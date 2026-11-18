@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -175,16 +174,16 @@ func (c *CLI) handleBackgroundCommand(cmd string) {
 		bgEnv.Values = &sync.Map{}
 		tools.DeclareStatelessChannel(&bgEnv)
 		bgEnv.Ask = cliAsker{c: c}
-		browser.SetUnlockPromptCallback(ctx, c.vaultUnlockCallback)
-		browser.SetSaveLoginPromptCallback(ctx, c.vaultSaveLoginCallback)
-		browser.SetCodePromptCallback(ctx, c.vaultCodeCallback)
+		tools.SetUnlockPromptCallback(ctx, c.vaultUnlockCallback)
+		tools.SetSaveLoginPromptCallback(ctx, c.vaultSaveLoginCallback)
+		tools.SetCodePromptCallback(ctx, c.vaultCodeCallback)
 		skills.SetSecretCaptureCallback(c.secretCaptureCallback)
 		defer func() {
 			bgEnv.Ask = nil
 			skills.SetSecretCaptureCallback(nil)
-			browser.SetUnlockPromptCallback(ctx, nil)
-			browser.SetSaveLoginPromptCallback(ctx, nil)
-			browser.SetCodePromptCallback(ctx, nil)
+			tools.SetUnlockPromptCallback(ctx, nil)
+			tools.SetSaveLoginPromptCallback(ctx, nil)
+			tools.SetCodePromptCallback(ctx, nil)
 		}()
 		bgAgent, err := agent.NewAIAgent(ctx, agent.AIAgentOptions{
 			Model: route.model, ACPCommand: rt.Command, ACPArgs: rt.Args, MaxIterations: new(c.maxTurns),

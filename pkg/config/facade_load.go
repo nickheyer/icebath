@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -188,33 +189,9 @@ func storeLoadEntry(path string, entry *loadEntry) {
 	loadCacheMu.Unlock()
 }
 
-// Python exception text a non mapping config root raises while being merged
+// Refusal of a config root that is not a mapping, met while merging
 func nonMappingRootError(doc any) error {
-	name := PyTypeName(doc)
-	switch doc.(type) {
-	case []any, string:
-		attr := "items"
-		if containsMaxTurns(doc) {
-			attr = "get"
-		}
-		return fmt.Errorf("'%s' object has no attribute '%s'", name, attr)
-	}
-	return fmt.Errorf("argument of type '%s' is not iterable", name)
-}
-
-// Reports whether a list or string root holds max_turns the way Python membership tests it
-func containsMaxTurns(doc any) bool {
-	switch c := doc.(type) {
-	case []any:
-		for _, v := range c {
-			if s, ok := v.(string); ok && s == "max_turns" {
-				return true
-			}
-		}
-	case string:
-		return len(c) >= len("max_turns") && containsSubstring(c, "max_turns")
-	}
-	return false
+	return fmt.Errorf("the config root is %s where a mapping was expected", errchain.Kind(doc))
 }
 
 func containsSubstring(s, sub string) bool {
@@ -267,7 +244,7 @@ func pyDictOf(v any) (map[string]any, error) {
 		SetMappingKeys(out, keys)
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", PyTypeName(v))
+	return nil, fmt.Errorf("expected a mapping or a list of key and value pairs, got %s", errchain.Kind(v))
 }
 
 // Defaults with the user document merged in, legacy root max_turns moved under agent first

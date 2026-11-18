@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -88,8 +89,14 @@ func (f SinkFn) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPa
 	return f(ctx, payload, config, existingRecord)
 }
 
-// Error standing for a Python builtin exception class with its message
-func pyError(class, msg string) error { return &pyrepr.FormatError{Class: class, Msg: msg} }
+// Failure carrying the class name the job error record keeps, its text the message alone
+type pipelineError struct{ class, msg string }
+
+func (e *pipelineError) Error() string      { return e.msg }
+func (e *pipelineError) PyTypeName() string { return e.class }
+
+// Error of a class with its message
+func pyError(class, msg string) error { return &pipelineError{class, msg} }
 
 // Mapping get that fails with the AttributeError of calling get on a non dict
 func dictGetAttr(v any, key string) (any, error) {
@@ -116,14 +123,14 @@ func subscript(v any, key string) (any, error) {
 			if val, ok := t.Get(key); ok {
 				return val, nil
 			}
-			return nil, pyError("KeyError", pyrepr.Repr(key))
+			return nil, pyError("KeyError", "missing "+key)
 		}
 	case []any:
-		return nil, pyError("TypeError", "list indices must be integers or slices, not str")
+		return nil, pyError("TypeError", "expected a mapping holding "+key+", got a list")
 	case string:
-		return nil, pyError("TypeError", "string indices must be integers, not 'str'")
+		return nil, pyError("TypeError", "expected a mapping holding "+key+", got text")
 	}
-	return nil, pyError("TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v)))
+	return nil, pyError("TypeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v)))
 }
 
 // Items of an iterable JSON value, the TypeError of iterating anything else
@@ -157,7 +164,7 @@ func iterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, pyError("TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v)))
+	return nil, pyError("TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v)))
 }
 
 // dict(value or {}) over a config value that may be a Go map or an ordered dict
@@ -169,7 +176,7 @@ func configDict(v any) (*pyjson.Object, error) {
 	case map[string]any:
 		return mapping(t)
 	case string:
-		return nil, pyError("ValueError", "dictionary update sequence element #0 has length 1; 2 is required")
+		return nil, pyError("ValueError", "expected a mapping, got text")
 	}
 	return dictField(v)
 }
@@ -263,7 +270,7 @@ func TeamsPipelineConfigFromDict(payload any) (*TeamsPipelineConfig, error) {
 	if tmp := or(get(data, "tmp_dir"), get(data, "tmpDir")); pyrepr.Truthy(tmp) {
 		text, ok := tmp.(string)
 		if !ok {
-			return nil, pyError("TypeError", "expected str, bytes or os.PathLike object, not "+pyrepr.TypeName(tmp))
+			return nil, pyError("TypeError", "tmp_dir is "+errchain.Kind(tmp)+" where a path was expected")
 		}
 		cfg.TmpDir = pypath.PurePathStr(text)
 	}
@@ -320,9 +327,9 @@ func summaryHead(v any) (any, error) {
 	case []any:
 		return append([]any{}, t[:min(len(t), 1900)]...), nil
 	case *pyjson.Object, map[string]any:
-		return nil, pyError("TypeError", "unhashable type: 'slice'")
+		return nil, pyError("TypeError", "the meeting summary is a mapping where text or a list was expected")
 	}
-	return nil, pyError("TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v)))
+	return nil, pyError("TypeError", fmt.Sprintf("the meeting summary is %s where text or a list was expected", errchain.Kind(v)))
 }
 
 // Lines joined by newlines, the TypeError str.join raises for a line that is not a str
@@ -331,7 +338,7 @@ func joinLines(lines []any) (string, error) {
 	for i, line := range lines {
 		text, ok := line.(string)
 		if !ok {
-			return "", pyError("TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(line)))
+			return "", pyError("TypeError", fmt.Sprintf("summary line %d is %s where text was expected", i, errchain.Kind(line)))
 		}
 		texts[i] = text
 	}
@@ -341,7 +348,7 @@ func joinLines(lines []any) (string, error) {
 // Meeting id of the payload reference, the AttributeError of a payload with no reference
 func payloadMeetingID(payload *TeamsMeetingSummaryPayload) (string, error) {
 	if payload.MeetingRef == nil {
-		return "", pyError("AttributeError", "'NoneType' object has no attribute 'meeting_id'")
+		return "", pyError("AttributeError", "the summary payload has no meeting reference")
 	}
 	return payload.MeetingRef.MeetingID, nil
 }
@@ -434,7 +441,7 @@ func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 		return nil, err
 	}
 	if config == nil {
-		return nil, pyError("AttributeError", "'NoneType' object has no attribute 'get'")
+		return nil, pyError("AttributeError", "the Notion sink has no config")
 	}
 	databaseID := strField(or(get(config, "database_id"), get(config, "databaseId"), ""))
 	pageID := get(existingRecord, "page_id")
@@ -476,9 +483,9 @@ func propertyKey(v any) (string, error) {
 		}
 		return "false", nil
 	case []any:
-		return "", pyError("TypeError", "unhashable type: 'list'")
+		return "", pyError("TypeError", "a Notion property name is a list where text was expected")
 	case *pyjson.Object, map[string]any:
-		return "", pyError("TypeError", "unhashable type: 'dict'")
+		return "", pyError("TypeError", "a Notion property name is a mapping where text was expected")
 	}
 	return pyrepr.Str(v), nil
 }
@@ -554,7 +561,7 @@ func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 	}
 	headers := [][2]string{{"Authorization", w.APIKey}, {"Content-Type", "application/json"}}
 	if config == nil {
-		return nil, pyError("AttributeError", "'NoneType' object has no attribute 'get'")
+		return nil, pyError("AttributeError", "the Linear sink has no config")
 	}
 	teamID := strField(or(get(config, "team_id"), get(config, "teamId"), ""))
 	title := payload.Title
@@ -645,7 +652,7 @@ func NewTeamsMeetingPipeline(client graphClient, store *TeamsPipelineStore, conf
 // Records the notification receipt and returns its existing job or a newly stored received job
 func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *pyjson.Object) (*TeamsMeetingPipelineJob, error) {
 	if notification == nil {
-		return nil, pyError("AttributeError", "'NoneType' object has no attribute 'get'")
+		return nil, pyError("AttributeError", "the notification is empty")
 	}
 	eventID, err := BuildNotificationReceiptKey(notification)
 	if err != nil {
@@ -795,9 +802,12 @@ func coerceSummaryPayload(raw any) (*TeamsMeetingSummaryPayload, error) {
 	} else if ok {
 		raw = nil
 	}
+	if raw == nil {
+		return nil, pyError("TypeError", "the summarizer returned nothing")
+	}
 	dict, err := mapping(orderedValue(raw))
 	if err != nil {
-		return nil, pyError("TypeError", err.Error())
+		return nil, pyError("TypeError", "the meeting summary is "+errchain.Kind(raw)+" where a mapping was expected")
 	}
 	return TeamsMeetingSummaryPayloadFromDict(dict)
 }
@@ -950,7 +960,7 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 	if pyrepr.Truthy(recording.DisplayName) {
 		text, ok := recording.DisplayName.(string)
 		if !ok {
-			return "", pyError("TypeError", "expected str, bytes or os.PathLike object, not "+pyrepr.TypeName(recording.DisplayName))
+			return "", pyError("TypeError", "recording display name is "+errchain.Kind(recording.DisplayName)+" where text was expected")
 		}
 		displayName = text
 	}
@@ -974,7 +984,7 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 		return "", err
 	}
 	if result == nil {
-		return "", pyError("AttributeError", "'NoneType' object has no attribute 'get'")
+		return "", pyError("AttributeError", "the transcription returned nothing")
 	}
 	if !pyrepr.Truthy(result["success"]) {
 		return "", &TeamsPipelineRetryableError{TeamsPipelineError{pyrepr.Str(or(result["error"], "Unknown STT failure"))}}
@@ -1109,7 +1119,7 @@ func (p *TeamsMeetingPipeline) writeSinks(ctx context.Context, job *TeamsMeeting
 			return err
 		}
 		if record == nil {
-			return pyError("TypeError", "'NoneType' object is not a mapping")
+			return pyError("TypeError", "the sink returned no record")
 		}
 		if _, err := p.Store.UpsertSinkRecord(sinkKey, record); err != nil {
 			return err

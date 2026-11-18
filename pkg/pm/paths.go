@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
@@ -477,7 +478,7 @@ func EnvironmentStoreRoot(ctx context.Context, projectRoot string, honorRuntimeO
 				if value, has := m["runtimeDir"]; has && pyrepr.Truthy(value) {
 					s, isStr := value.(string)
 					if !isStr {
-						return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(value))}
+						return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the install stamp runtimeDir must be text, got %s", errchain.Kind(value))}
 					}
 					return pathResolve(s)
 				}

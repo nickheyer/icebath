@@ -569,7 +569,7 @@ func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string,
 			}
 		}()
 		if db == nil {
-			return errors.New("'NoneType' object has no attribute 'get_session'")
+			return errors.New("no session database to read the session from")
 		}
 		sessionRow, err = db.GetSession(ctx, entry.SessionID)
 		return err

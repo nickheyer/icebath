@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -48,13 +48,12 @@ var (
 // queuedInput is the composer message bundled with its image attachments, the payload the prompt submits
 type queuedInput = submittedInput
 
-// Python str of the bundled message, the tuple repr the interrupt debug log records
+// Text of the bundled message with its image paths, the form the interrupt debug log records
 func (q submittedInput) String() string {
-	paths := make([]string, len(q.Images))
-	for i, p := range q.Images {
-		paths[i] = "PosixPath(" + pyrepr.StrRepr(p) + ")"
+	if len(q.Images) == 0 {
+		return q.Text
 	}
-	return "(" + pyrepr.StrRepr(q.Text) + ", [" + strings.Join(paths, ", ") + "])"
+	return q.Text + " [images: " + strings.Join(q.Images, ", ") + "]"
 }
 
 // Result of the turn so far, nil while the agent goroutine has not returned
@@ -370,9 +369,9 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 	ctx := tools.WithThreadLocals(c.turnCtx)
 	ctx = skills.WithTurnSecretCapture(ctx, c.secretCaptureCallback)
-	browser.SetUnlockPromptCallback(ctx, c.vaultUnlockCallback)
-	browser.SetSaveLoginPromptCallback(ctx, c.vaultSaveLoginCallback)
-	browser.SetCodePromptCallback(ctx, c.vaultCodeCallback)
+	tools.SetUnlockPromptCallback(ctx, c.vaultUnlockCallback)
+	tools.SetSaveLoginPromptCallback(ctx, c.vaultSaveLoginCallback)
+	tools.SetCodePromptCallback(ctx, c.vaultCodeCallback)
 	sessionKey := c.sessionID
 	if sessionKey == "" {
 		sessionKey = "default"
@@ -424,9 +423,9 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 			c.restoreModelRuntimeSnapshot(oneTurnModelRestore)
 		}
 		c.flushCreditNotices()
-		browser.SetUnlockPromptCallback(ctx, nil)
-		browser.SetSaveLoginPromptCallback(ctx, nil)
-		browser.SetCodePromptCallback(ctx, nil)
+		tools.SetUnlockPromptCallback(ctx, nil)
+		tools.SetSaveLoginPromptCallback(ctx, nil)
+		tools.SetCodePromptCallback(ctx, nil)
 		tools.ResetCurrentSessionKey(c.env)
 	}()
 	defer func() {
@@ -607,7 +606,7 @@ func (c *CLI) writeInterruptDebugLog(msg any) {
 	}
 	defer f.Close()
 	_, _ = fmt.Fprintf(f, "%s interrupt fired: msg=%s, children=0, parent._interrupt=%s\n", pydatetime.Strftime(time.Now(), "%H:%M:%S"),
-		pyrepr.StrRepr(pystr.Slice(pyrepr.Str(msg), 0, 60)), pyrepr.Repr(c.agentRef().InterruptRequested()))
+		pystr.Slice(pyrepr.Str(msg), 0, 60), errchain.Show(c.agentRef().InterruptRequested()))
 }
 
 // Transcript rows of a turn result, false when the result carries no messages key

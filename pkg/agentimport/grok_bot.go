@@ -13,6 +13,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -503,7 +504,7 @@ func equalsOne(v any) bool {
 // Bots of a validated export document, refusing other versions, credential keys and nameless bots
 func validatedBots(data *pyjson.Object) ([]*pyjson.Object, error) {
 	if version, has := data.Vals["version"]; has && !equalsOne(version) {
-		return nil, &ExportFormatError{"unsupported export version " + pyrepr.Repr(version)}
+		return nil, &ExportFormatError{"unsupported export version " + errchain.Show(version)}
 	}
 	if secrets := secretKeys(data, ""); len(secrets) > 0 {
 		shown := secrets
@@ -1098,7 +1099,7 @@ func zoneNote(routine *pyjson.Object) string {
 	if tz == "" || validZone(routine) != "" {
 		return ""
 	}
-	return "unknown time zone " + pyrepr.StrRepr(tz) + ", runs in this profile's time zone"
+	return "unknown time zone " + tz + ", runs in this profile's time zone"
 }
 
 // Event triggered routines saved in full where the user can rebuild them

@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -97,17 +96,13 @@ func asCommandTimeout(err error) *pysubprocess.TimeoutExpired {
 	return nil
 }
 
-// Argv of a timed out command as Python prints the list, or the words unknown command
+// Argv of a timed out command joined by spaces, or the words unknown command
 func timeoutCmdText(err error) string {
 	expired := asCommandTimeout(err)
 	if expired == nil || len(expired.Cmd) == 0 {
 		return "unknown command"
 	}
-	items := make([]any, len(expired.Cmd))
-	for i, arg := range expired.Cmd {
-		items[i] = arg
-	}
-	return pyrepr.Repr(items)
+	return strings.Join(expired.Cmd, " ")
 }
 
 // Captured stdout of a finished command as text with undecodable bytes replaced
@@ -398,7 +393,7 @@ func repairUnitWithoutFatalExitPark(ctx context.Context, w io.Writer, svcName, s
 	}
 	data = []byte(strings.TrimPrefix(string(data), string([]byte{0xef, 0xbb, 0xbf})))
 	if !utf8.Valid(data) {
-		return fmt.Errorf("'utf-8' codec can't decode the unit file of %s", svcName)
+		return fmt.Errorf("the unit file of %s is not valid UTF-8", svcName)
 	}
 	if parked, err := fatalExitParkRe.MatchString(string(data)); err != nil || parked {
 		return err

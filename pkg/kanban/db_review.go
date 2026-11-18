@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -610,7 +610,7 @@ func PromoteTask(ctx context.Context, conn state.SQLiteConn, taskID, actor strin
 		return false, fmt.Sprintf("task %s not found", taskID), nil
 	}
 	if *curStatus != "todo" && *curStatus != "blocked" {
-		return false, fmt.Sprintf("task %s is %s; promote only applies to 'todo' or 'blocked'", taskID, pyrepr.Repr(*curStatus)), nil
+		return false, fmt.Sprintf("task %s is %s; promote only applies to 'todo' or 'blocked'", taskID, errchain.Show(*curStatus)), nil
 	}
 	parents, err := QueryRows(ctx, conn, "SELECT t.id, t.status FROM tasks t "+
 		"JOIN task_links l ON l.parent_id = t.id "+

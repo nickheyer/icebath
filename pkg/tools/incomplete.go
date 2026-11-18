@@ -12,5 +12,4 @@ func init() {
 	registerDiscordTools()
 	registerProjectTools()
 	registerCheckpointManager()
-	registerRemoteTerminalBackends()
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -76,7 +77,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID string) (
 		}
 		obj, ok := v.(*pyjson.Object)
 		if !ok || obj == nil {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+			return nil, fmt.Errorf("the Slack reply must be a JSON object, got %s", errchain.Kind(v))
 		}
 		return obj, nil
 	}
@@ -106,12 +107,12 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID string) (
 			members := get(data, "members", []any{})
 			list, ok := members.([]any)
 			if !ok {
-				return "", nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(members))
+				return "", nil, fmt.Errorf("the Slack users.list members must be a list, got %s", errchain.Kind(members))
 			}
 			for _, item := range list {
 				m, ok := item.(*pyjson.Object)
 				if !ok || m == nil {
-					return "", nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(item))
+					return "", nil, fmt.Errorf("a Slack users.list member must be a mapping, got %s", errchain.Kind(item))
 				}
 				if pyrepr.Truthy(get(m, "deleted", nil)) || pyrepr.Truthy(get(m, "is_bot", nil)) {
 					continue
@@ -125,7 +126,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID string) (
 			if pyrepr.Truthy(meta) {
 				mo, ok := meta.(*pyjson.Object)
 				if !ok {
-					return "", nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(meta))
+					return "", nil, fmt.Errorf("the Slack users.list response_metadata must be a mapping, got %s", errchain.Kind(meta))
 				}
 				cursor = get(mo, "next_cursor", nil)
 			}
@@ -153,7 +154,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID string) (
 	if pyrepr.Truthy(channel) {
 		co, ok := channel.(*pyjson.Object)
 		if !ok {
-			return "", nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(channel))
+			return "", nil, fmt.Errorf("the Slack conversations.open channel must be a mapping, got %s", errchain.Kind(channel))
 		}
 		dmID = get(co, "id", nil)
 	}

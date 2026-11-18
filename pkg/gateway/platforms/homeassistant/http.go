@@ -21,12 +21,11 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -57,7 +56,7 @@ type responseError struct {
 }
 
 func (e *responseError) Error() string {
-	return fmt.Sprintf("%d, message=%s, url=%s", e.status, pyrepr.Repr(e.message), pyrepr.Repr(e.url))
+	return fmt.Sprintf("HTTP %d %s from %s", e.status, e.message, e.url)
 }
 
 func (e *responseError) PyTypeName() string {
@@ -176,9 +175,9 @@ func sslConnectError(rawURL string, err error) error {
 	host, port := hostPort(rawURL)
 	if strings.HasPrefix(text, "[SSL: CERTIFICATE_VERIFY_FAILED]") {
 		return &clientError{kind: "ClientConnectorCertificateError",
-			text: fmt.Sprintf("Cannot connect to host %s:%s ssl:True [SSLCertVerificationError: (1, %s)]", host, port, pyrepr.Repr(text)), err: err}
+			text: fmt.Sprintf("Cannot connect to host %s:%s: the TLS certificate could not be verified (%s)", host, port, text), err: err}
 	}
-	return &clientError{kind: "ClientConnectorSSLError", text: fmt.Sprintf("Cannot connect to host %s:%s ssl:default [%s]", host, port, text), err: err}
+	return &clientError{kind: "ClientConnectorSSLError", text: fmt.Sprintf("Cannot connect to host %s:%s: the TLS handshake failed (%s)", host, port, text), err: err}
 }
 
 // Host and port of a URL with the scheme default port
@@ -211,7 +210,7 @@ func transportError(rawURL string, err error) error {
 		return &clientError{kind: "ClientConnectorDNSError", text: fmt.Sprintf("Cannot connect to host %s:%s ssl:default [%s]", host, port, reason), err: err}
 	case errors.As(err, &op) && op.Op == "dial":
 		host, port := hostPort(rawURL)
-		reason := pyhttpx.OSErrorText(err)
+		reason := errchain.OSText(err)
 		if tcp, ok := op.Addr.(*net.TCPAddr); ok {
 			reason = fmt.Sprintf("Connect call failed ('%s', %d)", tcp.IP.String(), tcp.Port)
 		}
@@ -219,7 +218,7 @@ func transportError(rawURL string, err error) error {
 	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
 		return &clientError{kind: "ServerDisconnectedError", text: "Server disconnected", err: err}
 	}
-	return &clientError{kind: "ClientOSError", text: pyhttpx.OSErrorText(err), err: err}
+	return &clientError{kind: "ClientOSError", text: errchain.OSText(err), err: err}
 }
 
 // Body decoded as the aiohttp payload parser decodes gzip, deflate and zstd, with its errors for br and corrupt data

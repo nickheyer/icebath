@@ -7,20 +7,34 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Home target env var of a platform, its plugin cron delivery var else PLATFORM_HOME_CHANNEL
 func homeTargetEnvVar(ctx context.Context, platformName string) string {
-	if name := cron.ResolveHomeEnvVar(ctx, platformName); name != "" {
+	if name := pluginHomeEnvVar(ctx, platformName); name != "" {
 		return name
 	}
 	return strings.ToUpper(platformName) + "_HOME_CHANNEL"
+}
+
+// Home channel env var the platform's plugin registers, empty when none or when discovery fails
+func pluginHomeEnvVar(ctx context.Context, platformName string) (name string) {
+	defer func() {
+		if recover() != nil {
+			name = ""
+		}
+	}()
+	plugins.DiscoverPlugins(ctx, false)
+	if entry := gateway.Registry.Get(ctx, strings.ToLower(platformName)); entry != nil {
+		return entry.CronDeliverEnvVar
+	}
+	return ""
 }
 
 // Optional thread or topic env var of a platform home target

@@ -9,10 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -72,7 +74,10 @@ type SocketDisconnect struct {
 }
 
 func (e *SocketDisconnect) Error() string {
-	return fmt.Sprintf("(%s, %s)", pyrepr.Repr(e.Code), pyrepr.Repr(e.Reason))
+	if e.Reason == nil || e.Reason == "" {
+		return fmt.Sprintf("the peer closed the socket with code %s", errchain.Show(e.Code))
+	}
+	return fmt.Sprintf("the peer closed the socket with code %s: %s", errchain.Show(e.Code), errchain.Show(e.Reason))
 }
 
 // Accepted WebSocket one session connection runs over, as the gateway session route hands it in
@@ -197,7 +202,7 @@ func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, re
 		return nil, nil
 	}
 	if !isDict || request == nil {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(req))
+		return nil, fmt.Errorf("a request must be a mapping, got %s", errchain.Kind(req))
 	}
 	reply, err := authority.Dispatch(ctx, request)
 	if err != nil {
@@ -315,12 +320,12 @@ func requestIDAndMethod(req any) (any, string) {
 	return m["id"], method
 }
 
-// Method member of a request as the log lines print it, None when the frame carries none
+// Method member of a request as the log lines print it, nothing when the frame carries none
 func requestMethodText(req any) string {
 	if obj, isDict := req.(*pyjson.Object); isDict && obj != nil {
-		return pyrepr.Str(obj.GetOr("method", nil))
+		return errchain.Show(obj.GetOr("method", nil))
 	}
-	return "None"
+	return "nothing"
 }
 
 // Fails like a set lookup of a list or dict method, which ends the Python read loop with a TypeError
@@ -331,9 +336,9 @@ func requestMethodHashable(req any) error {
 	}
 	switch obj.GetOr("method", nil).(type) {
 	case []any:
-		return &pyjson.TypeError{Msg: "unhashable type: 'list'"}
+		return &pyjson.TypeError{Msg: "the request method must be text, got a list"}
 	case *pyjson.Object:
-		return &pyjson.TypeError{Msg: "unhashable type: 'dict'"}
+		return &pyjson.TypeError{Msg: "the request method must be text, got a mapping"}
 	}
 	return nil
 }
@@ -765,7 +770,8 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 	}
 	c.authority = authority
 	skinPayload := wsResolveSkin(c.ctx)
-	readyPayload := map[string]any{"skin": skinPayload, "change_events": true, "heartbeat": true, "replay_epoch": tuihost.ReplayEpoch()}
+	readyPayload := map[string]any{"skin": skinPayload, "change_events": true, "heartbeat": true, "replay_epoch": tuihost.ReplayEpoch(),
+		"build": tuigateway.BuildID(), "contract": int64(tuigateway.ContractVersion)}
 	if authority != nil {
 		readyPayload["session_authority"] = true
 	}

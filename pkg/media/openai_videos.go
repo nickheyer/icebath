@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -65,14 +66,14 @@ func (v *openAIVideo) errorText() (string, bool) {
 	seen := map[string]bool{}
 	for _, k := range []string{"code", "message"} {
 		if val, ok := obj.Get(k); ok {
-			parts = append(parts, k+"="+pyrepr.Repr(val))
+			parts = append(parts, k+"="+errchain.Show(val))
 			seen[k] = true
 		}
 	}
 	for _, k := range obj.Keys {
 		if !seen[k] {
 			val, _ := obj.Get(k)
-			parts = append(parts, k+"="+pyrepr.Repr(val))
+			parts = append(parts, k+"="+errchain.Show(val))
 		}
 	}
 	return strings.Join(parts, " "), true
@@ -130,7 +131,7 @@ func (c *openAIClient) VideosCreate(ctx context.Context, req map[string]any, ext
 // Path segment of a video id, the SDK ValueError for an empty id
 func openAIVideoPath(videoID, suffix string) (string, error) {
 	if videoID == "" {
-		return "", &openAIError{Class: "ValueError", Message: fmt.Sprintf("Expected a non-empty value for `video_id` but received %s", pyrepr.Repr(videoID))}
+		return "", &openAIError{Class: "ValueError", Message: fmt.Sprintf("Expected a non-empty value for `video_id` but received %s", errchain.Show(videoID))}
 	}
 	return "/videos/" + url.PathEscape(videoID) + suffix, nil
 }

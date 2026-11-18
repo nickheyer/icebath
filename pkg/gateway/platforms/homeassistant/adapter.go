@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -65,7 +66,7 @@ func validateHAConfig(ctx context.Context, config *gateway.PlatformConfig) (bool
 	}
 	text, ok := token.(string)
 	if !ok {
-		return false, attrErr(token, "strip")
+		return false, attrErr(token, "the Home Assistant token", "text")
 	}
 	return pystr.Strip(text) != "", nil
 }
@@ -74,7 +75,7 @@ func validateHAConfig(ctx context.Context, config *gateway.PlatformConfig) (bool
 func domainOf(entityID any) (string, error) {
 	id, ok := entityID.(string)
 	if !ok {
-		return "", &pyErr{"TypeError", fmt.Sprintf("argument of type '%s' is not a container or iterable", pyrepr.TypeName(entityID))}
+		return "", &pyErr{"TypeError", fmt.Sprintf("an entity id must be text, got %s", errchain.Kind(entityID))}
 	}
 	if !strings.Contains(id, ".") {
 		return "", nil
@@ -157,7 +158,7 @@ func NewHomeAssistantAdapter(ctx context.Context, config *gateway.PlatformConfig
 	}
 	urlText, ok := rawURL.(string)
 	if !ok {
-		return nil, attrErr(rawURL, "rstrip")
+		return nil, attrErr(rawURL, "the Home Assistant url", "text")
 	}
 	a.hassURL = pystr.RstripChars(urlText, "/")
 	a.hassToken = config.Token

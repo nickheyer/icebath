@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -284,7 +285,7 @@ func (t *TurnRunner) progressBuildMessage(toolName string, preview string, args 
 			}
 			argsStr := tools.VerboseToolArgsText(ordered, tools.GetToolPreviewMaxLen(), supports)
 			line = i18n.T(t.turnCtx, "gateway.progress.tool_verbose", "", map[string]any{"emoji": emoji, "tool": toolName,
-				"keys": pyrepr.Repr(keys), "args": argsStr})
+				"keys": errchain.Show(keys), "args": argsStr})
 		case preview != "":
 			line = i18n.T(t.turnCtx, "gateway.progress.tool_preview", "", map[string]any{"emoji": emoji, "tool": toolName, "preview": preview})
 		default:

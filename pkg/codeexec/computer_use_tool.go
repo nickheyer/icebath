@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -70,7 +71,7 @@ func rejectUnsafe(action string, args map[string]any) string {
 		text := cuArgStr(args, "text")
 		for i, p := range cuBlockedTypePatterns {
 			if p.MatchString(text) {
-				return cuDumps(map[string]any{"error": "blocked pattern in type text: " + pyrepr.Repr(cuBlockedTypeSources[i]),
+				return cuDumps(map[string]any{"error": "blocked pattern in type text: " + errchain.Show(cuBlockedTypeSources[i]),
 					"hint": "Dangerous shell patterns cannot be typed via computer_use."}, "error", "hint")
 			}
 		}
@@ -87,7 +88,7 @@ func rejectUnsafe(action string, args map[string]any) string {
 				for i, k := range blocked {
 					items[i] = k
 				}
-				return cuDumps(map[string]any{"error": "blocked key combo: " + pyrepr.Repr(items),
+				return cuDumps(map[string]any{"error": "blocked key combo: " + errchain.Show(items),
 					"hint": "Destructive system shortcuts are hard-blocked."}, "error", "hint")
 			}
 		}
@@ -558,15 +559,15 @@ func summarizeAction(action string, args map[string]any) string {
 		if len(text) > 60 {
 			head, more = text[:60], "..."
 		}
-		return "type " + pyrepr.Repr(string(head)) + more + fg
+		return "type " + errchain.Show(string(head)) + more + fg
 	case "key":
-		return "key " + pyrepr.Repr(cuArgOr(args, "keys", "")) + fg
+		return "key " + errchain.Show(cuArgOr(args, "keys", "")) + fg
 	case "focus_app":
 		raise := ""
 		if pyrepr.Truthy(args["raise_window"]) {
 			raise = " (raise)"
 		}
-		return "focus " + pyrepr.Repr(cuArgOr(args, "app", "")) + raise
+		return "focus " + errchain.Show(cuArgOr(args, "app", "")) + raise
 	}
 	return action + fg
 }
@@ -578,7 +579,7 @@ func summarizeClick(action string, args map[string]any, fg string) string {
 		where = " element #" + pyrepr.Str(el)
 	} else if coord := args["coordinate"]; pyrepr.Truthy(coord) {
 		items, _ := coord.([]any)
-		where = " at " + pyrepr.Repr(pyrepr.Tuple(items))
+		where = " at " + errchain.Show(pyrepr.Tuple(items))
 	}
 	return action + where + fg
 }

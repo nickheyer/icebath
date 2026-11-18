@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -167,7 +167,7 @@ func transcodeAudioForSTT(filePath, workDir string) (string, string) {
 func validateAudioFileSize(audioPath string, enforce bool) map[string]any {
 	st, err := os.Stat(audioPath)
 	if err != nil {
-		return sttError("Failed to access file: " + pypath.OSErrorText(err))
+		return sttError("Failed to access file: " + errchain.OSText(err))
 	}
 	if enforce && st.Size() > sttMaxFileSize {
 		return sttError(fmt.Sprintf("File too large: %.1fMB (max %.0fMB)", float64(st.Size())/(1024*1024), float64(sttMaxFileSize)/(1024*1024)))
@@ -251,7 +251,7 @@ func prepareAudioForTranscription(ctx context.Context, filePath string) (string,
 	}
 	tempDir, err := os.MkdirTemp("", "icebath-silk-")
 	if err != nil {
-		return "", "", sttError("Failed to convert .silk audio for transcription: " + pypath.OSErrorText(err))
+		return "", "", sttError("Failed to convert .silk audio for transcription: " + errchain.OSText(err))
 	}
 	converted := filepath.Join(tempDir, sttStem(filePath)+".wav")
 	err = sttSilkToWAV(ctx, filePath, converted)
@@ -392,7 +392,7 @@ func trimSilenceForCloudSTT(filePath string, sttConfig map[string]any) string {
 		thresholdDB, keep, thresholdDB, keep)
 	workDir, err := os.MkdirTemp("", "icebath-stt-trim-")
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim failed for %s: %s", filePath, pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Cloud STT silence trim failed for %s: %s", filePath, errchain.OSText(err)))
 		return ""
 	}
 	stem := sttStem(filePath)

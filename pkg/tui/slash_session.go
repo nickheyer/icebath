@@ -1,8 +1,10 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"slices"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -11,17 +13,25 @@ import (
 var indicatorNames = []string{"kaomoji", "emoji", "unicode", "ascii"}
 
 // Word of a fast mode value
-func fastModeWord(v any) string {
-	if v == "fast" || v == "ultrafast" {
-		return v.(string)
+func fastModeWord(word string) string {
+	if word == "fast" || word == "ultrafast" {
+		return word
 	}
 	return "normal"
 }
 
+// Word a config write took, empty for none or a flag
+func setWord(res *tuigateway.ConfigSetResult) string {
+	if res == nil || res.Value == nil {
+		return ""
+	}
+	return res.Value.Text
+}
+
 // Prints the warning a config answer carries
-func (r *slashRun) maybeWarn(res map[string]any) {
-	if warning, _ := res["warning"].(string); warning != "" {
-		r.sys("warning: " + warning)
+func (r *slashRun) maybeWarn(res *tuigateway.ConfigSetResult) {
+	if res.Warning != "" {
+		r.sys("warning: " + res.Warning)
 	}
 }
 
@@ -84,11 +94,15 @@ func (a *app) sessionCommands() []slashCommand {
 			}
 			var switchModel func(confirmed bool) tea.Cmd
 			switchModel = func(confirmed bool) tea.Cmd {
-				return r.rpc("config.set", map[string]any{"confirm_expensive_model": confirmed, "key": "model", "session_id": nilIfEmpty(r.sid), "value": value}, func(res map[string]any) tea.Cmd {
-					if truthyJS(res["confirm_required"]) {
+				params := tuigateway.ConfigSetParams{ConfirmExpensiveModel: confirmed, Key: "model", SessionID: r.sid, Value: tuigateway.TextValue(value)}
+				return ask(r.rpc, r.sys, tuigateway.ConfigSet, params, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					if res.ConfirmRequired {
 						detail := tr("slashCmd.session.model.expensiveDetail")
-						for _, k := range []string{"warning", "confirm_message"} {
-							if s, _ := res[k].(string); s != "" {
+						for _, s := range []string{res.Warning, res.ConfirmMessage} {
+							if s != "" {
 								detail = s
 							}
 						}
@@ -96,12 +110,12 @@ func (a *app) sessionCommands() []slashCommand {
 							Danger: true, Detail: detail, OnConfirm: func() tea.Cmd { return switchModel(true) }, Title: tr("slashCmd.session.model.expensiveTitle")}
 						return nil
 					}
-					model, _ := res["value"].(string)
+					model := setWord(res)
 					if model == "" {
-						r.sys(tr("slashCmd.session.model.invalidResponse"))
+						r.sys(misfitText(tr("slashCmd.session.model.invalidResponse")))
 						return nil
 					}
-					if truthyJS(res["deferred"]) {
+					if res.Deferred {
 						r.sys(tr("slashCmd.session.model.switchedDeferred", model))
 					} else {
 						r.sys(tr("slashCmd.session.model.switched", model))
@@ -138,21 +152,15 @@ func (a *app) sessionCommands() []slashCommand {
 					return nil
 				})
 			}
-			return r.rpc("config.set", map[string]any{"key": "personality", "session_id": nilIfEmpty(r.sid), "value": r.arg}, func(res map[string]any) tea.Cmd {
-				reset := truthyJS(res["history_reset"])
-				if reset {
-					var info *tuigateway.SessionInfo
-					if raw := res["info"]; raw != nil {
-						var decoded tuigateway.SessionInfo
-						if err := tuigateway.Loose(raw, &decoded); err != nil {
-							r.sys("error: " + tr("session.common.invalidResponse", "config.set") + " " + err.Error())
-						} else {
-							info = &decoded
-						}
-					}
-					a.life.resetVisibleHistory(info)
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "personality", SessionID: r.sid, Value: tuigateway.TextValue(r.arg)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				if res == nil {
+					return nil
 				}
-				value, _ := res["value"].(string)
+				reset := res.HistoryReset
+				if reset {
+					a.life.resetVisibleHistory(res.Info)
+				}
+				value := setWord(res)
 				if value == "" {
 					value = tr("slashCmd.session.personality.defaultValue")
 				}
@@ -168,8 +176,8 @@ func (a *app) sessionCommands() []slashCommand {
 		{name: "theme", help: "terminal UI color mode", usage: "[auto|light|dark]", suggest: func(string) []string { return []string{"auto", "light", "dark"} }, run: func(r *slashRun) tea.Cmd {
 			value := strings.ToLower(trimJS(r.arg))
 			if value == "" {
-				return r.rpc("config.get", map[string]any{"key": "theme"}, func(res map[string]any) tea.Cmd {
-					current, _ := res["value"].(string)
+				return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "theme"}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+					current := configWord(res)
 					if current == "" {
 						current = "auto"
 					}
@@ -181,18 +189,18 @@ func (a *app) sessionCommands() []slashCommand {
 				r.sys(tr("slashCmd.session.theme.usage"))
 				return nil
 			}
-			return r.rpc("config.set", map[string]any{"key": "theme", "value": value}, func(res map[string]any) tea.Cmd {
-				if _, has := res["value"]; !has {
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "theme", Value: tuigateway.TextValue(value)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				if res == nil || res.Value == nil {
 					return nil
 				}
 				r.sys(tr("slashCmd.session.theme.switched", value))
-				return a.store.applyConfiguredTuiTheme(value)
+				return a.store.applyConfiguredTuiTheme(tuigateway.ThemeMode(value))
 			})
 		}},
 		{name: "skin", help: "switch the theme skin", usage: "[name]", run: func(r *slashRun) tea.Cmd {
 			if r.arg == "" {
-				return r.rpc("config.get", map[string]any{"key": "skin"}, func(res map[string]any) tea.Cmd {
-					current, _ := res["value"].(string)
+				return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "skin"}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+					current := configWord(res)
 					if current == "" {
 						current = tr("slashCmd.session.skin.defaultValue")
 					}
@@ -200,8 +208,8 @@ func (a *app) sessionCommands() []slashCommand {
 					return nil
 				})
 			}
-			return r.rpc("config.set", map[string]any{"key": "skin", "value": r.arg}, func(res map[string]any) tea.Cmd {
-				if value, _ := res["value"].(string); value != "" {
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "skin", Value: tuigateway.TextValue(r.arg)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				if value := setWord(res); value != "" {
 					r.sys(tr("slashCmd.session.skin.switched", value))
 				}
 				return nil
@@ -210,8 +218,8 @@ func (a *app) sessionCommands() []slashCommand {
 		{name: "indicator", help: "pick the busy indicator", usage: "[" + strings.Join(indicatorNames, "|") + "]", suggest: func(string) []string { return indicatorNames }, run: func(r *slashRun) tea.Cmd {
 			value := strings.ToLower(trimJS(r.arg))
 			if value == "" {
-				return r.rpc("config.get", map[string]any{"key": "indicator"}, func(res map[string]any) tea.Cmd {
-					current, _ := res["value"].(string)
+				return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "indicator"}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+					current := configWord(res)
 					if current == "" {
 						current = defaultIndicator
 					}
@@ -219,12 +227,12 @@ func (a *app) sessionCommands() []slashCommand {
 					return nil
 				})
 			}
-			if !indicatorStyles[value] {
+			if !slices.Contains(indicatorNames, value) {
 				r.sys(tr("slashCmd.session.indicator.usage", strings.Join(indicatorNames, "|")))
 				return nil
 			}
-			return r.rpc("config.set", map[string]any{"key": "indicator", "value": value}, func(res map[string]any) tea.Cmd {
-				if set, _ := res["value"].(string); set != "" {
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "indicator", Value: tuigateway.TextValue(value)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				if set := setWord(res); set != "" {
 					a.store.ui.IndicatorStyle = value
 					r.sys(tr("slashCmd.session.indicator.switched", set))
 				}
@@ -232,8 +240,11 @@ func (a *app) sessionCommands() []slashCommand {
 			})
 		}},
 		{name: "yolo", help: "toggle yolo mode, approvals off for this session", run: func(r *slashRun) tea.Cmd {
-			return r.rpc("config.set", map[string]any{"key": "yolo", "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-				if res["value"] == "1" {
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "yolo", SessionID: r.sid}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				if setWord(res) == "1" {
 					r.sys(tr("slashCmd.session.yolo.on"))
 				} else {
 					r.sys(tr("slashCmd.session.yolo.off"))
@@ -243,9 +254,11 @@ func (a *app) sessionCommands() []slashCommand {
 		}},
 		{name: "reasoning", help: "inspect or set reasoning effort", usage: "[effort|show|hide] [--global]", run: func(r *slashRun) tea.Cmd {
 			if r.arg == "" {
-				return tea.Batch(r.ran(), r.rpc("config.get", map[string]any{"key": "reasoning", "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-					value, _ := res["value"].(string)
-					display, _ := res["display"].(string)
+				return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "reasoning", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					value, display := configWord(res), res.Display
 					if display == "" {
 						display = "hide"
 					}
@@ -286,12 +299,9 @@ func (a *app) sessionCommands() []slashCommand {
 					return r.ran()
 				})
 			}
-			params := map[string]any{"key": "reasoning", "session_id": r.sid, "value": value}
-			if scope != "" {
-				params["scope"] = scope
-			}
-			return r.rpc("config.set", params, func(res map[string]any) tea.Cmd {
-				set, _ := res["value"].(string)
+			params := tuigateway.ConfigSetParams{Key: "reasoning", SessionID: r.sid, Value: tuigateway.TextValue(value), Scope: tuigateway.ConfigWriteScope(scope)}
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, params, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				set := setWord(res)
 				if set == "" {
 					return nil
 				}
@@ -317,8 +327,10 @@ func (a *app) sessionCommands() []slashCommand {
 				mode := strings.ToLower(trimJS(r.arg))
 				switch mode {
 				case "", "status":
-					return r.rpc("config.get", map[string]any{"key": "fast", "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-						r.sys(tr("slashCmd.session.fast.mode", fastModeWord(res["value"])))
+					return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "fast", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+						if res != nil {
+							r.sys(tr("slashCmd.session.fast.mode", fastModeWord(configWord(res))))
+						}
 						return nil
 					})
 				case "normal", "fast", "ultrafast", "on", "off", "toggle":
@@ -326,8 +338,11 @@ func (a *app) sessionCommands() []slashCommand {
 					r.sys(tr("slashCmd.session.fast.usage"))
 					return nil
 				}
-				return r.rpc("config.set", map[string]any{"key": "fast", "session_id": nilIfEmpty(r.sid), "value": mode}, func(res map[string]any) tea.Cmd {
-					next := fastModeWord(res["value"])
+				return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "fast", SessionID: r.sid, Value: tuigateway.TextValue(mode)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					next := fastModeWord(setWord(res))
 					r.sys(tr("slashCmd.session.fast.mode", next))
 					if a.store.ui.Info != nil {
 						fast, tier := next != "normal", map[string]string{"fast": "priority", "normal": "", "ultrafast": "ultrafast"}[next]
@@ -340,14 +355,17 @@ func (a *app) sessionCommands() []slashCommand {
 			suggest: func(string) []string { return []string{"queue", "steer", "interrupt", "status"} },
 			run: func(r *slashRun) tea.Cmd {
 				mode := strings.ToLower(trimJS(r.arg))
-				params := map[string]any{"key": "busy"}
+				sid := ""
 				if a.gw.canonical() {
-					params["session_id"] = nilIfEmpty(r.sid)
+					sid = r.sid
 				}
 				switch mode {
 				case "", "status":
-					return r.rpc("config.get", params, func(res map[string]any) tea.Cmd {
-						current, _ := res["value"].(string)
+					return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "busy", SessionID: sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+						if res == nil {
+							return nil
+						}
+						current := configWord(res)
 						if current == "" {
 							current = "interrupt"
 						}
@@ -359,9 +377,11 @@ func (a *app) sessionCommands() []slashCommand {
 					r.sys(tr("slashCmd.session.busy.usage"))
 					return nil
 				}
-				params["value"] = mode
-				return r.rpc("config.set", params, func(res map[string]any) tea.Cmd {
-					next, _ := res["value"].(string)
+				return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "busy", SessionID: sid, Value: tuigateway.TextValue(mode)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					next := setWord(res)
 					if next == "" {
 						next = mode
 					}
@@ -377,8 +397,8 @@ func (a *app) sessionCommands() []slashCommand {
 			if value == "" {
 				value = "cycle"
 			}
-			return r.rpc("config.set", map[string]any{"key": "verbose", "session_id": nilIfEmpty(r.sid), "value": value}, func(res map[string]any) tea.Cmd {
-				if set, _ := res["value"].(string); set != "" {
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "verbose", SessionID: r.sid, Value: tuigateway.TextValue(value)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+				if set := setWord(res); set != "" {
 					r.sys(tr("slashCmd.session.verbose.current", set))
 				}
 				return nil

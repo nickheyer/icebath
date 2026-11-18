@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -103,7 +104,7 @@ func configureSessionTools(ctx context.Context, rid any, params map[string]any, 
 				rawNames = append(rawNames, k)
 			}
 		default:
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(params["names"]))
+			return nil, fmt.Errorf("the tool names must be a list, got %s", errchain.Kind(params["names"]))
 		}
 	}
 	for _, name := range rawNames {

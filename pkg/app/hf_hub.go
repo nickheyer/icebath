@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -178,10 +179,10 @@ func hfBackoff(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
 		var actual float64
 		if reset != nil {
 			actual = float64(*reset) + 1
-			pkgLog().Warn(fmt.Sprintf("Rate limited. Waiting %ss before retry [Retry %d/%d].", pyrepr.Repr(actual), tries, maxRetries))
+			pkgLog().Warn(fmt.Sprintf("Rate limited. Waiting %ss before retry [Retry %d/%d].", errchain.Show(actual), tries, maxRetries))
 		} else {
 			actual = sleep
-			pkgLog().Warn(fmt.Sprintf("Retrying in %ss [Retry %d/%d].", pyrepr.Repr(actual), tries, maxRetries))
+			pkgLog().Warn(fmt.Sprintf("Retrying in %ss [Retry %d/%d].", errchain.Show(actual), tries, maxRetries))
 		}
 		select {
 		case <-ctx.Done():
@@ -464,7 +465,7 @@ func hfTokenFromFile() (string, bool, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", false, nil
 		}
-		return "", false, errors.New(pypath.OSErrorText(err))
+		return "", false, errors.New(errchain.OSText(err))
 	}
 	text, err := pycodecs.Decode(data, pycodecs.LocaleEncoding())
 	if err != nil {
@@ -534,10 +535,10 @@ func hfCreateDatasetRepo(ctx context.Context, token, repoID string, private bool
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		return &pyrepr.FormatError{Class: "TypeError", Msg: "'" + pyrepr.TypeName(data) + "' object is not subscriptable"}
+		return &appClassedError{class: "TypeError", msg: "Hugging Face reply is " + errchain.Kind(data) + " where a mapping was expected"}
 	}
 	if _, ok := obj.Get("url"); !ok {
-		return &pyrepr.FormatError{Class: "KeyError", Msg: "'url'"}
+		return &appClassedError{class: "KeyError", msg: "Hugging Face reply has no url"}
 	}
 	return nil
 }
@@ -569,7 +570,7 @@ func hfFetchUploadMode(ctx context.Context, token, repoID, path string, content 
 	if err != nil {
 		return nil, err
 	}
-	malformed := &appValueError{"preupload_info is improperly formatted: " + pyrepr.Repr(data)}
+	malformed := &appValueError{"preupload_info is improperly formatted: " + errchain.Show(data)}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
 		return nil, malformed
@@ -599,7 +600,7 @@ func hfFetchUploadMode(ctx context.Context, token, repoID, path string, content 
 		}
 	}
 	if plan == nil {
-		return nil, &pyrepr.FormatError{Class: "KeyError", Msg: pyrepr.Repr(path)}
+		return nil, &appClassedError{class: "KeyError", msg: "no upload plan for " + path}
 	}
 	if len(content) == 0 {
 		plan.mode = "regular"
@@ -641,7 +642,7 @@ func hfUploadLFS(ctx context.Context, token, repoID string, content []byte, oid 
 	for _, item := range objects {
 		obj, _ := item.(*pyjson.Object)
 		if obj == nil {
-			return &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(item) + "' object has no attribute 'get'"}
+			return &appClassedError{class: "AttributeError", msg: "Hugging Face LFS object is " + errchain.Kind(item) + " where a mapping was expected"}
 		}
 		if _, isErr := obj.Get("error"); isErr {
 			if err := hfValidateBatchError(obj); err != nil {
@@ -697,7 +698,7 @@ func hfValidateBatchActions(obj *pyjson.Object) error {
 	}
 	actions, _ := obj.GetOr("actions", pyjson.NewObject()).(*pyjson.Object)
 	if actions == nil {
-		return &pyrepr.FormatError{Class: "AttributeError", Msg: "object has no attribute 'get'"}
+		return &appClassedError{class: "AttributeError", msg: "Hugging Face LFS actions are not a mapping"}
 	}
 	for _, name := range []string{"upload", "verify"} {
 		if a := actions.GetOr(name, nil); a != nil {
@@ -742,7 +743,7 @@ func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, 
 	}
 	upload, ok := actions.Get("upload")
 	if !ok {
-		return &pyrepr.FormatError{Class: "KeyError", Msg: "'upload'"}
+		return &appClassedError{class: "KeyError", msg: "Hugging Face LFS actions have no upload"}
 	}
 	if err := hfValidateLFSAction(upload); err != nil {
 		return err
@@ -828,7 +829,7 @@ func hfUploadMultiPart(ctx context.Context, content []byte, oid string, header *
 	}
 	sort.SliceStable(parts, func(i, j int) bool { return parts[i].n < parts[j].n })
 	if chunkSize == 0 {
-		return &pyrepr.FormatError{Class: "ZeroDivisionError", Msg: "division by zero"}
+		return &appClassedError{class: "ZeroDivisionError", msg: "Hugging Face upload chunk size is zero"}
 	}
 	if len(parts) != int(math.Ceil(float64(len(content))/float64(chunkSize))) {
 		return &appValueError{"Invalid server response to upload large LFS file"}
@@ -937,11 +938,11 @@ func hfUploadFile(ctx context.Context, token, repoID, pathInRepo string, content
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		return &pyrepr.FormatError{Class: "TypeError", Msg: "'" + pyrepr.TypeName(data) + "' object is not subscriptable"}
+		return &appClassedError{class: "TypeError", msg: "Hugging Face reply is " + errchain.Kind(data) + " where a mapping was expected"}
 	}
 	for _, key := range []string{"commitUrl", "commitOid"} {
 		if _, ok := obj.Get(key); !ok {
-			return &pyrepr.FormatError{Class: "KeyError", Msg: "'" + key + "'"}
+			return &appClassedError{class: "KeyError", msg: "Hugging Face reply has no " + key}
 		}
 	}
 	return nil

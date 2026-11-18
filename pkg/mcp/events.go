@@ -395,7 +395,7 @@ var isoDateTimeRe = regexp.MustCompile(`^(?:(\d{4})-?(\d{2})-?(\d{2})|(\d{4})-?W
 func pyISOTimestamp(s string) (float64, error) {
 	m := isoDateTimeRe.FindStringSubmatch(s)
 	if m == nil {
-		return 0, fmt.Errorf("Invalid isoformat string: %s", pyReprStr(s))
+		return 0, fmt.Errorf("%s is not an ISO date and time", s)
 	}
 	num := func(i int) int {
 		n, _ := strconv.Atoi(m[i])

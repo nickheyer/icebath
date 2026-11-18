@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
@@ -303,7 +304,7 @@ type ffmpegCalledProcessError struct {
 }
 
 func (e *ffmpegCalledProcessError) Error() string {
-	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(e.Args), e.ReturnCode)
+	return fmt.Sprintf("%s exited with status %d", strings.Join(e.Args, " "), e.ReturnCode)
 }
 
 // Error of an ffmpeg run that outlived its timeout
@@ -313,7 +314,7 @@ type ffmpegTimeoutError struct {
 }
 
 func (e *ffmpegTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %d seconds", pyrepr.Repr(e.Args), e.Timeout)
+	return fmt.Sprintf("%s timed out after %d seconds", strings.Join(e.Args, " "), e.Timeout)
 }
 
 // Runs ffmpeg with no stdin and a hidden console window, capturing output when asked
@@ -566,7 +567,7 @@ func concatAudioFiles(audioPaths []string, outputPath string, voiceCompatible bo
 		entries.WriteString("file " + pyshlex.Quote(absPath(p)) + "\n")
 	}
 	if err := os.WriteFile(concatPath, []byte(entries.String()), 0o666); err != nil {
-		pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", errchain.OSText(err)))
 		return "", nil
 	}
 	args := []string{"-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatPath, "-vn"}
@@ -587,7 +588,7 @@ func concatAudioFiles(audioPaths []string, outputPath string, voiceCompatible bo
 	}
 	if info, serr := os.Stat(tempOutput); result.ReturnCode == 0 && serr == nil && info.Size() > 0 {
 		if err := os.Rename(tempOutput, destination); err != nil {
-			pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", pypath.OSErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", errchain.OSText(err)))
 			return "", nil
 		}
 		return destination, nil

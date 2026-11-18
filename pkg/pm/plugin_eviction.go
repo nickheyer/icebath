@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
@@ -36,11 +37,11 @@ func pythonVersionOf(ctx context.Context, python string) (string, error) {
 	cmd := exec.CommandContext(ctx, Native(python), "-I", "-c", "import platform; print(platform.python_version())")
 	out, err := cmd.Output()
 	if ctx.Err() == context.DeadlineExceeded {
-		return "", &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 60 seconds", pyrepr.Repr(cmd.Args))}
+		return "", &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("%s timed out after 60 seconds", strings.Join(cmd.Args, " "))}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(cmd.Args), exitErr.ExitCode())}
+		return "", &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("%s exited with status %d", strings.Join(cmd.Args, " "), exitErr.ExitCode())}
 	}
 	if err != nil {
 		return "", err
@@ -162,7 +163,31 @@ func rtContains(container *yaml.Node, name string) (bool, error) {
 	case container.Kind == yaml.ScalarNode && rtTag(container) == "str":
 		return strings.Contains(container.Value, name), nil
 	}
-	return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument of type '%s' is not iterable", rtTag(container))}
+	return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list or mapping holding %s, got %s", name, rtKind(container))}
+}
+
+// Plain kind of a YAML node such as a mapping, a list or text
+func rtKind(n *yaml.Node) string {
+	switch tag := rtTag(n); tag {
+	case "map":
+		return "a mapping"
+	case "seq":
+		return "a list"
+	case "str":
+		return "text"
+	case "int", "float":
+		return "a number"
+	case "bool":
+		return "true or false"
+	case "null":
+		return "nothing"
+	case "timestamp":
+		return "a date"
+	case "binary":
+		return "bytes"
+	default:
+		return "a value tagged " + tag
+	}
 }
 
 // Removes spellings from a list value in place the way Python indexes and deletes, a string or mapping raising its error
@@ -175,7 +200,7 @@ func discardIn(names *yaml.Node, spellings map[string]bool) error {
 		runes := []rune(names.Value)
 		for i := len(runes) - 1; i >= 0; i-- {
 			if spellings[string(runes[i])] {
-				return &PyError{Class: "TypeError", Message: "'str' object doesn't support item deletion"}
+				return &PyError{Class: "TypeError", Message: "expected a list of names, got text"}
 			}
 		}
 		return nil
@@ -188,7 +213,7 @@ func discardIn(names *yaml.Node, spellings map[string]bool) error {
 				}
 			}
 			if position < 0 {
-				return &PyError{Class: "KeyError", Message: fmt.Sprintf("%d", index)}
+				return &PyError{Class: "KeyError", Message: fmt.Sprintf("the mapping of names has no key %d", index)}
 			}
 			spelled, err := rtSpelledIn(names.Content[position+1], spellings)
 			if err != nil {
@@ -200,14 +225,14 @@ func discardIn(names *yaml.Node, spellings map[string]bool) error {
 		}
 		return nil
 	}
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("object of type '%s' has no len()", rtTag(names))}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list of names, got %s", rtKind(names))}
 }
 
 // Reports whether a node is a string among the spellings, a list or mapping raising the unhashable TypeError
 func rtSpelledIn(n *yaml.Node, spellings map[string]bool) (bool, error) {
 	n = rtDeref(n)
 	if n.Kind == yaml.SequenceNode || n.Kind == yaml.MappingNode {
-		return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", rtTag(n))}
+		return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a plugin name, got %s", rtKind(n))}
 	}
 	return n.Kind == yaml.ScalarNode && rtTag(n) == "str" && spellings[n.Value], nil
 }
@@ -235,7 +260,7 @@ func listNode(plugins *yaml.Node, key string) *yaml.Node {
 // Appends a name to a list value, the AttributeError Python raises for any other value
 func appendName(list *yaml.Node, name string) error {
 	if list.Kind != yaml.SequenceNode {
-		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'append'", rtTag(list))}
+		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a list to add %s to, got %s", name, rtKind(list))}
 	}
 	list.Content = append(list.Content, rtString(name))
 	return nil
@@ -348,7 +373,7 @@ func jsonKey(v any) (string, error) {
 	case fmt.Stringer:
 		return "i:" + t.String(), nil
 	}
-	return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
+	return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 }
 
 // Forgets the records of plugins the user just enabled, disabled or removed, then prunes the rest
@@ -377,7 +402,7 @@ func pruneRecord(plugins *yaml.Node) error {
 		if list.Kind == yaml.SequenceNode {
 			for _, item := range list.Content {
 				if inner := rtDeref(item); inner.Kind == yaml.SequenceNode || inner.Kind == yaml.MappingNode {
-					return &PyError{Class: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", rtTag(inner))}
+					return &PyError{Class: "TypeError", Message: fmt.Sprintf("plugins.disabled must list names, got %s", rtKind(inner))}
 				}
 				disabled[rtKey(item)] = true
 			}
@@ -390,7 +415,7 @@ func pruneRecord(plugins *yaml.Node) error {
 				disabled["s:"+string(r)] = true
 			}
 		} else {
-			return &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", rtTag(list))}
+			return &PyError{Class: "TypeError", Message: fmt.Sprintf("plugins.disabled must be a list, got %s", rtKind(list))}
 		}
 	}
 	kept := record.Content[:0]
@@ -588,14 +613,14 @@ func newPluginEviction(ctx context.Context, entries []PluginEntry, reasons map[s
 			doc = rtNewDocument()
 			config = doc.Content[0]
 		} else if config.Kind != yaml.MappingNode {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", rtTag(config))}
+			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the config must be a mapping, got %s", rtKind(config))}
 		}
 		plugins := rtGet(config, "plugins")
 		if rtIsNone(plugins) {
 			plugins = rtMapping()
 			rtSet(config, "plugins", plugins)
 		} else if plugins.Kind != yaml.MappingNode {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", rtTag(plugins))}
+			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("plugins in the config must be a mapping, got %s", rtKind(plugins))}
 		}
 		for _, change := range byHome[home] {
 			spell := func() (map[string]bool, error) { return pluginSpellings(change.pluginDir, change.name) }

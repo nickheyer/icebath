@@ -328,7 +328,7 @@ func assigneeProfileHome(assignee *string) *string {
 			return &h
 		}
 	}
-	panic(&gateAuthError{fmt.Sprintf("assignee profile %s cannot be resolved", pyrepr.StrRepr(*assignee))})
+	panic(&gateAuthError{fmt.Sprintf("assignee profile %s cannot be resolved", errchain.Show(*assignee))})
 }
 
 // Required check of a branch, the context with its app id
@@ -353,7 +353,7 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 		case *gateAuthError:
 			login := "the ambient gh login"
 			if assignee != nil && *assignee != "" {
-				login = fmt.Sprintf("assignee profile %s's gh login", pyrepr.StrRepr(*assignee))
+				login = fmt.Sprintf("assignee profile %s's gh login", errchain.Show(*assignee))
 			}
 			receipt.Set("classification", "auth")
 			receipt.Set("detail", fmt.Sprintf("GitHub refused the acceptance read (%s) as %s; fix that profile's GitHub credentials/access to the repository, then retry completion.", e.Msg, login))
@@ -629,7 +629,7 @@ func prepareAcceptance(ctx context.Context, conn state.SQLiteConn, taskID string
 		return nil, false, err
 	}
 	if row == nil {
-		return nil, false, &RuntimeError{"'NoneType' object is not subscriptable"}
+		return nil, false, &RuntimeError{"task " + taskID + " was not found"}
 	}
 	receipt, err := collectAcceptance(ctx, cellStr(contract), published, cellOptStr(row.Get("assignee")))
 	if err != nil {

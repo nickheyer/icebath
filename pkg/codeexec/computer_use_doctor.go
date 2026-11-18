@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -217,13 +218,13 @@ func extractHealthReportFromResult(result *pyjson.Object) (*pyjson.Object, error
 		for i, k := range keys {
 			ks[i] = k
 		}
-		return nil, &healthReportUnavailable{"health_report structuredContent lacks schema_version/overall/checks (keys=" + pyrepr.Repr(ks) + ")"}
+		return nil, &healthReportUnavailable{"health_report structuredContent lacks schema_version/overall/checks (keys=" + errchain.Show(ks) + ")"}
 	}
 	ks := make([]any, len(result.Keys))
 	for i, k := range result.Keys {
 		ks[i] = k
 	}
-	return nil, &doctorRuntimeError{"health_report response carried neither structuredContent nor a parseable JSON text block. Result keys: " + pyrepr.Repr(ks)}
+	return nil, &doctorRuntimeError{"health_report response carried neither structuredContent nor a parseable JSON text block. Result keys: " + errchain.Show(ks)}
 }
 
 type cuMCPProc struct {
@@ -288,10 +289,10 @@ func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*pyjson.Object,
 				for i, l := range lines {
 					items[i] = l
 				}
-				tail = pyrepr.Repr(items)
+				tail = errchain.Show(items)
 			}
 		}
-		return nil, &doctorRuntimeError{fmt.Sprintf("cua-driver mcp produced no response for %s. stderr tail: %s", pyrepr.Repr(method), tail)}
+		return nil, &doctorRuntimeError{fmt.Sprintf("cua-driver mcp produced no response for %s. stderr tail: %s", errchain.Show(method), tail)}
 	}
 	decoded, err := pyjson.Loads(line)
 	if err != nil {
@@ -299,7 +300,7 @@ func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*pyjson.Object,
 	}
 	resp, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, &AttributeError{"'" + pyrepr.TypeName(decoded) + "' object has no attribute 'get'"}
+		return nil, &AttributeError{"the MCP server replied with " + errchain.Kind(decoded) + " where a mapping was expected"}
 	}
 	if e, has := resp.Vals["error"]; has {
 		return nil, &doctorRuntimeError{fmt.Sprintf("%s JSON-RPC error: %s", method, pyrepr.Str(e))}
@@ -374,7 +375,7 @@ func driveHealthReport(ctx context.Context, env *tools.Env, binary string, inclu
 	}
 	o, ok := result.(*pyjson.Object)
 	if !ok {
-		return nil, &doctorRuntimeError{"health_report result was not an object: " + pyrepr.TypeName(result)}
+		return nil, &doctorRuntimeError{"health_report result is " + errchain.Kind(result) + " where a mapping was expected"}
 	}
 	return extractHealthReportFromResult(o)
 }
@@ -400,7 +401,7 @@ func probeTool(p *cuMCPProc, msgID int, name string) (*pyjson.Object, *string, e
 	}
 	result, ok := r.(*pyjson.Object)
 	if !ok {
-		return nil, nil, &AttributeError{"'" + pyrepr.TypeName(r) + "' object has no attribute 'get'"}
+		return nil, nil, &AttributeError{"the MCP tool result is " + errchain.Kind(r) + " where a mapping was expected"}
 	}
 	if result.Vals["isError"] == true {
 		msg := firstText(result, name+" isError")
@@ -952,7 +953,7 @@ func printTextReport(w io.Writer, report *pyjson.Object, color bool, identity, e
 			fmt.Sprintf("  %sgateway environment was not checked; active gateway computer_use sessions use that process environment%s", dim, reset))
 	}
 	if pyrepr.Truthy(identity.Vals["version_mismatch"]) {
-		lines = append(lines, fmt.Sprintf("  %s⚠️ version mismatch: health_report says %s but binary --version is %s%s", yellow, pyrepr.Repr(reportV), pyrepr.Repr(cliV), reset),
+		lines = append(lines, fmt.Sprintf("  %s⚠️ version mismatch: health_report says %s but binary --version is %s%s", yellow, errchain.Show(reportV), errchain.Show(cliV), reset),
 			fmt.Sprintf("  %s→ trust --version / packages/current for debugging; health_report's binary_version check can lag on Windows%s", dim, reset))
 	}
 	checks, _ := report.Vals["checks"].([]any)
@@ -1018,7 +1019,7 @@ func runComputerUseDoctor(ctx context.Context, env *tools.Env, stdout, stderr io
 		if driverCmd != nil && *driverCmd != "" {
 			shown = *driverCmd
 		}
-		fmt.Fprintf(stdout, "cua-driver: not installed (looked for %s).\n  Run: icebath computer-use install\n", pyrepr.Repr(shown))
+		fmt.Fprintf(stdout, "cua-driver: not installed (looked for %s).\n  Run: icebath computer-use install\n", errchain.Show(shown))
 		return 2, nil
 	}
 	report, err := driveHealthReport(ctx, env, binary, include, skip, 12)
@@ -1034,7 +1035,7 @@ func runComputerUseDoctor(ctx context.Context, env *tools.Env, stdout, stderr io
 			"  The Icebath runtime interpreter cannot execute this binary; the tool may still work because the\n"+
 			"  shell resolves a different copy on PATH. Fix: install cua-driver outside the protected directory\n"+
 			"  (e.g. the upstream installer's default under your user profile) or point ICEBATH_CUA_DRIVER_CMD at\n"+
-			"  a copy the runtime can execute, then re-run `icebath computer-use doctor`.\n", pyrepr.Repr(binary), spawn)
+			"  a copy the runtime can execute, then re-run `icebath computer-use doctor`.\n", errchain.Show(binary), spawn)
 		return 2, nil
 	case errors.As(err, &rt):
 		fmt.Fprintf(stderr, "cua-driver health_report failed: %v\n", rt)

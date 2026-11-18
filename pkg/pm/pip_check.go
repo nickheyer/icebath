@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -69,7 +70,7 @@ func parseUVLock(text string) ([]any, [][2]string, error) {
 	for _, row := range rows {
 		obj, ok := row.(*OrderedObject)
 		if !ok {
-			return nil, nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument of type '%s' is not a container or iterable", tomlTypeName(row))}
+			return nil, nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock package entry must be a table, got %s", tomlKind(row))}
 		}
 		version, has := obj.Values["version"]
 		if !has {
@@ -118,11 +119,11 @@ func OverrideRequirements(lock string) ([]string, error) {
 	for _, entry := range entries {
 		obj, ok := entry.(*OrderedObject)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", tomlTypeName(entry))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override must be a table, got %s", tomlKind(entry))}
 		}
 		for _, k := range obj.Keys {
 			if k != "name" && k != "specifier" && k != "marker" {
-				return nil, &PyError{Class: "ValueError", Message: "unsupported uv.lock override: " + tomlRepr(obj)}
+				return nil, &PyError{Class: "ValueError", Message: "unsupported uv.lock override: " + errchain.Show(obj)}
 			}
 		}
 		name, err := tomlIndex(obj, "name")
@@ -131,19 +132,19 @@ func OverrideRequirements(lock string) ([]string, error) {
 		}
 		line, ok := name.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("unsupported operand type(s) for +: '%s' and 'str'", tomlTypeName(name))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override name must be text, got %s", tomlKind(name))}
 		}
 		if spec, has := obj.Values["specifier"]; has {
 			s, ok := spec.(string)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("can only concatenate str (not \"%s\") to str", tomlTypeName(spec))}
+				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override specifier must be text, got %s", tomlKind(spec))}
 			}
 			line += s
 		}
 		if marker, has := obj.Values["marker"]; has && tomlTruthy(marker) {
 			s, ok := marker.(string)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("can only concatenate str (not \"%s\") to str", tomlTypeName(marker))}
+				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override marker must be text, got %s", tomlKind(marker))}
 			}
 			line += " ; " + s
 		}
@@ -170,7 +171,7 @@ func OverriddenVersions(lock string) (map[string]map[string]bool, error) {
 		}
 		s, ok := name.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", tomlTypeName(name))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override name must be text, got %s", tomlKind(name))}
 		}
 		overridden[pep503Name(s)] = true
 	}

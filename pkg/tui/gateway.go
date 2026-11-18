@@ -254,6 +254,9 @@ type gatewayClient struct {
 	isCanonical     bool
 	contract        *tuigateway.SessionCreateDescriptor
 	describedSkin   map[string]any
+	// Go build ID and contract version the owner's runtime.describe reported
+	describedBuild    string
+	describedContract int64
 	capabilities    []string
 	describing      *describeFlight
 	hold            *attachHold
@@ -455,9 +458,9 @@ func (c *gatewayClient) describeThenReadyLocked(conn *gatewayConn, payload map[s
 		err := c.describeRuntime(context.Background())
 		c.locked(func() {
 			if err == nil {
-				ready := payload
+				ready := withKeys(payload, "build", c.describedBuild, "contract", c.describedContract)
 				if _, has := payload["skin"]; !has && c.describedSkin != nil {
-					ready = withKeys(payload, "skin", c.describedSkin)
+					ready = withKeys(ready, "skin", c.describedSkin)
 				}
 				if c.conn == conn {
 					c.publishLocked(gatewayEventMsg{Type: "gateway.ready", Payload: ready})
@@ -493,6 +496,7 @@ func (c *gatewayClient) describeRuntime(ctx context.Context) error {
 		if err == nil {
 			c.contract = &description.SessionCreate
 			c.capabilities = description.Capabilities
+			c.describedBuild, c.describedContract = description.Build, description.Contract
 			c.describedSkin = nil
 			if description.Skin != nil {
 				c.describedSkin = wireParams(description.Skin)
@@ -728,6 +732,9 @@ func (c *gatewayClient) startLocalGatewayLocked() {
 					mode = "start"
 				} else if recover {
 					mode = "recover"
+				}
+				if grant.Replaced != "" {
+					c.lifecycleLocked(fmt.Sprintf("[lifecycle] replaced idle shared gateway of build %s by this build %s", grant.Replaced, tuigateway.BuildID()))
 				}
 				c.lifecycleLocked(fmt.Sprintf("[lifecycle] attached shared gateway %s url=%s profile=%s instance=%s", mode, redactURL(grant.URL), grant.ProfileID, grant.InstanceID))
 				c.startAttachedGatewayLocked(grant.URL, grant.Protocols)
@@ -1290,8 +1297,9 @@ func (c *gatewayClient) createCanonical(ctx context.Context, prepared map[string
 	if err == nil {
 		acknowledged = true
 		if toolProgress != "" {
-			sid, _ := value.(map[string]any)["session_id"]
-			_, err = c.requestOverWebSocket(ctx, "config.set", map[string]any{"key": "verbose", "session_id": sid, "value": toolProgress}, 0)
+			sid, _ := value.(map[string]any)["session_id"].(string)
+			pin := tuigateway.ConfigSetParams{Key: "verbose", SessionID: sid, Value: tuigateway.TextValue(toolProgress)}
+			_, err = c.requestOverWebSocket(ctx, tuigateway.ConfigSet.Name(), wireParams(pin), 0)
 		}
 	}
 	if err != nil {

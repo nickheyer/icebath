@@ -63,7 +63,7 @@ func PendingSandboxImageSwitch(ctx context.Context, env *Env) (*SandboxImageSwit
 		}
 		terminal = m
 	}
-	if backend, ok := terminal["backend"].(string); !ok || backend != "docker" {
+	if backend, ok := terminal["backend"].(string); !ok || backend != "docker" || GetTerminalBackend("docker") == nil {
 		return nil, nil
 	}
 	if sandboxImagePinned(ctx, env, terminal) {

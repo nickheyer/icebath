@@ -692,6 +692,13 @@ func proxyFor(req *http.Request) *url.URL {
 }
 
 // HTTP client that re validates DNS at connect time and dials a vetted IP with the hostname kept for SNI
+// Refusal of a redirect whose target is a private or internal address
+type BlockedRedirectError struct{ Target string }
+
+func (e *BlockedRedirectError) Error() string {
+	return "Blocked redirect to private/internal address: " + e.Target
+}
+
 func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, onRedirect func(target string) error) *http.Client {
 	var proxyMu sync.Mutex
 	proxyHosts := map[string]bool{}
@@ -752,7 +759,7 @@ func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, on
 		}
 		target := req.URL.String()
 		if !isSafeURL(env, target) {
-			return fmt.Errorf("Blocked redirect to private/internal address: %s", target)
+			return &BlockedRedirectError{Target: target}
 		}
 		if onRedirect != nil {
 			return onRedirect(target)

@@ -273,8 +273,8 @@ func TestPythonParityHelpers(t *testing.T) {
 			}
 		}
 	}
-	for raw, want := range map[string]string{"ok\xff": "byte 0xff in position 2: invalid start byte", "a\xe2\x28\xa1": "byte 0xe2 in position 1: invalid continuation byte",
-		"ab\xe2\x82": "bytes in position 2-3: unexpected end of data"} {
+	for raw, want := range map[string]string{"ok\xff": "byte 0xff at position 2 cannot start a character", "a\xe2\x28\xa1": "byte 0xe2 at position 1 begins a character that the next byte breaks",
+		"ab\xe2\x82": "bytes at positions 2-3 begin a character the text ends inside"} {
 		if err := pyUTF8DecodeError([]byte(raw)); err == nil || !strings.HasSuffix(err.Error(), want) {
 			t.Fatalf("%q -> %v", raw, err)
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Authority work an unserve of a profile stops, managed workers, cron runs and side agents
@@ -130,6 +131,7 @@ func activeWorkVerb(ctx context.Context, runner activeWorkRunner, loop gateway.E
 			answer[k] = v
 		}
 		answer["pid"] = os.Getpid()
+		answer["clients"] = len(tuihost.LiveTransports())
 		return answer, nil
 	}
 }

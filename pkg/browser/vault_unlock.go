@@ -17,44 +17,6 @@ func init() { vaultIdleTTLNanos.Store(int64(30 * time.Minute)) }
 
 func vaultIdleTTL() time.Duration { return time.Duration(vaultIdleTTLNanos.Load()) }
 
-const vaultSessionSlot = "vault_current_session_id"
-
-// Binds the session running on this thread so an unlock records its owner, nil clearing it
-func SetVaultSessionID(ctx context.Context, sessionID *string) {
-	if sessionID == nil {
-		tools.ThreadLocalSet(ctx, vaultSessionSlot, nil)
-		return
-	}
-	tools.ThreadLocalSet(ctx, vaultSessionSlot, *sessionID)
-}
-
-// The session bound on this thread, nil when none is bound
-func VaultSessionID(ctx context.Context) *string {
-	sid, ok := tools.ThreadLocalGet(ctx, vaultSessionSlot).(string)
-	if !ok {
-		return nil
-	}
-	return &sid
-}
-
-// Hands the unlock owner to propagated worker threads beside the three prompt callbacks
-func init() {
-	tools.RegisterThreadCallback(tools.ThreadCallback{
-		Get: func(ctx context.Context) any {
-			if sid := VaultSessionID(ctx); sid != nil {
-				return *sid
-			}
-			return nil
-		},
-		Set: func(ctx context.Context, cb any) {
-			if sid, ok := cb.(string); ok {
-				SetVaultSessionID(ctx, &sid)
-				return
-			}
-			SetVaultSessionID(ctx, nil)
-		}})
-}
-
 // Profile home and backend a session token is scoped to
 type vaultTokenKey struct{ home, backend string }
 
@@ -232,7 +194,7 @@ func BeginVaultUnlock(ctx context.Context, backend string) int {
 
 // Commits an unlock, false and nothing stored when a lock happened since the generation snapshot
 func StoreVaultSessionToken(ctx context.Context, backend, token string, generation *int) bool {
-	return vaultTokens.commit(vaultKey(ctx, backend), token, generation, VaultSessionID(ctx))
+	return vaultTokens.commit(vaultKey(ctx, backend), token, generation, tools.VaultSessionID(ctx))
 }
 
 // Forgets the current profile's session for one backend, or all of them when backend is nil
@@ -257,5 +219,5 @@ func CanPromptVaultHere(ctx context.Context, env *tools.Env) bool {
 	if tools.NoUserCanAnswer(env) {
 		return false
 	}
-	return GetUnlockPromptCallback(ctx) != nil
+	return tools.GetUnlockPromptCallback(ctx) != nil
 }

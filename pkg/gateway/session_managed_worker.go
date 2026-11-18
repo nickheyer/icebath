@@ -619,7 +619,7 @@ func stoppedBeforeSpawn(a *SessionAuthority, ref SessionRef, row *pyjson.Object)
 
 // Tracked board note of a lost card attempt, nil for a stop, a stale generation or no card
 func recordLostAttempt(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, err error, reason string, scope *pyjson.Object) *trackedTask {
-	if policy.KanbanJSON == nil || *policy.KanbanJSON == "" || isCancellation(err) ||
+	if kanbanWorkerLoss == nil || policy.KanbanJSON == nil || *policy.KanbanJSON == "" || isCancellation(err) ||
 		reason == "managed_worker_stopped" || reason == "stale_generation" {
 		return nil
 	}
@@ -629,7 +629,7 @@ func recordLostAttempt(ctx context.Context, a *SessionAuthority, policy *LocalSe
 	}
 	caller := context.WithoutCancel(ctx)
 	return trackMutation(ctx, a, func(context.Context) (any, error) {
-		recordWorkerLoss(caller, policy, reason, pid, scope != nil)
+		kanbanWorkerLoss(caller, policy, reason, pid, scope != nil)
 		return nil, nil
 	})
 }

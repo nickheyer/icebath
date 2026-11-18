@@ -2,16 +2,17 @@ package tuiserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -85,27 +86,6 @@ func connectorGuard(body connectorBody) Handler {
 	}
 }
 
-// Text field of a validated contract instance, empty for None
-func connectorText(instance *pydantic.Instance, name string) string {
-	text, _ := instance.Get(name).(string)
-	return text
-}
-
-// Requested connector names of a validated connect request
-func connectorNames(request *pydantic.Instance) []string {
-	var names []string
-	for _, item := range pyjson.Plain(request.Get("connectors")).([]any) {
-		names = append(names, item.(string))
-	}
-	return names
-}
-
-// Owner instance of a validated connector request
-func connectorOwner(request *pydantic.Instance) *pydantic.Instance {
-	owner, _ := request.Get("owner").(*pydantic.Instance)
-	return owner
-}
-
 // Whether the owner session is still the live record of sid in profileHome and not finalized
 func connectorOwnerMatches(ctx context.Context, sid string, owner *tuihost.Session, profileHome any) bool {
 	_, current := currentSessionSteerAuthority(ctx, sid)
@@ -113,8 +93,7 @@ func connectorOwnerMatches(ctx context.Context, sid string, owner *tuihost.Sessi
 }
 
 // Live session this transport steers for a session owner, refused when not owned
-func connectorSessionOwner(ctx context.Context, rid any, owner *pydantic.Instance) (*tuihost.Session, map[string]any) {
-	sid := connectorText(owner, "session_id")
+func connectorSessionOwner(ctx context.Context, rid any, sid string) (*tuihost.Session, map[string]any) {
 	_, session := currentSessionSteerAuthority(ctx, sid)
 	origin := connectorRPCOriginOf(ctx)
 	if session == nil || truthy(session.Get("_finalized")) ||
@@ -124,22 +103,13 @@ func connectorSessionOwner(ctx context.Context, rid any, owner *pydantic.Instanc
 	return session, nil
 }
 
-// Request validated against a contract, the invalid params refusal when it does not validate
-func parseConnectorParams(rid any, params map[string]any, model *pydantic.Model) (*pydantic.Instance, map[string]any) {
-	request, invalid := model.Validate(params)
-	if invalid != nil {
-		return nil, connectorRefusal(rid, tuihost.ConnectorInvalidParams)
+// Params of a connector verb decoded into its type with the owning live session, refused when they do not fit or the session is not owned
+func connectorParams[P, R any](ctx context.Context, rid any, params map[string]any, m tuigateway.Method[P, R], owner func(P) tuigateway.SessionOwner) (P, *tuihost.Session, map[string]any) {
+	request, err := m.Params(params)
+	if err != nil {
+		return request, nil, connectorRefusal(rid, tuihost.ConnectorInvalidParams)
 	}
-	return request, nil
-}
-
-// Validated request and the owning live session
-func connectorParams(ctx context.Context, rid any, params map[string]any, model *pydantic.Model) (*pydantic.Instance, *tuihost.Session, map[string]any) {
-	request, failure := parseConnectorParams(rid, params, model)
-	if failure != nil {
-		return nil, nil, failure
-	}
-	session, failure := connectorSessionOwner(ctx, rid, connectorOwner(request))
+	session, failure := connectorSessionOwner(ctx, rid, owner(request).SessionID)
 	return request, session, failure
 }
 
@@ -159,30 +129,30 @@ func sessionConnectorGate(ctx context.Context, env *tools.Env, rid any, session 
 }
 
 // Card retry of the session's open operation, gated on manage_connections and the steering owner
-func sessionConnectorRetry(ctx context.Context, env *tools.Env, rid any, request *pydantic.Instance, session *tuihost.Session) (map[string]any, error) {
+func sessionConnectorRetry(ctx context.Context, env *tools.Env, rid any, request tuigateway.ConnectorsConnectParams, session *tuihost.Session) (map[string]any, error) {
 	if gate := sessionConnectorGate(ctx, env, rid, session); gate != nil {
 		return gate, nil
 	}
-	if !connectorOwnerMatches(ctx, connectorText(connectorOwner(request), "session_id"), session, session.Get("profile_home")) {
+	if !connectorOwnerMatches(ctx, request.Owner.SessionID, session, session.Get("profile_home")) {
 		return connectorRPCError(rid, 4001, "not_owner", "session ownership changed"), nil
 	}
 	operation := tools.LiveCurrent(strOr(session.Get("session_key")), strOr(session.Get("profile_home")))
 	if operation == nil {
 		return connectorRPCError(rid, 4004, "unknown_operation", "No open connection operation for this session."), nil
 	}
-	return connectorReissue(ctx, rid, operation, connectorNames(request))
+	return connectorReissue(ctx, rid, operation, request.Connectors)
 }
 
 // Runs the named failed rows of the session's open operation again, a connect without reconnect refused
 func connectorsConnect(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	request, session, failure := connectorParams(ctx, rid, params, tuihost.ConnectorsConnectParams)
+	request, session, failure := connectorParams(ctx, rid, params, tuigateway.ConnectorsConnect, func(p tuigateway.ConnectorsConnectParams) tuigateway.SessionOwner { return p.Owner })
 	if failure != nil {
 		return failure, nil
 	}
-	if !truthy(request.Get("reconnect")) {
+	if !request.Reconnect {
 		return connectorRefusal(rid, tuihost.ConnectorInvalidParams), nil
 	}
-	sid := connectorText(connectorOwner(request), "session_id")
+	sid := request.Owner.SessionID
 	runtimeCtx := withRuntimeSessionRecord(ctx, session)
 	profileHome := session.Get("profile_home")
 	scopeHome := strOr(profileHome)
@@ -218,8 +188,8 @@ func connectorReissue(ctx context.Context, rid any, operation *tools.ConnectionO
 }
 
 // Open operation of the owning session named by the request, refused when unknown
-func connectorOperationForRequest(rid any, request *pydantic.Instance, session *tuihost.Session) (*tools.ConnectionOperation, map[string]any) {
-	operation := tools.LiveGet(strOr(session.Get("session_key")), connectorText(request, "op_id"), strOr(session.Get("profile_home")))
+func connectorOperationForRequest(rid any, opID string, session *tuihost.Session) (*tools.ConnectionOperation, map[string]any) {
+	operation := tools.LiveGet(strOr(session.Get("session_key")), opID, strOr(session.Get("profile_home")))
 	if operation == nil {
 		return nil, connectorRefusal(rid, tuihost.ConnectorUnknownOperation)
 	}
@@ -228,11 +198,11 @@ func connectorOperationForRequest(rid any, request *pydantic.Instance, session *
 
 // Live snapshot of one open session operation
 func connectorsOperationStatus(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	request, session, failure := connectorParams(ctx, rid, params, tuihost.ConnectionOperationParams)
+	request, session, failure := connectorParams(ctx, rid, params, tuigateway.ConnectorsOperationStatus, operationOwner)
 	if failure != nil {
 		return failure, nil
 	}
-	operation, failure := connectorOperationForRequest(rid, request, session)
+	operation, failure := connectorOperationForRequest(rid, request.OpID, session)
 	if failure != nil {
 		return failure, nil
 	}
@@ -241,11 +211,11 @@ func connectorsOperationStatus(ctx context.Context, rid any, params map[string]a
 
 // Wakes the watcher of one open operation so it reads the accounts now
 func connectorsOperationWake(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	request, session, failure := connectorParams(ctx, rid, params, tuihost.ConnectionOperationParams)
+	request, session, failure := connectorParams(ctx, rid, params, tuigateway.ConnectorsOperationWake, operationOwner)
 	if failure != nil {
 		return failure, nil
 	}
-	operation, failure := connectorOperationForRequest(rid, request, session)
+	operation, failure := connectorOperationForRequest(rid, request.OpID, session)
 	if failure != nil {
 		return failure, nil
 	}
@@ -253,23 +223,16 @@ func connectorsOperationWake(ctx context.Context, rid any, params map[string]any
 	return ok(rid, map[string]any{"status": "ok"}), nil
 }
 
+// Owner of a status or wake request
+func operationOwner(p tuigateway.ConnectionOperationParams) tuigateway.SessionOwner { return p.Owner }
+
 // Applies the card's per target answer and optional Continue to the open operation
 func connectionRespond(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	envelope := make(map[string]any, len(params))
-	for key, value := range params {
-		if key != "result" {
-			envelope[key] = value
-		}
-	}
-	request, session, failure := connectorParams(ctx, rid, envelope, tuihost.ConnectionOperationParams)
+	request, session, failure := connectorParams(ctx, rid, params, tuigateway.ConnectionRespond, func(p tuigateway.ConnectionRespondParams) tuigateway.SessionOwner { return p.Owner })
 	if failure != nil {
 		return failure, nil
 	}
-	answer, invalid := tuihost.ConnectionAnswer.Validate(params["result"])
-	if invalid != nil {
-		return connectorRefusal(rid, tuihost.ConnectorInvalidAnswer), nil
-	}
-	operation, failure := connectorOperationForRequest(rid, request, session)
+	operation, failure := connectorOperationForRequest(rid, request.OpID, session)
 	if failure != nil {
 		return failure, nil
 	}
@@ -277,12 +240,16 @@ func connectionRespond(ctx context.Context, rid any, params map[string]any) (map
 	if scopeHome == "" {
 		scopeHome = importedHome()
 	}
-	return applyConnectionAnswer(profileRuntimeScope(ctx, scopeHome, true), rid, answer, operation)
+	return applyConnectionAnswer(profileRuntimeScope(ctx, scopeHome, true), rid, request.Result, operation)
 }
 
 // Hands the answer to the operation, an illegal transition refused as an invalid answer
-func applyConnectionAnswer(ctx context.Context, rid any, answer *pydantic.Instance, operation *tools.ConnectionOperation) (map[string]any, error) {
-	settled, err := mcp.Respond(ctx, operation, answer.DumpJSON(pydantic.DumpOptions{ExcludeNone: true}))
+func applyConnectionAnswer(ctx context.Context, rid any, answer tuigateway.ConnectionAnswer, operation *tools.ConnectionOperation) (map[string]any, error) {
+	raw, err := json.Marshal(tuigateway.Plain(answer))
+	if err != nil {
+		return nil, err
+	}
+	settled, err := mcp.Respond(ctx, operation, string(raw))
 	var illegal *tools.IllegalTransition
 	if errors.As(err, &illegal) {
 		return connectorRefusal(rid, tuihost.ConnectorInvalidAnswer), nil

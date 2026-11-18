@@ -1,4 +1,4 @@
-package kanban
+package tools
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Session store able to classify a session as a Kanban worker transcript
@@ -17,7 +16,7 @@ type kanbanOwnershipProbe interface {
 
 // True when this process holds a dispatcher granted Kanban task and may continue a worker transcript
 func dispatcherOwnedRun() bool {
-	return pystr.Strip(tools.GetSessionEnv(nil, "ICEBATH_KANBAN_TASK", "")) != ""
+	return pystr.Strip(GetSessionEnv(nil, "ICEBATH_KANBAN_TASK", "")) != ""
 }
 
 // Refusal text when the session is a Kanban worker transcript an ordinary session must not resume, else empty

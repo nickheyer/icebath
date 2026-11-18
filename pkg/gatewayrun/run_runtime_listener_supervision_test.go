@@ -71,7 +71,7 @@ func TestListenerFailureStopsBootstrapBackgroundThreads(t *testing.T) {
 	if !owned[0].stop.IsSet() {
 		t.Fatal("listener failure skipped background-writer shutdown")
 	}
-	if owned[0].cronThread.IsAlive() || owned[0].housekeeping.alive() {
+	if (owned[0].ticker != nil && owned[0].ticker.alive()) || owned[0].housekeeping.alive() {
 		t.Fatal("a background thread outlived the failed start")
 	}
 }

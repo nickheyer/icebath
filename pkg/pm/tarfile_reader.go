@@ -281,18 +281,16 @@ func tarParseInt(s string, base int) (*big.Int, int, bool) {
 
 // Value of int applied to a str or bytes in base 10, a ValueError carrying Python's message on refusal
 func tarPyInt(s string, isBytes bool) (*big.Int, error) {
-	text, shown := s, ""
-	if isBytes {
-		shown = tarBytesRepr([]byte(s))
-	} else {
-		text, shown = tarASCIIDigits(s), tarRepr(s)
+	text := s
+	if !isBytes {
+		text = tarASCIIDigits(s)
 	}
 	n, digits, ok := tarParseInt(text, 10)
 	if !ok {
-		return nil, &TarReadError{Class: "ValueError", Message: "invalid literal for int() with base 10: " + tarTruncate(shown, 200)}
+		return nil, &TarReadError{Class: "ValueError", Message: tarTruncate(strconv.Quote(s), 200) + " is not a whole number"}
 	}
 	if digits > 4300 {
-		return nil, &TarReadError{Class: "ValueError", Message: fmt.Sprintf("Exceeds the limit (4300 digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", digits)}
+		return nil, &TarReadError{Class: "ValueError", Message: fmt.Sprintf("a number has %d digits, more than the 4300 allowed", digits)}
 	}
 	return n, nil
 }
@@ -384,7 +382,7 @@ func tarNts(s []byte) string {
 // Numeric field the way nti reads it, base 256 or NUL terminated octal text
 func tarNti(s []byte) (*big.Int, error) {
 	if len(s) == 0 {
-		return nil, &TarReadError{Class: "IndexError", Message: "index out of range"}
+		return nil, &TarReadError{Class: "IndexError", Message: "an archive header is cut short"}
 	}
 	if s[0] == 0o200 || s[0] == 0o377 {
 		n := new(big.Int).SetBytes(s[1:])
@@ -618,9 +616,9 @@ func (s *tarRawStream) tell() int64 { return s.pos }
 func (s *tarRawStream) seek(pos *big.Int) error {
 	if !pos.IsInt64() {
 		if s.file {
-			return &TarReadError{Class: "ValueError", Message: "cannot fit 'int' into an offset-sized integer"}
+			return &TarReadError{Class: "ValueError", Message: "an archive offset is larger than a 64 bit integer holds"}
 		}
-		return &TarReadError{Class: "OverflowError", Message: "Python int too large to convert to C ssize_t"}
+		return &TarReadError{Class: "OverflowError", Message: "an archive offset is larger than a 64 bit integer holds"}
 	}
 	p, err := s.src.Seek(pos.Int64(), io.SeekStart)
 	if err != nil {
@@ -720,7 +718,7 @@ func (g *tarGzipReader) header() (bool, error) {
 		return false, nil
 	}
 	if n != 2 || magic[0] != 0x1f || magic[1] != 0x8b {
-		return false, &TarReadError{Class: "BadGzipFile", Message: fmt.Sprintf("Not a gzipped file (%s)", tarBytesRepr(magic[:n]))}
+		return false, &TarReadError{Class: "BadGzipFile", Message: fmt.Sprintf("not a gzipped file, it starts with %s", strconv.Quote(string(magic[:n])))}
 	}
 	hdr, err := g.readExact(8)
 	if err != nil {
@@ -1128,7 +1126,7 @@ func (s *tarCodecStream) tell() int64 { return s.pos }
 // Moves to an absolute decompressed position, rewinding for a backward move, stopping at the end, refusing a non C offset
 func (s *tarCodecStream) seek(pos *big.Int) error {
 	if !pos.IsInt64() {
-		return &TarReadError{Class: "ValueError", Message: "cannot fit 'int' into an offset-sized integer"}
+		return &TarReadError{Class: "ValueError", Message: "an archive offset is larger than a 64 bit integer holds"}
 	}
 	if pos.Cmp(big.NewInt(s.pos)) < 0 {
 		if _, err := s.src.Seek(0, io.SeekStart); err != nil {
@@ -1296,7 +1294,7 @@ func (tf *tarFile) procSparse(t *tarInfo) (*tarInfo, error) {
 			}
 		}
 		if len(buf) <= 504 {
-			return nil, &TarReadError{Class: "IndexError", Message: "index out of range"}
+			return nil, &TarReadError{Class: "IndexError", Message: "an archive header is cut short"}
 		}
 		isextended = buf[504] != 0
 	}
@@ -1464,7 +1462,7 @@ func tarPairs(offsets, sizes []*big.Int) []tarSparseBlock {
 
 // GNU pax sparse format 1.0, a newline separated map at the start of the member data
 func (tf *tarFile) gnuSparse10(next *tarInfo) error {
-	unpack := &TarReadError{Class: "ValueError", Message: "not enough values to unpack (expected 2, got 1)"}
+	unpack := &TarReadError{Class: "ValueError", Message: "the GNU sparse map has no line break after its entry count"}
 	buf, err := tf.stream.read(tarBlockSize)
 	if err != nil {
 		return err
@@ -1709,7 +1707,7 @@ func openTarFile(src io.ReadSeeker) (*tarFile, error) {
 			if method == "gz" && n == 0 {
 				refusal = "empty file"
 			}
-			failures = append(failures, fmt.Sprintf("- method %s: ReadError(%s)", method, tarRepr(refusal)))
+			failures = append(failures, fmt.Sprintf("- method %s: %s", method, refusal))
 			continue
 		}
 		if _, err := src.Seek(start, io.SeekStart); err != nil {
@@ -1730,9 +1728,9 @@ func openTarFile(src io.ReadSeeker) (*tarFile, error) {
 		isRead := errors.As(err, &read)
 		switch {
 		case isRead && read.Class == "ReadError":
-			failures = append(failures, fmt.Sprintf("- method %s: ReadError(%s)", method, tarRepr(read.Message)))
+			failures = append(failures, fmt.Sprintf("- method %s: %s", method, read.Message))
 		case method != "tar" && ((isRead && tarMethodCatches[method][read.Class]) || (!isRead && (method == "gz" || method == "bz2"))):
-			failures = append(failures, fmt.Sprintf("- method %s: ReadError(%s)", method, tarRepr(tarMethodRefusals[method])))
+			failures = append(failures, fmt.Sprintf("- method %s: %s", method, tarMethodRefusals[method]))
 		default:
 			return nil, err
 		}

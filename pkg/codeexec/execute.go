@@ -295,7 +295,7 @@ func executeCodeHandler(ctx context.Context, call *tools.Call) string {
 	raw := configValue(args, "code", "")
 	code, isStr := raw.(string)
 	if raw != nil && !isStr {
-		return toolError(fmt.Sprintf("execute_code received a %s in 'code', but it ", pyrepr.TypeName(raw)) +
+		return toolError(fmt.Sprintf("execute_code received %s in 'code', but it ", errchain.Kind(raw)) +
 			"requires Python source as a string. Retry as execute_code(code=\"...\").")
 	}
 	enabled, _ := tools.EnabledToolsOf(ctx)

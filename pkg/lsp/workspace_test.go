@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"github.com/nickheyer/icebath/pkg/workspaces"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,7 +15,7 @@ func TestFindGitWorktreeFindsDotgit(t *testing.T) {
 	must(t, os.MkdirAll(filepath.Join(repo, ".git"), 0o755))
 	sub := filepath.Join(repo, "src", "deep")
 	must(t, os.MkdirAll(sub, 0o755))
-	if got := FindGitWorktree(sub); got != repo {
+	if got := workspaces.FindGitWorktree(sub); got != repo {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -24,7 +25,7 @@ func TestNearestRootFindsFirstMarker(t *testing.T) {
 	deep := filepath.Join(root, "src", "pkg")
 	must(t, os.MkdirAll(deep, 0o755))
 	writeFile(t, filepath.Join(root, "pyproject.toml"), "")
-	if got := NearestRoot(filepath.Join(deep, "mod.py"), []string{"pyproject.toml"}, nil, ""); got != root {
+	if got := workspaces.NearestRoot(filepath.Join(deep, "mod.py"), []string{"pyproject.toml"}, nil, ""); got != root {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -35,7 +36,7 @@ func TestNearestRootSkipsPackageDirs(t *testing.T) {
 	writeFile(t, filepath.Join(root, "pyproject.toml"), "")
 	writeFile(t, filepath.Join(pkg, "__init__.py"), "")
 	writeFile(t, filepath.Join(pkg, "setup.py"), "")
-	if got := NearestRoot(filepath.Join(pkg, "main.py"), []string{"pyproject.toml", "setup.py"}, nil, ""); got != root {
+	if got := workspaces.NearestRoot(filepath.Join(pkg, "main.py"), []string{"pyproject.toml", "setup.py"}, nil, ""); got != root {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -45,13 +46,13 @@ func TestNearestRootExcludesAndCeiling(t *testing.T) {
 	app := filepath.Join(root, "app")
 	writeFile(t, filepath.Join(root, "package.json"), "{}")
 	writeFile(t, filepath.Join(app, "deno.json"), "{}")
-	if got := NearestRoot(filepath.Join(app, "a.ts"), []string{"package.json"}, []string{"deno.json"}, ""); got != "" {
+	if got := workspaces.NearestRoot(filepath.Join(app, "a.ts"), []string{"package.json"}, []string{"deno.json"}, ""); got != "" {
 		t.Fatalf("exclude marker must gate the file off, got %q", got)
 	}
 	if got := rootOrWorkspace(filepath.Join(app, "a.ts"), root, jsMarkers, denoExcludes); got != "" {
 		t.Fatalf("typescript root must be gated off by deno.json, got %q", got)
 	}
-	if got := NearestRoot(filepath.Join(app, "a.ts"), []string{"package.json"}, nil, app); got != "" {
+	if got := workspaces.NearestRoot(filepath.Join(app, "a.ts"), []string{"package.json"}, nil, app); got != "" {
 		t.Fatalf("walk must stop at the ceiling, got %q", got)
 	}
 }
@@ -62,7 +63,7 @@ func TestResolveWorkspaceForFileUsesCwdFirst(t *testing.T) {
 	must(t, os.MkdirAll(filepath.Join(repo, ".git"), 0o755))
 	f := writeFile(t, filepath.Join(repo, "x.py"), "")
 	t.Chdir(repo)
-	if root, gated := ResolveWorkspaceForFile(f, ""); root != repo || !gated {
+	if root, gated := workspaces.ResolveWorkspaceForFile(f, ""); root != repo || !gated {
 		t.Fatalf("got %q %v", root, gated)
 	}
 }
@@ -83,7 +84,7 @@ func TestResolveWorkspaceForFileSurvivesDeletedCwd(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Fatal("cwd still resolves")
 	}
-	if root, gated := ResolveWorkspaceForFile(f, ""); root != repo || !gated {
+	if root, gated := workspaces.ResolveWorkspaceForFile(f, ""); root != repo || !gated {
 		t.Fatalf("got %q %v", root, gated)
 	}
 	if got := shortPath(f); got != f {
@@ -96,7 +97,7 @@ func TestNormalizePathExpandsTilde(t *testing.T) {
 		t.Skip("linux expanduser semantics")
 	}
 	t.Setenv("HOME", "/home/user")
-	if got := NormalizePath("~/x.py"); got != "/home/user/x.py" {
+	if got := workspaces.NormalizePath("~/x.py"); got != "/home/user/x.py" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -104,15 +105,13 @@ func TestNormalizePathExpandsTilde(t *testing.T) {
 func TestFindGitWorktreeCacheIsCapped(t *testing.T) {
 	resetCaches(t)
 	tmp := t.TempDir()
-	for i := range workspaceCacheCap + 2 {
+	for i := range workspaces.WorktreeCacheCap + 2 {
 		d := filepath.Join(tmp, "d"+strconv.Itoa(i))
 		must(t, os.Mkdir(d, 0o755))
-		FindGitWorktree(d)
+		workspaces.FindGitWorktree(d)
 	}
-	workspaceMu.Lock()
-	n := len(workspaceCache)
-	workspaceMu.Unlock()
-	if n > workspaceCacheCap {
+	n := workspaces.CachedWorktrees()
+	if n > workspaces.WorktreeCacheCap {
 		t.Fatalf("cache grew to %d", n)
 	}
 }
@@ -120,7 +119,7 @@ func TestFindGitWorktreeCacheIsCapped(t *testing.T) {
 func TestIsInsideWorkspaceAndTrust(t *testing.T) {
 	resetCaches(t)
 	tmp := t.TempDir()
-	if !IsInsideWorkspace(filepath.Join(tmp, "a", "b"), tmp) || IsInsideWorkspace(tmp+"x", tmp) || !IsInsideWorkspace(tmp, tmp) {
+	if !workspaces.IsInsideWorkspace(filepath.Join(tmp, "a", "b"), tmp) || workspaces.IsInsideWorkspace(tmp+"x", tmp) || !workspaces.IsInsideWorkspace(tmp, tmp) {
 		t.Fatal("inside check")
 	}
 	launch := filepath.Join(tmp, "launch")
@@ -129,19 +128,19 @@ func TestIsInsideWorkspaceAndTrust(t *testing.T) {
 	must(t, os.MkdirAll(filepath.Join(nested, ".git"), 0o755))
 	listed := filepath.Join(tmp, "listed", "proj")
 	must(t, os.MkdirAll(listed, 0o755))
-	operators := OperatorWorkspaceRoots([]func() (string, error){func() (string, error) { return filepath.Join(launch, "src"), nil }})
+	operators := workspaces.OperatorWorkspaceRoots([]func() (string, error){func() (string, error) { return filepath.Join(launch, "src"), nil }})
 	if !operators[launch] || len(operators) != 1 {
 		t.Fatalf("operator roots %v", operators)
 	}
 	trusted := []string{filepath.Join(tmp, "listed")}
-	if !IsTrustedWorkspace(launch, trusted, operators) || !IsTrustedWorkspace(listed, trusted, operators) {
+	if !workspaces.IsTrustedWorkspace(launch, trusted, operators) || !workspaces.IsTrustedWorkspace(listed, trusted, operators) {
 		t.Fatal("operator and listed roots are trusted")
 	}
-	if IsTrustedWorkspace(nested, trusted, operators) {
+	if workspaces.IsTrustedWorkspace(nested, trusted, operators) {
 		t.Fatal("a nested clone with its own .git is not trusted")
 	}
 	t.Setenv("HOME", launch)
-	if roots := OperatorWorkspaceRoots([]func() (string, error){func() (string, error) { return launch, nil }}); len(roots) != 0 {
+	if roots := workspaces.OperatorWorkspaceRoots([]func() (string, error){func() (string, error) { return launch, nil }}); len(roots) != 0 {
 		t.Fatalf("a repo at or above home never counts: %v", roots)
 	}
 }

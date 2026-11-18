@@ -115,7 +115,7 @@ func TestProgressKilledChild(t *testing.T) {
 // A failed child reports its status the way subprocess CalledProcessError renders it
 func TestProgressCalledProcessErrorMatchesPython(t *testing.T) {
 	isolateHome(t)
-	if got := (&CalledProcessError{Argv: []string{"a", "b"}, Code: 2}).Error(); got != "Command '['a', 'b']' returned non-zero exit status 2." {
+	if got := (&CalledProcessError{Argv: []string{"a", "b"}, Code: 2}).Error(); got != "a b exited with status 2" {
 		t.Fatalf("exit message %q", got)
 	}
 	if got := (&CalledProcessError{Argv: []string{"a", "b"}, Code: -9}).Error(); got != "Command '['a', 'b']' died with <Signals.SIGKILL: 9>." && runtime.GOOS != "windows" {

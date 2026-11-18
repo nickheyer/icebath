@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -185,12 +186,12 @@ func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *pyjson
 	if present {
 		e, ok := existingAny.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object is not a mapping", pyrepr.TypeName(existingAny))
+			return nil, fmt.Errorf("stored %s record %s is %s where a mapping was expected", bucket, key, errchain.Kind(existingAny))
 		}
 		existing = e
 	}
 	if payload == nil {
-		return nil, pyError("TypeError", "'NoneType' object is not a mapping")
+		return nil, pyError("TypeError", "the "+bucket+" record to store is empty")
 	}
 	merged := existing.Copy()
 	for _, k := range payload.Keys {

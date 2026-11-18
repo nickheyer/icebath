@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -11,7 +10,6 @@ import (
 var (
 	_ gateway.RunnerDeliveryContract = (*GatewayRunner)(nil)
 	_ plugins.PlatformActionRunner   = (*GatewayRunner)(nil)
-	_ cron.GatewayRunner             = (*GatewayRunner)(nil)
 )
 
 // Replays the failed obligations of one bot identity after its adapter reconnected, the count redelivered

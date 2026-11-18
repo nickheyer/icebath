@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -70,26 +71,27 @@ func displayWord(ctx context.Context, key, def string, allowed map[string]bool) 
 	return def
 }
 
+// Answer carrying one word
+func wordAnswer(word string) tuigateway.ConfigGetResult {
+	return tuigateway.ConfigGetResult{Value: tuigateway.TextValue(word)}
+}
+
 // Current model, its normalized provider and every listed provider
-func cfgGetProvider(ctx context.Context, params map[string]any) map[string]any {
+func cfgGetProvider(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 	model := resolveModel(ctx)
 	providerName := "unknown"
 	if head, _, found := strings.Cut(model, "/"); found {
 		providerName = provider.NormalizeProvider(head)
 	}
-	providers := []any{}
+	providers := []tuigateway.ConfigProviderRef{}
 	for _, p := range provider.ListAvailableProviders(ctx) {
-		aliases := make([]any, len(p.Aliases))
-		for i, alias := range p.Aliases {
-			aliases[i] = alias
-		}
-		providers = append(providers, map[string]any{"id": p.ID, "label": p.Label, "aliases": aliases, "authenticated": p.Authenticated})
+		providers = append(providers, tuigateway.ConfigProviderRef{ID: p.ID, Label: p.Label, Aliases: p.Aliases, Authenticated: p.Authenticated})
 	}
-	return map[string]any{"model": model, "provider": providerName, "providers": providers}
+	return tuigateway.ConfigGetResult{Model: model, Provider: providerName, Providers: providers}
 }
 
 // Explicit or configured project cwd with its git branch
-func cfgGetProject(ctx context.Context, params map[string]any) map[string]any {
+func cfgGetProject(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 	raw := params["cwd"]
 	if !truthy(raw) {
 		terminal, _ := loadCfg(ctx)["terminal"].(map[string]any)
@@ -99,11 +101,11 @@ func cfgGetProject(ctx context.Context, params map[string]any) map[string]any {
 	if err != nil {
 		panic(err)
 	}
-	return map[string]any{"cwd": cwd, "branch": tools.GitProbeBranch(cwd)}
+	return tuigateway.ConfigGetResult{Cwd: cwd, Branch: tools.GitProbeBranch(cwd)}
 }
 
 // Effective reasoning effort of the session or config with whether reasoning shows
-func cfgGetReasoning(ctx context.Context, params map[string]any) map[string]any {
+func cfgGetReasoning(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 	cfg := loadCfg(ctx)
 	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	var reasoning any
@@ -160,11 +162,11 @@ func cfgGetReasoning(ctx context.Context, params map[string]any) map[string]any 
 	if truthy(show) {
 		shown = "show"
 	}
-	return map[string]any{"value": effort, "display": shown}
+	return tuigateway.ConfigGetResult{Value: tuigateway.TextValue(effort), Display: shown}
 }
 
 // Fast tier of the session pin or live agent, else the configured tier
-func cfgGetFast(ctx context.Context, params map[string]any) map[string]any {
+func cfgGetFast(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	tier, known := "", false
 	if a := sessionAgent(session); session != nil && a != nil {
@@ -182,11 +184,11 @@ func cfgGetFast(ctx context.Context, params map[string]any) map[string]any {
 	if value == "" {
 		value = "normal"
 	}
-	return map[string]any{"value": value}
+	return wordAnswer(value)
 }
 
 // Thinking display mode, the legacy details mode deciding when it is unset
-func cfgGetThinkingMode(ctx context.Context, params map[string]any) map[string]any {
+func cfgGetThinkingMode(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 	raw := displayWord(ctx, "thinking_mode", "", thinkingModes)
 	if raw == "" {
 		raw = "collapsed"
@@ -194,106 +196,110 @@ func cfgGetThinkingMode(ctx context.Context, params map[string]any) map[string]a
 			raw = "full"
 		}
 	}
-	return map[string]any{"value": raw}
+	return wordAnswer(raw)
 }
 
 // Launch config version token with the MCP section hash, zero when the version cannot be read
-func cfgGetMtime(ctx context.Context, params map[string]any) (out map[string]any) {
+func cfgGetMtime(ctx context.Context, params map[string]any) (out tuigateway.ConfigGetResult) {
+	unread := tuigateway.ConfigGetResult{Mtime: new(float64)}
 	defer func() {
 		if recover() != nil {
-			out = map[string]any{"mtime": 0}
+			out = unread
 		}
 	}()
 	version, err := config.ConfigVersionOrNone(ctx, filepath.Join(importedHome(), "config.yaml"))
 	if err != nil {
-		return map[string]any{"mtime": 0}
+		return unread
 	}
-	return map[string]any{"mtime": config.VersionToken(version), "mcp_rev": computeMCPRev(ctx)}
+	token := config.VersionToken(version)
+	return tuigateway.ConfigGetResult{Mtime: &token, McpRev: computeMCPRev(ctx)}
+}
+
+// Text of a config value, the default when it is not text
+func textOr(v any, def string) string {
+	if text, isText := v.(string); isText {
+		return text
+	}
+	return def
 }
 
 // Getter of each config.get key returning its result payload
-var configGetters = map[string]func(ctx context.Context, params map[string]any) map[string]any{
+var configGetters = map[string]func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult{
 	"provider": cfgGetProvider,
-	"profile": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"home": importedHome(), "display": home.Display(home.Dir(ctx))}
+	"profile": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return tuigateway.ConfigGetResult{Home: importedHome(), Display: home.Display(home.Dir(ctx))}
 	},
 	"project": cfgGetProject,
-	"full": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"config": loadCfg(ctx)}
+	"full": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		settings := tuihost.ClientConfig(loadCfg(ctx))
+		return tuigateway.ConfigGetResult{Config: &settings}
 	},
-	"prompt": func(ctx context.Context, params map[string]any) map[string]any {
-		prompt, present := loadCfg(ctx)["custom_prompt"]
-		if !present {
-			prompt = ""
-		}
-		return map[string]any{"prompt": prompt}
+	"prompt": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		prompt := textOr(loadCfg(ctx)["custom_prompt"], "")
+		return tuigateway.ConfigGetResult{Prompt: &prompt}
 	},
-	"skin": func(ctx context.Context, params map[string]any) map[string]any {
-		skin, present := displayRaw(ctx)["skin"]
-		if !present {
-			skin = "default"
-		}
-		return map[string]any{"value": skin}
+	"skin": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(textOr(displayRaw(ctx)["skin"], "default"))
 	},
-	"indicator": func(ctx context.Context, params map[string]any) map[string]any {
+	"indicator": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		allowed := map[string]bool{}
 		for _, style := range home.IndicatorStyles {
 			allowed[style] = true
 		}
-		return map[string]any{"value": displayWord(ctx, "tui_status_indicator", home.DefaultIndicatorStyle, allowed)}
+		return wordAnswer(displayWord(ctx, "tui_status_indicator", home.DefaultIndicatorStyle, allowed))
 	},
-	"personality": func(ctx context.Context, params map[string]any) map[string]any {
+	"personality": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		name := ActivePersonalityName(loadCfg(ctx))
 		if name == "" {
 			name = "none"
 		}
-		return map[string]any{"value": name}
+		return wordAnswer(name)
 	},
 	"reasoning": cfgGetReasoning,
 	"fast":      cfgGetFast,
-	"daybreak": func(ctx context.Context, params map[string]any) map[string]any {
+	"daybreak": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		agentCfg, _ := loadCfg(ctx)["agent"].(map[string]any)
-		return map[string]any{"value": agentCfg["daybreak"] == true}
+		return tuigateway.ConfigGetResult{Value: tuigateway.FlagValue(agentCfg["daybreak"] == true)}
 	},
-	"busy": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"value": loadBusyInputMode(ctx)}
+	"busy": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(loadBusyInputMode(ctx))
 	},
-	"approval_mode": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"value": loadApprovalMode(ctx)}
+	"approval_mode": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(loadApprovalMode(ctx))
 	},
-	"approvals.mode": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"value": loadApprovalMode(ctx)}
+	"approvals.mode": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(loadApprovalMode(ctx))
 	},
-	"details_mode": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"value": displayWord(ctx, "details_mode", "collapsed", detailModes)}
+	"details_mode": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(displayWord(ctx, "details_mode", "collapsed", detailModes))
 	},
 	"thinking_mode": cfgGetThinkingMode,
-	"density": func(ctx context.Context, params map[string]any) map[string]any {
+	"density": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		value := "off"
 		if truthy(displayRaw(ctx)["tui_compact"]) {
 			value = "on"
 		}
-		return map[string]any{"value": value}
+		return wordAnswer(value)
 	},
-	"theme": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"value": displayWord(ctx, "tui_theme", "auto", map[string]bool{"auto": true, "light": true, "dark": true})}
+	"theme": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(displayWord(ctx, "tui_theme", "auto", map[string]bool{"auto": true, "light": true, "dark": true}))
 	},
-	"statusbar": func(ctx context.Context, params map[string]any) map[string]any {
+	"statusbar": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		raw, present := displayCfg(ctx)["tui_statusbar"]
 		if !present {
 			raw = "top"
 		}
-		return map[string]any{"value": coerceStatusbar(raw)}
+		return wordAnswer(coerceStatusbar(raw))
 	},
-	"focus": func(ctx context.Context, params map[string]any) map[string]any {
+	"focus": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		value := "off"
 		if truthy(displayCfg(ctx)["focus_view"]) {
 			value = "on"
 		}
-		return map[string]any{"value": value, "tool_progress": loadToolProgressMode(ctx)}
+		return tuigateway.ConfigGetResult{Value: tuigateway.TextValue(value), ToolProgress: loadToolProgressMode(ctx)}
 	},
-	"mouse": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"value": displayMouseTracking(loadCfg(ctx)["display"])}
+	"mouse": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
+		return wordAnswer(displayMouseTracking(loadCfg(ctx)["display"]))
 	},
 	"mtime": cfgGetMtime,
 }
@@ -316,7 +322,7 @@ func configGet(ctx context.Context, rid any, params map[string]any) (resp map[st
 			}
 		}()
 	}
-	return ok(rid, getter(ctx, params))
+	return ok(rid, tuigateway.Plain(getter(ctx, params)))
 }
 
 // str of a param value

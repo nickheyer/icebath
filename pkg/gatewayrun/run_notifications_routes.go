@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -58,7 +59,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 			evtType = "?"
 		}
 		pkgLog().Warn(fmt.Sprintf("Synthetic event source unresolvable: session_key=%s platform=%s chat_type=%s chat_id=%s evt_type=%s",
-			pyrepr.Repr(sessionKey), pyrepr.Repr(platformName), pyrepr.Repr(chatType), pyrepr.Repr(chatID), pyrepr.Str(evtType)))
+			errchain.Show(sessionKey), errchain.Show(platformName), errchain.Show(chatType), errchain.Show(chatID), pyrepr.Str(evtType)))
 		return nil, nil
 	}
 	platform, err := gateway.ParsePlatform(ctx, platformName)
@@ -66,7 +67,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 		err = errors.New(platformName)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Synthetic process event has invalid platform metadata: %s", pyrepr.Repr(platformName)))
+		pkgLog().Warn(fmt.Sprintf("Synthetic process event has invalid platform metadata: %s", errchain.Show(platformName)))
 		return nil, nil
 	}
 	opt := func(field string) *string {
@@ -163,7 +164,7 @@ func (r *GatewayRunner) servedAPIServerWakeProfile(ctx context.Context, evt map[
 		if gateway.SessionOwnedByProfile(ctx, r.config, hinted, rawSID) {
 			return hinted, nil
 		}
-		return "", &lookupError{fmt.Sprintf("session is not in served profile %s's own store", pyrepr.Repr(hinted))}
+		return "", &lookupError{fmt.Sprintf("session is not in served profile %s's own store", errchain.Show(hinted))}
 	}
 	homes, err := gateway.MultiplexProfileHomes(ctx, r.config)
 	if err != nil {

@@ -55,10 +55,10 @@ func TestEmptyReasonFallbackTimeoutErrorNamesTheClass(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	})
-	if strings.TrimRight(got, " \t\r\n") == "failed to send media "+media+":" || !strings.Contains(got, "TimeoutError") {
+	if strings.TrimRight(got, " \t\r\n") == "failed to send media "+media+":" || !strings.Contains(got, "timed out") {
 		t.Fatalf("got %q", got)
 	}
-	if got != "failed to send media "+media+": TimeoutError" {
+	if got != "failed to send media "+media+": timed out" {
 		t.Fatalf("got %q", got)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -41,16 +42,10 @@ type journeyOptions struct {
 }
 
 // One learned skill or memory row of the timeline tree
-type journeyNode struct {
-	ID, Glyph, Label, FullLabel, Meta, Body, Style string
-}
+type journeyNode = tuigateway.LearningNodeRow
 
 // One time slice of the timeline with its counts and nodes
-type journeyBucket struct {
-	Label, Date, Category, Color string
-	Skills, Memories             int
-	Nodes                        []journeyNode
-}
+type journeyBucket = tuigateway.LearningBucketRow
 
 // Row of the flattened tree, a slice header, a node under it, or a gap between slices
 type journeyRow struct {
@@ -64,8 +59,8 @@ type journeyRow struct {
 type journeyCard struct {
 	a       *app
 	opts    journeyOptions
-	data    map[string]any
-	frames  []map[string]any
+	data    *tuigateway.LearningFramesResult
+	frames  []tuigateway.LearningFrame
 	buckets []journeyBucket
 	rows    []journeyRow
 	err     string
@@ -144,13 +139,14 @@ func (c *journeyCard) load(cols, rows int) tea.Cmd {
 	c.gen++
 	gen := c.gen
 	c.data, c.loaded, c.err = nil, false, ""
-	return gatewayCall(c.a.gw, "learning.frames", map[string]any{"cols": cols, "frames": c.frameCount(), "rows": rows}, func(v any, err error) tea.Cmd {
-		return c.loadedFrames(gen, asRPCResult(v), err)
+	params := tuigateway.LearningFramesParams{Cols: int64(cols), Frames: int64(c.frameCount()), Rows: int64(rows)}
+	return call(c.a.gw, tuigateway.LearningFrames, params, func(data *tuigateway.LearningFramesResult, err error) tea.Cmd {
+		return c.loadedFrames(gen, data, err)
 	})
 }
 
 // Takes fresh frames, the cursor on the newest row and the timeline view, and starts the animation when asked
-func (c *journeyCard) loadedFrames(gen int, data map[string]any, err error) tea.Cmd {
+func (c *journeyCard) loadedFrames(gen int, data *tuigateway.LearningFramesResult, err error) tea.Cmd {
 	if gen != c.gen {
 		return nil
 	}
@@ -159,15 +155,7 @@ func (c *journeyCard) loadedFrames(gen int, data map[string]any, err error) tea.
 		c.err = rpcErrorMessage(err)
 		return nil
 	}
-	c.data, c.frames = data, nil
-	if list, isList := data["frames"].([]any); isList {
-		for _, item := range list {
-			if frame, isDict := item.(map[string]any); isDict {
-				c.frames = append(c.frames, frame)
-			}
-		}
-	}
-	c.buckets = journeyBuckets(data["buckets"])
+	c.data, c.frames, c.buckets = data, data.Frames, data.Buckets
 	c.rows = nil
 	for b := range c.buckets {
 		bucket := &c.buckets[b]
@@ -213,73 +201,12 @@ func (c *journeyCard) tick(gen, frame int) tea.Cmd {
 	})
 }
 
-// Summary lines of the timeline answer
-func (c *journeyCard) summary() []string { return rpcStrings(c.data["summary"]) }
-
-// Legend or category items of the timeline answer
-func (c *journeyCard) legendItems(key string) []map[string]any {
-	var out []map[string]any
-	list, _ := c.data[key].([]any)
-	for _, item := range list {
-		if m, isDict := item.(map[string]any); isDict {
-			out = append(out, m)
-		}
+// Summary lines of the timeline answer, none before it arrived
+func (c *journeyCard) summary() []string {
+	if c.data == nil {
+		return nil
 	}
-	return out
-}
-
-// Buckets of the frames payload as typed slices
-func journeyBuckets(v any) []journeyBucket {
-	var rows []map[string]any
-	switch items := v.(type) {
-	case []map[string]any:
-		rows = items
-	case []any:
-		for _, item := range items {
-			if m, ok := item.(map[string]any); ok {
-				rows = append(rows, m)
-			}
-		}
-	}
-	text := func(m map[string]any, key string) string {
-		if m[key] == nil {
-			return ""
-		}
-		return jsValueString(m[key])
-	}
-	number := func(m map[string]any, key string) int {
-		switch n := m[key].(type) {
-		case int:
-			return n
-		case int64:
-			return int(n)
-		case float64:
-			return int(n)
-		}
-		return 0
-	}
-	out := make([]journeyBucket, 0, len(rows))
-	for _, row := range rows {
-		b := journeyBucket{Label: text(row, "label"), Date: text(row, "date"), Category: text(row, "category"), Color: text(row, "color"),
-			Skills: number(row, "skills"), Memories: number(row, "memories")}
-		var nodes []map[string]any
-		switch items := row["nodes"].(type) {
-		case []map[string]any:
-			nodes = items
-		case []any:
-			for _, item := range items {
-				if m, ok := item.(map[string]any); ok {
-					nodes = append(nodes, m)
-				}
-			}
-		}
-		for _, n := range nodes {
-			b.Nodes = append(b.Nodes, journeyNode{ID: text(n, "id"), Glyph: text(n, "glyph"), Label: text(n, "label"), FullLabel: text(n, "fullLabel"),
-				Meta: text(n, "meta"), Body: text(n, "body"), Style: text(n, "style")})
-		}
-		out = append(out, b)
-	}
-	return out
+	return c.data.Summary
 }
 
 func (c *journeyCard) Title() string  { return "journey" }
@@ -317,35 +244,22 @@ func (c *journeyCard) styleInk(p starmapPalette, style string, alpha float64) st
 }
 
 // Chart rows of the frame shown, trajectory rows left out and the oldest past the cap dropped
-func (c *journeyCard) chart(chartCap int) ([]string, map[string]any) {
+func (c *journeyCard) chart(chartCap int) ([]string, *tuigateway.LearningFrame) {
 	if c.frame >= len(c.frames) {
 		return nil, nil
 	}
-	frame := c.frames[c.frame]
+	frame := &c.frames[c.frame]
 	p := c.palette()
-	grid, _ := frame["grid"].([]any)
 	var out []string
-	for _, rawRow := range grid {
-		row, _ := rawRow.([]any)
+	for _, row := range frame.Grid {
 		var b, plain strings.Builder
-		for _, rawRun := range row {
-			run, _ := rawRun.([]any)
-			if len(run) < 2 {
-				continue
+		for _, run := range row {
+			hex := c.styleInk(p, run.Style, run.Alpha)
+			if run.Hex != "" {
+				hex = p.fadeHex(run.Hex, run.Alpha)
 			}
-			text, style := jsValueString(run[0]), jsValueString(run[1])
-			alpha := 1.0
-			if len(run) > 2 {
-				if f, ok := run[2].(float64); ok {
-					alpha = f
-				}
-			}
-			hex := c.styleInk(p, style, alpha)
-			if len(run) > 3 && truthyJS(run[3]) {
-				hex = p.fadeHex(jsValueString(run[3]), alpha)
-			}
-			plain.WriteString(text)
-			b.WriteString(c.ink(text, hex, false))
+			plain.WriteString(run.Text)
+			b.WriteString(c.ink(run.Text, hex, false))
 		}
 		if strings.HasPrefix(strings.TrimLeftFunc(plain.String(), isJSSpace), "trajectory") {
 			continue
@@ -364,71 +278,53 @@ func (c *journeyCard) header(chartCap int) []string {
 	p := c.palette()
 	lines := []string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true) + c.ink(" "+tr("journey.subtitle"), t.Color.Muted, false)}
 	var b strings.Builder
-	for i, item := range c.legendItems("legend") {
+	for i, item := range c.data.Legend {
 		if i > 0 {
 			b.WriteString("   ")
 		}
-		style := "dim"
-		if item["style"] != nil {
-			style = jsValueString(item["style"])
+		style := item.Style
+		if style == "" {
+			style = "dim"
 		}
-		b.WriteString(c.ink(jsValueString(item["glyph"])+" ", c.styleInk(p, style, 1), false))
-		b.WriteString(c.ink(jsValueString(item["label"]), t.Color.Muted, false))
+		b.WriteString(c.ink(item.Glyph+" ", c.styleInk(p, style, 1), false))
+		b.WriteString(c.ink(item.Label, t.Color.Muted, false))
 	}
 	lines = append(lines, b.String())
-	if categories := c.legendItems("categories"); len(categories) > 0 {
+	if categories := c.data.Categories; len(categories) > 0 {
 		var cb strings.Builder
 		for i, item := range categories {
 			if i > 0 {
 				cb.WriteString("  ")
 			}
 			hex := t.Color.Muted
-			if truthyJS(item["color"]) {
-				hex = p.fadeHex(jsValueString(item["color"]), 1)
+			if item.Color != "" {
+				hex = p.fadeHex(item.Color, 1)
 			}
-			cb.WriteString(c.ink(jsValueString(item["glyph"])+" ", hex, false))
-			cb.WriteString(c.ink(jsValueString(item["label"]), t.Color.Muted, false))
+			cb.WriteString(c.ink(item.Glyph+" ", hex, false))
+			cb.WriteString(c.ink(item.Label, t.Color.Muted, false))
 		}
 		lines = append(lines, cb.String())
 	}
 	lines = append(lines, "")
 	chart, frame := c.chart(chartCap)
 	lines = append(lines, chart...)
-	axis, _ := c.data["axis"].(map[string]any)
-	start, end := jsValueString(axis["start"]), jsValueString(axis["end"])
+	start, end := c.data.Axis.Start, c.data.Axis.End
 	gap := max(1, c.asked[0]-2-utf8.RuneCountInString(start)-utf8.RuneCountInString(end))
 	lines = append(lines, c.ink(start+strings.Repeat(" ", gap)+end, t.Color.Muted, false))
 	if frame != nil {
-		date := jsValueString(frame["date"])
-		if !truthyJS(frame["date"]) {
+		date := frame.Date
+		if date == "" {
 			date = "—"
 		}
-		pct := int(math.RoundToEven(jsNumberOf(frame["reveal"]) * 100))
+		pct := int(math.RoundToEven(frame.Reveal * 100))
 		lines = append(lines, c.ink("◷ ", t.Color.Muted, false)+c.ink(date, t.Color.Primary, false)+
-			c.ink(fmt.Sprintf("   %s/%s revealed · %d%%", jsValueString(frame["visible"]), jsValueString(c.data["count"]), pct), t.Color.Muted, false))
+			c.ink(fmt.Sprintf("   %d/%d revealed · %d%%", frame.Visible, c.data.Count, pct), t.Color.Muted, false))
 	}
 	return lines
 }
 
-// Nodes of a learning graph payload
-func journeyPayloadNodes(payload map[string]any) []map[string]any {
-	switch nodes := payload["nodes"].(type) {
-	case []map[string]any:
-		return nodes
-	case []any:
-		out := make([]map[string]any, 0, len(nodes))
-		for _, n := range nodes {
-			if m, ok := n.(map[string]any); ok {
-				out = append(out, m)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
 // Count with its singular or plural catalog form
-func journeyCount(one, other string, n int) string {
+func journeyCount(one, other string, n int64) string {
 	if n == 1 {
 		return tr(one, fmt.Sprint(n))
 	}
@@ -524,7 +420,7 @@ func (c *journeyCard) View(w, h int) string {
 		return shell(c.ink(tr("journey.error", c.err), t.Color.Error, false))
 	case !c.loaded:
 		return shell(c.ink(tr("journey.loading"), t.Color.Muted, false))
-	case !truthyJS(c.data["count"]):
+	case c.data.Count == 0:
 		return shell(c.ink(tr("journey.empty"), t.Color.Muted, false))
 	}
 	if c.item {
@@ -734,19 +630,21 @@ func (c *journeyCard) deleteActive() tea.Cmd {
 		return nil
 	}
 	c.busy = true
-	return gatewayCall(c.a.gw, "learning.delete", map[string]any{"id": n.ID}, func(v any, err error) tea.Cmd {
-		c.busy = false
-		if err != nil {
-			c.notice = rpcErrorMessage(err)
-			return nil
-		}
-		res := asRPCResult(v)
-		c.notice = jsValueString(res["message"])
-		if truthyJS(res["ok"]) {
-			return c.refetch()
-		}
+	return call(c.a.gw, tuigateway.LearningDelete, tuigateway.LearningNodeParams{ID: n.ID}, c.mutated)
+}
+
+// Takes a delete or edit answer, its message as the notice and the timeline reloaded when it went through
+func (c *journeyCard) mutated(res *tuigateway.LearningMutationResult, err error) tea.Cmd {
+	c.busy = false
+	if err != nil {
+		c.notice = rpcErrorMessage(err)
 		return nil
-	})
+	}
+	c.notice = res.Message
+	if res.Ok {
+		return c.refetch()
+	}
+	return nil
 }
 
 // Edits the node under the cursor in the external editor and reloads the timeline after a change
@@ -757,19 +655,18 @@ func (c *journeyCard) editActive() tea.Cmd {
 	}
 	c.busy = true
 	id := n.ID
-	return gatewayCall(c.a.gw, "learning.detail", map[string]any{"id": id}, func(v any, err error) tea.Cmd {
-		detail := asRPCResult(v)
-		if err != nil || !truthyJS(detail["ok"]) || detail["content"] == nil {
+	return call(c.a.gw, tuigateway.LearningDetail, tuigateway.LearningNodeParams{ID: id}, func(detail *tuigateway.LearningDetailResult, err error) tea.Cmd {
+		if err != nil || !detail.Ok || detail.Content == nil {
 			c.busy = false
 			c.notice = tr("journey.notice.cannotEdit")
 			if err != nil {
 				c.notice = rpcErrorMessage(err)
-			} else if message := jsValueString(detail["message"]); message != "" {
-				c.notice = message
+			} else if detail.Message != "" {
+				c.notice = detail.Message
 			}
 			return nil
 		}
-		content := jsValueString(detail["content"])
+		content := *detail.Content
 		return editText(content, journeySuffix(detail), func(edited string, runErr, fileErr error) tea.Msg {
 			return asyncDoneMsg{run: func() tea.Cmd {
 				if fileErr != nil || runErr != nil || strings.TrimSpace(edited) == strings.TrimSpace(content) {
@@ -780,27 +677,15 @@ func (c *journeyCard) editActive() tea.Cmd {
 					}
 					return nil
 				}
-				return gatewayCall(c.a.gw, "learning.edit", map[string]any{"id": id, "content": edited}, func(v any, err error) tea.Cmd {
-					c.busy = false
-					if err != nil {
-						c.notice = rpcErrorMessage(err)
-						return nil
-					}
-					res := asRPCResult(v)
-					c.notice = jsValueString(res["message"])
-					if truthyJS(res["ok"]) {
-						return c.refetch()
-					}
-					return nil
-				})
+				return call(c.a.gw, tuigateway.LearningEdit, tuigateway.LearningEditParams{ID: id, Content: edited}, c.mutated)
 			}}
 		})
 	})
 }
 
 // File suffix of a node's editor buffer, markdown for a skill
-func journeySuffix(detail map[string]any) string {
-	if jsValueString(detail["kind"]) == "skill" {
+func journeySuffix(detail *tuigateway.LearningDetailResult) string {
+	if detail.Kind == "skill" {
 		return ".md"
 	}
 	return ".txt"
@@ -967,39 +852,30 @@ func journeyDate(ts float64, present bool) string {
 }
 
 // Nodes of a learning graph oldest first with id, glyph, label and date, as journey list prints them
-func journeyListText(payload map[string]any) string {
-	nodes := append([]map[string]any(nil), journeyPayloadNodes(payload)...)
+func journeyListText(graph *tuigateway.LearningGraphResult) string {
+	nodes := append([]tuigateway.LearningGraphNode(nil), graph.Nodes...)
 	if len(nodes) == 0 {
 		return "No learning yet."
 	}
-	stamp := func(n map[string]any) (float64, bool) {
-		f, ok := n["timestamp"].(float64)
-		return f, ok
-	}
-	sort.SliceStable(nodes, func(i, j int) bool {
-		ti, _ := stamp(nodes[i])
-		tj, _ := stamp(nodes[j])
-		return ti < tj
-	})
+	sort.SliceStable(nodes, func(i, j int) bool { return val(nodes[i].Timestamp) < val(nodes[j].Timestamp) })
 	lines := make([]string, 0, len(nodes))
 	for _, n := range nodes {
 		glyph := journeySkillGlyph
-		if jsValueString(n["kind"]) == "memory" {
+		if n.Kind == "memory" {
 			glyph = journeyMemoryGlyph
 		}
-		ts, present := stamp(n)
-		lines = append(lines, fmt.Sprintf("%s  %s %s  %s", jsValueString(n["id"]), glyph, jsValueString(n["label"]), journeyDate(ts, present)))
+		lines = append(lines, fmt.Sprintf("%s  %s %s  %s", n.ID, glyph, n.Label, journeyDate(val(n.Timestamp), n.Timestamp != nil)))
 	}
 	return strings.Join(lines, "\n")
 }
 
 // Graph payload as indented JSON, the text journey --json prints
-func journeyJSONText(payload map[string]any) (string, error) {
+func journeyJSONText(graph *tuigateway.LearningGraphResult) (string, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(payload); err != nil {
+	if err := enc.Encode(tuigateway.Plain(graph)); err != nil {
 		return "", err
 	}
 	return strings.TrimRight(buf.String(), "\n"), nil
@@ -1015,14 +891,11 @@ func decodeUTF8Sig(saved string) (string, error) {
 }
 
 // Shows what a learning.graph answer renders to, or the journey failure line
-func (a *app) withJourneyGraph(render func(map[string]any) (string, error)) tea.Cmd {
-	return gatewayCall(a.gw, "learning.graph", map[string]any{}, func(v any, err error) tea.Cmd {
-		payload, text := asRPCResult(v), ""
-		if err == nil && payload == nil {
-			err = errors.New(tr("session.common.invalidResponse", "learning.graph"))
-		}
+func (a *app) withJourneyGraph(render func(*tuigateway.LearningGraphResult) (string, error)) tea.Cmd {
+	return call(a.gw, tuigateway.LearningGraph, tuigateway.LearningGraphParams{}, func(graph *tuigateway.LearningGraphResult, err error) tea.Cmd {
+		text := ""
 		if err == nil {
-			text, err = render(payload)
+			text, err = render(graph)
 		}
 		if err != nil {
 			a.sys(commandText(a.ctx, "journey.failed", map[string]any{"error": rpcErrorMessage(err)}))
@@ -1033,15 +906,14 @@ func (a *app) withJourneyGraph(render func(map[string]any) (string, error)) tea.
 }
 
 // Node detail of an id from the gateway, its failure printed and then skipped
-func (a *app) journeyDetail(r *slashRun, nodeID string, then func(detail map[string]any) tea.Cmd) tea.Cmd {
-	return gatewayCall(a.gw, "learning.detail", map[string]any{"id": nodeID}, func(v any, err error) tea.Cmd {
-		detail := asRPCResult(v)
+func (a *app) journeyDetail(r *slashRun, nodeID string, then func(detail *tuigateway.LearningDetailResult) tea.Cmd) tea.Cmd {
+	return call(a.gw, tuigateway.LearningDetail, tuigateway.LearningNodeParams{ID: nodeID}, func(detail *tuigateway.LearningDetailResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
 			r.sys(commandText(a.ctx, "journey.failed", map[string]any{"error": rpcErrorMessage(err)}))
 			return nil
-		case !truthyJS(detail["ok"]):
-			message := jsValueString(detail["message"])
+		case !detail.Ok:
+			message := detail.Message
 			if message == "" {
 				message = "not found"
 			}
@@ -1053,25 +925,27 @@ func (a *app) journeyDetail(r *slashRun, nodeID string, then func(detail map[str
 }
 
 // Message of a learning mutation answer, the failure line when the call failed
-func (a *app) journeyMutation(r *slashRun, method string, params map[string]any) tea.Cmd {
-	return gatewayCall(a.gw, method, params, func(v any, err error) tea.Cmd {
+func (a *app) journeyMutation(r *slashRun) func(*tuigateway.LearningMutationResult, error) tea.Cmd {
+	return func(res *tuigateway.LearningMutationResult, err error) tea.Cmd {
 		if err != nil {
 			r.sys(commandText(a.ctx, "journey.failed", map[string]any{"error": rpcErrorMessage(err)}))
 			return nil
 		}
-		r.sys(jsValueString(asRPCResult(v)["message"]))
+		r.sys(res.Message)
 		return nil
-	})
+	}
 }
 
 // Deletes a node by id after the confirm dialog unless yes was given
 func (a *app) journeyDelete(r *slashRun, nodeID string, yes bool) tea.Cmd {
-	return a.journeyDetail(r, nodeID, func(detail map[string]any) tea.Cmd {
-		commit := func() tea.Cmd { return a.journeyMutation(r, "learning.delete", map[string]any{"id": nodeID}) }
+	return a.journeyDetail(r, nodeID, func(detail *tuigateway.LearningDetailResult) tea.Cmd {
+		commit := func() tea.Cmd {
+			return call(a.gw, tuigateway.LearningDelete, tuigateway.LearningNodeParams{ID: nodeID}, a.journeyMutation(r))
+		}
 		if yes {
 			return commit()
 		}
-		label := jsValueString(detail["label"])
+		label := detail.Label
 		a.store.overlay.Confirm = &confirmReq{CancelLabel: "Cancel", ConfirmLabel: "Delete", Danger: true, Title: "Delete '" + label + "'?",
 			Detail: "A skill goes to the archive the curator can restore from, a memory entry is removed.", OnConfirm: commit}
 		return nil
@@ -1080,8 +954,8 @@ func (a *app) journeyDelete(r *slashRun, nodeID string, yes bool) tea.Cmd {
 
 // Edits a node by id in the external editor and applies a changed text
 func (a *app) journeyEdit(r *slashRun, nodeID string) tea.Cmd {
-	return a.journeyDetail(r, nodeID, func(detail map[string]any) tea.Cmd {
-		content := jsValueString(detail["content"])
+	return a.journeyDetail(r, nodeID, func(detail *tuigateway.LearningDetailResult) tea.Cmd {
+		content := val(detail.Content)
 		return editText(content, journeySuffix(detail), func(saved string, runErr, fileErr error) tea.Msg {
 			return asyncDoneMsg{run: func() tea.Cmd {
 				var exit *exec.ExitError
@@ -1101,7 +975,7 @@ func (a *app) journeyEdit(r *slashRun, nodeID string) tea.Cmd {
 					r.sys("no changes")
 					return nil
 				}
-				return a.journeyMutation(r, "learning.edit", map[string]any{"id": nodeID, "content": edited})
+				return call(a.gw, tuigateway.LearningEdit, tuigateway.LearningEditParams{ID: nodeID, Content: edited}, a.journeyMutation(r))
 			}}
 		})
 	})
@@ -1119,7 +993,7 @@ func (a *app) journeyCommands() []slashCommand {
 				}
 				switch parsed.action {
 				case "list":
-					return tea.Batch(r.ran(), a.withJourneyGraph(func(payload map[string]any) (string, error) { return journeyListText(payload), nil }))
+					return tea.Batch(r.ran(), a.withJourneyGraph(func(graph *tuigateway.LearningGraphResult) (string, error) { return journeyListText(graph), nil }))
 				case "delete":
 					return tea.Batch(r.ran(), a.journeyDelete(r, parsed.node, parsed.yes))
 				case "edit":

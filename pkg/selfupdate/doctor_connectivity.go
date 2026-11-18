@@ -311,7 +311,7 @@ func (e *doctorProbeEnv) probeAPIKeyProvider(p doctorAPIKeyProvider) (doctorProb
 		}
 	} else {
 		if target == "" {
-			return warn(errors.New("Invalid type for url.  Expected str or httpx.URL, got <class 'NoneType'>: None"))
+			return warn(errors.New("the provider has no URL to probe"))
 		}
 		if r, err = e.send(http.MethodGet, target, headers, nil); err != nil {
 			return warn(err)

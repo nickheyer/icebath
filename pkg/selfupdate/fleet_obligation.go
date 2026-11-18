@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -96,7 +95,7 @@ func currentProfileName(ctx context.Context) (name string) {
 // Removes an update recovery breadcrumb, a missing file fine and any other failure logged
 func clearMarkerFile(path, label string) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		pkgLog().Debug(fmt.Sprintf("Could not clear %s marker: %s", label, pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Could not clear %s marker: %s", label, errchain.OSText(err)))
 	}
 }
 

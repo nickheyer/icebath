@@ -123,11 +123,11 @@ func (m *RecallGuardMiddleware) handleRecall(ctx context.Context, ic *InboundCon
 		pkgLog().Debug(fmt.Sprintf("[%s] Recall callback with empty seq_list, skipping", adapter.Name()))
 		return nil
 	}
-	groupCode, err := strMethod(pyrepr.Or(push.GetOr("group_code", nil), ""), "strip")
+	groupCode, err := strMethod(pyrepr.Or(push.GetOr("group_code", nil), ""), "group_code")
 	if err != nil {
 		return err
 	}
-	fromAccount, err := strMethod(pyrepr.Or(push.GetOr("from_account", nil), ""), "strip")
+	fromAccount, err := strMethod(pyrepr.Or(push.GetOr("from_account", nil), ""), "from_account")
 	if err != nil {
 		return err
 	}

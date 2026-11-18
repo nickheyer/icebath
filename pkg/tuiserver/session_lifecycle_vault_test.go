@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tuiserver
 
 import (
@@ -15,12 +17,12 @@ func TestOnlyTheOwningSessionReleaseDropsAToken(t *testing.T) {
 	t.Cleanup(browser.LockAllVaultProfiles)
 	ctx := tools.WithThreadLocals(context.Background())
 	owner := "sess-A"
-	browser.SetVaultSessionID(ctx, &owner)
+	tools.SetVaultSessionID(ctx, &owner)
 	generation := browser.BeginVaultUnlock(ctx, "bitwarden")
 	if !browser.StoreVaultSessionToken(ctx, "bitwarden", "SESSION-TOKEN", &generation) {
 		t.Fatal("the unlock made under sess-A must store its token")
 	}
-	browser.SetVaultSessionID(ctx, nil)
+	tools.SetVaultSessionID(ctx, nil)
 	if !browser.IsVaultUnlocked(ctx, "bitwarden") {
 		t.Fatal("the manager must read unlocked after the unlock")
 	}

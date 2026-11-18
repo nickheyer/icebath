@@ -165,7 +165,9 @@ func (e *ConsoleEngine) registerDefaults() {
 		e.Register(b.path, b.usage, b.summary, b.handler, b.confirmation != "", b.confirmation)
 	}
 	for _, family := range consoleCLIFamilies {
-		consoleRegisterCommandFamily(e, family)
+		if _, refused := commands.CLITierRefusal(family.root); !refused {
+			consoleRegisterCommandFamily(e, family)
+		}
 	}
 	e.Register([]string{"send"}, "send --to <target> <message>", "Send a message to a configured platform.",
 		func(e *ConsoleEngine, args []string) (string, error) { return e.dispatch("send", nil, args, false) },
@@ -214,6 +216,9 @@ func (e *ConsoleEngine) executeBuiltin(tokens []string) (ConsoleResult, bool) {
 func (e *ConsoleEngine) resolveCommand(tokens []string) (*ConsoleCommand, []string, error) {
 	if rejected := consoleRejectionFor(tokens); rejected != "" {
 		return nil, nil, &ConsoleCommandError{Msg: rejected}
+	}
+	if refusal, refused := commands.CLITierRefusal(tokens[0]); refused {
+		return nil, nil, &ConsoleCommandError{Msg: refusal}
 	}
 	for size := min(len(tokens), 3); size > 0; size-- {
 		if command, ok := e.commands[consoleKey(tokens[:size])]; ok {

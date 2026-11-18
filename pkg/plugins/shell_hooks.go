@@ -730,7 +730,7 @@ func shellHookPopenError(name string, err error) string {
 	case isBadExeFormat(err):
 		return errchain.Show(name) + " " + shellHookNotDirectlyExecutable
 	case isOSError(err):
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }
@@ -969,7 +969,7 @@ func SaveShellHookAllowlist(ctx context.Context, data map[string]any) error {
 	if err != nil && isOSError(err) {
 		pkgLog().Warn(fmt.Sprintf("Failed to persist shell hook allowlist to %s: %s. The approval holds for this process "+
 			"only (a gateway keeps a launch's --accept-hooks until it restarts); a gateway session "+
-			"opened from a CLI prompt skips the hook, and the next run re-prompts.", p, pypath.OSErrorText(err)))
+			"opened from a CLI prompt skips the hook, and the next run re-prompts.", p, errchain.OSText(err)))
 		return nil
 	}
 	return err

@@ -15,7 +15,7 @@ import (
 func TestSetRuntimeEnabledRefusesAListSectionLikePython(t *testing.T) {
 	lmRoutesClient(t)
 	configLoadFn = func(context.Context) (map[string]any, error) { return map[string]any{"local_runtime": []any{}}, nil }
-	if _, err := lmSetRuntimeEnabled(context.Background(), true); err == nil || err.Error() != "list indices must be integers or slices, not str" {
+	if _, err := lmSetRuntimeEnabled(context.Background(), true); err == nil || err.Error() != "the local_models section of config.yaml is a list, expected a mapping" {
 		t.Fatalf("list section %v", err)
 	}
 	configLoadFn = func(context.Context) (map[string]any, error) { return map[string]any{"local_runtime": nil}, nil }

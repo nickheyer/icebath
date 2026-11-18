@@ -210,7 +210,7 @@ func TestEnterNewWorktreeReportsAFailedMove(t *testing.T) {
 	if c.enterNewWorktree(map[string]string{"path": missing}) {
 		t.Fatal("a failed chdir entered the tree")
 	}
-	want := catalogText("cli.commands.worktree.enter_failed", map[string]any{"error": "[Errno 2] No such file or directory: '" + missing + "'"})
+	want := catalogText("cli.commands.worktree.enter_failed", map[string]any{"error": "no such file or directory: " + missing})
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("output %q want %q", out.String(), want)
 	}
@@ -371,7 +371,7 @@ func TestNewWhoseShellCannotFollowSaysTheSessionMoved(t *testing.T) {
 	if want := filepath.Join(repo, ".worktrees", "stuck"); wt != want {
 		t.Fatalf("moved to %q, want %q", wt, want)
 	}
-	failed := catalogText("cli.session.cwd_enter_failed", map[string]any{"path": wt, "error": "[Errno 13] Permission denied: '" + wt + "'"})
+	failed := catalogText("cli.session.cwd_enter_failed", map[string]any{"path": wt, "error": "permission denied: " + wt})
 	if !strings.Contains(out.String(), failed) {
 		t.Fatalf("output %q lacks %q", out.String(), failed)
 	}

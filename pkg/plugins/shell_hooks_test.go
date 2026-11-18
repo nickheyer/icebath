@@ -314,7 +314,7 @@ func TestShellHookParseHooksBlock(t *testing.T) {
 		t.Fatal("non tool event kept its matcher")
 	}
 	logs := captureLogs(t)
-	if _, complete := parseShellHooks(map[string]any{"pre_tool_cal": []any{}}); complete || !strings.Contains(logs.String(), "did you mean 'pre_tool_call'?") {
+	if _, complete := parseShellHooks(map[string]any{"pre_tool_cal": []any{}}); complete || !strings.Contains(logs.String(), "did you mean pre_tool_call?") {
 		t.Fatalf("typo not suggested: %s", logs.String())
 	}
 	failCases := []struct {

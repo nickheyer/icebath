@@ -36,7 +36,7 @@ func TestRelayBindingBridgesFailLikeTheMissingWheel(t *testing.T) {
 	}
 	broken := &tools.RelayError{Class: "ImportError", Message: "libnemo_relay.so: cannot open shared object file"}
 	tools.RegisterNemoRelayBinding(func() (*tools.NemoRelay, error) { return nil, broken })
-	if _, err := ValidateRelayPluginPayload(context.Background(), relayObject("version", 1)); relayExceptionText(err) != "ImportError: libnemo_relay.so: cannot open shared object file" {
+	if _, err := ValidateRelayPluginPayload(context.Background(), relayObject("version", 1)); relayExceptionText(err) != "libnemo_relay.so: cannot open shared object file" {
 		t.Fatalf("broken binding %v", err)
 	}
 	for _, c := range []struct {

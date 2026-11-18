@@ -2,9 +2,11 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"strconv"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/pet"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -61,12 +64,21 @@ func (a *app) hatchCommands() []slashCommand {
 		}}}
 }
 
-// Gateway request of a long pet run, its answer continuing on the update loop
-func (p *petView) long(method string, params map[string]any, timeout time.Duration, then func(map[string]any, error) tea.Cmd) tea.Cmd {
+// Typed gateway request of a long pet run, its answer or failure continuing on the update loop
+func longPet[P, R any](p *petView, m tuigateway.Method[P, R], params P, timeout time.Duration, then func(*R, error) tea.Cmd) tea.Cmd {
 	gw := p.a.gw
 	return func() tea.Msg {
-		result, err := gw.request(context.Background(), method, params, timeout)
-		return asyncDoneMsg{run: func() tea.Cmd { return then(asRPCResult(result), err) }}
+		raw, err := gw.request(context.Background(), m.Name(), wireParams(params), timeout)
+		var res *R
+		if err == nil {
+			r, misfit := m.Result(raw)
+			if misfit != nil {
+				err = fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", m.Name())), misfit)
+			} else {
+				res = &r
+			}
+		}
+		return asyncDoneMsg{run: func() tea.Cmd { return then(res, err) }}
 	}
 }
 
@@ -83,50 +95,52 @@ func (p *petView) startHatch(concept string) tea.Cmd {
 	job := &hatchJob{concept: concept, name: name, phase: "draft"}
 	p.hatch = job
 	p.a.sys(tr("slashCmd.session.hatch.designing", concept))
-	return p.long("pet.generate", map[string]any{"prompt": concept, "count": 1}, hatchDraftTimeout, func(res map[string]any, err error) tea.Cmd {
+	draft := tuigateway.PetGenerateParams{Prompt: concept, Count: 1}
+	return longPet(p, tuigateway.PetGenerate, draft, hatchDraftTimeout, func(res *tuigateway.PetGenerateResult, err error) tea.Cmd {
 		if p.hatch != job {
 			return nil
 		}
-		drafts, _ := res["drafts"].([]any)
 		switch {
 		case job.cancelled:
 			return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
 		case err != nil:
 			return p.endHatch(job, tr("slashCmd.session.hatch.baseFailed", rpcErrorMessage(err)))
-		case len(drafts) == 0:
+		case len(res.Drafts) == 0:
 			return p.endHatch(job, tr("slashCmd.session.hatch.noBaseDraft"))
 		}
-		first, _ := drafts[0].(map[string]any)
-		index, _ := first["index"].(float64)
-		job.token, job.cancelKey, job.phase = stringOr(res["token"], job.token), uuid.NewString(), "rows"
+		first := res.Drafts[0]
+		job.token, job.cancelKey, job.phase = cmp.Or(res.Token, job.token), uuid.NewString(), "rows"
 		var preview tea.Cmd
 		if job.preview == nil {
-			preview = p.previewDraft(job, stringOr(first["dataUri"], ""))
+			preview = p.previewDraft(job, first.DataURI)
 		}
-		params := map[string]any{"token": job.token, "index": int(index), "name": name, "prompt": concept, "cancelToken": job.cancelKey}
-		return tea.Batch(preview, p.long("pet.hatch", params, hatchRowsTimeout, func(res map[string]any, err error) tea.Cmd {
+		params := tuigateway.PetHatchParams{Token: job.token, Index: &first.Index, Name: name, Prompt: concept, CancelToken: job.cancelKey}
+		return tea.Batch(preview, longPet(p, tuigateway.PetHatch, params, hatchRowsTimeout, func(res *tuigateway.PetHatchResult, err error) tea.Cmd {
 			if p.hatch != job {
 				return nil
 			}
-			slug := stringOr(res["slug"], "")
+			slug := ""
+			if res != nil {
+				slug = res.Slug
+			}
 			switch {
 			case err != nil && job.cancelled:
 				return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
 			case err != nil:
 				return p.endHatch(job, tr("slashCmd.session.hatch.failed", rpcErrorMessage(err)))
 			case slug == "":
-				return p.endHatch(job, tr("slashCmd.session.hatch.failed", tr("pickers.common.invalidResponse", "pet.hatch")))
+				return p.endHatch(job, tr("slashCmd.session.hatch.failed", misfitText(tr("pickers.common.invalidResponse", "pet.hatch"))))
 			case job.cancelled:
-				return gatewayCall(p.a.gw, "pet.remove", map[string]any{"slug": slug}, func(_ any, err error) tea.Cmd {
+				return call(p.a.gw, tuigateway.PetRemove, tuigateway.PetSlugParams{Slug: slug}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 					if err != nil {
 						p.a.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
 					}
 					return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
 				})
 			}
-			display := stringOr(res["displayName"], name)
+			display := cmp.Or(res.DisplayName, name)
 			return p.claimSlug(job, slug, name, func(final string) tea.Cmd {
-				return gatewayCall(p.a.gw, "pet.select", map[string]any{"slug": final}, func(_ any, err error) tea.Cmd {
+				return call(p.a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: final}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 					if err != nil {
 						return p.endHatch(job, tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
 					}
@@ -146,15 +160,15 @@ func (p *petView) claimSlug(job *hatchJob, slug, name string, then func(string) 
 	fail := func(err error) tea.Cmd {
 		return p.endHatch(job, tr("slashCmd.session.hatch.failed", rpcErrorMessage(err)))
 	}
-	return gatewayCall(p.a.gw, "pet.remove", map[string]any{"slug": want}, func(_ any, err error) tea.Cmd {
+	return call(p.a.gw, tuigateway.PetRemove, tuigateway.PetSlugParams{Slug: want}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 		if err != nil {
 			return fail(err)
 		}
-		return gatewayCall(p.a.gw, "pet.rename", map[string]any{"slug": slug, "name": name}, func(v any, err error) tea.Cmd {
+		return call(p.a.gw, tuigateway.PetRename, tuigateway.PetRenameParams{Slug: slug, Name: name}, func(res *tuigateway.PetSlugResult, err error) tea.Cmd {
 			if err != nil {
 				return fail(err)
 			}
-			return then(stringOr(asRPCResult(v)["slug"], slug))
+			return then(cmp.Or(res.Slug, slug))
 		})
 	})
 }
@@ -192,7 +206,7 @@ func (p *petView) sendCancel(job *hatchJob) tea.Cmd {
 	if token == "" {
 		return nil
 	}
-	return gatewayCall(p.a.gw, "pet.cancel", map[string]any{"token": token}, func(_ any, err error) tea.Cmd {
+	return call(p.a.gw, tuigateway.PetCancel, tuigateway.PetCancelParams{Token: token}, func(_ *tuigateway.PetOkResult, err error) tea.Cmd {
 		if err != nil && p.hatch == job {
 			p.a.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
 		}
@@ -201,12 +215,12 @@ func (p *petView) sendCancel(job *hatchJob) tea.Cmd {
 }
 
 // Takes a pet.generate.progress frame, the token of the draft run, a cancel waiting on it, and the draft preview
-func (p *petView) draftProgress(payload map[string]any) tea.Cmd {
+func (p *petView) draftProgress(payload tuigateway.PetGenerateProgressPayload) tea.Cmd {
 	job := p.hatch
-	if job == nil || job.phase != "draft" || payload == nil {
+	if job == nil || job.phase != "draft" {
 		return nil
 	}
-	token := stringOr(payload["token"], "")
+	token := payload.Token
 	if token != "" && job.token != "" && token != job.token {
 		return nil
 	}
@@ -217,29 +231,29 @@ func (p *petView) draftProgress(payload map[string]any) tea.Cmd {
 			cmds = append(cmds, p.sendCancel(job))
 		}
 	}
-	if uri := stringOr(payload["dataUri"], ""); uri != "" && job.preview == nil {
+	if uri := payload.DataURI; uri != "" && job.preview == nil {
 		cmds = append(cmds, p.previewDraft(job, uri))
 	}
 	return tea.Batch(cmds...)
 }
 
 // Takes a pet.hatch.progress frame, each row drawn, the compose and the save said in the transcript
-func (p *petView) rowProgress(payload map[string]any) tea.Cmd {
+func (p *petView) rowProgress(payload tuigateway.PetHatchProgressPayload) tea.Cmd {
 	job := p.hatch
-	if job == nil || job.phase == "draft" || payload == nil {
+	if job == nil || job.phase == "draft" {
 		return nil
 	}
-	switch stringOr(payload["event"], "") {
+	switch payload.Event {
 	case "row":
-		state := stringOr(payload["state"], "")
+		state := payload.State
 		if state == "" {
-			state, _, _ = strings.Cut(stringOr(payload["detail"], ""), ":")
+			state, _, _ = strings.Cut(payload.Detail, ":")
 		}
 		job.state = state
-		if done, err := strconv.Atoi(stringOr(payload["done"], "")); err == nil {
+		if done, err := strconv.Atoi(payload.Done); err == nil {
 			job.done = done
 		}
-		if total, err := strconv.Atoi(stringOr(payload["total"], "")); err == nil {
+		if total, err := strconv.Atoi(payload.Total); err == nil {
 			job.total = total
 		}
 		p.a.sys("  " + tr("slashCmd.session.hatch.drawing", state))
@@ -278,7 +292,7 @@ func (p *petView) previewDraft(job *hatchJob, uri string) tea.Cmd {
 func draftPreview(uri string) ([]string, error) {
 	_, data, found := strings.Cut(uri, ",")
 	if !found {
-		return nil, errors.New(tr("pickers.common.invalidResponse", "dataUri"))
+		return nil, errors.New(misfitText(tr("pickers.common.invalidResponse", "dataUri")))
 	}
 	raw, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {

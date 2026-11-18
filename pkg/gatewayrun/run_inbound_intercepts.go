@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -20,7 +20,7 @@ func hmWriteUpdateResponse(ctx context.Context, responseText string) *string {
 	h := home.Dir(ctx)
 	responsePath := filepath.Join(h, ".update_response")
 	failed := func(err error) *string {
-		text := pypath.OSErrorText(err)
+		text := errchain.OSText(err)
 		return &text
 	}
 	tmp := responsePath + ".tmp"

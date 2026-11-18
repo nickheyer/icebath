@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -196,7 +197,7 @@ func (t *TurnRunner) nativeImageRunMessage(ctx context.Context) any {
 		return tc.message
 	}
 	if len(skipped) > 0 {
-		pkgLog().Warn(fmt.Sprintf("Native image attachment: skipped %d unreadable path(s): %s", len(skipped), pyrepr.Repr(skipped)))
+		pkgLog().Warn(fmt.Sprintf("Native image attachment: skipped %d unreadable path(s): %s", len(skipped), errchain.Show(skipped)))
 	}
 	for _, part := range parts {
 		if p, ok := part.(map[string]any); ok && p["type"] == "image_url" {

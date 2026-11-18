@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -265,7 +266,7 @@ func stopWindowsGatewayService(ctx context.Context, name string, expectedProcess
 		return fmt.Errorf("Windows service %s did not stop within %.0fs; venv mutation unsafe.", name, timeout)
 	}
 	if left := alive(); len(left) > 0 {
-		return fmt.Errorf("Windows service %s stopped but its process tree is still alive: %s", name, pyrepr.Repr(intsAsAny(left)))
+		return fmt.Errorf("Windows service %s stopped but its process tree is still alive: %s", name, errchain.Show(intsAsAny(left)))
 	}
 	return nil
 }

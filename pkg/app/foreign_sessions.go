@@ -13,6 +13,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -477,7 +478,7 @@ func ImportForeignSession(ctx context.Context, source, path string) (string, err
 func importForeignSession(ctx context.Context, store foreignSessionCaller, source, path string) (string, error) {
 	source = pystr.LstripChars(pystr.Lower(pystr.Strip(source)), "@")
 	if _, ok := foreignSourceLabels[source]; !ok {
-		return "", &appValueError{"Unknown foreign session source: " + pyrepr.Repr(source)}
+		return "", &appValueError{"Unknown foreign session source: " + errchain.Show(source)}
 	}
 	expanded, err := pypath.PathExpanduser(path)
 	if err != nil {
@@ -524,11 +525,11 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	}
 	receipt, ok := pyjson.AsObject(result)
 	if !ok {
-		return "", &pyrepr.FormatError{Class: "TypeError", Msg: "'" + pyrepr.TypeName(result) + "' object is not subscriptable"}
+		return "", &appClassedError{class: "TypeError", msg: "session import receipt is " + errchain.Kind(result) + " where a mapping was expected"}
 	}
 	revision, ok := receipt.Get("revision")
 	if !ok {
-		return "", &pyrepr.FormatError{Class: "KeyError", Msg: "'revision'"}
+		return "", &appClassedError{class: "KeyError", msg: "session import receipt has no revision"}
 	}
 	_, err = store.Call(ctx, "session.mutate", map[string]any{"session_id": sessionID, "request_id": uuid4HexText(),
 		"expected_revision": revision, "operation": "rename",
@@ -545,6 +546,12 @@ type appValueError struct{ msg string }
 
 func (e *appValueError) Error() string      { return e.msg }
 func (e *appValueError) PyTypeName() string { return "ValueError" }
+
+// Failure carrying the class name its callers decide on, its text the message alone
+type appClassedError struct{ class, msg string }
+
+func (e *appClassedError) Error() string      { return e.msg }
+func (e *appClassedError) PyTypeName() string { return e.class }
 
 // Random version four UUID as 32 hex digits
 func uuid4HexText() string { return strings.ReplaceAll(uuid.NewString(), "-", "") }

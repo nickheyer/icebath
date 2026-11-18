@@ -39,7 +39,7 @@ func TestIterPluginDirsSkipsUnreadableChild(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, []string{good}) {
 		t.Fatalf("IterPluginDirs = %v, %v", got, err)
 	}
-	if want := "Skipping unreadable plugin directory " + denied + ": [Errno 13] Permission denied: '" + denied + "'"; !strings.Contains(logs.String(), want) {
+	if want := "Skipping unreadable plugin directory " + denied + ": permission denied: " + denied; !strings.Contains(logs.String(), want) {
 		t.Fatalf("warning %q missing from %s", want, logs)
 	}
 	pluginDirStat = func(p string) (os.FileInfo, error) {

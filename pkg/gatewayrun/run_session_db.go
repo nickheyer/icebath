@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -15,9 +16,14 @@ import (
 )
 
 // Python RuntimeError carrying only its message
-type pyRuntimeError struct{ msg string }
+type pyRuntimeError struct {
+	msg   string
+	cause error
+}
 
 func (e *pyRuntimeError) Error() string { return e.msg }
+
+func (e *pyRuntimeError) Unwrap() error { return e.cause }
 
 // Exception class the error reports, RuntimeError
 func (e *pyRuntimeError) PyTypeName() string { return "RuntimeError" }
@@ -119,7 +125,7 @@ func (r *GatewayRunner) closeAllSessionDBHandles() {
 		}()
 	}
 	if r.sessionDBHandleCache == nil {
-		panic(&pyAttributeError{msg: "'GatewayRunner' object has no attribute '_session_db_handle_cache'"})
+		panic(&pyAttributeError{msg: "the gateway runner has no session database handle cache"})
 	}
 	r.sessionDBHandleCache.CloseAll(closeHandle)
 }
@@ -189,7 +195,7 @@ func housekeepingStateDBMaintenance(ctx context.Context, launch *launchSessions)
 	if raw := full["sessions"]; pyrepr.Truthy(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
-			return &pyAttributeError{msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+			return &pyAttributeError{msg: fmt.Sprintf("config sessions section is %s where a mapping was expected", errchain.Kind(raw))}
 		}
 		sessCfg = m
 	}

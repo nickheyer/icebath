@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -386,7 +387,7 @@ var errSnapshotFence = errors.New("snapshot carries no revision or execution_gen
 func snapshotFence(snapshot any) (any, any, error) {
 	obj, ok := pyjson.AsObject(snapshot)
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: %s", errSnapshotFence, pyrepr.TypeName(snapshot))
+		return nil, nil, fmt.Errorf("%w: the snapshot is %s", errSnapshotFence, errchain.Kind(snapshot))
 	}
 	revision, hasRevision := obj.Get("revision")
 	generation, hasGeneration := obj.Get("execution_generation")

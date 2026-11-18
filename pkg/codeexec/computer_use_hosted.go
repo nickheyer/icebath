@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -49,7 +50,7 @@ func (p *hostedComputerUseProvider) GetSetupSchema() (map[string]any, error) {
 	}
 	m, ok := hostedMap(v)
 	if !ok {
-		return nil, fmt.Errorf("computer-use provider %s get_setup_schema() returned %T, not a dict", pyrepr.Repr(p.name), v)
+		return nil, fmt.Errorf("computer-use provider %s get_setup_schema returned %s where a mapping was expected", p.name, errchain.Kind(v))
 	}
 	return m, nil
 }
@@ -62,7 +63,7 @@ func (p *hostedComputerUseProvider) CreateBackend(permissionMode string) (Comput
 	}
 	obj, ok := v.(*plugins.HostedObject)
 	if !ok || obj == nil {
-		return nil, fmt.Errorf("computer-use provider %s create_backend() returned %T, not a ComputerUseBackend", pyrepr.Repr(p.name), v)
+		return nil, fmt.Errorf("computer-use provider %s create_backend returned %s where a computer use backend was expected", p.name, errchain.Kind(v))
 	}
 	return &hostedComputerUseBackend{ctx: p.ctx, obj: obj}, nil
 }

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package app
 
 import (
@@ -12,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -92,7 +95,7 @@ func (r *petsRun) cmdList() (int, error) {
 	}
 	matching := ""
 	if query != "" {
-		matching = " matching " + pyrepr.Repr(query)
+		matching = " matching " + errchain.Show(query)
 	}
 	r.printf("petdex gallery — %d pet(s)%s:", len(entries), matching)
 	for _, e := range shown {
@@ -449,5 +452,5 @@ func PetsCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) 
 	case "doctor":
 		return r.cmdDoctor()
 	}
-	return 1, fmt.Errorf("unknown pets command %s", pyrepr.Repr(ns["pets_command"]))
+	return 1, fmt.Errorf("unknown pets command %s", errchain.Show(ns["pets_command"]))
 }

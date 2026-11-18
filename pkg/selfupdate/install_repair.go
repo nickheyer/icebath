@@ -4,6 +4,7 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -356,7 +357,7 @@ func configuredFeaturesMissingDeps(ctx context.Context) []pm.ConfiguredFeatureGa
 				continue
 			}
 			if entry.CheckFn == nil {
-				return fmt.Errorf("'NoneType' object is not callable")
+				return errors.New("the feature has no dependency check")
 			}
 			if !entry.RunCheck(ctx) {
 				hint := entry.InstallHint

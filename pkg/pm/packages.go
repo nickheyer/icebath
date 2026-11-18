@@ -16,8 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Rust target triple of each supported target
@@ -144,7 +143,7 @@ func (b *BinaryPackage) Verify(entry, target string) string {
 	case errors.As(err, &timeout):
 		return described + " timed out after 60s"
 	case err != nil:
-		return fmt.Sprintf("could not exec %s: %s", described, pypath.OSErrorText(err))
+		return fmt.Sprintf("could not exec %s: %s", described, errchain.OSText(err))
 	case result.Code != 0:
 		return ProbeReason(bin, result.Code, result.Stdout, result.Stderr)
 	}
@@ -268,7 +267,7 @@ type processTimeoutError struct {
 }
 
 func (e *processTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyrepr.Repr(e.Argv), strconv.FormatFloat(e.Timeout.Seconds(), 'f', -1, 64))
+	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Argv, " "), strconv.FormatFloat(e.Timeout.Seconds(), 'f', -1, 64))
 }
 
 // Runs a child to completion, replaced by tests the way they patch subprocess run

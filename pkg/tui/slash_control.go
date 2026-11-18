@@ -61,7 +61,7 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 		if operation == "branch" {
 			child := val(result.BranchedSessionID)
 			if child == "" {
-				r.fail(errors.New(tr("session.common.invalidResponse", "branch")))
+				r.fail(errors.New(misfitText(tr("session.common.invalidResponse", "branch"))))
 				return nil
 			}
 			return a.resumeByID(child, func(err error) tea.Cmd {
@@ -204,22 +204,18 @@ func (a *app) controlCommands() []slashCommand {
 			return keys
 		}, run: func(r *slashRun) tea.Cmd { return a.openSetup(trimJS(r.arg)) }},
 		{name: "wake", help: "toggle the wake word listener", usage: "[on|off|status]", suggest: func(string) []string { return []string{"on", "off", "status"} }, run: func(r *slashRun) tea.Cmd {
-			text := func(res map[string]any, key string) string {
-				s, _ := res[key].(string)
-				return s
-			}
 			withHint := func(line, hint string) string {
 				if trimJS(hint) != "" {
 					return tr("slashCmd.wake.withHint", line, trimJS(hint))
 				}
 				return line
 			}
-			detail := func(res map[string]any) string {
+			detail := func(phrase, provider string) string {
 				out := ""
-				if phrase := text(res, "phrase"); phrase != "" {
+				if phrase != "" {
 					out = " " + tr("slashCmd.wake.forPhrase", phrase)
 				}
-				if provider := text(res, "provider"); provider != "" {
+				if provider != "" {
 					out += " · " + provider
 				}
 				return out
@@ -227,40 +223,46 @@ func (a *app) controlCommands() []slashCommand {
 			switch strings.ToLower(trimJS(r.arg)) {
 			case "on":
 				a.store.wakeUserDisabled = false
-				return r.rpc("wake.start", map[string]any{"persist": true, "surface": "tui"}, func(res map[string]any) tea.Cmd {
-					if !truthyJS(res["started"]) {
-						reason := text(res, "reason")
+				return ask(r.rpc, r.sys, tuigateway.WakeStart, tuigateway.WakeStartParams{Persist: true, Surface: "tui"}, func(res *tuigateway.WakeStartResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					if !res.Started {
+						reason := res.Reason
 						base := reason
 						if key, known := map[string]string{"disabled": "disabled", "disabled_for_surface": "disabledForSurface", "not_owner": "notOwner", "owned": "owned", "unavailable": "unavailable"}[reason]; known {
 							base = tr("slashCmd.wake.reason." + key)
 						} else if reason == "" {
 							base = tr("slashCmd.wake.reason.unknown")
 						}
-						if owner := text(res, "owner_surface"); owner != "" {
+						if owner := val(res.OwnerSurface); owner != "" {
 							base += " (" + tr("slashCmd.wake.ownedBy", owner) + ")"
 						}
-						r.sys(withHint(tr("slashCmd.wake.notStarted", base), text(res, "hint")))
+						r.sys(withHint(tr("slashCmd.wake.notStarted", base), res.Hint))
 						return nil
 					}
 					saved := ""
-					if truthyJS(res["enabled_persisted"]) {
+					if res.EnabledPersisted {
 						saved = " · " + tr("slashCmd.wake.enabledInConfig")
 					}
-					r.sys(tr("slashCmd.wake.listening", detail(res)+saved))
+					r.sys(tr("slashCmd.wake.listening", detail(res.Phrase, res.Provider)+saved))
 					return nil
 				})
 			case "off":
 				a.store.wakeUserDisabled = true
-				return r.rpc("wake.stop", map[string]any{"persist": true}, func(res map[string]any) tea.Cmd {
-					saved := detail(res)
-					if truthyJS(res["disabled_persisted"]) {
+				return ask(r.rpc, r.sys, tuigateway.WakeStop, tuigateway.WakeStopParams{Persist: true}, func(res *tuigateway.WakeStopResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					saved := detail(res.Phrase, res.Provider)
+					if res.DisabledPersisted {
 						saved += " · " + tr("slashCmd.wake.disabledInConfig")
 					}
-					if truthyJS(res["stopped"]) {
+					if res.Stopped {
 						r.sys(tr("slashCmd.wake.listenerOff", saved))
 						return nil
 					}
-					reason := text(res, "reason")
+					reason := val(res.Reason)
 					switch reason {
 					case "not_owner":
 						reason = tr("slashCmd.wake.notOwnerStop")
@@ -271,17 +273,20 @@ func (a *app) controlCommands() []slashCommand {
 					return nil
 				})
 			case "", "status":
-				return r.rpc("wake.status", map[string]any{}, func(res map[string]any) tea.Cmd {
-					details := detail(res)
+				return ask(r.rpc, r.sys, tuigateway.WakeStatus, tuigateway.WakeStatusParams{}, func(res *tuigateway.WakeStatusResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					details := detail(res.Phrase, res.Provider)
 					switch {
-					case truthyJS(res["listening"]) && truthyJS(res["audio_silent"]):
-						r.sys(withHint(tr("slashCmd.wake.listening", details)+" · "+tr("slashCmd.wake.micSilent"), text(res, "hint")))
-					case truthyJS(res["listening"]):
+					case res.Listening && res.AudioSilent:
+						r.sys(withHint(tr("slashCmd.wake.listening", details)+" · "+tr("slashCmd.wake.micSilent"), res.Hint))
+					case res.Listening:
 						r.sys(tr("slashCmd.wake.listening", details))
-					case text(res, "owner_surface") != "" && !truthyJS(res["owned_by_caller"]):
-						r.sys(tr("slashCmd.wake.offOwnedBy", text(res, "owner_surface"), details))
-					case res["available"] == false:
-						r.sys(withHint(tr("slashCmd.wake.unavailable"), text(res, "hint")))
+					case val(res.OwnerSurface) != "" && !res.OwnedByCaller:
+						r.sys(tr("slashCmd.wake.offOwnedBy", val(res.OwnerSurface), details))
+					case !res.Available:
+						r.sys(withHint(tr("slashCmd.wake.unavailable"), res.Hint))
 					default:
 						r.sys(tr("slashCmd.wake.off", details))
 					}
@@ -305,7 +310,7 @@ func (a *app) controlCommands() []slashCommand {
 				}
 				var counters tuigateway.SessionUsagePayload
 				if err := tuigateway.Loose(wireParams(res), &counters); err != nil {
-					r.sys("error: " + tr("session.common.invalidResponse", "session.stats") + " " + err.Error())
+					r.sys("error: " + misfitText(tr("session.common.invalidResponse", "session.stats")) + " " + err.Error())
 					return nil
 				}
 				usage := usageOf(usageOfCounters(counters))
@@ -332,16 +337,22 @@ func (a *app) controlCommands() []slashCommand {
 					if out, _ := res["output"].(string); trimJS(out) != "" {
 						r.sys(trimJS(out))
 					}
-					return r.rpc("config.get", map[string]any{"key": "voice", "session_id": r.sid}, func(cfg map[string]any) tea.Cmd {
-						a.voiceEnabled = cfg["value"] == "voice_only" || cfg["value"] == "all"
+					return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "voice", SessionID: r.sid}, func(cfg *tuigateway.ConfigGetResult) tea.Cmd {
+						if cfg != nil {
+							mode := configWord(cfg)
+							a.voiceEnabled = mode == "voice_only" || mode == "all"
+						}
 						return nil
 					})
 				})
 			}
-			return r.rpc("voice.toggle", map[string]any{"action": action}, func(res map[string]any) tea.Cmd {
-				a.voiceEnabled = truthyJS(res["enabled"])
+			return ask(r.rpc, r.sys, tuigateway.VoiceToggle, tuigateway.VoiceToggleParams{Action: tuigateway.VoiceToggleAction(action)}, func(res *tuigateway.VoiceToggleResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				a.voiceEnabled = res.Enabled
 				key := a.voiceKey
-				if raw, _ := res["record_key"].(string); raw != "" {
+				if raw := res.RecordKey; raw != "" {
 					key = parseVoiceRecordKey(raw)
 					a.setVoiceRecordKey(key)
 				}
@@ -356,9 +367,9 @@ func (a *app) controlCommands() []slashCommand {
 				case action == "status":
 					r.sys(tr("slashCmd.session.voice.statusTitle"))
 					r.sys(tr("slashCmd.session.voice.statusMode", onOffWord(a.voiceEnabled)))
-					r.sys(tr("slashCmd.session.voice.statusTts", onOffWord(truthyJS(res["tts"]))))
+					r.sys(tr("slashCmd.session.voice.statusTts", onOffWord(res.TTS)))
 					r.sys(tr("slashCmd.session.voice.statusRecordKey", label))
-					if details, _ := res["details"].(string); details != "" {
+					if details := res.Details; details != "" {
 						r.sys("")
 						r.sys(tr("slashCmd.session.voice.requirements"))
 						for _, line := range strings.Split(details, "\n") {
@@ -367,18 +378,18 @@ func (a *app) controlCommands() []slashCommand {
 							}
 						}
 					}
-				case action == "tts" && truthyJS(res["tts"]):
+				case action == "tts" && res.TTS:
 					r.sys(tr("slashCmd.session.voice.ttsEnabled"))
 				case action == "tts":
 					r.sys(tr("slashCmd.session.voice.ttsDisabled"))
 				case a.voiceEnabled:
-					if truthyJS(res["tts"]) {
+					if res.TTS {
 						r.sys(tr("slashCmd.session.voice.enabledWithTts"))
 					} else {
 						r.sys(tr("slashCmd.session.voice.enabled"))
 					}
 					r.sys(tr("slashCmd.session.voice.recordHint", label))
-					if hint, _ := res["stop_hint"].(string); hint != "" {
+					if hint := res.StopHint; hint != "" {
 						r.sys("  " + hint)
 					}
 					r.sys(tr("slashCmd.session.voice.ttsHint"))

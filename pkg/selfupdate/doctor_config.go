@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -156,10 +157,7 @@ func checkRelayPlugins(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 				f.ManualIssues = append(f.ManualIssues, "Run `icebath pm install --extra nemo-relay` to provision the NeMo Relay runtime.")
 				return nil
 			}
-			if name, missing := strings.CutPrefix(err.Error(), "No module named "); missing {
-				if strings.Trim(name, "'") != "nemo_relay" {
-					return err
-				}
+			if errors.Is(err, tools.ErrRelayBindingMissing) {
 				doctorCheckOK(d.W, "NeMo Relay is not available on this platform", "")
 				return nil
 			}
@@ -378,7 +376,7 @@ func doctorStripField(m map[string]any, keys ...string) (string, error) {
 		}
 		s, ok := v.(string)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+			return "", fmt.Errorf("config value is %s where text was expected", errchain.Kind(v))
 		}
 		return pystr.Strip(s), nil
 	}
@@ -395,7 +393,7 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 	if raw := cfg["model"]; pyrepr.Truthy(raw) {
 		section, ok := raw.(map[string]any)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return fmt.Errorf("config model section is %s where a mapping was expected", errchain.Kind(raw))
 		}
 		modelSection = section
 	}
@@ -520,7 +518,7 @@ func doctorValidateAuxiliaryConfig(ctx context.Context, d *Doctor, configPath st
 		if rerr != nil {
 			lines := pystr.Splitlines(rerr.Error(), false)
 			if len(lines) == 0 {
-				return errors.New("list index out of range")
+				return errors.New("provider resolution failed without a reason")
 			}
 			reason, moved := lines[0], provider.ProviderInstallHint(ctx, requested)
 			if moved == "" {
@@ -624,8 +622,8 @@ func doctorCheckConfigBackend(ctx context.Context, d *Doctor, backend config.Con
 		if !errors.As(err, &exit) {
 			return false, err
 		}
-		doctorCheckFail(d.W, "Config backend "+pyrepr.Repr(backend.Name())+" unavailable", exit.SystemExitCode())
-		f.Issues = append(f.Issues, "Config backend "+pyrepr.Repr(backend.Name())+" cannot serve config for "+d.Home)
+		doctorCheckFail(d.W, "Config backend "+errchain.Show(backend.Name())+" unavailable", exit.SystemExitCode())
+		f.Issues = append(f.Issues, "Config backend "+errchain.Show(backend.Name())+" cannot serve config for "+d.Home)
 		return false, nil
 	}
 	doctorCheckOK(d.W, "Config backend: "+backend.Describe(ctx, d.Home), "")

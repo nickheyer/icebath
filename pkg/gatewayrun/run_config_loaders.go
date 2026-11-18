@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -325,7 +326,7 @@ func busyTextTimingFromConfig(cfg map[string]any) [2]float64 {
 		}
 		value, err := pyint.Float(raw)
 		if err != nil || value < 0 || math.IsNaN(value) {
-			pkgLog().Warn(fmt.Sprintf("display.%s=%s is not a non-negative number; using %s", spec.key, pyrepr.Repr(raw), pyrepr.Str(spec.def)))
+			pkgLog().Warn(fmt.Sprintf("display.%s=%s is not a non-negative number; using %s", spec.key, errchain.Show(raw), pyrepr.Str(spec.def)))
 			value = spec.def
 		}
 		out[i] = value
@@ -349,7 +350,7 @@ func humanDelayFromConfig(cfg map[string]any) *[2]int {
 	bounds := defaultHumanDelayRangeMS
 	if mode != "natural" {
 		if mode != "custom" {
-			pkgLog().Warn(fmt.Sprintf("human_delay.mode=%s is not off/natural/custom; using natural", pyrepr.Repr(mode)))
+			pkgLog().Warn(fmt.Sprintf("human_delay.mode=%s is not off/natural/custom; using natural", errchain.Show(mode)))
 			natural := defaultHumanDelayRangeMS
 			return &natural
 		}
@@ -360,7 +361,7 @@ func humanDelayFromConfig(cfg map[string]any) *[2]int {
 			if raw != nil && raw != "" {
 				parsed, err := pyint.Int64(raw)
 				if err != nil || parsed < 0 {
-					pkgLog().Warn(fmt.Sprintf("human_delay.%s=%s is not a non-negative integer; using %d", key, pyrepr.Repr(raw), def))
+					pkgLog().Warn(fmt.Sprintf("human_delay.%s=%s is not a non-negative integer; using %d", key, errchain.Show(raw), def))
 				} else {
 					value = int(parsed)
 				}

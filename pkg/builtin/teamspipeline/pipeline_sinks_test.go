@@ -105,7 +105,7 @@ func TestNotionWriterFailures(t *testing.T) {
 	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj(), nil); !errors.As(err, &sinkErr) || err.Error() != "Notion sink requires database_id or an existing page_id." {
 		t.Fatalf("no target %v", err)
 	}
-	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj("databaseId", "db"), nil); pyrepr.ExceptionName(err) != "KeyError" || pyrepr.ExceptionMessage(err) != "'id'" {
+	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj("databaseId", "db"), nil); pyrepr.ExceptionName(err) != "KeyError" || pyrepr.ExceptionMessage(err) != "missing id" {
 		t.Fatalf("missing id %v", err)
 	}
 	refused, _ := NewNotionWriter(context.Background(), "k", &sinkTransport{status: 400, body: `{"message": "bad"}`})
@@ -191,10 +191,10 @@ func TestSummaryParsingAndHeuristicFallback(t *testing.T) {
 		empty.ConfidenceNotes != "Generated with heuristic fallback because no LLM summary response was available." {
 		t.Fatalf("empty %+v err %v", empty, err)
 	}
-	if _, err := parseSummaryJSON("[1]"); pyrepr.ExceptionName(err) != "AttributeError" || pyrepr.ExceptionMessage(err) != "'list' object has no attribute 'get'" {
+	if _, err := parseSummaryJSON("[1]"); pyrepr.ExceptionName(err) != "AttributeError" || pyrepr.ExceptionMessage(err) != "expected a mapping, got a list" {
 		t.Fatalf("list %v", err)
 	}
-	if _, err := parseSummaryJSON(`{"summary": "x", "risks": null}`); pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "'NoneType' object is not iterable" {
+	if _, err := parseSummaryJSON(`{"summary": "x", "risks": null}`); pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "expected a list, got nothing" {
 		t.Fatalf("null risks %v", err)
 	}
 	if _, err := parseSummaryJSON("no json here"); err == nil {
@@ -239,7 +239,7 @@ func TestTeamsPipelineConfigFromDictReadsSnakeAndCamelKeys(t *testing.T) {
 	if _, err := TeamsPipelineConfigFromDict(obj("tmp_dir", int64(5))); pyrepr.ExceptionName(err) != "TypeError" {
 		t.Fatalf("tmp_dir %v", err)
 	}
-	if _, err := TeamsPipelineConfigFromDict("on"); pyrepr.ExceptionName(err) != "ValueError" || pyrepr.ExceptionMessage(err) != "dictionary update sequence element #0 has length 1; 2 is required" {
+	if _, err := TeamsPipelineConfigFromDict("on"); pyrepr.ExceptionName(err) != "ValueError" || pyrepr.ExceptionMessage(err) != "expected a mapping, got text" {
 		t.Fatalf("string config %v", err)
 	}
 	kept := NewTeamsPipelineConfig()

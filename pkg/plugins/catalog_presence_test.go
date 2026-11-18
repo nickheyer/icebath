@@ -252,7 +252,7 @@ func TestServerPresenceFollowsTheDeclaredLiveness(t *testing.T) {
 		}
 	}
 	fields := presenceEntry(t, "fields", true, nil, "Fx", "")
-	if _, err := CatalogPresence(context.Background(), fields); err == nil || err.Error() != "'list' object is not a mapping" {
+	if _, err := CatalogPresence(context.Background(), fields); err == nil || err.Error() != "catalog presence fields are a list where a mapping was expected" {
 		t.Fatalf("fields error %v", err)
 	}
 	InstallServices(&Services{})

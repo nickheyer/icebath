@@ -109,10 +109,10 @@ func pyIntCell(v any) (int64, error) {
 	}
 	n, err := pyint.Of(v)
 	if err != nil {
-		return 0, err
+		return 0, errchain.Reword(err, "%s is not a whole number", errchain.Show(v))
 	}
 	if !n.IsInt64() {
-		return 0, fmt.Errorf("Python int too large to convert to C long")
+		return 0, fmt.Errorf("%s is too large for a 64-bit integer", n)
 	}
 	return n.Int64(), nil
 }

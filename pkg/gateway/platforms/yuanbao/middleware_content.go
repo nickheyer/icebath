@@ -387,7 +387,7 @@ func detectOwnerCommand(push *pyjson.Object, msgBody []any, chatType string, fro
 	if err != nil {
 		return "", "", false, err
 	}
-	text, err := strMethod(dictGetOr(content, "text", ""), "strip")
+	text, err := strMethod(dictGetOr(content, "text", ""), "the message text")
 	if err != nil {
 		return "", "", false, err
 	}
@@ -523,7 +523,7 @@ func observeGroupMessage(ctx context.Context, adapter *YuanbaoAdapter, source *g
 	}
 	err := func() error {
 		if source == nil {
-			return attrError(nil, "user_id")
+			return &pyErr{"AttributeError", "the inbound message has no source"}
 		}
 		sessionEntry, err := store.GetOrCreateSession(ctx, source, false, true)
 		if err != nil {

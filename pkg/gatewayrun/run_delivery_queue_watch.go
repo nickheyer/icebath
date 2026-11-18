@@ -5,7 +5,6 @@ import (
 	"os"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
@@ -51,7 +50,10 @@ func (w *DeliveryQueueWatch) stamp(ctx context.Context) []queueStamp {
 		if served != nil {
 			root = *served
 		}
-		path := cron.QueuePath(root)
+		if cronQueuePath == nil {
+			break
+		}
+		path := cronQueuePath(root)
 		for _, candidate := range []string{path, path + "-wal"} {
 			info, err := os.Stat(candidate)
 			if err != nil {

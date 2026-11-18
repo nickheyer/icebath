@@ -235,7 +235,7 @@ func TestGraphClientCollectsPagesAndDeletes(t *testing.T) {
 		t.Fatalf("urls %v", urls)
 	}
 	if _, err := client.CollectPaginated(context.Background(), "/bad", nil, nil); err == nil ||
-		err.Error() != "Expected paginated Graph response dict, got list." {
+		err.Error() != "Expected a paginated Graph response object, got a list." {
 		t.Fatalf("err = %v", err)
 	}
 	gone, err := client.Delete(context.Background(), "/gone", nil)

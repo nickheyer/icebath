@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Named values a setup section loads beside its keys, each given the subject its name carries
@@ -75,7 +75,7 @@ func setDottedKey(cfg map[string]any, key string, value any) error {
 			current = next
 		default:
 			if present {
-				return fmt.Errorf("TypeError: %s holds a %s, not a mapping", part, pyrepr.TypeName(raw))
+				return fmt.Errorf("%s holds %s, not a mapping", part, errchain.Kind(raw))
 			}
 			level := map[string]any{}
 			current[part] = level

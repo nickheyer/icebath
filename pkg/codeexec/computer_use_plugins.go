@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -147,7 +147,7 @@ func loadComputerUseProviderFromDir(env *tools.Env, d cuProviderDir) (ComputerUs
 	}
 	ctx := cuProviderContext(env)
 	module := cuUserNamespace + "." + d.name
-	what := fmt.Sprintf("plugin %s (loaded as %s)", pyrepr.Repr(d.name), module)
+	what := fmt.Sprintf("plugin %s (loaded as %s)", errchain.Show(d.name), module)
 	if refusal := plugins.InProcessImportRefusal(ctx, what, "user", nil); refusal != "" {
 		pkgLog(nil).Warn(refusal)
 		return nil, nil
@@ -195,7 +195,7 @@ func getActiveProvider(env *tools.Env) (ComputerUseProvider, error) {
 		state = "could not be loaded (see the log)"
 	}
 	return nil, &lookupError{msg: fmt.Sprintf("computer_use.backend is %s, but that computer-use provider %s (available: %s). "+
-		"Install it under ~/.icebath/plugins/<name>/ or pick a backend with `icebath tools`.", pyrepr.Repr(name), state, strings.Join(names, ", "))}
+		"Install it under ~/.icebath/plugins/<name>/ or pick a backend with `icebath tools`.", errchain.Show(name), state, strings.Join(names, ", "))}
 }
 
 // Built in cua provider driving cua-driver over MCP

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
@@ -423,7 +423,7 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 		dset(entry, "api_mode", apiMode)
 		list, ok := customProviders.([]any)
 		if !ok {
-			raisef("AttributeError", "'%s' object has no attribute 'append'", pyrepr.TypeName(customProviders))
+			raisef("AttributeError", "custom_providers must be a list, got %s", errchain.Kind(customProviders))
 		}
 		customProviders = append(list, entry)
 		added++

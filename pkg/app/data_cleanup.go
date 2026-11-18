@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -209,7 +210,7 @@ func dataErrText(err error) string {
 		return planErr.msg
 	}
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return pyrepr.ExceptionMessage(err)
 }

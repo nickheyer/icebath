@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -179,7 +180,7 @@ func WorkerClaimIsLive(ctx context.Context, proof ClaimProof) (bool, error) {
 	if !exists {
 		shown := "None"
 		if dbPath != "" {
-			shown = pyrepr.Repr(dbPath)
+			shown = errchain.Show(dbPath)
 		}
 		pkgLog().Warn(fmt.Sprintf("kanban claim check: pinned board db %s not found — not retrying in place", shown))
 		return false, nil

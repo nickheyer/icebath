@@ -18,7 +18,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -74,7 +73,7 @@ type uvTimeoutError struct {
 }
 
 func (e *uvTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyrepr.Repr(e.Argv), pySeconds(e.Timeout))
+	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Argv, " "), pySeconds(e.Timeout))
 }
 
 // Seconds of a duration the way Python prints an int or float timeout
@@ -160,7 +159,7 @@ func projectName(source string) (string, error) {
 	}
 	s, ok := name.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s", tomlTypeName(name))}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("project.name must be text, got %s", tomlKind(name))}
 	}
 	return s, nil
 }

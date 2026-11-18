@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -39,7 +40,7 @@ func urlSchemeProblem(u string) string {
 	}
 	return fmt.Sprintf("Home Assistant URL %s has no http:// or https:// scheme. Set HASS_URL (or "+
 		"platforms.homeassistant.extra.url) to the full URL, e.g. https://ha.example.com or "+
-		"http://homeassistant.local:8123", pyrepr.StrRepr(u))
+		"http://homeassistant.local:8123", u)
 }
 
 // get_secret of a name with the default for an unset value, the scope error while multiplexing without one
@@ -130,7 +131,7 @@ func entityMatches(entityID any, patterns []string) (bool, error) {
 			return true, nil
 		}
 		if !isStr {
-			return false, &pyErr{"TypeError", fmt.Sprintf("expected str, bytes or os.PathLike object, not %s", pyrepr.TypeName(entityID))}
+			return false, &pyErr{"TypeError", fmt.Sprintf("an entity id must be text, got %s", errchain.Kind(entityID))}
 		}
 		if fnmatch.Fnmatch(id, pat) {
 			return true, nil
@@ -327,7 +328,7 @@ func serviceCallViolation(ctx context.Context, domain, service string, payload a
 			for _, p := range deny {
 				if hit, _ := entityMatches(eid, []string{p}); hit {
 					return fmt.Sprintf("%s is excluded by HASS_ENTITY_DENYLIST (pattern %s); %s.%s refused. %s",
-						eid, pyrepr.StrRepr(p), domain, service, hint), nil
+						eid, p, domain, service, hint), nil
 				}
 			}
 		}
@@ -378,7 +379,7 @@ var blockedDomains = []string{"command_line", "hassio", "pyscript", "python_scri
 func reMatch(re interface{ MatchString(string) (bool, error) }, v any) bool {
 	s, ok := v.(string)
 	if !ok {
-		panic(&pyErr{"TypeError", fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(v))})
+		panic(&pyErr{"TypeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))})
 	}
 	matched, err := re.MatchString(s)
 	if err != nil {
@@ -440,7 +441,7 @@ func apiJSON(ctx context.Context, method, path string, timeout time.Duration, pa
 func pyLower(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", attrErr(v, "lower")
+		return "", &pyErr{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 	}
 	return pystr.Lower(s), nil
 }
@@ -562,7 +563,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 			if err != nil {
 				return false, err
 			}
-			if _, err := hashKeyAs(eid, "set element"); err != nil {
+			if _, err := hashKeyAs(eid, "set member"); err != nil {
 				return false, err
 			}
 			id, ok := eid.(string)
@@ -580,7 +581,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 				}
 				id, ok := eid.(string)
 				if !ok {
-					return false, attrErr(eid, "startswith")
+					return false, attrErr(eid, "an entity id", "text")
 				}
 				return strings.HasPrefix(id, prefix), nil
 			}); err != nil {
@@ -636,7 +637,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 	if !listed {
 		items, err := pyIter(filtered)
 		if err != nil {
-			return nil, &pyErr{"TypeError", fmt.Sprintf("object of type '%s' has no len()", pyrepr.TypeName(filtered))}
+			return nil, &pyErr{"TypeError", fmt.Sprintf("the entity filter must give a list, got %s", errchain.Kind(filtered))}
 		}
 		list = items
 	}
@@ -1139,7 +1140,7 @@ func callService(ctx context.Context, domain, service string, entityID, data any
 	}
 	stateIDText, ok := stateID.(string)
 	if !ok {
-		return nil, attrErr(stateID, "split")
+		return nil, attrErr(stateID, "the state id", "text")
 	}
 	actualDomain, _, _ := strings.Cut(stateIDText, ".")
 	if actualDomain != domain && domain != "homeassistant" {
@@ -1183,7 +1184,7 @@ func listServices(ctx context.Context, domain any) (any, error) {
 			return nil, err
 		}
 		if !isDict(svcs) {
-			return nil, attrErr(svcs, "items")
+			return nil, attrErr(svcs, "the services of a domain", "a mapping")
 		}
 		domainServices := pyjson.NewObject()
 		for _, svcName := range dictKeys(svcs) {
@@ -1196,7 +1197,7 @@ func listServices(ctx context.Context, domain any) (any, error) {
 			fields, _ := pyGet(svcInfo, "fields", pyjson.NewObject())
 			if pyrepr.Truthy(fields) {
 				if !isDict(fields) {
-					return nil, attrErr(fields, "items")
+					return nil, attrErr(fields, "the fields of a service", "a mapping")
 				}
 				described := pyjson.NewObject()
 				for _, k := range dictKeys(fields) {
@@ -1233,7 +1234,7 @@ func handleListEntities(ctx context.Context, call *tools.Call) string {
 	if s, ok := maxEntities.(string); ok {
 		n, parsed := parseIntStr(s)
 		if !parsed {
-			return toolError(fmt.Sprintf("Invalid 'max' value: %s (expected a positive integer)", pyrepr.StrRepr(s)))
+			return toolError(fmt.Sprintf("Invalid max value: %s (expected a positive integer)", s))
 		}
 		maxEntities = n
 	}
@@ -1281,10 +1282,10 @@ func handleCallService(ctx context.Context, call *tools.Call) string {
 		return toolError("Missing required parameters: domain and service")
 	}
 	if !reMatch(serviceNameRE, domainArg) {
-		return toolError("Invalid domain format: " + pyrepr.Repr(domainArg))
+		return toolError("Invalid domain format: " + errchain.Show(domainArg))
 	}
 	if !reMatch(serviceNameRE, serviceArg) {
-		return toolError("Invalid service format: " + pyrepr.Repr(serviceArg))
+		return toolError("Invalid service format: " + errchain.Show(serviceArg))
 	}
 	domain, service := domainArg.(string), serviceArg.(string)
 	if containsString(blockedDomains, domain) {
@@ -1313,7 +1314,7 @@ func handleCallService(ctx context.Context, call *tools.Call) string {
 	}
 	if len(allow) > 0 || len(deny) > 0 {
 		if data != nil && !isDict(data) {
-			return toolError("Invalid 'data' parameter: expected a JSON object, got " + pyrepr.TypeName(data))
+			return toolError("Invalid data parameter: expected a JSON object, got " + errchain.Kind(data))
 		}
 		payload, err := buildServicePayload(entityID, data)
 		if err != nil {

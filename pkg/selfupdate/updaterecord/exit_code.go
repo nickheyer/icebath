@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -35,7 +34,7 @@ func ReadGatewayExitCode(h string) (*big.Int, error) {
 	}
 	n, ok := pyint.Parse(text)
 	if !ok {
-		return nil, &pyint.Error{Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(text)}
+		return nil, &pyint.Error{Msg: "recorded gateway exit code " + text + " is not a whole number"}
 	}
 	return n, nil
 }

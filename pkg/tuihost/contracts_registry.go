@@ -143,7 +143,7 @@ func ValidateParams(contract paramsContract, params any) (any, string) {
 				if loc == "" {
 					loc = "params"
 				}
-				return nil, fmt.Sprintf("invalid params for %s: %s: %s — the client and the Icebath backend are out of sync (different versions); run `icebath update` and restart both",
+				return nil, fmt.Sprintf("invalid params for %s: %s: %s — the client and the shared gateway run different Icebath builds; run `icebath gateway restart` to move the gateway to the client's build",
 					contract.contractName(), loc, issue.Msg)
 			}
 		}

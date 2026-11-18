@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -116,7 +117,7 @@ func sessionsExcText(err error) string {
 		return state.ErrText(err)
 	}
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return pyrepr.ExceptionMessage(err)
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -116,11 +117,7 @@ type sttProcessError struct {
 }
 
 func (e *sttProcessError) Error() string {
-	cmd := make([]any, len(e.Cmd))
-	for i, c := range e.Cmd {
-		cmd[i] = c
-	}
-	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(cmd), e.ReturnCode)
+	return fmt.Sprintf("%s exited with status %d", strings.Join(e.Cmd, " "), e.ReturnCode)
 }
 
 // Helper binary outlived its timeout
@@ -130,11 +127,7 @@ type sttTimeoutError struct {
 }
 
 func (e *sttTimeoutError) Error() string {
-	cmd := make([]any, len(e.Cmd))
-	for i, c := range e.Cmd {
-		cmd[i] = c
-	}
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyrepr.Repr(cmd), pyrepr.Str(e.Timeout))
+	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Cmd, " "), errchain.Show(e.Timeout))
 }
 
 // Stderr then stdout then the exception text of a failed helper binary

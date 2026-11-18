@@ -184,7 +184,7 @@ func TestPipConfigInvalidUTF8RaisesLikePython(t *testing.T) {
 	conf := filepath.Join(t.TempDir(), "pip.conf")
 	writeFile(t, conf, []byte("[global]\nindex-url = x\xff\n"), 0o644)
 	_, err := PipConfIndexURL(map[string]string{"PIP_CONFIG_FILE": conf}, "")
-	want := "'utf-8' codec can't decode byte 0xff in position 22: invalid start byte"
+	want := "not valid UTF-8: byte 0xff at position 22 cannot start a character"
 	if err == nil || err.Error() != want {
 		t.Fatalf("got %v, want %s", err, want)
 	}

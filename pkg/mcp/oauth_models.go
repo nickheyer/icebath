@@ -195,28 +195,6 @@ func jsonTruthy(v any) bool {
 	return pyTruthy(v)
 }
 
-// Python type name of a decoded JSON document
-func pyJSONTypeName(v any) string {
-	switch x := v.(type) {
-	case *jsonObject, map[string]any:
-		return "dict"
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case bool:
-		return "bool"
-	case json.Number:
-		if strings.ContainsAny(string(x), ".eE") {
-			return "float"
-		}
-		return "int"
-	case nil:
-		return "NoneType"
-	}
-	return fmt.Sprintf("%T", v)
-}
-
 // FieldError is one failing field of a model validation
 type FieldError struct {
 	Loc, Msg, Type string

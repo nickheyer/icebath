@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -45,30 +45,6 @@ func persistedSessionID(k *kanbanCall, sessionID any) (*string, error) {
 	return id, nil
 }
 
-// Python repr of a raised failure for a log line, the class name around its quoted text
-func excRepr(err error) string {
-	name := "Exception"
-	var ve *ValueError
-	var re *RuntimeError
-	var pe *PermissionError
-	var ie *pyint.Error
-	switch {
-	case errors.As(err, &pe):
-		name = "PermissionError"
-	case errors.As(err, &ve):
-		name = "ValueError"
-	case errors.As(err, &ie):
-		name = ie.Kind
-	case errors.As(err, &re):
-		name = "RuntimeError"
-	default:
-		if class, ok := state.SQLiteClassOf(err); ok {
-			name = fmt.Sprint(class)
-		}
-	}
-	return name + "(" + pyrepr.StrRepr(excText(err)) + ")"
-}
-
 // Optional text of a create argument Python strips and treats as absent when empty, an attribute error for other types
 func strippedArg(value any) (*string, error) {
 	if !pyrepr.Truthy(value) {
@@ -76,7 +52,7 @@ func strippedArg(value any) (*string, error) {
 	}
 	text, isText := value.(string)
 	if !isText {
-		return nil, &RuntimeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(value))}
+		return nil, &RuntimeError{fmt.Sprintf("expected text, got %s", errchain.Kind(value))}
 	}
 	return nonEmpty(pystr.Strip(text)), nil
 }
@@ -364,12 +340,12 @@ func createArgumentError(err error, workspaceKind any, parentItems []any) error 
 		return err
 	}
 	if _, isText := workspaceKind.(string); workspaceKind != nil && !isText {
-		passed := ", got " + pyrepr.StrRepr(pyrepr.Str(workspaceKind))
+		passed := ", got " + pyrepr.Str(workspaceKind)
 		if strings.HasPrefix(ve.Msg, "workspace_kind must be one of ") && strings.HasSuffix(ve.Msg, passed) {
 			if !pyHashable(workspaceKind) {
 				return unhashableSetError(workspaceKind)
 			}
-			return &ValueError{strings.TrimSuffix(ve.Msg, passed) + ", got " + pyrepr.Repr(workspaceKind)}
+			return &ValueError{strings.TrimSuffix(ve.Msg, passed) + ", got " + errchain.Show(workspaceKind)}
 		}
 	}
 	const unknownParents = "unknown parent task(s): "
@@ -384,7 +360,7 @@ func createArgumentError(err error, workspaceKind any, parentItems []any) error 
 				continue
 			}
 			if _, isText := item.(string); !isText {
-				return &RuntimeError{fmt.Sprintf("sequence item %d: expected str instance, %s found", position, pyrepr.TypeName(item))}
+				return &RuntimeError{fmt.Sprintf("task id at position %d is %s where text was expected", position, errchain.Kind(item))}
 			}
 			position++
 		}
@@ -508,7 +484,7 @@ func maybeAutoSubscribe(k *kanbanCall, conn state.SQLiteConn, taskID string) (su
 			platform, keySet = target.Platform, target.ChatID != ""
 		}
 		pkgLog().Warn(fmt.Sprintf("_maybe_auto_subscribe failed: %s (platform=%s key_set=%s)",
-			excRepr(cause), pyrepr.StrRepr(platform), pyrepr.Repr(keySet)))
+			excText(cause), errchain.Show(platform), errchain.Show(keySet)))
 		return false
 	}
 	defer func() {
@@ -636,7 +612,7 @@ func handleLink(k *kanbanCall) (string, error) {
 			for i, id := range missing {
 				name, isText := id.(string)
 				if !isText {
-					return "", &RuntimeError{fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(id))}
+					return "", &RuntimeError{fmt.Sprintf("task id at position %d is %s where text was expected", i, errchain.Kind(id))}
 				}
 				names = append(names, name)
 			}

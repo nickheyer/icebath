@@ -368,6 +368,76 @@ func UnavailableInSessionReason(name string) string {
 		"Don't retry it — state the assumption and proceed with the work."
 }
 
+// DeferredDirectCallReason answers a direct call of a deferred tool, whose schema the request does not carry
+func DeferredDirectCallReason(name string) string {
+	return fmt.Sprintf("'%s' is a deferred tool: its schema is not loaded, so it cannot be called directly. The tool was NOT invoked. ", name) +
+		fmt.Sprintf(`Load its schema with %s {"names": ["%s"]}, then invoke it with %s {"calls": [{"name": "%s", "arguments": {...}}]}.`,
+			ToolDescribeName, name, ToolCallName, name)
+}
+
+// DisabledToolReason answers a call of a tool whose toolset is switched off in this session
+func DisabledToolReason(name, toolset string) string {
+	return fmt.Sprintf("'%s' is disabled in this session: its toolset '%s' is switched off. The tool was NOT invoked. ", name, toolset) +
+		"Don't retry it — continue without it, or tell the user the task needs that toolset enabled."
+}
+
+// Toolset switching a registered non MCP tool off under the session selection, empty when the selection keeps it
+func switchedOffToolset(ctx context.Context, env *Env, def *Def, enabled, disabled []string) string {
+	if strings.HasPrefix(def.Toolset, "mcp-") {
+		return ""
+	}
+	s := newSearchScope(ctx, env)
+	if selected, _ := s.reg.SelectToolNames(s.ctx, env, enabled, disabled, definitionSelectionContext(s.ctx, env)); selected[def.Name] {
+		return ""
+	}
+	for _, raw := range disabled {
+		probe := map[string]bool{def.Name: true}
+		s.reg.applyToolsetSelection(s.ctx, env, probe, []string{raw}, true)
+		if !probe[def.Name] {
+			return raw
+		}
+	}
+	return def.Toolset
+}
+
+// UnofferedToolReason explains a call naming a registered tool the request did not offer, empty for an unregistered name
+func UnofferedToolReason(ctx context.Context, env *Env, name string, deferred map[string]bool, enabled, disabled []string) string {
+	if deferred[name] {
+		return DeferredDirectCallReason(name)
+	}
+	def := newSearchScope(ctx, env).entry(name)
+	if def == nil {
+		return ""
+	}
+	if toolset := switchedOffToolset(ctx, env, def, enabled, disabled); toolset != "" {
+		return DisabledToolReason(name, toolset)
+	}
+	if reason := OutOfScopeReason(ctx, env, name); reason != "" {
+		return reason
+	}
+	return UnavailableInSessionReason(name)
+}
+
+// SessionScopeBlockReason blocks a tool_call naming a tool outside the session scope, naming a switched off toolset
+func SessionScopeBlockReason(ctx context.Context, env *Env, name string, enabled, disabled []string) string {
+	if def := newSearchScope(ctx, env).entry(name); def != nil {
+		if toolset := switchedOffToolset(ctx, env, def, enabled, disabled); toolset != "" {
+			return DisabledToolReason(name, toolset)
+		}
+	}
+	return ScopeBlockReason(ctx, env, name)
+}
+
+// RegisteredToolNames lists every tool the registry holds for the session's profile scope
+func RegisteredToolNames(ctx context.Context, env *Env) map[string]bool {
+	s := newSearchScope(ctx, env)
+	out := map[string]bool{}
+	for _, d := range s.reg.Snapshot(s.ctx, s.scopeKey()) {
+		out[d.Name] = true
+	}
+	return out
+}
+
 // SessionUnavailableError reports a core tool missing from the session's own tool list
 func SessionUnavailableError(ctx context.Context, env *Env, name string, sessionToolNames map[string]bool) string {
 	if sessionToolNames == nil || sessionToolNames[name] {

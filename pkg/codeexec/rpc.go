@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
@@ -70,7 +71,7 @@ func executeChecked(ctx context.Context, envr tools.Environment, cmd, what strin
 		return nil, err
 	}
 	if result.ReturnCode != 0 {
-		return nil, fmt.Errorf("%s failed: %s", what, pyrepr.StrRepr(result.Output))
+		return nil, fmt.Errorf("%s failed: %s", what, errchain.Show(result.Output))
 	}
 	return result, nil
 }
@@ -85,7 +86,7 @@ func remoteWrite(ctx context.Context, envr tools.Environment, remotePath, conten
 	}
 	cmd := "umask 077 && " + write
 	if check {
-		return executeChecked(ctx, envr, cmd, "remote file ship for "+pyrepr.StrRepr(remotePath), timeout, &encoded)
+		return executeChecked(ctx, envr, cmd, "remote file ship for "+errchain.Show(remotePath), timeout, &encoded)
 	}
 	return envr.Execute(ctx, cmd, tools.ExecOptions{Cwd: "/", Timeout: timeout, Stdin: &encoded})
 }
@@ -318,11 +319,12 @@ func rpcServerLoop(ctx context.Context, env *tools.Env, ln net.Listener, taskID 
 				var resp string
 				decoded, derr := decodeRPCLine(line)
 				if derr != nil {
-					resp = toolError("Invalid RPC request: " + derr.Error())
+					pkgLog(env).Debug("sandbox RPC request unreadable: " + errchain.Text(derr))
+					resp = toolError("Invalid RPC request: the request is not valid JSON text")
 				} else {
 					request, ok := decoded.(*pyjson.Object)
 					if !ok {
-						log("RPC request is not a JSON object", "type", pyrepr.TypeName(decoded))
+						log("RPC request is not a JSON object", "kind", errchain.Kind(decoded))
 						return
 					}
 					if rpcTokenOK(request, token) {
@@ -414,7 +416,7 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 			}
 			request, ok := decoded.(*pyjson.Object)
 			if !ok {
-				return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+				return fmt.Errorf("sandbox tool request is %s where a mapping was expected", errchain.Kind(decoded))
 			}
 			if !rpcTokenOK(request, token) {
 				log("Unauthorized RPC request", "file", reqFile)

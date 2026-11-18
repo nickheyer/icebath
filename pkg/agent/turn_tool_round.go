@@ -38,6 +38,10 @@ func (h *toolRoundValidationHost) RepairToolName(name string) string {
 	return repaired
 }
 
+func (h *toolRoundValidationHost) InvalidToolContent(name string) (string, bool) {
+	return h.a.invalidToolContent(name)
+}
+
 func (h *toolRoundValidationHost) Messages() []*state.Message { return h.s.Messages }
 
 func (h *toolRoundValidationHost) AppendAssistantMessage() {
@@ -164,7 +168,7 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 		for _, tc := range invalidBatchCalls {
 			appendLiveMessage(&s.Messages, map[string]any{
 				"role": "tool", "name": tc.Function.Name, "tool_call_id": state.CoalesceToolCallID(tc),
-				"content": tools.InvalidToolNameErrorContent(tc.Function.Name, a.validToolNames),
+				"content": invalidBatchContent(a, tc.Function.Name),
 			})
 		}
 		kept := make([]state.ToolCall, 0, len(msg.ToolCalls))
@@ -233,6 +237,12 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 	a.setSessionMessages(s.Messages)
 	a.TouchActivity(fmt.Sprintf("tool results posted, continuing iteration #%d", s.APICallCount))
 	return PhaseVerdict{Action: "continue"}, nil
+}
+
+// Tool result for an unresolved call of a mixed batch
+func invalidBatchContent(a *AIAgent, name string) string {
+	content, _ := a.invalidToolContent(name)
+	return content
 }
 
 // Splits local tool batches, rewriting the ordered Anthropic and Bedrock content block carriers the provider data holds

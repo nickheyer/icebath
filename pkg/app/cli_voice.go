@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -560,7 +561,7 @@ func (c *CLI) voiceSubmitBargeUtterance(wavPath string) {
 			return
 		}
 		if c.voiceBargePhase == "playback" && media.IsTTSEcho(transcript, c.voiceLastTTSText) {
-			pkgLog().Debug(fmt.Sprintf("Dropping playback-phase barge transcript as TTS echo: %s", pyrepr.Repr(transcript)))
+			pkgLog().Debug(fmt.Sprintf("Dropping playback-phase barge transcript as TTS echo: %s", errchain.Show(transcript)))
 			cprint("\n" + voiceDim(c.t("cli.voice.echo_ignored", nil)))
 			return
 		}

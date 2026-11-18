@@ -2,11 +2,13 @@ package codeexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -146,16 +148,16 @@ func concatStr(left any, right string) (string, error) {
 	case string:
 		return l + right, nil
 	case []any:
-		return "", fmt.Errorf(`can only concatenate list (not "str") to list`)
+		return "", errors.New("remote kernel output is a list where text was expected")
 	}
-	return "", fmt.Errorf("unsupported operand type(s) for +: '%s' and 'str'", pyrepr.TypeName(left))
+	return "", fmt.Errorf("remote kernel output is %s where text was expected", errchain.Kind(left))
 }
 
 // Python left + right where left is a str, the TypeError text when right is not one
 func concatOnto(left string, right any) (string, error) {
 	r, ok := right.(string)
 	if !ok {
-		return "", fmt.Errorf(`can only concatenate str (not "%s") to str`, pyrepr.TypeName(right))
+		return "", fmt.Errorf("remote kernel output is %s where text was expected", errchain.Kind(right))
 	}
 	return left + r, nil
 }
@@ -180,7 +182,7 @@ func finishRemoteKernelResult(env *tools.Env, kernelResult *pyjson.Object, timeo
 	}
 	text, ok := stdoutText.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'encode'", pyrepr.TypeName(stdoutText))
+		return "", fmt.Errorf("remote kernel stdout is %s where text was expected", errchain.Kind(stdoutText))
 	}
 	fields := pyjson.NewObject()
 	fields.Set("tool_calls_made", objGet(kernelResult, "tool_calls_made", 0))

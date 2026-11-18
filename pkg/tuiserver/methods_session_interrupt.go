@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -137,7 +138,7 @@ func applyCorrection(rid any, session *tuihost.Session, verb, text, acceptedStat
 		case interface{ Redirect(string) bool }:
 			accepted = a.Redirect(text)
 		default:
-			panic(fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(a), verb))
+			panic(fmt.Sprintf("the session agent cannot %s", verb))
 		}
 	}); failure != nil {
 		return rpcErr(rid, 5000, verb+" failed: "+errorMessage(failure), nil)
@@ -163,7 +164,7 @@ func correctionMethod(name, verb, acceptedStatus string, supported func(any) boo
 		if raw := params["text"]; truthy(raw) {
 			s, isText := raw.(string)
 			if !isText {
-				panic(&pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(raw))})
+				panic(&pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("the %s text must be text, got %s", verb, errchain.Kind(raw))})
 			}
 			text = pystr.Strip(s)
 		}

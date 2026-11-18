@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -1371,7 +1372,7 @@ func recoveryReconstructMissingSessions(destination state.SQLiteConn) (*pyjson.O
 			return nil, err
 		}
 		if n != 1 {
-			return nil, &state.SQLiteError{Class: state.SQLiteIntegrityError, Msg: "failed to reconstruct missing session " + pyrepr.Repr(row[0])}
+			return nil, &state.SQLiteError{Class: state.SQLiteIntegrityError, Msg: "failed to reconstruct missing session " + errchain.Show(row[0])}
 		}
 		recoveryBump(result, "sessions_reconstructed", 1)
 		recoveryBump(result, "messages_retained", count)

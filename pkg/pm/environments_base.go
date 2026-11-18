@@ -13,6 +13,7 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -89,11 +90,11 @@ func realpathOrSelf(path string) string {
 func rowItem(row any, key string) (any, error) {
 	m, ok := row.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(row))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a journal row must be a mapping holding %s, got %s", key, errchain.Kind(row))}
 	}
 	v, present := m[key]
 	if !present {
-		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: "the journal row has no " + key}
 	}
 	return v, nil
 }
@@ -106,7 +107,7 @@ func rowPath(row any, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object, not '%s'", pyrepr.TypeName(v))}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the journal row %s must be text, got %s", key, errchain.Kind(v))}
 	}
 	return s, nil
 }
@@ -118,7 +119,7 @@ func rowBase64(v any) ([]byte, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", pyrepr.TypeName(v))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected base64 text, got %s", errchain.Kind(v))}
 	}
 	out, err := base64.StdEncoding.Strict().DecodeString(s)
 	if err != nil {
@@ -266,7 +267,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 			return err
 		}
 		if rawAfter == nil {
-			return &PyError{Class: "TypeError", Message: "argument should be a bytes-like object or ASCII string, not 'NoneType'"}
+			return &PyError{Class: "TypeError", Message: "the journal row holds no metadata_after"}
 		}
 		updated, err := rowBase64(rawAfter)
 		if err != nil {
@@ -312,7 +313,7 @@ func pyExceptionText(err error) string {
 	var pathErr *fs.PathError
 	var linkErr *os.LinkError
 	if errors.As(err, &pathErr) || errors.As(err, &linkErr) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }
@@ -434,7 +435,7 @@ func ProjectPython(ctx context.Context, projectRoot string) (string, error) {
 func pyIntText(s string) (string, error) {
 	for _, r := range s {
 		if !isDecimalRune(r) {
-			return "", &PyError{Class: "ValueError", Message: "invalid literal for int() with base 10: " + pyrepr.StrRepr(s)}
+			return "", &PyError{Class: "ValueError", Message: s + " is not a whole number"}
 		}
 	}
 	return digitsValue(s).String(), nil
@@ -496,13 +497,21 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 // Reports a Unicode decimal digit, the only digit form Python int accepts
 func isDecimalRune(r rune) bool { return unicode.Is(unicode.Nd, r) }
 
+// Refusal of a lock without a usable python pin, naming the partial pin it holds
+func noPythonPin(version string) error {
+	if version == "" {
+		return &PyError{Class: "RuntimeError", Message: "the lock pins no python version"}
+	}
+	return &PyError{Class: "RuntimeError", Message: "the lock pins no usable python version, only " + version}
+}
+
 // Major and minor version of the pinned Python PM builds environments with, this process's interpreter
 func pinnedPythonVersion() (string, string, error) {
 	version, ok := currentLockfile().Version("python")
 	major, rest, _ := strings.Cut(version, ".")
 	minor, _, _ := strings.Cut(rest, ".")
 	if !ok || major == "" || minor == "" {
-		return "", "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("the lock pins no python version: %s", pyrepr.StrRepr(version))}
+		return "", "", noPythonPin(version)
 	}
 	return major, minor, nil
 }

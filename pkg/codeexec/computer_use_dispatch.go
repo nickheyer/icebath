@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -105,7 +106,7 @@ func cuOptInt(key string, v any) (*int, error) {
 		i := int(f)
 		return &i, nil
 	}
-	return nil, fmt.Errorf("%s must be an integer, got %s", key, pyrepr.Repr(v))
+	return nil, fmt.Errorf("%s must be an integer, got %s", key, errchain.Show(v))
 }
 
 // Optional string argument, an error naming the key for a non string value
@@ -116,7 +117,7 @@ func cuOptStr(key string, v any) (*string, error) {
 	if s, ok := v.(string); ok {
 		return &s, nil
 	}
-	return nil, fmt.Errorf("%s must be a string, got %s", key, pyrepr.Repr(v))
+	return nil, fmt.Errorf("%s must be a string, got %s", key, errchain.Show(v))
 }
 
 // String argument with the default dict.get applies to an absent key
@@ -141,13 +142,13 @@ func cuModifiers(args map[string]any) ([]string, error) {
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("modifiers must be a list of strings, got %s", pyrepr.Repr(raw))
+		return nil, fmt.Errorf("modifiers must be a list of strings, got %s", errchain.Show(raw))
 	}
 	out := make([]string, 0, len(list))
 	for _, m := range list {
 		s, ok := m.(string)
 		if !ok {
-			return nil, fmt.Errorf("modifiers must be a list of strings, got %s", pyrepr.Repr(raw))
+			return nil, fmt.Errorf("modifiers must be a list of strings, got %s", errchain.Show(raw))
 		}
 		out = append(out, s)
 	}
@@ -162,14 +163,14 @@ func cuPyFloat(v any) (float64, error) {
 	case string:
 		f, err := strconv.ParseFloat(strings.ReplaceAll(pystr.Strip(n), "_", ""), 64)
 		if err != nil {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyrepr.Repr(n))
+			return 0, fmt.Errorf("%s is not a number", n)
 		}
 		return f, nil
 	}
 	if i, ok := cuIsInt(v); ok {
 		return float64(i), nil
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 }
 
 // Python int() of a tool argument, floats truncated, with its ValueError and TypeError texts
@@ -177,20 +178,20 @@ func cuPyInt(v any) (int, error) {
 	switch n := v.(type) {
 	case float64:
 		if math.IsInf(n, 0) || math.IsNaN(n) {
-			return 0, fmt.Errorf("cannot convert float %s to integer", pyrepr.Repr(n))
+			return 0, fmt.Errorf("%s is not a whole number", errchain.Show(n))
 		}
 		return int(n), nil
 	case string:
 		i, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(n), "_", ""), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(n))
+			return 0, fmt.Errorf("%s is not a whole number", n)
 		}
 		return int(i), nil
 	}
 	if i, ok := cuIsInt(v); ok {
 		return int(i), nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Coordinate pair a drag endpoint unpacks into, the unpacking ValueError otherwise
@@ -210,7 +211,7 @@ func cuPair(key string, c []any) (*[2]int, error) {
 	}
 	y, err := cuOptInt(key, c[1])
 	if err != nil || x == nil || y == nil {
-		return nil, fmt.Errorf("%s must hold two integers, got %s", key, pyrepr.Repr(c))
+		return nil, fmt.Errorf("%s must hold two integers, got %s", key, errchain.Show(c))
 	}
 	return &[2]int{*x, *y}, nil
 }
@@ -337,7 +338,7 @@ func doFocusApp(c *cuCall) (any, error) {
 func doCapture(c *cuCall) (any, error) {
 	mode := cuStrOr(c.args, "mode", "som")
 	if mode != "som" && mode != "vision" && mode != "ax" {
-		return cuDumps(map[string]any{"error": fmt.Sprintf("bad mode %s; use som|vision|ax", pyrepr.Repr(mode))}, "error"), nil
+		return cuDumps(map[string]any{"error": fmt.Sprintf("bad mode %s; use som|vision|ax", errchain.Show(mode))}, "error"), nil
 	}
 	app, err := cuOptStr("app", c.args["app"])
 	if err != nil {
@@ -390,19 +391,19 @@ func dispatchComputerUse(ctx context.Context, env *tools.Env, backend ComputerUs
 	fence func() error, sessionID *string) (any, error) {
 	spec, ok := cuActions[action]
 	if !ok {
-		msg := "unknown action " + pyrepr.Repr(action)
+		msg := "unknown action " + errchain.Show(action)
 		if hint := cuActionSuggestions[action]; hint != "" {
-			msg += " — did you mean " + pyrepr.Repr(hint) + "? See the action enum in the tool schema."
+			msg += " — did you mean " + errchain.Show(hint) + "? See the action enum in the tool schema."
 		}
 		return cuDumps(map[string]any{"error": msg}, "error"), nil
 	}
 	if requested, isStr := args["app"].(string); spec.input && isStr && pystr.Strip(requested) != "" {
 		if mismatch := inputTargetMismatch(backend, requested); mismatch != nil {
-			want := pyrepr.Repr(pystr.Strip(requested))
+			want := errchain.Show(pystr.Strip(requested))
 			return cuDumps(map[string]any{"ok": false, "action": action, "code": "input_target_mismatch",
 				"error": fmt.Sprintf("%s would go to the current target %s, not %s — input actions always hit the sticky "+
 					"target from the last capture/focus_app. Call capture(app=%s) or focus_app first, then retry.",
-					action, pyrepr.Repr(*mismatch), want, want)}, "ok", "action", "code", "error"), nil
+					action, errchain.Show(*mismatch), want, want)}, "ok", "action", "code", "error"), nil
 		}
 	}
 	defer bindBackendCall(ctx, backend)()
@@ -495,7 +496,7 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 	}
 	merged, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object is not a mapping", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("the merged arguments are %s where a mapping was expected", errchain.Kind(decoded))
 	}
 	for _, k := range payload.Keys {
 		merged.Set(k, payload.Vals[k])
@@ -536,7 +537,7 @@ func handleComputerUse(ctx context.Context, env *tools.Env, args map[string]any,
 	rawAction := args["action"]
 	if rawAction != nil && pyrepr.Truthy(rawAction) {
 		if _, ok := rawAction.(string); !ok {
-			return nil, &AttributeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(rawAction))}
+			return nil, &AttributeError{fmt.Sprintf("action is %s where text was expected", errchain.Kind(rawAction))}
 		}
 	}
 	action := strings.ToLower(pystr.Strip(cuArgStr(args, "action")))

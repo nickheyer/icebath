@@ -86,7 +86,7 @@ func TestChatParserFailureClosesManagedStream(t *testing.T) {
 	}}
 	s.relay = &ccManagedRelay{src: src, acc: newRelayChatAccumulator()}
 	_, err := c.consumeStream(ctx, attemptCtx, cancel, &ccKill{}, s.relay, nil, s, tm)
-	if err == nil || !strings.Contains(err.Error(), "has no attribute 'choices'") {
+	if err == nil || !strings.Contains(err.Error(), "expected a chat completion chunk") {
 		t.Fatalf("a chunk without choices must fail the parse, got %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)

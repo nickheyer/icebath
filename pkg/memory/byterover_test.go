@@ -295,7 +295,7 @@ func TestByteRoverToolCalls(t *testing.T) {
 		t.Fatalf("non string query error %v", err)
 	}
 	out, _ = p.HandleToolCall(ctx, "brv_curate", map[string]any{"content": 5}, ToolCallOptions{})
-	if decode(out)["error"] != "expected str, bytes or os.PathLike object, not int" {
+	if decode(out)["error"] != "brv argument is a number where text was expected" {
 		t.Fatalf("non string curate %q", out)
 	}
 }

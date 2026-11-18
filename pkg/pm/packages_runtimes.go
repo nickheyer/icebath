@@ -101,7 +101,7 @@ func (p *Python) FetchURL(version, target string) (string, error) {
 	}
 	pyver, tag := partition(version, "+")
 	if tag == "" {
-		return "", NewInstallError(p.Name, fmt.Sprintf("version %s needs the +<release> tag", pyrepr.StrRepr(version)), "")
+		return "", NewInstallError(p.Name, fmt.Sprintf("version %s needs the +<release> tag", version), "")
 	}
 	triple, ok := rustTriple[target]
 	if !ok {
@@ -292,7 +292,7 @@ func (p *Npm) Unpack(archive, staged, target string) error {
 	}
 	for _, stream := range [][]byte{result.Stdout, result.Stderr} {
 		if err := strictUTF8(stream); err != nil {
-			return fmt.Errorf("UnicodeDecodeError: %s", err)
+			return fmt.Errorf("the npm install output is %w", err)
 		}
 	}
 	if result.Code != 0 {

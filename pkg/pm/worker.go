@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -43,7 +44,7 @@ func workerError(payload map[string]any) error {
 	field := func(key string) (any, error) {
 		v, ok := payload[key]
 		if !ok {
-			return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+			return nil, &PyError{Class: "KeyError", Message: "the worker error has no " + key}
 		}
 		return v, nil
 	}
@@ -56,7 +57,7 @@ func workerError(payload map[string]any) error {
 			}
 			values[i] = v
 		}
-		failure := &InstallError{Package: pyrepr.Str(values[1]), Cause: pyrepr.Str(values[2]), Remedy: pyrepr.Str(values[3])}
+		failure := &InstallError{Package: wireText(values[1]), Cause: wireText(values[2]), Remedy: wireText(values[3])}
 		if !pyrepr.Truthy(values[3]) {
 			failure = NewInstallError(failure.Package, failure.Cause, "")
 		}
@@ -74,11 +75,11 @@ func workerError(payload map[string]any) error {
 		if err != nil {
 			return err
 		}
-		return downloadError(DownloadWasPaused, "%s", pyrepr.Str(message))
+		return downloadError(DownloadWasPaused, "%s", wireText(message))
 	}
 	switch kindValue.(type) {
 	case map[string]any, []any:
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("cannot use '%s' as a dict key (unhashable type: '%s')", pyrepr.TypeName(kindValue), pyrepr.TypeName(kindValue))}
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker error type must be text, got %s", errchain.Kind(kindValue))}
 	}
 	raw, err := field("message")
 	if err != nil {
@@ -86,12 +87,17 @@ func workerError(payload map[string]any) error {
 	}
 	kind, _ := kindValue.(string)
 	if !workerErrorClasses[kind] {
-		return &PyError{Class: "RuntimeError", Message: pyrepr.Str(raw)}
+		return &PyError{Class: "RuntimeError", Message: wireText(raw)}
 	}
-	if kind == "KeyError" {
-		return &PyError{Class: kind, Message: pyrepr.Repr(raw)}
+	return &PyError{Class: kind, Message: wireText(raw)}
+}
+
+// Text of a wire value as a person reads it, text kept as sent
+func wireText(v any) string {
+	if s, ok := v.(string); ok {
+		return s
 	}
-	return &PyError{Class: kind, Message: pyrepr.Str(raw)}
+	return errchain.Show(v)
 }
 
 // Unbounded control message queue between the reader and the worker, nil marking the client gone
@@ -163,7 +169,7 @@ func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEv
 		}
 		id, ok := message["id"]
 		if !ok {
-			messages.put(&PyError{Class: "KeyError", Message: "'id'"})
+			messages.put(&PyError{Class: "KeyError", Message: "the request has no id"})
 			return
 		}
 		if !haveID {
@@ -186,7 +192,7 @@ func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEv
 func requestField(m map[string]any, key string) (any, error) {
 	v, ok := m[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: "the request has no " + key}
 	}
 	return v, nil
 }
@@ -198,7 +204,7 @@ func requestDefinitions(value any) ([]PackageDefinition, error) {
 	}
 	list, ok := value.([]any)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(value))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the request packages must be a list, got %s", errchain.Kind(value))}
 	}
 	out := make([]PackageDefinition, 0, len(list))
 	for _, item := range list {
@@ -290,7 +296,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 			return nil, &PyError{Class: "RuntimeError", Message: "unexpected PM callback response"}
 		}
 		if message, failed := reply["error"]; failed {
-			return nil, &PyError{Class: "RuntimeError", Message: pyrepr.Str(message)}
+			return nil, &PyError{Class: "RuntimeError", Message: wireText(message)}
 		}
 		return reply["result"], nil
 	}
@@ -324,7 +330,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 		}
 		arguments, ok := rawArguments.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: operation + "() argument after ** must be a mapping"}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s request arguments must be a mapping, got %s", operation, errchain.Kind(rawArguments))}
 		}
 		hooks := workerHooks{}
 		if operation == "ensure" {

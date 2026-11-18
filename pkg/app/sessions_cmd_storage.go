@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -60,7 +61,7 @@ func cmdCleanMarkers(r *sessionsRun, db *state.SessionDB) (int, error) {
 	case pyrepr.Equal(affected, 0):
 		r.print("✓ No affected rows found — nothing to clean.")
 	case dryRun:
-		r.printf("Would clear %s row(s): ids %s", pyrepr.Str(affected), pyrepr.Repr(rowGet(report, "row_ids")))
+		r.printf("Would clear %s row(s): ids %s", pyrepr.Str(affected), errchain.Show(rowGet(report, "row_ids")))
 	default:
 		if backup := rowGet(report, "backup_path"); pyrepr.Truthy(backup) {
 			r.printf("  backup: %s", pyrepr.Str(backup))
@@ -388,7 +389,7 @@ func cmdRepairPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 			return 1, err
 		}
 		if sessionID == "" {
-			r.printf("No session matches %s.", pyrepr.Repr(target))
+			r.printf("No session matches %s.", errchain.Show(target))
 			return 1, nil
 		}
 		row, err := db.GetSession(r.ctx, sessionID)
@@ -523,7 +524,7 @@ func cmdRefreshPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 			return 1, err
 		}
 		if resolved == "" {
-			r.printf("No session matches %s.", pyrepr.Repr(target))
+			r.printf("No session matches %s.", errchain.Show(target))
 			return 1, nil
 		}
 		tip, err := db.GetCompressionTip(r.ctx, resolved)

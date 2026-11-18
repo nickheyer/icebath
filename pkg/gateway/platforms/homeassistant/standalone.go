@@ -43,7 +43,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	urlText, ok := rawURL.(string)
 	if !ok {
-		return nil, attrErr(rawURL, "rstrip")
+		return nil, attrErr(rawURL, "the Home Assistant url", "text")
 	}
 	hassURL := pystr.RstripChars(urlText, "/")
 	if !pyrepr.Truthy(token) {
@@ -55,7 +55,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	tokenText, ok := token.(string)
 	if !ok {
-		return nil, attrErr(token, "strip")
+		return nil, attrErr(token, "the Home Assistant token", "text")
 	}
 	tokenText = pystr.Strip(tokenText)
 	if hassURL == "" || tokenText == "" {
@@ -75,7 +75,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	serviceText, ok := serviceRef.(string)
 	if !ok {
-		return nil, attrErr(serviceRef, "strip")
+		return nil, attrErr(serviceRef, "the service", "text")
 	}
 	service := strings.TrimPrefix(pystr.Strip(serviceText), "notify.")
 	if matched, err := notifyServiceRE.MatchString(service); err != nil {

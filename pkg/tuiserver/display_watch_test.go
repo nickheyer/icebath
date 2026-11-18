@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tuiserver
 
 import (
@@ -18,28 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Child mode of the test binary, a lease transition or a sleeping launcher stand in for another process
-func runTestChild() {
-	switch os.Getenv("ICEBATH_TEST_CHILD") {
-	case "":
-		return
-	case "lease-acquire":
-		if _, err := botdesktop.LeaseAcquire(os.Getenv("ICEBATH_TEST_VIEWER"), "", os.Getenv("ICEBATH_TEST_REASON")); err != nil {
-			os.Exit(1)
-		}
-	case "lease-release":
-		viewer := os.Getenv("ICEBATH_TEST_VIEWER")
-		if _, err := botdesktop.LeaseRelease(botdesktop.LeaseReleaseOptions{ViewerID: &viewer}); err != nil {
-			os.Exit(1)
-		}
-	case "sleep":
-		time.Sleep(30 * time.Second)
-	case "session-lease-holder":
-		sessionLeaseHolderChild()
-	}
-	os.Exit(0)
-}
 
 // Runs a lease transition in another process bound to home
 func otherProcess(t *testing.T, h, mode, viewer, reason string) {
@@ -337,13 +317,5 @@ func TestScreenStartAndStopReachTheModelsTurnNotes(t *testing.T) {
 	}
 	if len(events.statuses()) == 0 {
 		t.Fatal("the broadcast never happened")
-	}
-}
-
-// Writes text to a file the test owns
-func writeFile(t *testing.T, path, text string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
-		t.Fatal(err)
 	}
 }

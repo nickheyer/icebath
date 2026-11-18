@@ -124,7 +124,7 @@ func writeCatalogSidecarRecord(target string, catalog map[string]any, sha string
 		err = os.WriteFile(filepath.Join(target, CatalogSidecar), []byte(text+"\n"), 0o666)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to write catalog sidecar in %s: %s", target, pyfs.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to write catalog sidecar in %s: %s", target, errchain.OSText(err)))
 	}
 }
 
@@ -583,7 +583,7 @@ func carryUserFiles(old, newTree string, local []string, gitTree bool) ([]string
 	walk = func(dir, relDir string) error {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return &PluginOperationError{Msg: fmt.Sprintf("Could not preserve user files from '%s': %s", old, pyfs.OSErrorText(err))}
+			return &PluginOperationError{Msg: fmt.Sprintf("Could not preserve user files from '%s': %s", old, errchain.OSText(err))}
 		}
 		join := func(name string) string {
 			if relDir == "" {
@@ -626,7 +626,7 @@ func carryUserFiles(old, newTree string, local []string, gitTree bool) ([]string
 			}
 			info, err := os.Lstat(src)
 			if err != nil {
-				return &PluginOperationError{Msg: fmt.Sprintf("Could not preserve user file '%s': %s", filepath.FromSlash(rel), pyfs.OSErrorText(err))}
+				return &PluginOperationError{Msg: fmt.Sprintf("Could not preserve user file '%s': %s", filepath.FromSlash(rel), errchain.OSText(err))}
 			}
 			if info.Mode()&fs.ModeSymlink != 0 {
 				userLink(rel)

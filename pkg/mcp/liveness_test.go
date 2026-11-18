@@ -41,7 +41,7 @@ func TestLivenessParseContract(t *testing.T) {
 		{map[string]any{"kind": "server_json"}, "server_json liveness requires a non-empty path"},
 		{map[string]any{"kind": "server_json", "path": "/p", "fields": map[string]any{"port": "p"}}, "server_json liveness fields may only override url, token, and pid"},
 		{map[string]any{"kind": "server_json", "path": "/p", "fields": map[string]any{"pid": 3}}, "server_json liveness field names must be non-empty strings"},
-		{map[string]any{"kind": "server_json", "path": "/p", "fields": "url"}, "'str' object is not a mapping"},
+		{map[string]any{"kind": "server_json", "path": "/p", "fields": "url"}, "server_json liveness fields are text where a mapping was expected"},
 	}
 	for _, c := range bad {
 		if _, err := ParseLiveness(c.raw); err == nil || err.Error() != c.text {

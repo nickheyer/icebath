@@ -206,21 +206,15 @@ type FileSyncManager struct {
 	sleep        func(time.Duration)
 }
 
+// Environment that keeps a file sync manager
+type syncManaged interface {
+	fileSyncManager() *FileSyncManager
+}
+
 // File sync manager of a remote backend environment, nil for backends that keep none
 func EnvironmentSyncManager(e Environment) *FileSyncManager {
-	switch b := e.(type) {
-	case *sshEnv:
-		return b.syncManager
-	case *modalEnv:
-		return b.syncManager
-	case *daytonaEnv:
-		b.lock.Lock()
-		defer b.lock.Unlock()
-		return b.syncManager
-	case *vercelEnv:
-		b.lock.Lock()
-		defer b.lock.Unlock()
-		return b.syncManager
+	if m, ok := e.(syncManaged); ok {
+		return m.fileSyncManager()
 	}
 	return nil
 }

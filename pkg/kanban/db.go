@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -224,7 +225,7 @@ func NormalizeReasoningEffort(effort *string) (*string, error) {
 	allowed := strings.Join(append([]string{"none"}, config.ValidReasoningEfforts...), ", ")
 	shown := "None"
 	if effort != nil {
-		shown = pyrepr.StrRepr(*effort)
+		shown = errchain.Show(*effort)
 	}
 	return nil, &ValueError{fmt.Sprintf("reasoning_effort must be one of %s, got %s", allowed, shown)}
 }
@@ -380,8 +381,8 @@ const (
 	DefaultClaimHeartbeatMaxStaleSeconds = 60 * 60
 	ReclaimDeferGraceSeconds             = 120
 	DefaultCrashGraceSeconds             = 30
-	KanbanRateLimitExitCode              = 75
-	KanbanTerminalProviderExitCode       = 78
+	KanbanRateLimitExitCode              = tools.KanbanRateLimitExitCode
+	KanbanTerminalProviderExitCode       = tools.KanbanTerminalProviderExitCode
 )
 
 // Explicit ttl, then ICEBATH_KANBAN_CLAIM_TTL_SECONDS, then the default

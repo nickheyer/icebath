@@ -92,25 +92,16 @@ type TranscriptMessage struct {
 	Extra           map[string]any   `json:"-" wire:"extra"`
 }
 
-type ToolLabelKind string
-
-func (ToolLabelKind) Values() []string { return []string{"connector", "mcp", "tool"} }
-
-type ToolLabel struct {
-	Kind    ToolLabelKind `json:"kind"`
-	App     string        `json:"app"`
-	Action  string        `json:"action"`
-	Emoji   string        `json:"emoji"`
-	Text    string        `json:"text"`
-	Name    string        `json:"name"`
-	Preview string        `json:"preview,omitzero"`
-}
-
+// MCP server of the session with its transport, tool count, connection state and sampling metrics
 type McpServerStatus struct {
-	Name      string  `json:"name,omitzero"`
-	Status    *string `json:"status,omitzero"`
-	ToolCount *int64  `json:"tool_count,omitzero"`
-	Error     *string `json:"error,omitzero"`
+	Name      string           `json:"name"`
+	Transport string           `json:"transport"`
+	Tools     int64            `json:"tools"`
+	Connected bool             `json:"connected"`
+	Disabled  bool             `json:"disabled"`
+	Status    MCPRuntimeStatus `json:"status"`
+	Error     *string          `json:"error,omitzero"`
+	Sampling  map[string]any   `json:"sampling,omitzero"`
 }
 
 type Usage struct {
@@ -365,117 +356,6 @@ type AutoContinue struct {
 	InterruptedAt float64 `json:"interrupted_at"`
 }
 
-type TodoState struct {
-	Todos    []map[string]any `json:"todos"`
-	Revision int64            `json:"revision"`
-}
-
-type ConnectionRequestPayload struct {
-	OpID           string                      `json:"op_id"`
-	Seq            int64                       `json:"seq"`
-	DeadlineAt     float64                     `json:"deadline_at"`
-	TimeoutSeconds float64                     `json:"timeout_seconds"`
-	Targets        []ConnectionOperationTarget `json:"targets"`
-	ToolCallID     *string                     `json:"tool_call_id,omitzero"`
-	Display        *ConnectionDisplay          `json:"display,omitzero"`
-}
-
-type ConnectionDisplay struct {
-	Suggested []string `json:"suggested"`
-}
-
-type ConnectionTargetKind string
-
-func (ConnectionTargetKind) Values() []string { return []string{"mcp", "plugin", "skill"} }
-
-type ConnectionTargetAction string
-
-func (ConnectionTargetAction) Values() []string { return []string{"authorize", "enable", "install"} }
-
-type ConnectionTargetState string
-
-func (ConnectionTargetState) Values() []string {
-	return []string{"pending", "initiated", "connected", "skipped", "failed", "not_connected"}
-}
-
-type CatalogTier string
-
-func (CatalogTier) Values() []string { return []string{"official", "verified", "community"} }
-
-type CatalogAppState string
-
-func (CatalogAppState) Values() []string {
-	return []string{"present", "missing_app", "app_not_running", "unknown"}
-}
-
-type InstallPhase string
-
-func (InstallPhase) Values() []string {
-	return []string{"downloading", "python_packages", "loading_tools"}
-}
-
-type ConnectionOperationTarget struct {
-	Name             string                     `json:"name"`
-	Kind             ConnectionTargetKind       `json:"kind"`
-	Action           ConnectionTargetAction     `json:"action"`
-	State            ConnectionTargetState      `json:"state"`
-	Resolved         *bool                      `json:"resolved,omitzero"`
-	Detail           *string                    `json:"detail,omitzero"`
-	Instructions     *string                    `json:"instructions,omitzero"`
-	DiscoveryError   *string                    `json:"discovery_error,omitzero"`
-	ConnectURL       *string                    `json:"connect_url,omitzero"`
-	Attempt          *string                    `json:"attempt,omitzero"`
-	RequiredEnv      []ConnectionTargetEnvField `json:"required_env,omitzero"`
-	Tools            []string                   `json:"tools,omitzero"`
-	Hint             *string                    `json:"hint,omitzero"`
-	Display          *string                    `json:"display,omitzero"`
-	Description      *string                    `json:"description,omitzero"`
-	Tier             *CatalogTier               `json:"tier,omitzero"`
-	Platforms        []string                   `json:"platforms,omitzero"`
-	Repo             *string                    `json:"repo,omitzero"`
-	Sha              *string                    `json:"sha,omitzero"`
-	Subdir           *string                    `json:"subdir,omitzero"`
-	Scan             *CatalogScan               `json:"scan,omitzero"`
-	RequiresIcebath  *string                    `json:"requires_icebath,omitzero"`
-	TargetProfile    *string                    `json:"target_profile,omitzero"`
-	AppState         *CatalogAppState           `json:"app_state,omitzero"`
-	Skill            *string                    `json:"skill,omitzero"`
-	Phase            *InstallPhase              `json:"phase,omitzero"`
-	Approved         *CatalogApproved           `json:"approved,omitzero"`
-	Enabled          *bool                      `json:"enabled,omitzero"`
-	MissingEnv       []string                   `json:"missing_env,omitzero"`
-	ServerErrors     []CatalogServerError       `json:"server_errors,omitzero"`
-	AlreadyInstalled *bool                      `json:"already_installed,omitzero"`
-}
-
-type CatalogServerError struct {
-	Name  string `json:"name"`
-	Error string `json:"error"`
-}
-
-type CatalogApproved struct {
-	Force  bool    `json:"force"`
-	Enable bool    `json:"enable"`
-	Ref    *string `json:"ref,omitzero"`
-}
-
-type CatalogScanStatus string
-
-func (CatalogScanStatus) Values() []string { return []string{"passed", "warnings", "failed"} }
-
-type CatalogScan struct {
-	Status  CatalogScanStatus `json:"status"`
-	Summary string            `json:"summary"`
-}
-
-type ConnectionTargetEnvField struct {
-	Name     string  `json:"name"`
-	Required bool    `json:"required"`
-	Secret   bool    `json:"secret"`
-	Default  string  `json:"default"`
-	Prompt   *string `json:"prompt,omitzero"`
-}
-
 type OpenRequestEntry struct {
 	ID     string         `json:"id"`
 	Method string         `json:"method"`
@@ -719,6 +599,9 @@ type GatewayReadyPayload struct {
 	ReplayEpoch      string            `json:"replay_epoch"`
 	Heartbeat        *bool             `json:"heartbeat,omitzero"`
 	SessionAuthority *bool             `json:"session_authority,omitzero"`
+	// Go build ID and contract version of the gateway, absent from a gateway older than both
+	Build    string `json:"build"`
+	Contract int64  `json:"contract"`
 }
 
 type SkinPayloadModel struct {
@@ -911,6 +794,8 @@ type RuntimeDescribeResult struct {
 	Capabilities   []string                `json:"capabilities"`
 	SessionCreate  SessionCreateDescriptor `json:"session_create"`
 	Skin           *SkinPayloadModel       `json:"skin,omitzero"`
+	Build          string                  `json:"build"`
+	Contract       int64                   `json:"contract"`
 }
 
 type SessionCreateDescriptor struct {

@@ -2,6 +2,7 @@ package codeexec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -261,7 +263,7 @@ func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environme
 			}
 		}
 		if !isPyDigit(pid) {
-			pkgLog(env).Warn("remote kernel spawn returned no PID: " + pyrepr.Repr(started))
+			pkgLog(env).Warn("remote kernel spawn returned no PID: " + errchain.Show(started))
 			return nil
 		}
 		candidate := &remoteKernel{envr: envr, envType: envType, kernelDir: kernelDir, pid: pid, rpcToken: rpcToken,
@@ -501,11 +503,11 @@ func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, 
 	if tb, _ := result.Get("traceback"); isStatus(status, "error") && pyrepr.Truthy(tb) {
 		text, ok := tb.(string)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(tb))
+			return nil, fmt.Errorf("remote kernel traceback is %s where text was expected", errchain.Kind(tb))
 		}
 		lines := pystr.Splitlines(pystr.Strip(text), false)
 		if len(lines) == 0 {
-			return nil, fmt.Errorf("list index out of range")
+			return nil, errors.New("remote kernel traceback is blank")
 		}
 		result.Set("error", lines[len(lines)-1])
 	}

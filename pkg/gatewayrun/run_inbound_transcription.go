@@ -67,7 +67,7 @@ func (r *GatewayRunner) enrichMessageWithTranscription(ctx context.Context, user
 			pkgLog().Debug("Transcribing user voice: " + path)
 			var err error
 			if transcribeVoice == nil {
-				line, _ := linktier.Refusal("speech to text", linktier.Plugins)
+				line := linktier.Missing("speech to text", linktier.Plugins)
 				err = errors.New(line)
 			} else {
 				clip, err = r.transcribeOneClip(ctx, path, transcribeVoice, transcribeVoiceFallback)

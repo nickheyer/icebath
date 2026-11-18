@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Actions the screen command takes as its argument
@@ -21,38 +24,49 @@ func (a *app) runScreen(r *slashRun) tea.Cmd {
 	if len(fields) > 0 {
 		action = fields[0]
 	}
-	show := func(res map[string]any) tea.Cmd {
-		a.panel(tr("screen.title"), screenSections(res))
+	show := func(res *tuigateway.DisplayStatus) tea.Cmd {
+		if res != nil {
+			a.panel(tr("screen.title"), screenSections(res))
+		}
 		return nil
 	}
 	switch action {
 	case "status":
-		return r.rpc("display.status", map[string]any{}, show)
+		return ask(r.rpc, r.sys, tuigateway.DisplayStatusMethod, tuigateway.ProfileParams{}, show)
 	case "start":
 		r.sys(tr("screen.starting"))
-		return r.rpc("display.start", map[string]any{}, show)
+		return ask(r.rpc, r.sys, tuigateway.DisplayStart, tuigateway.ProfileParams{}, show)
 	case "stop":
 		force := len(fields) > 1 && fields[1] == "force"
-		return r.rpc("display.stop", map[string]any{"force": force}, func(res map[string]any) tea.Cmd {
-			if truthyJS(res["stopped"]) {
+		return ask(r.rpc, r.sys, tuigateway.DisplayStop, tuigateway.DisplayStopParams{Force: force}, func(res *tuigateway.DisplayStopResult) tea.Cmd {
+			switch {
+			case res == nil:
+				return nil
+			case res.Stopped:
 				r.sys(tr("screen.stopped"))
 				return nil
 			}
-			return show(res)
+			return show(&res.DisplayStatus)
 		})
 	case "install":
-		return r.rpc("display.install", map[string]any{}, func(res map[string]any) tea.Cmd {
-			if truthyJS(res["started"]) {
+		return ask(r.rpc, r.sys, tuigateway.DisplayInstall, tuigateway.ProfileParams{}, func(res *tuigateway.DisplayInstallResult) tea.Cmd {
+			switch {
+			case res == nil:
+			case res.Started:
 				r.sys(tr("screen.installing"))
-				return nil
+			default:
+				r.sys(tr("screen.installByHand", res.Command))
 			}
-			r.sys(tr("screen.installByHand", stringOr(res["command"], "")))
 			return nil
 		})
 	case "switch", "keep":
-		return r.rpc("display.switchSandboxImage", map[string]any{"approve": action == "switch"}, func(res map[string]any) tea.Cmd {
-			r.sys(tr("screen.imageSet", stringOr(res["docker_image"], "")))
-			return show(res)
+		params := tuigateway.DisplaySwitchSandboxImageParams{Approve: action == "switch"}
+		return ask(r.rpc, r.sys, tuigateway.DisplaySwitchSandboxImage, params, func(res *tuigateway.DisplaySwitchSandboxImageResult) tea.Cmd {
+			if res == nil {
+				return nil
+			}
+			r.sys(tr("screen.imageSet", res.DockerImage))
+			return show(&res.DisplayStatus)
 		})
 	}
 	r.sys(tr("screen.usage"))
@@ -60,75 +74,60 @@ func (a *app) runScreen(r *slashRun) tea.Cmd {
 }
 
 // Rows of a screen status, the runtime, the lease, a blocker and a pending sandbox image switch
-func screenSections(s map[string]any) []panelSection {
-	yes := func(key string) string {
-		if truthyJS(s[key]) {
+func screenSections(s *tuigateway.DisplayStatus) []panelSection {
+	yes := func(on bool) string {
+		if on {
 			return tr("screen.yes")
 		}
 		return tr("screen.no")
 	}
-	rows := [][2]string{{tr("screen.rowProfile"), stringOr(s["profile"], "")}, {tr("screen.rowSupported"), yes("supported")},
-		{tr("screen.rowInstalled"), yes("installed")}, {tr("screen.rowRunning"), yes("running")}}
-	if missing := stringList(s["missing"]); len(missing) > 0 {
-		rows = append(rows, [2]string{tr("screen.rowMissing"), strings.Join(missing, ", ")})
+	rows := [][2]string{{tr("screen.rowProfile"), s.Profile}, {tr("screen.rowSupported"), yes(s.Supported)},
+		{tr("screen.rowInstalled"), yes(s.Installed)}, {tr("screen.rowRunning"), yes(s.Running)}}
+	if len(s.Missing) > 0 {
+		rows = append(rows, [2]string{tr("screen.rowMissing"), strings.Join(s.Missing, ", ")})
 	}
-	for _, f := range [][2]string{{"display", "screen.rowDisplay"}, {"geometry", "screen.rowGeometry"}, {"placement", "screen.rowPlacement"}, {"browser", "screen.rowBrowser"}} {
-		if v := stringOr(s[f[0]], ""); v != "" {
-			rows = append(rows, [2]string{tr(f[1]), v})
+	for _, f := range []struct{ value, key string }{{val(s.Display), "screen.rowDisplay"}, {s.Geometry, "screen.rowGeometry"}, {s.Placement, "screen.rowPlacement"}, {val(s.Browser), "screen.rowBrowser"}} {
+		if f.value != "" {
+			rows = append(rows, [2]string{tr(f.key), f.value})
 		}
 	}
-	if lease, _ := s["lease"].(map[string]any); lease != nil {
-		rows = append(rows, [2]string{tr("screen.rowControl"), screenHolder(lease)})
-	}
+	rows = append(rows, [2]string{tr("screen.rowControl"), screenHolder(s.Lease)})
 	sections := []panelSection{{Rows: rows}}
-	if blocker := stringOr(s["blocker"], ""); blocker != "" {
+	if blocker := val(s.Blocker); blocker != "" {
 		sections = append(sections, panelSection{Text: &blocker})
 	}
-	if sw, _ := s["image_switch"].(map[string]any); sw != nil {
-		text := tr("screen.switchPending", stringOr(sw["current_image"], ""), stringOr(sw["target_image"], ""))
+	if sw := s.ImageSwitch; sw != nil {
+		text := tr("screen.switchPending", sw.CurrentImage, sw.TargetImage)
 		sections = append(sections, panelSection{Text: &text})
 	}
 	return sections
 }
 
 // Who holds the screen, the person at the keyboard or the agent
-func screenHolder(lease map[string]any) string {
-	if lease["holder"] == "human" {
+func screenHolder(lease tuigateway.DisplayLease) string {
+	if lease.Holder == "human" {
 		return tr("screen.heldByPerson")
 	}
 	return tr("screen.heldByAgent")
 }
 
-// Line of a screen event for the status row, empty for an event of no screen
-func screenEventNote(ev gatewayEventMsg) string {
-	p := ev.Payload
-	switch ev.Type {
-	case "display.status":
-		if truthyJS(p["running"]) {
-			return tr("screen.nowRunning")
-		}
-		return tr("screen.nowStopped")
-	case "display.lease":
-		lease, _ := p["lease"].(map[string]any)
-		return tr("screen.control", screenHolder(lease))
+// Status row line of a screen that started or stopped
+func screenRunningNote(running bool) string {
+	if running {
+		return tr("screen.nowRunning")
 	}
-	return ""
+	return tr("screen.nowStopped")
 }
 
-// Transcript line of the package install, a line of its output or how it ended
-func screenInstallLine(ev gatewayEventMsg) string {
-	p := ev.Payload
-	if ev.Type == "display.install.log" {
-		return "  " + stringOr(p["line"], "")
-	}
-	switch code, _ := p["code"].(float64); code {
+// Transcript line of how the package install ended
+func screenInstallDone(code int64) string {
+	switch code {
 	case 0:
 		return tr("screen.installed")
 	case -1:
 		return tr("screen.installCancelled")
 	case -2:
 		return tr("screen.installNoSudo")
-	default:
-		return tr("screen.installFailed", jsString(code))
 	}
+	return tr("screen.installFailed", strconv.FormatInt(code, 10))
 }

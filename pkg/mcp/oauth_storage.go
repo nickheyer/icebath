@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -200,7 +201,7 @@ func (s *TokenStorage) loadModel(path, label string, fixup func(m map[string]any
 	}
 	m, ok := documentMap(doc)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("Corrupt %s at %s -- ignoring: expected a JSON object, got %s", label, path, pyJSONTypeName(doc)))
+		pkgLog().Warn(fmt.Sprintf("Corrupt %s at %s -- ignoring: expected a JSON object, got %s", label, path, errchain.Kind(doc)))
 		return nil, nil
 	}
 	if fixup != nil {
@@ -228,7 +229,7 @@ func (s *TokenStorage) rebaseExpiresIn(m map[string]any) error {
 	if had && absolute != nil {
 		at, ok := jsonNumeric(absolute)
 		if !ok {
-			return fmt.Errorf("unsupported operand type(s) for -: '%s' and 'float'", pyJSONTypeName(absolute))
+			return fmt.Errorf("stored expires_at is %s where a number was expected", errchain.Kind(absolute))
 		}
 		m["expires_in"] = pyIntOfFloat(math.Max(at-oauthNow(), 0))
 		return nil

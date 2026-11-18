@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -698,7 +699,7 @@ func TranscribeRecording(ctx context.Context, wavPath, model string) (map[string
 			raw = pyrepr.Str(v)
 		}
 		if isWhisperHallucination(raw) && !isVoiceStopPhrase(raw, nil) {
-			pkgLog().Info(fmt.Sprintf("Filtered Whisper hallucination: %s", pyrepr.Repr(result["transcript"])))
+			pkgLog().Info(fmt.Sprintf("Filtered Whisper hallucination: %s", errchain.Show(result["transcript"])))
 			return map[string]any{"success": true, "transcript": "", "filtered": true}, nil
 		}
 	}

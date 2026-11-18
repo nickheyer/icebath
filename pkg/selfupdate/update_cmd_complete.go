@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -297,7 +298,7 @@ func completionExitCode(result map[string]any) (int64, error) {
 	if n, ok := pyIntValue(value); ok {
 		return n, nil
 	}
-	return 0, &pm.PyError{Class: "TypeError", Message: "the completion exit code is " + pyrepr.TypeName(value) + ", not an integer"}
+	return 0, &pm.PyError{Class: "TypeError", Message: "the completion exit code is " + errchain.Kind(value) + " where a whole number was expected"}
 }
 
 // Hands a moved or current checkout to its completion, the one exit of every source selection route
@@ -347,7 +348,7 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 	result, err := updateRunCompletion(ctx, w, request)
 	if err != nil {
 		if errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, context.Canceled) {
-			updaterecord.FinalizeInterruptedUpdateReceipt(ctx, "KeyboardInterrupt: interrupted after the code was updated", 130)
+			updaterecord.FinalizeInterruptedUpdateReceipt(ctx, "interrupted after the code was updated", 130)
 			return &pm.SystemExit{Code: 130}
 		}
 		var exit *pm.SystemExit

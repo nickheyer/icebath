@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -58,12 +59,12 @@ func sqliteBind(value any, position int) (*string, error) {
 	}
 	if n, isInt := pyrepr.Int(value); isInt {
 		if !n.IsInt64() {
-			return nil, &RuntimeError{"Python int too large to convert to SQLite INTEGER"}
+			return nil, &RuntimeError{"the number is too large for a SQLite INTEGER"}
 		}
 		text := n.String()
 		return &text, nil
 	}
-	return nil, &RuntimeError{fmt.Sprintf("Error binding parameter %d: type '%s' is not supported", position, pyrepr.TypeName(value))}
+	return nil, &RuntimeError{fmt.Sprintf("SQL parameter %d is %s, which SQLite cannot store", position, errchain.Kind(value))}
 }
 
 // Whether a Python value can be a set element, false for the list and dict shapes JSON decodes to
@@ -77,8 +78,7 @@ func pyHashable(value any) bool {
 
 // TypeError Python raises testing an unhashable value for set membership
 func unhashableSetError(value any) error {
-	name := pyrepr.TypeName(value)
-	return &RuntimeError{fmt.Sprintf("cannot use '%s' as a set element (unhashable type: '%s')", name, name)}
+	return &RuntimeError{fmt.Sprintf("expected text, got %s", errchain.Kind(value))}
 }
 
 // Full task state, the row with parents, children, comments, runs and its last fifty events
@@ -400,7 +400,7 @@ func handleBlock(k *kanbanCall) (string, error) {
 			return "", reject(fmt.Sprintf("goal_mode tasks can only block with kind in "+
 				"%s (got %s). If the task is actually "+
 				"finished or cannot proceed for another reason, call kanban_complete instead — "+
-				"the completion judge will evaluate it.", sortedRepr(goalModeBlockAllowedKinds), pyrepr.Repr(kind)))
+				"the completion judge will evaluate it.", sortedRepr(goalModeBlockAllowedKinds), errchain.Show(kind)))
 		}
 		var kindArg *string
 		if isText {
@@ -418,7 +418,7 @@ func handleBlock(k *kanbanCall) (string, error) {
 			return "", err
 		}
 		if landed == nil {
-			return "", &RuntimeError{"'NoneType' object has no attribute 'block_kind'"}
+			return "", &RuntimeError{"task " + tid + " vanished before its block was recorded"}
 		}
 		extra := []any{"block_kind", optStrValue(landed.BlockKind)}
 		if isText && kindText == "dependency" && (landed.BlockKind == nil || *landed.BlockKind != kindText) {
@@ -514,7 +514,7 @@ func handleRequestReview(k *kanbanCall) (string, error) {
 		if name != "" {
 			if !profileExistsFn(name) {
 				return "", reject(fmt.Sprintf("reviewer profile %s is not installed. "+
-					"Installed profiles: %s", pyrepr.StrRepr(name), strings.Join(profiles.ListProfileNames(), ", ")))
+					"Installed profiles: %s", errchain.Show(name), strings.Join(profiles.ListProfileNames(), ", ")))
 			}
 		}
 		reviewer = &name
@@ -636,7 +636,7 @@ func handleComment(k *kanbanCall) (string, error) {
 				present = task != nil
 			}
 			if !present {
-				return "", &ValueError{"unknown task " + pyrepr.Str(tid)}
+				return "", &ValueError{"unknown task " + errchain.Show(tid)}
 			}
 		}
 		cid, err := AddComment(k.ctx, conn, *taskID, author, body)

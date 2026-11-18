@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -347,7 +346,7 @@ func mustSpecVersion(text string) (*pep440Version, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, &PyError{Class: "InvalidVersion", Message: fmt.Sprintf("Invalid version: %s", pyrepr.StrRepr(text))}
+		return nil, &PyError{Class: "InvalidVersion", Message: fmt.Sprintf("invalid version: %s", text)}
 	}
 	return v, nil
 }
@@ -442,7 +441,7 @@ func evalMarkerOp(lhs, op, rhs, key string) (bool, error) {
 	case "!=":
 		return lhs != rhs, nil
 	}
-	return false, &UndefinedMarkerError{Class: "UndefinedComparison", Message: fmt.Sprintf("Undefined <Op(%s)> on %s and %s.", pyrepr.StrRepr(op), pyrepr.StrRepr(lhs), pyrepr.StrRepr(rhs))}
+	return false, &UndefinedMarkerError{Class: "UndefinedComparison", Message: fmt.Sprintf("cannot compare %s %s %s", lhs, op, rhs)}
 }
 
 // Evaluates a parsed marker against a full environment the way packaging's _evaluate_markers does
@@ -469,7 +468,7 @@ func evaluateMarkerList(markers markerList, env map[string]string) (bool, error)
 				rhs, found = env[key]
 			}
 			if !found {
-				return false, &UndefinedMarkerError{Class: "UndefinedEnvironmentName", Message: pyrepr.StrRepr(key)}
+				return false, &UndefinedMarkerError{Class: "UndefinedEnvironmentName", Message: "unknown marker name " + key}
 			}
 			if key == "extras" || key == "dependency_groups" {
 				lhs, rhs = CanonicalizeName(lhs), CanonicalizeName(rhs)

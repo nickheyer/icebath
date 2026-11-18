@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -51,11 +50,7 @@ type GitTimeout struct {
 }
 
 func (e *GitTimeout) Error() string {
-	args := make([]any, len(e.Args))
-	for i, a := range e.Args {
-		args[i] = a
-	}
-	return fmt.Sprintf("Command '%s' timed out after %v seconds", pyrepr.Repr(args), e.Timeout.Seconds())
+	return fmt.Sprintf("%s timed out after %v seconds", strings.Join(e.Args, " "), e.Timeout.Seconds())
 }
 
 // Windows refused to bind an update child to the update job so the child never ran

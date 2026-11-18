@@ -4,6 +4,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -94,13 +95,15 @@ type voiceSetters interface {
 func (s *tuiStore) handleVoiceCapture(ev gatewayEventMsg, voice voiceSetters) bool {
 	switch ev.Type {
 	case "voice.partial":
-		s.voicePartial = stringOr(ev.Payload["text"], "")
+		partial, _ := tuigateway.VoicePartialEvent.Payload(ev.Payload)
+		s.voicePartial = partial.Text
 		return true
 	case "voice.transcript":
 		s.voicePartial = ""
 		return false
 	case "voice.status":
-		state := stringOr(ev.Payload["state"], "")
+		status, _ := tuigateway.VoiceStatusEvent.Payload(ev.Payload)
+		state := status.State
 		voice.setVoiceRecording(state == "listening")
 		voice.setVoiceProcessing(state == "transcribing")
 		if state != "listening" && state != "transcribing" {
@@ -113,11 +116,9 @@ func (s *tuiStore) handleVoiceCapture(ev gatewayEventMsg, voice voiceSetters) bo
 
 // Live connection operation the card shows
 type connectionOperation struct {
-	DeadlineAt float64
-	OpID       string
-	Seq        float64
-	Targets    []map[string]any
-	ToolCallID string
+	OpID    string
+	Seq     int64
+	Targets []tuigateway.ConnectionOperationTarget
 }
 
 // Remembers an operation id, the oldest forgotten past the memory
@@ -132,88 +133,76 @@ func rememberOperation(ids []string, opID string) []string {
 	return ids
 }
 
-// Outcome word of a settled target
-func outcomeWord(target map[string]any) string {
-	switch target["state"] {
+// Word of a target state on the card and in the settled lines
+func connectionStateWord(state tuigateway.ConnectionTargetState) string {
+	switch state {
+	case "initiated":
+		return tr("connection.state.initiated")
 	case "connected":
-		return "connected"
+		return tr("connection.state.connected")
 	case "skipped":
-		return "skipped"
+		return tr("connection.state.skipped")
+	case "failed":
+		return tr("connection.state.failed")
+	case "not_connected":
+		return tr("connection.state.notConnected")
 	}
-	return "not connected"
+	return tr("connection.state.pending")
 }
 
-// Transcript lines of a settled target, its outcome and the named account it connected
-func settledLines(target map[string]any) []string {
-	name, alias := jsString(target["name"]), ""
-	if a, has := target["alias"]; has && truthyJS(a) {
-		alias = jsString(a)
+// Transcript line of a settled target and its outcome
+func settledLine(target tuigateway.ConnectionOperationTarget) string {
+	state := target.State
+	if state != "connected" && state != "skipped" {
+		state = "not_connected"
 	}
-	outcome := name
-	if alias != "" {
-		outcome += " (" + alias + ")"
-	}
-	outcome += ": " + outcomeWord(target)
-	if target["state"] == "connected" && alias != "" {
-		return []string{outcome, tr("connection.namedAccount", name, alias)}
-	}
-	return []string{outcome}
+	return connectionTargetName(target) + ": " + connectionStateWord(state)
 }
 
-// Snapshot fields of a connection payload
-func connectionTargets(v any) []map[string]any {
-	list, _ := v.([]any)
-	rows := make([]map[string]any, 0, len(list))
-	for _, item := range list {
-		row, _ := item.(map[string]any)
-		rows = append(rows, row)
-	}
-	return rows
+// Name of a target as the card shows it
+func connectionTargetName(target tuigateway.ConnectionOperationTarget) string {
+	return firstText(strings.TrimFunc(val(target.Display), isJSSpace), target.Name)
 }
 
-// Shows the card of a connection request unless its operation already settled or was dismissed
-func (s *tuiStore) applyConnectionRequest(p map[string]any) {
-	opID := jsString(p["op_id"])
-	if slices.Contains(s.settledOperations, opID) || slices.Contains(s.dismissedOperations, opID) {
+// Shows the card of a connection request unless its operation already settled
+func (s *tuiStore) applyConnectionRequest(p tuigateway.ConnectionRequestPayload) {
+	if slices.Contains(s.settledOperations, p.OpID) {
 		return
 	}
-	seq := jsNumberOf(p["seq"])
 	current := s.connectionOp
-	if !(current != nil && current.OpID == opID && seq <= current.Seq) {
-		toolCallID, _ := p["tool_call_id"].(string)
-		s.connectionOp = &connectionOperation{DeadlineAt: jsNumberOf(p["deadline_at"]), OpID: opID, Seq: seq, Targets: connectionTargets(p["targets"]), ToolCallID: toolCallID}
+	if !(current != nil && current.OpID == p.OpID && p.Seq <= current.Seq) {
+		s.connectionOp = &connectionOperation{OpID: p.OpID, Seq: p.Seq, Targets: p.Targets}
 	}
-	s.overlay.Connection = &connectionOverlay{OpID: opID}
+	s.overlay.Connection = &connectionOverlay{OpID: p.OpID}
 }
 
-// Applies a connection update, the settled outcome lines when it closes the card
-func (s *tuiStore) applyConnectionUpdate(p map[string]any) []string {
-	opID := jsString(p["op_id"])
+// Applies an operation snapshot, the settled outcome lines when it closes the card
+func (s *tuiStore) applyConnectionSnapshot(p tuigateway.ConnectionOperationSnapshot) []string {
 	current := s.connectionOp
-	shown := current != nil && current.OpID == opID
-	if truthyJS(p["settled"]) {
-		s.settledOperations = rememberOperation(s.settledOperations, opID)
-		if !shown && !slices.Contains(s.dismissedOperations, opID) {
+	shown := current != nil && current.OpID == p.OpID
+	if p.Settled {
+		s.settledOperations = rememberOperation(s.settledOperations, p.OpID)
+		if !shown {
 			return nil
 		}
-		if shown {
-			s.clearConnectionOperation()
-		}
-		lines := []string{}
-		for _, target := range connectionTargets(p["targets"]) {
-			lines = append(lines, settledLines(target)...)
+		s.clearConnectionOperation()
+		lines := make([]string, 0, len(p.Targets))
+		for _, target := range p.Targets {
+			lines = append(lines, settledLine(target))
 		}
 		return lines
 	}
-	seq := jsNumberOf(p["seq"])
-	if !shown || seq <= current.Seq {
+	if !shown || p.Seq <= current.Seq {
 		return nil
 	}
-	next := *current
-	next.DeadlineAt, next.Seq, next.Targets = jsNumberOf(p["deadline_at"]), seq, connectionTargets(p["targets"])
-	s.connectionOp = &next
-	s.overlay.Connection = &connectionOverlay{OpID: opID}
+	s.connectionOp = &connectionOperation{OpID: p.OpID, Seq: p.Seq, Targets: p.Targets}
+	s.overlay.Connection = &connectionOverlay{OpID: p.OpID}
 	return nil
+}
+
+// Applies a connection update, the settled outcome lines when it closes the card
+func (s *tuiStore) applyConnectionUpdate(p tuigateway.ConnectionUpdatePayload) []string {
+	return s.applyConnectionSnapshot(p.ConnectionOperationSnapshot)
 }
 
 // Closes the connection card

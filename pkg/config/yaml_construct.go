@@ -151,7 +151,13 @@ func pyHashKey(v any) string {
 			return "K(" + strings.Join(parts, "\x01") + ")"
 		}
 	}
-	panic(pyErr("TypeError", "unhashable type: '"+unhashableName(v, isRTObject(v))+"'"))
+	name := unhashableName(v, isRTObject(v))
+	kind := map[string]string{"list": "a list", "CommentedSeq": "a list", "dict": "a mapping", "CommentedMap": "a mapping",
+		"set": "a set", "CommentedSet": "a set"}[name]
+	if kind == "" {
+		kind = "a " + name
+	}
+	panic(pyErr("TypeError", "a YAML mapping key or set item is "+kind+", which cannot serve as a key"))
 }
 
 // Whether an unhashable object came from the round trip constructor
@@ -702,16 +708,16 @@ func yamlIntOf(text string, base int) *big.Int {
 	} else if n, ok := pyint.ParseBase(text, base); ok {
 		return n
 	}
-	r := []rune(pyrepr.StrRepr(text))
+	r := []rune(text)
 	if len(r) > 200 {
 		r = r[:200]
 	}
-	panic(pyErr("ValueError", fmt.Sprintf("invalid literal for int() with base %d: %s", base, string(r))))
+	panic(pyErr("ValueError", fmt.Sprintf("YAML value %s is not a whole number in base %d", string(r), base)))
 }
 
 func strIndex0(s string) rune {
 	if s == "" {
-		panic(pyErr("IndexError", "string index out of range"))
+		panic(pyErr("IndexError", "YAML text is empty where a character was expected"))
 	}
 	return pystr.Runes(s)[0]
 }
@@ -910,9 +916,9 @@ func (c *safeConstructor) constructBinary(n *ry.Node) any {
 			}
 			var msg string
 			if j-i == 1 {
-				msg = fmt.Sprintf("'ascii' codec can't encode character '%s' in position %d: ordinal not in range(128)", unicodeErrorChar(runes[i]), i)
+				msg = fmt.Sprintf("the character %c at position %d is not ASCII", runes[i], i)
 			} else {
-				msg = fmt.Sprintf("'ascii' codec can't encode characters in position %d-%d: ordinal not in range(128)", i, j-1)
+				msg = fmt.Sprintf("the characters at positions %d-%d are not ASCII", i, j-1)
 			}
 			panic(constructorError("", nil, "failed to convert base64 data into ascii: "+msg, n.Start))
 		}

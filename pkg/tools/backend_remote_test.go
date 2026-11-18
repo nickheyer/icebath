@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -19,16 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-func remoteTestEnv(t *testing.T) *Env {
-	t.Helper()
-	h := t.TempDir()
-	return &Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}
-}
 
 // Fake transport recording uploads and deletes
 type fakeTransport struct {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -157,14 +158,14 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 		slug = GetCurrentBoard(ctx)
 	}
 	if !BoardExists(&slug) {
-		return nil, &ValueError{fmt.Sprintf("board %s does not exist", pyrepr.Repr(slug))}
+		return nil, &ValueError{fmt.Sprintf("board %s does not exist", errchain.Show(slug))}
 	}
 	dbPath, err := KanbanDBPath(ctx, &slug)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Stat(dbPath); err != nil {
-		return nil, &FileNotFoundError{fmt.Sprintf("board %s has no database at %s", pyrepr.Repr(slug), dbPath)}
+		return nil, &FileNotFoundError{fmt.Sprintf("board %s has no database at %s", errchain.Show(slug), dbPath)}
 	}
 	base := strings.TrimSuffix(strings.TrimSuffix(pypath.PathStr(pypath.Expanduser(outputPath)), ".tar.gz"), ".tgz")
 	if err := os.MkdirAll(pypath.PathParent(base), 0o777); err != nil {
@@ -311,13 +312,13 @@ func readManifest(root string) (*pyjson.Object, error) {
 		if ok {
 			shown = format
 		}
-		return nil, &ValueError{"archive is not an Icebath kanban board export (format=" + pyrepr.Repr(shown) + ")"}
+		return nil, &ValueError{"archive is not an Icebath kanban board export (format=" + errchain.Show(shown) + ")"}
 	}
 	version, _ := manifest.Get("format_version")
 	n, isInt := pyint.Instance(version)
 	if !isInt || n.Cmp(big.NewInt(ArchiveFormatVersion)) > 0 {
 		return nil, &ValueError{fmt.Sprintf("archive format version %s is newer than this Icebath understands (max %d) — update Icebath and retry",
-			pyrepr.Repr(version), ArchiveFormatVersion)}
+			errchain.Show(version), ArchiveFormatVersion)}
 	}
 	return manifest, nil
 }

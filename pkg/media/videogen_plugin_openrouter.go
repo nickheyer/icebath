@@ -674,7 +674,7 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 		status = strings.ToLower(pyrepr.Str(v))
 	}
 	if status != "completed" {
-		text := "video job ended with status=" + pyrepr.Repr(status)
+		text := "video job ended with status=" + errchain.Show(status)
 		if v := mustGet(job, "error"); pyTruthy(v) {
 			text = pyrepr.Str(v)
 		}

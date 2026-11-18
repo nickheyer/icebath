@@ -194,7 +194,7 @@ func detectLightModeUncached() (bool, error) {
 	if pystr.StrIsDigit(last) {
 		n, ok := pystr.IntText(last)
 		if !ok {
-			return false, fmt.Errorf("invalid literal for int() with base 10: '%s'", last)
+			return false, fmt.Errorf("COLORFGBG background %s is not a whole number", last)
 		}
 		if n.IsInt64() && n.Int64() >= 0 && n.Int64() < 16 {
 			return n.Int64() == 7 || n.Int64() == 15, nil

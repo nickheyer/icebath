@@ -2,21 +2,16 @@ package gatewayrun
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -25,9 +20,6 @@ const (
 	IdleExitReason         = "idle_exit"
 	IdleExitStopPrefix     = "auto-started gateway idle"
 )
-
-// Kanban statuses the embedded dispatcher acts on without a human
-var kanbanDueStatuses = []string{"scheduled", "ready", "running", "review"}
 
 // Idle window from gateway.unmanaged_idle_exit_seconds of the launch home, zero disabling and junk keeping the default
 func idleExitSeconds(ctx context.Context) float64 {
@@ -38,7 +30,7 @@ func idleExitSeconds(ctx context.Context) float64 {
 	}
 	seconds, ok := pyFloat(value)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("gateway.unmanaged_idle_exit_seconds=%s is not a number; using %.0f", pyrepr.Repr(value), DefaultIdleExitSeconds))
+		pkgLog().Warn(fmt.Sprintf("gateway.unmanaged_idle_exit_seconds=%s is not a number; using %.0f", errchain.Show(value), DefaultIdleExitSeconds))
 		return DefaultIdleExitSeconds
 	}
 	return math.Max(0, seconds)
@@ -127,7 +119,7 @@ func messagingBusy(r *GatewayRunner) string {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	return "messaging " + pyrepr.Repr(names)
+	return "messaging " + errchain.Show(names)
 }
 
 // Homes of every authority and every cron ticked profile, sorted
@@ -149,75 +141,6 @@ func servedHomes(ctx context.Context, r *GatewayRunner) ([]string, error) {
 	}
 	sort.Strings(homes)
 	return homes, nil
-}
-
-// A running cron job or a runnable non terminal job stored in any served home
-func cronBusy(ctx context.Context, homes []string) (string, error) {
-	if len(cron.GetRunningJobIDs()) > 0 {
-		return "cron job running", nil
-	}
-	for _, h := range homes {
-		if _, err := os.Stat(filepath.Join(h, "cron", "jobs.json")); err != nil {
-			continue
-		}
-		jobs, err := cron.LoadJobsForHome(ctx, h)
-		if err != nil {
-			return "", err
-		}
-		for _, job := range jobs {
-			if cron.IsJobRunnable(job) && !cron.IsTerminalJob(job) {
-				return "cron jobs scheduled in " + h, nil
-			}
-		}
-	}
-	return "", nil
-}
-
-// A kanban task on any unarchived board in a status the dispatcher acts on
-func kanbanBusy(ctx context.Context) (string, error) {
-	boards, err := kanban.ListBoards(false)
-	if err != nil {
-		return "", err
-	}
-	marks := strings.TrimSuffix(strings.Repeat("?,", len(kanbanDueStatuses)), ",")
-	args := make([]any, len(kanbanDueStatuses))
-	for i, s := range kanbanDueStatuses {
-		args[i] = s
-	}
-	for _, meta := range boards {
-		slugValue, _ := meta.Get("slug")
-		var slug *string
-		if s, ok := slugValue.(string); ok {
-			slug = &s
-		}
-		path, err := kanban.KanbanDBPath(ctx, slug)
-		if err != nil {
-			return "", err
-		}
-		if _, err := os.Stat(path); err != nil {
-			continue
-		}
-		found, err := func() (bool, error) {
-			conn, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?mode=ro&_pragma=busy_timeout(2000)")
-			if err != nil {
-				return false, err
-			}
-			defer conn.Close()
-			rows, err := conn.QueryContext(ctx, "SELECT 1 FROM tasks WHERE status IN ("+marks+") LIMIT 1", args...)
-			if err != nil {
-				return false, err
-			}
-			defer rows.Close()
-			return rows.Next(), rows.Err()
-		}()
-		if err != nil {
-			return "", err
-		}
-		if found {
-			return "kanban work on board " + pyrepr.Str(slugValue), nil
-		}
-	}
-	return "", nil
 }
 
 // Hosted room service whose status reports its current tasks and leased rooms

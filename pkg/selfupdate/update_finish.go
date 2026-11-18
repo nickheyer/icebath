@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -158,7 +159,7 @@ func requestResumeToken(value any) (map[string]any, error) {
 	if m, ok := value.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("resume token is %s where a mapping was expected", errchain.Kind(value))
 }
 
 // Finishes a historical takeover in a fresh process of the selected checkout and writes its acknowledgement

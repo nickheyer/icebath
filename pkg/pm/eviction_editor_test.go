@@ -129,14 +129,14 @@ func TestEditorSettleAndPruneForgetWhatTheUserDecided(t *testing.T) {
 		t.Fatalf("string disabled pruned %v", plugins)
 	}
 	doc, _ := loadRoundtrip([]byte("plugins:\n  disabled: 5\n  disabled_by_update:\n    a: {enabled: true}\n"))
-	if err := pruneRecord(rtGet(rtRoot(doc), "plugins")); err == nil || !strings.Contains(err.Error(), "'int' object is not iterable") {
+	if err := pruneRecord(rtGet(rtRoot(doc), "plugins")); err == nil || !strings.Contains(err.Error(), "plugins.disabled must be a list, got a number") {
 		t.Fatalf("non iterable disabled %v", err)
 	}
 	if err := settleRecord(rtMapping(), []any{map[string]any{}}); err != nil {
 		t.Fatalf("settling without a record raised %v", err)
 	}
 	doc, _ = loadRoundtrip([]byte(config))
-	if err := settleRecord(rtGet(rtRoot(doc), "plugins"), []any{[]any{"a"}}); err == nil || !strings.Contains(err.Error(), "unhashable type: 'list'") {
+	if err := settleRecord(rtGet(rtRoot(doc), "plugins"), []any{[]any{"a"}}); err == nil || !strings.Contains(err.Error(), "expected a single value, got a list") {
 		t.Fatalf("unhashable settled name %v", err)
 	}
 }
@@ -190,11 +190,11 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 		t.Fatalf("string disabled %v", plugins)
 	}
 	doc, _ := loadRoundtrip([]byte("plugins:\n  disabled: other\n"))
-	if err := disablePlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow"), "r", ""); err == nil || !strings.Contains(err.Error(), "'str' object has no attribute 'append'") {
+	if err := disablePlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow"), "r", ""); err == nil || !strings.Contains(err.Error(), "expected a list to add slow to, got text") {
 		t.Fatalf("string without the name %v", err)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  disabled: 5\n"))
-	if err := disablePlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow"), "r", ""); err == nil || !strings.Contains(err.Error(), "argument of type 'int' is not iterable") {
+	if err := disablePlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow"), "r", ""); err == nil || !strings.Contains(err.Error(), "expected a list or mapping holding slow, got a number") {
 		t.Fatalf("int disabled %v", err)
 	}
 	_, plugins = edEdit(t, "plugins:\n  enabled: keep-slow\n  disabled: slow\n  disabled_by_update:\n    slow: {enabled: true}\n", func(p *yaml.Node) error {
@@ -204,7 +204,7 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 		t.Fatalf("string lists on rejoin %v", plugins)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  disabled: s\n  disabled_by_update:\n    s: {enabled: true}\n"))
-	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "s", edSpell("s")); err == nil || !strings.Contains(err.Error(), "doesn't support item deletion") {
+	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "s", edSpell("s")); err == nil || !strings.Contains(err.Error(), "expected a list of names, got text") {
 		t.Fatalf("single letter string disabled %v", err)
 	}
 	text, _ := edEdit(t, "plugins:\n  disabled: {0: slow, 1: keep}\n  disabled_by_update:\n    slow: {enabled: false}\n", func(p *yaml.Node) error {
@@ -214,7 +214,7 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 		t.Fatalf("index keyed mapping %s", text)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  enabled: [keep, [nested]]\n  disabled: []\n"))
-	if err := disablePlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow"), "r", ""); !edPyError(err, "TypeError", "unhashable type: 'seq'") {
+	if err := disablePlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpellings("slow"), "r", ""); !edPyError(err, "TypeError", "expected a plugin name, got a list") {
 		t.Fatalf("unhashable enabled item %v", err)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  disabled: {a: slow}\n  disabled_by_update:\n    slow: {enabled: false}\n"))

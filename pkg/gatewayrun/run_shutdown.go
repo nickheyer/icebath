@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -335,7 +336,7 @@ func (r *GatewayRunner) logScaleToZeroNotArmedReason(ctx context.Context) {
 	active := r.scaleToZeroActiveMessagingPlatforms()
 	enabled := "none"
 	if len(active) > 0 {
-		enabled = pyrepr.Repr(active)
+		enabled = errchain.Show(active)
 	}
 	wake := "MISSING"
 	if w := relayWakeURLOrNone(ctx); w != nil && *w != "" {
@@ -343,7 +344,7 @@ func (r *GatewayRunner) logScaleToZeroNotArmedReason(ctx context.Context) {
 	}
 	pkgLog().Info(fmt.Sprintf("scale-to-zero: NOT armed despite opt-in — relay_only_or_absent=%s (enabled platforms=%s), "+
 		"wake_url=%s. Need relay-only messaging + a registered wake URL.",
-		pyrepr.Repr(gateway.MessagingIsRelayOnlyOrAbsent(active)), enabled, wake))
+		errchain.Show(gateway.MessagingIsRelayOnlyOrAbsent(active)), enabled, wake))
 }
 
 // Value of fn, the busy sentinel when the work source cannot be read so the gateway stays awake

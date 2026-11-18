@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -38,7 +37,7 @@ func (r *GatewayRunner) adaptersForProfile(ctx context.Context, profile *string)
 		return r.primaryAdapters()
 	}
 	if adapters, ok := r.profileAdaptersMap().Get(name); ok {
-		if cron.HasCredentialPlatform(adapters, nil) || !r.isSharedBotSatellite(ctx, name, "") {
+		if gateway.HasCredentialPlatform(adapters, nil) || !r.isSharedBotSatellite(ctx, name, "") {
 			return adapters
 		}
 		return pydict.Merge(r.primaryAdapters(), adapters)

@@ -1,10 +1,11 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tools
 
 import (
 	"context"
 	"encoding/json"
 	"math/big"
-	"os"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -120,23 +121,23 @@ func lspJSONValue(v any) any {
 	return v
 }
 
-// Worktrees the operator pointed the session at, the launch dir and the surface set workspace, none for scheduled work
-func lspOperatorWorkspaceRoots(env *Env) map[string]bool {
-	if os.Getenv("ICEBATH_KANBAN_TASK") != "" {
-		return map[string]bool{}
+// Binds the LSP layer seams the write path and the worktree sweep consult
+func init() {
+	lspServiceLookup = bridgeServiceLookup
+	lspStaticHandles = lsp.StaticRegistryHandles
+	lspInlineBudget = lsp.InlineWait
+	lspDiagnosticsBlock = func(path string, diagnostics []map[string]any, header string) string {
+		block := lspReportForFile(path, diagnostics)
+		if block == "" {
+			return ""
+		}
+		return lspTruncate(header + block)
 	}
-	anchors := []func() (string, error){os.Getwd}
-	if !isCronSession(env) {
-		anchors = append(anchors, func() (string, error) { return ResolveAgentCwd(env) })
-	}
-	return lsp.OperatorWorkspaceRoots(anchors)
+	lspReleaseWorkspace = lsp.ReleaseWorkspace
 }
 
-// Active LSP service of the session's profile, nil when disabled or its config cannot build one
-func lspServiceFor(env *Env) lspService { return lspServiceLookup(env) }
-
-// Session service lookup the write path consults, swapped by tests that stand in a fake service
-var lspServiceLookup = func(env *Env) lspService {
+// Session service of the profile, nil when disabled or its config cannot build one
+func bridgeServiceLookup(env *Env) lspService {
 	svc, err := LSPServiceFor(env)
 	if err != nil || svc == nil {
 		return nil
@@ -210,20 +211,6 @@ func (f lspFuture) Wait(timeout time.Duration) (*lspEditCheckResult, bool, error
 func (f lspFuture) OnDone(fn func(res *lspEditCheckResult, cancelled bool, err error)) {
 	f.fut.OnDone(func(res *lsp.CheckResult, cancelled bool, err error) { fn(lspCheckResult(res), cancelled, err) })
 }
-
-// Whether a built in server claims the extension
-func lspStaticRegistryHandles(ext string) bool { return lsp.StaticRegistryHandles(ext) }
-
-// lsp.trusted_workspaces as directories, a malformed value trusting nothing extra
-func lspParseTrustedWorkspaces(raw any) []string { return lsp.ParseTrustedWorkspaces(nil, raw) }
-
-// Whether a root lies in a trusted directory or an operator worktree
-func lspIsTrustedWorkspace(root string, trusted []string, operatorRoots map[string]bool) bool {
-	return lsp.IsTrustedWorkspace(root, trusted, operatorRoots)
-}
-
-// Time a write may still wait for its verdict inline, zero start meaning unknown
-func lspInlineWait(started time.Time) time.Duration { return lsp.InlineWait(started) }
 
 // Diagnostics block of a file, raising like the reporter does on malformed entries
 func lspReportForFile(path string, diagnostics []map[string]any) string {

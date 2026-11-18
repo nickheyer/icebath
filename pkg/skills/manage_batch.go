@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const batchMaxOps = 20
@@ -305,7 +306,7 @@ func (s *Scope) rollbackBatch(snapshots []skillSnapshot, results []batchResult) 
 		}
 		post, _ := s.FindSkill(sn.name)
 		if err := restoreSnapshot(sn, post, written); err != nil {
-			note := fmt.Sprintf("ROLLBACK FAILED for '%s' (%s)", sn.name, pyErrText(err))
+			note := fmt.Sprintf("%s for '%s' (%s)", tools.RollbackFailedMarker, sn.name, pyErrText(err))
 			if sn.snap != "" {
 				note += fmt.Sprintf("; snapshot preserved at '%s'", sn.snap)
 			}

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gateway
 
 import (
@@ -29,7 +31,7 @@ func kanbanContextItem(context *pyjson.Object, key string) (any, error) {
 }
 
 // Binds the adopted worker to its Kanban claim before tool discovery, refusing a stale claim and following the submitter
-func BindWorkerContext(ctx context.Context, frame *pyjson.Object) error {
+func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
 	text, _ := policy.GetOr("kanban_json", nil).(string)
 	if text == "" {

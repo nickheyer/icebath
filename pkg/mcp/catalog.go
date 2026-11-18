@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -202,13 +203,6 @@ func yOr(a, b any) any {
 	return b
 }
 
-func yTypeName(v any) string {
-	if _, ok := v.(map[any]any); ok {
-		return "dict"
-	}
-	return pyTypeName(v)
-}
-
 // Python list() of a value, characters of a string and keys of a mapping
 func pyList(v any) ([]any, error) {
 	switch x := v.(type) {
@@ -230,7 +224,7 @@ func pyList(v any) ([]any, error) {
 		m, _, _ := yDict(x)
 		return pyList(m)
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", yTypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 func pyStrListRepr(items []string) string {
@@ -242,7 +236,7 @@ func pyStrListRepr(items []string) string {
 }
 
 func notStringError(v any) error {
-	return fmt.Errorf("expected string or bytes-like object, got '%s'", yTypeName(v))
+	return fmt.Errorf("expected text, got %s", errchain.Kind(v))
 }
 
 func isPyInt(v any) bool {
@@ -256,7 +250,7 @@ func isPyInt(v any) bool {
 func parseEnvSpec(raw any) (EnvVarSpec, error) {
 	m, _, ok := yDict(raw)
 	if !ok {
-		return EnvVarSpec{}, catalogErr("env entry must be a mapping, got %s", yTypeName(raw))
+		return EnvVarSpec{}, catalogErr("env entry must be a mapping, got %s", errchain.Kind(raw))
 	}
 	nameRaw := yOr(m["name"], "")
 	if !yTruthy(nameRaw) {
@@ -516,14 +510,14 @@ func utf8DecodeError(data []byte) error {
 			i += size
 			continue
 		}
-		reason := "invalid start byte"
+		reason := "cannot start a character"
 		if b := data[i]; b >= 0xc2 && b <= 0xf4 {
-			reason = "invalid continuation byte"
+			reason = "begins a character that the next byte breaks"
 			if !utf8.FullRune(data[i:]) {
-				reason = "unexpected end of data"
+				reason = "begins a character the text ends inside"
 			}
 		}
-		return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: %s", data[i], i, reason)
+		return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d %s", data[i], i, reason)
 	}
 	return nil
 }
@@ -699,7 +693,7 @@ func IsInstalled(ctx context.Context, name string) (bool, error) {
 func serverBlockEnabled(cfg any) (bool, error) {
 	m, _, ok := yDict(cfg)
 	if !ok {
-		return false, fmt.Errorf("'%s' object has no attribute 'get'", yTypeName(cfg))
+		return false, fmt.Errorf("MCP server config is %s where a mapping was expected", errchain.Kind(cfg))
 	}
 	return ServerEnabled(m), nil
 }
@@ -796,7 +790,7 @@ func doGitInstall(ctx context.Context, ui TerminalUI, entry *CatalogEntry) (stri
 	}
 	url, isStr := install.URL.(string)
 	if !isStr {
-		return "", fmt.Errorf("expected str, bytes or os.PathLike object, not %s", yTypeName(install.URL))
+		return "", fmt.Errorf("catalog install url is %s where text was expected", errchain.Kind(install.URL))
 	}
 	isSHA := shaRefRe.MatchString(ref)
 	gitEnv := tools.NoninteractiveGitEnv(nil)
@@ -851,7 +845,7 @@ func doGitInstall(ctx context.Context, ui TerminalUI, entry *CatalogEntry) (stri
 func expandInstallDir(value any, installDir string) (string, error) {
 	s, ok := value.(string)
 	if !ok {
-		return "", fmt.Errorf("argument of type '%s' is not iterable", yTypeName(value))
+		return "", fmt.Errorf("expected text, got %s", errchain.Kind(value))
 	}
 	if !strings.Contains(s, installDirVar) {
 		return s, nil
@@ -985,7 +979,7 @@ func readPriorToolList(ctx context.Context, name, key string) ([]string, error) 
 	cfg := yOr(servers[name], map[string]any{})
 	m, _, ok := yDict(cfg)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", yTypeName(cfg))
+		return nil, fmt.Errorf("MCP server %s config is %s where a mapping was expected", name, errchain.Kind(cfg))
 	}
 	toolsCfg, _, ok := yDict(yOr(m["tools"], map[string]any{}))
 	if !ok {
@@ -1018,7 +1012,7 @@ func probeCatalogTools(ctx context.Context, env *tools.Env, ui TerminalUI, name 
 	}
 	m, _, isMap := yDict(cfg)
 	if !isMap {
-		say(ui, fmt.Sprintf("  Probe failed: '%s' object has no attribute 'get'", yTypeName(cfg)), ansiYellow)
+		say(ui, fmt.Sprintf("  Probe failed: MCP server %s config is %s where a mapping was expected", name, errchain.Kind(cfg)), ansiYellow)
 		return nil, false, nil
 	}
 	found, err := catalogProbeServer(ctx, env, name, m)
@@ -1045,12 +1039,12 @@ func writeToolsFilter(ctx context.Context, name, mode string, values []string) e
 	}
 	servers, _, ok := yDict(serversRaw)
 	if !ok {
-		return fmt.Errorf("'%s' object has no attribute 'get'", yTypeName(serversRaw))
+		return fmt.Errorf("config mcp_servers is %s where a mapping was expected", errchain.Kind(serversRaw))
 	}
 	entryRaw := yOr(servers[name], map[string]any{})
 	entry, _, ok := yDict(entryRaw)
 	if !ok {
-		return fmt.Errorf("'%s' object has no attribute 'pop'", yTypeName(entryRaw))
+		return fmt.Errorf("config mcp_servers.%s is %s where a mapping was expected", name, errchain.Kind(entryRaw))
 	}
 	if values == nil {
 		delete(entry, "tools")

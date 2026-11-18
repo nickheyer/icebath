@@ -486,7 +486,7 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 		return name, args, ""
 	}
 	if !e.toolSearchScopedNames(ctx)[underlying] {
-		return name, args, ScopeBlockReason(ctx, env, underlying)
+		return name, args, SessionScopeBlockReason(ctx, env, underlying, e.Host.EnabledToolsets(), e.Host.DisabledToolsets())
 	}
 	scopeBlock := ValidateDeferredCallArgs(ctx, env, underlying, DeferredCallArguments(orderedArgsObject(raw, args).Vals))
 	if scopeBlock == "" {

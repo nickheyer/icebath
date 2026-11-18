@@ -66,18 +66,14 @@ func payload(kv ...any) *pyjson.Object {
 	return o
 }
 
-// Python repr of the sorted keys of a set
+// Sorted keys of a set joined by commas
 func sortedRepr(m map[string]bool) string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	items := make([]any, len(keys))
-	for i, k := range keys {
-		items[i] = k
-	}
-	return pyrepr.Repr(items)
+	return strings.Join(keys, ", ")
 }
 
 // Equality of two optional strings with None equal only to None
@@ -161,7 +157,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 		workspaceKind = *o.WorkspaceKind
 	}
 	if !ValidWorkspaceKinds[workspaceKind] {
-		return "", &ValueError{fmt.Sprintf("workspace_kind must be one of %s, got %s", sortedRepr(ValidWorkspaceKinds), pyrepr.StrRepr(workspaceKind))}
+		return "", &ValueError{fmt.Sprintf("workspace_kind must be one of %s, got %s", sortedRepr(ValidWorkspaceKinds), workspaceKind)}
 	}
 	branchName := o.BranchName
 	if branchName != nil {

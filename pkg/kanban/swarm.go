@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -217,7 +218,7 @@ func createSwarmUncommitted(ctx context.Context, conn state.SQLiteConn, o SwarmO
 		if ids, _ := dictGet(existing, "worker_ids"); ids != nil {
 			list, ok := ids.([]any)
 			if !ok {
-				return nil, &TypeError{fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(ids))}
+				return nil, &TypeError{fmt.Sprintf("swarm topology worker_ids are %s where a list was expected", errchain.Kind(ids))}
 			}
 			for _, x := range list {
 				if pyrepr.Truthy(x) {
@@ -323,7 +324,7 @@ func LatestBlackboard(ctx context.Context, conn state.SQLiteConn, rootID string)
 		}
 		entry, ok := decoded.(*pyjson.Object)
 		if !ok {
-			return nil, &TypeError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+			return nil, &TypeError{fmt.Sprintf("swarm blackboard entry is %s where a mapping was expected", errchain.Kind(decoded))}
 		}
 		key, ok := entry.GetOr("key", nil).(string)
 		if !ok || key == "" {

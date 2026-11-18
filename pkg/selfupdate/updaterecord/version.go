@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -183,7 +184,7 @@ func stampVersionInfo() (*VersionInfo, error) {
 	}
 	commit, ok := commitValue.(string)
 	if !ok {
-		return nil, &pyjson.TypeError{Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(commitValue))}
+		return nil, &pyjson.TypeError{Msg: fmt.Sprintf("stamped version commit is %s where text was expected", errchain.Kind(commitValue))}
 	}
 	if strings.Trim(commit, "0") == "" {
 		return nil, nil

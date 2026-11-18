@@ -315,7 +315,7 @@ func osvHTTPJSON(ctx context.Context, url string, payload any) (any, error) {
 		return nil, &auditHTTPError{err: err}
 	}
 	if !utf8.Valid(raw) {
-		return nil, &pm.PyError{Class: "UnicodeDecodeError", Message: "'utf-8' codec can't decode the OSV response"}
+		return nil, &pm.PyError{Class: "UnicodeDecodeError", Message: "the OSV response is not valid UTF-8"}
 	}
 	return pyjson.Loads(string(raw))
 }

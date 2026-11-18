@@ -39,7 +39,7 @@ func LockPackageNames(sourceRepo string) (map[string]bool, error) {
 		}
 		s, ok := name.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", tomlTypeName(name))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock package name must be text, got %s", tomlKind(name))}
 		}
 		names[pep503Name(s)] = true
 	}

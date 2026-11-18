@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -81,7 +82,7 @@ var newTelegramBot = func(token any, proxy string) (telegramBotAPI, error) {
 		switch u.Scheme {
 		case "http", "https", "socks5", "socks5h":
 		default:
-			return nil, fmt.Errorf("Unknown scheme for proxy URL %s", pyrepr.Repr(proxy))
+			return nil, fmt.Errorf("Unknown scheme for proxy URL %s", proxy)
 		}
 		transport.Proxy = http.ProxyURL(u)
 	}
@@ -192,12 +193,12 @@ func (b *telegramHTTPBot) Send(ctx context.Context, method string, kwargs map[st
 		if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
 			return nil, newTelegramError("TimedOut", "Timed out")
 		}
-		return nil, newTelegramError("NetworkError", "httpx.ConnectError: "+err.Error())
+		return nil, newTelegramError("NetworkError", "could not reach Telegram: "+err.Error())
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, newTelegramError("NetworkError", "httpx.ReadError: "+err.Error())
+		return nil, newTelegramError("NetworkError", "could not read the Telegram reply: "+err.Error())
 	}
 	return parseTelegramResponse(resp.StatusCode, payload)
 }
@@ -245,7 +246,7 @@ func parseTelegramResponse(code int, payload []byte) (*telegramMessage, error) {
 			after, _ := new(big.Float).SetInt(secs).Float64()
 			return nil, &telegramError{Kind: "RetryAfter", Message: fmt.Sprintf("Flood control exceeded. Retry in %s seconds", secs), RetryAfter: &after}
 		}
-		message += fmt.Sprintf("\nThe server response contained unknown parameters: %s", pyrepr.Repr(params))
+		message += fmt.Sprintf("\nThe server response contained unknown parameters: %s", errchain.Show(params))
 	}
 	switch code {
 	case http.StatusForbidden:

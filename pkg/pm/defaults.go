@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -85,7 +86,7 @@ func pyIterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Updates the recorded opt outs, writing only on change, and returns the new set

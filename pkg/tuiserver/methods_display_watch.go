@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tuiserver
 
 import (
@@ -199,7 +201,7 @@ func pollLeaseFiles() {
 }
 
 // Starts the lease file poll once per process and marks in process transitions seen so they broadcast once
-func ensureLeaseWatcher() {
+func startLeaseWatcher() {
 	if !leaseWatcherStarted.CompareAndSwap(false, true) {
 		return
 	}

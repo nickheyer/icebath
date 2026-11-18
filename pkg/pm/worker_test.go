@@ -335,7 +335,7 @@ func TestWorkerInvalidArgumentsKeepTheEngineExceptionType(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	if _, err := request(ctx, "ensure", map[string]any{"name": "node", "explicit": true, "bogus": 1}, workerHooks{}, ""); errorClass(err) != "TypeError" ||
-		err.Error() != "ensure() got an unexpected keyword argument 'bogus'" {
+		err.Error() != "ensure does not take the option bogus" {
 		t.Fatalf("got %v", err)
 	}
 }

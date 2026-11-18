@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -309,7 +310,7 @@ var tccCopyAlias = func(venvBin, name, anchor string) bool {
 			return true
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("TCC anchor alias %s not materialized: %s", name, pyfs.OSErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf("TCC anchor alias %s not materialized: %s", name, errchain.OSText(err)))
 	tccDiscard(tmp)
 	return false
 }
@@ -380,10 +381,10 @@ var tccPassesBootGate = func(staged, venvDir string) bool {
 	}
 	if err != nil {
 		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOEXEC) || errors.Is(err, exec.ErrNotFound) {
-			pkgLog().Debug(fmt.Sprintf("boot gate skipped: cannot execute %s (%s)", staged, pyfs.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("boot gate skipped: cannot execute %s (%s)", staged, errchain.OSText(err)))
 			return true
 		}
-		pkgLog().Warn("boot gate: staged copy not executable: " + pyfs.OSErrorText(err))
+		pkgLog().Warn("boot gate: staged copy not executable: " + errchain.OSText(err))
 		return false
 	}
 	if code != 0 {
@@ -466,7 +467,7 @@ func ensureMacosTCCAnchor(ctx context.Context, projectRoot string) (string, erro
 		if errors.As(err, &gate) {
 			pkgLog().Warn("macOS TCC anchor boot-gate refused install: " + gate.msg)
 		} else {
-			pkgLog().Warn("macOS TCC anchor install failed: " + pyfs.OSErrorText(err))
+			pkgLog().Warn("macOS TCC anchor install failed: " + errchain.OSText(err))
 		}
 		return "", nil
 	}

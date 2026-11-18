@@ -16,6 +16,7 @@ import (
 	"time"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -962,7 +963,7 @@ func LoadFrom(python string) (*tools.NemoRelay, error) {
 const pythonNoRelayModule = "No module named 'nemo_relay'"
 
 // Missing Relay runtime of an environment without nemo_relay
-var errNoRelayModule = errors.New("the Relay runtime is not installed in the selected Python environment")
+var errNoRelayModule = errchain.Reword(tools.ErrRelayBindingMissing, "the Relay runtime is not installed in the selected Python environment")
 
 // Whether the lock pins a nemo-relay wheel for this host, the marker deciding where Relay exists
 func wheelPinned() bool {

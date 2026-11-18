@@ -190,10 +190,10 @@ func TestUpdateLogsAreReadFromTheRootHomeUnderAProfile(t *testing.T) {
 
 func TestParseSinceBeyondTheDatetimeRangeRaisesOverflowError(t *testing.T) {
 	for since, want := range map[string]string{
-		"99999999999d":          "Python int too large to convert to C int",
-		"99999999999999999999s": "Python int too large to convert to C int",
-		"86400000000000s":       "days=1000000000; must have magnitude <= 999999999",
-		"1000000d":              "date value out of range",
+		"99999999999d":          "the --since window 99999999999d reaches back before the year 1",
+		"99999999999999999999s": "the --since window 99999999999999999999s reaches back before the year 1",
+		"86400000000000s":       "the --since window 86400000000000s reaches back before the year 1",
+		"1000000d":              "the --since window 1000000d reaches back before the year 1",
 	} {
 		_, ok, err := parseLogSince(since)
 		var raised *pyint.Error

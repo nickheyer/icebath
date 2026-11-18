@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -104,7 +105,7 @@ func pluginPCMStreamingProvider(ctx context.Context, provider string, ttsConfig 
 	}
 	f, ok := pyRealNumber(rate)
 	if _, isBool := rate.(bool); isBool || !ok || math.IsInf(f, 0) || math.IsNaN(f) || f < 1 {
-		pkgLog().Warn(fmt.Sprintf("TTS provider '%s' sets streams_pcm without a valid stream_sample_rate (%s); using per-sentence synthesis instead", key, pyrepr.Repr(rate)))
+		pkgLog().Warn(fmt.Sprintf("TTS provider '%s' sets streams_pcm without a valid stream_sample_rate (%s); using per-sentence synthesis instead", key, errchain.Show(rate)))
 		return nil, 0, false
 	}
 	return plugin, int(f), true

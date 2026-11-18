@@ -39,8 +39,12 @@ type clarifyReq struct {
 	Answers   map[string]string
 }
 
-// Masked sudo password prompt
-type sudoReq struct{ RequestID string }
+// Masked sudo password prompt, for a terminal command or for the screen package install of a profile
+type sudoReq struct {
+	Command    string
+	ProfileKey string
+	RequestID  string
+}
 
 // Masked secret prompt for one environment variable
 type secretReq struct {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -260,7 +261,7 @@ func kanbanHandler(toolName string, fn func(k *kanbanCall) (string, error)) tool
 func registeredProperties(toolName string) (map[string]any, error) {
 	def := tools.Default.Get(toolName)
 	if def == nil || def.Schema == nil {
-		return nil, &RuntimeError{"'NoneType' object is not subscriptable"}
+		return nil, &RuntimeError{"tool " + toolName + " is not registered"}
 	}
 	parameters, ok := def.Schema.Get("parameters")
 	if !ok {
@@ -268,7 +269,7 @@ func registeredProperties(toolName string) (map[string]any, error) {
 	}
 	paramKeys, paramValues, isDict := dictItems(parameters)
 	if !isDict {
-		return nil, &RuntimeError{fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(parameters))}
+		return nil, &RuntimeError{fmt.Sprintf("tool %s parameters are %s where a mapping was expected", toolName, errchain.Kind(parameters))}
 	}
 	for i, key := range paramKeys {
 		if key != "properties" {
@@ -276,7 +277,7 @@ func registeredProperties(toolName string) (map[string]any, error) {
 		}
 		names, values, isDict := dictItems(paramValues[i])
 		if !isDict {
-			return nil, &RuntimeError{fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(paramValues[i]))}
+			return nil, &RuntimeError{fmt.Sprintf("tool %s properties are %s where a mapping was expected", toolName, errchain.Kind(paramValues[i]))}
 		}
 		out := make(map[string]any, len(names))
 		for j, name := range names {
@@ -466,7 +467,7 @@ func boardArg(v any) (*string, error) {
 	if _, isText := v.(string); !isText {
 		if _, err := normalizeBoardSlug(&s); err != nil {
 			return nil, &ValueError{fmt.Sprintf("invalid board slug %s: must be 1-64 chars, lowercase "+
-				"alphanumerics / hyphens / underscores, not starting with '-' or '_'", pyrepr.Repr(v))}
+				"alphanumerics / hyphens / underscores, not starting with '-' or '_'", errchain.Show(v))}
 		}
 	}
 	return &s, nil
@@ -586,7 +587,7 @@ func coerceStrList(value any, name, what string, strip bool) ([]any, bool, error
 	case pyrepr.Tuple:
 		items = []any(v)
 	default:
-		return nil, false, reject(fmt.Sprintf("%s must be a list of %s, got %s", name, what, pyrepr.TypeName(value)))
+		return nil, false, reject(fmt.Sprintf("%s must be a list of %s, got %s", name, what, errchain.Kind(value)))
 	}
 	if !strip {
 		return items, true, nil
@@ -617,7 +618,7 @@ func requireDictMetadata(metadata any) error {
 	if _, _, isDict := dictItems(metadata); isDict {
 		return nil
 	}
-	return reject(fmt.Sprintf("metadata must be an object/dict, got %s", pyrepr.TypeName(metadata)))
+	return reject(fmt.Sprintf("metadata must be a mapping, got %s", errchain.Kind(metadata)))
 }
 
 // Folds declared artifact paths into the metadata artifacts list, merged with a list already there
@@ -831,7 +832,7 @@ func rowField(obj any, name string) any {
 			return r.CreatedAt
 		}
 	}
-	panic(&RuntimeError{fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(obj), name)})
+	panic(&RuntimeError{fmt.Sprintf("kanban row has no field %s", name)})
 }
 
 // Summary row of a task with its parent and child ids and their counts

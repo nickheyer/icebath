@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -257,7 +256,7 @@ func containsString(items []string, s string) bool {
 // Parsed YAML of one catalog file read as utf-8-sig, nil with a warning when unreadable or malformed
 func readCatalogYAML(raw []byte, readErr error, label string) any {
 	if readErr != nil {
-		pkgLog().Warn("Plugin catalog: failed to read " + label + ": " + pypath.OSErrorText(readErr))
+		pkgLog().Warn("Plugin catalog: failed to read " + label + ": " + errchain.OSText(readErr))
 		return nil
 	}
 	if err := strictUTF8(raw); err != nil {

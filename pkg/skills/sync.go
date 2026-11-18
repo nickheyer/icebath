@@ -263,7 +263,7 @@ func (t skillTree) copyInto(top, dir, dest string, dirsExistOK, keepExisting boo
 				if errors.As(err, &nested) {
 					cerr.errs = append(cerr.errs, nested.errs...)
 				} else {
-					cerr.errs = append(cerr.errs, [3]string{t.display(src), target, pyfs.OSErrorText(err)})
+					cerr.errs = append(cerr.errs, [3]string{t.display(src), target, errchain.OSText(err)})
 				}
 			}
 			continue
@@ -272,11 +272,11 @@ func (t skillTree) copyInto(top, dir, dest string, dirsExistOK, keepExisting boo
 			continue
 		}
 		if err := t.copyFile(src, target); err != nil {
-			cerr.errs = append(cerr.errs, [3]string{t.display(src), target, pyfs.OSErrorText(err)})
+			cerr.errs = append(cerr.errs, [3]string{t.display(src), target, errchain.OSText(err)})
 		}
 	}
 	if err := t.applyStat(dir, dest); err != nil {
-		cerr.errs = append(cerr.errs, [3]string{t.display(dir), dest, pyfs.OSErrorText(err)})
+		cerr.errs = append(cerr.errs, [3]string{t.display(dir), dest, errchain.OSText(err)})
 	}
 	return nil
 }
@@ -590,7 +590,7 @@ func (s *Scope) installNewSkill(st *syncState, t skillTree, name, src, dest, bun
 		return
 	}
 	if err := syncSteps.copyTree(t, src, dest, false, false); err != nil {
-		st.say(fmt.Sprintf("  ! Failed to copy %s: %s", name, pyfs.OSErrorText(err)))
+		st.say(fmt.Sprintf("  ! Failed to copy %s: %s", name, errchain.OSText(err)))
 		return
 	}
 	st.copied = append(st.copied, name)
@@ -658,7 +658,7 @@ func (s *Scope) updateExistingSkill(st *syncState, t skillTree, name, src, dest,
 		if !isOSErr(err) {
 			return err
 		}
-		st.say(fmt.Sprintf("  ! Failed to update %s: %s", name, pyfs.OSErrorText(err)))
+		st.say(fmt.Sprintf("  ! Failed to update %s: %s", name, errchain.OSText(err)))
 		return nil
 	}
 	st.manifest[name] = bundledHash
@@ -1233,7 +1233,7 @@ func (s *Scope) ResetBundledSkill(ctx context.Context, name string, restore bool
 				if !config.IsOSError(err) {
 					return nil, err
 				}
-				return fail("not_reset", fmt.Sprintf("Could not delete user copy at %s: %s. Manifest entry preserved — nothing was changed.", dest, pyfs.OSErrorText(err)))
+				return fail("not_reset", fmt.Sprintf("Could not delete user copy at %s: %s. Manifest entry preserved — nothing was changed.", dest, errchain.OSText(err)))
 			}
 		}
 	}
@@ -1307,7 +1307,7 @@ func (s *Scope) EnsureBundledSkill(ctx context.Context, name string) (map[string
 	}
 	notRestored := func(err error) (map[string]any, error) {
 		return map[string]any{"ok": false, "action": "not_restored", "path": dest,
-			"message": fmt.Sprintf("Could not copy the built-in skill '%s' to %s: %s", name, dest, pyfs.OSErrorText(err))}, nil
+			"message": fmt.Sprintf("Could not copy the built-in skill '%s' to %s: %s", name, dest, errchain.OSText(err))}, nil
 	}
 	rel, _ := s.relSkillsPosix(dest)
 	if _, err := resolveLockInstallPath(s, rel, filepath.Base(dest)); err != nil {
@@ -1454,7 +1454,7 @@ func (s *Scope) SetBundledSkillsOptOut(enabled bool) map[string]any {
 		err = os.Remove(marker)
 	}
 	if err != nil {
-		return map[string]any{"ok": false, "changed": false, "marker": marker, "message": fmt.Sprintf("Could not update opt-out marker at %s: %s", marker, pyfs.OSErrorText(err))}
+		return map[string]any{"ok": false, "changed": false, "marker": marker, "message": fmt.Sprintf("Could not update opt-out marker at %s: %s", marker, errchain.OSText(err))}
 	}
 	changed := enabled != existed
 	return map[string]any{"ok": true, "changed": changed, "marker": marker, "message": optOutMessages[[2]bool{enabled, changed}]}
@@ -1494,7 +1494,7 @@ func (s *Scope) RemovePristineBundledSkills(ctx context.Context, dryRun bool) (m
 				if !config.IsOSError(err) {
 					return nil, err
 				}
-				skipped = append(skipped, map[string]any{"name": name, "reason": "delete failed: " + pyfs.OSErrorText(err)})
+				skipped = append(skipped, map[string]any{"name": name, "reason": "delete failed: " + errchain.OSText(err)})
 				continue
 			}
 			delete(manifest, name)

@@ -139,7 +139,7 @@ func (c *safeConstructor) constructScalarTagRT(n *ry.Node, tag string) any {
 // AttributeError a ScalarNode raises for the flow_style read of omap and set construction
 func requireFlowStyle(n *ry.Node) {
 	if n.Kind == ry.ScalarNode {
-		panic(pyErr("AttributeError", "'ScalarNode' object has no attribute 'flow_style'"))
+		panic(pyErr("AttributeError", "a YAML scalar stands where a mapping or a list was expected"))
 	}
 }
 
@@ -218,7 +218,7 @@ func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 func strIndex(s string, i int) rune {
 	r := pystr.Runes(s)
 	if i >= len(r) {
-		panic(pyErr("IndexError", "string index out of range"))
+		panic(pyErr("IndexError", fmt.Sprintf("YAML text has no character at position %d", i)))
 	}
 	return r[i]
 }
@@ -381,9 +381,9 @@ func extendList(list any, items any) any {
 		}
 		return l
 	case nil:
-		panic(pyErr("TypeError", "'NoneType' object is not iterable"))
+		panic(pyErr("TypeError", "a YAML comment slot is empty where comment tokens were expected"))
 	}
-	panic(pyErr("TypeError", "'CommentToken' object is not iterable"))
+	panic(pyErr("TypeError", "a YAML comment token stands where a list of comment tokens was expected"))
 }
 
 // Elements of a round trip sequence with each child comment moved onto the sequence

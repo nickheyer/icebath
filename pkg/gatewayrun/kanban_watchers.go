@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gatewayrun
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -31,6 +34,22 @@ const (
 
 // Sleep of the kanban watcher loops, a context aware timer
 var asyncioSleep = sleepCtx
+
+// Dispatcher lock and notifier failure counts a runner keeps for its kanban watchers
+type runnerKanbanState struct {
+	kanbanDispatcherLockMu     sync.Mutex
+	kanbanDispatcherLockHandle *os.File
+	kanbanSubFailCounts        map[kanbanSubKey]int
+}
+
+// Binds the kanban slash command, watchers and idle probe of the runner
+func init() {
+	kanbanCommand, kanbanBusyProbe = (*GatewayRunner).runKanbanCommand, kanbanTaskBusy
+	kanbanWatchers = func(r *GatewayRunner) []runnerWatcher {
+		return []runnerWatcher{{"kanban_notifier_watcher", func(c context.Context) error { return r.kanbanNotifierWatcher(c, 5.0) }},
+			{"kanban_dispatcher_watcher", r.kanbanDispatcherWatcher}}
+	}
+}
 
 // Runs fn and turns a panic into its error the way an except Exception clause catches a raise
 func catchPanic(fn func() error) (err error) {

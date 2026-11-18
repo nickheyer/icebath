@@ -12,7 +12,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -138,7 +138,7 @@ func spawnWindowsRestartWatcher(ctx context.Context, icebathCmd []string, curren
 		}
 		pkgLog().Warn(fmt.Sprintf("Detached restart watcher was not started after the "+
 			"no-breakaway retry (%s; %s=%s). The gateway will not "+
-			"be respawned by this restart attempt.", filepath.Base(watcherBinary), label, pyrepr.Repr(code)))
+			"be respawned by this restart attempt.", filepath.Base(watcherBinary), label, errchain.Show(code)))
 	}
 	return nil
 }
@@ -189,13 +189,16 @@ func (r *GatewayRunner) wedgedAgentCount(ctx context.Context) int {
 }
 
 // Per run split of in flight cron work, everything awaitable when the split cannot be read
-func (r *GatewayRunner) restartWaitCronCounts(ctx context.Context) (counts cron.RestartWaitCronCounts) {
+func (r *GatewayRunner) restartWaitCronCounts(ctx context.Context) (counts cronRestartCounts) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			counts = cron.RestartWaitCronCounts{Awaitable: r.activeCronJobCount()}
+			counts = cronRestartCounts{Awaitable: r.activeCronJobCount()}
 		}
 	}()
-	return cron.GetRestartWaitCronCounts(ctx)
+	if cronRestartWaitCounts == nil {
+		return cronRestartCounts{}
+	}
+	return cronRestartWaitCounts(ctx)
 }
 
 // Cron runs past their in flight allowance
@@ -294,7 +297,7 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 				"(%d wedged and excluded, %d restart-safe and excluded; "+
 				"%.0fs remaining before force drain): %s",
 				r.awaitableWorkCount(ctx), r.wedgedAgentCount(ctx), r.restartSafeCronCount(ctx), deadline-now,
-				pyrepr.Repr(r.describeActiveWork(ctx))))
+				errchain.Show(r.describeActiveWork(ctx))))
 			r.scaleToZeroStatus(ctx, "draining", "restart wait: status mark failed")
 			lastStatusAt = now
 		}

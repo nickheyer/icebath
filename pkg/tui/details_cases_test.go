@@ -3,6 +3,8 @@ package tui
 import (
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 func TestParseDetailsMode(t *testing.T) {
@@ -12,7 +14,7 @@ func TestParseDetailsMode(t *testing.T) {
 		}
 	})
 	t.Run("rejects junk", func(t *testing.T) {
-		for _, v := range []any{"truncated", "", nil, 42} {
+		for _, v := range []string{"truncated", "", "42"} {
 			if parseDetailsMode(v) != "" {
 				t.Fatalf("%v accepted", v)
 			}
@@ -22,7 +24,7 @@ func TestParseDetailsMode(t *testing.T) {
 
 func TestIsSectionName(t *testing.T) {
 	t.Run("only lets the four canonical sections through", func(t *testing.T) {
-		for v, want := range map[any]bool{"thinking": true, "tools": true, "subagents": true, "activity": true, "Thinking": false, "bogus": false, "": false, 7: false} {
+		for v, want := range map[string]bool{"thinking": true, "tools": true, "subagents": true, "activity": true, "Thinking": false, "bogus": false, "": false} {
 			if isSectionName(v) != want {
 				t.Fatalf("%v", v)
 			}
@@ -31,6 +33,9 @@ func TestIsSectionName(t *testing.T) {
 }
 
 func TestResolveSections(t *testing.T) {
+	resolveSections := func(raw any) map[string]string {
+		return sectionModes(tuigateway.ClientConfigOf(map[string]any{"display": map[string]any{"sections": raw}}).Display.Sections)
+	}
 	t.Run("parses a well-formed sections object", func(t *testing.T) {
 		got := resolveSections(map[string]any{"thinking": "expanded", "tools": "expanded", "subagents": "collapsed", "activity": "hidden"})
 		if !reflect.DeepEqual(got, map[string]string{"thinking": "expanded", "tools": "expanded", "subagents": "collapsed", "activity": "hidden"}) {

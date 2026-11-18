@@ -665,16 +665,15 @@ func formatLSPBlock(path string, diagnostics []map[string]any, header string) (t
 	if len(diagnostics) == 0 {
 		return ""
 	}
+	if lspDiagnosticsBlock == nil {
+		return ""
+	}
 	defer func() {
 		if recover() != nil {
 			text = ""
 		}
 	}()
-	block := lspReportForFile(path, diagnostics)
-	if block == "" {
-		return ""
-	}
-	return lspTruncate(header + block)
+	return lspDiagnosticsBlock(path, diagnostics, header)
 }
 
 // Done callback queuing a late verdict for the editing session, then releasing a waiting turn end

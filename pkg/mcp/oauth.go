@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -47,9 +48,9 @@ func pyIntStrict(v any) (int, error) {
 		return n, nil
 	}
 	if s, isStr := v.(string); isStr {
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyReprStr(s))
+		return 0, fmt.Errorf("%s is not a whole number", s)
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Python float() of a config value with its error text where float raises
@@ -59,9 +60,9 @@ func pyFloatStrict(v any) (float64, error) {
 		return f, nil
 	}
 	if s, isStr := v.(string); isStr {
-		return 0, fmt.Errorf("could not convert string to float: %s", pyReprStr(s))
+		return 0, fmt.Errorf("%s is not a number", s)
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 }
 
 // Resolves the callback port into cfg _resolved_port, preferring client flow or cached proxy URIs, then CIMD, config, cache, ephemeral

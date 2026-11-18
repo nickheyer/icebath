@@ -18,6 +18,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -374,7 +375,7 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 		}
 		result, ok := asDict(decoded)
 		if !ok {
-			return nil, &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+			return nil, &pyErr{"AttributeError", fmt.Sprintf("the sign token response must be a JSON object, got %s", errchain.Kind(decoded))}
 		}
 		code := result["code"]
 		if equalsInt(code, 0) {

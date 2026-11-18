@@ -64,7 +64,7 @@ func (r *slashRun) rpc(method string, params map[string]any, then func(map[strin
 		}
 		result := asRPCResult(v)
 		if result == nil {
-			r.a.sys("error: " + tr("session.common.invalidResponse", method))
+			r.a.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
 			return nil
 		}
 		if then == nil {
@@ -238,7 +238,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 func (a *app) handleDispatch(run *slashRun, raw any, fromExec bool) tea.Cmd {
 	d := parseCommandDispatch(raw)
 	if d == nil {
-		a.sys("error: " + tr("session.common.invalidResponse", "command.dispatch"))
+		a.sys("error: " + misfitText(tr("session.common.invalidResponse", "command.dispatch")))
 		return nil
 	}
 	text := func(p *string) string {
@@ -384,11 +384,11 @@ func flagFromArg(arg string, current bool) (bool, bool) {
 
 // Saves a display preference, session scoped for the focus view on the canonical wire
 func (r *slashRun) saveDisplayPref(key, value string) tea.Cmd {
-	params := map[string]any{"key": key, "value": value}
+	params := tuigateway.ConfigSetParams{Key: key, Value: tuigateway.TextValue(value)}
 	if key == "focus" && r.a.gw.canonical() && r.sid != "" {
-		params["session_id"] = r.sid
+		params.SessionID = r.sid
 	}
-	return r.a.events.quietRequest("config.set", params)
+	return fire(r.a.gw, tuigateway.ConfigSet, params)
 }
 
 // Asks before a destructive step unless confirmations are off
@@ -536,7 +536,7 @@ func (a *app) coreCommands() []slashCommand {
 			}
 			a.store.ui.Timestamps = next
 			r.sys("timestamps " + onOff(next))
-			return r.rpc("config.set", map[string]any{"key": "timestamps", "value": onOff(next)}, nil)
+			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "timestamps", Value: tuigateway.TextValue(onOff(next))}, done)
 		}},
 		{name: "config", help: "show the presentation settings the gateway serves for this profile", run: func(r *slashRun) tea.Cmd {
 			if !a.gw.canonical() {
@@ -548,12 +548,11 @@ func (a *app) coreCommands() []slashCommand {
 					return a.page(out, "Config")
 				})
 			}
-			params := map[string]any{"key": "full"}
-			if r.sid != "" {
-				params["session_id"] = r.sid
-			}
-			return r.rpc("config.get", params, func(res map[string]any) tea.Cmd {
-				cfg, _ := res["config"].(map[string]any)
+			return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+				var cfg map[string]any
+				if res != nil && res.Config != nil {
+					cfg, _ = tuigateway.Plain(*res.Config).(map[string]any)
+				}
 				lines := configLines(cfg, "")
 				if len(lines) == 0 {
 					lines = []string{"{}"}

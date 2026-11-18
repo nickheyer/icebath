@@ -416,7 +416,7 @@ func runAtExit() {
 	}
 	run(state.RunTokenExitHooks)
 	run(func() { tools.CleanupAllEnvironments(processToolsEnv(context.Background())) })
-	run(tools.SweepSingularityScratchAtExit)
+	run(tools.SweepBackendScratchAtExit)
 	run(func() { tools.CleanupSafeSkillsCopy() })
 	for _, fn := range tierAtExit {
 		run(fn)

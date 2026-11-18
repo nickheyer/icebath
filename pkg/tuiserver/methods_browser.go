@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tuiserver
 
 import (
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
@@ -21,12 +24,8 @@ import (
 // URL schemes a browser CDP endpoint may use
 var cdpSchemes = map[string]bool{"http": true, "https": true, "ws": true, "wss": true}
 
-var browserRegistry = &handlerRegistry{}
-
-func init() {
-	browserRegistry.scopedMethod("browser.manage", browserManage)
-	browserRegistry.install()
-}
+// Binds the browser card method and the vault release of a closing session
+func init() { browserManageHandler, releaseVaultSession = browserManage, browser.ReleaseVaultSession }
 
 // Tool env of the scoped profile home the browser session reads
 func browserEnv(ctx context.Context) *tools.Env {
@@ -145,7 +144,7 @@ func browserConnect(ctx context.Context, rid any, params map[string]any) (respon
 	rawURL, present := params["url"]
 	if present && rawURL != nil {
 		if _, isText := rawURL.(string); !isText {
-			return rpcErr(rid, 4015, fmt.Sprintf("browser url must be a string, got %s", pyrepr.TypeName(rawURL)), nil)
+			return rpcErr(rid, 4015, fmt.Sprintf("browser url must be text, got %s", errchain.Kind(rawURL)), nil)
 		}
 	}
 	text, _ := rawURL.(string)

@@ -17,10 +17,10 @@ func TestShowPercentFollowsPythonMultiplyAndFormat(t *testing.T) {
 		{int(1), "100", ""},
 		{true, "100", ""},
 		{math.NaN(), "nan", ""},
-		{"0.5", "", "ValueError: Unknown format code 'f' for object of type 'str'"},
-		{[]any{1}, "", "TypeError: unsupported format string passed to list.__format__"},
-		{nil, "", "TypeError: unsupported operand type(s) for *: 'NoneType' and 'int'"},
-		{map[string]any{}, "", "TypeError: unsupported operand type(s) for *: 'dict' and 'int'"},
+		{"0.5", "", "expected a number, got text"},
+		{[]any{1}, "", "expected a number, got a list"},
+		{nil, "", "expected a number, got nothing"},
+		{map[string]any{}, "", "expected a number, got a mapping"},
 	}
 	for _, c := range cases {
 		got, err := showPercent(c.value)

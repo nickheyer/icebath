@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -22,7 +23,7 @@ func (c *CLI) restoreGatewaySnapshot(store *gatewaycli.GatewaySessionStore, snap
 	})
 	if res.Detached {
 		if line := res.ReserveLine(); line != "" {
-			pkgLog().Warn(fmt.Sprintf("Profile re-serve after snapshot restore: %s", pyrepr.Repr(res.Ack)))
+			pkgLog().Warn(fmt.Sprintf("Profile re-serve after snapshot restore: %s", errchain.Show(res.Ack)))
 			printLines("  " + line)
 		}
 		store.ForgetSessions()

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -89,7 +90,7 @@ func pyListItems(v any) []any {
 		}
 		return out
 	}
-	panic(fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v)))
+	panic(fmt.Errorf("expected a list, got %s", errchain.Kind(v)))
 }
 
 // Display summary of one server with its transport, env key names, auth and source
@@ -339,7 +340,7 @@ func mcpServersSetAPIKey(ctx context.Context, rid any, params map[string]any, _ 
 		cfg["mcp_servers"] = block
 	}
 	if !isDict {
-		return nil, fmt.Errorf("'%s' object does not support item assignment", pyrepr.TypeName(cfg["mcp_servers"]))
+		return nil, fmt.Errorf("mcp_servers in the config must be a mapping, got %s", errchain.Kind(cfg["mcp_servers"]))
 	}
 	block[name] = entry
 	if err := config.Save(h, cfg); err != nil {

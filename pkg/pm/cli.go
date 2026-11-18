@@ -466,7 +466,7 @@ func installFlagError(args InstallArgs, extras []string, crossTarget string, too
 	names := len(args.Names) > 0
 	if crossTarget != "" {
 		if !containsString(AllTargets, crossTarget) {
-			return fmt.Sprintf("unknown target %s; known: %s", pyrepr.StrRepr(crossTarget), strings.Join(AllTargets, ", ")), nil
+			return fmt.Sprintf("unknown target %s; known: %s", crossTarget, strings.Join(AllTargets, ", ")), nil
 		}
 		if !names {
 			return "--target requires explicit package names", nil
@@ -1135,7 +1135,7 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 			return nil, err
 		}
 		if !found {
-			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", pyrepr.StrRepr(extra), path)}
+			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", extra, path)}
 		}
 		seen[extra] = true
 		listed, err := tomlIndex(table, extra)
@@ -1150,13 +1150,13 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 			if own == nil {
 				name, ok := nameValue.(string)
 				if !ok {
-					return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("decoding to str: need a bytes-like object, %s found", tomlTypeName(nameValue))}
+					return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("project.name must be text, got %s", tomlKind(nameValue))}
 				}
 				own = regexp.MustCompile(`\A(?:` + regexp.QuoteMeta(name) + `\[([^\]]+)\])\z`)
 			}
 			requirement, ok := row.(string)
 			if !ok {
-				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'replace'", tomlTypeName(row))}
+				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("optional dependency of extra %s must be text, got %s", extra, tomlKind(row))}
 			}
 			if m := own.FindStringSubmatch(strings.ReplaceAll(requirement, " ", "")); m != nil {
 				pending = append(pending, strings.Split(m[1], ",")...)

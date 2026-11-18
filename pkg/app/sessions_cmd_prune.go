@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -473,10 +474,10 @@ func cmdRetitleSkills(r *sessionsRun, db *state.SessionDB) (int, error) {
 			continue
 		}
 		if first := []rune(newTitle)[0]; !pystr.IsAlnum(first) {
-			r.printf("  %s\n    kept %s — got %s", sessionID, pyrepr.Repr(oldTitle), pyrepr.Repr(newTitle))
+			r.printf("  %s\n    kept %s — got %s", sessionID, errchain.Show(oldTitle), errchain.Show(newTitle))
 			continue
 		}
-		r.printf("  %s\n    %s\n    → %s", sessionID, pyrepr.Repr(oldTitle), pyrepr.Repr(newTitle))
+		r.printf("  %s\n    %s\n    → %s", sessionID, errchain.Show(oldTitle), errchain.Show(newTitle))
 		changed++
 		if !applyChanges {
 			continue
@@ -495,7 +496,7 @@ func cmdRetitleSkills(r *sessionsRun, db *state.SessionDB) (int, error) {
 		_, err = db.SetSessionTitle(r.ctx, sessionID, deduped)
 		switch {
 		case err == nil:
-			r.printf("    (renamed to %s — title was taken)", pyrepr.Repr(deduped))
+			r.printf("    (renamed to %s — title was taken)", errchain.Show(deduped))
 		case isValueError(err):
 			r.printf("    skipped: %s", sessionsExcText(err))
 			changed--

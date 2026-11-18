@@ -482,7 +482,7 @@ func newOpenAIStreamer(env *tools.Env, ttsConfig map[string]any, section any) (S
 			return s, nil
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("Invalid tts.openai.pcm_sample_rate %s; using %d Hz", pyrepr.Repr(configured), s.SampleRate()))
+	pkgLog().Warn(fmt.Sprintf("Invalid tts.openai.pcm_sample_rate %s; using %d Hz", errchain.Show(configured), s.SampleRate()))
 	return s, nil
 }
 
@@ -745,7 +745,7 @@ func pyJSONGet(v any, key string) (any, error) {
 func pyB64DecodeValue(v any) ([]byte, error) {
 	s, ok := v.(string)
 	if !ok {
-		return nil, &ttsTypeError{msg: fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", pyrepr.TypeName(v))}
+		return nil, &ttsTypeError{msg: fmt.Sprintf("audio payload is %s where base64 text was expected", errchain.Kind(v))}
 	}
 	return pybase64.B64Decode(s)
 }

@@ -195,7 +195,7 @@ type ParamsRefusal struct {
 func (e *ParamsRefusal) Error() string {
 	text := "invalid params for " + e.Method + ": " + e.Fit.Error()
 	if e.Unknown() {
-		text += " — the client and the Icebath backend are out of sync (different versions); run `icebath update` and restart both"
+		text += " — the client and the shared gateway run different Icebath builds; run `icebath gateway restart` to move the gateway to the client's build"
 	}
 	return text
 }

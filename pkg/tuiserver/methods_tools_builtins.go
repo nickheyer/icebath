@@ -357,7 +357,7 @@ func cmdUndo(ctx context.Context, rid any, params map[string]any, session *tuiho
 	if argStr != "" {
 		parsed, valid := pyint.Parse(pystr.SplitWhitespace(argStr, -1)[0])
 		if !valid {
-			return rpcErr(rid, 4004, fmt.Sprintf("undo: invalid count %s — use /undo or /undo N", pyrepr.Repr(argStr)), nil)
+			return rpcErr(rid, 4004, fmt.Sprintf("undo: invalid count %s — use /undo or /undo N", argStr), nil)
 		}
 		switch {
 		case parsed.IsInt64():

@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -898,7 +899,7 @@ func backgroundReaper(env *tools.Env) {
 type replyShapeError struct{ value any }
 
 func (e replyShapeError) Error() string {
-	return fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(e.value))
+	return fmt.Sprintf("the kernel replied with %s where a mapping was expected", errchain.Kind(e.value))
 }
 
 // Waits for the cell reply polling interrupt and deadline, returning the host status and payload

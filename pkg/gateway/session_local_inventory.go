@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -184,13 +183,22 @@ func cliSkills(ctx context.Context) *pyjson.Object {
 
 // MCP server status rows as the JSON objects a viewer reads
 func inventoryMCPStatus(ctx context.Context) []any {
-	raw, err := json.Marshal(mcp.Status(ctx, inventoryToolEnv(ctx), nil, true))
-	if err != nil {
-		panic(err)
-	}
-	rows := []any{}
-	if err := json.Unmarshal(raw, &rows); err != nil {
-		panic(err)
+	return MCPStatusRows(mcp.Status(ctx, inventoryToolEnv(ctx), nil, true))
+}
+
+// Session info rows of MCP server states, the tool count a whole number
+func MCPStatusRows(statuses []mcp.ServerStatus) []any {
+	rows := make([]any, 0, len(statuses))
+	for _, s := range statuses {
+		row := map[string]any{"name": s.Name, "transport": s.Transport, "tools": int64(s.Tools), "connected": s.Connected,
+			"disabled": s.Disabled, "status": s.Status}
+		if s.Error != "" {
+			row["error"] = s.Error
+		}
+		if len(s.Sampling) > 0 {
+			row["sampling"] = s.Sampling
+		}
+		rows = append(rows, row)
 	}
 	return rows
 }

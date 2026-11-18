@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -248,7 +249,7 @@ func RemoveBoard(ctx context.Context, slug string, archive bool) (*pyjson.Object
 		return nil, err
 	}
 	if _, err := os.Stat(d); err != nil {
-		return nil, &ValueError{fmt.Sprintf("board %s does not exist", pyrepr.StrRepr(normed))}
+		return nil, &ValueError{fmt.Sprintf("board %s does not exist", errchain.Show(normed))}
 	}
 	if GetCurrentBoard(ctx) == normed {
 		if err := ClearCurrentBoard(ctx); err != nil {

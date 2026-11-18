@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -197,7 +198,7 @@ type recoveryTimeout struct {
 }
 
 func (e *recoveryTimeout) Error() string {
-	return fmt.Sprintf("Command %s timed out after %s seconds", pyrepr.Repr(stringsAny(e.argv)), pyrepr.Str(e.seconds))
+	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.argv, " "), errchain.Show(e.seconds))
 }
 
 // Runs a prepared child capturing stdout as replaced text, killing it past the timeout

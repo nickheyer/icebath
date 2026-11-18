@@ -79,9 +79,6 @@ func TestReasoningHideAndFooterReachTheLocalClientsConfigRead(t *testing.T) {
 	if display["show_reasoning"] != false {
 		t.Fatalf("served display %v", display)
 	}
-	if footer, _ := display["runtime_footer"].(map[string]any); footer["enabled"] != false {
-		t.Fatalf("served runtime_footer %v", display)
-	}
 }
 
 func TestImpeccableSlashExecHandsTheTUIItsSkillTurnAndRefusesMidTurn(t *testing.T) {

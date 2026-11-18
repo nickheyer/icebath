@@ -7,11 +7,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"golang.org/x/sys/windows"
 )
 
@@ -71,8 +69,8 @@ func TestInlineShellInvalidWorkingDirectoryIsTheCreateProcessError(t *testing.T)
 	s := NewScope(t.TempDir(), config.Defaults())
 	file := filepath.Join(t.TempDir(), "file.txt")
 	os.WriteFile(file, []byte("x"), 0o644)
-	text, _ := pypath.ErrnoText(windows.ERROR_DIRECTORY)
-	if got := s.RunInlineShell(context.Background(), ":", file, 5); got != "[inline-shell error: "+text+"]" || !strings.HasPrefix(text, "[WinError 267] ") {
+	text := windows.ERROR_DIRECTORY.Error()
+	if got := s.RunInlineShell(context.Background(), ":", file, 5); got != "[inline-shell error: "+text+"]" {
 		t.Fatalf("got %q want the FormatMessage text %q", got, text)
 	}
 }

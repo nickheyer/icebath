@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -506,7 +507,7 @@ func strerrorOf(err error) string {
 	if errors.As(err, &errno) {
 		return pypath.Strerror(errno)
 	}
-	return pypath.OSErrorText(err)
+	return errchain.OSText(err)
 }
 
 // Takes or joins the checkout lock, the refusal holder when another tree holds it or it cannot be made
@@ -546,7 +547,7 @@ func acquireCheckout(installRoot string) (*UpdateHolder, error) {
 	refuse := func(err error) (*UpdateHolder, error) {
 		unlockBytes(f, windowsLockOffset, 1)
 		f.Close()
-		return &UpdateHolder{Reason: fmt.Sprintf("%s could not be locked (%s)", path, pypath.OSErrorText(err))}, nil
+		return &UpdateHolder{Reason: fmt.Sprintf("%s could not be locked (%s)", path, errchain.OSText(err))}, nil
 	}
 	locked, err := lockWithContentionWait(f, path)
 	if err != nil {
@@ -806,7 +807,7 @@ func publishExclusive(ctx context.Context, path string, body []byte) (bool, erro
 
 // Why an unwritable marker location refuses the update
 func markerUnwritable(path string, err error) string {
-	return fmt.Sprintf("%s is not writable (%s); the update records itself there so gateways, installers and other updaters wait for it", path, pypath.OSErrorText(err))
+	return fmt.Sprintf("%s is not writable (%s); the update records itself there so gateways, installers and other updaters wait for it", path, errchain.OSText(err))
 }
 
 var claims struct {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -253,7 +254,7 @@ func handleSlashWorkerLine(c *CLI, out io.Writer, line string) {
 		rawCommand := req.GetOr("command", "")
 		command, isText := rawCommand.(string)
 		if !isText && pyrepr.Truthy(rawCommand) {
-			slashWorkerReply(out, "id", rid, "ok", false, "error", fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(rawCommand)))
+			slashWorkerReply(out, "id", rid, "ok", false, "error", fmt.Sprintf("command is %s where text was expected", errchain.Kind(rawCommand)))
 			return
 		}
 		var output string

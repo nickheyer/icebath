@@ -448,3 +448,21 @@ func ExtractCachePut(ctx context.Context, env *Env, u, content, title, format, p
 
 // Python float() of a string, trimmed
 func parseFloatText(s string) (float64, error) { return strconv.ParseFloat(strings.TrimSpace(s), 64) }
+
+// Float the way Python float() reads a JSON value
+func pyFloatValue(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case bool:
+		if n {
+			return 1, true
+		}
+		return 0, true
+	}
+	return 0, false
+}

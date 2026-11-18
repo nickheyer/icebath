@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -117,7 +117,7 @@ func mapOf(v any) map[string]any {
 func getter(v any) (map[string]any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("pause record is %s where a mapping was expected", errchain.Kind(v))
 	}
 	return m, nil
 }
@@ -137,7 +137,7 @@ func itemsOrEmpty(v any) (map[string]any, error) {
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("pause record field is %s where a mapping was expected", errchain.Kind(v))
 	}
 	return m, nil
 }
@@ -182,7 +182,7 @@ func pyDictUpdate(target map[string]any, v any) error {
 		case string:
 			target[key] = pair[1]
 		case []any, map[string]any:
-			return fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(key))
+			return fmt.Errorf("pause record key is %s where text was expected", errchain.Kind(key))
 		default:
 			spelled, err := pyjson.Dumps(key)
 			if err != nil {
@@ -222,7 +222,7 @@ func setdefaultList(token map[string]any, key string) ([]any, error) {
 	}
 	list, isList := v.([]any)
 	if !isList {
-		return nil, fmt.Errorf("'%s' object has no attribute 'extend'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("pause record %s is %s where a list was expected", key, errchain.Kind(v))
 	}
 	return list, nil
 }
@@ -328,7 +328,7 @@ func pauseErrText(err error) string {
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}
-	return pypath.OSErrorText(err)
+	return errchain.OSText(err)
 }
 
 // Removes the record only while it still names this pause, decided under the mutex
@@ -407,7 +407,7 @@ func pauseRetired(path string) (map[string]bool, error) {
 		return map[string]bool{}, nil
 	}
 	if err != nil {
-		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot read the retired paused-gateway list %s: %s", target, pypath.OSErrorText(err))}
+		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot read the retired paused-gateway list %s: %s", target, errchain.OSText(err))}
 	}
 	var ids any
 	if v, err := pyjson.Loads(pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))); err == nil {
@@ -433,7 +433,7 @@ func quarantineRetired(path, target string) (map[string]bool, error) {
 	}
 	corrupt := pyWithSuffix(target, ".corrupt")
 	if err := os.Rename(target, corrupt); err != nil {
-		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot set aside the malformed retired paused-gateway list %s: %s", target, pypath.OSErrorText(err))}
+		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot set aside the malformed retired paused-gateway list %s: %s", target, errchain.OSText(err))}
 	}
 	pauseWarn(pauseStderr, "  ⚠ Set aside a malformed paused-gateway history (no paused set refers to it): %s", corrupt)
 	return map[string]bool{}, nil
@@ -1094,7 +1094,7 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 		}
 		m, isMap := token[key].(map[string]any)
 		if !isMap {
-			return fmt.Errorf("'%s' object has no attribute 'setdefault'", pyrepr.TypeName(token[key]))
+			return fmt.Errorf("pause record %s is %s where a mapping was expected", key, errchain.Kind(token[key]))
 		}
 		for k, v := range source {
 			if _, ok := m[k]; !ok {
@@ -1198,7 +1198,7 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 		}
 		m, isMap := token["service_profiles"].(map[string]any)
 		if !isMap {
-			return nil, fmt.Errorf("'%s' object has no attribute 'update'", pyrepr.TypeName(token["service_profiles"]))
+			return nil, fmt.Errorf("pause record service_profiles is %s where a mapping was expected", errchain.Kind(token["service_profiles"]))
 		}
 		if err := pyDictUpdate(m, adopted["service_profiles"]); err != nil {
 			return nil, err

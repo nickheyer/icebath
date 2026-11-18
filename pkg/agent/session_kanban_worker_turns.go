@@ -40,7 +40,7 @@ func runKanbanAttempt(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Obje
 	code, lastOutput := 1, ""
 	result, runErr := runTaskTurns(ctx, a, frame, history, kctx)
 	if runErr == nil {
-		code = kanban.TurnExitCode(result, kanban.TurnExitOptions{KanbanWorker: true})
+		code = tools.TurnExitCode(result, tools.TurnExitOptions{KanbanWorker: true})
 		if result != nil {
 			text := ""
 			if final := result["final_response"]; pyrepr.Truthy(final) {
@@ -50,7 +50,7 @@ func runKanbanAttempt(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Obje
 		}
 	} else {
 		rateLimited, terminal, _ := kanban.CredentialFailureFlags(runErr)
-		code = kanban.TurnExitCode(nil, kanban.TurnExitOptions{KanbanWorker: true, CredentialsRateLimited: rateLimited, CredentialsTerminal: terminal})
+		code = tools.TurnExitCode(nil, tools.TurnExitOptions{KanbanWorker: true, CredentialsRateLimited: rateLimited, CredentialsTerminal: terminal})
 	}
 	if err := gateway.RecordWorkerResult(ctx, kctx, code, lastOutput); err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 	if itemErr != nil {
 		return nil, itemErr
 	}
-	if !pyrepr.Truthy(goalMode) || kanban.TurnExitCode(result, kanban.TurnExitOptions{KanbanWorker: true}) != 0 {
+	if !pyrepr.Truthy(goalMode) || tools.TurnExitCode(result, tools.TurnExitOptions{KanbanWorker: true}) != 0 {
 		return result, nil
 	}
 	return runKanbanGoalTurns(ctx, a, kctx, taskID, result, sessionConversation, taskTurn)

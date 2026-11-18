@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -474,7 +475,7 @@ var shellIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 func ShellExports(env []string, dialect string) (string, error) {
 	shell, ok := shellDialects[dialect]
 	if !ok {
-		return "", &PyError{Class: "KeyError", Message: pyrepr.StrRepr(dialect)}
+		return "", &PyError{Class: "KeyError", Message: "unknown shell dialect " + dialect}
 	}
 	var lines []string
 	for _, kv := range env {
@@ -608,7 +609,7 @@ func recoverJournal(ctx context.Context, project, journal string, data []byte) e
 	}
 	row, ok := doc.(map[string]any)
 	if !ok {
-		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(doc))}
+		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("the publication journal %s must hold a mapping, got %s", journal, errchain.Kind(doc))}
 	}
 	if kind, _ := row["kind"].(string); kind == "plugin" {
 		return recoverPluginPublication(ctx, project, row, journal)
@@ -707,7 +708,7 @@ func finishPublication(ctx context.Context, project string) error {
 	}
 	row, ok := doc.(map[string]any)
 	if !ok {
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object does not support item assignment", pyrepr.TypeName(doc))}
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the publication journal %s must hold a mapping, got %s", journal, errchain.Kind(doc))}
 	}
 	row["committed"] = true
 	encoded, err := dumpsJSON(row, false)

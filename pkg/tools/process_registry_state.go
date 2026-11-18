@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -399,7 +401,7 @@ func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) 
 					continue
 				}
 			}
-			if rerr != nil && rerr.Error() != "EOF" {
+			if rerr != nil && !errors.Is(rerr, io.EOF) {
 				envLog(s.env).Warn(fmt.Sprintf("Process output log %s unreadable: %v", s.OutputLog, rerr))
 				break
 			}

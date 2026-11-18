@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -909,13 +910,13 @@ func checkSkillsHub(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, e
 					}
 					obj, ok := doc.(*pyjson.Object)
 					if !ok {
-						return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(doc))
+						return fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(doc))
 					}
 					count := 0
 					if installed, present := obj.Get("installed"); present {
 						n, sized := doctorJSONLen(installed)
 						if !sized {
-							return fmt.Errorf("object of type '%s' has no len()", pyrepr.TypeName(installed))
+							return fmt.Errorf("skills hub lock installed table is %s where a mapping or a list was expected", errchain.Kind(installed))
 						}
 						count = n
 					}
@@ -1166,7 +1167,7 @@ func checkProfiles(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 			if config.PyTruthy(p.Model) {
 				model, ok := p.Model.(string)
 				if !ok {
-					return fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(p.Model))
+					return fmt.Errorf("profile model is %s where text was expected", errchain.Kind(p.Model))
 				}
 				if runes := []rune(model); len(runes) > 30 {
 					model = string(runes[:30])

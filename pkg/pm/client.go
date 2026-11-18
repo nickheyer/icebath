@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -67,7 +68,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 		offered = append(offered, "progress")
 		handlers["progress"] = func(args []any) error {
 			if len(args) != 4 {
-				return &PyError{Class: "TypeError", Message: fmt.Sprintf("progress() takes 4 positional arguments but %d were given", len(args))}
+				return &PyError{Class: "TypeError", Message: fmt.Sprintf("the progress callback takes 4 values, got %d", len(args))}
 			}
 			done, _ := jsonNumber(args[1])
 			total, _ := jsonNumber(args[2])
@@ -78,7 +79,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 		offered = append(offered, "download_progress")
 		handlers["download_progress"] = func(args []any) error {
 			if len(args) != 3 {
-				return &PyError{Class: "TypeError", Message: fmt.Sprintf("download_progress() takes 3 positional arguments but %d were given", len(args))}
+				return &PyError{Class: "TypeError", Message: fmt.Sprintf("the download_progress callback takes 3 values, got %d", len(args))}
 			}
 			done, _ := jsonNumber(args[0])
 			total, _ := jsonNumber(args[1])
@@ -317,7 +318,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 		}
 		var runErr error
 		if !known {
-			runErr = &PyError{Class: "KeyError", Message: pyrepr.Repr(name)}
+			runErr = &PyError{Class: "KeyError", Message: "unknown callback " + errchain.Show(name)}
 		} else if args, err := wireCallbackArgs(pyrepr.Str(name), parsed, line); err != nil {
 			runErr = err
 		} else {
@@ -335,7 +336,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 			if callbackErr == nil {
 				callbackErr = runErr
 			}
-			if err := s.send(map[string]any{"type": "callback_result", "call": parsed["call"], "error": errorClass(runErr) + ": " + runErr.Error()}); err != nil {
+			if err := s.send(map[string]any{"type": "callback_result", "call": parsed["call"], "error": runErr.Error()}); err != nil {
 				return nil, err
 			}
 			continue
@@ -377,29 +378,20 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 
 // KeyError subscripting a worker message raises for a missing key
 func wireKeyError(key string) error {
-	return &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+	return &PyError{Class: "KeyError", Message: "the worker message has no " + key}
 }
 
 // Error subscripting a decoded worker value raises when it is no object
 func wireSubscriptError(v any, key string) error {
-	switch v.(type) {
-	case map[string]any:
+	if _, ok := v.(map[string]any); ok {
 		return wireKeyError(key)
-	case string:
-		return &PyError{Class: "TypeError", Message: "string indices must be integers, not 'str'"}
-	case []any:
-		return &PyError{Class: "TypeError", Message: "list indices must be integers or slices, not str"}
 	}
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker message must be a mapping holding %s, got %s", key, errchain.Kind(v))}
 }
 
-// Error re-raising a worker error value that is no object raises, its package test then its type lookup failing
+// Error for a worker error value that is no mapping
 func wireErrorShape(v any) error {
-	switch v.(type) {
-	case string, []any:
-		return wireSubscriptError(v, "type")
-	}
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("argument of type '%s' is not a container or iterable", pyrepr.TypeName(v))}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker error must be a mapping, got %s", errchain.Kind(v))}
 }
 
 // Positional arguments of a relayed callback the way star unpacking reads the message args, an empty list when absent
@@ -437,7 +429,7 @@ func wireCallbackArgs(name string, message map[string]any, line []byte) ([]any, 
 		}
 		return out, nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() argument after * must be an iterable, not %s", name, pyrepr.TypeName(raw))}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s callback arguments must be a list, got %s", name, errchain.Kind(raw))}
 }
 
 // Callback arguments with the coverage object rebuilt in the order the worker reported it
@@ -502,7 +494,7 @@ func managedSyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 		}
 		if !running {
 			return RefuseLazyFor(ctx, "venv", fmt.Sprintf("%s: this process is not running from the install's dependency environment "+
-				"(%s); only an explicit install may change what later processes boot into", pyrepr.Repr(opts.Extras), prefix))
+				"(%s); only an explicit install may change what later processes boot into", errchain.Show(opts.Extras), prefix))
 		}
 	}
 	plugins := opts.Plugins
@@ -510,11 +502,11 @@ func managedSyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 		if _, has := selection.Data["expected_config"]; !has {
 			homeValue, ok := selection.Data["home"]
 			if !ok {
-				return wireKeyError("home")
+				return &PyError{Class: "KeyError", Message: "the plugin selection has no home"}
 			}
 			homeDir, ok := homeValue.(string)
 			if !ok {
-				return &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(homeValue))}
+				return &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugin selection home must be text, got %s", errchain.Kind(homeValue))}
 			}
 			digest, found, err := FileDigest(filepath.Join(homeDir, "config.yaml"))
 			if err != nil {

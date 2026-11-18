@@ -12,12 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -157,7 +156,7 @@ var validateRuntime = func(ctx context.Context, python, imports string, env map[
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("Command '%s' timed out after 30 seconds", pyrepr.Repr(cmd.Args))
+		return fmt.Sprintf("%s timed out after 30 seconds", strings.Join(cmd.Args, " "))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -235,7 +234,7 @@ func PrepareRuntime(ctx context.Context, uv, python, root string, opts RuntimeOp
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+			return "", fmt.Errorf("%s must hold a mapping, got %s", selected, errchain.Kind(v))
 		}
 		fact = m
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -281,11 +280,7 @@ var stageRuntime = StageRuntime
 func generationPath(root string, value any) (string, error) {
 	generation, ok := value.(string)
 	if !ok {
-		kind := "PosixPath"
-		if runtime.GOOS == "windows" {
-			kind = "WindowsPath"
-		}
-		return "", fmt.Errorf("unsupported operand type(s) for /: '%s' and '%s'", kind, pyrepr.TypeName(value))
+		return "", fmt.Errorf("the generation a runtime selection names must be text, got %s", errchain.Kind(value))
 	}
 	return filepath.Clean(pypath.Join(root, generation)), nil
 }
@@ -354,7 +349,7 @@ func managedCollectRuntimeGenerations(root string) ([]string, error) {
 		}
 		m, ok := v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+			return nil, fmt.Errorf("%s must hold a mapping, got %s", filepath.Join(root, "selected.json"), errchain.Kind(v))
 		}
 		if g, has := m["generation"]; has {
 			selectedValue = g

@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -84,7 +85,7 @@ func pidRunning(pid *big.Int) (bool, error) {
 		return pidAlive(int(pid.Int64())), nil
 	}
 	if !pid.IsInt64() || pid.Int64() > math.MaxInt32 {
-		return false, &PyError{Class: "OverflowError", Message: "Python int too large to convert to C int"}
+		return false, &PyError{Class: "OverflowError", Message: fmt.Sprintf("the process id %s is larger than a 32 bit integer holds", pid.String())}
 	}
 	return pidAlive(int(pid.Int64())), nil
 }
@@ -195,7 +196,7 @@ func existingMarkers(paths []string) []string {
 
 func reprError(err error) string {
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

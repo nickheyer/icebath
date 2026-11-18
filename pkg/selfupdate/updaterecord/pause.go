@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -167,7 +168,7 @@ func ReadPauseRecord(path string) (map[string]any, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, &PauseRecordError{Kind: "RecordUnknown", Msg: fmt.Sprintf("cannot read the paused-gateway record %s: %s", path, pypath.OSErrorText(err))}
+		return nil, &PauseRecordError{Kind: "RecordUnknown", Msg: fmt.Sprintf("cannot read the paused-gateway record %s: %s", path, errchain.OSText(err))}
 	}
 	text, err := pystr.DecodeUTF8Sig(raw)
 	if err != nil {
@@ -256,7 +257,7 @@ func MarkStopConsumed(path string, marker *pyjson.Object, sameHome func(left, ri
 		token := f.Body["token"].(map[string]any)
 		markers, ok := orEmptyMap(token["stop_markers"])
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(token["stop_markers"]))
+			return fmt.Errorf("pause record stop_markers is %s where a mapping was expected", errchain.Kind(token["stop_markers"]))
 		}
 		recorded := markers[pid]
 		requested, err := pyContains(orEmptyList(token["stop_requested"]), pid)
@@ -301,13 +302,13 @@ func pyContains(container any, s string) (bool, error) {
 		}
 		return false, nil
 	}
-	return false, fmt.Errorf("argument of type '%s' is not iterable", pyrepr.TypeName(container))
+	return false, fmt.Errorf("expected text, a list or a mapping, got %s", errchain.Kind(container))
 }
 
-// Python KeyError text of a missing mapping key
+// Failure naming a missing mapping key
 type KeyErrorText struct{ Key string }
 
-func (e *KeyErrorText) Error() string { return pyrepr.StrRepr(e.Key) }
+func (e *KeyErrorText) Error() string { return "missing " + e.Key }
 
 func orEmptyMap(v any) (map[string]any, bool) {
 	if !truthy(v) {
@@ -353,7 +354,7 @@ func MarkStopAccepted(path string, marker *pyjson.Object) error {
 		return f.Sync()
 	}()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ⚠ Could not record the accepted stop request %s: %s; %s\n", path, pypath.OSErrorText(refused), pypath.OSErrorText(err))
+		fmt.Fprintf(os.Stderr, "  ⚠ Could not record the accepted stop request %s: %s; %s\n", path, errchain.OSText(refused), errchain.OSText(err))
 	}
 	return nil
 }

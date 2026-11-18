@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -102,7 +103,7 @@ func resolveDMRecipient(ctx context.Context, adapter *YuanbaoAdapter, groupCode,
 	if !pyrepr.Truthy(name) {
 		return nil, nil, ybFail("name is required when user_id is not provided")
 	}
-	nameText, err := strMethod(name, "strip")
+	nameText, err := strMethod(name, "name")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -117,7 +118,7 @@ func resolveDMRecipient(ctx context.Context, adapter *YuanbaoAdapter, groupCode,
 		if err != nil {
 			return nil, nil, err
 		}
-		nick, err := strMethod(pyrepr.Or(pyrepr.Or(member["nickname"], member["nick_name"]), ""), "lower")
+		nick, err := strMethod(pyrepr.Or(pyrepr.Or(member["nickname"], member["nick_name"]), ""), "a member nickname")
 		if err != nil {
 			return nil, nil, err
 		}
@@ -233,14 +234,14 @@ func queryGroupMembers(ctx context.Context, call *tools.Call) (*pyjson.Object, e
 		return listing(true, fmt.Sprintf("Found %d bot(s).", len(bots)), bots), nil
 	}
 	if pyrepr.Equal(action, "find") && pyrepr.Truthy(name) {
-		nameText, err := strMethod(name, "strip")
+		nameText, err := strMethod(name, "name")
 		if err != nil {
 			return nil, err
 		}
 		filter := pystr.Lower(pystr.Strip(nameText))
 		var matched []*pyjson.Object
 		for _, member := range allMembers {
-			nick, err := strMethod(member.GetOr("nickname", ""), "lower")
+			nick, err := strMethod(member.GetOr("nickname", ""), "a member nickname")
 			if err != nil {
 				return nil, err
 			}
@@ -299,7 +300,7 @@ func searchSticker(ctx context.Context, call *tools.Call) (*pyjson.Object, error
 
 // Stripped text of an optional string argument, the AttributeError a value that is not text raises
 func strippedArg(call *tools.Call, key string) (string, error) {
-	text, err := strMethod(pyrepr.Or(toolArg(call, key, ""), ""), "strip")
+	text, err := strMethod(pyrepr.Or(toolArg(call, key, ""), ""), key)
 	return pystr.Strip(text), err
 }
 
@@ -334,7 +335,7 @@ func sendSticker(ctx context.Context, call *tools.Call) (*pyjson.Object, error) 
 		sticker = GetStickerByName(raw)
 	}
 	if sticker == nil {
-		return nil, ybFail("Sticker not found: " + pyrepr.StrRepr(raw) + ". Use search_sticker first to discover available stickers.")
+		return nil, ybFail("Sticker not found: " + errchain.Show(raw) + ". Use search_sticker first to discover available stickers.")
 	}
 	replyTo, err := protoText(toolArg(call, "reply_to", ""))
 	if err != nil {
@@ -388,7 +389,7 @@ func sendDM(ctx context.Context, call *tools.Call) (*pyjson.Object, error) {
 	}
 	rawMessage, isText := toolArg(call, "message", "").(string)
 	if !isText {
-		return nil, &pyErr{"TypeError", "argument of type '" + pyrepr.TypeName(call.Args["message"]) + "' is not iterable"}
+		return nil, &pyErr{"TypeError", "message must be text, got " + errchain.Kind(call.Args["message"])}
 	}
 	embedded, message, err := gateway.ExtractMedia(ctx, rawMessage)
 	if err != nil {
@@ -409,7 +410,7 @@ func sendDM(ctx context.Context, call *tools.Call) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	nameText, err := strMethod(name, "strip")
+	nameText, err := strMethod(name, "name")
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,7 @@ package selfupdate
 import (
 	"os/exec"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
@@ -12,7 +12,7 @@ func init() {
 	pm.SetUpdateLockHooks(pm.UpdateLockHooks{
 		BindChild: func(cmd *exec.Cmd) (string, bool) {
 			if err := updaterecord.BindChildToUpdateTree(cmd.Process.Pid); err != nil {
-				return pypath.OSErrorText(err), true
+				return errchain.OSText(err), true
 			}
 			return "", false
 		},

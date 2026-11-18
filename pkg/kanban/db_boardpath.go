@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -57,7 +58,7 @@ func normalizeBoardSlug(slug *string) (string, error) {
 	}
 	if !boardSlugRE.MatchString(s) {
 		return "", &ValueError{fmt.Sprintf("invalid board slug %s: must be 1-64 chars, lowercase "+
-			"alphanumerics / hyphens / underscores, not starting with '-' or '_'", pyrepr.StrRepr(*slug))}
+			"alphanumerics / hyphens / underscores, not starting with '-' or '_'", errchain.Show(*slug))}
 	}
 	return s, nil
 }

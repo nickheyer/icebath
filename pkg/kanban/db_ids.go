@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -193,7 +193,7 @@ func normalizeTaskSkills(skills []string) ([]string, error) {
 		}
 		if strings.Contains(name, ",") {
 			return nil, &ValueError{fmt.Sprintf("skill name cannot contain comma: %s "+
-				"(pass a list of separate names instead of a comma-joined string)", pyrepr.StrRepr(name))}
+				"(pass a list of separate names instead of a comma-joined string)", errchain.Show(name))}
 		}
 		if known[pystr.Casefold(name)] {
 			typos = append(typos, name)
@@ -208,7 +208,7 @@ func normalizeTaskSkills(skills []string) ([]string, error) {
 	if len(typos) > 0 {
 		quoted := make([]string, len(typos))
 		for i, n := range typos {
-			quoted[i] = pyrepr.StrRepr(n)
+			quoted[i] = errchain.Show(n)
 		}
 		noun := "are toolset names"
 		if len(typos) == 1 {
@@ -227,7 +227,7 @@ func normalizeTaskSkills(skills []string) ([]string, error) {
 func pyIntOf(v any) (int64, error) {
 	switch x := v.(type) {
 	case nil:
-		return 0, &RuntimeError{"int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"}
+		return 0, &RuntimeError{"expected a whole number, got nothing"}
 	case int64:
 		return x, nil
 	case float64:
@@ -242,11 +242,11 @@ func pyIntOf(v any) (int64, error) {
 	case string:
 		n, ok := pyint.Parse(x)
 		if !ok {
-			return 0, &ValueError{fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(x))}
+			return 0, &ValueError{fmt.Sprintf("%s is not a whole number", x)}
 		}
 		return clampBig(n), nil
 	}
-	return 0, &RuntimeError{fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not %s", pyrepr.StrRepr(pyrepr.TypeName(v)))}
+	return 0, &RuntimeError{fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
 }
 
 // int64 of a big integer saturated at the int64 bounds

@@ -148,7 +148,7 @@ func policySetting(ctx context.Context, extra map[string]any, kind string) (stri
 		}
 		policy = scoped
 	}
-	policyText, err := strMethod(pyrepr.Or(policy, "pairing"), "strip")
+	policyText, err := strMethod(pyrepr.Or(policy, "pairing"), kind+"_policy")
 	if err != nil {
 		return "", nil, err
 	}
@@ -160,7 +160,7 @@ func policySetting(ctx context.Context, extra map[string]any, kind string) (stri
 		}
 		raw = scoped
 	}
-	rawText, err := strMethod(raw, "split")
+	rawText, err := strMethod(raw, kind+"_allow_from")
 	if err != nil {
 		return "", nil, err
 	}
@@ -187,26 +187,26 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 	if extra == nil {
 		extra = map[string]any{}
 	}
-	setting := func(key string, def any, method string) (string, error) {
-		return strMethod(pyrepr.Or(extra[key], def), method)
+	setting := func(key string, def any) (string, error) {
+		return strMethod(pyrepr.Or(extra[key], def), key)
 	}
 	var err error
-	if a.appKey, err = setting("app_id", "", "strip"); err != nil {
+	if a.appKey, err = setting("app_id", ""); err != nil {
 		return nil, err
 	}
-	if a.appSecret, err = setting("app_secret", "", "strip"); err != nil {
+	if a.appSecret, err = setting("app_secret", ""); err != nil {
 		return nil, err
 	}
 	if botID := extra["bot_id"]; pyrepr.Truthy(botID) {
 		a.botID = botID
 	}
-	if a.wsURL, err = setting("ws_url", defaultWSGatewayURL, "strip"); err != nil {
+	if a.wsURL, err = setting("ws_url", defaultWSGatewayURL); err != nil {
 		return nil, err
 	}
-	if a.apiDomain, err = setting("api_domain", defaultBotAPIDomain, "rstrip"); err != nil {
+	if a.apiDomain, err = setting("api_domain", defaultBotAPIDomain); err != nil {
 		return nil, err
 	}
-	if a.routeEnv, err = setting("route_env", "", "strip"); err != nil {
+	if a.routeEnv, err = setting("route_env", ""); err != nil {
 		return nil, err
 	}
 	a.appKey, a.appSecret, a.wsURL, a.routeEnv = pystr.Strip(a.appKey), pystr.Strip(a.appSecret), pystr.Strip(a.wsURL), pystr.Strip(a.routeEnv)

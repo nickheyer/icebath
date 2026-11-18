@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Seconds a parked worker waits for work before its thread exits
@@ -54,7 +56,7 @@ func (e *unboundedThreadExecutor) submit(fn func(ctx context.Context) (any, erro
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	if e.shut {
-		return nil, &pyRuntimeError{msg: "cannot schedule new futures after shutdown"}
+		return nil, &pyRuntimeError{msg: tools.ErrPoolShutdown.Error(), cause: tools.ErrPoolShutdown}
 	}
 	if n := len(e.idle); n > 0 {
 		worker := e.idle[n-1]

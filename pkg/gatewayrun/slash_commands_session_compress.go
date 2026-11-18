@@ -296,7 +296,7 @@ func (r *GatewayRunner) persistManualCompression(ctx context.Context, tmpAgent *
 	newSessionID := tmpAgent.SessionID()
 	if newSessionID != entry.SessionID {
 		if !store.PersistRotatedCompressionChild(ctx, entry.SessionID, newSessionID, compressed) {
-			return fmt.Errorf("RuntimeError: failed to persist compressed transcript for session %s", newSessionID)
+			return fmt.Errorf("failed to persist compressed transcript for session %s", newSessionID)
 		}
 		entry.SessionID = newSessionID
 		if err := store.Save(ctx); err != nil {

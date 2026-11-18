@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -100,7 +101,7 @@ func listField(value any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(value))
 }
 
 // dict(value or {}) over JSON values
@@ -116,16 +117,16 @@ func dictField(value any) (*pyjson.Object, error) {
 		for i, it := range items {
 			pair, ok := it.([]any)
 			if !ok {
-				return nil, fmt.Errorf("cannot convert dictionary update sequence element #%d to a sequence", i)
+				return nil, fmt.Errorf("item %d is not a key and value pair", i)
 			}
 			if len(pair) != 2 {
-				return nil, fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))
+				return nil, fmt.Errorf("item %d has %d parts where a key and a value were expected", i, len(pair))
 			}
 			out.Set(pyrepr.Str(pair[0]), pair[1])
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(value))
 }
 
 // Payload as a dict, failing like attribute access on a non dict
@@ -133,7 +134,7 @@ func asDict(value any) (*pyjson.Object, error) {
 	if o, ok := value.(*pyjson.Object); ok {
 		return o, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(value))
 }
 
 // Wire value of a field with empty lists and dicts dropped and nested models as dicts

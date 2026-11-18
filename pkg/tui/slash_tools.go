@@ -3,11 +3,13 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 )
 
@@ -24,21 +26,16 @@ func rpcStrings(v any) []string {
 }
 
 // Tool catalog of a session grouped by toolset with the total underneath
-func toolsCatalogText(ctx context.Context, res map[string]any) string {
+func toolsCatalogText(ctx context.Context, res tuigateway.ToolsShowResult) string {
 	lines := []string{}
-	sections, _ := res["sections"].([]any)
-	for _, rawSection := range sections {
-		section, _ := rawSection.(map[string]any)
-		lines = append(lines, "  ["+jsValueString(section["name"])+"]")
-		rows, _ := section["tools"].([]any)
-		for _, rawRow := range rows {
-			row, _ := rawRow.(map[string]any)
-			lines = append(lines, fmt.Sprintf("    * %-20s - %s", jsValueString(row["name"]), jsValueString(row["description"])))
+	for _, section := range res.Sections {
+		lines = append(lines, "  ["+section.Name+"]")
+		for _, row := range section.Tools {
+			lines = append(lines, fmt.Sprintf("    * %-20s - %s", row.Name, row.Description))
 		}
 		lines = append(lines, "")
 	}
-	total := jsValueString(res["total"])
-	return strings.Join(append(lines, "  "+i18n.T(ctx, "cli.tools.total", "", map[string]any{"count": total})), "\n")
+	return strings.Join(append(lines, "  "+i18n.T(ctx, "cli.tools.total", "", map[string]any{"count": strconv.FormatInt(res.Total, 10)})), "\n")
 }
 
 // Slash command that lists the session tools and enables or disables toolsets and MCP tools
@@ -60,8 +57,11 @@ func (a *app) toolsCommands() []slashCommand {
 			}
 			switch subcommand {
 			case "list":
-				return tea.Batch(r.ran(), r.rpc("tools.list", map[string]any{"platform": "cli"}, func(res map[string]any) tea.Cmd {
-					return a.page(strings.Join(rpcStrings(res["lines"]), "\n"), i18n.T(a.ctx, "cli.tools.header", "", nil))
+				return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ToolsList, tuigateway.ToolsListParams{Platform: ptr("cli")}, func(res *tuigateway.ToolsListResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					return a.page(strings.Join(res.Lines, "\n"), i18n.T(a.ctx, "cli.tools.header", "", nil))
 				}))
 			case "enable", "disable":
 				names := parts[1:]
@@ -73,42 +73,45 @@ func (a *app) toolsCommands() []slashCommand {
 				if a.life.guardBusySessionSwitch(tr("slashCmd.core.clear.switchSessions")) {
 					return nil
 				}
-				progress, verb := "enabling", "Enabled"
+				progress, changedKey := "enabling", "tools.enabled"
 				if subcommand == "disable" {
-					progress, verb = "disabling", "Disabled"
+					progress, changedKey = "disabling", "tools.disabled"
 				}
 				started := text(progress, map[string]any{"names": strings.Join(names, ", ")})
 				r.sys(started)
-				reset := func(res map[string]any) tea.Cmd {
+				reset := func(res *tuigateway.ToolsConfigureResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
 					lines := []string{started}
-					for _, name := range rpcStrings(res["unknown"]) {
-						lines = append(lines, fmt.Sprintf("\u2717 Unknown toolset '%s'", name))
+					for _, name := range res.Unknown {
+						lines = append(lines, tr("tools.unknownToolset", name))
 					}
-					for _, server := range rpcStrings(res["missing_servers"]) {
-						lines = append(lines, fmt.Sprintf("\u2717 MCP server '%s' not found in config", server))
+					for _, server := range res.MissingServers {
+						lines = append(lines, tr("tools.missingServer", server))
 					}
-					if changed := rpcStrings(res["changed"]); len(changed) > 0 {
-						lines = append(lines, "\u2713 "+verb+": "+strings.Join(changed, ", "))
+					if len(res.Changed) > 0 {
+						lines = append(lines, tr(changedKey, strings.Join(res.Changed, ", ")))
 					}
 					a.store.ui.Status = tr("slashCmd.core.clear.forgingSession")
 					return a.life.newSession(strings.Join(append(lines, text("session_reset", nil)), "\n"), "", nil)
 				}
-				params := map[string]any{"action": subcommand, "names": names}
-				if r.sid != "" {
-					params["session_id"] = r.sid
-				}
-				return tea.Batch(r.ran(), r.rpc("tools.configure", params, reset))
+				params := tuigateway.ToolsConfigureParams{Action: tuigateway.ToolsAction(subcommand), Names: names, SessionID: optionalText(r.sid)}
+				return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ToolsConfigure, params, reset))
 			}
 			if r.sid == "" {
 				r.sys(tr("slashCmd.core.status.noActiveSession"))
 				return nil
 			}
-			return tea.Batch(r.ran(), r.rpc("tools.show", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
-				if sections, _ := res["sections"].([]any); len(sections) == 0 {
+			return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ToolsShow, tuigateway.SessionScopedParams{SessionID: &r.sid}, func(res *tuigateway.ToolsShowResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				if len(res.Sections) == 0 {
 					r.sys(i18n.T(a.ctx, "cli.tools.none_available", "", nil))
 					return nil
 				}
-				return a.page(toolsCatalogText(a.ctx, res), i18n.T(a.ctx, "cli.tools.header", "", nil))
+				return a.page(toolsCatalogText(a.ctx, *res), i18n.T(a.ctx, "cli.tools.header", "", nil))
 			}))
 		}},
 	}

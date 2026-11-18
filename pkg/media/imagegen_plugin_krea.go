@@ -428,7 +428,7 @@ func kreaInlineLocalImages(env *tools.Env, refs []any, fail errorFn) ([]any, map
 		}
 		data, err := readAtMost(path, kreaMaxLocalReferenceBytes-total+1)
 		if err != nil {
-			return []any{}, fail(fmt.Sprintf("Reference image unreadable: %s (%s)", s, pypath.OSErrorText(err)), "invalid_image_url")
+			return []any{}, fail(fmt.Sprintf("Reference image unreadable: %s (%s)", s, errchain.OSText(err)), "invalid_image_url")
 		}
 		total += len(data)
 		if total > kreaMaxLocalReferenceBytes {

@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -179,7 +178,7 @@ func insideRoot(path, root string) bool {
 func readJSONObject(path, label string) (*pyjson.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, agentErr("%s is not valid readable JSON: %s", label, pyfs.OSErrorText(err))
+		return nil, agentErr("%s is not valid readable JSON: %s", label, errchain.OSText(err))
 	}
 	text, err := pycodecs.Decode(raw, "utf-8-sig")
 	if err != nil {
@@ -325,7 +324,7 @@ func validSkillFrontmatter(fm map[string]any, dirName string) string {
 func skillReadErrorText(err error) string {
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
-		return pyfs.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }
@@ -342,7 +341,7 @@ func discoverPortableSkills(root string, diags *[]AgentPluginDiagnostic) ([]Agen
 	}
 	entries, err := os.ReadDir(skillsRoot)
 	if err != nil {
-		*diags = append(*diags, AgentPluginDiagnostic{"skills", "cannot list skills: " + pyfs.OSErrorText(err)})
+		*diags = append(*diags, AgentPluginDiagnostic{"skills", "cannot list skills: " + errchain.OSText(err)})
 		return nil, nil
 	}
 	var skills []AgentPluginSkill
@@ -576,7 +575,7 @@ func rejectSSE(server map[string]any) (map[string]any, error) {
 func translateErrorText(err error) string {
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
-		return pyfs.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

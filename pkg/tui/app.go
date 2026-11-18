@@ -741,7 +741,7 @@ func (a *app) shellExec(command string, destination submissionDestination, item 
 		case err != nil:
 			a.sys("error: " + describeShellExecError(err))
 		case r == nil:
-			a.sys("error: " + tr("session.common.invalidResponse", "shell.exec"))
+			a.sys("error: " + misfitText(tr("session.common.invalidResponse", "shell.exec")))
 		default:
 			var parts []string
 			for _, k := range []string{"stdout", "stderr"} {

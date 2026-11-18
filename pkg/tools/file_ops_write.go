@@ -343,7 +343,7 @@ func (s *shellFileOps) noMatchResult(path, content, oldString, newString string,
 	}
 	errMsg := errText
 	if errMsg == "" {
-		errMsg = "Could not find match for old_string in " + path
+		errMsg = noMatchIn(path)
 	}
 	func() {
 		defer func() { recover() }()

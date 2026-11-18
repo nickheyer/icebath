@@ -382,7 +382,7 @@ func prepareCheckoutForUpdate(ctx context.Context, w io.Writer, gitCmd []string,
 	}
 	commitCount, err := strconv.Atoi(pystr.Strip(result.Stdout))
 	if err != nil {
-		return nil, &ValueError{Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(pystr.Strip(result.Stdout))}
+		return nil, &ValueError{Msg: "git rev-list printed " + pystr.Strip(result.Stdout) + " where a commit count was expected"}
 	}
 	applyIsShallow, err := isShallowCheckout(ctx, gitCmd)
 	if err != nil {

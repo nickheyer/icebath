@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -253,7 +254,7 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 		source = "oneshot"
 	}
 	if !has(sources, source) {
-		return nil, &gateway.GatewayClientError{Msg: "Gateway does not support source " + pyrepr.Repr(source)}
+		return nil, &gateway.GatewayClientError{Msg: "Gateway does not support source " + errchain.Show(source)}
 	}
 	parameters, _ := gatewayGetOr(contract, "parameters", []any{}).([]any)
 	policy := gatewaycli.RequestedPolicy(args)
@@ -551,7 +552,7 @@ func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 				if runCtx.Err() != nil {
 					return 0, runCtx.Err()
 				}
-				return failed(fmt.Sprintf("cannot read --query-file %s: %s", path, pypath.OSErrorText(err)), 2), nil
+				return failed(fmt.Sprintf("cannot read --query-file %s: %s", path, errchain.OSText(err)), 2), nil
 			}
 			args["query"] = query
 			if pystr.Strip(query) == "" {

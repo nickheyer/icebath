@@ -40,7 +40,7 @@ func TestHostedAttachmentDataNeedsTheAttestedPromptBeforeItAsksForAChunk(t *test
 		t.Fatalf("a missing prompt gave %v", err)
 	}
 	_, err = hostedAttachmentData(context.Background(), pyjson.NewObject(), attestedOneInput("attachment_digests", []any{"ab"}, "prompt", 7), map[string]any{})
-	if err == nil || !strings.Contains(err.Error(), "encode") {
+	if err == nil || !strings.Contains(err.Error(), "prompt is a number, expected text") {
 		t.Fatalf("a prompt that is no text gave %v", err)
 	}
 }

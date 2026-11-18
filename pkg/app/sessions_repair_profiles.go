@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -272,8 +273,8 @@ func (p *repairProfilesPlan) scan(ctx context.Context, session *repairProfilesSe
 	return nil
 }
 
-// Python repr of a row value
-func rowRepr(row *pyjson.Object, key string) string { return pyrepr.Repr(rowGet(row, key)) }
+// Value of a row field as a person writes it
+func rowShown(row *pyjson.Object, key string) string { return errchain.Show(rowGet(row, key)) }
 
 // Python str of a row value
 func rowStr(row *pyjson.Object, key string) string { return pyrepr.Str(rowGet(row, key)) }
@@ -304,7 +305,7 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 		if reason, ok := held[id]; ok {
 			moving[id] = true
 			p.add(&repairProfilesFinding{kind: "wrong_store", store: store.profile, subject: id,
-				detail: fmt.Sprintf("key %s (%s messages) sits in the %s store", rowRepr(row, "session_key"),
+				detail: fmt.Sprintf("key %s (%s messages) sits in the %s store", rowShown(row, "session_key"),
 					rowStr(row, "message_count"), store.profile), reason: strRef(reason)})
 			continue
 		}
@@ -317,9 +318,9 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 		}
 		st := store
 		p.add(&repairProfilesFinding{kind: "mislabelled", store: store.profile, subject: sid,
-			detail: fmt.Sprintf("profile_name=%s but key %s belongs to %s", rowRepr(row, "profile_name"),
-				rowRepr(row, "session_key"), rowRepr(row, "key_profile")),
-			action: strRef("relabel to " + rowRepr(row, "key_profile")),
+			detail: fmt.Sprintf("profile_name=%s but key %s belongs to %s", rowShown(row, "profile_name"),
+				rowShown(row, "session_key"), rowShown(row, "key_profile")),
+			action: strRef("relabel to " + rowShown(row, "key_profile")),
 			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
 				db, err := s.writable(st)
 				if err != nil {
@@ -339,8 +340,8 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 		}
 		st := store
 		p.add(&repairProfilesFinding{kind: "crossed_parent", store: store.profile, subject: sid,
-			detail: fmt.Sprintf("%s row inherits from parent %s keyed under %s", rowRepr(row, "key_profile"),
-				rowStr(row, "parent_session_id"), rowRepr(row, "parent_profile")),
+			detail: fmt.Sprintf("%s row inherits from parent %s keyed under %s", rowShown(row, "key_profile"),
+				rowStr(row, "parent_session_id"), rowShown(row, "parent_profile")),
 			action: strRef("sever parent_session_id"),
 			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
 				db, err := s.writable(st)
@@ -370,7 +371,7 @@ func (p *repairProfilesPlan) wouldMove(store repairProfilesStore, row *pyjson.Ob
 // Plans a row keyed to another profile, a move into its store or a report when no profile claims it
 func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *pyjson.Object, moving map[string]bool) {
 	keyProfile, sid := rowGet(row, "key_profile"), rowKey(row, "id")
-	detail := fmt.Sprintf("key %s (%s messages) sits in the %s store", rowRepr(row, "session_key"),
+	detail := fmt.Sprintf("key %s (%s messages) sits in the %s store", rowShown(row, "session_key"),
 		rowStr(row, "message_count"), store.profile)
 	if keyProfile == "default" && store.profile != "default" {
 		p.planLegacyMainRow(store, row, moving)
@@ -380,7 +381,7 @@ func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *pyjs
 	if !p.claimed[name] {
 		p.add(&repairProfilesFinding{kind: "unclaimed_namespace", store: store.profile, subject: sid, detail: detail,
 			reason: strRef(fmt.Sprintf("no live profile named %s; create it, then rerun, or "+
-				"`icebath profile migrate-identity %s <target>`", pyrepr.Repr(keyProfile), pyrepr.Str(keyProfile)))})
+				"`icebath profile migrate-identity %s <target>`", errchain.Show(keyProfile), pyrepr.Str(keyProfile)))})
 		return
 	}
 	moving[sid] = true
@@ -392,7 +393,7 @@ func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *pyjs
 func (p *repairProfilesPlan) planLegacyMainRow(store repairProfilesStore, row *pyjson.Object, moving map[string]bool) {
 	sid := rowKey(row, "id")
 	detail := fmt.Sprintf("legacy default-namespace key %s (%s messages) in the %s store",
-		rowRepr(row, "session_key"), rowStr(row, "message_count"), store.profile)
+		rowShown(row, "session_key"), rowStr(row, "message_count"), store.profile)
 	switch {
 	case p.legacyMain == "rekey":
 		st := store
@@ -445,8 +446,8 @@ func (p *repairProfilesPlan) scanTopics(ctx context.Context, session *repairProf
 		st, r := store, row
 		p.add(&repairProfilesFinding{kind: "topic_profile_less", store: store.profile,
 			subject: fmt.Sprintf("chat %s thread %s", rowStr(row, "chat_id"), rowStr(row, "thread_id")),
-			detail:  "telegram topic binding labelled 'default' but keyed " + rowRepr(row, "session_key"),
-			action:  strRef("relabel to " + rowRepr(row, "key_profile")),
+			detail:  "telegram topic binding labelled 'default' but keyed " + rowShown(row, "session_key"),
+			action:  strRef("relabel to " + rowShown(row, "key_profile")),
 			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
 				db, err := s.writable(st)
 				if err != nil {
@@ -473,13 +474,13 @@ func (p *repairProfilesPlan) scanRouting(ctx context.Context, session *repairPro
 		if !ok {
 			continue
 		}
-		subject := fmt.Sprintf("%s (scope %s)", rowStr(row, "session_key"), rowRepr(row, "scope"))
+		subject := fmt.Sprintf("%s (scope %s)", rowStr(row, "session_key"), rowShown(row, "scope"))
 		st, r := store, row
 		if store.routing {
 			if !p.claimed[keyProfile] {
 				p.add(&repairProfilesFinding{kind: "routing_unclaimed", store: store.profile, subject: subject,
 					detail: fmt.Sprintf("routing row for a namespace no live profile claims (%s); every "+
-						"inbound event on it logs a missing-profile error", pyrepr.Repr(keyProfile)),
+						"inbound event on it logs a missing-profile error", errchain.Show(keyProfile)),
 					action: strRef("delete"),
 					fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
 						db, err := s.writable(st)
@@ -607,14 +608,14 @@ func (p *repairProfilesPlan) scanVoiceModes(ctx context.Context, session *repair
 				list[i] = n
 			}
 			p.add(&repairProfilesFinding{kind: "voice_profile_less", store: store.profile, subject: key,
-				detail: "voice mode entry without a profile; chat is held by " + pyrepr.Repr(list),
+				detail: "voice mode entry without a profile; chat is held by " + errchain.Show(list),
 				reason: strRef("more than one non-default bot speaks in this chat")})
 			continue
 		}
 		owner, k := names[0], key
 		p.add(&repairProfilesFinding{kind: "voice_profile_less", store: store.profile, subject: key,
-			detail: fmt.Sprintf("voice mode %s without a profile; chat is held only by %s", pyrepr.Repr(data.Vals[key]),
-				pyrepr.Repr(owner)),
+			detail: fmt.Sprintf("voice mode %s without a profile; chat is held only by %s", errchain.Show(data.Vals[key]),
+				errchain.Show(owner)),
 			action: strRef("rekey to " + owner + ":" + key),
 			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
 				return rekeyVoiceModeEntry(s.ctx, path, k, owner)
@@ -649,7 +650,7 @@ func (p *repairProfilesPlan) scanSessionsJSON(store repairProfilesStore) error {
 		k := key
 		p.add(&repairProfilesFinding{kind: "sessions_json_unclaimed", store: store.profile, subject: key,
 			detail: fmt.Sprintf("sessions.json mirror entry for a namespace no live profile claims (%s); "+
-				"the legacy import re-injects it into routing on every boot", pyrepr.Repr(keyProfile)),
+				"the legacy import re-injects it into routing on every boot", errchain.Show(keyProfile)),
 			action: strRef("delete entry"),
 			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
 				return dropSessionsJSONEntry(s.ctx, path, k)
@@ -704,10 +705,9 @@ func (p *repairProfilesPlan) apply(ctx context.Context, session *repairProfilesS
 			return nil
 		}()
 		if err != nil {
-			name, msg := pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)
-			pkgLog().Warn(fmt.Sprintf("repair-profiles: %s on %s failed\n%s: %s", finding.kind, finding.subject, name, msg))
+			pkgLog().Warn(fmt.Sprintf("repair-profiles: %s on %s failed: %s", finding.kind, finding.subject, errchain.Text(err)))
 			failures = append(failures, pyjson.ObjectOf("kind", finding.kind, "subject", finding.subject,
-				"error", name+": "+msg))
+				"error", err.Error()))
 		}
 	}
 	return pyjson.ObjectOf("snapshots", snapshots, "totals", totals, "failures", failures), nil
@@ -795,8 +795,8 @@ func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*pyjso
 		sid, parent := rowKey(payload.Session, "id"), rowGet(payload.Session, "parent_session_id")
 		if parentID, ok := parent.(string); ok {
 			if _, failed := b.errs[parentID]; failed {
-				b.errs[sid] = &pyrepr.FormatError{Class: "RuntimeError",
-					Msg: fmt.Sprintf("its parent %s did not move; kept in the %s store with it", parentID, b.src.profile)}
+				b.errs[sid] = &appClassedError{class: "RuntimeError",
+					msg: fmt.Sprintf("its parent %s did not move; kept in the %s store with it", parentID, b.src.profile)}
 				continue
 			}
 		}
@@ -967,8 +967,7 @@ func jsonContains(data any, key string) (bool, error) {
 	case string:
 		return strings.Contains(d, key), nil
 	}
-	return false, &pyrepr.FormatError{Class: "TypeError",
-		Msg: "argument of type '" + pyrepr.TypeName(data) + "' is not a container or iterable"}
+	return false, &appClassedError{class: "TypeError", msg: "the file holds " + errchain.Kind(data) + " where a mapping or a list was expected"}
 }
 
 // Reloaded JSON document of a fix, failing on any read or parse error
@@ -984,9 +983,9 @@ func repairLoadForFix(path string) (any, error) {
 	return pyjson.Loads(text)
 }
 
-// Error a dict method raises on another JSON type
-func repairNoAttribute(data any, attr string) error {
-	return &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(data) + "' object has no attribute '" + attr + "'"}
+// Refusal of a JSON document that is not a mapping
+func repairNoAttribute(data any) error {
+	return &appClassedError{class: "AttributeError", msg: "the file holds " + errchain.Kind(data) + " where a mapping was expected"}
 }
 
 // Moves a voice mode entry under the owner prefix, an existing prefixed entry winning
@@ -1004,7 +1003,7 @@ func rekeyVoiceModeEntry(ctx context.Context, path, key, owner string) (*pyjson.
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		return nil, repairNoAttribute(data, "setdefault")
+		return nil, repairNoAttribute(data)
 	}
 	value := obj.Vals[key]
 	obj.Delete(key)
@@ -1033,10 +1032,7 @@ func dropSessionsJSONEntry(ctx context.Context, path, key string) (*pyjson.Objec
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		if _, isList := data.([]any); isList {
-			return nil, &pyrepr.FormatError{Class: "TypeError", Msg: "list indices must be integers or slices, not str"}
-		}
-		return nil, &pyrepr.FormatError{Class: "TypeError", Msg: "'" + pyrepr.TypeName(data) + "' object doesn't support item deletion"}
+		return nil, &appClassedError{class: "TypeError", msg: "the file holds " + errchain.Kind(data) + " where a mapping was expected"}
 	}
 	obj.Delete(key)
 	if err := config.AtomicJSONWriteMode(ctx, path, obj, 0o600, pyjson.Indent(2)); err != nil {

@@ -28,7 +28,9 @@ func (e *HostedRoomSessionError) Error() string { return e.Method + " failed: " 
 // Lookup of a method name the server never registered, a KeyError
 type hostedRoomMissingMethodError struct{ method string }
 
-func (e *hostedRoomMissingMethodError) Error() string { return pyrepr.Repr(e.method) }
+func (e *hostedRoomMissingMethodError) Error() string {
+	return "the hosted room server has no method " + e.method
+}
 
 // Server surface the adapter drives, its installed handlers, live session records, pending approvals and profile homes
 type HostedRoomServer struct {

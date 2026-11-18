@@ -180,8 +180,8 @@ func TestErrorsInvalidURL(t *testing.T) {
 		url  any
 		text string
 	}{
-		{nil, "Invalid MCP URL for 's': expected a string, got NoneType"},
-		{map[string]any{}, "Invalid MCP URL for 's': expected a string, got dict"},
+		{nil, "Invalid MCP URL for 's': expected text, got nothing"},
+		{map[string]any{}, "Invalid MCP URL for 's': expected text, got a mapping"},
 		{"   ", "Invalid MCP URL for 's': empty url"},
 		{"ftp://example.com", "Invalid MCP URL for 's': scheme must be http or https, got 'ftp' ('ftp://example.com')"},
 		{"not a url at all", "Invalid MCP URL for 's': scheme must be http or https, got '' ('not a url at all')"},

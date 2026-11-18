@@ -263,13 +263,13 @@ func pyContains(list []any, target any) bool {
 	return false
 }
 
-// TypeError Python raises when an unhashable value meets a set
+// Refusal of a list or mapping where text is expected as a set member
 func pyUnhashable(v any) error {
 	switch v.(type) {
 	case []any:
-		return errors.New("unhashable type: 'list'")
+		return errors.New("expected text, got a list")
 	case map[string]any:
-		return errors.New("unhashable type: 'dict'")
+		return errors.New("expected text, got a mapping")
 	}
 	return nil
 }
@@ -414,7 +414,7 @@ func pyUTF8DecodeError(data []byte) error {
 		case b >= 0xF0 && b <= 0xF4:
 			need = 3
 		default:
-			return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: invalid start byte", b, i)
+			return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d cannot start a character", b, i)
 		}
 		tail := data[i+1:]
 		if len(tail) > need {
@@ -426,11 +426,11 @@ func pyUTF8DecodeError(data []byte) error {
 		}
 		if valid == len(tail) && i+1+need > len(data) {
 			if len(data)-i == 1 {
-				return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: unexpected end of data", b, i)
+				return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d begins a character the text ends inside", b, i)
 			}
-			return fmt.Errorf("'utf-8' codec can't decode bytes in position %d-%d: unexpected end of data", i, len(data)-1)
+			return fmt.Errorf("not valid UTF-8: bytes at positions %d-%d begin a character the text ends inside", i, len(data)-1)
 		}
-		return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: invalid continuation byte", b, i)
+		return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d begins a character that the next byte breaks", b, i)
 	}
 	return nil
 }

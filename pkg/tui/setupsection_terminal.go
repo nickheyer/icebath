@@ -56,10 +56,14 @@ func terminalCurrent(run *sectionRun) string {
 	return "local"
 }
 
-// Backend menu, the built in backends, the registered ones and a row that keeps the current backend
+// Backend menu, the built in backends the gateway links, the registered ones and a row that keeps the current backend
 func terminalBackendChoices(run *sectionRun) []sectionChoice {
 	choices := []sectionChoice{}
+	linked, _ := tuigateway.SetupValue[[]string](run.values, "terminal.builtin_backends")
 	for _, name := range terminalBuiltins {
+		if name != "local" && !slices.Contains(linked, name) {
+			continue
+		}
 		choices = append(choices, sectionChoice{name, tr("setupFlow.terminal.backend." + name), tr("setupFlow.terminal.backend." + name + "Detail")})
 	}
 	for _, row := range terminalPluginRows(run) {
@@ -307,7 +311,7 @@ func terminalSection() sectionSpec {
 	vercel := terminalRuns("vercel_sandbox")
 	return sectionSpec{key: "terminal", title: tr("setupFlow.terminal.title"), detail: tr("setupFlow.terminal.detail"), intro: tr("setupFlow.terminal.intro"),
 		fields: fields, fullSave: true,
-		values: []string{"terminal.plugin_backends", "terminal.docker", "terminal.ssh_defaults", linkedValue,
+		values: []string{"terminal.plugin_backends", "terminal.builtin_backends", "terminal.docker", "terminal.ssh_defaults", linkedValue,
 			"terminal.vercel_default_image"},
 		reads: []sectionTarget{{key: "terminal.vercel_runtime"}, {key: "terminal.container_disk"}},
 		constants: []sectionConstant{

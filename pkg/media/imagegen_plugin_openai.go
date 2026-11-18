@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -180,7 +180,7 @@ func loadOpenAIImageBytes(ctx context.Context, env *tools.Env, ref string) ([]by
 	}
 	data, err := os.ReadFile(ref)
 	if err != nil {
-		return nil, "", fmt.Errorf("%s", pypath.OSErrorText(err))
+		return nil, "", fmt.Errorf("%s", errchain.OSText(err))
 	}
 	name := filepath.Base(ref)
 	if name == "." || name == string(filepath.Separator) || strings.HasSuffix(ref, string(filepath.Separator)) {

@@ -61,10 +61,10 @@ func TestHandleComputerUseRefusesUnknownMissingAndHumanControl(t *testing.T) {
 	if got := cuHandle(t, env, map[string]any{"action": "  "}); got != `{"error": "missing `+"`action`"+`"}` {
 		t.Fatalf("missing %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "Hotkey"}); !strings.Contains(got, "unknown action 'hotkey' \\u2014 did you mean 'key'?") {
+	if got := cuHandle(t, env, map[string]any{"action": "Hotkey"}); !strings.Contains(got, "unknown action hotkey \\u2014 did you mean key?") {
 		t.Fatalf("unknown %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "teleport"}); got != `{"error": "unknown action 'teleport'"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "teleport"}); got != `{"error": "unknown action teleport"}` {
 		t.Fatalf("unknown without hint %s", got)
 	}
 	human = true
@@ -92,10 +92,10 @@ func TestHandleComputerUseDispatchesThroughTheBackend(t *testing.T) {
 	if got := cuHandle(t, env, map[string]any{"action": "focus_app", "app": ""}); got != `{"error": "focus_app requires `+"`app`"+`"}` {
 		t.Fatalf("focus_app %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "capture", "mode": "x"}); got != `{"error": "bad mode 'x'; use som|vision|ax"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "capture", "mode": "x"}); got != `{"error": "bad mode x; use som|vision|ax"}` {
 		t.Fatalf("capture %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "wait", "seconds": "abc"}); got != `{"error": "wait failed: could not convert string to float: 'abc'"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "wait", "seconds": "abc"}); got != `{"error": "wait failed: abc is not a number"}` {
 		t.Fatalf("wait %s", got)
 	}
 	if got := cuHandle(t, env, map[string]any{"action": "double_click", "element": int64(4)}); !strings.Contains(got, `"ok": true`) {

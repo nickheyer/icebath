@@ -128,7 +128,7 @@ func (s *SignedBinary) Stage(store *Store, staged, version, target string) error
 	provenance := filepath.Join(staged, ".provenance")
 	artifacts := NewLockfile(LockfilePath()).Artifacts(s.Name, target)
 	if len(artifacts) == 0 {
-		return errors.New("IndexError: list index out of range")
+		return fmt.Errorf("the lockfile pins no %s artifact for target %s", s.Name, target)
 	}
 	archive := artifacts[0]
 	filename, err := archiveFilename(archive)
@@ -278,7 +278,7 @@ func runGPG(gpg string, args []string) (int, error) {
 	cmd := exec.CommandContext(ctx, gpg, args...)
 	_, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return 0, fmt.Errorf("Command '%s' timed out after 60 seconds", pyrepr.Repr(cmd.Args))
+		return 0, fmt.Errorf("%s timed out after 60 seconds", strings.Join(cmd.Args, " "))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

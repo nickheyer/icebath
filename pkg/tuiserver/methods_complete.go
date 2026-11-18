@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -416,7 +417,7 @@ func completePath(ctx context.Context, rid any, params map[string]any) (map[stri
 	}
 	word, isStr := rawWord.(string)
 	if !isStr {
-		return nil, fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(rawWord))
+		return nil, fmt.Errorf("the word to complete must be text, got %s", errchain.Kind(rawWord))
 	}
 	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	local := effectiveTerminalBackend(ctx) == "local"
@@ -504,7 +505,7 @@ func completeSlash(ctx context.Context, rid any, params map[string]any) (map[str
 		if s, isStr := raw.(string); isStr {
 			text = s
 		} else {
-			return nil, fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("the slash command text must be text, got %s", errchain.Kind(raw))
 		}
 	}
 	result, err := slashCompletions(ctx, text, sessionHomeScope(session, cwd, strOr(params["profile"])))

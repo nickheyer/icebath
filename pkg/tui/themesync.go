@@ -153,19 +153,15 @@ func (s *tuiStore) reapplyTheme() tea.Cmd {
 	return cmd
 }
 
-// Applies the display.tui_theme pin, light or dark pinning the mode and anything else clearing a pin it set
-func (s *tuiStore) applyConfiguredTuiTheme(raw any) tea.Cmd {
-	mode := ""
-	if raw != nil {
-		mode = strings.ToLower(strings.TrimFunc(jsValueString(raw), isJSSpace))
-	}
+// Applies the display.tui_theme pin, light or dark pinning the mode and auto clearing a pin it set
+func (s *tuiStore) applyConfiguredTuiTheme(mode tuigateway.ThemeMode) tea.Cmd {
 	current := os.Getenv("ICEBATH_TUI_THEME")
 	if mode == "light" || mode == "dark" {
 		s.themes.configPinned = true
-		if current == mode {
+		if current == string(mode) {
 			return nil
 		}
-		_ = os.Setenv("ICEBATH_TUI_THEME", mode)
+		_ = os.Setenv("ICEBATH_TUI_THEME", string(mode))
 	} else {
 		if current == "" || !s.themes.configPinned {
 			return nil

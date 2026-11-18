@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -23,8 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-var dockerSearchPaths = []string{"/usr/local/bin/docker", "/opt/homebrew/bin/docker", "/Applications/Docker.app/Contents/Resources/bin/docker"}
-
 const (
 	environmentLabelKey = "icebath-environment"
 	workspaceLabelKey   = "icebath-workspace"
@@ -38,7 +38,6 @@ const (
 )
 
 var workspaceTaskRe = regexp.MustCompile(`:ws:([0-9a-f]{16})$`)
-var labelValueBadRe = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 var volumeSpecRe = regexp.MustCompile(`^(.+):(/[^:]+)(?::[^:]*)?$`)
 var hostCwdFallbackMounts = []string{"/host-cwd", "/host-cwd-2", "/host-cwd-3"}
 var s6InitEntrypoints = map[string]bool{"/init": true, "/package/admin/s6-overlay/command/init": true}
@@ -75,102 +74,6 @@ type EgressProxySource interface {
 
 // EgressProxy is the installed egress proxy source, nil meaning the proxy is unavailable
 var EgressProxy EgressProxySource
-
-var dockerExecutable struct {
-	sync.Mutex
-	path string
-}
-
-// Forgets the located docker CLI so the next lookup searches the PATH again
-func ResetDockerExecutable() {
-	dockerExecutable.Lock()
-	dockerExecutable.path = ""
-	dockerExecutable.Unlock()
-}
-
-func isExecutableFile(p string) bool {
-	st, err := os.Stat(p)
-	if err != nil || !st.Mode().IsRegular() {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	return st.Mode().Perm()&0o111 != 0
-}
-
-// FindDocker locates the docker or podman CLI once per process
-func FindDocker(env *Env) string {
-	dockerExecutable.Lock()
-	defer dockerExecutable.Unlock()
-	if dockerExecutable.path != "" {
-		return dockerExecutable.path
-	}
-	found := ""
-	if override := os.Getenv("ICEBATH_DOCKER_BINARY"); override != "" && isExecutableFile(override) {
-		envLog(env).Info("Using ICEBATH_DOCKER_BINARY override", "path", override)
-		found = override
-	} else if p, err := exec.LookPath("docker"); err == nil {
-		found = p
-	} else if p, err := exec.LookPath("podman"); err == nil {
-		envLog(env).Info("Using podman as container runtime", "path", p)
-		found = p
-	} else {
-		for _, p := range dockerSearchPaths {
-			if isExecutableFile(p) {
-				envLog(env).Info("Found docker at non-PATH location", "path", p)
-				found = p
-				break
-			}
-		}
-	}
-	dockerExecutable.path = found
-	return found
-}
-
-// DockerRuntimeName is the user facing runtime name for the CLI at a path
-func DockerRuntimeName(executable string) string {
-	if strings.Contains(strings.ToLower(filepath.Base(executable)), "podman") {
-		return "Podman"
-	}
-	return "Docker"
-}
-
-// DockerRuntimeStartHint says how to bring the runtime back up
-func DockerRuntimeStartHint(executable string) string {
-	if DockerRuntimeName(executable) != "Podman" {
-		return "start Docker and retry"
-	}
-	return "run `podman machine start` and retry"
-}
-
-// Lossy coercion into a docker label safe value
-func sanitizeLabelValue(value string) string {
-	if value == "" {
-		return "unknown"
-	}
-	out := labelValueBadRe.ReplaceAllString(value, "_")
-	if len(out) > 63 {
-		out = out[:63]
-	}
-	if out == "" {
-		return "unknown"
-	}
-	return out
-}
-
-// Profile label used for container reuse and orphan reaping
-func dockerContainerIdentity(env *Env, sharedKey string) string {
-	if sharedKey == "" {
-		return sanitizeLabelValue(homeProfileName(env))
-	}
-	digest := sha256.Sum256([]byte(sharedKey))
-	label := sanitizeLabelValue(sharedKey)
-	if len(label) > 50 {
-		label = label[:50]
-	}
-	return label + "-" + hex.EncodeToString(digest[:])[:12]
-}
 
 func splitVolumeSpec(spec string) (string, string, bool) {
 	m := volumeSpecRe.FindStringSubmatch(strings.TrimSpace(spec))
@@ -228,19 +131,6 @@ func normcaseHostPath(p string) string {
 		return strings.ToLower(filepath.ToSlash(p))
 	}
 	return p
-}
-
-func dockerQuery(ctx context.Context, env *Env, argv []string, timeout time.Duration, fail string, nonzero string) *CaptureResult {
-	res, err := runCapture(ctx, argv, timeout, false, nil)
-	if err != nil {
-		envLog(env).Debug(fail, "error", err)
-		return nil
-	}
-	if nonzero != "" && res.Code != 0 {
-		envLog(env).Debug(nonzero, "code", res.Code, "stderr", strings.TrimSpace(res.Stderr))
-		return nil
-	}
-	return res
 }
 
 func containerFinishedAt(ctx context.Context, env *Env, docker, cid string) (time.Time, bool) {
@@ -1329,56 +1219,6 @@ func reclaimSandboxFiles(ctx context.Context, env *Env, docker, cid string, moun
 	_ = os.Remove(record)
 }
 
-// ---- teardown workers --------------------------------------------------------------------------
-
-var teardownWorkers = struct {
-	sync.Mutex
-	pending map[chan struct{}]bool
-}{pending: map[chan struct{}]bool{}}
-
-func startTeardown(work func()) chan struct{} {
-	done := make(chan struct{})
-	teardownWorkers.Lock()
-	teardownWorkers.pending[done] = true
-	teardownWorkers.Unlock()
-	go func() {
-		defer func() {
-			close(done)
-			teardownWorkers.Lock()
-			delete(teardownWorkers.pending, done)
-			teardownWorkers.Unlock()
-		}()
-		work()
-	}()
-	return done
-}
-
-// WaitForAllBackendTeardowns joins every in flight teardown worker within the timeout
-func WaitForAllBackendTeardowns(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for {
-		teardownWorkers.Lock()
-		var first chan struct{}
-		for ch := range teardownWorkers.pending {
-			first = ch
-			break
-		}
-		teardownWorkers.Unlock()
-		if first == nil {
-			return true
-		}
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return false
-		}
-		select {
-		case <-first:
-		case <-time.After(remaining):
-			return false
-		}
-	}
-}
-
 // ---- environment --------------------------------------------------------------------------------
 
 // dockerEnv runs commands inside a hardened docker container
@@ -2261,3 +2101,82 @@ func (dockerBackend) CreateEnvironment(ctx context.Context, env *Env, opts Creat
 func init() {
 	registerBuiltinBackend(dockerBackend{})
 }
+
+// Container config of a docker environment with the session scoped lifecycle applied
+func (dockerBackend) shapeContainerConfig(env *Env, cc map[string]any, taskID string) (map[string]any, error) {
+	return dockerContainerConfig(env, cc, taskID)
+}
+
+// Builds the docker container config with the session scoped lifecycle applied
+func dockerContainerConfig(env *Env, cc map[string]any, taskID string) (map[string]any, error) {
+	if err := maybeReapDockerOrphans(env, cc); err != nil {
+		return nil, err
+	}
+	isolated, err := dockerSessionIsolationEnabled(env)
+	if err != nil {
+		return nil, err
+	}
+	sessionScoped := isolated && taskID != "default" && !hasIsolationOverrides(env, taskID)
+	out := map[string]any{}
+	for k, v := range cc {
+		out[k] = v
+	}
+	for k, v := range sandboxResources(cc) {
+		out[k] = v
+	}
+	for k, v := range shapeConfig(cc, dockerKwargKeys) {
+		out[k] = v
+	}
+	if sessionScoped {
+		out["persist_across_processes"] = false
+		out["docker_persist_across_processes"] = false
+	}
+	out["session_scoped"] = sessionScoped
+	return out, nil
+}
+
+// Once per process guard for the docker orphan reaper
+var dockerOrphanReaper struct {
+	sync.Mutex
+	ran bool
+}
+
+// Runs the docker orphan reaper once per process when enabled
+func maybeReapDockerOrphans(env *Env, containerConfig map[string]any) error {
+	if v, ok := containerConfig["docker_orphan_reaper"]; ok && v != nil && !truthy(v) {
+		return nil
+	}
+	dockerOrphanReaper.Lock()
+	if dockerOrphanReaper.ran {
+		dockerOrphanReaper.Unlock()
+		return nil
+	}
+	dockerOrphanReaper.ran = true
+	dockerOrphanReaper.Unlock()
+	policy, err := terminalPolicy(env)
+	if err != nil {
+		return err
+	}
+	lifetime, err := parseTerminalInt(policy, "TERMINAL_LIFETIME_SECONDS", "300")
+	if err != nil {
+		lifetime = 300
+	}
+	if lifetime < 60 {
+		lifetime = 60
+	}
+	maxAge := lifetime * 2
+	sharedKey, _ := containerConfig["docker_shared_container_key"].(string)
+	profile := dockerContainerIdentity(env, sharedKey)
+	removed, err := dockerReapOrphanContainers(env, maxAge, profile)
+	if err != nil {
+		envLog(env).Debug("Docker orphan reaper raised", "error", err)
+		return nil
+	}
+	if removed > 0 {
+		envLog(env).Info("Docker orphan reaper removed stale containers", "count", removed, "profile", profile)
+	}
+	return nil
+}
+
+// Whether the container keeps its filesystem across sessions
+func (d *dockerEnv) persistentFilesystem() bool { return d.persistent }

@@ -38,8 +38,8 @@ func TestConstructorReadsCredentialsEndpointsAndHomeState(t *testing.T) {
 	if policy.DMPolicy != "allowlist" || policy.GroupPolicy != "pairing" || !reflect.DeepEqual(policy.AllowFromSnapshot(), map[string]bool{"u1": true, "u2": true}) {
 		t.Fatalf("policy %q %q %v", policy.DMPolicy, policy.GroupPolicy, policy.AllowFromSnapshot())
 	}
-	for extraKey, want := range map[string]string{"app_id": "'int' object has no attribute 'strip'", "api_domain": "'int' object has no attribute 'rstrip'",
-		"group_allow_from": "'int' object has no attribute 'split'"} {
+	for extraKey, want := range map[string]string{"app_id": "app_id must be text, got a number", "api_domain": "api_domain must be text, got a number",
+		"group_allow_from": "group_allow_from must be text, got a number"} {
 		if _, err := buildAdapter(ctx, map[string]any{extraKey: int64(42)}, nil); err == nil || err.Error() != want {
 			t.Fatalf("%s of the wrong type: %v", extraKey, err)
 		}
@@ -177,7 +177,7 @@ func TestMentionsResolveAgainstTheFreshMemberCacheOnly(t *testing.T) {
 		t.Fatal("a fresh entry must survive the read")
 	}
 	adapter.memberCache["g-odd"] = memberCacheEntry{wallClock(), []any{pyjson.ObjectOf("nickname", int64(7), "user_id", "u9")}}
-	if _, err := adapter.outbound.sender.buildMsgBodyWithMentions("hi", "g-odd"); err == nil || err.Error() != "'int' object has no attribute 'lower'" {
+	if _, err := adapter.outbound.sender.buildMsgBodyWithMentions("hi", "g-odd"); err == nil || err.Error() != "a member nickname must be text, got a number" {
 		t.Fatalf("a nickname that is not text: %v", err)
 	}
 }

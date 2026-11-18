@@ -18,8 +18,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -595,7 +593,7 @@ func ensureGeneration(ctx context.Context, name, root string, inputs map[string]
 				return "", err
 			}
 			if !has {
-				return "", NewInstallError(name, "installed requirements do not provide "+pyrepr.StrRepr(executable), "")
+				return "", NewInstallError(name, "installed requirements do not provide "+executable, "")
 			}
 		}
 		if err := flushBeforeSelecting(); err != nil {

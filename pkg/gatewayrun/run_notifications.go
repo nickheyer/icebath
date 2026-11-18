@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -172,13 +173,13 @@ func heldReason(source *gateway.SessionSource, platform string, multiplexed bool
 	}
 	if identity != nil && identity.Multiplexed && !identity.TransportInferred {
 		return fmt.Sprintf("the %s bot of profile %s that received this chat (runtime profile %s) is not connected; the row stays pending until it reconnects",
-			platform, pyrepr.Repr(identity.TransportProfile), pyrepr.Repr(runtime))
+			platform, errchain.Show(identity.TransportProfile), errchain.Show(runtime))
 	}
 	if multiplexed {
 		return fmt.Sprintf("the %s route of profile %s has no saved receiving bot and no shared bot covers it; the row stays pending until a new message in that chat records the bot",
-			platform, pyrepr.Repr(runtime))
+			platform, errchain.Show(runtime))
 	}
-	return fmt.Sprintf("no live %s transport for profile %s; the row stays pending until it connects", platform, pyrepr.Repr(runtime))
+	return fmt.Sprintf("no live %s transport for profile %s; the row stays pending until it connects", platform, errchain.Show(runtime))
 }
 
 // Session id of a raw API route event, empty for structured or partial messaging routes

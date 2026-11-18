@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -181,7 +182,7 @@ func resolveSTTClientConfig(ctx context.Context) (*pyjson.Object, error) {
 		}
 		return direct(sttWireOpenAI, provider.DeepinfraBaseURL(ctx, section), apiKey, model), nil
 	}
-	return relayVoiceConfig(fmt.Sprintf("provider %s has no client wire", pyrepr.Repr(providerName))), nil
+	return relayVoiceConfig(fmt.Sprintf("provider %s has no client wire", errchain.Show(providerName))), nil
 }
 
 // Direct TTS wire for openai, elevenlabs or deepinfra with voice, speed and chunking, relay otherwise
@@ -243,7 +244,7 @@ func resolveTTSClientConfig(ctx context.Context) (*pyjson.Object, error) {
 		return directVoiceConfig(ttsWireOpenAI, "deepinfra", provider.DeepinfraBaseURL(ctx, di), apiKey, model,
 			"voice", truthyOr(di["voice"], "af_bella"), "speed", nil, "min_len", minLen), nil
 	}
-	return relayVoiceConfig(fmt.Sprintf("provider %s has no client wire", pyrepr.Repr(providerName))), nil
+	return relayVoiceConfig(fmt.Sprintf("provider %s has no client wire", errchain.Show(providerName))), nil
 }
 
 // ResolveClientVoiceConfig is the STT and TTS client direct wiring of the active profile, relay on any failure

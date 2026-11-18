@@ -24,7 +24,7 @@ var runIDBeyondSQLite = func() *int64 { v := int64(-1); return &v }()
 // Failure sqlite3 raises binding a run id past its integer range, nil for every other id
 func runIDBindable(id *int64) error {
 	if id == runIDBeyondSQLite {
-		return &RuntimeError{"Python int too large to convert to SQLite INTEGER"}
+		return &RuntimeError{"the number is too large for a SQLite INTEGER"}
 	}
 	return nil
 }

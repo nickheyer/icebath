@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -17,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -37,9 +39,32 @@ import (
 )
 
 // pyExc is a raised Python exception, its class name kept for the worker's error envelope
-type pyExc struct{ class, msg string }
+type pyExc struct {
+	class, msg string
+	cause      error
+}
 
 func (e *pyExc) Error() string { return e.msg }
+
+func (e *pyExc) Unwrap() error { return e.cause }
+
+// Exception of the given class over the failure that caused it
+func raiseFrom(cause error, class, format string, args ...any) error {
+	return &pyExc{class: class, msg: fmt.Sprintf(format, args...), cause: cause}
+}
+
+// Whether a search failure was a connect or read timeout
+func ddgsTimedOut(err error) bool {
+	var exc *pyExc
+	if errors.As(err, &exc) && exc.class == "TimeoutException" {
+		return true
+	}
+	var re *pyrequests.Error
+	if errors.As(err, &re) && (re.Reason == "ReadTimeoutError" || re.Reason == "ConnectTimeoutError") {
+		return true
+	}
+	return errors.Is(err, syscall.ETIMEDOUT)
+}
 
 func raise(class, format string, args ...any) error {
 	return &pyExc{class: class, msg: fmt.Sprintf(format, args...)}
@@ -239,9 +264,9 @@ func (c *ddgsHTTPClient) request(ctx context.Context, method, target string, par
 			if e.Class == "ConnectTimeout" || e.Class == "ReadTimeout" || e.Class == "Timeout" {
 				return nil, raise("TimeoutException", "%s", e.Error())
 			}
-			return nil, raise("DDGSException", "%s: %s(%s)", e.Class, e.Class, pyrepr.StrRepr(e.Error()))
+			return nil, raiseFrom(e, "DDGSException", "%s: %s(%s)", e.Class, e.Class, pyrepr.StrRepr(e.Error()))
 		}
-		return nil, raise("DDGSException", "Exception: Exception(%s)", pyrepr.StrRepr(err.Error()))
+		return nil, raiseFrom(err, "DDGSException", "Exception: Exception(%s)", pyrepr.StrRepr(err.Error()))
 	}
 	if final, err := url.Parse(target); err == nil {
 		c.jar.SetCookies(final, (&http.Response{Header: resp.Header}).Cookies())
@@ -1229,7 +1254,7 @@ func (c *ddgsClient) text(ctx context.Context, q ddgsQuery, maxResults int) ([]*
 		}
 		return results, nil
 	}
-	if lastErr != nil && strings.Contains(lastErr.Error(), "timed out") {
+	if lastErr != nil && ddgsTimedOut(lastErr) {
 		return nil, raise("TimeoutException", "%s", lastErr.Error())
 	}
 	if lastErr != nil {

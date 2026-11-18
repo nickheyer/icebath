@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -123,7 +124,7 @@ func voiceRequestParams(source, query string, filters [][2]string, useCase, sort
 		return "/v2/voices", params, nil
 	}
 	if page != "" && !pystr.StrIsDigit(page) {
-		return "", nil, &ttsValueError{msg: fmt.Sprintf("Invalid library page %s: pass next_page from the previous result.", pyrepr.Repr(page))}
+		return "", nil, &ttsValueError{msg: fmt.Sprintf("Invalid library page %s: pass next_page from the previous result.", errchain.Show(page))}
 	}
 	if sort != "" && !containsString(elevenLabsLibrarySorts, sort) {
 		return "", nil, &ttsValueError{msg: "find_voices.sort must be one of " + strings.Join(elevenLabsLibrarySorts, ", ")}

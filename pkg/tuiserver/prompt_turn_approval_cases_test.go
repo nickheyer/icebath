@@ -86,7 +86,10 @@ func TestADangerousCommandOfATurnAsksTheClientAndADenyBlocksIt(t *testing.T) {
 		for _, frame := range approvalFrames(recorder) {
 			if p, _ := frame["params"].(map[string]any); frame["method"] == "event" && p["type"] == "tool.complete" {
 				payload, _ := p["payload"].(map[string]any)
-				outcome, _ = payload["result"].(map[string]any)
+				if text, isText := payload["result"].(string); isText {
+					decoded, _ := pyjson.Loads(text)
+					outcome, _ = pyjson.Plain(decoded).(map[string]any)
+				}
 			}
 		}
 	}

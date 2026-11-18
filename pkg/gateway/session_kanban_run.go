@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gateway
 
 import (
@@ -442,7 +444,8 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 	return pyjson.ObjectOf("session_id", ref.SessionID, "receipt", admissionReceiptDict(receipt)), nil
 }
 
-// Kanban run verb
-func (c *AuthorityConnection) kanbanRun(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return runKanbanTask(ctx, c, params)
+// Binds the kanban card operations of the session host
+func init() {
+	kanbanRunTask, kanbanBindWorker = runKanbanTask, bindKanbanWorkerContext
+	kanbanStartFailure, kanbanWorkerLoss = recordKanbanStartFailure, recordWorkerLoss
 }

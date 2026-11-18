@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -74,7 +75,7 @@ func doctorAckAdvisory(ctx context.Context, d *Doctor, ackTarget string) int {
 		if ids == "" {
 			ids = "(none)"
 		}
-		fmt.Fprintln(d.W, c.Color("Unknown advisory ID: "+pyrepr.Repr(ackTarget)+". Known IDs: "+ids, cliui.Red))
+		fmt.Fprintln(d.W, c.Color("Unknown advisory ID: "+errchain.Show(ackTarget)+". Known IDs: "+ids, cliui.Red))
 		return 2
 	}
 	if plugins.AckAdvisory(ctx, ackTarget) {

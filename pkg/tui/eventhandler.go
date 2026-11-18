@@ -54,8 +54,8 @@ type slashCategory struct {
 type fullConfigFlight struct {
 	started bool
 	done    bool
-	value   map[string]any
-	waiters []func(map[string]any) tea.Cmd
+	value   tuigateway.ClientConfig
+	waiters []func(tuigateway.ClientConfig) tea.Cmd
 }
 
 // Batched status of the thinking stream firing
@@ -80,6 +80,8 @@ type eventHandler struct {
 	agentsNudgeConfigFetched  bool
 	agentsNudgedThisTurn      bool
 	view                      mainView
+	// Gateway build the other build line was told for, nil while the gateway runs this build
+	toldBuild *string
 
 	cmds       []tea.Cmd
 	microtasks []func() tea.Cmd
@@ -152,7 +154,7 @@ func (h *eventHandler) rpc(method string, params map[string]any, then func(map[s
 		case err != nil:
 			h.app.sys("error: " + rpcErrorMessage(err))
 		case asRPCResult(v) == nil:
-			h.app.sys("error: " + tr("session.common.invalidResponse", method))
+			h.app.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
 		default:
 			result = asRPCResult(v)
 		}
@@ -168,8 +170,8 @@ func (h *eventHandler) quietRequest(method string, params map[string]any) tea.Cm
 	return gatewayCall(h.gw, method, params, func(any, error) tea.Cmd { return nil })
 }
 
-// Calls fn with the full config, fetched once and nil when the fetch failed
-func (h *eventHandler) withFullConfig(fn func(map[string]any) tea.Cmd) {
+// Calls fn with the full config, fetched once and the defaults when the fetch failed
+func (h *eventHandler) withFullConfig(fn func(tuigateway.ClientConfig) tea.Cmd) {
 	f := h.config
 	if f.done {
 		cfg := f.value
@@ -181,7 +183,11 @@ func (h *eventHandler) withFullConfig(fn func(map[string]any) tea.Cmd) {
 		return
 	}
 	f.started = true
-	h.queue(h.rpc("config.get", map[string]any{"key": "full"}, func(cfg map[string]any) tea.Cmd {
+	h.queue(ask(h.rpc, h.app.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full"}, func(r *tuigateway.ConfigGetResult) tea.Cmd {
+		cfg := tuigateway.ClientConfigOf(nil)
+		if r != nil && r.Config != nil {
+			cfg = *r.Config
+		}
 		f.done, f.value = true, cfg
 		waiters := f.waiters
 		f.waiters = nil
@@ -191,19 +197,6 @@ func (h *eventHandler) withFullConfig(fn func(map[string]any) tea.Cmd) {
 		}
 		return tea.Batch(cmds...)
 	}))
-}
-
-// Nested object of a config path, nil where a step is missing
-func configPath(cfg map[string]any, keys ...string) any {
-	var cur any = cfg
-	for _, k := range keys {
-		obj, _ := cur.(map[string]any)
-		if obj == nil {
-			return nil
-		}
-		cur = obj[k]
-	}
-	return cur
 }
 
 // Sets the status line, cancelling a batched thinking status
@@ -354,8 +347,8 @@ func (h *eventHandler) ensureAgentsNudgeConfig() {
 		return
 	}
 	h.agentsNudgeConfigFetched = true
-	h.withFullConfig(func(cfg map[string]any) tea.Cmd {
-		if configPath(cfg, "config", "display", "tui_agents_nudge") == false {
+	h.withFullConfig(func(cfg tuigateway.ClientConfig) tea.Cmd {
+		if !cfg.Display.AgentsNudge {
 			h.agentsNudgeEnabled = false
 		}
 		return nil
@@ -441,20 +434,39 @@ func (h *eventHandler) refreshSlashCatalogOnSkillsChange(ev gatewayEventMsg) boo
 	return true
 }
 
-// Starts a fresh session with the forging status
-func (h *eventHandler) forgeSession() tea.Cmd {
+// Starts a fresh session with the forging status, then runs after
+func (h *eventHandler) forgeSession(after func() tea.Cmd) tea.Cmd {
 	h.store.ui.Status = tr("gatewayMsg.status.forgingSession")
-	return h.app.newSession(nil)
+	return h.app.newSession(after)
 }
 
-// First gateway.ready of a connection, skin, wake listener, catalog and the session to open
-func (h *eventHandler) handleReady(skin *gatewaySkin) {
-	if skin != nil {
+// Records whether the gateway runs another build, returning the line to tell once per gateway build or nil
+func (h *eventHandler) noteGatewayBuild(ready tuigateway.GatewayReadyPayload) func() tea.Cmd {
+	other := !tuigateway.SameBuild(ready.Build, ready.Contract)
+	gatewayOtherBuild.Store(other)
+	if !other {
+		h.toldBuild = nil
+		return func() tea.Cmd { return nil }
+	}
+	if h.toldBuild != nil && *h.toldBuild == ready.Build {
+		return func() tea.Cmd { return nil }
+	}
+	h.toldBuild = &ready.Build
+	return func() tea.Cmd {
+		h.app.sys(tr("gatewayMsg.otherBuild.line"))
+		return nil
+	}
+}
+
+// First gateway.ready of a connection, skin, wake listener, catalog and the session to open, then the build line
+func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
+	tell := h.noteGatewayBuild(ready)
+	if skin := gatewaySkinOf(ready.Skin); skin != nil {
 		h.queue(h.store.applySkin(skin))
 	}
 	h.ensureAgentsNudgeConfig()
 	if !h.store.wakeUserDisabled {
-		h.queue(h.rpc("wake.start", map[string]any{"surface": "tui"}, nil))
+		h.queue(ask(h.rpc, h.app.sys, tuigateway.WakeStart, tuigateway.WakeStartParams{Surface: "tui"}, done[tuigateway.WakeStartResult]))
 	}
 	if h.store.ui.Sid == "" {
 		h.queue(h.loadSlashCatalog(""))
@@ -464,31 +476,32 @@ func (h *eventHandler) handleReady(skin *gatewaySkin) {
 		h.queue(h.app.resumeByID(recoverSid, func(err error) tea.Cmd {
 			if err != nil {
 				h.app.uncaught(err)
-				return nil
+				return tell()
 			}
 			if h.store.ui.Sid != "" && *ref == recoverSid {
 				*ref = ""
 			}
-			return nil
+			return tell()
 		}))
 		h.store.ui.Status = tr("gatewayMsg.status.recoveringSession")
 		return
 	}
+	resumed := func(error) tea.Cmd { return tell() }
 	if h.startupResumeID != "" {
 		h.store.ui.Status = tr("session.status.resuming")
-		h.queue(h.app.resumeByID(h.startupResumeID, nil))
+		h.queue(h.app.resumeByID(h.startupResumeID, resumed))
 		return
 	}
-	h.withFullConfig(func(cfg map[string]any) tea.Cmd {
-		if !truthyJS(configPath(cfg, "config", "display", "tui_auto_resume_recent")) {
-			return h.forgeSession()
+	h.withFullConfig(func(cfg tuigateway.ClientConfig) tea.Cmd {
+		if !cfg.Display.AutoResumeRecent {
+			return h.forgeSession(tell)
 		}
 		return ask(h.rpc, h.app.sys, tuigateway.SessionMostRecent, tuigateway.SessionMostRecentParams{}, func(r *tuigateway.SessionMostRecentResult) tea.Cmd {
 			if r != nil && val(r.SessionID) != "" {
 				h.store.ui.Status = tr("gatewayMsg.status.resumingMostRecent")
-				return h.app.resumeByID(*r.SessionID, nil)
+				return h.app.resumeByID(*r.SessionID, resumed)
 			}
-			return h.forgeSession()
+			return h.forgeSession(tell)
 		})
 	})
 }
@@ -514,28 +527,20 @@ func (h *eventHandler) showGatewayNotice(p map[string]any) {
 	h.turn.showNotice(n)
 }
 
-// Voice submit mode of the config, draft or direct
-func normalizeVoiceSubmitMode(v any) string {
-	if s, isStr := v.(string); isStr && strings.ToLower(strings.TrimFunc(s, isJSSpace)) == "draft" {
-		return "draft"
-	}
-	return "direct"
-}
-
 // Final transcript of a voice capture, submitted, drafted or queued for the session it was spoken in
-func (h *eventHandler) handleVoiceTranscript(p map[string]any) {
-	if truthyJS(p["stop_phrase"]) || truthyJS(p["no_speech_limit"]) {
+func (h *eventHandler) handleVoiceTranscript(p tuigateway.VoiceTranscriptPayload) {
+	if p.StopPhrase || p.NoSpeechLimit {
 		h.app.setVoiceEnabled(false)
 		h.app.setVoiceRecording(false)
 		h.app.setVoiceProcessing(false)
-		if truthyJS(p["stop_phrase"]) {
+		if p.StopPhrase {
 			h.app.sys(tr("gatewayMsg.voice.stopPhrase"))
 		} else {
 			h.app.sys(tr("gatewayMsg.voice.noSpeechLimit"))
 		}
 		return
 	}
-	text := strings.TrimFunc(stringOr(p["text"], ""), isJSSpace)
+	text := strings.TrimFunc(p.Text, isJSSpace)
 	if text == "" {
 		return
 	}
@@ -544,12 +549,12 @@ func (h *eventHandler) handleVoiceTranscript(p map[string]any) {
 		h.app.uncaught(err)
 		return
 	}
-	h.withFullConfig(func(cfg map[string]any) tea.Cmd {
+	h.withFullConfig(func(cfg tuigateway.ClientConfig) tea.Cmd {
 		if !h.store.isCurrentDestination(destination) {
 			h.app.enqueue(text, text, destination)
 			return nil
 		}
-		if normalizeVoiceSubmitMode(configPath(cfg, "config", "voice", "submit_mode")) == "draft" {
+		if cfg.Voice.SubmitMode == "draft" {
 			h.app.setInput(func(current string) string {
 				if strings.TrimFunc(current, isJSSpace) != "" {
 					return strings.TrimRightFunc(current, isJSSpace) + " " + text
@@ -573,13 +578,15 @@ func (h *eventHandler) handleVoiceTranscript(p map[string]any) {
 }
 
 // Wake word heard, a fresh session on this profile with voice capture on, else the listener resumed
-func (h *eventHandler) handleWakeDetected(p map[string]any) {
-	resume := func() tea.Cmd { return h.rpc("wake.resume", map[string]any{}, nil) }
+func (h *eventHandler) handleWakeDetected(p tuigateway.WakeDetectedPayload) {
+	resume := func() tea.Cmd {
+		return ask(h.rpc, h.app.sys, tuigateway.WakeResume, tuigateway.WakeControlParams{}, done[tuigateway.WakeResumeResult])
+	}
 	fail := func(err error) tea.Cmd {
 		h.app.sys(tr("gatewayMsg.wake.failed", rpcErrorMessage(err)))
 		return resume()
 	}
-	wakeProfile := strings.TrimFunc(paramStr(p["profile"]), isJSSpace)
+	wakeProfile := strings.TrimFunc(val(p.Profile), isJSSpace)
 	ownProfile := "default"
 	if name := val(infoOf(h.store.ui.Info).ProfileName); name != "" {
 		ownProfile = name
@@ -596,7 +603,8 @@ func (h *eventHandler) handleWakeDetected(p map[string]any) {
 		}
 		h.app.setVoiceEnabled(true)
 		record := func() tea.Cmd {
-			return h.rpc("voice.record", map[string]any{"action": "start", "session_id": sid}, nil)
+			params := tuigateway.VoiceRecordParams{Action: "start", SessionID: sid}
+			return ask(h.rpc, h.app.sys, tuigateway.VoiceRecord, params, done[tuigateway.VoiceRecordResult])
 		}
 		if h.gw.canonical() {
 			return gatewayCall(h.gw, "slash.exec", map[string]any{"command": "voice on", "session_id": sid}, func(_ any, err error) tea.Cmd {
@@ -606,9 +614,9 @@ func (h *eventHandler) handleWakeDetected(p map[string]any) {
 				return record()
 			})
 		}
-		return h.rpc("voice.toggle", map[string]any{"action": "on"}, func(map[string]any) tea.Cmd { return record() })
+		return ask(h.rpc, h.app.sys, tuigateway.VoiceToggle, tuigateway.VoiceToggleParams{Action: "on"}, func(*tuigateway.VoiceToggleResult) tea.Cmd { return record() })
 	}
-	if p["start_new_session"] != false {
+	if p.StartNewSession {
 		h.queue(h.app.newSession(arm))
 		return
 	}

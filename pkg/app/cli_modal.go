@@ -7,8 +7,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -158,7 +158,7 @@ func (c *CLI) approvalCallback(ctx context.Context, command, description string,
 	raw := mapValueOr(cliMap(CLIConfig(c.ctx), "approvals"), "timeout", 300)
 	timeout, ok := pyIntOf(raw)
 	if !ok {
-		return "", fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(raw))
+		return "", fmt.Errorf("approvals.timeout %s is not a whole number", errchain.Show(raw))
 	}
 	response := make(chan string, 1)
 	c.setApprovalModal(&approvalModalState{Command: command, Description: description,

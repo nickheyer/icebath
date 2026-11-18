@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -65,7 +65,7 @@ func validateCuaDriverAppSignature(env *tools.Env, appPath string) error {
 	identifier, team := fields["Identifier"], fields["TeamIdentifier"]
 	if identifier != cuaDriverBundleID {
 		return fmt.Errorf("CuaDriver.app at %s has identifier %s, expected %s; refusing to launch it.",
-			appPath, pyrepr.Repr(identifier), pyrepr.Repr(cuaDriverBundleID))
+			appPath, errchain.Show(identifier), errchain.Show(cuaDriverBundleID))
 	}
 	for _, t := range cuaDriverTeamIDs {
 		if team == t {
@@ -77,7 +77,7 @@ func validateCuaDriverAppSignature(env *tools.Env, appPath string) error {
 	}
 	return fmt.Errorf("CuaDriver.app at %s is signed by team %s, expected one of ('4YEC26S9KF', 'YCK386LBJ7'); "+
 		"refusing to launch it. (Set computer_use.allow_unsigned_driver: true in config.yaml only for "+
-		"local unsigned driver builds.)", appPath, pyrepr.Repr(team))
+		"local unsigned driver builds.)", appPath, errchain.Show(team))
 }
 
 // Private daemon launch argv, wrapped in open on macOS so TCC stays attached to the signed bundle

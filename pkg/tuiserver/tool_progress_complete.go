@@ -3,6 +3,7 @@ package tuiserver
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -51,11 +52,8 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 			payload["duration_s"] = elapsed
 		}
 	}
-	if decoded, err := pyjson.Loads(result); err == nil {
-		payload["result"] = decoded
-	} else {
-		payload["result"] = result
-	}
+	failed, _ := tools.DetectToolFailure(ctx, name, result)
+	payload["result"] = gateway.BoundedToolResult(result, failed)
 	if summary := toolSummary(name, result, durationS); summary != "" {
 		payload["summary"] = summary
 	}
@@ -65,8 +63,8 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 		}
 	}
 	var todoState *pyjson.Object
-	if tools.IsTodoToolName(name) {
-		todoState = tuihost.NormalizeTodoState(payload["result"])
+	if decoded, err := pyjson.Loads(result); err == nil && tools.IsTodoToolName(name) {
+		todoState = tuihost.NormalizeTodoState(decoded)
 	}
 	if todoState != nil {
 		for _, key := range todoState.Keys {

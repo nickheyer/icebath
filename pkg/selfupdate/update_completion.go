@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -353,7 +354,7 @@ func readCompletionResult(request map[string]any, resultPath string, code int) (
 	if receipt != nil {
 		obj, ok := receipt.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(receipt))
+			return nil, fmt.Errorf("update result receipt is %s where a mapping was expected", errchain.Kind(receipt))
 		}
 		if !pyjson.Equal(obj.GetOr("update_id", nil), updateID) || !pyrepr.Truthy(obj.GetOr("finished_at", nil)) ||
 			(code == 0) != (obj.GetOr("outcome", nil) == "success") {
@@ -518,7 +519,7 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 		if record == nil {
 			obj, ok := request["receipt"].(*pyjson.Object)
 			if !ok {
-				return 0, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(request["receipt"]))
+				return 0, fmt.Errorf("update request receipt is %s where a mapping was expected", errchain.Kind(request["receipt"]))
 			}
 			record = obj
 		}
@@ -781,7 +782,7 @@ func resumePausedBeforeMaintenance(ctx context.Context, w io.Writer, request map
 func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string]any, resultPath string) (int, error) {
 	receipt, ok := request["receipt"].(*pyjson.Object)
 	if !ok {
-		return 0, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(request["receipt"]))
+		return 0, fmt.Errorf("update request receipt is %s where a mapping was expected", errchain.Kind(request["receipt"]))
 	}
 	updateID, err := completionUpdateID(request)
 	if err != nil {
@@ -801,7 +802,7 @@ func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string
 			code, reason = 1, "local changes left in the stash; re-apply them by hand"
 		}
 	case isInterrupt(err):
-		code, reason = 130, "KeyboardInterrupt: interrupted after the code was updated"
+		code, reason = 130, "interrupted after the code was updated"
 		updaterecord.FinalizeInterruptedUpdateReceipt(ctx, reason, code)
 	case errors.As(err, &exit):
 		if exit.Code != 0 {
@@ -855,10 +856,10 @@ func bootstrapCompletion(ctx context.Context, w io.Writer, request map[string]an
 	if isInterrupt(err) {
 		receipt, ok := request["receipt"].(*pyjson.Object)
 		if !ok {
-			return 0, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(request["receipt"]))
+			return 0, fmt.Errorf("update request receipt is %s where a mapping was expected", errchain.Kind(request["receipt"]))
 		}
 		updaterecord.ResumeReceipt(ctx, receipt)
-		updaterecord.FinalizeInterruptedUpdateReceipt(ctx, "KeyboardInterrupt: interrupted while installing dependencies", 130)
+		updaterecord.FinalizeInterruptedUpdateReceipt(ctx, "interrupted while installing dependencies", 130)
 		terminal, err := completionTerminalReceipt(ctx, request)
 		if err != nil {
 			return 0, err

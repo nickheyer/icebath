@@ -29,11 +29,7 @@ var (
 )
 
 // Voice chord of a voice.record_key config value, the default for anything invalid or reserved
-func parseVoiceRecordKey(raw any) voiceRecordKey {
-	text, isString := raw.(string)
-	if !isString {
-		return defaultVoiceRecordKey
-	}
+func parseVoiceRecordKey(text string) voiceRecordKey {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	if lower == "" {
 		return defaultVoiceRecordKey

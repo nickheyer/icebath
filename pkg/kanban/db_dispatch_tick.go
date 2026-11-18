@@ -12,6 +12,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -694,7 +695,7 @@ func applyDefaultAssignee(ctx context.Context, conn state.SQLiteConn, taskID, as
 		return appendEvent(ctx, conn, taskID, "assigned", payload("assignee", assignee, "source", "kanban.default_assignee"), nil)
 	})
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("kanban dispatch: failed to apply default_assignee=%s to task %s", pyrepr.Repr(assignee), taskID), "exc", err)
+		pkgLog().Debug(fmt.Sprintf("kanban dispatch: failed to apply default_assignee=%s to task %s", errchain.Show(assignee), taskID), "exc", err)
 		return false
 	}
 	return true

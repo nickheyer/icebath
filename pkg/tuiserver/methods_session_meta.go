@@ -3,8 +3,8 @@ package tuiserver
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -63,7 +63,7 @@ func sessionTitle(ctx context.Context, rid any, params map[string]any, session *
 		}
 		text, isText := raw.(string)
 		if !isText {
-			panic(&pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(raw) + "' object has no attribute 'strip'"})
+			panic(&pyint.Error{Kind: "AttributeError", Msg: "the title must be text, got " + errchain.Kind(raw)})
 		}
 		title := pystr.Strip(text)
 		if title == "" {

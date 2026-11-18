@@ -122,7 +122,7 @@ func TestGroupInfoAndMemberTools(t *testing.T) {
 		t.Fatalf("bots %s", got)
 	}
 	if got := compact(t, callTool(t, "yb_query_group_info", map[string]any{"group_code": int64(7)})); got !=
-		`{"success": false, "error": "'int' object has no attribute 'encode'"}` {
+		`{"success": false, "error": "expected text, got a number"}` {
 		t.Fatalf("group code of the wrong type %s", got)
 	}
 }
@@ -208,7 +208,7 @@ func TestSendDMToolResolvesTheRecipientAndSendsMedia(t *testing.T) {
 		}
 	}
 	if got := compact(t, callTool(t, "yb_send_dm", map[string]any{"user_id": int64(5), "message": "hi"})); got !=
-		`{"success": false, "error": "'int' object has no attribute 'strip'"}` {
+		`{"success": false, "error": "user_id must be text, got a number"}` {
 		t.Fatalf("user id of the wrong type %s", got)
 	}
 	adapter.accessPolicy = makePolicy(t, "allowlist", []string{"someone-else"}, "pairing", nil)

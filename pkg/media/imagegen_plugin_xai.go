@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -326,7 +325,7 @@ func xaiImageField(env *tools.Env, source string) (map[string]any, error) {
 	}
 	raw, err := os.ReadFile(pypath.Expanduser(source))
 	if err != nil {
-		return nil, fmt.Errorf("%s", pypath.OSErrorText(err))
+		return nil, fmt.Errorf("%s", errchain.OSText(err))
 	}
 	_, ext := pypath.Splitext(source)
 	ext = strings.ToLower(strings.TrimLeft(ext, "."))
@@ -501,7 +500,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	}
 	items, ok := data.([]any)
 	if !ok {
-		return nil, fmt.Errorf("%s indices must be integers", pyrepr.TypeName(data))
+		return nil, fmt.Errorf("xAI image data is %s where a list was expected", errchain.Kind(data))
 	}
 	first, isObj := pyjson.AsObject(items[0])
 	fileOutput := pyjson.NewObject()

@@ -39,7 +39,7 @@ func checkTTSRequirements(ctx context.Context) bool { return SpeechReady != nil 
 // Speech synthesized into the output path, the text_to_speech tool result envelope, refused without the speech backends
 func textToSpeechTool(ctx context.Context, text, outputPath string) (string, error) {
 	if SpeechToFile == nil {
-		line, _ := linktier.Refusal("text to speech", linktier.Plugins)
+		line := linktier.Missing("text to speech", linktier.Plugins)
 		return "", errors.New(line)
 	}
 	return SpeechToFile(ctx, text, outputPath)

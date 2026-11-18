@@ -1080,11 +1080,11 @@ func TestTarReaderRepr(t *testing.T) {
 var trdWant = map[string]string{
 	"all_zero": `error none`,
 	"bad_devmajor_first": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('invalid header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: invalid header`,
 	"base256_fields": `'a' file mode=644 mtime=8589934592000000000 nlink=1 size=5 b'12345'
 'b' file mode=755 mtime=-1000000000000 nlink=1 size=1 b'b'
 error none`,
@@ -1303,17 +1303,17 @@ error none`,
 'big/39' file mode=644 mtime=1000000039000000000 nlink=1 size=12288 sha=88d3e3d77c3d1e1e
 error none`,
 	"bz2_garbage": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"bz2_truncated": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"chksum_base256": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'c'
 error none`,
 	"contiguous_type": `'c' file mode=644 mtime=1000000000000000000 nlink=1 size=4 b'cont'
@@ -1326,73 +1326,73 @@ error none`,
 	"dot_names": `'f' file mode=644 mtime=1000000000000000000 nlink=1 size=3 b'dot'
 error none`,
 	"empty_file": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('empty file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('empty file')`,
+- method gz: empty file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: empty file`,
 	"empty_file_gz": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('empty file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: empty file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"empty_file_xz": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('empty file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: empty file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"empty_file_zst": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('empty file')
-- method tar: ReadError('truncated header')`,
-	"filter_absolute_symlink": `error AbsoluteLinkError: 's\udcff' is a link to an absolute path`,
-	"filter_hardlink_outside": `error LinkOutsideDestinationError: 'h' would link to '<parent>/outside', which is outside the destination`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: empty file
+- method tar: truncated header`,
+	"filter_absolute_symlink": `error AbsoluteLinkError: "s\xff" is a link to an absolute path`,
+	"filter_hardlink_outside": `error LinkOutsideDestinationError: "h" would link to "<parent>/outside", which is outside the destination`,
 	"filter_outside_nonutf8": `'ok' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error OutsideDestinationError: '../caf\udce9' would be extracted to '<parent>/caf\udce9', which is outside the destination`,
+error OutsideDestinationError: "../caf\xe9" would be extracted to "<parent>/caf\xe9", which is outside the destination`,
 	"filter_special": `'ok' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error SpecialFileError: 'fifo\x01' is a special file`,
+error SpecialFileError: "fifo\x01" is a special file`,
 	"filter_symlink_escape": `'d' dir mode=default mtime=recent
-error LinkOutsideDestinationError: 'd/up' would link to '<parent>/x\udcfe', which is outside the destination`,
+error LinkOutsideDestinationError: "d/up" would link to "<parent>/x\xfe", which is outside the destination`,
 	"first_bad_checksum": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('invalid header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: invalid header`,
 	"first_bad_checksum_bz2": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('invalid header')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: invalid header
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"first_bad_checksum_gz": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('invalid header')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: invalid header
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"first_bad_checksum_xz": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('invalid header')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: invalid header
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"first_bad_checksum_zst": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('invalid header')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: invalid header
+- method tar: truncated header`,
 	"first_invalid_number": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('invalid header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: invalid header`,
 	"global_linkpath_symlink": `'f' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'f'
 's' link -> 't'
 't' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b't'
@@ -1424,7 +1424,7 @@ error none`,
 	"global_size_smaller": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=3 b'012'
 error none`,
 	"global_sparse_size_invalid": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error ValueError: invalid literal for int() with base 10: 'abc'`,
+error ValueError: "abc" is not a whole number`,
 	"global_then_eof": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
 error ReadError: empty header`,
 	"global_then_local": `'g' file mode=644 mtime=1600000000000000000 nlink=1 size=1 b'y'
@@ -1434,11 +1434,11 @@ error none`,
 '07346545000/gnufile' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'g'
 error none`,
 	"gnu_longname_first_then_garbage": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('invalid header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: invalid header`,
 	"gnu_longname_longlink": `'dd' dir mode=default mtime=1000000000000000000
 'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn' dir mode=default mtime=recent
 'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn/mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm' file mode=644 mtime=1000000000000000000 nlink=1 size=4 b'long'
@@ -1461,11 +1461,11 @@ error none`,
 'l' link -> 'a'
 error none`,
 	"gz_bad_method": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"gz_big_truncated": `'big' dir mode=default mtime=recent
 'big/00' file mode=644 mtime=1000000000000000000 nlink=1 size=12288 sha=509e351ab17e2fdf
 'big/01' file mode=644 mtime=1000000001000000000 nlink=1 size=12288 sha=eecdd31bdc75302d
@@ -1496,11 +1496,11 @@ error none`,
 'big/26' file mode=644 mtime=recent nlink=1 size=0 b''
 error EOFError: Compressed file ended before the end-of-stream marker was reached`,
 	"gz_empty_content": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('empty file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: empty file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"gz_header_only": `error EOFError: Compressed file ended before the end-of-stream marker was reached`,
 	"gz_short_content_bad_crc": `'a' file mode=644 mtime=recent nlink=1 size=0 b''
 error BadGzipFile: CRC check failed 0x7 != 0xcbabcb0`,
@@ -1541,7 +1541,7 @@ error none`,
 'h' dir mode=750 mtime=1000000000000000000
 error none`,
 	"hardlink_missing": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'x'
-error KeyError: "linkname 'nowhere' not found"`,
+error KeyError: linkname "nowhere" not found`,
 	"invalid_after_first": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'alpha'
 error none`,
 	"link_fallback_rejected": `'d' dir mode=default mtime=1000000000000000000
@@ -1553,11 +1553,11 @@ error none`,
 	"longname_huge_size": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
 error ReadError: empty header`,
 	"lzip_bad_magic": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"lzip_big_truncated": `'big' dir mode=default mtime=recent
 'big/00' file mode=644 mtime=1000000000000000000 nlink=1 size=12288 sha=509e351ab17e2fdf
 'big/01' file mode=644 mtime=1000000001000000000 nlink=1 size=12288 sha=eecdd31bdc75302d
@@ -1612,11 +1612,11 @@ error none`,
 'l' link -> 'a'
 error none`,
 	"lzip_version_two": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"lzma_alone": `'a' file mode=755 mtime=1000000000000000000 nlink=2 size=5 b'alpha'
 'd' dir mode=default mtime=1000000000000000000
 'd/b' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'bravo'
@@ -1680,11 +1680,11 @@ error ReadError: unexpected end of data`,
 	"missing_padding_zst": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=10 b'0123456789'
 error ReadError: unexpected end of data`,
 	"negative_size_first": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('invalid offset')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: invalid offset`,
 	"negative_size_later": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
 error none`,
 	"no_end_marker": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'alpha'
@@ -1698,11 +1698,11 @@ error none`,
 	"pax_duplicate_keys": `'two=x' file mode=644 mtime=5000000000 nlink=1 size=3 b'dup'
 error none`,
 	"pax_invalid_record_first": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('invalid header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: invalid header`,
 	"pax_invalid_record_later": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
 error none`,
 	"pax_linkpath": `'sym' link -> 'target'
@@ -1832,13 +1832,13 @@ error none`,
 	"sparse_old_bad_extension_number": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
 error none`,
 	"sparse_old_beyond_int64": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
-error ValueError: cannot fit 'int' into an offset-sized integer`,
+error ValueError: an archive offset is larger than a 64 bit integer holds`,
 	"sparse_old_beyond_int64_gz": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
-error ValueError: cannot fit 'int' into an offset-sized integer`,
+error ValueError: an archive offset is larger than a 64 bit integer holds`,
 	"sparse_old_beyond_int64_xz": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
-error ValueError: cannot fit 'int' into an offset-sized integer`,
+error ValueError: an archive offset is larger than a 64 bit integer holds`,
 	"sparse_old_beyond_int64_zst": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
-error ValueError: cannot fit 'int' into an offset-sized integer`,
+error ValueError: an archive offset is larger than a 64 bit integer holds`,
 	"sparse_old_huge_header_size": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
 error ReadError: unexpected end of data`,
 	"sparse_old_huge_header_size_gz": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
@@ -1853,7 +1853,7 @@ error none`,
 	"sparse_old_negative_realsize": `'sparse' file mode=644 mtime=recent nlink=1 size=5 b'hello'
 error OSError[22]`,
 	"sparse_old_truncated_extension": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error IndexError: index out of range`,
+error IndexError: an archive header is cut short`,
 	"sparse_old_zero_runs": `'after' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'after'
 'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=20 b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00xyz\x00\x00\x00\x00\x00\x00\x00'
 error none`,
@@ -1866,12 +1866,12 @@ error none`,
 'sparse01' file mode=644 mtime=1000000000000000000 nlink=1 size=5000 sha=200ef05537dc94e7
 error none`,
 	"sparse_pax01_bad_map": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error ValueError: invalid literal for int() with base 10: 'x'`,
+error ValueError: "x" is not a whole number`,
 	"sparse_pax10": `'after' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'after'
 'sparse10' file mode=644 mtime=1000000000000000000 nlink=1 size=9000 sha=22c2dffa279f3fa4
 error none`,
 	"sparse_pax10_bad_count": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error ValueError: invalid literal for int() with base 10: b''`,
+error ValueError: "" is not a whole number`,
 	"sparse_pax10_gz": `'after' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'after'
 'sparse10' file mode=644 mtime=1000000000000000000 nlink=1 size=9000 sha=22c2dffa279f3fa4
 error none`,
@@ -1879,7 +1879,7 @@ error none`,
 'longmap' file mode=644 mtime=1000000000000000000 nlink=1 size=120000 sha=8b5ebb85d1f99ee6
 error none`,
 	"sparse_pax10_no_newline": `'first' file mode=644 mtime=1000000000000000000 nlink=1 size=1 b'1'
-error ValueError: not enough values to unpack (expected 2, got 1)`,
+error ValueError: the GNU sparse map has no line break after its entry count`,
 	"sparse_pax10_xz": `'after' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'after'
 'sparse10' file mode=644 mtime=1000000000000000000 nlink=1 size=9000 sha=22c2dffa279f3fa4
 error none`,
@@ -1907,16 +1907,16 @@ error none`,
 's' link -> 'after'
 error none`,
 	"tiny_file": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"truncated_after_first": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'alpha'
 error none`,
 	"truncated_data": `'a' file mode=644 mtime=recent nlink=1 size=0 b''
 error ReadError: unexpected end of data`,
-	"unknown_type": `error SpecialFileError: 'vol' is a special file`,
+	"unknown_type": `error SpecialFileError: "vol" is a special file`,
 	"ustar_prefix": `'pre' dir mode=default mtime=recent
 'pre/fix' dir mode=default mtime=recent
 'pre/fix/file.txt' file mode=644 mtime=1000000000000000000 nlink=1 size=2 b'pf'
@@ -1926,11 +1926,11 @@ error none`,
 'dir/file' file mode=644 mtime=1000000000000000000 nlink=1 size=2 b'v7'
 error none`,
 	"xz_truncated": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 	"zero_block_middle": `'a' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'alpha'
 error none`,
 	"zst_big_truncated": `'big' dir mode=default mtime=recent
@@ -1957,11 +1957,11 @@ error none`,
 'big/20' file mode=644 mtime=recent nlink=1 size=0 b''
 error EOFError: Compressed file ended before the end-of-stream marker was reached`,
 	"zst_only_skippable": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('empty file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: empty file
+- method tar: truncated header`,
 	"zst_skippable_first": `'a' file mode=755 mtime=1000000000000000000 nlink=2 size=5 b'alpha'
 'd' dir mode=default mtime=1000000000000000000
 'd/b' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'bravo'
@@ -1969,17 +1969,17 @@ error EOFError: Compressed file ended before the end-of-stream marker was reache
 'l' link -> 'a'
 error none`,
 	"zst_truncated": `error ReadError: file could not be opened successfully:
-- method gz: ReadError('not a gzip file')
-- method bz2: ReadError('not a bzip2 file')
-- method xz: ReadError('not an lzma file')
-- method zst: ReadError('not a zstd file')
-- method tar: ReadError('truncated header')`,
+- method gz: not a gzip file
+- method bz2: not a bzip2 file
+- method xz: not an lzma file
+- method zst: not a zstd file
+- method tar: truncated header`,
 }
 
 // Cases whose in memory extraction CPython reported differently, read from a BytesIO
 var trdWantMem = map[string]string{
 	"sparse_old_beyond_int64": `'sparse' file mode=644 mtime=1000000000000000000 nlink=1 size=5 b'hello'
-error OverflowError: Python int too large to convert to C ssize_t`,
+error OverflowError: an archive offset is larger than a 64 bit integer holds`,
 }
 
 // Values and ValueError messages CPython int gives str and bytes text in base 10
@@ -1988,40 +1988,40 @@ var trdPyInts = []struct {
 	isBytes bool
 	want    string
 }{
-	{"\x1c5", false, "ValueError: invalid literal for int() with base 10: '\\x1c5'"},
-	{"5\x1c", false, "ValueError: invalid literal for int() with base 10: '5\\x1c'"},
+	{"\x1c5", false, "ValueError: \"\\x1c5\" is not a whole number"},
+	{"5\x1c", false, "ValueError: \"5\\x1c\" is not a whole number"},
 	{" 5 ", false, "5"},
 	{"\xc2\xa05", false, "5"},
 	{"\xd9\xa3", false, "3"},
 	{"1_0", false, "10"},
-	{"_1", false, "ValueError: invalid literal for int() with base 10: '_1'"},
-	{"1_", false, "ValueError: invalid literal for int() with base 10: '1_'"},
-	{"1__0", false, "ValueError: invalid literal for int() with base 10: '1__0'"},
+	{"_1", false, "ValueError: \"_1\" is not a whole number"},
+	{"1_", false, "ValueError: \"1_\" is not a whole number"},
+	{"1__0", false, "ValueError: \"1__0\" is not a whole number"},
 	{"+5", false, "5"},
-	{"- 5", false, "ValueError: invalid literal for int() with base 10: '- 5'"},
+	{"- 5", false, "ValueError: \"- 5\" is not a whole number"},
 	{"-5", false, "-5"},
-	{"0x10", false, "ValueError: invalid literal for int() with base 10: '0x10'"},
+	{"0x10", false, "ValueError: \"0x10\" is not a whole number"},
 	{"010", false, "10"},
-	{"\x7f", false, "ValueError: invalid literal for int() with base 10: '\\x7f'"},
-	{"5\x00", false, "ValueError: invalid literal for int() with base 10: '5\\x00'"},
-	{"", false, "ValueError: invalid literal for int() with base 10: ''"},
+	{"\x7f", false, "ValueError: \"\\x7f\" is not a whole number"},
+	{"5\x00", false, "ValueError: \"5\\x00\" is not a whole number"},
+	{"", false, "ValueError: \"\" is not a whole number"},
 	{"\xe2\x80\x805", false, "5"},
 	{"\xef\xbc\x95", false, "5"},
-	{"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", false, "ValueError: invalid literal for int() with base 10: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
-	{"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111", false, "ValueError: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit"},
-	{"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111x", false, "ValueError: invalid literal for int() with base 10: '1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"},
-	{"\xff", false, "ValueError: invalid literal for int() with base 10: '\\udcff'"},
+	{"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", false, "ValueError: \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is not a whole number"},
+	{"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111", false, "ValueError: a number has 5000 digits, more than the 4300 allowed"},
+	{"11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111x", false, "ValueError: \"1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111 is not a whole number"},
+	{"\xff", false, "ValueError: \"\\xff\" is not a whole number"},
 	{"123456789012345678901234567890", false, "123456789012345678901234567890"},
 	{"\xd9\xa1\xd9\xa2\xd9\xa3", false, "123"},
-	{"\x1c5", true, "ValueError: invalid literal for int() with base 10: b'\\x1c5'"},
+	{"\x1c5", true, "ValueError: \"\\x1c5\" is not a whole number"},
 	{" 5\x0a", true, "5"},
 	{"1_0", true, "10"},
-	{"\xa05", true, "ValueError: invalid literal for int() with base 10: b'\\xa05'"},
-	{"", true, "ValueError: invalid literal for int() with base 10: b''"},
-	{"5\x00", true, "ValueError: invalid literal for int() with base 10: b'5\\x00'"},
-	{"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", true, "ValueError: invalid literal for int() with base 10: b'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+	{"\xa05", true, "ValueError: \"\\xa05\" is not a whole number"},
+	{"", true, "ValueError: \"\" is not a whole number"},
+	{"5\x00", true, "ValueError: \"5\\x00\" is not a whole number"},
+	{"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", true, "ValueError: \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx is not a whole number"},
 	{"-7", true, "-7"},
-	{"0o7", true, "ValueError: invalid literal for int() with base 10: b'0o7'"},
+	{"0o7", true, "ValueError: \"0o7\" is not a whole number"},
 }
 
 // Bits of the float CPython parses from each text, invalid when it raises ValueError

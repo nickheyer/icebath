@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
@@ -267,7 +268,7 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyj
 		pid := int(n.Int64())
 		live, found, err := fleetLiveGatewayPID(ph.home)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Fleet version probe failed: %s", pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("Fleet version probe failed: %s", errchain.OSText(err)))
 			return results
 		}
 		if found && live == pid {

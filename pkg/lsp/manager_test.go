@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/workspaces"
 	"log/slog"
 	"maps"
 	"os"
@@ -31,7 +32,7 @@ func testService(t *testing.T, rt *Runtime, o Options) *Service {
 
 // Operator roots of the test process cwd
 func cwdRoots() map[string]bool {
-	return OperatorWorkspaceRoots([]func() (string, error){os.Getwd})
+	return workspaces.OperatorWorkspaceRoots([]func() (string, error){os.Getwd})
 }
 
 func TestUnrelatedProjectNotAffectedByBroken(t *testing.T) {
@@ -268,7 +269,7 @@ func trustSpawns(t *testing.T, rt *Runtime, tmp, launcher string, roots []string
 	}
 	must(t, os.MkdirAll(filepath.Join(tmp, "launch", "src"), 0o755))
 	t.Chdir(filepath.Join(tmp, "launch", "src"))
-	ClearWorkspaceCache()
+	workspaces.ClearWorkspaceCache()
 	handed := recordSpawns(t)
 	svc, err := ServiceFromConfig(rt, map[string]any{"trusted_workspaces": tw, "servers": servers}, cwdRoots())
 	must(t, err)
@@ -317,7 +318,7 @@ func TestUntrustedCheckoutStartsOnlyAllowlistedServersPinnedToIcebathCode(t *tes
 	}
 	for sid, init := range untrusted {
 		for _, s := range allStrings(init) {
-			if filepath.IsAbs(s) && IsInsideWorkspace(s, clone) {
+			if filepath.IsAbs(s) && workspaces.IsInsideWorkspace(s, clone) {
 				t.Errorf("%s handed project code %s", sid, s)
 			}
 		}
@@ -327,7 +328,7 @@ func TestUntrustedCheckoutStartsOnlyAllowlistedServersPinnedToIcebathCode(t *tes
 		t.Fatalf("typescript %v svelte %v", untrusted["typescript"], untrusted["svelte-language-server"])
 	}
 	pythonPath := trusted["pyright"]["python"].(map[string]any)["pythonPath"].(string)
-	if !IsInsideWorkspace(pythonPath, filepath.Join(launch, ".venv")) {
+	if !workspaces.IsInsideWorkspace(pythonPath, filepath.Join(launch, ".venv")) {
 		t.Fatalf("trusted pyright interpreter %s", pythonPath)
 	}
 	for _, sid := range []string{"typescript", "svelte-language-server", "rust-analyzer"} {
@@ -350,7 +351,7 @@ func TestOnlyOperatorWorkspacesAndListedDirectoriesAreTrusted(t *testing.T) {
 	handed, _ := trustSpawns(t, rt, tmp, launcher, roots, []string{filepath.Join(tmp, "listed")})
 	for _, root := range []string{launch, listed} {
 		py := handed[pairKey{"pyright", root}]["python"].(map[string]any)["pythonPath"].(string)
-		if !IsInsideWorkspace(py, filepath.Join(root, ".venv")) {
+		if !workspaces.IsInsideWorkspace(py, filepath.Join(root, ".venv")) {
 			t.Errorf("%s pyright %s", root, py)
 		}
 		if _, ok := handed[pairKey{"rust-analyzer", root}]; !ok {
@@ -359,7 +360,7 @@ func TestOnlyOperatorWorkspacesAndListedDirectoriesAreTrusted(t *testing.T) {
 	}
 	for _, root := range []string{nested, sibling} {
 		if py, ok := handed[pairKey{"pyright", root}]["python"].(map[string]any); ok {
-			if p, _ := py["pythonPath"].(string); IsInsideWorkspace(p, root) {
+			if p, _ := py["pythonPath"].(string); workspaces.IsInsideWorkspace(p, root) {
 				t.Errorf("%s pyright got the project interpreter", root)
 			}
 		}

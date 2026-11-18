@@ -9,11 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -203,21 +201,6 @@ func shutdownMCPServersNonblocking(ctx context.Context, timeout float64, cfg *ga
 	return done, nil
 }
 
-// Stops a cron provider without letting it choose the gateway exit code
-func stopCronProvider(p cron.CronScheduler) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			var exit *gateway.SystemExitError
-			if err, ok := rec.(error); ok && errors.As(err, &exit) {
-				pkgLog().Warn(fmt.Sprintf("Cron provider stop() attempted to exit the gateway with code %d; ignoring", exit.Code))
-				return
-			}
-			pkgLog().Debug(fmt.Sprintf("Cron provider stop() error: %v", rec))
-		}
-	}()
-	cron.SchedulerStop(p)
-}
-
 // MCP discovery then the runner start, the exit verdict when the process must end before running mode
 func startGatewayRunRunner(ctx context.Context, r *GatewayRunner, signalInitiated *bool) (*bool, error) {
 	if err := discoverGatewayMCPTools(ctx, r.config); err != nil {
@@ -262,8 +245,7 @@ func startGatewayRunRunner(ctx context.Context, r *GatewayRunner, signalInitiate
 // Cron and housekeeping goroutines of a running gateway with the stop event they share
 type cronHousekeeping struct {
 	stop         *pythread.Event
-	provider     cron.CronScheduler
-	cronThread   *cron.SupervisedTickerThread
+	ticker       cronTicker
 	housekeeping *bootThread
 }
 
@@ -281,10 +263,12 @@ func startGatewayShutdownTail(ctx context.Context, r *GatewayRunner, control *ga
 		}()
 	}
 	ch.stop.Set()
-	stopCronProvider(ch.provider)
-	if !awaitThreadExit(ctx, ch.cronThread.IsAlive, cronShutdownDrainTimeout) {
-		pkgLog().Warn(fmt.Sprintf("Cron ticker did not exit within %.0fs of shutdown — an in-flight "+
-			"delivery may have been dropped.", cronShutdownDrainTimeout))
+	if ch.ticker != nil {
+		ch.ticker.stopProvider()
+		if !awaitThreadExit(ctx, ch.ticker.alive, cronShutdownDrainTimeout) {
+			pkgLog().Warn(fmt.Sprintf("Cron ticker did not exit within %.0fs of shutdown — an in-flight "+
+				"delivery may have been dropped.", cronShutdownDrainTimeout))
+		}
 	}
 	awaitThreadExit(ctx, ch.housekeeping.alive, housekeepingShutdownDrainTimeout)
 	plannedStop.Set()
@@ -301,81 +285,20 @@ func startGatewayShutdownTail(ctx context.Context, r *GatewayRunner, control *ga
 // Starts the cron ticker and the housekeeping goroutine sharing one stop event
 func startGatewayStartCronAndHousekeeping(ctx context.Context, r *GatewayRunner) cronHousekeeping {
 	stop := &pythread.Event{}
-	homes, err := cronTickProfileHomes(ctx, r.config)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not resolve profile homes for cron: %v", err))
-		homes = nil
-	}
-	h := home.Dir(ctx)
-	p := cron.SchedulerForProfileMode(h, cron.ResolveCronScheduler(h), len(homes) > 1)
-	opts := cron.StartOptions{Adapters: r.adapters, Loop: r.gatewayLoop}
-	_, inProcess := p.(*cron.InProcessCronScheduler)
-	if inProcess && len(homes) > 0 {
-		opts.ProfileHomesFn = func() ([]cron.ProfileHome, error) {
-			served, err := cronTickProfileHomes(ctx, r.config)
-			if err != nil {
-				return nil, err
-			}
-			out := make([]cron.ProfileHome, 0, len(served))
-			for _, s := range served {
-				name := s.Name
-				out = append(out, cron.ProfileHome{Name: &name, Home: s.Home})
-			}
-			return out, nil
-		}
-		opts.ProfileGate = func(name *string, profileHome string) bool {
-			n := ""
-			if name != nil {
-				n = *name
-			}
-			return cronProfileGate(n, profileHome)
-		}
-		opts.ProfileAdapters = map[string]any{}
-		for name, m := range r.profileAdapters.All() {
-			opts.ProfileAdapters[name] = m
-		}
-		opts.ProfileBotPlatforms = map[string]any{}
-		for name, m := range r.profileBotPlatforms {
-			opts.ProfileBotPlatforms[name] = m
-		}
-		opts.DefaultProfile = &r.primaryProfileName
-		names := make([]string, 0, len(homes))
-		for _, s := range homes {
-			names = append(names, s.Name)
-		}
-		pkgLog().Info(fmt.Sprintf("Cron scheduler will tick %d profile(s): %s", len(homes), pyReprStrings(names)))
-	}
-	if inProcess {
-		opts.CanDispatch = func() bool { return !(r.draining.Load() || r.externalDrainActive) }
-	}
-	stopCh := make(chan struct{})
-	go func() {
-		stop.Wait(-1)
-		close(stopCh)
-	}()
-	cronThread := cron.NewSupervisedTickerThread(func() { p.Start(context.WithoutCancel(ctx), stopCh, opts) }, stopCh, "cron-ticker")
-	gateway.ProcessOwnership.StartWriterThread(cronThread.IsAlive, func() { cronThread.Start() })
-	if !inProcess {
-		if _, hasAPIServer := r.adapters.Get(gateway.PlatformAPIServer); !hasAPIServer {
-			pkgLog().Warn(fmt.Sprintf("Cron provider '%s' is active but the api_server adapter is "+
-				"NOT running in this gateway — scheduled fires arrive over "+
-				"loopback HTTP and will all fail (jobs only run when "+
-				"triggered manually). Most common cause: API_SERVER_KEY is "+
-				"missing from this gateway process's environment. Restart "+
-				"the gateway through its supervisor (`icebath gateway "+
-				"restart`) so the profile env loads.", p.Name()))
-		}
+	var ticker cronTicker
+	if startCronTicker != nil {
+		ticker = startCronTicker(ctx, r, stop)
 	}
 	housekeeping := &bootThread{done: make(chan struct{})}
 	gateway.ProcessOwnership.StartWriterThread(housekeeping.alive, func() {
 		go func() {
 			defer close(housekeeping.done)
 			startGatewayHousekeeping(context.WithoutCancel(ctx), stop, housekeepingArgs{
-				adapters: r.adapters, loop: r.gatewayLoop, cronProvider: p, runner: r, cronThread: cronThread,
+				adapters: r.adapters, loop: r.gatewayLoop, cron: ticker, runner: r,
 			})
 		}()
 	})
-	return cronHousekeeping{stop: stop, provider: p, cronThread: cronThread, housekeeping: housekeeping}
+	return cronHousekeeping{stop: stop, ticker: ticker, housekeeping: housekeeping}
 }
 
 // Seams of the gateway start, the real functions swapped only where a test installs a fake
@@ -559,13 +482,4 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 		return false, err
 	}
 	return verdict, nil
-}
-
-// Python repr of a list of strings, the way a profile name list prints in a log line
-func pyReprStrings(items []string) string {
-	out := make([]any, len(items))
-	for i, s := range items {
-		out[i] = s
-	}
-	return pyrepr.Repr(out)
 }

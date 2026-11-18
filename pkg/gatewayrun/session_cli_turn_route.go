@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -49,7 +50,7 @@ func oneTurnRuntime(ctx context.Context, override *pyjson.Object, model string, 
 	if !result.Success {
 		message := result.ErrorMessage
 		if message == "" {
-			message = "model " + pyrepr.Repr(rawModel) + " could not be resolved"
+			message = "model " + errchain.Show(rawModel) + " could not be resolved"
 		}
 		return "", nil, errors.New(message)
 	}

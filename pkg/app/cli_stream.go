@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -798,7 +799,7 @@ func (c *CLI) analyzeImage(imgPath string) (result map[string]any, failure strin
 	}
 	obj, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, "'" + pyrepr.TypeName(decoded) + "' object has no attribute 'get'"
+		return nil, "the vision tool replied with " + errchain.Kind(decoded) + " where a mapping was expected"
 	}
 	result = map[string]any{}
 	for _, key := range []string{"success", "analysis"} {

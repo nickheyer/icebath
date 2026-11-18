@@ -49,9 +49,9 @@ func TestTurnControllerRecordTodosPreservesTheParentField(t *testing.T) {
 	}
 	t.Run("keeps parent on a valid nested subtask", func(t *testing.T) {
 		c := newCtl()
-		c.recordTodos([]any{
-			map[string]any{"content": "Ship feature", "id": "wp1", "status": "in_progress"},
-			map[string]any{"content": "Write tests", "id": "t1", "parent": "wp1", "status": "pending"},
+		c.recordTodos([]tuigateway.TodoItem{
+			{Content: "Ship feature", ID: "wp1", Status: "in_progress"},
+			{Content: "Write tests", ID: "t1", Parent: ptr("wp1"), Status: "pending"},
 		})
 		want := []todoItem{{Content: "Ship feature", ID: "wp1", Status: "in_progress"}, {Content: "Write tests", ID: "t1", Parent: "wp1", Status: "pending"}}
 		if !reflect.DeepEqual(c.store.turn.Todos, want) {
@@ -60,14 +60,14 @@ func TestTurnControllerRecordTodosPreservesTheParentField(t *testing.T) {
 	})
 	t.Run("drops a self-referential parent instead of keeping a self-loop", func(t *testing.T) {
 		c := newCtl()
-		c.recordTodos([]any{map[string]any{"content": "x", "id": "a", "parent": "a", "status": "pending"}})
+		c.recordTodos([]tuigateway.TodoItem{{Content: "x", ID: "a", Parent: ptr("a"), Status: "pending"}})
 		if !reflect.DeepEqual(c.store.turn.Todos, []todoItem{{Content: "x", ID: "a", Status: "pending"}}) {
 			t.Fatalf("todos %#v", c.store.turn.Todos)
 		}
 	})
 	t.Run("omits parent entirely when absent, matching pre-nesting payloads", func(t *testing.T) {
 		c := newCtl()
-		c.recordTodos([]any{map[string]any{"content": "x", "id": "a", "status": "pending"}})
+		c.recordTodos([]tuigateway.TodoItem{{Content: "x", ID: "a", Status: "pending"}})
 		if !reflect.DeepEqual(c.store.turn.Todos, []todoItem{{Content: "x", ID: "a", Status: "pending"}}) {
 			t.Fatalf("todos %#v", c.store.turn.Todos)
 		}

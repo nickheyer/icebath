@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -105,7 +106,7 @@ func (c *CLI) checkpointManager() {
 		printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
 		return
 	}
-	panic(fmt.Errorf("'NoneType' object has no attribute 'enabled'"))
+	panic(errors.New("this session has no checkpoint manager"))
 }
 
 var diffModes = map[string]string{

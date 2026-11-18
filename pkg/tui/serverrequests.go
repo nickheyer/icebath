@@ -129,16 +129,18 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 		s.overlay.Approval = &approvalReq{AllowPermanent: p.AllowPermanent == nil || *p.AllowPermanent, Choices: choices, Command: p.Command, Description: description, RequestID: id, SmartDenied: val(p.SmartDenied)}
 		open(tr("session.status.approvalNeeded"))
 	case tuigateway.SudoRequest.Name():
-		if _, ok := requestParams(r, sink, tuigateway.SudoRequest); !ok {
+		p, ok := requestParams(r, sink, tuigateway.SudoRequest)
+		if !ok {
 			return true
 		}
-		s.overlay.Sudo = &sudoReq{RequestID: id}
+		s.overlay.Sudo = &sudoReq{Command: p.Command, RequestID: id}
 		open(tr("session.status.sudoPasswordNeeded"))
 	case tuigateway.DisplayInstallSudoRequest.Name():
-		if _, ok := requestParams(r, sink, tuigateway.DisplayInstallSudoRequest); !ok {
+		p, ok := requestParams(r, sink, tuigateway.DisplayInstallSudoRequest)
+		if !ok {
 			return true
 		}
-		s.overlay.Sudo = &sudoReq{RequestID: id}
+		s.overlay.Sudo = &sudoReq{ProfileKey: p.ProfileKey, RequestID: id}
 		open(tr("session.status.sudoPasswordNeeded"))
 	case tuigateway.SecretRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.SecretRequest)

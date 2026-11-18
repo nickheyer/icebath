@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -331,7 +332,7 @@ func pyIterItems(value any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(value))
 }
 
 // Readiness of a local driver for the 0.20 integration with its version and the failing reason
@@ -369,7 +370,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 			}
 			lines := pystr.Splitlines(pystr.Strip(text), false)
 			if len(lines) == 0 {
-				return nil, errors.New("list index out of range")
+				return nil, errors.New("the manifest command printed only blank lines")
 			}
 			last := []rune(lines[len(lines)-1])
 			result, reason = nil, string(last[:min(len(last), 200)])

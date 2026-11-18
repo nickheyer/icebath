@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestInlineShellSubprocessSemantics(t *testing.T) {
@@ -17,7 +16,7 @@ func TestInlineShellSubprocessSemantics(t *testing.T) {
 	s := NewScope(t.TempDir(), config.Defaults())
 	file := filepath.Join(t.TempDir(), "file.txt")
 	os.WriteFile(file, []byte("x"), 0o644)
-	if got, want := s.RunInlineShell(ctx, ":", file, 5), "[inline-shell error: [Errno 20] Not a directory: "+pyrepr.StrRepr(file)+"]"; got != want {
+	if got, want := s.RunInlineShell(ctx, ":", file, 5), "[inline-shell error: not a directory: "+file+"]"; got != want {
 		t.Fatalf("file cwd got %q want %q", got, want)
 	}
 	if got := s.RunInlineShell(ctx, ":", filepath.Join(t.TempDir(), "missing"), 5); got != "[inline-shell error: bash not found]" {

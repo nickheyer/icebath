@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -147,7 +148,7 @@ func ContinueUpdateInFreshInterpreter(ctx context.Context, payload *pyjson.Objec
 		if !pypath.IsOSError(err) {
 			return 0, false, err
 		}
-		fmt.Fprintf(out, "  ⚠ Could not start the post-update interpreter: %s\n", pypath.OSErrorText(err))
+		fmt.Fprintf(out, "  ⚠ Could not start the post-update interpreter: %s\n", errchain.OSText(err))
 		fmt.Fprintln(out, "  The code update is applied. Finish it with:")
 		fmt.Fprintf(out, "    %s\n", pysubprocess.List2cmdline(cmd))
 		return 0, false, nil

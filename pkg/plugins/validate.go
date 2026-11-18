@@ -665,7 +665,7 @@ type PortableAvailability struct {
 func validatePortablePlugin(ctx context.Context, report *ValidationReport, pluginDir string) (*ValidationReport, error) {
 	dataRoot, err := os.MkdirTemp("", "")
 	if err != nil {
-		report.add("portable manifest", false, "plugin.json failed validation: "+pypath.OSErrorText(err))
+		report.add("portable manifest", false, "plugin.json failed validation: "+errchain.OSText(err))
 		return report, nil
 	}
 	pkg, err := LoadAgentPlugin(pluginDir, dataRoot)

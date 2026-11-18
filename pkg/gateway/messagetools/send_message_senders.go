@@ -219,7 +219,7 @@ func telegramThreadKwargs(threadID *string) (map[string]any, error) {
 	}
 	n, ok := pyint.Parse(*threadID)
 	if !ok {
-		return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(*threadID))
+		return nil, fmt.Errorf("the Telegram thread id %s is not a whole number", *threadID)
 	}
 	out["message_thread_id"] = pyint.Native(n)
 	return out, nil
@@ -475,7 +475,7 @@ func liveAdapter(ctx context.Context, platform gateway.Platform, lookupFailedWar
 	if !ok {
 		registry, ok := runner.(adapterMapRunner)
 		if !ok {
-			panic(fmt.Sprintf("'%T' object has no attribute 'adapters'", runner))
+			panic("the gateway runner gives no access to its platform adapters")
 		}
 		live, _ := registry.Adapters().Get(platform)
 		if live == nil {
@@ -560,7 +560,7 @@ func sendMatrixViaAdapter(ctx context.Context, pconfig *gateway.PlatformConfig, 
 	}
 	adapter, ok := built.(gateway.PlatformAdapter)
 	if !ok {
-		return sendError(fmt.Sprintf("Matrix send failed: '%T' object has no attribute 'connect'", built)), nil
+		return sendError("Matrix send failed: the adapter factory did not build a platform adapter"), nil
 	}
 	defer func() {
 		defer func() { _ = recover() }()
@@ -594,7 +594,7 @@ func sendMatrixViaAdapter(ctx context.Context, pconfig *gateway.PlatformConfig, 
 func matrixSendCore(ctx context.Context, live any, chatID, message string, mediaFiles []gateway.MediaRef, metadata map[string]any) (map[string]any, error) {
 	adapter, ok := live.(gateway.PlatformAdapter)
 	if !ok {
-		return nil, fmt.Errorf("'%T' object has no attribute 'send'", live)
+		return nil, errors.New("the live Matrix adapter cannot send")
 	}
 	var last *gateway.SendResult
 	if pystr.Strip(message) != "" {

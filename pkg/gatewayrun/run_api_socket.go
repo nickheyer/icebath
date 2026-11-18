@@ -14,7 +14,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Socket of one admitted session as the session handler drives it
@@ -98,13 +97,13 @@ func (s *sessionSocket) Peer() (string, int, bool) {
 	return host, port, err == nil
 }
 
-// Peer as the refusal log names it, the host and port tuple or None
+// Peer as the refusal log names it, host and port or unknown
 func (s *sessionSocket) peerText() string {
 	host, port, known := s.Peer()
 	if !known {
-		return "None"
+		return "unknown"
 	}
-	return fmt.Sprintf("(%s, %d)", pyrepr.Repr(host), port)
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func (s *sessionSocket) SessionAuthority() *gateway.SessionAuthority { return s.authority }

@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -130,24 +132,6 @@ func modalCreateParams(kwargs map[string]any) *modal.SandboxCreateParams {
 		}
 	}
 	return params
-}
-
-// Float the way Python float() reads a JSON value
-func pyFloatValue(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case bool:
-		if n {
-			return 1, true
-		}
-		return 0, true
-	}
-	return 0, false
 }
 
 // NewModalEnvironment creates the sandbox, restoring a stored snapshot when persistent, and seeds the sync
@@ -508,3 +492,6 @@ func (modalBackend) CreateEnvironment(ctx context.Context, env *Env, opts Create
 	persistent := truthy(res["persistent_filesystem"])
 	return NewModalEnvironment(ctx, env, ModalOptions{Image: opts.Image, Cwd: opts.Cwd, Timeout: opts.Timeout, SandboxKwargs: kwargs, Persistent: persistent, TaskID: opts.TaskID})
 }
+
+// File sync manager of the environment
+func (b *modalEnv) fileSyncManager() *FileSyncManager { return b.syncManager }

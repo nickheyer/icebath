@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -110,7 +111,7 @@ func reconcilePluginMCPServers(ctx context.Context, r *GatewayRunner, profileHom
 		}
 		if len(result.Removed) > 0 || len(result.Added) > 0 {
 			pkgLog().Info(fmt.Sprintf("MCP servers reconciled after reload-plugins (%s): removed=%s added=%s",
-				profileHome, pyrepr.Repr(stringsAny(result.Removed)), pyrepr.Repr(stringsAny(result.Added))))
+				profileHome, errchain.Show(stringsAny(result.Removed)), errchain.Show(stringsAny(result.Added))))
 		}
 	}()
 	select {

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
@@ -246,10 +246,10 @@ func (c *CLI) enterNewWorktree(wtInfo map[string]string) bool {
 		activeWorktreeMu.Unlock()
 		return false
 	case gatewayAutomationConnection(c) == nil:
-		printLines("  " + c.commandsT("worktree.enter_failed", map[string]any{"error": pypath.OSErrorText(err)}))
+		printLines("  " + c.commandsT("worktree.enter_failed", map[string]any{"error": errchain.OSText(err)}))
 		return false
 	default:
-		printLines("  " + c.t("cli.session.cwd_enter_failed", map[string]any{"path": wtInfo["path"], "error": pypath.OSErrorText(err)}))
+		printLines("  " + c.t("cli.session.cwd_enter_failed", map[string]any{"path": wtInfo["path"], "error": errchain.OSText(err)}))
 	}
 	return true
 }

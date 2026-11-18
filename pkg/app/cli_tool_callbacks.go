@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -21,9 +20,9 @@ func installInteractiveToolCallbacks(c *CLI) {
 		c.env.Ask = cliAsker{c: c}
 	}
 	skills.SetSecretCaptureCallback(c.secretCaptureCallback)
-	browser.SetUnlockPromptCallback(c.ctx, c.vaultUnlockCallback)
-	browser.SetSaveLoginPromptCallback(c.ctx, c.vaultSaveLoginCallback)
-	browser.SetCodePromptCallback(c.ctx, c.vaultCodeCallback)
+	tools.SetUnlockPromptCallback(c.ctx, c.vaultUnlockCallback)
+	tools.SetSaveLoginPromptCallback(c.ctx, c.vaultSaveLoginCallback)
+	tools.SetCodePromptCallback(c.ctx, c.vaultCodeCallback)
 }
 
 // cliAsker answers the tool asker through the sudo, approval and clarify panels

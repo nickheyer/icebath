@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"gopkg.in/yaml.v3"
@@ -497,7 +497,7 @@ func recordOf(data map[string]any, key, name string) (any, error) {
 	}
 	records, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the %s metadata of the request must be a mapping, got %s", key, errchain.Kind(raw))}
 	}
 	return records[name], nil
 }

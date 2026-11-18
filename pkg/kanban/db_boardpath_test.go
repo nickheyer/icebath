@@ -214,7 +214,7 @@ func TestNormalizeReasoningEffortAndSkills(t *testing.T) {
 	if got, _ := normalizeTaskSkills(nil); got != nil {
 		t.Fatal(got)
 	}
-	if _, err := normalizeTaskSkills([]string{"a,b"}); err == nil || !strings.Contains(err.Error(), "skill name cannot contain comma: 'a,b'") {
+	if _, err := normalizeTaskSkills([]string{"a,b"}); err == nil || !strings.Contains(err.Error(), "skill name cannot contain comma: a,b") {
 		t.Fatal(err)
 	}
 	if m, p, err := validateModelOverride(nil, BoardArg("openrouter")); err == nil || m != nil || p != nil {

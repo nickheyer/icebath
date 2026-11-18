@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -202,7 +203,7 @@ func (c *CLI) cmdUndo(cmdOriginal string) {
 	if parts := strings.Fields(cmdOriginal); len(parts) > 1 {
 		parsed, ok := parsePyInt(parts[1])
 		if !ok {
-			printLines(c.t("cli.undo.invalid_count", map[string]any{"value": pyrepr.StrRepr(parts[1])}))
+			printLines(c.t("cli.undo.invalid_count", map[string]any{"value": errchain.Show(parts[1])}))
 			return
 		}
 		n = max(1, parsed)

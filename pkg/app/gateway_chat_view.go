@@ -957,7 +957,7 @@ func (v *GatewayChatView) runFinite(ctx context.Context, receipt map[string]any)
 	if v.unattended {
 		exitCode = oneshotExitCode(text, plain)
 	} else {
-		exitCode = TurnExitCode(plain, TurnExitOptions{})
+		exitCode = tools.TurnExitCode(plain, tools.TurnExitOptions{})
 	}
 	if v.usageFile != "" {
 		v.writeUsageFile(result, outcome)

@@ -76,7 +76,7 @@ func TestValidateRejectsInconsistentWorkflows(t *testing.T) {
 
 func TestDuplicateColumnMessageReprsTheKeyTuple(t *testing.T) {
 	w := Workflow{Columns: []Column{NewColumn("a", "A"), NewColumn("a", "B")}, Manual: FrozenManual()}
-	if err := w.Validate(); err == nil || err.Error() != "duplicate column keys: ('a', 'a')" {
+	if err := w.Validate(); err == nil || err.Error() != "duplicate column keys: a, a" {
 		t.Fatal(err)
 	}
 }

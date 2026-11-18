@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -262,14 +263,14 @@ func StepAdoptBlessedCheckout(ctx context.Context, projectRoot string) (map[stri
 	}
 	identified, err := WriteSourceStamp(root, true)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", pypath.OSErrorText(err)))
-		return map[string]any{"ok": true, "skipped": "unwritable: " + pypath.OSErrorText(err)}, nil
+		pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", errchain.OSText(err)))
+		return map[string]any{"ok": true, "skipped": "unwritable: " + errchain.OSText(err)}, nil
 	}
 	if identified == nil {
 		stamp := pyjson.ObjectOf("schemaVersion", 2, "updateMechanism", "self", "source", "adoption", "adoptedAt", pyISONowUTC())
 		if err := writeJSONViaTemp(root, ".install-stamp.", stampPath, stamp); err != nil {
-			pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", pypath.OSErrorText(err)))
-			return map[string]any{"ok": true, "skipped": "unwritable: " + pypath.OSErrorText(err)}, nil
+			pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", errchain.OSText(err)))
+			return map[string]any{"ok": true, "skipped": "unwritable: " + errchain.OSText(err)}, nil
 		}
 	}
 	pkgLog().Info(fmt.Sprintf("adopted blessed checkout at %s (updateMechanism: self)", root))

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -303,7 +304,7 @@ func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error
 		defaultRate = pyrepr.Str(*details.DefaultSamplerate)
 	}
 	pkgLog().Info(fmt.Sprintf("wake word: opening microphone device=%s selector=%s hostapi=%s default_rate=%s capture_rate=%d engine_rate=%d",
-		name, pyrepr.Repr(d.inputDevice), hostapi, defaultRate, c.rate, WakeSampleRate))
+		name, errchain.Show(d.inputDevice), hostapi, defaultRate, c.rate, WakeSampleRate))
 	stream, err := sd.InputStream(pysounddevice.StreamParams{Device: d.inputDevice, Samplerate: float64(c.rate), Blocksize: c.frameLength, Channels: 1}, nil)
 	if err == nil {
 		c.stream = stream

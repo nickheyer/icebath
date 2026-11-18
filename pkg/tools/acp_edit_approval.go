@@ -136,7 +136,7 @@ func proposalForPatchReplace(env *Env, arguments map[string]any) (*EditProposal,
 	newText, matches, _, problem := FuzzyFindAndReplace(*old, pyrepr.Str(oldString), pyrepr.Str(newString), pyrepr.Truthy(arguments["replace_all"]), nil)
 	if problem != "" || matches == 0 {
 		if problem == "" {
-			problem = "Could not find match for old_string in " + path
+			problem = noMatchIn(path)
 		}
 		return nil, errors.New(problem)
 	}

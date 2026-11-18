@@ -38,7 +38,7 @@ func (r *GatewayRunner) wireTeamsPipelineRuntime(ctx context.Context) {
 		return
 	}
 	if BindTeamsPipelineRuntime == nil {
-		pkgLog().Warn("Teams pipeline runtime import failed: No module named 'plugins.teams_pipeline.runtime'")
+		pkgLog().Warn("Teams pipeline runtime unavailable: the teams pipeline plugin is not built into this icebath")
 		return
 	}
 	bound, err := func() (bound bool, err error) {

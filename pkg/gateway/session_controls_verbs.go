@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Generation a turn never carries, standing for a None or non integer generation param
@@ -479,7 +480,7 @@ func (c *AuthorityConnection) describe(ctx context.Context, ref SessionRef, para
 		"capabilities", []any{"durable-admission-v1", "event-replay-v1", "local-cli-create-v1", "acp-editor-policy-v1",
 			"acp-session-mcp-v1", "clarify-batch-v1"},
 		"session_create", pyjson.ObjectOf("sources", stringsAny(sources), "parameters", stringsAny(parameters)),
-		"skin", resolvedSkin(ctx)), nil
+		"skin", resolvedSkin(ctx), "build", tuigateway.BuildID(), "contract", int64(tuigateway.ContractVersion)), nil
 }
 
 // Strings as a JSON list value

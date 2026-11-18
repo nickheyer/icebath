@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser"
 	_ "github.com/nickheyer/icebath/pkg/builtin/agentimporters"
+	"github.com/nickheyer/icebath/pkg/builtin/googlemeet"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/commands"
@@ -50,7 +51,8 @@ var _ acp.ReasoningCallbackSetter = (*agent.AIAgent)(nil)
 func init() {
 	linktier.Link(linktier.Extras)
 	childEntriesFirst = append(childEntriesFirst, func(ctx context.Context) { selfupdate.DispatchCustodyLauncher() })
-	childEntriesAfterPruneExtras = append(childEntriesAfterPruneExtras, func(ctx context.Context) { botdesktop.DispatchIdleWatchEntry() })
+	childEntriesAfterPruneExtras = append(childEntriesAfterPruneExtras, googlemeet.DispatchMeetBotEntry,
+		func(ctx context.Context) { botdesktop.DispatchIdleWatchEntry() })
 	tierStartup[phaseAfterLauncher] = append(tierStartup[phaseAfterLauncher], func([]string) {
 		if restoreInterruptedPull() {
 			relaunchAfterRestore()
@@ -61,6 +63,7 @@ func init() {
 	tierStartup[phaseAfterParser] = append(tierStartup[phaseAfterParser], finishOwedSourceUpdate)
 	tierStartup[phaseBeforeDotenv] = append(tierStartup[phaseBeforeDotenv], func([]string) { ensureBinLaunchers() })
 	tierStartup[phaseRun] = append(tierStartup[phaseRun], updateRunSteps)
+	childEntriesAfterCgroup = append(childEntriesAfterCgroup, gateway.DispatchKanbanWorkerClientEntry)
 	childEntriesAfterCodex = append(childEntriesAfterCodex, func(ctx context.Context) { cron.DispatchExternalWorkerEntry(exit) })
 	childEntriesLast = append(childEntriesLast, func(ctx context.Context) { acp.DispatchModuleEntry(ctx, exit) })
 	tierWiring = append(tierWiring, installExtrasWiring)
@@ -105,7 +108,6 @@ func installExtrasWiring() {
 	}
 	acp.RunModelSetup = func(context.Context) int { return run([]string{"model"}) }
 	gateway.HostedEntryKeywords = hosted.EntryKeywords
-	kanban.ParseSlash = app.ParseKanbanSlash
 	cron.SetupWorkerLogging = logging.SetupHomeLogging
 	cron.WorkerProcessBoot = cronWorkerProcessBoot
 	cron.RegisterWorkerConfigHooks = gateway.RegisterWorkerConfigHooks

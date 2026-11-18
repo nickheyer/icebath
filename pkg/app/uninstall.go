@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
@@ -76,7 +77,7 @@ func uninstallWarn(w io.Writer, msg string)    { uninstallLine(w, "⚠", cliui.Y
 // str of an exception an uninstall step raised, OSError text for filesystem failures
 func uninstallErrText(err error) string {
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return pyrepr.ExceptionMessage(err)
 }

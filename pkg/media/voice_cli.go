@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -147,7 +148,7 @@ func transcribeWav(ctx context.Context, wavPath, failMsg, debugPrefix string) (t
 		transcript = pystr.Strip(pyrepr.Str(raw))
 	}
 	if debugPrefix != "" {
-		voiceDebug(fmt.Sprintf("%s: transcribe -> success=%s text=%s err=%s", debugPrefix, pyrepr.Repr(success), pyrepr.Repr(transcript), pyrepr.Repr(result["error"])))
+		voiceDebug(fmt.Sprintf("%s: transcribe -> success=%s text=%s err=%s", debugPrefix, errchain.Show(success), errchain.Show(transcript), errchain.Show(result["error"])))
 	}
 	if success && transcript != "" && !isWhisperHallucination(transcript) {
 		return transcript
@@ -201,7 +202,7 @@ func turnTranscript(ctx context.Context, wavPath, failMsg, where, tail string, t
 	if transcript == "" || !IsVoiceStopPhrase(transcript) {
 		return transcript, false, ""
 	}
-	voiceDebug(fmt.Sprintf("%s: stop phrase %s — %s", where, pyrepr.Repr(transcript), tail))
+	voiceDebug(fmt.Sprintf("%s: stop phrase %s — %s", where, errchain.Show(transcript), tail))
 	return "", true, transcript
 }
 
@@ -304,7 +305,7 @@ func StartContinuous(ctx context.Context, o ContinuousOptions) (bool, error) {
 	}
 	rec.SetMaxRecordingSeconds(max(0, maxSeconds))
 	continuousMu.Unlock()
-	voiceDebug(fmt.Sprintf("start_continuous: begin (threshold=%s, duration=%ss)", pyrepr.Repr(o.SilenceThreshold), pyrepr.Repr(o.SilenceDuration)))
+	voiceDebug(fmt.Sprintf("start_continuous: begin (threshold=%s, duration=%ss)", errchain.Show(o.SilenceThreshold), errchain.Show(o.SilenceDuration)))
 	voicePlayBeep(ctx, 880, 1)
 	if err := rec.Start(ctx, func() { continuousOnSilence(ctx) }); err != nil {
 		pkgLog().Error(fmt.Sprintf("failed to start continuous recording: %s", err))
@@ -424,7 +425,7 @@ func continuousOnSilence(ctx context.Context) {
 	if wavPath != "" {
 		wavRepr = wavPath
 	}
-	voiceDebug(fmt.Sprintf("_continuous_on_silence: rec.stop -> %s (peak_rms=%d)", pyrepr.Repr(wavRepr), peak))
+	voiceDebug(fmt.Sprintf("_continuous_on_silence: rec.stop -> %s (peak_rms=%d)", errchain.Show(wavRepr), peak))
 	voicePlayBeep(ctx, 660, 2)
 	transcript, stopPhrase, stopText := turnTranscript(ctx, wavPath, "continuous transcription failed: %s", "_continuous_on_silence", "ending loop", true)
 	held := transcript == "" && !stopPhrase && voiceActivityHeld()
@@ -634,7 +635,7 @@ func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
 	}
 	continuousMu.Unlock()
 	ttsPlaying.Clear()
-	voiceDebug(fmt.Sprintf("speak_text: TTS begin (paused_recording=%s)", pyrepr.Repr(pausedRecording)))
+	voiceDebug(fmt.Sprintf("speak_text: TTS begin (paused_recording=%s)", errchain.Show(pausedRecording)))
 	defer func() {
 		ttsPlaying.Set()
 		voiceDebug("speak_text: TTS done")

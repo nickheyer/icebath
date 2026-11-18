@@ -24,7 +24,7 @@ func prepareAPIRuntime(ctx context.Context, model string, runtimeKwargs map[stri
 	adapterValue, _ := current.Get("adapter")
 	selector, ok := adapterValue.(apiTurnRuntimeSelector)
 	if !ok {
-		return "", nil, &pyAttributeError{fmt.Sprintf("'%T' object has no attribute '_select_agent_runtime'", adapterValue)}
+		return "", nil, &pyAttributeError{"the API adapter cannot select an agent runtime"}
 	}
 	selected, err := selector.PrepareTurnRuntime(ctx, model, runtimeKwargs, settings)
 	if err != nil {

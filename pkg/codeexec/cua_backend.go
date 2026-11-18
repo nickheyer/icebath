@@ -15,9 +15,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -43,17 +43,13 @@ type subprocessTimeout struct {
 }
 
 func (e *subprocessTimeout) Error() string {
-	items := make([]any, len(e.Cmd))
-	for i, a := range e.Cmd {
-		items[i] = a
-	}
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyrepr.Repr(items), pyrepr.Float(e.Timeout))
+	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Cmd, " "), errchain.Show(e.Timeout))
 }
 
 // spawnError is the OSError subprocess raises when the program cannot start
 type spawnError struct{ err error }
 
-func (e *spawnError) Error() string { return pypath.OSErrorText(e.err) }
+func (e *spawnError) Error() string { return errchain.OSText(e.err) }
 func (e *spawnError) Unwrap() error { return e.err }
 
 // runOpts are the subprocess.run keywords the probe helpers forward

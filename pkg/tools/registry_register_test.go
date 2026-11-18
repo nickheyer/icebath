@@ -90,7 +90,7 @@ func TestRegisterRejectsNonDictSchema(t *testing.T) {
 	r := NewRegistry()
 	func() {
 		defer func() {
-			if rec := recover(); rec == nil || !strings.Contains(rec.(string), "schema must be a dict") {
+			if rec := recover(); rec == nil || !strings.Contains(rec.(string), "schema must be a mapping") {
 				t.Fatalf("nil schema recovered %v", rec)
 			}
 		}()

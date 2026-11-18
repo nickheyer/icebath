@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // InvalidMCPURLError is a remote server url that is not a parseable http or https URL
@@ -258,7 +260,7 @@ func validatedRemoteMCPURL(serverName string, raw any) (string, error) {
 	}
 	s, ok := raw.(string)
 	if !ok {
-		return "", bad("expected a string, got " + pyTypeName(raw))
+		return "", bad("expected text, got " + errchain.Kind(raw))
 	}
 	stripped := pyStrip(s)
 	if stripped == "" {

@@ -38,7 +38,7 @@ func strictUTF8(data []byte) error {
 			need = 4
 		}
 		if need == 0 {
-			return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: invalid start byte", data[i], i)
+			return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d cannot start a character", data[i], i)
 		}
 		valid := 1
 		for valid < need && i+valid < len(data) && utf8ContinuationOK(data[i], valid, data[i+valid]) {
@@ -46,14 +46,14 @@ func strictUTF8(data []byte) error {
 		}
 		if i+valid >= len(data) && valid < need {
 			if valid == 1 {
-				return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: unexpected end of data", data[i], i)
+				return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d begins a character the text ends inside", data[i], i)
 			}
-			return fmt.Errorf("'utf-8' codec can't decode bytes in position %d-%d: unexpected end of data", i, i+valid-1)
+			return fmt.Errorf("not valid UTF-8: bytes at positions %d-%d begin a character the text ends inside", i, i+valid-1)
 		}
 		if valid == 1 {
-			return fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: invalid continuation byte", data[i], i)
+			return fmt.Errorf("not valid UTF-8: byte 0x%02x at position %d begins a character that the next byte breaks", data[i], i)
 		}
-		return fmt.Errorf("'utf-8' codec can't decode bytes in position %d-%d: invalid continuation byte", i, i+valid-1)
+		return fmt.Errorf("not valid UTF-8: bytes at positions %d-%d begin a character that the next byte breaks", i, i+valid-1)
 	}
 	return nil
 }

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gatewayrun
 
 import (
@@ -6,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -14,63 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// One recorded kanban ping
-type kanbanSent struct {
-	chatID   string
-	text     string
-	metadata map[string]any
-}
-
-// Telegram adapter recording every send and accepting every wake turn
-type kanbanRecordingAdapter struct {
-	*gateway.BasePlatformAdapter
-	mu       sync.Mutex
-	sent     []kanbanSent
-	handled  []*gateway.MessageEvent
-	failSend bool
-	failWake bool
-}
-
-func (a *kanbanRecordingAdapter) Connect(context.Context, bool) (bool, error) { return true, nil }
-func (a *kanbanRecordingAdapter) Disconnect(context.Context) error            { return nil }
-func (a *kanbanRecordingAdapter) Send(_ context.Context, chatID, content, _ string, metadata map[string]any) (gateway.SendResult, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-	a.sent = append(a.sent, kanbanSent{chatID, content, metadata})
-	if a.failSend {
-		return gateway.SendResult{}, &kanban.RuntimeError{Msg: "transient send failure"}
-	}
-	return gateway.SendResult{Success: true}, nil
-}
-func (a *kanbanRecordingAdapter) HandleMessage(_ context.Context, event *gateway.MessageEvent) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.handled = append(a.handled, event)
-	if a.failWake {
-		return &kanban.RuntimeError{Msg: "simulated wake failure"}
-	}
-	event.SetGatewayAccepted(true)
-	return nil
-}
-func (a *kanbanRecordingAdapter) GetChatInfo(_ context.Context, chatID string) (map[string]any, error) {
-	return map[string]any{"id": chatID}, nil
-}
-
-// Recording Telegram adapter
-func newKanbanRecordingAdapter() *kanbanRecordingAdapter {
-	return newKanbanRecordingAdapterOn(gateway.PlatformTelegram)
-}
-
-// Recording adapter of a platform
-func newKanbanRecordingAdapterOn(platform gateway.Platform) *kanbanRecordingAdapter {
-	a := &kanbanRecordingAdapter{}
-	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(gateway.NewPlatformConfig(), platform, a)
-	return a
-}
 
 // Hermetic home with a kanban database pinned to name and initialised
 func kanbanTestDB(t *testing.T, name string) string {
@@ -95,8 +39,6 @@ func kanbanTestConn(t *testing.T) state.SQLiteConn {
 	t.Cleanup(func() { conn.Close() })
 	return conn
 }
-
-func kstr(s string) *string { return &s }
 
 // Task created with title, assignee and an optional session id
 func kanbanCreate(t *testing.T, conn state.SQLiteConn, title, assignee string, sessionID *string) string {

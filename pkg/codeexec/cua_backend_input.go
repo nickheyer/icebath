@@ -3,8 +3,8 @@ package codeexec
 import (
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -82,7 +82,7 @@ func (b *CuaDriverBackend) applyDelivery(action string, args *pyjson.Object, mod
 		return nil
 	}
 	if *mode != "foreground" {
-		return refuseCoded(action, fmt.Sprintf("unknown delivery_mode %s — use background|foreground.", pyrepr.Repr(*mode)), "bad_delivery_mode", "")
+		return refuseCoded(action, fmt.Sprintf("unknown delivery_mode %s — use background|foreground.", errchain.Show(*mode)), "bad_delivery_mode", "")
 	}
 	if !b.session.supportsInputProperty(action, "delivery_mode") {
 		return refuseCoded(action, foregroundUnsupMsg, "foreground_unsupported", "foreground")
@@ -133,7 +133,7 @@ func (b *CuaDriverBackend) Click(a ClickArgs) (*ActionResult, error) {
 	}
 	norm := pystr.Lower(button)
 	if norm != "left" && norm != "right" && norm != "middle" {
-		return refuseAction("click", fmt.Sprintf("unknown button %s — expected left, right, middle.", pyrepr.Repr(a.Button))), nil
+		return refuseAction("click", fmt.Sprintf("unknown button %s — expected left, right, middle.", errchain.Show(a.Button))), nil
 	}
 	tool := "click"
 	if a.ClickCount == 2 {

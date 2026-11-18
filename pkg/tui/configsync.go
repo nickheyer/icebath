@@ -5,12 +5,14 @@ import (
 	"math"
 	"os"
 	"regexp"
-	"strconv"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -21,12 +23,6 @@ const (
 
 var (
 	falsyToggle       = regexp.MustCompile(`(?i)^(?:0|false|no|off)$`)
-	statusBarAlias    = map[string]string{"bottom": "bottom", "off": "off", "on": "top", "top": "top"}
-	busyInputModes    = map[string]bool{"interrupt": true, "queue": true, "steer": true}
-	indicatorStyles   = map[string]bool{"ascii": true, "emoji": true, "kaomoji": true, "unicode": true}
-	falseyMouse       = map[string]bool{"0": true, "false": true, "no": true, "off": true}
-	truthyMouseAll    = map[string]bool{"1": true, "true": true, "yes": true, "on": true, "all": true, "full": true, "any": true}
-	leadingIntegerRe  = regexp.MustCompile(`^[` + jsWS + `]*([+-]?\d+)`)
 	defaultIndicator  = "kaomoji"
 	defaultBusyMode   = "queue"
 	defaultPasteLines = 5
@@ -62,109 +58,25 @@ func bootMouseTracking() string {
 	return "off"
 }
 
-// Status bar position of display.tui_statusbar, top by default
-func normalizeStatusBar(raw any) string {
-	if raw == false {
-		return "off"
-	}
-	if s, isStr := raw.(string); isStr {
-		if mode, known := statusBarAlias[strings.ToLower(strings.TrimFunc(s, isJSSpace))]; known {
-			return mode
-		}
-	}
-	return "top"
-}
-
-// Status bar fields of display.status_bar.fields, nil for every field
-func normalizeStatusBarFields(raw any) map[string]bool {
-	list, isList := raw.([]any)
-	if !isList || len(list) == 0 {
-		return nil
-	}
-	fields := map[string]bool{}
-	for _, v := range list {
-		if name := strings.ToLower(strings.TrimFunc(jsValueString(v), isJSSpace)); name != "" {
-			fields[name] = true
-		}
-	}
+// Status bar fields as a set, nil for every field
+func statusBarFieldSet(fields []string) map[string]bool {
 	if len(fields) == 0 {
 		return nil
 	}
-	return fields
+	set := make(map[string]bool, len(fields))
+	for _, name := range fields {
+		set[name] = true
+	}
+	return set
 }
 
-// Busy input mode of a config value, queue by default
-func normalizeBusyInputMode(raw any) string {
-	if s, isStr := raw.(string); isStr {
-		if v := strings.ToLower(strings.TrimFunc(s, isJSSpace)); busyInputModes[v] {
-			return v
-		}
+// Per section detail modes of the wire as the UI state keeps them
+func sectionModes(sections map[string]tuigateway.DetailsMode) map[string]string {
+	out := make(map[string]string, len(sections))
+	for name, mode := range sections {
+		out[name] = string(mode)
 	}
-	return defaultBusyMode
-}
-
-// Status indicator style of a config value, kaomoji by default
-func normalizeIndicatorStyle(raw any) string {
-	if s, isStr := raw.(string); isStr {
-		if v := strings.ToLower(strings.TrimFunc(s, isJSSpace)); indicatorStyles[v] {
-			return v
-		}
-	}
-	return defaultIndicator
-}
-
-// Mouse tracking mode of display.mouse_tracking, else the legacy display.tui_mouse
-func normalizeMouseTracking(display map[string]any) string {
-	raw, has := display["mouse_tracking"]
-	if !has {
-		raw = display["tui_mouse"]
-	}
-	switch v := raw.(type) {
-	case bool:
-		if !v {
-			return "off"
-		}
-		return "all"
-	case float64:
-		if v == 0 {
-			return "off"
-		}
-		return "all"
-	case string:
-		s := strings.ToLower(strings.TrimFunc(v, isJSSpace))
-		switch {
-		case falseyMouse[s]:
-			return "off"
-		case truthyMouseAll[s]:
-			return "all"
-		case s == "wheel" || s == "scroll":
-			return "wheel"
-		case s == "button" || s == "buttons" || s == "click":
-			return "buttons"
-		}
-	}
-	return "all"
-}
-
-// Paste collapse threshold of a config key, a non negative number or integer string, else the default
-func pasteThreshold(cfg map[string]any, key string, fallback int) int {
-	config, _ := cfg["config"].(map[string]any)
-	if config == nil || !truthyJS(cfg["config"]) {
-		return fallback
-	}
-	switch raw := config[key].(type) {
-	case float64:
-		if !math.IsInf(raw, 0) && !math.IsNaN(raw) && raw >= 0 {
-			return int(jsRound(raw))
-		}
-	case string:
-		if m := leadingIntegerRe.FindStringSubmatch(raw); m != nil {
-			if n, err := strconv.Atoi(m[1]); err == nil && n >= 0 {
-				return n
-			}
-		}
-	}
-	return fallback
+	return out
 }
 
 // Config surface the sync sets outside the store, the main model in production
@@ -209,52 +121,40 @@ func newConfigSync(store *tuiStore, turn *turnController, gw turnGateway, app co
 	return &configSync{store: store, turn: turn, gw: gw, app: app}
 }
 
-// Request whose failure and non object answer both read as nil
-func quietCall(gw turnGateway, method string, params map[string]any) map[string]any {
-	r, err := gw.request(context.Background(), method, params, 0)
-	if err != nil {
-		return nil
-	}
-	return asRPCResult(r)
-}
-
 // Whether the session generation is still the one in view
 func (c *configSync) current(gen int, sid string) bool { return gen == c.gen && c.store.ui.Sid == sid }
 
-// Applies the display section of a config to the UI state, the busy mode only when applyBusy
-func (c *configSync) applyDisplay(cfg map[string]any, applyBusy bool) tea.Cmd {
-	d, _ := configPath(cfg, "config", "display").(map[string]any)
-	if d == nil {
-		d = map[string]any{}
+// Applies the settings of a config to the UI state, the defaults when the read failed, the busy mode only when applyBusy
+func (c *configSync) applyDisplay(cfg *tuigateway.ClientConfig, applyBusy bool) tea.Cmd {
+	settings := tuigateway.ClientConfigOf(nil)
+	if cfg != nil {
+		settings = *cfg
 	}
-	approvals, _ := configPath(cfg, "config", "approvals").(map[string]any)
-	c.app.setBellOnComplete(truthyJS(d["bell_on_complete"]))
-	c.app.setBellOnPrompt(truthyJS(d["bell_on_prompt"]))
-	cmd := c.store.applyConfiguredTuiTheme(d["tui_theme"])
+	d := settings.Display
+	c.app.setBellOnComplete(d.BellOnComplete)
+	c.app.setBellOnPrompt(d.BellOnPrompt)
+	cmd := c.store.applyConfiguredTuiTheme(d.Theme)
+	ui := &c.store.ui
 	if cfg != nil {
 		key := defaultVoiceRecordKey
-		if raw := configPath(cfg, "config", "voice", "record_key"); truthyJS(raw) {
-			key = parseVoiceRecordKey(raw)
+		if settings.Voice.RecordKey != "" {
+			key = parseVoiceRecordKey(settings.Voice.RecordKey)
 		}
 		c.app.setVoiceRecordKey(key)
+		ui.DestructiveSlashConfirm = settings.Approvals.DestructiveSlashConfirm
 	}
-	ui := &c.store.ui
-	ui.Battery = truthyJS(d["battery"])
+	ui.Battery = d.Battery
 	if applyBusy {
-		ui.BusyInputMode = normalizeBusyInputMode(d["busy_input_mode"])
+		ui.BusyInputMode = string(d.BusyInputMode)
 	}
-	ui.Compact = truthyJS(d["tui_compact"])
-	if cfg != nil {
-		ui.DestructiveSlashConfirm = approvals["destructive_slash_confirm"] != false
-	}
-	statusBar, _ := d["status_bar"].(map[string]any)
-	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.FocusView = resolveDetailsMode(d), false, truthyJS(d["focus_view"])
-	ui.IndicatorStyle, ui.InlineDiffs, ui.MouseTracking = normalizeIndicatorStyle(d["tui_status_indicator"]), d["inline_diffs"] != false, normalizeMouseTracking(d)
-	ui.PasteCollapseLines, ui.PasteCollapseChars = pasteThreshold(cfg, "paste_collapse_threshold", defaultPasteLines), pasteThreshold(cfg, "paste_collapse_char_threshold", defaultPasteChars)
-	ui.Sections, ui.ShowReasoning = resolveSections(d["sections"]), truthyJS(d["show_reasoning"])
-	ui.StatusBar, ui.StatusBarFields = normalizeStatusBar(d["tui_statusbar"]), normalizeStatusBarFields(statusBar["fields"])
-	ui.Streaming, ui.Timestamps = d["streaming"] != false, d["timestamps"] == true
-	ui.Arena, ui.Pet = d["arena"], d["pet"]
+	ui.Compact = d.Compact
+	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.FocusView = string(d.DetailsMode), false, d.FocusView
+	ui.IndicatorStyle, ui.InlineDiffs, ui.MouseTracking = string(d.Indicator), d.InlineDiffs, string(d.MouseTracking)
+	ui.PasteCollapseLines, ui.PasteCollapseChars = int(settings.PasteCollapseThreshold), int(settings.PasteCollapseCharThreshold)
+	ui.Sections, ui.ShowReasoning = sectionModes(d.Sections), d.ShowReasoning
+	ui.StatusBar, ui.StatusBarFields = string(d.StatusBarPlace), statusBarFieldSet(d.StatusBar.Fields)
+	ui.Streaming, ui.Timestamps = d.Streaming, d.Timestamps
+	ui.Arena, ui.PetRenderMode = d.Arena, d.Pet.RenderMode
 	return cmd
 }
 
@@ -262,30 +162,33 @@ func (c *configSync) applyDisplay(cfg map[string]any, applyBusy bool) tea.Cmd {
 func (c *configSync) hydrateFullConfig(gen int, sid string) tea.Cmd {
 	gw, canonical := c.gw, c.gw.canonical()
 	return func() tea.Msg {
-		params := map[string]any{"key": "full", "session_id": sid}
-		var cfg, busy map[string]any
+		var full, busy *tuigateway.ConfigGetResult
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			cfg = quietCall(gw, "config.get", params)
+			full = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full", SessionID: sid})
 		}()
 		if canonical {
-			busy = quietCall(gw, "config.get", map[string]any{"key": "busy", "session_id": sid})
+			busy = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "busy", SessionID: sid})
 		}
 		wg.Wait()
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if !c.current(gen, sid) {
 				return nil
 			}
+			var cfg *tuigateway.ClientConfig
+			if full != nil {
+				cfg = full.Config
+			}
 			cmd := c.applyDisplay(cfg, !canonical)
-			if mode, isStr := busy["value"].(string); canonical && isStr && busyInputModes[mode] {
+			if mode := configWord(busy); canonical && slices.Contains(tuigateway.BusyInputMode("").Values(), mode) {
 				c.store.ui.BusyInputMode = mode
 			}
 			if cfg == nil {
 				return cmd
 			}
-			language := configPath(cfg, "config", "display", "language")
+			language := cfg.Display.Language
 			return tea.Batch(cmd, func() tea.Msg {
 				syncTUILocale(func(method string, params map[string]any) (any, error) {
 					return gw.request(context.Background(), method, params, 0)
@@ -296,6 +199,14 @@ func (c *configSync) hydrateFullConfig(gen int, sid string) tea.Cmd {
 	}
 }
 
+// Word a config answer carries, empty for none or a flag
+func configWord(r *tuigateway.ConfigGetResult) string {
+	if r == nil || r.Value == nil {
+		return ""
+	}
+	return r.Value.Text
+}
+
 // Voice mode of a canonical session, enabled for voice_only and all
 func (c *configSync) hydrateVoiceMode(gen int, sid string) tea.Cmd {
 	if !c.gw.canonical() {
@@ -303,36 +214,28 @@ func (c *configSync) hydrateVoiceMode(gen int, sid string) tea.Cmd {
 	}
 	gw := c.gw
 	return func() tea.Msg {
-		r := quietCall(gw, "config.get", map[string]any{"key": "voice", "session_id": sid})
+		r := quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "voice", SessionID: sid})
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if r != nil && c.current(gen, sid) {
-				c.app.setVoiceEnabled(r["value"] == "voice_only" || r["value"] == "all")
+				mode := configWord(r)
+				c.app.setVoiceEnabled(mode == "voice_only" || mode == "all")
 			}
 			return nil
 		}}
 	}
 }
 
-// Mtime and MCP revision of the session's config, nil on failure
-func (c *configSync) readMtime(sid string, then func(r map[string]any) tea.Cmd) tea.Cmd {
+// Mtime and MCP revision of the session's config, zero and empty when the read failed
+func (c *configSync) readMtime(sid string, then func(mtime float64, rev string) tea.Cmd) tea.Cmd {
 	gw := c.gw
 	return func() tea.Msg {
-		r := quietCall(gw, "config.get", map[string]any{"key": "mtime", "session_id": sid})
-		return asyncDoneMsg{run: func() tea.Cmd { return then(r) }}
+		r := quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "mtime", SessionID: sid})
+		mtime, rev := 0.0, ""
+		if r != nil {
+			mtime, rev = val(r.Mtime), r.McpRev
+		}
+		return asyncDoneMsg{run: func() tea.Cmd { return then(mtime, rev) }}
 	}
-}
-
-// Number and text of an mtime answer the way JavaScript converts them
-func mtimeOf(r map[string]any) (float64, string) {
-	next := 0.0
-	if v := r["mtime"]; v != nil {
-		next = jsNumberOf(v)
-	}
-	rev := ""
-	if v := r["mcp_rev"]; v != nil {
-		rev = jsValueString(v)
-	}
-	return next, rev
 }
 
 // Starts syncing a session's config, stopping the previous session's polls
@@ -346,11 +249,11 @@ func (c *configSync) syncSession(sid string) tea.Cmd {
 	c.app.setVoiceEnabled(os.Getenv("ICEBATH_VOICE") == "1")
 	return tea.Batch(
 		c.hydrateVoiceMode(gen, sid),
-		c.readMtime(sid, func(r map[string]any) tea.Cmd {
+		c.readMtime(sid, func(mtime float64, rev string) tea.Cmd {
 			if !c.current(gen, sid) {
 				return nil
 			}
-			c.mtime, c.mcp.accepted = mtimeOf(r)
+			c.mtime, c.mcp.accepted = mtime, rev
 			return nil
 		}),
 		c.hydrateFullConfig(gen, sid),
@@ -368,11 +271,10 @@ func (c *configSync) onPoll(m configPollMsg) tea.Cmd {
 		return nil
 	}
 	gen, sid := m.gen, c.sid
-	poll := c.readMtime(sid, func(r map[string]any) tea.Cmd {
+	poll := c.readMtime(sid, func(next float64, nextMcpRev string) tea.Cmd {
 		if !c.current(gen, sid) {
 			return nil
 		}
-		next, nextMcpRev := mtimeOf(r)
 		if c.mtime == 0 || math.IsNaN(c.mtime) {
 			if next != 0 && !math.IsNaN(next) {
 				c.mtime, c.mcp.accepted = next, nextMcpRev
@@ -390,7 +292,7 @@ func (c *configSync) onPoll(m configPollMsg) tea.Cmd {
 		if nextMcpRev == "" {
 			gw := c.gw
 			cmds = append(cmds, func() tea.Msg {
-				r := quietCall(gw, "reload.mcp", map[string]any{"session_id": sid, "confirm": true})
+				r := quietAsk(gw, tuigateway.ReloadMCP, tuigateway.ReloadMCPParams{SessionID: optionalText(sid), Confirm: true})
 				return asyncDoneMsg{run: func() tea.Cmd {
 					if r != nil {
 						c.turnActivity(tr("status.mcpReloaded"))
@@ -423,14 +325,11 @@ func (c *configSync) syncMcpReload(sid, nextMcpRev string) tea.Cmd {
 	state.inFlight = true
 	gw := c.gw
 	return func() tea.Msg {
-		r := quietCall(gw, "reload.mcp", map[string]any{"confirm": true, "rev": nextMcpRev, "session_id": sid})
+		r := quietAsk(gw, tuigateway.ReloadMCP, tuigateway.ReloadMCPParams{SessionID: optionalText(sid), Confirm: true, Rev: optionalText(nextMcpRev)})
 		return asyncDoneMsg{run: func() tea.Cmd {
 			state.inFlight = false
-			if r["status"] == "reloaded" {
-				state.accepted = nextMcpRev
-				if truthyJS(r["loaded_rev"]) {
-					state.accepted = jsValueString(r["loaded_rev"])
-				}
+			if r != nil && r.Status == "reloaded" {
+				state.accepted = firstText(val(r.LoadedRev), nextMcpRev)
 				state.refused = nil
 				c.turnActivity(tr("status.mcpReloaded"))
 				return nil

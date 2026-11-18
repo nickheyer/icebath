@@ -20,10 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
@@ -235,7 +235,7 @@ func debugIsDpasteURL(raw string) bool {
 func debugURLOpen(ctx context.Context, method, target string, body []byte, headers map[string]string, timeout time.Duration) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, &pm.PyError{Class: "ValueError", Message: "unknown url type: " + pyrepr.StrRepr(target)}
+		return nil, 0, &pm.PyError{Class: "ValueError", Message: "unknown url type: " + errchain.Show(target)}
 	}
 	if body == nil {
 		req.Body, req.ContentLength = http.NoBody, 0
@@ -295,7 +295,7 @@ var debugScheduleAutoDelete = func(ctx context.Context, urls []string, delaySeco
 	}
 	release, err := debugPendingLock(ctx)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("could not schedule auto-delete for %s", pyrepr.Repr(pasteRS)), "err", err)
+		pkgLog().Debug(fmt.Sprintf("could not schedule auto-delete for %s", errchain.Show(pasteRS)), "err", err)
 		return nil
 	}
 	defer release()
@@ -541,7 +541,7 @@ func debugCaptureLogSnapshot(ctx context.Context, name string, tailLines int, ma
 func debugErrText(err error) string {
 	var pe *os.PathError
 	if errors.As(err, &pe) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

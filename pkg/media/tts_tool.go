@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -231,7 +232,7 @@ func warnIgnoredTTSProviderOverride(requested, configured string) {
 	if _, seen := onceWarnings.LoadOrStore("tts_provider_override\x00"+requested, true); seen {
 		return
 	}
-	pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS provider override %s; tts.provider is %s", pyrepr.Repr(requested), pyrepr.Repr(configured)))
+	pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS provider override %s; tts.provider is %s", errchain.Show(requested), errchain.Show(configured)))
 }
 
 // Per call speed on a copy of the config and the configured provider, a disagreeing override ignored
@@ -272,11 +273,11 @@ func applyVoiceOverride(ttsConfig map[string]any, provider, voiceID string) (map
 		return ttsConfig, ""
 	}
 	if provider != "elevenlabs" || !elevenLabsVoiceSelectionActive(ttsConfig) {
-		pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS voice_id; tts.provider is %s", pyrepr.Repr(provider)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS voice_id; tts.provider is %s", errchain.Show(provider)))
 		return ttsConfig, ""
 	}
 	if !elevenLabsVoiceIDRe.MatchString(voiceID) {
-		return ttsConfig, ttsToolError(fmt.Sprintf("Invalid ElevenLabs voice_id %s: use a voice_id returned by find_voices.", pyrepr.Repr(voiceID)))
+		return ttsConfig, ttsToolError(fmt.Sprintf("Invalid ElevenLabs voice_id %s: use a voice_id returned by find_voices.", errchain.Show(voiceID)))
 	}
 	section := map[string]any{}
 	if existing, err := orEmptyDict(ttsConfig, "elevenlabs"); err == nil {

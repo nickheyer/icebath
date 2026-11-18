@@ -11,7 +11,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -174,7 +173,7 @@ func (e *OSError) Error() string {
 	if errors.As(e.Err, &pe) {
 		return errchain.OSText(pe)
 	}
-	return pyhttpx.OSErrorText(e.Err)
+	return errchain.OSText(e.Err)
 }
 
 func (e *OSError) Unwrap() error { return e.Err }

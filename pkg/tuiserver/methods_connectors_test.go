@@ -348,7 +348,7 @@ func TestRespondCannotClaimAnOutcomeForAnyTarget(t *testing.T) {
 	mustTransition(t, operation, "gmail", tools.TargetInitiated, tools.ActorBackendWatcher, tools.TransitionFields{})
 	reply := connectorRPCCall(t, owner, "connection.respond", map[string]any{"op_id": operation.OpID, "result": map[string]any{
 		"targets": []any{map[string]any{"name": "gmail", "status": "connected"}, map[string]any{"name": "notion", "status": "failed"}}}})
-	if code := rpcCode(reply); code != 4002 {
+	if code := rpcCode(reply); code != 4000 {
 		t.Fatalf("reply %v", reply)
 	}
 	if operation.StateOf(operation.Target("gmail")) != tools.TargetInitiated || operation.StateOf(operation.Target("notion")) != tools.TargetPending {
@@ -648,7 +648,7 @@ func TestConnectionRespondIgnoresOutcomeClaimsAndRejectsStrangers(t *testing.T) 
 	mustTransition(t, operation, "gmail", tools.TargetInitiated, tools.ActorBackendWatcher, tools.TransitionFields{})
 	refused := connectorE2ERPC(t, owner, "connection.respond", map[string]any{"op_id": operation.OpID,
 		"result": map[string]any{"targets": []any{map[string]any{"name": "gmail", "status": "connected"}}}})
-	if code := rpcCode(refused); code != 4002 {
+	if code := rpcCode(refused); code != 4000 {
 		t.Fatalf("refused %v", refused)
 	}
 	if operation.StateOf(operation.Target("gmail")) != tools.TargetInitiated {

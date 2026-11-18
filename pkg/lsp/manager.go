@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
 // Service lifetime defaults in seconds
@@ -143,42 +144,19 @@ func floatOr(v any, fallback float64) float64 {
 	return f
 }
 
-// Config list of paths with the tilde expanded, false when not a list of strings
-func pathList(v any) ([]string, bool) {
-	if v == nil {
-		return []string{}, true
-	}
-	list, ok := v.([]any)
-	if !ok {
-		return nil, false
-	}
-	out := []string{}
-	for _, e := range list {
-		s, ok := e.(string)
-		if !ok {
-			return nil, false
-		}
-		if s != "" {
-			out = append(out, pypath.Expanduser(s))
-		}
-	}
-	return out, true
-}
-
 // ParseTrustedWorkspaces reads lsp.trusted_workspaces, a malformed value trusting nothing extra
 func ParseTrustedWorkspaces(rt *Runtime, value any) []string {
-	roots, ok := pathList(value)
+	roots, ok := workspaces.TrustedWorkspaces(value)
 	if !ok {
 		rt.logf(slog.LevelWarn, "lsp.trusted_workspaces must be a list of directories, e.g. ['~/code/my-app'] (got %s); only the "+
 			"workspaces you launched Icebath or opened a session in are trusted until the key is fixed", pyrepr.TypeName(value))
-		return []string{}
 	}
 	return roots
 }
 
 // Exclude globs, false failing closed on a malformed value
 func parseExcludeRoots(rt *Runtime, value any) ([]string, bool) {
-	roots, ok := pathList(value)
+	roots, ok := workspaces.PathList(value)
 	if !ok {
 		rt.logf(slog.LevelWarn, "lsp.exclude_roots must be a list of glob patterns, e.g. ['~/big-monorepo', '/srv/*/vendor'] "+
 			"(got %s); LSP is skipped for every workspace until the key is fixed", pyrepr.TypeName(value))
@@ -370,7 +348,7 @@ func (s *Service) IsActive() bool { return s.enabled }
 
 // Broken set key of a file, false when the file is not gated into a workspace
 func (s *Service) brokenKey(srv *ServerDef, filePath string) (pairKey, bool) {
-	wsRoot, gated := ResolveWorkspaceForFile(filePath, "")
+	wsRoot, gated := workspaces.ResolveWorkspaceForFile(filePath, "")
 	if wsRoot == "" || !gated {
 		return pairKey{}, false
 	}
@@ -438,7 +416,7 @@ func (s *Service) noteOperatorRoots(roots map[string]bool) {
 }
 
 func (s *Service) trusted(root string) bool {
-	return IsTrustedWorkspace(root, s.trustedWorkspaces, *s.operatorRoots.Load())
+	return workspaces.IsTrustedWorkspace(root, s.trustedWorkspaces, *s.operatorRoots.Load())
 }
 
 // Client key of a root with the state lock held, an untrusted multi root client keeping its own key
@@ -743,7 +721,7 @@ func (s *Service) Shutdown() {
 		s.rt.logf(slog.LevelDebug, "LSP shutdown error: %s", errText(err))
 	}
 	s.l.stop()
-	ClearWorkspaceCache()
+	workspaces.ClearWorkspaceCache()
 }
 
 // ClientStatus is one client row of the service status
@@ -874,7 +852,7 @@ func (s *Service) openAndWaitAsync(ctx context.Context, filePath string, snapsho
 // Fresh diagnostics the live client of a file holds, without syncing anything
 func (s *Service) currentDiagsAsync(filePath string) func(ctx context.Context) ([]map[string]any, error) {
 	return func(ctx context.Context) ([]map[string]any, error) {
-		ws, gated := ResolveWorkspaceForFile(filePath, "")
+		ws, gated := workspaces.ResolveWorkspaceForFile(filePath, "")
 		srv := s.serverFor(filePath)
 		if ws == "" || !gated || srv == nil {
 			return []map[string]any{}, nil
@@ -903,7 +881,7 @@ func (s *Service) getOrSpawn(ctx context.Context, filePath string) (*Client, err
 		logDisabled(s.rt, srv.ServerID, filePath, "disabled in config")
 		return nil, nil
 	}
-	wsRoot, gated := ResolveWorkspaceForFile(filePath, "")
+	wsRoot, gated := workspaces.ResolveWorkspaceForFile(filePath, "")
 	if wsRoot == "" || !gated {
 		logNoProjectRoot(s.rt, srv.ServerID, filePath)
 		return nil, nil
@@ -1139,7 +1117,7 @@ func (s *Service) releaseAsync(ctx context.Context, root string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	ClearWorkspaceCache()
+	workspaces.ClearWorkspaceCache()
 	return released, nil
 }
 

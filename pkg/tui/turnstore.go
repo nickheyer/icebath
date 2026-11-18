@@ -23,6 +23,7 @@ type activeTool struct {
 	ID          string
 	Labels      []toolLabel
 	Name        string
+	Progress    string
 	VerboseArgs string
 	StartedAt   time.Time
 }
@@ -115,7 +116,7 @@ type uiState struct {
 	Theme                      theme
 	Usage                      *tuigateway.Usage
 	Arena                      any
-	Pet                        any
+	PetRenderMode              tuigateway.PetRenderMode
 }
 
 // UI state of a fresh session
@@ -175,7 +176,6 @@ type tuiStore struct {
 	voicePartial           string
 	connectionOp           *connectionOperation
 	settledOperations      []string
-	dismissedOperations    []string
 	controls               controlState
 	loopTickGen            int
 	processSnapshot        processSnapshot

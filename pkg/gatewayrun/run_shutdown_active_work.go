@@ -2,7 +2,6 @@ package gatewayrun
 
 import (
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
@@ -14,7 +13,10 @@ func (r *GatewayRunner) activeWorkCount() int {
 
 // Cron jobs executing on the scheduler pool outside the running agent map
 func runningCronJobCount() int {
-	return len(cron.GetRunningJobIDs())
+	if cronRunningJobIDs == nil {
+		return 0
+	}
+	return len(cronRunningJobIDs())
 }
 
 // Cron jobs currently executing, zero when the count cannot be read

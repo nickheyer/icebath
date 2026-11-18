@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -48,11 +49,11 @@ func pluginInjectionArgsFrom(kwargs map[string]any) (pluginInjectionArgs, error)
 	}
 	content, ok := kwargs["content"].(string)
 	if !ok {
-		return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("content must be str, not %s", pyrepr.TypeName(kwargs["content"]))}
+		return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("content must be text, got %s", errchain.Kind(kwargs["content"]))}
 	}
 	pluginID, ok := kwargs["plugin_id"].(string)
 	if !ok {
-		return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("plugin_id must be str, not %s", pyrepr.TypeName(kwargs["plugin_id"]))}
+		return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("plugin_id must be text, got %s", errchain.Kind(kwargs["plugin_id"]))}
 	}
 	args.content, args.pluginID = content, pluginID
 	if key, isText := kwargs["session_key"].(string); isText {
@@ -61,7 +62,7 @@ func pluginInjectionArgsFrom(kwargs map[string]any) (pluginInjectionArgs, error)
 	if raw, present := kwargs["origin"]; present && raw != nil {
 		origin, isMap := raw.(map[string]any)
 		if !isMap {
-			return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not a mapping", pyrepr.TypeName(raw))}
+			return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("origin is %s where a mapping was expected", errchain.Kind(raw))}
 		}
 		args.origin = origin
 	}
@@ -335,7 +336,7 @@ func (r *GatewayRunner) pluginOriginSource(ctx context.Context, origin map[strin
 	requested := fields["profile"]
 	delete(fields, "profile")
 	if named, isText := requested.(string); pyrepr.Truthy(requested) && (!isText || named != *profile) {
-		refuse(fmt.Sprintf("origin names profile %s; plugins may only start sessions in their own profile (%s)", pyrepr.Repr(requested), *profile))
+		refuse(fmt.Sprintf("origin names profile %s; plugins may only start sessions in their own profile (%s)", errchain.Show(requested), *profile))
 		return nil, nil
 	}
 	source, err := gateway.SessionSourceFromDict(ctx, fields)

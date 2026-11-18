@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -44,7 +45,7 @@ func (r *GatewayRunner) instantiateAdapter(ctx context.Context, platform gateway
 		}
 		adapter, ok := created.(gateway.PlatformAdapter)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'gateway_runner'", pyrepr.TypeName(created))}
+			return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the %s plugin created %s where a platform adapter was expected", platform, errchain.Kind(created))}
 		}
 		return adapter, nil
 	}

@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -24,13 +23,12 @@ import (
 // Housekeeping interval in seconds, the cadence unit of every chore
 const housekeepingIntervalSecs = 60
 
-// Adapters, loop, cron provider, runner and cron ticker the housekeeping goroutine works with
+// Adapters, loop, cron ticker and runner the housekeeping goroutine works with
 type housekeepingArgs struct {
-	adapters     *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
-	loop         gateway.EventLoop
-	cronProvider cron.CronScheduler
-	runner       *GatewayRunner
-	cronThread   *cron.SupervisedTickerThread
+	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	loop     gateway.EventLoop
+	cron     cronTicker
+	runner   *GatewayRunner
 }
 
 // Schedules fn as a loop task from another goroutine, nil with a debug log when the loop refuses it
@@ -89,18 +87,6 @@ func housekeepingPasteSweep(ctx context.Context) error {
 	return nil
 }
 
-// Fires jobs an external cron provider never fired once their misfire grace passed
-func housekeepingMisfireCatchUp(ctx context.Context, p cron.CronScheduler, adapters, loop any) error {
-	caughtUp, err := cron.FireOverdueJobs(ctx, p, adapters, loop)
-	if err != nil {
-		return err
-	}
-	if caughtUp > 0 {
-		pkgLog().Info(fmt.Sprintf("Misfire catch-up: fired %d overdue job(s)", caughtUp))
-	}
-	return nil
-}
-
 // Curator poll, gated inside by its configured interval
 func housekeepingCurator(ctx context.Context) error {
 	idle := math.Inf(1)
@@ -143,57 +129,6 @@ func housekeepingCheckpointPrune(ctx context.Context) error {
 	return nil
 }
 
-// Drains each profile's worker queue through its live adapters, a satellite through the primary's routed ones
-func drainRestartSafeCronDeliveries(ctx context.Context, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter],
-	loop gateway.EventLoop, r *GatewayRunner) error {
-	var loopArg any
-	if loop != nil {
-		loopArg = loop
-	}
-	if r == nil {
-		if adapters != nil {
-			_, err := cron.DrainDeliveryQueue(ctx, adapters, loopArg)
-			return err
-		}
-		return nil
-	}
-	for _, scope := range handoffWatchScopes(ctx, r) {
-		var profileAdapters any
-		if scope.name == nil {
-			if adapters != nil {
-				profileAdapters = adapters
-			}
-		} else if r.profileAdapters != nil {
-			if m, ok := r.profileAdapters.Get(*scope.name); ok && m != nil {
-				profileAdapters = m
-			}
-		}
-		if profileAdapters == nil {
-			continue
-		}
-		h := scope.home
-		if h == "" {
-			h = home.Dir(ctx)
-		}
-		scoped := gateway.ProfileRuntimeScope(ctx, h, true)
-		var owned any
-		if scope.name != nil {
-			if platforms, ok := r.profileBotPlatforms[*scope.name]; ok {
-				owned = platforms
-			}
-		}
-		if scope.name != nil && adapters != nil && adapters.Len() > 0 && !cron.HasCredentialPlatform(profileAdapters, owned) {
-			if routes := cron.PrimaryProfileRoutesForCurrentHome(scoped); len(routes) > 0 {
-				profileAdapters = cron.NewSharedRouteAdapters(adapters, routes)
-			}
-		}
-		if _, err := cron.DrainDeliveryQueue(scoped, profileAdapters, loopArg); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Chore keeping live MCP servers in step with mcp_servers on disk, every tick after the first per profile
 func mcpConfigReconciler(ctx context.Context, r *GatewayRunner) func() error {
 	primed := map[string]bool{}
@@ -208,7 +143,7 @@ func mcpConfigReconciler(ctx context.Context, r *GatewayRunner) func() error {
 		}
 		if len(result.Removed) > 0 || len(result.Added) > 0 {
 			pkgLog().Info(fmt.Sprintf("MCP servers reconciled with config (%s): removed=%s added=%s",
-				label, pyrepr.Repr(result.Removed), pyrepr.Repr(result.Added)))
+				label, errchain.Show(result.Removed), errchain.Show(result.Added)))
 		}
 		return nil
 	}
@@ -227,12 +162,13 @@ func startGatewayHousekeeping(ctx context.Context, stop *pythread.Event, a house
 	interval := housekeepingIntervalSecs
 	adapters, loop, r := a.adapters, a.loop, a.runner
 	hasSources := adapters != nil || r != nil
-	drain := func() error { return drainRestartSafeCronDeliveries(ctx, adapters, loop, r) }
+	drains := hasSources && cronDeliveryDrain != nil
+	drain := func() error { return cronDeliveryDrain(ctx, adapters, loop, r) }
 	chores := []housekeepingTask{{1, "Runtime heartbeat", func() error {
 		writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{})
 		return nil
 	}}}
-	if hasSources {
+	if drains {
 		chores = append(chores, housekeepingTask{1, deliveryQueueDrainLabel, drain})
 	}
 	chores = append(chores,
@@ -245,20 +181,8 @@ func startGatewayHousekeeping(ctx context.Context, stop *pythread.Event, a house
 		housekeepingTask{60, "Media cache cleanup", func() error { housekeepingMediaCaches(ctx); return nil }},
 		housekeepingTask{60, "Paste sweep", func() error { return housekeepingPasteSweep(ctx) }},
 		housekeepingTask{1, "Auto-prune low-disk prompt", func() error { return maybePostAutoPrunePrompt(ctx, r, loop) }})
-	if a.cronProvider != nil {
-		var adaptersArg, loopArg any
-		if adapters != nil {
-			adaptersArg = adapters
-		}
-		if loop != nil {
-			loopArg = loop
-		}
-		chores = append(chores, housekeepingTask{5, "Misfire catch-up sweep", func() error {
-			return housekeepingMisfireCatchUp(ctx, a.cronProvider, adaptersArg, loopArg)
-		}})
-	}
-	if a.cronThread != nil {
-		chores = append(chores, housekeepingTask{1, "Cron ticker supervisor", func() error { a.cronThread.RestartIfDead(); return nil }})
+	if a.cron != nil {
+		chores = append(chores, a.cron.chores(ctx, adapters, loop)...)
 	}
 	var cfg *gateway.GatewayConfig
 	if r != nil {
@@ -276,7 +200,7 @@ func startGatewayHousekeeping(ctx context.Context, stop *pythread.Event, a house
 		housekeepingTask{1, "MCP config reconcile", mcpConfigReconciler(ctx, r)},
 		housekeepingTask{1, "Checkpoint prune tick", func() error { return housekeepingCheckpointPrune(ctx) }})
 	var watch *DeliveryQueueWatch
-	if hasSources {
+	if drains {
 		servedHomes := func() []*string {
 			if r == nil {
 				return []*string{nil}

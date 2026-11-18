@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -72,7 +73,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 	case reflect.TypeOf(time.Duration(0)):
 		seconds, err := jsonNumber(value)
 		if err != nil {
-			return kwargTypeError(op, name, "int", value)
+			return kwargTypeError(op, name, "a whole number", value)
 		}
 		field.SetInt(int64(seconds * float64(time.Second)))
 		return nil
@@ -83,7 +84,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 		}
 		s, ok := value.(string)
 		if !ok {
-			return kwargTypeError(op, name, "str", value)
+			return kwargTypeError(op, name, "text", value)
 		}
 		field.SetString(s)
 		return nil
@@ -114,7 +115,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 		for k, v := range object {
 			s, ok := v.(string)
 			if !ok {
-				return kwargTypeError(op, name, "a mapping of str", v)
+				return kwargTypeError(op, name, "a mapping of text", v)
 			}
 			out[k] = s
 		}
@@ -124,7 +125,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 	if field.Kind() == reflect.Int {
 		n, err := jsonNumber(value)
 		if err != nil {
-			return kwargTypeError(op, name, "int", value)
+			return kwargTypeError(op, name, "a whole number", value)
 		}
 		field.SetInt(int64(n))
 		return nil
@@ -215,7 +216,7 @@ func (k *kwargs) plugins() (PluginInput, error) {
 	}
 	encoded, isMap := raw.(map[string]any)
 	if !isMap {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(raw))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugins option must be a mapping, got %s", errchain.Kind(raw))}
 	}
 	return DecodePluginInput(encoded)
 }

@@ -221,7 +221,7 @@ func TestProvenanceClassesAndLocalCheck(t *testing.T) {
 	if r := checkLocalProvenance(got["pinned"]); r.Reason != "pinned @ cccccccccccc" || r.UpdateAvailable == nil || *r.UpdateAvailable {
 		t.Fatalf("pinned %+v", r)
 	}
-	if r := checkLocalProvenance(got["drift"]); !strings.Contains(r.Reason, "sidecar records 's' but the dir has no .git") {
+	if r := checkLocalProvenance(got["drift"]); !strings.Contains(r.Reason, "sidecar records s but the dir has no .git") {
 		t.Fatalf("drift %q", r.Reason)
 	}
 	if v := versionIsNewer("1.10", "1.9"); v == nil || !*v {

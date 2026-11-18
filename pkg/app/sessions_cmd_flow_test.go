@@ -316,7 +316,7 @@ func TestSessionsMaintenanceFlow(t *testing.T) {
 		t.Fatalf("refresh-prompts code %d output %q", code, out)
 	}
 	code, out = runSessionsCmd(t, h, map[string]any{"sessions_action": "refresh-prompts", "session": "no-such", "json": false}, "")
-	if code != 1 || out != "No session matches 'no-such'.\n" {
+	if code != 1 || out != "No session matches no-such.\n" {
 		t.Fatalf("refresh-prompts unknown code %d output %q", code, out)
 	}
 	code, out = runSessionsCmd(t, h, heldStoreArgsNeverActive(), "")

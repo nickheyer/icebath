@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -271,7 +272,7 @@ func childAssignee(v any) (*string, error) {
 	case string:
 		return canonicalAssignee(&s)
 	}
-	return nil, &RuntimeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))}
+	return nil, &RuntimeError{fmt.Sprintf("child assignee is %s where text was expected", errchain.Kind(v))}
 }
 
 // Inserts one decomposed child as todo, inheriting the root workspace kind and its path only for a matching non worktree kind

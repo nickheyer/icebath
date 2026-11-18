@@ -177,7 +177,7 @@ func (f *bgFuture) isDone() bool {
 	}
 }
 
-var errExecutorShutdown = errors.New("cannot schedule new futures after shutdown")
+var errExecutorShutdown = tools.ErrPoolShutdown
 
 // Single worker FIFO executor whose worker starts on first submit and exits once shut down and drained
 type serialExecutor struct {

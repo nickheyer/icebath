@@ -55,7 +55,7 @@ func dispatchChildEntries(ctx context.Context) {
 	gateway.DispatchSystemdStopMarkEntry(ctx)
 	runChildEntries(ctx, childEntriesAfterStopMark)
 	gateway.DispatchCgroupCleanupEntry()
-	gateway.DispatchKanbanWorkerClientEntry(ctx)
+	runChildEntries(ctx, childEntriesAfterCgroup)
 	tools.DispatchDDGSWorkerEntry()
 	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()

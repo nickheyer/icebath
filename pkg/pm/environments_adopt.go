@@ -137,7 +137,7 @@ func generationDistributions(environment string) (map[string]installedDistributi
 		}
 		name := metadataHeader(text, "Name")
 		if name == nil {
-			return nil, &PyError{Class: "TypeError", Message: "expected string or bytes-like object, got 'NoneType'"}
+			return nil, &PyError{Class: "TypeError", Message: "the metadata of " + path + " has no Name"}
 		}
 		dist := installedDistribution{version: metadataHeader(text, "Version")}
 		if record := distributionText(filepath.Join(path, "RECORD")); record != "" {

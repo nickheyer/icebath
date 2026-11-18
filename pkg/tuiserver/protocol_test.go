@@ -347,11 +347,17 @@ func TestClientCapabilitiesAdvertisesCountingNotShownDeclines(t *testing.T) {
 }
 
 func TestServerRequestTimeoutEmitsOneRequestCancel(t *testing.T) {
+	fixtures := map[string]*pyjson.Object{
+		"secret":           pyjson.ObjectOf("env_var", "DRIVE_TOKEN", "prompt", "Token"),
+		"sudo":             pyjson.ObjectOf("command", "sudo true"),
+		"vault.code":       pyjson.ObjectOf("site", "example.com", "hint", ""),
+		"vault.save_login": pyjson.ObjectOf("origin", "https://example.com", "site", "example.com"),
+	}
 	for _, method := range []string{"secret", "sudo", "vault.code", "vault.save_login"} {
 		t.Run(method, func(t *testing.T) {
 			capture := captureProtocol(t)
 			timeout := 0.0
-			if result, err := tuihost.Send(context.Background(), method, "s1", pyjson.NewObject(), &timeout, nil); result != nil || err != nil {
+			if result, err := tuihost.Send(context.Background(), method, "s1", fixtures[method], &timeout, nil); result != nil || err != nil {
 				t.Fatalf("result %v %v", result, err)
 			}
 			frames := capture.frames(t)

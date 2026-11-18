@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -46,7 +47,7 @@ func WorkerLogRotationConfig(ctx context.Context, kanbanCfg any) (int64, int64, 
 	}
 	cfg, ok := kanbanCfg.(map[string]any)
 	if !ok {
-		return 0, 0, &RuntimeError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(kanbanCfg))}
+		return 0, 0, &RuntimeError{fmt.Sprintf("config kanban section is %s where a mapping was expected", errchain.Kind(kanbanCfg))}
 	}
 	maxBytes := positiveInt(cfg["worker_log_rotate_bytes"], DefaultLogRotateBytes, 1)
 	backupCount := positiveInt(cfg["worker_log_backup_count"], DefaultLogBackupCount, 0)

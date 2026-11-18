@@ -71,7 +71,7 @@ func TestExitCodeReaderParsesLikeTheGatewayWatcher(t *testing.T) {
 		}
 	}
 	os.WriteFile(GatewayExitCodePath(h), []byte("done"), 0o644)
-	if _, err := ReadGatewayExitCode(h); err == nil || err.Error() != "invalid literal for int() with base 10: 'done'" {
+	if _, err := ReadGatewayExitCode(h); err == nil || err.Error() != "recorded gateway exit code done is not a whole number" {
 		t.Fatalf("bad text %v", err)
 	}
 	os.WriteFile(GatewayExitCodePath(h), []byte{0xff}, 0o644)

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -143,7 +144,7 @@ func pyStrOrEmpty(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	raisef("AttributeError", "'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+	raisef("AttributeError", "expected text, got %s", errchain.Kind(v))
 	return ""
 }
 

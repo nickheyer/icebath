@@ -155,40 +155,19 @@ func diffSegmentBody(m msg) (string, bool) {
 
 func hasDetails(m msg) bool { return m.Thinking != "" || len(m.Tools) > 0 || m.ToolTokens != 0 }
 
-var todoStatuses = []string{"pending", "in_progress", "completed", "cancelled"}
-
-// Task list of the planning tool payload, ok false when it is not a list
-func parseTodos(value any) ([]todoItem, bool) {
-	list, isList := value.([]any)
-	if !isList {
-		return nil, false
-	}
-	field := func(row map[string]any, k string) string {
-		v, has := row[k]
-		if !has || v == nil {
-			return ""
-		}
-		return strings.TrimFunc(jsString(v), isJSSpace)
-	}
+// Task list of the planning tool, items without an id or content left out and a parent naming itself dropped
+func parseTodos(items []tuigateway.TodoItem) []todoItem {
 	todos := []todoItem{}
-	for _, item := range list {
-		row, isDict := item.(map[string]any)
-		if !isDict {
-			continue
-		}
-		status, isStr := row["status"].(string)
-		if !isStr || !slices.Contains(todoStatuses, status) {
-			continue
-		}
-		todo := todoItem{Content: field(row, "content"), ID: field(row, "id"), Status: status}
-		if parent := field(row, "parent"); parent != "" && parent != todo.ID {
+	for _, item := range items {
+		todo := todoItem{Content: strings.TrimFunc(item.Content, isJSSpace), ID: strings.TrimFunc(item.ID, isJSSpace), Status: string(item.Status)}
+		if parent := strings.TrimFunc(val(item.Parent), isJSSpace); parent != "" && parent != todo.ID {
 			todo.Parent = parent
 		}
 		if todo.ID != "" && todo.Content != "" {
 			todos = append(todos, todo)
 		}
 	}
-	return todos, true
+	return todos
 }
 
 // Final text with the streamed segments it repeats cut from its head
@@ -450,7 +429,7 @@ func (c *turnController) interruptTurn(deps interruptDeps, keepBusy bool) (tea.C
 			if handle, err = tuigateway.CanonicalSessionInterrupt.Result(value); err == nil {
 				reply.handle = &handle
 			} else {
-				err = fmt.Errorf("%s %w", tr("session.common.invalidResponse", tuigateway.CanonicalSessionInterrupt.Name()), err)
+				err = fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", tuigateway.CanonicalSessionInterrupt.Name())), err)
 			}
 		}
 		reply.err = err
@@ -600,13 +579,11 @@ func (c *turnController) pulseReasoningStreaming() {
 }
 
 // Takes the planning tool list as the task list of the turn
-func (c *turnController) recordTodos(value any) {
-	if c.interrupted {
+func (c *turnController) recordTodos(items []tuigateway.TodoItem) {
+	if c.interrupted || items == nil {
 		return
 	}
-	if todos, ok := parseTodos(value); ok {
-		c.store.turn.Todos = todos
-	}
+	c.store.turn.Todos = parseTodos(items)
 }
 
 // Merges pending tool rows into the last shelf segment, false when they would start a new one
@@ -844,7 +821,7 @@ func (c *turnController) recordReasoningDelta(text string, force bool) {
 }
 
 // Finishes a tool call into trail rows, merged into the last shelf segment when one holds them
-func (c *turnController) recordToolComplete(toolID, fallbackName, summary string, duration *float64, todos any, resultText string, labels []toolLabel) {
+func (c *turnController) recordToolComplete(toolID, fallbackName, summary string, duration *float64, todos []tuigateway.TodoItem, resultText string, labels []toolLabel) {
 	if c.interrupted {
 		return
 	}
@@ -900,6 +877,21 @@ func (c *turnController) completeTool(toolID, fallbackName, summary string, dura
 
 func (c *turnController) publishToolState() {
 	c.store.turn.StreamPendingTools, c.store.turn.Tools, c.store.turn.TurnTrail = c.pendingSegmentTools, c.activeTools, c.turnTools
+}
+
+// Shows the progress a running call reported on its row
+func (c *turnController) recordToolProgress(toolID, text string) {
+	if c.interrupted || text == "" {
+		return
+	}
+	i := slices.IndexFunc(c.activeTools, func(t activeTool) bool { return t.ID == toolID })
+	if i < 0 {
+		return
+	}
+	next := slices.Clone(c.activeTools)
+	next[i].Progress = text
+	c.activeTools = next
+	c.store.turn.Tools = c.activeTools
 }
 
 // Starts a tool call, sealing the streamed text and reasoning before it

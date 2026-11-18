@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -93,7 +94,7 @@ func disposeUnusedAdapter(ctx context.Context, adapter gateway.PlatformAdapter) 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Debug("Adapter dispose raised on unowned adapter "+pyrepr.Repr(adapter.Base().Name()), "error", err)
+		pkgLog().Debug("Adapter dispose raised on unowned adapter "+errchain.Show(adapter.Base().Name()), "error", err)
 	}
 	return nil
 }

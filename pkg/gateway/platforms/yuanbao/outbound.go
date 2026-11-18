@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -33,7 +34,7 @@ func readLocalFile(adapter *YuanbaoAdapter, label, path, defaultName, filename s
 	pkgLog().Info(fmt.Sprintf("[%s] %s: reading %s", adapter.Name(), label, path))
 	fileBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", "", &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
+		return nil, "", "", &pyErr{pypath.OSErrorClass(err), errchain.OSText(err)}
 	}
 	if filename == "" {
 		filename = pypath.Basename(path)
@@ -156,7 +157,7 @@ func (stickerHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any)
 	if name, named := kwargs["sticker_name"].(string); named {
 		sticker := GetStickerByName(name)
 		if sticker == nil {
-			return nil, valueError("Sticker not found: " + pyrepr.StrRepr(name))
+			return nil, valueError("Sticker not found: " + errchain.Show(name))
 		}
 		return BuildStickerMsgBody(sticker)
 	}
@@ -292,7 +293,7 @@ func (h *heartbeatManager) sendHeartbeatOnce(ctx context.Context, chatID string,
 		}
 		ws := adapter.connection.socket()
 		if ws == nil {
-			return attrError(nil, "send")
+			return &pyErr{"AttributeError", "the Yuanbao connection has no open socket"}
 		}
 		return ws.SendBytes(encoded)
 	}()
@@ -632,7 +633,7 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 		if !pyrepr.Truthy(nick) || !pyrepr.Truthy(uid) {
 			continue
 		}
-		nickText, err := strMethod(nick, "lower")
+		nickText, err := strMethod(nick, "a member nickname")
 		if err != nil {
 			return nil, err
 		}

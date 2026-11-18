@@ -72,20 +72,14 @@ func exactInt(v any) (int64, bool) {
 	return 0, false
 }
 
-// Python KeyError text of a missing mapping key
-func pyKeyErrorText(key string) string { return pyrepr.Repr(key) }
+// Text of a missing mapping key
+func pyKeyErrorText(key string) string { return "missing " + key }
 
 // Value of key in a JSON object, the KeyError or TypeError text when it is absent or not subscriptable
 func pyDictItem(holder any, key string) (any, error) {
 	obj, ok := holder.(*pyjson.Object)
 	if !ok {
-		if _, isList := holder.([]any); isList {
-			return nil, fmt.Errorf("list indices must be integers or slices, not str")
-		}
-		if _, isText := holder.(string); isText {
-			return nil, fmt.Errorf("string indices must be integers, not 'str'")
-		}
-		return nil, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(holder))
+		return nil, fmt.Errorf("record is %s where a mapping holding %s was expected", errchain.Kind(holder), key)
 	}
 	value, present := obj.Get(key)
 	if !present {
@@ -127,5 +121,5 @@ func pyIterable(value any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("record value is %s where a list was expected", errchain.Kind(value))
 }

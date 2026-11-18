@@ -12,11 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Copies a tree like shutil.copytree with copy2, links copied as links or followed, failures gathered
@@ -47,7 +45,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 		from, to := filepath.Join(src, name), filepath.Join(dst, name)
 		st, err := os.Lstat(from)
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(pypath.OSErrorText(err))))
+			failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", from, to, errchain.OSText(err)))
 			continue
 		}
 		if st.Mode()&fs.ModeSymlink != 0 && symlinks {
@@ -59,7 +57,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 				err = pyshutil.CopyLinkStat(from, to)
 			}
 			if err != nil {
-				failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(pypath.OSErrorText(err))))
+				failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", from, to, errchain.OSText(err)))
 			}
 			continue
 		}
@@ -69,14 +67,14 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 			err = copy2(from, to)
 		}
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(from), pyrepr.StrRepr(to), pyrepr.StrRepr(err.Error())))
+			failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", from, to, err.Error()))
 		}
 	}
 	if err := copyStat(src, dst); err != nil {
-		failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(src), pyrepr.StrRepr(dst), pyrepr.StrRepr(pypath.OSErrorText(err))))
+		failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", src, dst, errchain.OSText(err)))
 	}
 	if len(failures) > 0 {
-		return &PyError{Class: "Error", Message: "[" + strings.Join(failures, ", ") + "]"}
+		return &PyError{Class: "Error", Message: strings.Join(failures, "; ")}
 	}
 	return nil
 }
@@ -193,11 +191,11 @@ func InstallNodeSidecar(ctx context.Context, pluginDir string, explicit bool) st
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err = cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("npm %s failed to run: Command '%s' timed out after 900 seconds", installCmd, pyrepr.Repr(argv))
+		return fmt.Sprintf("npm %s failed to run: %s timed out after 900 seconds", installCmd, strings.Join(argv, " "))
 	}
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {
-		return fmt.Sprintf("npm %s failed to run: %s", installCmd, pypath.OSErrorText(err))
+		return fmt.Sprintf("npm %s failed to run: %s", installCmd, errchain.OSText(err))
 	}
 	if exitErr == nil {
 		return ""

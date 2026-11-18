@@ -6,12 +6,10 @@ import (
 	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // False when the platform config turns gateway restart notifications off
@@ -41,79 +39,6 @@ func (r *GatewayRunner) shutdownActionText(ctx context.Context) string {
 		return i18n.T(ctx, "gateway.shutdown.action_restarting", "", nil)
 	}
 	return i18n.T(ctx, "gateway.shutdown.action_shutting_down", "", nil)
-}
-
-// Dedupe key of one cron job notice target
-type cronNoticeKey struct {
-	jobID string
-	key   noticeTargetKey
-}
-
-// Tells the owner of each just interrupted cron job that its run died, returning the notices sent
-func (r *GatewayRunner) notifyInterruptedCronJobs(ctx context.Context, jobIDs []string) int {
-	if len(jobIDs) == 0 {
-		return 0
-	}
-	action := r.shutdownActionText(ctx)
-	notified := map[cronNoticeKey]bool{}
-	for _, jobID := range jobIDs {
-		job, err := cron.GetJob(ctx, home.Dir(ctx), jobID)
-		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Cron interrupt targets unresolved for %s: %s", jobID, pyrepr.ExceptionMessage(err)))
-			continue
-		}
-		if job == nil {
-			continue
-		}
-		targets := cron.ResolveDeliveryTargets(ctx, job, true)
-		jobName := job.Name
-		if jobName == "" {
-			jobName = jobID
-		}
-		msg := i18n.T(ctx, "gateway.shutdown.cron_interrupted", "", map[string]any{"job": jobName, "action": action})
-		for _, target := range targets {
-			platform, err := gateway.ParsePlatform(ctx, pystr.Lower(target.Platform))
-			if err != nil {
-				continue
-			}
-			adapter, ok := r.adapters.Get(platform)
-			if !ok || adapter == nil || !r.restartNotificationAllowed(platform) {
-				continue
-			}
-			chatID := target.ChatID
-			var threadID *string
-			if target.ThreadID != "" {
-				thread := target.ThreadID
-				threadID = &thread
-			}
-			dedupKey := cronNoticeKey{jobID, noticeTargetKeyOf(string(platform), chatID, optAny(threadID))}
-			if notified[dedupKey] {
-				continue
-			}
-			func() {
-				defer func() {
-					if rec := recover(); rec != nil {
-						pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %v", platform, chatID, rec))
-					}
-				}()
-				metadata := r.threadMetadataForTarget(platform, chatID, threadID, "", nil, adapter)
-				_, err := config.PresentNotification(ctx, func(ctx context.Context) error {
-					if sendNoticeLogged(ctx, adapter, chatID, msg, string(platform), "Cron interrupt notice to %s:%s failed: %s",
-						"Cron interrupt notice to %s:%s raised: %s", metadata) {
-						notified[dedupKey] = true
-					}
-					return nil
-				}, string(platform), false, nil)
-				if err != nil {
-					pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %s", platform, chatID, pyrepr.ExceptionMessage(err)))
-				}
-			}()
-		}
-	}
-	if len(notified) > 0 {
-		pkgLog().Info(fmt.Sprintf("Shutdown: delivered %d interrupted-cron-job notice(s)", len(notified)))
-	}
-	return len(notified)
 }
 
 // Where a shutdown notice for a session goes, the persisted origin over the cached source over the parsed key

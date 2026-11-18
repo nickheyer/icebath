@@ -370,7 +370,7 @@ func untarDebPayload(name string, payload []byte, staged string) error {
 	if err := ExtractTar(bytes.NewReader(payload), staged); err != nil {
 		var filterErr *TarFilterError
 		if errors.As(err, &filterErr) {
-			return NewInstallError(name, fmt.Sprintf("unsafe member %s: %s", tarRepr(filterErr.Member), filterErr.Error()), "")
+			return NewInstallError(name, fmt.Sprintf("unsafe member %s: %s", strconv.Quote(filterErr.Member), filterErr.Error()), "")
 		}
 		return err
 	}

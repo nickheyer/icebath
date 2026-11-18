@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -102,7 +103,7 @@ func resolveProfileFromCfg(ctx context.Context, cfg any, key string, fallback *s
 		}
 	}
 	if !isDict(kanbanCfg) {
-		return "", &TypeError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(kanbanCfg))}
+		return "", &TypeError{fmt.Sprintf("config kanban section is %s where a mapping was expected", errchain.Kind(kanbanCfg))}
 	}
 	raw, _ := dictGet(kanbanCfg, key)
 	if !pyrepr.Truthy(raw) {
@@ -110,7 +111,7 @@ func resolveProfileFromCfg(ctx context.Context, cfg any, key string, fallback *s
 	}
 	text, ok := raw.(string)
 	if !ok {
-		return "", &TypeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(raw))}
+		return "", &TypeError{fmt.Sprintf("config kanban.%s is %s where text was expected", key, errchain.Kind(raw))}
 	}
 	fb := ""
 	if fallback != nil {
@@ -146,7 +147,7 @@ func buildRoster(ctx context.Context) ([]rosterEntry, map[string]bool) {
 		desc := pystr.Strip(p.Description)
 		entry := rosterEntry{name: p.Name, description: desc, hasDescription: desc != ""}
 		if desc == "" {
-			entry.description = "(no description; profile named " + pyrepr.Repr(p.Name) + ")"
+			entry.description = "(no description; profile named " + errchain.Show(p.Name) + ")"
 		}
 		roster = append(roster, entry)
 		valid[p.Name] = true
@@ -259,7 +260,7 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 		chosen := normalizeAssigneeChoice(assignee, routing.defaultAssignee, routing.validNames)
 		if s, isStr := assignee.(string); isStr && pystr.Strip(s) != "" && !routing.validNames[pystr.Strip(s)] {
 			pkgLog().Info(fmt.Sprintf("decompose: task %s child %d picked unknown assignee %s — routing to default_assignee %s",
-				taskID, idx, pyrepr.Repr(s), pyrepr.Repr(routing.defaultAssignee)))
+				taskID, idx, errchain.Show(s), errchain.Show(routing.defaultAssignee)))
 		}
 		parentsValue := obj.GetOr("parents", nil)
 		if !pyrepr.Truthy(parentsValue) {

@@ -174,8 +174,8 @@ func TestCarriedExtraThatFailsForTheMomentIsRetriedByTheNextUpdate(t *testing.T)
 	}
 	err := syncVenv(ctx, SyncVenvOptions{Extras: []string{"all", "fal", "matrix"}, Explicit: true, Carried: []string{"fal", "matrix"}})
 	var refused *InstallError
-	if !errors.As(err, &refused) || !strings.Contains(refused.Error(), "['matrix']") || !strings.Contains(refused.Error(), "could not be prepared") ||
-		strings.Index(refused.Error(), "['matrix']") > strings.Index(refused.Error(), "could not be prepared") {
+	if !errors.As(err, &refused) || !strings.Contains(refused.Error(), "extras matrix icebath") || !strings.Contains(refused.Error(), "could not be prepared") ||
+		strings.Index(refused.Error(), "extras matrix icebath") > strings.Index(refused.Error(), "could not be prepared") {
 		t.Fatalf("refusal %v", err)
 	}
 	if !strings.Contains(refused.Remedy, "icebath pm install --without matrix") {

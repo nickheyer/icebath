@@ -141,7 +141,7 @@ type helperTimeoutError struct {
 }
 
 func (e *helperTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %d seconds", pyrepr.Repr(e.Cmd), e.Timeout)
+	return fmt.Sprintf("%s timed out after %d seconds", strings.Join(e.Cmd, " "), e.Timeout)
 }
 
 // Runs a helper with captured replaced UTF-8 output, no stdin and a timeout, the seam tests replace

@@ -274,7 +274,7 @@ func TestOpenAILoadImageBytesBlocksCredentialStoreAndAllowsImages(t *testing.T) 
 	if err != nil || string(data) != "abc" || name != "image.webp" {
 		t.Fatal(name, err)
 	}
-	if _, _, err := loadOpenAIImageBytes(context.Background(), env, filepath.Join(h, "missing.png")); err == nil || !strings.HasPrefix(err.Error(), "[Errno 2] No such file or directory") {
+	if _, _, err := loadOpenAIImageBytes(context.Background(), env, filepath.Join(h, "missing.png")); err == nil || !strings.HasPrefix(err.Error(), "no such file or directory") {
 		t.Fatal(err)
 	}
 }
@@ -464,7 +464,7 @@ func TestOpenAIClientErrorsRetriesAndMultipart(t *testing.T) {
 	f.reply = func(*http.Request) (int, string) { return 400, `{"error": {"message": "bad size", "code": null}}` }
 	_, err = c.ImagesGenerate(context.Background(), map[string]any{"prompt": "p", "size": "1x1"})
 	oe, ok := err.(*openAIError)
-	if !ok || oe.Class != "BadRequestError" || err.Error() != "Error code: 400 - {'error': {'message': 'bad size', 'code': None}}" || slept != 0 {
+	if !ok || oe.Class != "BadRequestError" || err.Error() != `Error code: 400 - {"error":{"message":"bad size","code":null}}` || slept != 0 {
 		t.Fatalf("%v %d", err, slept)
 	}
 	calls := 0

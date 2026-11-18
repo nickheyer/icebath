@@ -57,7 +57,7 @@ func runWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object
 		return result, err
 	}
 	if kanbanAttemptTurns == nil {
-		refusal, _ := linktier.Refusal("a kanban attempt", linktier.Extras)
+		refusal := linktier.Missing("a kanban attempt", linktier.Extras)
 		return nil, errors.New(refusal)
 	}
 	return kanbanAttemptTurns(ctx, a, frame, history, kctx)

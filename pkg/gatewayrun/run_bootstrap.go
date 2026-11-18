@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -177,7 +178,7 @@ func launchHomeMayMultiplex(ctx context.Context, cfg *gateway.GatewayConfig) (bo
 		if explicit == nil || !*explicit {
 			decision := gateway.MultiplexDecision{Enabled: false, Source: "guard", Reason: fmt.Sprintf(
 				"profile %s launched the gateway, and only the default profile runs the multiplexer "+
-					"(start it with `icebath gateway run` from the default profile to serve every profile)", pyrepr.Repr(name))}
+					"(start it with `icebath gateway run` from the default profile to serve every profile)", errchain.Show(name))}
 			cfg.MultiplexProfiles = boolRef(false)
 			gateway.LogMultiplexDecision(ctx, decision)
 			return true, nil
@@ -185,7 +186,7 @@ func launchHomeMayMultiplex(ctx context.Context, cfg *gateway.GatewayConfig) (bo
 	}
 	pkgLog().Error(fmt.Sprintf("gateway.multiplex_profiles is set on profile %s, but only the default profile can run the "+
 		"multiplexer. Unset the flag in this profile's config.yaml, or start the gateway from the "+
-		"default profile (`icebath gateway run`), which serves this profile too.", pyrepr.Repr(name)))
+		"default profile (`icebath gateway run`), which serves this profile too.", errchain.Show(name)))
 	writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{
 		"gateway_state": "startup_failed", "exit_reason": "multiplex_requires_default_profile"}})
 	return false, &gateway.SystemExitError{Code: gateway.GatewayFatalConfigExitCode}

@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 
@@ -241,14 +240,14 @@ type CalledProcessError struct {
 }
 
 func (e *CalledProcessError) Error() string {
-	command := pyrepr.Repr(e.Argv)
+	command := strings.Join(e.Argv, " ")
 	if e.Code < 0 {
 		if name := signalName(-e.Code); name != "" {
-			return fmt.Sprintf("Command '%s' died with <Signals.%s: %d>.", command, name, -e.Code)
+			return fmt.Sprintf("%s was killed by %s (signal %d)", command, name, -e.Code)
 		}
-		return fmt.Sprintf("Command '%s' died with unknown signal %d.", command, -e.Code)
+		return fmt.Sprintf("%s was killed by unknown signal %d", command, -e.Code)
 	}
-	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", command, e.Code)
+	return fmt.Sprintf("%s exited with status %d", command, e.Code)
 }
 
 // Exit status as Python reports it, the negated signal number for a child a signal killed

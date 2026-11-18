@@ -136,8 +136,8 @@ func TestVenvInstallsCheckoutReadsDirectURL(t *testing.T) {
 		{name: "empty file", directURL: ""},
 		{name: "not a file url", directURL: `{"url": "https://example.com/x"}`},
 		{name: "uppercase scheme never matches", directURL: `{"url": "FILE://` + filepath.ToSlash(checkout) + `"}`},
-		{name: "array raises", directURL: `[]`, wantErr: "'list' object has no attribute 'get'"},
-		{name: "null url raises", directURL: `{"url": null}`, wantErr: "'NoneType' object has no attribute 'startswith'"},
+		{name: "array raises", directURL: `[]`, wantErr: "direct_url.json must hold a mapping, got a list"},
+		{name: "null url raises", directURL: `{"url": null}`, wantErr: "the url in direct_url.json must be text, got nothing"},
 	}
 	if runtime.GOOS != "windows" {
 		cases = append(cases, struct {
@@ -146,7 +146,7 @@ func TestVenvInstallsCheckoutReadsDirectURL(t *testing.T) {
 		}{name: "nul raises", directURL: `{"url": "file:///a%00b"}`, wantErr: "lstat: embedded null character in path"}, struct {
 			name, directURL, wantErr string
 			want                     bool
-		}{name: "remote host raises", directURL: `{"url": "file:////server/x"}`, wantErr: "<urlopen error file:// scheme is supported only on localhost>"})
+		}{name: "remote host raises", directURL: `{"url": "file:////server/x"}`, wantErr: "cannot use file:////server/x as a local path: file:// scheme is supported only on localhost"})
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

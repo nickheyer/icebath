@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 	"gopkg.in/yaml.v3"
@@ -51,7 +52,7 @@ func readYAMLStream(stream any) ([]byte, error) {
 	case io.Reader:
 		return io.ReadAll(s)
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'read'", PyTypeName(stream))
+	return nil, fmt.Errorf("YAML source is %s where text, bytes or a reader was expected", errchain.Kind(stream))
 }
 
 // Value of one YAML document given as a Python str, bytes or a reader yielding bytes, as builds it

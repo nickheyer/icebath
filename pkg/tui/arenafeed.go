@@ -110,8 +110,9 @@ func (f *arenaFeed) observe(ev gatewayEventMsg) {
 	}
 	p := ev.Payload
 	switch ev.Type {
-	case "tool.start":
-		f.turnTools[stringOr(p["name"], "tool")]++
+	case tuigateway.ToolStartEvent.Name():
+		start, _ := tuigateway.ToolStartEvent.Payload(p)
+		f.turnTools[firstText(start.Name, "tool")]++
 	case "subagent.tool":
 		id := subagentKey(p)
 		log := f.agents[id]

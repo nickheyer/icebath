@@ -272,7 +272,7 @@ func updateExitCode(paths updatePaths) (*big.Int, error) {
 	}
 	code, ok := pyint.Parse(text)
 	if !ok {
-		return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(text))
+		return nil, fmt.Errorf("recorded update exit code %s is not a whole number", text)
 	}
 	return code, nil
 }

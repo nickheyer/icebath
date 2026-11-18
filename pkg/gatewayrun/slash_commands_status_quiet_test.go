@@ -63,7 +63,7 @@ func TestTaskCardCompactCollapsesEveryWhitespaceRunAndCuts(t *testing.T) {
 
 func TestLeaseTokenAndFieldViewDebugText(t *testing.T) {
 	token := &TurnLeaseToken{sessionID: "s1", ownerKey: "agent:main:local:dm:1", generation: 3}
-	if got, want := token.String(), "TurnLeaseToken(session_id='s1', owner_key='agent:main:local:dm:1', generation=3, released=False)"; got != want {
+	if got, want := token.String(), "turn lease of session s1, owner agent:main:local:dm:1, generation 3, released false"; got != want {
 		t.Fatalf("got %q", got)
 	}
 	r := allocGatewayRunner()

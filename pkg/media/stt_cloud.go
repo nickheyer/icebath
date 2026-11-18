@@ -26,7 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -81,7 +80,7 @@ type sttOpenError struct {
 	err  error
 }
 
-func (e *sttOpenError) Error() string { return pypath.OSErrorText(e.err) }
+func (e *sttOpenError) Error() string { return errchain.OSText(e.err) }
 func (e *sttOpenError) Unwrap() error { return e.err }
 
 // Shared mapping of a REST or SDK provider failure to the envelope

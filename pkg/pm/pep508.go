@@ -7,7 +7,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -107,7 +106,7 @@ var (
 // Decimal value of a digit run as Python int prints it, refusing runs past the conversion limit
 func pyDecimal(digits string) (string, error) {
 	if len(digits) > 4300 {
-		return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Exceeds the limit (4300 digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", len(digits))}
+		return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("a number has %d digits, more than the 4300 allowed", len(digits))}
 	}
 	trimmed := strings.TrimLeft(digits, "0")
 	if trimmed == "" {
@@ -273,7 +272,7 @@ func (s pySpecifier) String() string { return s.op + s.version }
 // Parses one clause like packaging Specifier
 func parseSpecifier(spec string) (pySpecifier, error) {
 	if !specifierFull.MatchString(spec) {
-		return pySpecifier{}, &InvalidRequirementError{Message: "Invalid specifier: " + pyrepr.StrRepr(spec)}
+		return pySpecifier{}, &InvalidRequirementError{Message: "invalid specifier: " + spec}
 	}
 	spec = pystr.Strip(spec)
 	switch {

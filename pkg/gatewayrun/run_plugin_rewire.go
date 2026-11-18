@@ -66,7 +66,7 @@ func (r *GatewayRunner) rewirePluginHandlers(ctx context.Context, profileName, p
 			}()
 			rewirer, ok := adapter.(pluginRewirer)
 			if !ok {
-				panic(fmt.Sprintf("'%s' object has no attribute 'rewire_plugin_handlers'", pyrepr.TypeName(adapter)))
+				panic("the platform adapter cannot rewire plugin handlers")
 			}
 			rewirer.RewirePluginHandlers(scoped)
 			count++

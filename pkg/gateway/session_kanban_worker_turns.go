@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gateway
 
 import (
@@ -20,20 +22,6 @@ var kanbanTurnsDoneOnce sync.Once
 // KanbanTurnAuthor is the dispatcher identity a card attempt's prompts carry so memory never files them as the operator's
 var KanbanTurnAuthor = map[string]any{"id": "kanban:dispatcher", "name": "Kanban dispatcher", "is_bot": true}
 
-// Decoded kanban context of a bootstrap frame's policy, nil for a chat turn
-func WorkerKanbanContext(frame *pyjson.Object) (any, error) {
-	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
-	raw := policy.GetOr("kanban_json", nil)
-	if !pyrepr.Truthy(raw) {
-		raw = "null"
-	}
-	text, isText := raw.(string)
-	if !isText {
-		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(raw) + ", expected JSON text"}
-	}
-	return pyjson.Loads(text)
-}
-
 // Item of a kanban context, TypeError for a context that is no dict and KeyError for a missing key
 func KanbanContextItem(kctx any, key string) (any, error) {
 	obj, isDict := kctx.(*pyjson.Object)
@@ -44,13 +32,13 @@ func KanbanContextItem(kctx any, key string) (any, error) {
 }
 
 // Books the one shot credential exit of a worker that died before any turn ran, nothing for a chat turn
-func RecordStartFailure(ctx context.Context, frame *pyjson.Object, cause error) error {
+func recordKanbanStartFailure(ctx context.Context, frame *pyjson.Object, cause error) error {
 	kctx, err := WorkerKanbanContext(frame)
 	if err != nil || kctx == nil {
 		return err
 	}
 	rateLimited, terminal, _ := kanban.CredentialFailureFlags(cause)
-	code := kanban.TurnExitCode(nil, kanban.TurnExitOptions{KanbanWorker: true, CredentialsRateLimited: rateLimited, CredentialsTerminal: terminal})
+	code := tools.TurnExitCode(nil, tools.TurnExitOptions{KanbanWorker: true, CredentialsRateLimited: rateLimited, CredentialsTerminal: terminal})
 	return RecordWorkerResult(ctx, kctx, code, "")
 }
 
@@ -173,40 +161,4 @@ func BoundClaimIsLive(ctx context.Context, kctx any) (bool, error) {
 		return false, nil
 	}
 	return matches, err
-}
-
-// Runs body in the session workspace with its session vars bound, the session id as task id when scoped
-func WorkerWorkspace(ctx context.Context, env *tools.Env, frame *pyjson.Object, body func(taskID string) error) error {
-	rawScope := frame.GetOr("scope", nil)
-	scope, isDict := rawScope.(*pyjson.Object)
-	if pyrepr.Truthy(rawScope) && !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "the worker workspace scope is " + errchain.Kind(rawScope) + ", expected a mapping"}
-	}
-	sessionID := ""
-	if scope != nil && pyrepr.Truthy(scope.GetOr("session_id", nil)) {
-		sessionID = pyrepr.Str(scope.GetOr("session_id", nil))
-	}
-	if sessionID == "" {
-		return body("")
-	}
-	policy, err := RestorePolicy(frame.GetOr("policy", nil))
-	if err != nil {
-		return err
-	}
-	route := sessionID
-	if raw := frame.GetOr("route", nil); pyrepr.Truthy(raw) {
-		route = pyrepr.Str(raw)
-	}
-	homeText, _ := frame.GetOr("home", nil).(string)
-	profile := servedProfileName(homeText)
-	bound := ""
-	if keyed, ok := state.ProfileFromSessionKey(route); ok && keyed == profile {
-		bound = profile
-	}
-	tools.SetSessionVars(env, tools.SessionVars{SessionKey: route, SessionID: sessionID, Profile: bound})
-	defer tools.ClearSessionVars(env)
-	if err := BindTurnWorkspace(env, policy, sessionID); err != nil {
-		return err
-	}
-	return body(sessionID)
 }

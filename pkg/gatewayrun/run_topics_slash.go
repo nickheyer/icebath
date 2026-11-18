@@ -241,7 +241,7 @@ func (r *GatewayRunner) disableTelegramTopicModeForChat(ctx context.Context, sou
 func (r *GatewayRunner) telegramTopicRootStatusMessage(ctx context.Context, source *gateway.SessionSource) string {
 	lines := []string{i18n.T(ctx, "gateway.topic.status_enabled", "", nil), "", i18n.T(ctx, "gateway.topic.status_how_to", "", nil), ""}
 	var sessions []*pyjson.Object
-	err := errors.New("'NoneType' object has no attribute 'list_unlinked_telegram_sessions_for_user'")
+	err := errors.New("no session database to list unlinked Telegram sessions from")
 	if asyncDB := r.sessionDB(ctx); asyncDB != nil {
 		sessions, err = state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*pyjson.Object, error) {
 			return d.ListUnlinkedTelegramSessionsForUser(ctx, strOrNone(source.UserID), telegramTopicProfileName(source), 10)

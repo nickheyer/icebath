@@ -340,6 +340,11 @@ func checkApprovalRequiredWrite(ctx context.Context, env *Env, paths []string, t
 	return blocked("was denied."), nil
 }
 
+// Container whose filesystem outlives the session, its home mirrored under /root/.icebath
+type persistentContainer interface {
+	persistentFilesystem() bool
+}
+
 // Container side icebath mirror prefix for a persistent Docker task, empty otherwise
 func containerMirrorPrefixForTask(env *Env, taskID string) string {
 	key, err := resolveContainerTaskID(env, taskID)
@@ -353,7 +358,7 @@ func containerMirrorPrefixForTask(env *Env, taskID string) string {
 	}
 	termPool.Unlock()
 	if live != nil {
-		if d, ok := live.(*dockerEnv); ok && d.persistent {
+		if d, ok := live.(persistentContainer); ok && d.persistentFilesystem() {
 			return "/root/.icebath"
 		}
 		return ""

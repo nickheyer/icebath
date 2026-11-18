@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -19,7 +19,7 @@ func NativeManifestFileFS(tree fs.FS, pluginDir string) (string, error) {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", p, pypath.OSErrorText(err))}
+			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", p, errchain.OSText(err))}
 		}
 		return p, nil
 	}
@@ -37,7 +37,7 @@ func ReadNativeManifestFS(tree fs.FS, name string) (map[string]any, error) {
 	}
 	if err != nil {
 		var pyErr *PyError
-		message := pypath.OSErrorText(err)
+		message := errchain.OSText(err)
 		if errors.As(err, &pyErr) {
 			message = pyErr.Message
 		}

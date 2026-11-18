@@ -8,7 +8,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/unicode/norm"
 )
@@ -94,10 +93,10 @@ func buildStickerMap() *pyjson.Object {
 	return m
 }
 
-// Missing key error a sticker dict lookup raises, rendered as str of the Python KeyError with quotes
+// Missing key error a sticker dict lookup raises, naming the key
 type KeyError struct{ Key string }
 
-func (e *KeyError) Error() string { return pyrepr.StrRepr(e.Key) }
+func (e *KeyError) Error() string { return "the sticker has no " + e.Key }
 
 func stickers() []*pyjson.Object {
 	out := make([]*pyjson.Object, 0, StickerMap.Len())

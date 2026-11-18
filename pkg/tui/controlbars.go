@@ -77,22 +77,25 @@ func goalLineOf(goal *tuigateway.GoalSnapshot) *goalLine {
 	return &goalLine{Detail: turns, Glyph: "⊙", Label: "goal", Title: goal.Title}
 }
 
+// Shortest decimal text of a duration count
+func countText(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
+
 // Time left rounded up, whole minutes with hours until the last minute, then seconds
 func countdown(seconds float64) string {
 	left := math.Max(0, math.Ceil(seconds))
 	if left < 60 {
-		return jsString(left) + "s"
+		return countText(left) + "s"
 	}
 	minutes := math.Ceil(left / 60)
 	hours := math.Floor(minutes / 60)
 	if hours != 0 && !math.IsNaN(hours) {
-		rem := jsString(math.Mod(minutes, 60))
+		rem := countText(math.Mod(minutes, 60))
 		if len(rem) < 2 {
 			rem = strings.Repeat("0", 2-len(rem)) + rem
 		}
-		return jsString(hours) + "h" + rem + "m"
+		return countText(hours) + "h" + rem + "m"
 	}
-	return jsString(minutes) + "m"
+	return countText(minutes) + "m"
 }
 
 // Cadence of a loop, self-paced or every interval in hours, minutes or seconds
@@ -104,11 +107,11 @@ func cadence(loop *tuigateway.LoopSnapshot) string {
 	var every string
 	switch {
 	case math.Mod(s, 3600) == 0:
-		every = jsString(s/3600) + "h"
+		every = countText(s/3600) + "h"
 	case math.Mod(s, 60) == 0:
-		every = jsString(s/60) + "m"
+		every = countText(s/60) + "m"
 	default:
-		every = jsString(s) + "s"
+		every = countText(s) + "s"
 	}
 	return "every " + every
 }

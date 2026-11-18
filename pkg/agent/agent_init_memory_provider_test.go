@@ -63,7 +63,7 @@ func TestMemoryProviderUnavailableReasonIsAppended(t *testing.T) {
 	hint := "Install the embedded runtime with: uv pip install hindsight-all."
 	var said []string
 	warnMemoryProviderUnavailable(ctx, "hindsight", hint, func(s string) { said = append(said, s) })
-	if w := unavailableWarnings(logs); len(w) != 1 || len(said) != 1 || !strings.HasSuffix(said[0], " "+hint) || !strings.Contains(said[0], "'hindsight'") {
+	if w := unavailableWarnings(logs); len(w) != 1 || len(said) != 1 || !strings.HasSuffix(said[0], " "+hint) || !strings.Contains(said[0], "Memory provider hindsight is selected") {
 		t.Fatalf("warnings %q said %q", w, said)
 	}
 }

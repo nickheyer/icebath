@@ -263,7 +263,7 @@ func TestManifestContractReason(t *testing.T) {
 			t.Fatalf("case %d got %q err %v", i, got, err)
 		}
 	}
-	if _, err := manifestContractReason(jsonObject(`{"binary_version": "1.0.0", "mcp_invocation": {"args": ["mcp"]}, "subcommands": 5}`)); err == nil || err.Error() != "'int' object is not iterable" {
+	if _, err := manifestContractReason(jsonObject(`{"binary_version": "1.0.0", "mcp_invocation": {"args": ["mcp"]}, "subcommands": 5}`)); err == nil || err.Error() != "expected a list, got a number" {
 		t.Fatalf("non iterable subcommands must raise, got %v", err)
 	}
 	cuFakeRun(t, func([]string) string { return full }, 0)

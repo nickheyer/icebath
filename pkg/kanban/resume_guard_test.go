@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 type guardDB struct {
@@ -110,7 +111,7 @@ func TestBranchChildOfKanbanWorkerIsNotOwned(t *testing.T) {
 
 func TestGuardRefusesKanbanSessionWithReason(t *testing.T) {
 	db := newGuardDB(t, guardDB{source: "kanban", sessionID: "worker-1"})
-	refusal := KanbanResumeRefusal(context.Background(), db, "worker-1")
+	refusal := tools.KanbanResumeRefusal(context.Background(), db, "worker-1")
 	if refusal == "" || !strings.Contains(refusal, "worker-1") || !strings.Contains(refusal, "Kanban") {
 		t.Fatalf("refusal %q", refusal)
 	}
@@ -118,7 +119,7 @@ func TestGuardRefusesKanbanSessionWithReason(t *testing.T) {
 
 func TestGuardAllowsOrdinarySession(t *testing.T) {
 	db := newGuardDB(t, guardDB{source: "cli", sessionID: "chat-1"})
-	if refusal := KanbanResumeRefusal(context.Background(), db, "chat-1"); refusal != "" {
+	if refusal := tools.KanbanResumeRefusal(context.Background(), db, "chat-1"); refusal != "" {
 		t.Fatalf("ordinary session refused %q", refusal)
 	}
 }
@@ -126,7 +127,7 @@ func TestGuardAllowsOrdinarySession(t *testing.T) {
 func TestGuardExemptsDispatcherOwnedRun(t *testing.T) {
 	db := newGuardDB(t, guardDB{source: "kanban", sessionID: "worker-1"})
 	t.Setenv("ICEBATH_KANBAN_TASK", "task-42")
-	if refusal := KanbanResumeRefusal(context.Background(), db, "worker-1"); refusal != "" {
+	if refusal := tools.KanbanResumeRefusal(context.Background(), db, "worker-1"); refusal != "" {
 		t.Fatalf("dispatcher owned run refused %q", refusal)
 	}
 }
@@ -139,7 +140,7 @@ func (failingOwnershipProbe) IsKanbanOwnedSession(context.Context, string) (bool
 
 func TestGuardFailsOpenOnProbeError(t *testing.T) {
 	clearKanbanEnv(t)
-	if refusal := KanbanResumeRefusal(context.Background(), failingOwnershipProbe{}, "chat-1"); refusal != "" {
+	if refusal := tools.KanbanResumeRefusal(context.Background(), failingOwnershipProbe{}, "chat-1"); refusal != "" {
 		t.Fatalf("probe error refused %q", refusal)
 	}
 }
@@ -148,7 +149,7 @@ func TestGuardLeavesAStoreWithoutTheProbeUnclassified(t *testing.T) {
 	clearKanbanEnv(t)
 	var missing *state.SessionDB
 	for _, db := range []any{nil, missing, struct{}{}} {
-		if refusal := KanbanResumeRefusal(context.Background(), db, "chat-1"); refusal != "" {
+		if refusal := tools.KanbanResumeRefusal(context.Background(), db, "chat-1"); refusal != "" {
 			t.Fatalf("store %T refused %q", db, refusal)
 		}
 	}

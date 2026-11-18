@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -58,7 +59,8 @@ func handleAttach(k *kanbanCall) (string, error) {
 	}
 	data, err := pybase64.B64DecodeValidate(pyrepr.Str(content))
 	if err != nil {
-		return "", reject(fmt.Sprintf("content_base64 is not valid base64: %s", err.Error()))
+		pkgLog().Debug("kanban_attach content refused: " + errchain.Text(err))
+		return "", reject("content_base64 is not valid base64")
 	}
 	return storeAttachment(k, tid, filename, data, k.get("content_type"))
 }
@@ -72,8 +74,11 @@ func downloadURLWithCap(ctx context.Context, env *tools.Env, rawURL string, maxB
 			return nil, nil, &ValueError{err.Error()}
 		}
 		scheme := pystr.Lower(parsed.Scheme)
+		if scheme == "" {
+			return nil, nil, &ValueError{"the URL has no scheme; only http/https are allowed"}
+		}
 		if scheme != "http" && scheme != "https" {
-			return nil, nil, &ValueError{fmt.Sprintf("unsupported URL scheme %s; only http/https are allowed", pyrepr.StrRepr(scheme))}
+			return nil, nil, &ValueError{fmt.Sprintf("unsupported URL scheme %s; only http/https are allowed", scheme)}
 		}
 		if !tools.IsSafeURL(env, currentURL) {
 			return nil, nil, &ValueError{fmt.Sprintf("URL blocked by SSRF protection (private/internal address): %s", currentURL)}

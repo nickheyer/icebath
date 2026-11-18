@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -119,13 +120,22 @@ func cfgRawWord(value any) string {
 	return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
 }
 
-// config.set answer naming the key, its value and any extra fields
-func cfgKV(rid any, key string, value any, extra ...any) map[string]any {
-	result := map[string]any{"key": key, "value": value}
-	for i := 0; i+1 < len(extra); i += 2 {
-		result[extra[i].(string)] = extra[i+1]
+// config.set answer of a typed result
+func setAnswer(rid any, result tuigateway.ConfigSetResult) map[string]any {
+	return ok(rid, tuigateway.Plain(result))
+}
+
+// config.set answer naming the key and the word it took
+func cfgKV(rid any, key, word string) map[string]any {
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(word)})
+}
+
+// Config value of a fitted config.set value, a flag or text
+func configValueOf(v any) *tuigateway.ConfigValue {
+	if on, isFlag := v.(bool); isFlag {
+		return tuigateway.FlagValue(on)
 	}
-	return ok(rid, result)
+	return tuigateway.TextValue(strOr(v))
 }
 
 // Waits for an in progress agent build, its error envelope or 5032 when no agent came of it
@@ -140,9 +150,9 @@ func cfgsetAwaitAgent(ctx context.Context, session *tuihost.Session, rid any) ma
 }
 
 // Model switch envelope whose confirm flag follows the confirm message
-func cfgsetModelOK(rid any, key string, value any, warning, confirmMessage, scope string, extra ...any) map[string]any {
-	fields := append([]any{"warning", warning, "confirm_required", confirmMessage != "", "confirm_message", confirmMessage, "scope", scope}, extra...)
-	return cfgKV(rid, key, value, fields...)
+func cfgsetModelOK(rid any, key, model, warning, confirmMessage string, deferred bool) map[string]any {
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(model), Warning: warning,
+		ConfirmRequired: confirmMessage != "", ConfirmMessage: confirmMessage, Scope: "session", Deferred: deferred})
 }
 
 // Stashes a model pick for the next turn start, a guard warning answered instead of stashing
@@ -163,12 +173,12 @@ func stashPendingModelSwitch(ctx context.Context, rid any, key string, value any
 			guardProvider = pystr.Strip(a.Provider())
 		}
 		if warning := pendingSwitchSelectionWarning(ctx, pendingModel, guardProvider, a); warning != "" {
-			return cfgsetModelOK(rid, key, pendingModel, warning, warning, "session", "deferred", false)
+			return cfgsetModelOK(rid, key, pendingModel, warning, warning, false)
 		}
 	}
 	session.Set("pending_model_switch", map[string]any{"raw": value, "confirm_expensive_model": confirmed,
 		"display_model": pendingModel, "display_provider": pendingProvider})
-	return cfgsetModelOK(rid, key, pendingModel, "", "", "session", "deferred", true)
+	return cfgsetModelOK(rid, key, pendingModel, "", "", true)
 }
 
 // Setter whose uncaught failure answers 5001, a config backend refusal passing through to config.set
@@ -246,20 +256,14 @@ func setModel(ctx context.Context, rid any, params map[string]any, key string, v
 		panicIf(err)
 		result = switched
 	}
-	confirmRequired, has := result["confirm_required"]
-	if !has {
-		confirmRequired = false
-	}
-	confirmMessage, has := result["confirm_message"]
-	if !has {
-		confirmMessage = ""
-	}
-	scope, has := result["scope"]
-	if !has {
+	confirmRequired, _ := result["confirm_required"].(bool)
+	confirmMessage, _ := result["confirm_message"].(string)
+	scope, _ := result["scope"].(string)
+	if scope == "" {
 		scope = "session"
 	}
-	return cfgKV(rid, key, result["value"], "warning", result["warning"], "confirm_required", confirmRequired,
-		"confirm_message", confirmMessage, "scope", scope)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(strOr(result["value"])), Warning: strOr(result["warning"]),
+		ConfirmRequired: confirmRequired, ConfirmMessage: confirmMessage, Scope: tuigateway.ConfigScope(scope)})
 }
 
 // Words /fast accepts and the mode each names
@@ -419,7 +423,7 @@ func setFocus(ctx context.Context, rid any, params map[string]any, key string, v
 		if curFocus {
 			state = "on"
 		}
-		return cfgKV(rid, key, state, "tool_progress", loadToolProgressMode(ctx))
+		return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(state), ToolProgress: loadToolProgressMode(ctx)})
 	}
 	var updates []config.KeyValue
 	var effective string
@@ -453,7 +457,7 @@ func setFocus(ctx context.Context, rid any, params map[string]any, key string, v
 	if *target {
 		state = "on"
 	}
-	return cfgKV(rid, key, state, "tool_progress", effective)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(state), ToolProgress: effective})
 }
 
 // Legacy alias of approvals.mode reporting the real key
@@ -526,11 +530,11 @@ func setYolo(ctx context.Context, rid any, params map[string]any, key string, va
 	if enable {
 		reported = "1"
 	}
-	reportedScope := "session"
+	reportedScope := tuigateway.ConfigScope("session")
 	if scope == "global" {
-		reportedScope = scope
+		reportedScope = "global"
 	}
-	return cfgKV(rid, key, reported, "scope", reportedScope)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(reported), Scope: reportedScope})
 }
 
 // One reasoning display word, the value it reports, its display field, thinking section and session flag
@@ -632,7 +636,7 @@ func wordSetters() map[string]wordSetter {
 			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.tui_theme", w)) }},
 		"indicator": {cfgRawWord, home.IndicatorStyles,
 			func(value any, raw string) string {
-				return "unknown indicator: " + pyrepr.Repr(raw) + "; pick one of " + strings.Join(home.IndicatorStyles, "|")
+				return "unknown indicator: " + raw + "; pick one of " + strings.Join(home.IndicatorStyles, "|")
 			},
 			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.tui_status_indicator", w)) }},
 		"voice.voice_chat_mode": {cfgWord, []string{"chained", "gpt-live"},
@@ -677,18 +681,18 @@ type toggleSetter struct {
 	cfgKey  string
 	aliases map[string]any
 	flipped func(ctx context.Context) any
-	report  func(v any) any
+	report  func(v any) string
 }
 
 // Toggle setters keyed by config.set key, empty or toggle flipping the current value
 func toggleSetters() map[string]toggleSetter {
-	onOff := func(v any) any {
+	onOff := func(v any) string {
 		if truthy(v) {
 			return "on"
 		}
 		return "off"
 	}
-	same := func(v any) any { return v }
+	same := func(v any) string { return strOr(v) }
 	boolAliases := func(words map[string]bool) map[string]any {
 		out := map[string]any{}
 		for w, b := range words {
@@ -767,15 +771,16 @@ func setCwd(ctx context.Context, rid any, params map[string]any, key string, val
 	if resolveLax(home.Dir(ctx)) == resolveLax(importedHome()) {
 		os.Setenv("TERMINAL_CWD", cwd)
 	}
-	return cfgKV(rid, "terminal.cwd", cwd, "cwd", cwd, "branch", tools.GitProbeBranch(cwd))
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: "terminal.cwd", Value: tuigateway.TextValue(cwd), Cwd: cwd, Branch: tools.GitProbeBranch(cwd)})
 }
 
 // Sets or clears the custom prompt, one explicit key when no config file backs the profile
 func setPrompt(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	reported := value
+	reported := configValueOf(value)
 	if value == "clear" {
-		reported = ""
+		reported = tuigateway.TextValue("")
 	}
+	answer := setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: reported})
 	fileTooling, err := config.SupportsFileTooling(ctx)
 	panicIf(err)
 	if !fileTooling {
@@ -784,7 +789,7 @@ func setPrompt(ctx context.Context, rid any, params map[string]any, key string, 
 		} else {
 			panicIf(writeConfigChanges(ctx, []config.KeyValue{{Key: "custom_prompt", Value: value}}, nil))
 		}
-		return cfgKV(rid, key, reported)
+		return answer
 	}
 	cfg, err := loadCfgRaw(ctx)
 	panicIf(err)
@@ -794,7 +799,7 @@ func setPrompt(ctx context.Context, rid any, params map[string]any, key string, 
 		cfg["custom_prompt"] = value
 	}
 	panicIf(saveCfg(ctx, cfg))
-	return cfgKV(rid, key, reported)
+	return answer
 }
 
 // Persists a personality and applies its prompt to the session
@@ -813,10 +818,16 @@ func setPersonality(ctx context.Context, rid any, params map[string]any, key str
 	if truthy(value) {
 		reported = pyrepr.Str(value)
 	}
+	result := tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(reported), HistoryReset: historyReset}
 	if info != nil {
-		return cfgKV(rid, key, reported, "history_reset", historyReset, "info", info)
+		var typed tuigateway.SessionInfo
+		if err := tuigateway.Loose(info, &typed); err != nil {
+			tuihost.ReportMisfit("result of", "config.set", err)
+		} else {
+			result.Info = &typed
+		}
 	}
-	return cfgKV(rid, key, reported, "history_reset", historyReset)
+	return setAnswer(rid, result)
 }
 
 // Persists the skin and repaints every surface, syncing the watcher baseline
@@ -824,7 +835,7 @@ func setSkin(ctx context.Context, rid any, params map[string]any, key string, va
 	panicIf(writeConfigKey(ctx, "display.skin", value))
 	broadcastGlobalEvent("skin.changed", resolveSkin(ctx))
 	tuihost.NoteSkinBroadcast(ctx)
-	return cfgKV(rid, key, value)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: configValueOf(value)})
 }
 
 // Boolean renderer switch the agent sees
@@ -834,7 +845,7 @@ func setDisplayToggle(ctx context.Context, rid any, params map[string]any, key s
 		return rpcErr(rid, 4002, key+" takes true or false", nil)
 	}
 	panicIf(writeConfigKey(ctx, key, on))
-	return cfgKV(rid, key, on)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.FlagValue(on)})
 }
 
 // Profile wide daybreak flag every turn reads
@@ -844,7 +855,7 @@ func setDaybreak(ctx context.Context, rid any, params map[string]any, key string
 		return rpcErr(rid, 4002, key+" takes true or false", nil)
 	}
 	panicIf(writeConfigKey(ctx, "agent.daybreak", on))
-	return cfgKV(rid, key, on)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.FlagValue(on)})
 }
 
 // Applies one config key, a stale session refusing the session scoped keys and a backend refusal answering 4002

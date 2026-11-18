@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Bounded pool queueing items for at most maxWorkers threads, the concurrent.futures.ThreadPoolExecutor
@@ -63,7 +65,7 @@ func (e *threadPoolExecutor) submit(fn func(ctx context.Context) (any, error)) (
 	e.shutdownLock.Lock()
 	defer e.shutdownLock.Unlock()
 	if e.shut {
-		return nil, &pyRuntimeError{msg: "cannot schedule new futures after shutdown"}
+		return nil, &pyRuntimeError{msg: tools.ErrPoolShutdown.Error(), cause: tools.ErrPoolShutdown}
 	}
 	fut := newConcurrentFuture()
 	e.put(&executorItem{fut: fut, fn: fn})

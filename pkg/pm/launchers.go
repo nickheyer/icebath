@@ -12,6 +12,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -209,7 +210,7 @@ func storePython(runtime string) (string, error) {
 	get := func(value any, key string, fallback any) (any, error) {
 		obj, ok := value.(*pyjson.Object)
 		if !ok {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(value))}
+			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s in %s, got %s", key, facts, errchain.Kind(value))}
 		}
 		if got, present := obj.Get(key); present {
 			return got, nil
@@ -233,11 +234,7 @@ func storePython(runtime string) (string, error) {
 	}
 	name, ok := entry.(string)
 	if !ok {
-		flavour := "PosixPath"
-		if isWindows() {
-			flavour = "WindowsPath"
-		}
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("unsupported operand type(s) for /: '%s' and '%s'", flavour, pyrepr.TypeName(entry))}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the python entry of %s must be text, got %s", facts, errchain.Kind(entry))}
 	}
 	candidate := pypath.Join(runtime, name, rel)
 	if isRegularFile(candidate) {
@@ -678,7 +675,7 @@ func ExposeCLI(ctx context.Context, projectRoot string, create bool) (ExposeResu
 	}
 	local, err := EnsureInstallLaunchers(ctx, root, checkoutLauncherDir(root))
 	if err != nil {
-		return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}, nil
+		return ExposeResult{OK: false, Error: errchain.OSText(err)}, nil
 	}
 	if len(local) != len(windowsBinLaunchers) {
 		return ExposeResult{OK: false, Error: "source launcher publication failed"}, nil
@@ -697,7 +694,7 @@ func ExposeCLI(ctx context.Context, projectRoot string, create bool) (ExposeResu
 	for _, directory := range dirs {
 		published, err := publishConveniences(root, directory, append(append([]string{}, windowsBinLaunchers...), "icebath-agent"), create)
 		if err != nil {
-			return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}, nil
+			return ExposeResult{OK: false, Error: errchain.OSText(err)}, nil
 		}
 		for _, p := range published {
 			if p.changed {
@@ -788,7 +785,7 @@ func PublishLaunchers(ctx context.Context, projectRoot string, create bool) erro
 // Stages the user facing commands into the default home bin and registers it on the User PATH
 func exposeWindowsUserBin(ctx context.Context, root string, create bool) ExposeResult {
 	directory := filepath.Join(home.Root(), "bin")
-	fail := func(err error) ExposeResult { return ExposeResult{OK: false, Error: pypath.OSErrorText(err)} }
+	fail := func(err error) ExposeResult { return ExposeResult{OK: false, Error: errchain.OSText(err)} }
 	if !create {
 		published, err := publishConveniences(root, directory, windowsBinLaunchers, false)
 		if err != nil {

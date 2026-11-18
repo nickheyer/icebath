@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -57,7 +58,7 @@ func reportPackTidy(ctx context.Context, w io.Writer, root string) {
 			tidy.Erased, float64(tidy.FreedBytes)/1e6, tidy.Merged, tidy.PacksLeft)
 	}
 	if tidy.OutOfTime {
-		fmt.Fprintf(w, "  (git cleanup stopped at its %ss limit; the next update continues it)\n", pyrepr.Repr(TidyBudgetSeconds))
+		fmt.Fprintf(w, "  (git cleanup stopped at its %ss limit; the next update continues it)\n", errchain.Show(TidyBudgetSeconds))
 	}
 }
 
@@ -285,7 +286,7 @@ func reportRevListVerdict(ctx context.Context, w io.Writer, gitCmd []string, roo
 	}
 	behind, err := strconv.Atoi(pystr.Strip(revResult.Stdout))
 	if err != nil {
-		return &ValueError{Msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(pystr.Strip(revResult.Stdout)))}
+		return &ValueError{Msg: fmt.Sprintf("git rev-list printed %s where a commit count was expected", pystr.Strip(revResult.Stdout))}
 	}
 	if behind == 0 {
 		fmt.Fprintln(w, "✓ Already up to date.")

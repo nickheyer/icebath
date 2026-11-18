@@ -36,6 +36,9 @@ func init() {
 		}
 		return tuigateway.Plain(rows), nil
 	}
+	setupSectionValues["terminal.builtin_backends"] = func(context.Context, string, config.Tree, string) (any, error) {
+		return tuigateway.Plain(tools.LinkedTerminalBuiltins()), nil
+	}
 	setupSectionValues["terminal.docker"] = func(_ context.Context, h string, cfg config.Tree, _ string) (any, error) {
 		env, err := setupToolEnv(h, cfg, "")
 		if err != nil {

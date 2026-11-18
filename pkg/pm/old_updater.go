@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Exit status a pm command ends the process with, the error form of a Python SystemExit
@@ -317,7 +317,7 @@ func takeoverErrorText(err error) string {
 	if errors.As(err, &py) {
 		return py.Message
 	}
-	return pypath.OSErrorText(err)
+	return errchain.OSText(err)
 }
 
 // Finishes the update in a fresh takeover child once and returns its status as a SystemExit

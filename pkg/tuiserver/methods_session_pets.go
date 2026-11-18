@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tuiserver
 
 import (
@@ -22,36 +24,34 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-var petMethodsRegistry = &handlerRegistry{}
-
 // Payload a disabled pet surface answers with
 func petOff(map[string]any) map[string]any { return map[string]any{"enabled": false} }
 
+// Binds the pet method handlers
 func init() {
-	petMethod("pet.info", petOff, false, true, petInfo)
-	petMethod("pet.info.meta", petOff, false, true, petInfoMeta)
-	petMethod("pet.cells", petOff, false, true, petCells)
+	petMethod("pet.info", petOff, false, petInfo)
+	petMethod("pet.info.meta", petOff, false, petInfoMeta)
+	petMethod("pet.cells", petOff, false, petCells)
 	petMethod("pet.gallery", func(map[string]any) map[string]any {
 		return map[string]any{"enabled": false, "active": "", "pets": []any{}}
-	}, false, true, petGallery)
-	petMethod("pet.select", nil, true, true, petSelect)
-	petMethod("pet.remove", nil, true, true, petRemove)
-	petMethod("pet.export", nil, true, true, petExport)
-	petMethod("pet.rename", nil, true, true, petRename)
-	petMethod("pet.disable", nil, false, true, petDisable)
-	petMethod("pet.enable", nil, false, true, petEnable)
-	petMethod("pet.scale", nil, false, true, petScale)
-	petMethodsRegistry.method("pet.cancel", petCancel)
-	petMethod("pet.generate", nil, false, false, petGenerate)
-	petMethod("pet.hatch", nil, false, false, petHatch)
-	petMethodsRegistry.install()
+	}, false, petGallery)
+	petMethod("pet.select", nil, true, petSelect)
+	petMethod("pet.remove", nil, true, petRemove)
+	petMethod("pet.export", nil, true, petExport)
+	petMethod("pet.rename", nil, true, petRename)
+	petMethod("pet.disable", nil, false, petDisable)
+	petMethod("pet.enable", nil, false, petEnable)
+	petMethod("pet.scale", nil, false, petScale)
+	petHandlers["pet.cancel"] = petCancel
+	petMethod("pet.generate", nil, false, petGenerate)
+	petMethod("pet.hatch", nil, false, petHatch)
 }
 
 // Pet handler body, its slug the third argument when the method takes one
 type petBody func(ctx context.Context, rid any, params map[string]any, slug string) (map[string]any, error)
 
-// Registers a pet method whose failures never break the surface, logged then answered with failOpen or 5031
-func petMethod(name string, failOpen func(map[string]any) map[string]any, slug, scoped bool, body petBody) {
+// Binds a pet method whose failures never break the surface, logged then answered with failOpen or 5031
+func petMethod(name string, failOpen func(map[string]any) map[string]any, slug bool, body petBody) {
 	handler := func(ctx context.Context, rid any, params map[string]any) (out map[string]any) {
 		fail := func(failure any) map[string]any {
 			pkgLog().Debug(fmt.Sprintf("%s failed: %s", name, errorMessage(failure)))
@@ -75,11 +75,7 @@ func petMethod(name string, failOpen func(map[string]any) map[string]any, slug, 
 		}
 		return out
 	}
-	if scoped {
-		petMethodsRegistry.scopedMethod(name, handler)
-		return
-	}
-	petMethodsRegistry.method(name, handler)
+	petHandlers[name] = handler
 }
 
 // Tool env of the pet store fetches and image backends, the bound home's config and secrets loaded

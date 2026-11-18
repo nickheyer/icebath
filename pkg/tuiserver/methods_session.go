@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -116,7 +117,7 @@ func intParam(params map[string]any, key string, def int) int {
 		return def
 	}
 	if !n.IsInt64() {
-		panic(&pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C ssize_t"})
+		panic(&pyint.Error{Kind: "OverflowError", Msg: fmt.Sprintf("the %s value %s is larger than a 64 bit integer holds", key, n.String())})
 	}
 	return int(n.Int64())
 }
@@ -226,7 +227,7 @@ func historyRows(history []any) []map[string]any {
 	for _, msg := range history {
 		m, isDict := msg.(map[string]any)
 		if !isDict {
-			panic(fmt.Errorf("'%T' object has no attribute 'get'", msg))
+			panic(fmt.Errorf("a history entry must be a mapping, got %s", errchain.Kind(msg)))
 		}
 		out = append(out, m)
 	}
@@ -427,9 +428,11 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 	cols := 80
 	if raw, present := params["cols"]; present {
 		n, err := pyint.Of(raw)
-		panicIf(err)
+		if err != nil {
+			panic(errchain.Reword(err, "the column count must be a whole number, got %s", errchain.Show(raw)))
+		}
 		if !n.IsInt64() {
-			panic(&pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C ssize_t"})
+			panic(&pyint.Error{Kind: "OverflowError", Msg: fmt.Sprintf("the column count %s is larger than a 64 bit integer holds", n.String())})
 		}
 		cols = int(n.Int64())
 	}

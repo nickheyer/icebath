@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -111,13 +110,12 @@ func universalNewlines(text string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 }
 
-// Python OSError text of a spawn errno, Windows CreateProcess failures carrying no filename
+// Reason of a spawn errno followed by the path, Windows CreateProcess failures carrying no filename
 func spawnErrorText(errno syscall.Errno, filename string) string {
-	text, _ := pypath.ErrnoText(errno)
 	if runtime.GOOS == "windows" {
-		return text
+		return errno.Error()
 	}
-	return text + ": " + filename
+	return errno.Error() + ": " + filename
 }
 
 // Process environment as a map

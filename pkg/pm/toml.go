@@ -217,34 +217,32 @@ func timedeltaRepr(seconds int) string {
 	return "datetime.timedelta(" + strings.Join(parts, ", ") + ")"
 }
 
-// Python type name of a tomllib value
-func tomlTypeName(v any) string {
+// Plain kind of a decoded TOML value such as a table, a list or text
+func tomlKind(v any) string {
 	switch v.(type) {
 	case *OrderedObject:
-		return "dict"
+		return "a table"
 	case []any:
-		return "list"
+		return "a list"
 	case string:
-		return "str"
-	case int64:
-		return "int"
-	case float64:
-		return "float"
+		return "text"
+	case int64, float64:
+		return "a number"
 	case bool:
-		return "bool"
+		return "true or false"
 	case toml.LocalDate:
-		return "datetime.date"
+		return "a date"
 	case toml.LocalTime:
-		return "datetime.time"
+		return "a time"
 	}
-	return "datetime.datetime"
+	return "a date and time"
 }
 
 // Value of key in a decoded table the way dict get with a default reads it, refusing a non table
 func tomlGet(v any, key string, fallback any) (any, error) {
 	obj, ok := v.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", tomlTypeName(v))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(v))}
 	}
 	if value, ok := obj.Values[key]; ok {
 		return value, nil
@@ -256,17 +254,11 @@ func tomlGet(v any, key string, fallback any) (any, error) {
 func tomlIndex(v any, key string) (any, error) {
 	obj, ok := v.(*OrderedObject)
 	if !ok {
-		if _, isList := v.([]any); isList {
-			return nil, &PyError{Class: "TypeError", Message: "list indices must be integers or slices, not str"}
-		}
-		if _, isStr := v.(string); isStr {
-			return nil, &PyError{Class: "TypeError", Message: "string indices must be integers, not 'str'"}
-		}
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", tomlTypeName(v))}
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(v))}
 	}
 	value, ok := obj.Values[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: "missing " + key}
 	}
 	return value, nil
 }
@@ -289,7 +281,7 @@ func tomlIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", tomlTypeName(v))}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", tomlKind(v))}
 }
 
 // Python equality of two tomllib values, bools and ints and floats comparing as numbers
@@ -403,14 +395,14 @@ func tomlContains(container any, item string) (bool, error) {
 	case string:
 		return strings.Contains(c, item), nil
 	}
-	return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument of type '%s' is not a container or iterable", tomlTypeName(container))}
+	return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a table or list holding %s, got %s", item, tomlKind(container))}
 }
 
 // TypeError a set raises for an unhashable tomllib value, nil for a hashable one
 func tomlUnhashable(v any) error {
 	switch v.(type) {
 	case *OrderedObject, []any:
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("cannot use '%s' as a set element (unhashable type: '%s')", tomlTypeName(v), tomlTypeName(v))}
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a single value, got %s", tomlKind(v))}
 	}
 	return nil
 }

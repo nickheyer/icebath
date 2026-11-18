@@ -16,7 +16,7 @@ type causedError struct {
 func (e *causedError) Error() string { return e.msg }
 func (e *causedError) Unwrap() error { return e.cause }
 
-var errNoSessionAPI = errors.New("'NoneType' object has no attribute 'task'")
+var errNoSessionAPI = errors.New("the gateway session API is not running")
 
 // Whether the session API serve task has ended
 func sessionAPIDone(r *GatewayRunner) bool {

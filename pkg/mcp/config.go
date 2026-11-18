@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -1200,26 +1201,9 @@ func jsonGet(doc any, key string) (any, error) {
 	}
 	m, ok := doc.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", jsonTypeName(doc))
+		return nil, fmt.Errorf("expected a mapping holding %s, got %s", key, errchain.Kind(doc))
 	}
 	return m[key], nil
-}
-
-// Python type name of a decoded JSON value
-func jsonTypeName(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case float64:
-		return "float"
-	case bool:
-		return "bool"
-	case map[string]any:
-		return "dict"
-	}
-	return "NoneType"
 }
 
 // Reports whether needle is in a decoded JSON container the way Python in tests membership
@@ -1238,7 +1222,7 @@ func jsonContains(container any, needle string) (bool, error) {
 	case string:
 		return strings.Contains(c, needle), nil
 	}
-	return false, fmt.Errorf("argument of type '%s' is not iterable", jsonTypeName(container))
+	return false, fmt.Errorf("expected text, a list or a mapping, got %s", errchain.Kind(container))
 }
 
 // Installed binary and remaining args for npx -y pkg when the package already sits in the npx cache
@@ -1836,7 +1820,7 @@ func resolveIdentityHeader(ctx context.Context, serverName string, cfg map[strin
 	}
 	block, ok := raw.(map[string]any)
 	if !ok {
-		return ignore(fmt.Sprintf("must be a mapping with 'name' and 'value'/'value_from' keys (got %s)", pyTypeName(raw)))
+		return ignore(fmt.Sprintf("must be a mapping with 'name' and 'value'/'value_from' keys (got %s)", errchain.Kind(raw)))
 	}
 	name, ok := block["name"].(string)
 	if !ok || pyStrip(name) == "" {
@@ -1861,27 +1845,6 @@ func resolveIdentityHeader(ctx context.Context, serverName string, cfg map[strin
 		return ignore("with value_from: static requires a non-empty string 'value'")
 	}
 	return pyStrip(name), value, true
-}
-
-// Python type name of a YAML value
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int, int64, uint64:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case []any, []string:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
 }
 
 // Headers with the identity header merged in unless an explicit header of that name exists in any casing

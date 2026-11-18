@@ -513,7 +513,9 @@ func (v *transcriptView) liveLines(s *tuiStore, stream string, c renderCtx, tick
 					elapsed = toneStyle(c.t.Color.Muted).Render(" " + render.Elapsed(d))
 				}
 			}
-			if d := s.now().Sub(tool.StartedAt); !tool.StartedAt.IsZero() && d >= 12*time.Second {
+			if tool.Progress != "" {
+				elapsed += toneStyle(c.t.Color.Muted).Render(" · " + tool.Progress)
+			} else if d := s.now().Sub(tool.StartedAt); !tool.StartedAt.IsZero() && d >= 12*time.Second {
 				elapsed += toneStyle(c.t.Color.Muted).Italic(true).Render(" · " + longRunCharms[int(d/(12*time.Second))%len(longRunCharms)])
 			}
 			lines = append(lines, pad+render.Spinner(tick, c.ut)+" "+toneStyle(c.t.Color.Tool).Render(truncateEnd(call, max(c.width-transcriptIndent-40, 8)))+delegateMonitorHint(tool.Name, c)+elapsed)

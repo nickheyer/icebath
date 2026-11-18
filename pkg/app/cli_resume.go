@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -238,7 +237,7 @@ func (c *CLI) handleResumeCommand(cmdOriginal string) {
 	if !ok {
 		return
 	}
-	if refusal := kanban.KanbanResumeRefusal(c.ctx, c.sessionDB, targetID); refusal != "" {
+	if refusal := tools.KanbanResumeRefusal(c.ctx, c.sessionDB, targetID); refusal != "" {
 		cp("  " + refusal)
 		return
 	}

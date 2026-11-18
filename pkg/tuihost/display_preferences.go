@@ -1,8 +1,10 @@
 package tuihost
 
 import (
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Tool progress mode focus view pins while it is on
@@ -11,35 +13,22 @@ const FocusToolProgressMode = "off"
 var toolProgressModeWords = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
 
 // Mouse tracking spellings mapped to off, wheel, buttons or all
-var MouseTrackingAliases = map[string]string{
-	"0": "off", "1": "all", "all": "all", "any": "all", "button": "buttons", "buttons": "buttons",
-	"click": "buttons", "false": "off", "full": "all", "no": "off", "off": "off", "on": "all",
-	"scroll": "wheel", "true": "all", "wheel": "wheel", "yes": "all",
-}
+var MouseTrackingAliases = tuigateway.MouseTrackingAliases
 
 // Mouse tracking mode of the display config, legacy tui_mouse only when mouse_tracking is absent
 func DisplayMouseTracking(display any) string {
-	section, ok := display.(map[string]any)
-	if !ok {
-		return "all"
+	section, _ := display.(map[string]any)
+	return string(tuigateway.MouseTrackingOf(section))
+}
+
+// Settings the terminal UI follows from a profile config, the local display overlay applied and the arena redacted
+func ClientConfig(cfg map[string]any) tuigateway.ClientConfig {
+	display := config.LocalDisplayConfig(cfg["display"])
+	if arena, present := display["arena"]; present {
+		display["arena"] = config.RedactConfigValue(arena)
 	}
-	raw, present := section["mouse_tracking"]
-	if !present {
-		raw, present = section["tui_mouse"]
-		if !present {
-			raw = true
-		}
-	}
-	if s, isText := raw.(string); isText {
-		if mode, known := MouseTrackingAliases[pystr.Lower(pystr.Strip(s))]; known {
-			return mode
-		}
-		return "all"
-	}
-	if raw == false || raw == 0 || raw == int64(0) || raw == float64(0) {
-		return "off"
-	}
-	return "all"
+	return tuigateway.ClientConfigOf(map[string]any{"display": display, "approvals": cfg["approvals"], "voice": cfg["voice"],
+		"paste_collapse_threshold": cfg["paste_collapse_threshold"], "paste_collapse_char_threshold": cfg["paste_collapse_char_threshold"]})
 }
 
 // Known tool progress mode of a raw config value, log kept as a gateway mode, else the default

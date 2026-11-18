@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // CarriedFailure is why a carried extra keeps the environment from building and whether that is a build verdict
@@ -96,7 +96,7 @@ func refuseTransient(failing map[string]CarriedFailure, failure error) error {
 		return nil
 	}
 	return NewInstallError("venv", fmt.Sprintf("the extras %s icebath carried over from the old venv could not be prepared: %s",
-		pyrepr.Repr(names), pyPrefix(strings.Join(details, "; "), 600)),
+		errchain.Show(names), pyPrefix(strings.Join(details, "; "), 600)),
 		"fix the download or tooling problem, then rerun `icebath update`: it tries them again; or leave them out for good with "+strings.Join(withouts, " "))
 }
 
@@ -115,7 +115,7 @@ func recordLeftOut(ctx context.Context, p VenvState, failing map[string]CarriedF
 	for _, extra := range names {
 		message := fmt.Sprintf("Left the optional %s extra out of this update: icebath carried it over from the old venv, and %s "+
 			"(the build output is above). Everything else is installed. Once that is fixed, run `%s` to add it back.",
-			pyrepr.StrRepr(extra), noBuildReason, InstallHint(extra))
+			extra, noBuildReason, InstallHint(extra))
 		fmt.Fprintf(os.Stderr, "⚠ %s\n", message)
 		RecordWarning(ctx, message+" Detail: "+pyPrefix(failing[extra].Reason, 300))
 	}

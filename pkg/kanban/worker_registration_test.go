@@ -146,7 +146,7 @@ func TestRunIDPastTheSQLiteRangePassesTheGuardAndFailsWhereItIsBound(t *testing.
 	if run != runIDBeyondSQLite || expectedRunID("t_big") != runIDBeyondSQLite {
 		t.Fatalf("a run id past int64 read as %v", run)
 	}
-	if err := runIDBindable(run); err == nil || err.Error() != "Python int too large to convert to SQLite INTEGER" {
+	if err := runIDBindable(run); err == nil || err.Error() != "the number is too large for a SQLite INTEGER" {
 		t.Fatalf("bind failure %v", err)
 	}
 	for _, id := range []string{"7", "-3", " 42 ", "4_2", "9223372036854775807"} {

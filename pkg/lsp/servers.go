@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
 // LSP languageId per language for didOpen, in Python dict order
@@ -168,8 +169,8 @@ func rootOrWorkspace(filePath, workspace string, markers, excludes []string) str
 	if workspace != "" {
 		ceiling = filepath.Dir(workspace)
 	}
-	found := NearestRoot(filePath, markers, excludes, ceiling)
-	if found == "" && len(excludes) > 0 && NearestRoot(filePath, markers, nil, ceiling) != "" {
+	found := workspaces.NearestRoot(filePath, markers, excludes, ceiling)
+	if found == "" && len(excludes) > 0 && workspaces.NearestRoot(filePath, markers, nil, ceiling) != "" {
 		return ""
 	}
 	if found != "" {
@@ -639,7 +640,7 @@ var Servers = []*ServerDef{
 	server("clojure-lsp", []string{".clj", ".cljs", ".cljc", ".edn"}, "Clojure — clojure-lsp", serverOpts{
 		markers: []string{"deps.edn", "project.clj", "shadow-cljs.edn", "bb.edn", "build.boot"}, args: []string{"listen"}}),
 	server("nixd", []string{".nix"}, "Nix — nixd", serverOpts{resolveRoot: func(fp, ws string) string {
-		if r := NearestRoot(fp, []string{"flake.nix"}, nil, ""); r != "" {
+		if r := workspaces.NearestRoot(fp, []string{"flake.nix"}, nil, ""); r != "" {
 			return r
 		}
 		return ws

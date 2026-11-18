@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -161,9 +162,9 @@ func maybeCheckpointWAL(ctx context.Context, conn state.SQLiteConn, dbPath strin
 		pkgLog().Debug(fmt.Sprintf("kanban WAL checkpoint on %s skipped: %s", key, state.ErrText(err)))
 		return
 	}
-	shown := "None"
+	shown := "nothing"
 	if row != nil {
-		shown = pyrepr.Repr(pyrepr.Tuple(row.Vals))
+		shown = errchain.Show(row.Vals)
 	}
 	pkgLog().Debug(fmt.Sprintf("kanban WAL checkpoint (PASSIVE) on %s -> %s (busy, wal_frames, checkpointed_frames)", key, shown))
 }
@@ -414,12 +415,12 @@ func probeForCorruption(ctx context.Context, resolved string) ([]string, string,
 	return messages, "integrity_check returned " + firstMessageRepr(messages), true, nil
 }
 
-// Repr of the first message or the no row marker
+// First message or the no row marker
 func firstMessageRepr(messages []string) string {
 	if len(messages) == 0 {
-		return pyrepr.StrRepr("<no row>")
+		return "no row"
 	}
-	return pyrepr.StrRepr(messages[0])
+	return messages[0]
 }
 
 // Fails closed on a corrupt existing database after backing it up, auto repairing index only damage through REINDEX
@@ -581,7 +582,7 @@ func refuseDeadBoardResurrection(path string, board *string) error {
 		}
 		if obj, ok := raw.(*pyjson.Object); ok && pyrepr.Truthy(objGet(obj, "archived")) {
 			return &ValueError{fmt.Sprintf("kanban board %s is archived; refusing to recreate its database",
-				pyrepr.StrRepr(pypath.PathName(pypath.PathParent(path))))}
+				errchain.Show(pypath.PathName(pypath.PathParent(path))))}
 		}
 		return nil
 	}
@@ -594,14 +595,14 @@ func refuseDeadBoardResurrection(path string, board *string) error {
 		return err
 	}
 	if pyrepr.Truthy(objGet(meta, "archived")) {
-		return &ValueError{fmt.Sprintf("kanban board %s is archived; refusing to recreate its database", pyrepr.StrRepr(slug))}
+		return &ValueError{fmt.Sprintf("kanban board %s is archived; refusing to recreate its database", errchain.Show(slug))}
 	}
 	metaPath, err := BoardMetadataPath(&slug)
 	if err != nil {
 		return err
 	}
 	if !pathExists(metaPath) {
-		return &ValueError{fmt.Sprintf("kanban board %s does not exist; create it with `icebath kanban boards create %s`", pyrepr.StrRepr(slug), slug)}
+		return &ValueError{fmt.Sprintf("kanban board %s does not exist; create it with `icebath kanban boards create %s`", errchain.Show(slug), slug)}
 	}
 	return nil
 }

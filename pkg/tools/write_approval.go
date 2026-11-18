@@ -542,7 +542,7 @@ func foldPatch(base, oldString, newString string, replaceAll bool) (string, stri
 	folded, matchCount, _, errText := FuzzyFindAndReplace(base, oldString, newString, replaceAll, nil)
 	if errText != "" || matchCount == 0 {
 		if errText == "" {
-			errText = "Could not find a match for old_string in the file"
+			errText = noMatchText
 		}
 		return base, errText
 	}

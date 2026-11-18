@@ -110,7 +110,7 @@ func pmEnvironmentOwner(venv string) (string, error) {
 	}
 	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	if !utf8.Valid(data) {
-		return "", errors.New("'utf-8' codec can't decode the recorded project root")
+		return "", errors.New("the recorded project root is not valid UTF-8")
 	}
 	owner := pypath.PathStr(pystr.Strip(string(data)))
 	if pm.InstallKey(owner) != pypath.PathName(state) || !isRegular(pypath.PathJoin(owner, owningInstallBinary())) {

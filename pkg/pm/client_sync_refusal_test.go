@@ -60,7 +60,7 @@ func TestClientSyncVenvRefusesLazyExtrasOutsideTheSelectedEnvironment(t *testing
 	facts := EnvironmentRuntimeFactsPath(ctx, repo)
 	before := peRead(t, facts)
 
-	csrWantRefusal(t, SyncVenv(ctx, SyncVenvOptions{Extras: []string{"bedrock", "voice"}}), "['bedrock', 'voice']", filepath.Join(tmp, "foreign-python"))
+	csrWantRefusal(t, SyncVenv(ctx, SyncVenvOptions{Extras: []string{"bedrock", "voice"}}), "bedrock, voice", filepath.Join(tmp, "foreign-python"))
 	if len(*prepared) != 0 || peRead(t, facts) != before {
 		t.Fatalf("refused sync built %v or moved the selection", *prepared)
 	}
@@ -95,7 +95,7 @@ func TestClientSyncVenvLazyExtrasRunFromTheSelectedEnvironment(t *testing.T) {
 		t.Fatalf("lazy sync from the selected environment prepared %v", *prepared)
 	}
 	other := sttMkdir(t, filepath.Join(tmp, "other"))
-	csrWantRefusal(t, SyncVenv(ctx, SyncVenvOptions{Extras: []string{"bedrock"}, ProjectRoot: other}), "['bedrock']", filepath.Join(tmp, "foreign-python"))
+	csrWantRefusal(t, SyncVenv(ctx, SyncVenvOptions{Extras: []string{"bedrock"}, ProjectRoot: other}), "bedrock", filepath.Join(tmp, "foreign-python"))
 	if len(*prepared) != 1 {
 		t.Fatalf("foreign root refusal prepared %v", *prepared)
 	}

@@ -7,11 +7,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -187,7 +187,7 @@ func (c *MicrosoftGraphClient) Delete(ctx context.Context, path string, headers 
 	case map[string]any:
 		return d, nil
 	}
-	return nil, &MicrosoftGraphClientError{Msg: fmt.Sprintf("Expected Graph delete response dict, got %s.", pyrepr.TypeName(v))}
+	return nil, &MicrosoftGraphClientError{Msg: fmt.Sprintf("Expected a Graph delete response object, got %s.", errchain.Kind(v))}
 }
 
 // Every page value list concatenated while following the odata nextLink
@@ -209,7 +209,7 @@ func (c *MicrosoftGraphClient) CollectPaginated(ctx context.Context, path string
 		}
 		get, ok := jsonDict(payload)
 		if !ok {
-			return nil, &MicrosoftGraphClientError{Msg: fmt.Sprintf("Expected paginated Graph response dict, got %s.", pyrepr.TypeName(payload))}
+			return nil, &MicrosoftGraphClientError{Msg: fmt.Sprintf("Expected a paginated Graph response object, got %s.", errchain.Kind(payload))}
 		}
 		if list, ok := get("value").([]any); ok {
 			items = append(items, list...)
@@ -220,7 +220,7 @@ func (c *MicrosoftGraphClient) CollectPaginated(ctx context.Context, path string
 		}
 		s, ok := next.(string)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(next))
+			return nil, fmt.Errorf("the Microsoft Graph @odata.nextLink must be text, got %s", errchain.Kind(next))
 		}
 		nextURL, nextParams = s, nil
 	}
@@ -240,11 +240,7 @@ func (c *MicrosoftGraphClient) DownloadToFileChunked(ctx context.Context, path, 
 	}
 	name := pypath.PathName(target)
 	if name == "" {
-		flavour := "PosixPath"
-		if runtime.GOOS == "windows" {
-			flavour = "WindowsPath"
-		}
-		return nil, fmt.Errorf("%s(%s) has an empty name", flavour, pyrepr.StrRepr(target))
+		return nil, fmt.Errorf("%s has an empty file name", target)
 	}
 	tmpTarget := pypath.PathJoin(pypath.PathParent(target), name+".part")
 	unlinkPart := func() {

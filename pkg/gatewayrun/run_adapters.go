@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -121,7 +122,7 @@ func envTimeoutOverride(name string) *float64 {
 	}
 	value, err := pyint.ParseFloat(raw)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s", name, pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s", name, errchain.Show(raw)))
 		return nil
 	}
 	if !(value > 0) {

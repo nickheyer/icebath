@@ -5,6 +5,7 @@ import (
 	"iter"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -103,7 +104,7 @@ func (w Workflow) Column(key string) (Column, bool) {
 func (w Workflow) require(key string) (Column, error) {
 	col, ok := w.Column(key)
 	if !ok {
-		return Column{}, fmt.Errorf("unknown kanban workflow column %s", pyrepr.StrRepr(key))
+		return Column{}, fmt.Errorf("unknown kanban workflow column %s", errchain.Show(key))
 	}
 	return col, nil
 }
@@ -139,10 +140,10 @@ func (w Workflow) Validate() error {
 		for i, k := range keys {
 			parts[i] = k
 		}
-		return fmt.Errorf("duplicate column keys: %s", pyrepr.Repr(parts))
+		return fmt.Errorf("duplicate column keys: %s", errchain.Show(parts))
 	}
 	if known[Archived] {
-		return fmt.Errorf("%s is reserved and cannot be a column", pyrepr.StrRepr(Archived))
+		return fmt.Errorf("%s is reserved and cannot be a column", errchain.Show(Archived))
 	}
 	for _, src := range w.Manual.srcs {
 		ok := known[src] || src == Archived
@@ -150,7 +151,7 @@ func (w Workflow) Validate() error {
 			ok = ok && known[d]
 		}
 		if !ok {
-			return fmt.Errorf("manual moves from %s reference unknown columns", pyrepr.StrRepr(src))
+			return fmt.Errorf("manual moves from %s reference unknown columns", errchain.Show(src))
 		}
 	}
 	return nil

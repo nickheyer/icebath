@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -169,7 +170,7 @@ func (c *CLI) restoreSessionCwd(sessionMeta map[string]any, quiet bool) {
 		}
 		msg = c.t("cli.session.cwd_gone", map[string]any{"recorded": recorded, "current": shown})
 	} else if cerr := os.Chdir(recorded); cerr != nil {
-		msg = c.t("cli.session.cwd_enter_failed", map[string]any{"path": recorded, "error": pypath.OSErrorText(cerr)})
+		msg = c.t("cli.session.cwd_enter_failed", map[string]any{"path": recorded, "error": errchain.OSText(cerr)})
 	} else {
 		_ = os.Setenv("TERMINAL_CWD", recorded)
 		msg = c.t("cli.session.cwd_restored", map[string]any{"path": recorded})

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -253,7 +253,7 @@ func countsByAssignee(ctx context.Context, conn state.SQLiteConn) (*pyjson.Objec
 // Garbage collection window, a negative one refused because it would select everything
 func retentionSeconds(olderThanSeconds int64) (int64, error) {
 	if olderThanSeconds < 0 {
-		return 0, &ValueError{fmt.Sprintf("older_than_seconds must be >= 0, got %s: a negative retention selects everything.", pyrepr.Repr(olderThanSeconds))}
+		return 0, &ValueError{fmt.Sprintf("older_than_seconds must be >= 0, got %s: a negative retention selects everything.", errchain.Show(olderThanSeconds))}
 	}
 	return olderThanSeconds, nil
 }

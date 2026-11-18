@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -103,7 +104,7 @@ func pickerEnableDisable(ctx context.Context, ui TerminalUI, name string, enable
 	}
 	servers, _, ok := yDict(yOr(cfg["mcp_servers"], map[string]any{}))
 	if !ok {
-		return fmt.Errorf("'%s' object has no attribute 'get'", yTypeName(cfg["mcp_servers"]))
+		return fmt.Errorf("config mcp_servers is %s where a mapping was expected", errchain.Kind(cfg["mcp_servers"]))
 	}
 	server := servers[name]
 	if !yTruthy(server) {
@@ -112,7 +113,7 @@ func pickerEnableDisable(ctx context.Context, ui TerminalUI, name string, enable
 	}
 	block, _, ok := yDict(server)
 	if !ok {
-		return fmt.Errorf("'%s' object does not support item assignment", yTypeName(server))
+		return fmt.Errorf("config mcp_servers.%s is %s where a mapping was expected", name, errchain.Kind(server))
 	}
 	block["enabled"] = enable
 	servers[name] = block

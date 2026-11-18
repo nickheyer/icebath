@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -33,7 +34,7 @@ func activeSkinFromConfig(ctx context.Context) (string, error) {
 	if v := cfg["display"]; PyTruthy(v) {
 		m, ok := v.(map[string]any)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", PyTypeName(v))
+			return "", fmt.Errorf("config display section is %s where a mapping was expected", errchain.Kind(v))
 		}
 		display = m
 	}
@@ -89,7 +90,7 @@ func skinSet(ctx context.Context, key, value, skin string, src ConfigCommandSour
 		}
 		m, ok := doc.(map[string]any)
 		if !ok {
-			return 0, fmt.Errorf("'%s' object has no attribute 'get'", PyTypeName(doc))
+			return 0, fmt.Errorf("config is %s where a mapping was expected", errchain.Kind(doc))
 		}
 		data = m
 	} else {

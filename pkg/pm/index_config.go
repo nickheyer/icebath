@@ -3,7 +3,6 @@
 package pm
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -212,25 +210,25 @@ func (c *rawConfig) parse(path, text string) error {
 			if _, ok := c.sections[name]; !ok {
 				c.sections[name] = map[string]string{}
 			} else if seenSections[name] {
-				return fmt.Errorf("While reading from %s [line %d]: section %s already exists", pyrepr.StrRepr(path), lineno, pyrepr.StrRepr(name))
+				return fmt.Errorf("%s line %d: section %s appears twice", path, lineno, name)
 			}
 			seenSections[name] = true
 			current = c.sections[name]
 			continue
 		}
 		if current == nil {
-			return fmt.Errorf("File contains no section headers.\nfile: %s, line: %d\n%s", pyrepr.StrRepr(path), lineno, pyrepr.StrRepr(raw+"\n"))
+			return fmt.Errorf("%s line %d comes before any [section] header: %s", path, lineno, raw)
 		}
 		cut := strings.IndexAny(stripped, "=:")
 		if cut < 0 {
-			return errors.New("Source contains parsing errors: " + pyrepr.StrRepr(path))
+			return fmt.Errorf("%s line %d has no = or : between a name and a value", path, lineno)
 		}
 		key := strings.ToLower(strings.TrimRightFunc(stripped[:cut], pystr.IsSpace))
 		if key == "" {
-			return errors.New("Source contains parsing errors: " + pyrepr.StrRepr(path))
+			return fmt.Errorf("%s line %d has no name before its = or :", path, lineno)
 		}
 		if seenOptions[currentName+"\x00"+key] {
-			return fmt.Errorf("While reading from %s [line %d]: option %s in section %s already exists", pyrepr.StrRepr(path), lineno, pyrepr.StrRepr(key), pyrepr.StrRepr(currentName))
+			return fmt.Errorf("%s line %d: option %s appears twice in section %s", path, lineno, key, currentName)
 		}
 		seenOptions[currentName+"\x00"+key] = true
 		option = &rawOption{target: current, name: key, lines: []string{pystr.Strip(stripped[cut+1:])}}

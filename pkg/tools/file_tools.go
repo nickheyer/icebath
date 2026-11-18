@@ -626,7 +626,7 @@ func readExtractedDocument(ctx context.Context, env *Env, path, resolved string,
 		docExt := strings.ToLower(pathSuffix(resolved))
 		binaryDoc := nativeDocumentExtensions[docExt] || (extractableExtensions[docExt] && docExt != ".ipynb")
 		var ee *ExtractionError
-		if binaryDoc && errors.As(extractErr, &ee) && !strings.HasPrefix(ee.Error(), "Unsupported document type") {
+		if binaryDoc && errors.As(extractErr, &ee) && !ee.Unsupported {
 			return fileToolError(fmt.Sprintf("Cannot read '%s' (%s): document extraction failed — %s. Use terminal utilities to inspect or convert the file.",
 				path, docExt, ee.Error())), true, nil
 		}
@@ -881,7 +881,7 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 	result := handle.forCall(ctx).readFile(target, offset, limit)
 	dict := toDict(result)
 	errText := dictString(dict, "error")
-	if strings.HasPrefix(errText, "File not found:") {
+	if result != nil && result.NotFound {
 		if fields := ExpiredArchiveFields(path); len(fields) > 0 {
 			dict.Set("expired", fields["expired"])
 			dict.Set("hint", fields["hint"])
@@ -1377,7 +1377,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 	if early {
 		return dictJSON(dict), nil
 	}
-	if errText := pyDisplay(dict.Vals["error"]); dictTruthy(dict, "error") && strings.Contains(errText, "Could not find") {
+	if errText := pyDisplay(dict.Vals["error"]); dictTruthy(dict, "error") && holdsNoMatch(errText) {
 		failureCount := 0
 		if a.mode == "replace" && a.path != "" {
 			target := pathToResolved[a.path]
@@ -1394,7 +1394,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 				"surrounding context lines, or (3) re-read the file in "+
 				"full, then use write_file to replace it if the targeted "+
 				"region is hard to anchor.", failureCount, pyReprStr(a.path)))
-		} else if !strings.Contains(errText, "Did you mean one of these sections?") {
+		} else if !strings.Contains(errText, didYouMeanLead) {
 			dict.Set("_hint", "old_string not found. Use read_file to verify the current "+
 				"content, or search_files to locate the text.")
 		}

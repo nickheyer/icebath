@@ -80,17 +80,17 @@ func phantomSibling(container map[string]any, part string) string {
 func listIndex(segment string, length int) (int, *PathError) {
 	n, ok := pyint.Parse(segment)
 	if !ok {
-		return 0, &PathError{"ValueError", "invalid literal for int() with base 10: " + PyRepr(segment)}
+		return 0, &PathError{"ValueError", segment + " is not a list index"}
 	}
 	if !n.IsInt64() {
-		return 0, &PathError{"IndexError", "cannot fit 'int' into an index-sized integer"}
+		return 0, &PathError{"IndexError", segment + " is too large for a list index"}
 	}
 	idx := n.Int64()
 	if idx < 0 {
 		idx += int64(length)
 	}
 	if idx < 0 || idx >= int64(length) {
-		return 0, &PathError{"IndexError", "list index out of range"}
+		return 0, &PathError{"IndexError", "the list has no item " + segment}
 	}
 	return int(idx), nil
 }
@@ -189,9 +189,6 @@ func (t Tree) Set(path string, value any) error {
 			part := remaining[0]
 			idx, err := listIndex(part, len(c))
 			if atLeaf {
-				if err != nil && err.Kind == "IndexError" && err.Msg == "list index out of range" {
-					err.Msg = "list assignment index out of range"
-				}
 				if err != nil {
 					return err
 				}

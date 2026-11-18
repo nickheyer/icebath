@@ -23,9 +23,9 @@ import (
 
 	"golang.org/x/net/http/httpproxy"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
@@ -73,7 +73,7 @@ type stagedEntry struct {
 var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 	parsed, err := url.Parse(source)
 	if err != nil {
-		return &pm.PyError{Class: "ValueError", Message: "unknown url type: " + pyrepr.StrRepr(source)}
+		return &pm.PyError{Class: "ValueError", Message: "unknown url type: " + errchain.Show(source)}
 	}
 	switch parsed.Scheme {
 	case "file":

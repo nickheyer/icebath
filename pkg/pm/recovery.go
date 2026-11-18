@@ -72,7 +72,7 @@ func ValidateEnvironment(ctx context.Context, python string, argvPrefix []string
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("Command '%s' timed out after 60 seconds", pyrepr.Repr(cmd.Args))
+		return fmt.Errorf("%s timed out after 60 seconds", strings.Join(cmd.Args, " "))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

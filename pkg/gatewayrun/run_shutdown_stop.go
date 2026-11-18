@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/browser"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -37,6 +35,9 @@ func quietStep[T any](label string, fn func() (T, error)) (out T) {
 	return value
 }
 
+// Browser session sweep, bound by the extras tier that carries the browser and nil in a build without it
+var cleanupAllBrowsers func(ctx context.Context, env *tools.Env)
+
 // Kills tool subprocesses, terminal environments and browsers, returning the cron job ids marked interrupted
 func stopKillToolSubprocesses(ctx context.Context, phase string) []string {
 	env := &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
@@ -55,7 +56,10 @@ func stopKillToolSubprocesses(ctx context.Context, phase string) []string {
 		return nil
 	})
 	marked := quietStep("mark_running_jobs_interrupted ("+phase+") error", func() ([]string, error) {
-		interrupted := cron.MarkRunningJobsInterrupted(ctx,
+		if cronMarkInterrupted == nil {
+			return nil, nil
+		}
+		interrupted := cronMarkInterrupted(ctx,
 			fmt.Sprintf("Gateway shutdown (%s) killed the job's tool subprocess before the run finished.", phase))
 		if len(interrupted) > 0 {
 			pkgLog().Warn(fmt.Sprintf("Shutdown (%s): marked %d in-flight cron job(s) interrupted: %s",
@@ -70,7 +74,9 @@ func stopKillToolSubprocesses(ctx context.Context, phase string) []string {
 		return nil
 	})
 	step("cleanup_all_environments", func() error { tools.CleanupAllEnvironments(env); return nil })
-	step("cleanup_all_browsers", func() error { browser.CleanupAllBrowsers(ctx, env); return nil })
+	if cleanupAllBrowsers != nil {
+		step("cleanup_all_browsers", func() error { cleanupAllBrowsers(ctx, env); return nil })
+	}
 	if marked == nil {
 		return []string{}
 	}

@@ -121,29 +121,5 @@ func nonEmptyPtr(p *string) bool { return p != nil && *p != "" }
 
 // True when the profile has a bot of its own, a local only adapter map holds no platform credential
 func hasCredentialPlatform(adapters any, owned any) bool {
-	if pyTruthy(owned) {
-		return true
-	}
-	if m, ok := adapters.(map[string]any); ok {
-		for platform := range m {
-			if platform != "local" {
-				return true
-			}
-		}
-	}
-	if m, ok := adapters.(*pydict.Dict[gateway.Platform, gateway.PlatformAdapter]); ok {
-		for _, platform := range m.Keys() {
-			if platform != gateway.PlatformLocal {
-				return true
-			}
-		}
-	}
-	if m, ok := adapters.(map[gateway.Platform]gateway.PlatformAdapter); ok {
-		for platform := range m {
-			if platform != gateway.PlatformLocal {
-				return true
-			}
-		}
-	}
-	return false
+	return gateway.HasCredentialPlatform(adapters, owned)
 }

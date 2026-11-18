@@ -246,7 +246,7 @@ func TestAttachStoresInlineBytesAndRejectsBadBase64(t *testing.T) {
 func TestAttachContentTypeBindingFailsAtTheRowInsertAndRemovesTheBlob(t *testing.T) {
 	tid := toolWorkerEnv(t)
 	d := runKanbanTool(t, "kanban_attach", `{"filename": "x.txt", "content_base64": "aGVsbG8=", "content_type": ["text/plain"]}`)
-	if errText(d) != "kanban_attach: Error binding parameter 4: type 'list' is not supported" {
+	if errText(d) != "kanban_attach: SQL parameter 4 is a list, which SQLite cannot store" {
 		t.Fatal(d)
 	}
 	if atts := boardAttachments(t, tid); len(atts) != 0 {

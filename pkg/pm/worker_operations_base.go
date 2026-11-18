@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -106,7 +107,7 @@ func (k *kwargs) checkKnown(known map[string]bool) error {
 	sort.Strings(names)
 	for _, name := range names {
 		if !known[name] {
-			return &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() got an unexpected keyword argument '%s'", k.op, name)}
+			return &PyError{Class: "TypeError", Message: fmt.Sprintf("%s does not take the option %s", k.op, name)}
 		}
 	}
 	return nil
@@ -114,7 +115,7 @@ func (k *kwargs) checkKnown(known map[string]bool) error {
 
 // Python TypeError for a value of the wrong JSON kind
 func kwargTypeError(op, name, want string, value any) error {
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() argument '%s' must be %s, not %s", op, name, want, pyrepr.TypeName(value))}
+	return &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s option %s must be %s, got %s", op, name, want, errchain.Kind(value))}
 }
 
 // Value of an optional keyword and whether the call passed it
@@ -128,7 +129,7 @@ func (k *kwargs) str(name string) (string, error) {
 	v, _ := k.take(name)
 	s, ok := v.(string)
 	if !ok {
-		return "", kwargTypeError(k.op, name, "str", v)
+		return "", kwargTypeError(k.op, name, "text", v)
 	}
 	return s, nil
 }
@@ -191,7 +192,7 @@ var workerOperations = map[string]*workerOperation{
 func lookupOperation(name string) (*workerOperation, error) {
 	spec, ok := workerOperations[name]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(name)}
+		return nil, &PyError{Class: "KeyError", Message: "the worker has no operation " + name}
 	}
 	return spec, nil
 }

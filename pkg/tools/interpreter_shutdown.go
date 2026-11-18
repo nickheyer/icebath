@@ -2,7 +2,6 @@ package tools
 
 import (
 	"errors"
-	"strings"
 	"sync/atomic"
 )
 
@@ -21,5 +20,5 @@ func InterpreterShuttingDown(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, ErrPoolShutdown) || strings.Contains(strings.ToLower(err.Error()), "cannot schedule new futures")
+	return errors.Is(err, ErrPoolShutdown)
 }

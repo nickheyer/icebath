@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
@@ -532,7 +533,7 @@ var wakeBuildEngine = func(ctx context.Context, cfg map[string]any) (WakeEngine,
 	}
 	entry, ok := WakeProviders[provider]
 	if !ok {
-		return nil, &WakeWordError{Class: "ValueError", Msg: "Unknown wake_word provider: " + pyrepr.StrRepr(provider)}
+		return nil, &WakeWordError{Class: "ValueError", Msg: "Unknown wake_word provider: " + errchain.Show(provider)}
 	}
 	return wakeEngineClasses[entry.Engine](ctx, cfg)
 }
@@ -637,7 +638,7 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 	hint := ""
 	switch {
 	case !platformOK && wakeConfiguredProvider(cfg) == "auto" && wakeOpenWakeWordModel(cfg) == "":
-		hint = fmt.Sprintf("The %s wake engine that detects %s is not supported on this platform.", provider, pyrepr.StrRepr(WakePhrase(ctx, cfg)))
+		hint = fmt.Sprintf("The %s wake engine that detects %s is not supported on this platform.", provider, errchain.Show(WakePhrase(ctx, cfg)))
 		owwOK, err := supported(WakeProviders["openwakeword"].Extra)
 		if err != nil {
 			return WakeRequirements{}, err
@@ -662,7 +663,7 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		}
 	case !modelOK:
 		hint = "Set wake_word.openwakeword.model to an openWakeWord model file trained for your wake phrase, " +
-			"or set wake_word.provider to auto so the open vocabulary engine detects " + pyrepr.StrRepr(WakePhrase(ctx, cfg)) + "."
+			"or set wake_word.provider to auto so the open vocabulary engine detects " + errchain.Show(WakePhrase(ctx, cfg)) + "."
 	case provider == "porcupine" && pystr.Strip(os.Getenv("PORCUPINE_ACCESS_KEY")) == "":
 		keyOK = false
 		hint = "Set PORCUPINE_ACCESS_KEY (free key at https://console.picovoice.ai)."

@@ -143,6 +143,12 @@ func publishLocalProgress(ctx context.Context, t *TurnRunner, eventType, name, p
 		t.publishExecution(eventType, tools.ToolProgressPayload(name, preview, kwargs))
 		return nil
 	}
+	if eventType == "tool.output_risk" {
+		if payload := tuihost.OutputRiskPayload(name, kwargs); payload != nil {
+			t.publishExecution(eventType, payload)
+		}
+		return nil
+	}
 	moaKeys, isMoa := localViewerMoaKeys[eventType]
 	if eventType != "reasoning.available" && !isMoa {
 		return nil

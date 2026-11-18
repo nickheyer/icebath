@@ -223,7 +223,7 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 	}
 	bad := t.TempDir()
 	write(filepath.Join(bad, ".install_method"), "\xffgit")
-	if _, err := DetectInstallMethod(context.Background(), h, bad); err == nil || !strings.Contains(err.Error(), "invalid start byte") {
+	if _, err := DetectInstallMethod(context.Background(), h, bad); err == nil || !strings.Contains(err.Error(), "cannot start a character") {
 		t.Fatalf("undecodable stamp must raise, got %v", err)
 	}
 }
@@ -448,7 +448,7 @@ func TestPlatformManifestEnvEntriesFollowPythonUnpacking(t *testing.T) {
 		t.Fatalf("got %+v %v", entries, err)
 	}
 	if _, err := platformManifestEnvEntries(map[string]any{"requires_env": 5}, true); err == nil ||
-		err.Error() != "Value after * must be an iterable, not int" {
+		err.Error() != "expected a list, got a number" {
 		t.Fatalf("a scalar requires_env raises like Python, got %v", err)
 	}
 	prev := hooks()

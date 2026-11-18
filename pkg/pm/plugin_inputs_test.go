@@ -48,7 +48,7 @@ func TestPluginInputSurvivesTheWorkerWire(t *testing.T) {
 // An unknown kind is refused with the kind's repr
 func TestPluginInputUnknownKindIsRefused(t *testing.T) {
 	_, err := DecodePluginInput(map[string]any{"kind": "mystery"})
-	if err == nil || err.Error() != "unknown plugin input kind: 'mystery'" || errorClass(err) != "ValueError" {
+	if err == nil || err.Error() != "unknown plugin input kind: mystery" || errorClass(err) != "ValueError" {
 		t.Fatalf("got %v", err)
 	}
 }

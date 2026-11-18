@@ -506,7 +506,24 @@ func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, 
 		}
 		return newContent, len(matches), st.name, ""
 	}
-	return content, 0, "", "Could not find a match for old_string in the file"
+	return content, 0, "", noMatchText
+}
+
+// Failure of a replace whose old_string matches nowhere in the file
+const noMatchText = "Could not find a match for old_string in the file"
+
+// Lead of the no match failure that names the file
+const noMatchInLead = "Could not find match for old_string in "
+
+// Lead of the closest lines hint appended to a no match failure
+const didYouMeanLead = "\n\nDid you mean one of these sections?\n"
+
+// No match failure naming the file
+func noMatchIn(path string) string { return noMatchInLead + path }
+
+// Whether a failure text is or carries a no match failure
+func holdsNoMatch(errText string) bool {
+	return strings.Contains(errText, noMatchText) || strings.Contains(errText, noMatchInLead)
 }
 
 // Error when a literal backslash n in the arguments stands in for a real line break in the file
@@ -830,14 +847,14 @@ func findClosestLines(oldString, content string, contextLines, maxResults int) s
 
 // Did you mean snippet for plain no match errors only, empty otherwise
 func formatNoMatchHint(errText string, matchCount int, oldString, content string) string {
-	if matchCount != 0 || errText == "" || !strings.HasPrefix(errText, "Could not find") {
+	if matchCount != 0 || !(errText == noMatchText || strings.HasPrefix(errText, noMatchInLead)) {
 		return ""
 	}
 	hint := findClosestLines(oldString, content, 2, 3)
 	if hint == "" {
 		return ""
 	}
-	return "\n\nDid you mean one of these sections?\n" + hint
+	return didYouMeanLead + hint
 }
 
 // Did you mean hint for a plain no match error

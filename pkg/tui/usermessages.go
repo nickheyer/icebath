@@ -24,7 +24,7 @@ var (
 	stderrNoiseRe       = regexp.MustCompile(`^\[(?:lifecycle|startup|protocol|spawn)\]`)
 	stderrProblemRe     = regexp.MustCompile(`Traceback|\b[A-Z][A-Za-z]*(?:Error|Exception)\b:|CRITICAL|\[gateway-turn\]|\[gateway-exit\]|^gateway (?:absent|conflict|draining|inaccessible|incompatible|starting|unavailable): `)
 	stderrExceptionRe   = regexp.MustCompile(`([A-Z][A-Za-z]*(?:Error|Exception)):`)
-	versionSkewRe       = regexp.MustCompile(`Extra inputs are not permitted|^unknown method:`)
+	versionSkewRe       = regexp.MustCompile(`Extra inputs are not permitted|: unknown field\b|^unknown method:`)
 	unavailableMethodRe = regexp.MustCompile(`^unknown method: (\S+) \x{2014} not available on this Icebath backend$`)
 	sessionNotFoundRe   = regexp.MustCompile(`(?i)session not found`)
 	notConnectedRe      = regexp.MustCompile(`^gateway not (?:connected|running)\b`)
@@ -252,6 +252,9 @@ func describeRPCError(err error) string {
 	}
 	if isVersionSkewError(err) {
 		logReplacedWireText(s, text)
+		if gatewayOtherBuild.Load() {
+			return tr("gatewayMsg.otherBuild.line")
+		}
 		return tr("userMessages.rpc.versionSkew")
 	}
 	return describeWireText(s, text)

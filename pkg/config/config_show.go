@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -72,7 +73,7 @@ func subMap(m map[string]any, key string) map[string]any {
 	return AsMap(v)
 }
 
-// Python value times 100 then format .0f, the TypeError or ValueError either step raises
+// Value times 100 as a whole percent, a refusal naming the kind for anything but a number
 func showPercent(v any) (string, error) {
 	var product any
 	switch x := v.(type) {
@@ -80,16 +81,12 @@ func showPercent(v any) (string, error) {
 		product = x * 100
 	case float32:
 		product = float64(x) * 100
-	case string:
-		product = strings.Repeat(x, 100)
 	default:
-		if n, ok := pyint.Instance(v); ok {
-			product = new(big.Int).Mul(n, big.NewInt(100))
-		} else if PyTypeName(v) == "list" {
-			product = v
-		} else {
-			return "", &pyrepr.FormatError{Class: "TypeError", Msg: "unsupported operand type(s) for *: '" + PyTypeName(v) + "' and 'int'"}
+		n, ok := pyint.Instance(v)
+		if !ok {
+			return "", fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 		}
+		product = new(big.Int).Mul(n, big.NewInt(100))
 	}
 	return pyrepr.Format(product, ".0f")
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Missing packages of a closure, refusing a static registry gap or a lazy install the policy disallows
@@ -75,12 +75,12 @@ func refuseColdRuntime(ctx context.Context, cold *InstallError, extras []string)
 		for i, extra := range extras {
 			hints[i] = InstallHint(extra)
 		}
-		refusal = NewInstallError(cold.Package, fmt.Sprintf("%s while enabling %s", cold.Cause, pyrepr.Repr(extras)),
+		refusal = NewInstallError(cold.Package, fmt.Sprintf("%s while enabling %s", cold.Cause, errchain.Show(extras)),
 			"run `"+strings.Join(hints, "`, `")+"`")
 	}
 	token := BeginReceipt(ctx, "sync")
 	RecordRefusal(ctx, "lazy-install", refusal.Error())
-	RecordStep(ctx, "dependency-sync", false, "InstallError: "+refusal.Error())
+	RecordStep(ctx, "dependency-sync", false, refusal.Error())
 	FinalizeReceipt(ctx, "failed", 1, token)
 	return refusal
 }

@@ -318,7 +318,7 @@ func TestPluginLlmCheckTask(t *testing.T) {
 		t.Fatalf("own key %v %v", got, err)
 	}
 	logs := captureLogs(t)
-	if _, err := checkTask(ctx, pol, "my-plugin", sp("classifier")); !isTrustErr(err, "'my-plugin'") || !isTrustErr(err, "'classifier'") ||
+	if _, err := checkTask(ctx, pol, "my-plugin", sp("classifier")); !isTrustErr(err, "Plugin my-plugin cannot") || !isTrustErr(err, "auxiliary task classifier") ||
 		!strings.Contains(logs.String(), "plugin my-plugin requested auxiliary task classifier it did not register") {
 		t.Fatalf("foreign %v %s", err, logs)
 	}

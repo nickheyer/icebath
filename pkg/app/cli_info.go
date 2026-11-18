@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -17,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -593,14 +595,14 @@ func (c *CLI) showHelp(arg string) {
 	if rawQuick := c.config["quick_commands"]; pyrepr.Truthy(rawQuick) && query == "" {
 		quick, ok := rawQuick.(map[string]any)
 		if !ok {
-			panic(fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(rawQuick)))
+			panic(fmt.Errorf("config quick_commands is %s where a mapping was expected", errchain.Kind(rawQuick)))
 		}
 		cprint("\n  ⚡ " + boldANSI + c.t("cli.help.quick_commands", nil) + resetANSI + " (" +
 			c.t("cli.help.n_configured", map[string]any{"count": strconv.Itoa(len(quick))}) + "):")
 		for _, name := range sortedMapKeys(quick) {
 			qcmd, ok := quick[name].(map[string]any)
 			if !ok {
-				panic(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(quick[name])))
+				panic(fmt.Errorf("config quick_commands.%s is %s where a mapping was expected", name, errchain.Kind(quick[name])))
 			}
 			desc, hasDesc := qcmd["description"]
 			if !hasDesc {
@@ -611,7 +613,7 @@ func (c *CLI) showHelp(arg string) {
 			}
 			text, ok := desc.(string)
 			if !ok {
-				panic(fmt.Errorf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(desc)))
+				panic(fmt.Errorf("config quick_commands.%s description is %s where text was expected", name, errchain.Kind(desc)))
 			}
 			helpRow("/"+name, text, 22)
 		}
@@ -907,7 +909,7 @@ func (c *CLI) showUsage() {
 		infoPrint("")
 	}
 	if !r.HasCompressor {
-		panic(fmt.Errorf("'NoneType' object has no attribute 'last_prompt_tokens'"))
+		panic(errors.New("this session has no context compressor to report usage from"))
 	}
 	lastPrompt := max(0, r.LastPromptTokens)
 	ctxLen := r.ContextLength
@@ -1006,7 +1008,7 @@ func (c *CLI) showInsights(command string) {
 			if isPyDigit(parts[i]) {
 				n, ok := pyint.Parse(parts[i])
 				if !ok {
-					panic(fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(parts[i])))
+					panic(fmt.Errorf("%s is not a whole number of days", parts[i]))
 				}
 				days = int(n.Int64())
 			}
@@ -1071,7 +1073,7 @@ func joinServerKeys(keys []mcp.ServerKey) (string, error) {
 		}
 	}
 	if scoped > 0 && bare > 0 {
-		return "", fmt.Errorf("'<' not supported between instances of 'str' and 'tuple'")
+		return "", errors.New("cannot list scoped and unscoped MCP server keys together")
 	}
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].Scope != sorted[j].Scope {
@@ -1220,7 +1222,7 @@ func reloadItems(v any) []map[string]any {
 		for _, item := range list {
 			m, ok := item.(map[string]any)
 			if !ok {
-				panic(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(item)))
+				panic(fmt.Errorf("reload item is %s where a mapping was expected", errchain.Kind(item)))
 			}
 			out = append(out, m)
 		}

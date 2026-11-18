@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -90,10 +91,10 @@ func matchRuntimeOutcomes(plan *UpdatePlan, e runtimeOutcomeEvidence) []*pyjson.
 			}
 			if ambiguous {
 				pkgLog().Debug(fmt.Sprintf("%d planned gateway runtimes for profile %s still need a verdict — successor evidence cannot attribute the restart, leaving pid %d on the name path",
-					pendingGateways[r.Profile], pyrepr.Repr(r.Profile), *r.PID))
+					pendingGateways[r.Profile], errchain.Show(r.Profile), *r.PID))
 			} else if len(live) == 0 {
 				pkgLog().Debug(fmt.Sprintf("No post-restart gateway evidence for profile %s (planned pid %d via %s) — reconciling on restart bookkeeping alone",
-					pyrepr.Repr(r.Profile), *r.PID, r.RestartVia))
+					errchain.Show(r.Profile), *r.PID, r.RestartVia))
 			}
 		}
 		if r.PID != nil && e.ExternalGatewayPIDs[*r.PID] {

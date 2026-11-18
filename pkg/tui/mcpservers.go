@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -31,35 +32,22 @@ type mcpServer struct {
 	Tools     int
 	Enabled   bool
 	OAuth     bool
-	Plugin    string
 }
 
 // Servers of an mcp.servers.list answer with the states of an mcp.servers.status answer, sorted by name
-func mcpServersOf(list, status map[string]any) []mcpServer {
-	states := map[string]map[string]any{}
-	rows, _ := status["servers"].([]any)
-	for _, raw := range rows {
-		row, _ := raw.(map[string]any)
-		name, _ := row["name"].(string)
-		states[name] = row
+func mcpServersOf(list tuigateway.MCPServersListResult, status tuigateway.MCPServersStatusResult) []mcpServer {
+	states := map[string]tuigateway.MCPServerRuntimeRow{}
+	for _, row := range status.Servers {
+		states[row.Name] = row
 	}
-	configured, _ := list["servers"].([]any)
-	out := make([]mcpServer, 0, len(configured))
-	for _, raw := range configured {
-		row, _ := raw.(map[string]any)
-		text := func(m map[string]any, key string) string {
-			s, _ := m[key].(string)
-			return s
-		}
-		server := mcpServer{Name: text(row, "name"), Transport: text(row, "transport"), Enabled: row["enabled"] == true,
-			OAuth: text(row, "auth") == "oauth", Plugin: text(row, "plugin"), Status: "configured"}
+	out := make([]mcpServer, 0, len(list.Servers))
+	for _, row := range list.Servers {
+		server := mcpServer{Name: row.Name, Transport: row.Transport, Enabled: row.Enabled, OAuth: val(row.Auth) == "oauth", Status: "configured"}
 		if !server.Enabled {
 			server.Status = "disabled"
 		}
 		if state, seen := states[server.Name]; seen {
-			server.Status = text(state, "status")
-			tools, _ := state["tools"].(float64)
-			server.Tools = int(tools)
+			server.Status, server.Tools = string(state.Status), int(state.Tools)
 		}
 		out = append(out, server)
 	}
@@ -161,20 +149,19 @@ func (p *mcpPanel) hints(_ *cards.List, i int) []wm.Hint {
 
 // Reads the configured servers and their runtime states again, a failure leaving the rows as they were
 func (p *mcpPanel) load() tea.Cmd {
-	return gatewayCall(p.app.gw, "mcp.servers.list", map[string]any{}, func(v any, err error) tea.Cmd {
+	return call(p.app.gw, tuigateway.MCPServersList, tuigateway.ProfileParams{}, func(list *tuigateway.MCPServersListResult, err error) tea.Cmd {
 		if err != nil {
 			p.loading = false
 			p.List.Refresh()
 			return p.fail(err)
 		}
-		list := asRPCResult(v)
-		return gatewayCall(p.app.gw, "mcp.servers.status", map[string]any{}, func(sv any, err error) tea.Cmd {
+		return call(p.app.gw, tuigateway.MCPServersStatus, tuigateway.ProfileParams{}, func(status *tuigateway.MCPServersStatusResult, err error) tea.Cmd {
 			p.loading = false
 			if err != nil {
 				p.List.Refresh()
 				return p.fail(err)
 			}
-			p.servers = mcpServersOf(list, asRPCResult(sv))
+			p.servers = mcpServersOf(*list, *status)
 			p.List.Refresh()
 			return nil
 		})
@@ -211,15 +198,15 @@ func (p *mcpPanel) selected(i int) (mcpServer, bool) {
 	return p.servers[i], true
 }
 
-// Request of the panel, its answer handed on and a failure shown as a toast
-func (p *mcpPanel) call(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd {
+// Request of the panel, its decoded answer handed on and a failure shown as a toast
+func mcpCall[P, R any](p *mcpPanel, m tuigateway.Method[P, R], params P, then func(R) tea.Cmd) tea.Cmd {
 	p.busy = true
-	return gatewayCall(p.app.gw, method, params, func(v any, err error) tea.Cmd {
+	return call(p.app.gw, m, params, func(r *R, err error) tea.Cmd {
 		p.busy = false
 		if err != nil {
 			return p.fail(err)
 		}
-		return then(asRPCResult(v))
+		return then(*r)
 	})
 }
 
@@ -228,18 +215,14 @@ func (p *mcpPanel) add(_ *cards.List, _ int) tea.Cmd {
 	if p.busy {
 		return nil
 	}
-	return p.call("mcp.catalog", map[string]any{}, func(res map[string]any) tea.Cmd {
-		rows, _ := res["servers"].([]any)
+	return mcpCall(p, tuigateway.MCPCatalog, tuigateway.ProfileParams{}, func(res tuigateway.MCPCatalogResult) tea.Cmd {
 		items := []wm.Item{}
-		for _, raw := range rows {
-			row, _ := raw.(map[string]any)
-			name, _ := row["name"].(string)
-			if row["installed"] == true || name == "" {
+		for _, row := range res.Servers {
+			name, requires := row.Name, row.Requires
+			if row.Installed || name == "" {
 				continue
 			}
-			description, _ := row["description"].(string)
-			requires := rpcStrings(row["requires"])
-			items = append(items, wm.Item{ID: "mcp:" + name, Title: name, Detail: description, Run: func() tea.Cmd { return p.install(name, requires) }})
+			items = append(items, wm.Item{ID: "mcp:" + name, Title: name, Detail: row.Description, Run: func() tea.Cmd { return p.install(name, requires) }})
 		}
 		if len(items) == 0 {
 			return wm.Notify(tr("mcp.add.none"), wm.Info)
@@ -252,7 +235,7 @@ func (p *mcpPanel) add(_ *cards.List, _ int) tea.Cmd {
 
 // Adds the catalog server, then asks each value it requires
 func (p *mcpPanel) install(name string, requires []string) tea.Cmd {
-	return p.call("mcp.servers.add", map[string]any{"name": name, "preset": name}, func(map[string]any) tea.Cmd {
+	return mcpCall(p, tuigateway.MCPServersAdd, tuigateway.MCPServersAddParams{Name: name, Preset: &name}, func(tuigateway.MCPServerResult) tea.Cmd {
 		return tea.Batch(wm.Notify(tr("mcp.notice.added", name), wm.Success), p.askValues(name, requires))
 	})
 }
@@ -268,7 +251,8 @@ func (p *mcpPanel) askValues(name string, requires []string) tea.Cmd {
 		if value == "" {
 			return p.askValues(name, requires[1:])
 		}
-		return p.call("mcp.servers.set_api_key", map[string]any{"name": name, "value": value, "env_var": envVar}, func(map[string]any) tea.Cmd {
+		params := tuigateway.MCPServersSetAPIKeyParams{Name: name, Value: value, EnvVar: &envVar}
+		return mcpCall(p, tuigateway.MCPServersSetAPIKey, params, func(tuigateway.MCPServersSetAPIKeyResult) tea.Cmd {
 			return tea.Batch(wm.Notify(tr("mcp.notice.keySaved", envVar, name), wm.Success), p.askValues(name, requires[1:]))
 		})
 	}))
@@ -280,7 +264,7 @@ func (p *mcpPanel) toggle(_ *cards.List, i int) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return p.call("mcp.servers.enable", map[string]any{"name": s.Name, "enabled": !s.Enabled}, func(map[string]any) tea.Cmd {
+	return mcpCall(p, tuigateway.MCPServersEnable, tuigateway.MCPServersEnableParams{Name: s.Name, Enabled: !s.Enabled}, func(tuigateway.MCPServerResult) tea.Cmd {
 		if s.Enabled {
 			return p.back(tr("mcp.notice.disabled", s.Name), wm.Success, nil)
 		}
@@ -294,13 +278,11 @@ func (p *mcpPanel) test(_ *cards.List, i int) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return p.call("mcp.servers.test", map[string]any{"name": s.Name}, func(res map[string]any) tea.Cmd {
-		if res["ok"] != true {
-			reason, _ := res["error"].(string)
-			return wm.Notify(tr("mcp.notice.testFailed", s.Name, reason), wm.Warn)
+	return mcpCall(p, tuigateway.MCPServersTest, tuigateway.MCPServerNameParams{Name: s.Name}, func(res tuigateway.MCPServersTestResult) tea.Cmd {
+		if !res.OK {
+			return wm.Notify(tr("mcp.notice.testFailed", s.Name, val(res.Error)), wm.Warn)
 		}
-		tools, _ := res["tools"].([]any)
-		return wm.Notify(tr("mcp.notice.testOk", s.Name, float64(len(tools))), wm.Success)
+		return wm.Notify(tr("mcp.notice.testOk", s.Name, float64(len(res.Tools))), wm.Success)
 	})
 }
 
@@ -311,7 +293,7 @@ func (p *mcpPanel) remove(l *cards.List, i int) tea.Cmd {
 		return nil
 	}
 	l.Confirm(tr("mcp.remove.confirm", s.Name), func() tea.Cmd {
-		return p.call("mcp.servers.remove", map[string]any{"name": s.Name}, func(map[string]any) tea.Cmd {
+		return mcpCall(p, tuigateway.MCPServersRemove, tuigateway.MCPServerNameParams{Name: s.Name}, func(tuigateway.MCPServersRemoveResult) tea.Cmd {
 			return p.back(tr("mcp.notice.removed", s.Name), wm.Success, nil)
 		})
 	})
@@ -324,10 +306,9 @@ func (p *mcpPanel) authorize(_ *cards.List, i int) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	return p.call("mcp.servers.oauth.start", map[string]any{"name": s.Name}, func(res map[string]any) tea.Cmd {
-		flow, _ := res["session_id"].(string)
-		link, _ := res["auth_url"].(string)
-		card := &mcpAuthCard{panel: p, server: s.Name, flow: flow, link: link}
+	return mcpCall(p, tuigateway.MCPServersOAuthStart, tuigateway.MCPOAuthStartParams{Name: s.Name}, func(res tuigateway.MCPOAuthStartResult) tea.Cmd {
+		link := res.AuthURL
+		card := &mcpAuthCard{panel: p, server: s.Name, flow: res.SessionID, link: link}
 		cmds := []tea.Cmd{p.app.wm.ShowOverlay(card)}
 		if link != "" && !openExternalURL(link) {
 			cmds = append(cmds, wm.Notify(tr("mcp.notice.browserDidNotOpen"), wm.Warn))
@@ -403,7 +384,8 @@ func (c *mcpAuthCard) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			}
 		case "tui.mcp.auth.stop":
 			c.done = true
-			return c, gatewayCall(c.panel.app.gw, "mcp.servers.oauth.cancel", map[string]any{"name": c.server, "session_id": c.flow}, func(_ any, err error) tea.Cmd {
+			params := tuigateway.MCPOAuthFlowParams{Name: c.server, SessionID: c.flow}
+			return c, call(c.panel.app.gw, tuigateway.MCPServersOAuthCancel, params, func(_ *tuigateway.MCPOAuthCancelResult, err error) tea.Cmd {
 				if err != nil {
 					return c.panel.back(tr("mcp.errorLine", rpcErrorMessage(err)), wm.Error, c)
 				}
@@ -427,7 +409,8 @@ func (c *mcpAuthCard) poll() tea.Cmd {
 	if c.done {
 		return nil
 	}
-	return gatewayCall(c.panel.app.gw, "mcp.servers.oauth.poll", map[string]any{"name": c.server, "session_id": c.flow}, func(v any, err error) tea.Cmd {
+	params := tuigateway.MCPOAuthFlowParams{Name: c.server, SessionID: c.flow}
+	return call(c.panel.app.gw, tuigateway.MCPServersOAuthPoll, params, func(res *tuigateway.MCPOAuthPollResult, err error) tea.Cmd {
 		if c.done {
 			return nil
 		}
@@ -435,18 +418,16 @@ func (c *mcpAuthCard) poll() tea.Cmd {
 			c.done = true
 			return c.panel.back(tr("mcp.errorLine", rpcErrorMessage(err)), wm.Error, c)
 		}
-		res := asRPCResult(v)
-		if link, _ := res["auth_url"].(string); link != "" {
+		if link := val(res.AuthURL); link != "" {
 			c.link = link
 		}
-		switch res["status"] {
+		switch res.Status {
 		case "approved":
 			c.done = true
 			return c.panel.back(tr("mcp.notice.authorized", c.server), wm.Success, c)
 		case "error":
 			c.done = true
-			reason, _ := res["error_message"].(string)
-			return c.panel.back(tr("mcp.notice.authFailed", c.server, reason), wm.Warn, c)
+			return c.panel.back(tr("mcp.notice.authFailed", c.server, val(res.ErrorMessage)), wm.Warn, c)
 		}
 		return c.schedule()
 	})

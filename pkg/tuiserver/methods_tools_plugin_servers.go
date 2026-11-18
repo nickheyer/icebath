@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -20,7 +21,7 @@ func manifestMapping(m map[string]any, key string) (map[string]any, error) {
 	}
 	out, isMap := v.(map[string]any)
 	if !isMap {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("%s in the plugin manifest must be a mapping, got %s", key, errchain.Kind(v))
 	}
 	return out, nil
 }

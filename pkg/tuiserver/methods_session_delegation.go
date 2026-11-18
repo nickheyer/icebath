@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -57,7 +58,7 @@ func subagentSteer(ctx context.Context, rid any, params map[string]any) map[stri
 	}
 	textValue, isStr := raw.(string)
 	if !isStr {
-		panic(fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(raw)))
+		panic(fmt.Errorf("the steering text must be text, got %s", errchain.Kind(raw)))
 	}
 	text := strings.TrimSpace(textValue)
 	if text == "" {
@@ -210,7 +211,7 @@ func spawnTreeList(ctx context.Context, rid any, params map[string]any) map[stri
 			for _, item := range indexed {
 				entry, isDict := item.(map[string]any)
 				if !isDict {
-					panic(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(item)))
+					panic(fmt.Errorf("a spawn tree index entry must be a mapping, got %s", errchain.Kind(item)))
 				}
 				if p := entry["path"]; truthy(p) {
 					if _, err := os.Stat(pyrepr.Str(p)); err == nil {
@@ -273,7 +274,7 @@ func spawnTreeLoad(ctx context.Context, rid any, params map[string]any) map[stri
 	}
 	if rel, relErr := filepath.Rel(root, resolved); relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return rpcErr(rid, 4030, fmt.Sprintf("path outside spawn-trees root: %s is not in the subpath of %s",
-			pyrepr.StrRepr(resolved), pyrepr.StrRepr(root)), nil)
+			resolved, root), nil)
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {

@@ -2,15 +2,16 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -72,32 +73,41 @@ func pendingConnection(a *SessionAuthority, sessionID string) (*pyjson.Object, e
 	return operation.RequestPayload(), nil
 }
 
-// Validated envelope of a connector verb and the separately validated answer of connection.respond
-func connectionRequest(method string, params *pyjson.Object) (*pydantic.Instance, *pydantic.Instance, error) {
-	respond := method == "connection.respond"
-	contract := tuihost.ConnectionOperationParams
-	if !respond {
-		contract = tuihost.Methods[method].Params
+// Decoded params of a connector verb, its owner and the operation, answer or connector names it carries
+type connectionVerb struct {
+	owner      tuigateway.SessionOwner
+	opID       string
+	answer     tuigateway.ConnectionAnswer
+	connectors []string
+	reconnect  bool
+}
+
+// Params of a connector verb decoded into its declared type, refused as invalid params when they do not fit
+func connectionRequest(method string, params *pyjson.Object) (connectionVerb, error) {
+	var verb connectionVerb
+	var err error
+	switch method {
+	case tuigateway.ConnectionRespond.Name():
+		var p tuigateway.ConnectionRespondParams
+		p, err = tuigateway.ConnectionRespond.Params(params)
+		verb = connectionVerb{owner: p.Owner, opID: p.OpID, answer: p.Result}
+	case tuigateway.ConnectorsConnect.Name():
+		var p tuigateway.ConnectorsConnectParams
+		p, err = tuigateway.ConnectorsConnect.Params(params)
+		verb = connectionVerb{owner: p.Owner, connectors: p.Connectors, reconnect: p.Reconnect}
+	case tuigateway.ConnectorsOperationWake.Name():
+		var p tuigateway.ConnectionOperationParams
+		p, err = tuigateway.ConnectorsOperationWake.Params(params)
+		verb = connectionVerb{owner: p.Owner, opID: p.OpID}
+	default:
+		var p tuigateway.ConnectionOperationParams
+		p, err = tuigateway.ConnectorsOperationStatus.Params(params)
+		verb = connectionVerb{owner: p.Owner, opID: p.OpID}
 	}
-	envelope := map[string]any{}
-	for _, key := range params.Keys {
-		if respond && key == "result" {
-			continue
-		}
-		envelope[key] = pyjson.Plain(params.GetOr(key, nil))
+	if err != nil {
+		return verb, connectorRefusal(tuihost.ConnectorInvalidParams, err)
 	}
-	request, invalid := contract.Validate(envelope)
-	if invalid != nil {
-		return nil, nil, connectorRefusal(tuihost.ConnectorInvalidParams, invalid)
-	}
-	if !respond {
-		return request, nil, nil
-	}
-	answer, invalid := tuihost.ConnectionAnswer.Validate(pyjson.Plain(params.GetOr("result", nil)))
-	if invalid != nil {
-		return nil, nil, connectorRefusal(tuihost.ConnectorInvalidAnswer, invalid)
-	}
-	return request, answer, nil
+	return verb, nil
 }
 
 // Card view of an operation's snapshot with its settled flag
@@ -107,21 +117,14 @@ func connectionView(operation *tools.ConnectionOperation) any {
 	return tuihost.ConnectorUIPayload(snapshot)
 }
 
-// Text field of a validated contract instance, empty for None
-func instanceText(instance *pydantic.Instance, name string) string {
-	text, _ := instance.Get(name).(string)
-	return text
-}
-
 // Answers, polls, wakes or retries the connection operation of one session the caller may drive
 func handleConnection(ctx context.Context, c *AuthorityConnection, method string, params *pyjson.Object) (any, error) {
-	request, answer, err := connectionRequest(method, params)
+	verb, err := connectionRequest(method, params)
 	if err != nil {
 		return nil, err
 	}
 	a := c.authority
-	owner, _ := request.Get("owner").(*pydantic.Instance)
-	ref := SessionRef{ProfileID: a.ProfileID, SessionID: instanceText(owner, "session_id")}
+	ref := SessionRef{ProfileID: a.ProfileID, SessionID: verb.owner.SessionID}
 	capability := "session:control"
 	if method == "connectors.operation.status" {
 		capability = "session:read"
@@ -137,7 +140,7 @@ func handleConnection(ctx context.Context, c *AuthorityConnection, method string
 	if method == "connectors.connect" {
 		operation = tools.LiveCurrent(live.Route, a.ProfileID)
 	} else {
-		operation = tools.LiveGet(live.Route, instanceText(request, "op_id"), a.ProfileID)
+		operation = tools.LiveGet(live.Route, verb.opID, a.ProfileID)
 	}
 	if operation == nil {
 		return nil, connectorRefusal(tuihost.ConnectorUnknownOperation, nil)
@@ -149,14 +152,18 @@ func handleConnection(ctx context.Context, c *AuthorityConnection, method string
 		operation.Wake.Set()
 		return pyjson.ObjectOf("status", "ok"), nil
 	case "connection.respond":
-		return forwardOffThread(ctx, func() (*pyjson.Object, error) { return respondConnection(ctx, operation, answer) })
+		return forwardOffThread(ctx, func() (*pyjson.Object, error) { return respondConnection(ctx, operation, verb.answer) })
 	}
-	return forwardOffThread(ctx, func() (any, error) { return retryConnection(ctx, a, ref, operation, request) })
+	return forwardOffThread(ctx, func() (any, error) { return retryConnection(ctx, a, ref, operation, verb) })
 }
 
 // Settles the operation with the client's answer, an illegal transition refused as an invalid answer
-func respondConnection(ctx context.Context, operation *tools.ConnectionOperation, answer *pydantic.Instance) (*pyjson.Object, error) {
-	settled, err := mcp.Respond(ctx, operation, answer.DumpJSON(pydantic.DumpOptions{ExcludeNone: true}))
+func respondConnection(ctx context.Context, operation *tools.ConnectionOperation, answer tuigateway.ConnectionAnswer) (*pyjson.Object, error) {
+	raw, err := json.Marshal(tuigateway.Plain(answer))
+	if err != nil {
+		return nil, err
+	}
+	settled, err := mcp.Respond(ctx, operation, string(raw))
 	var illegal *tools.IllegalTransition
 	if errors.As(err, &illegal) {
 		return nil, connectorRefusal(tuihost.ConnectorInvalidAnswer, err)
@@ -168,14 +175,11 @@ func respondConnection(ctx context.Context, operation *tools.ConnectionOperation
 }
 
 // The card's Try again under the session's own context, re-running only the named targets
-func retryConnection(ctx context.Context, a *SessionAuthority, ref SessionRef, operation *tools.ConnectionOperation, request *pydantic.Instance) (any, error) {
-	if !pyrepr.Truthy(request.Get("reconnect")) {
+func retryConnection(ctx context.Context, a *SessionAuthority, ref SessionRef, operation *tools.ConnectionOperation, verb connectionVerb) (any, error) {
+	if !verb.reconnect {
 		return nil, connectorRefusal(tuihost.ConnectorInvalidParams, nil)
 	}
-	names := []string{}
-	for _, item := range pyjson.Plain(request.Get("connectors")).([]any) {
-		names = append(names, pyrepr.Str(item))
-	}
+	names := append([]string{}, verb.connectors...)
 	scoper, ok := a.Runner.(sessionEnvScoper)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: "runner has no attribute '_session_env_scope'"}

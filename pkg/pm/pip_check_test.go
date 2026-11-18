@@ -116,7 +116,7 @@ func TestPipCheckOverridesRoundTripAsRequirementLines(t *testing.T) {
 	}
 	unsupported := filepath.Join(t.TempDir(), "uv.lock")
 	peWrite(t, unsupported, "[manifest]\noverrides = [{ name = \"x\", url = \"https://x\", specifier = \">1\" }]\n")
-	if _, err := OverrideRequirements(unsupported); err == nil || err.Error() != "unsupported uv.lock override: {'name': 'x', 'url': 'https://x', 'specifier': '>1'}" {
+	if _, err := OverrideRequirements(unsupported); err == nil || err.Error() != "unsupported uv.lock override: {\"name\":\"x\",\"url\":\"https://x\",\"specifier\":\">1\"}" {
 		t.Fatalf("unsupported override: %v", err)
 	}
 }

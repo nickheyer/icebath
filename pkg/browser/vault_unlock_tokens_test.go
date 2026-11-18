@@ -80,7 +80,7 @@ func reachable(v reflect.Value, needle string, seen map[uintptr]bool, depth int)
 }
 
 func heldByUnlockGlobals(token string) bool {
-	for _, global := range []any{vaultTokens, &vaultIdleTTLNanos, vaultSessionSlot} {
+	for _, global := range []any{vaultTokens, &vaultIdleTTLNanos, "vault_current_session_id"} {
 		if reachable(reflect.ValueOf(global), token, map[uintptr]bool{}, 0) {
 			return true
 		}
@@ -133,8 +133,8 @@ func TestSessionTeardownFencesALateUnlockAfterItsTokenExpired(t *testing.T) {
 	ctx, _ := vaultProfile(t)
 	pinIdleTTL(t, 50*time.Millisecond)
 	sid := "dummy-session"
-	SetVaultSessionID(ctx, &sid)
-	defer SetVaultSessionID(ctx, nil)
+	tools.SetVaultSessionID(ctx, &sid)
+	defer tools.SetVaultSessionID(ctx, nil)
 	if !StoreVaultSessionToken(ctx, "bitwarden", "dummy-old-"+uuidHex(t), nil) {
 		t.Fatal("token not stored")
 	}
@@ -152,15 +152,15 @@ func TestSessionTeardownFencesALateUnlockAfterItsTokenExpired(t *testing.T) {
 func TestSiblingSessionTeardownKeepsALoginAfterAnEarlierTokenExpired(t *testing.T) {
 	ctx, _ := vaultProfile(t)
 	pinIdleTTL(t, 50*time.Millisecond)
-	defer SetVaultSessionID(ctx, nil)
+	defer tools.SetVaultSessionID(ctx, nil)
 	first, second := "dummy-first", "dummy-second"
-	SetVaultSessionID(ctx, &first)
+	tools.SetVaultSessionID(ctx, &first)
 	if !StoreVaultSessionToken(ctx, "bitwarden", "dummy-first-"+uuidHex(t), nil) {
 		t.Fatal("token not stored")
 	}
 	waitUntil(t, 5*time.Second, "the first token expires", func() bool { return !IsVaultUnlocked(ctx, "bitwarden") })
 	pinIdleTTL(t, 60*time.Second)
-	SetVaultSessionID(ctx, &second)
+	tools.SetVaultSessionID(ctx, &second)
 	if !StoreVaultSessionToken(ctx, "bitwarden", "dummy-second-"+uuidHex(t), nil) {
 		t.Fatal("token not stored")
 	}

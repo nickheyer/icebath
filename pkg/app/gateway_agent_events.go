@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -493,7 +492,7 @@ func (a *GatewayAgent) askSecret(params map[string]any) any {
 
 // Password manager unlock answer from the CLI's masked panel
 func (a *GatewayAgent) askVaultUnlock(params map[string]any) any {
-	callback := browser.GetUnlockPromptCallback(a.threadCtx())
+	callback := tools.GetUnlockPromptCallback(a.threadCtx())
 	if callback == nil {
 		return ""
 	}
@@ -502,7 +501,7 @@ func (a *GatewayAgent) askVaultUnlock(params map[string]any) any {
 
 // Login to save as one JSON string of identifier and password, empty without a password
 func (a *GatewayAgent) askVaultSaveLogin(params map[string]any) any {
-	callback := browser.GetSaveLoginPromptCallback(a.threadCtx())
+	callback := tools.GetSaveLoginPromptCallback(a.threadCtx())
 	if callback == nil {
 		return ""
 	}
@@ -520,7 +519,7 @@ func (a *GatewayAgent) askVaultSaveLogin(params map[string]any) any {
 
 // One time code from the CLI's code panel
 func (a *GatewayAgent) askVaultCode(params map[string]any) any {
-	callback := browser.GetCodePromptCallback(a.threadCtx())
+	callback := tools.GetCodePromptCallback(a.threadCtx())
 	if callback == nil {
 		return ""
 	}

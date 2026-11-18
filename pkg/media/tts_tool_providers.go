@@ -698,7 +698,7 @@ func resolveMiniMaxTTSRuntime(env *tools.Env, ttsConfig map[string]any) (*miniMa
 	}
 	source, apiKey := creds[region][0], creds[region][1]
 	if apiKey == "" {
-		return nil, &ttsValueError{msg: fmt.Sprintf("%s not set for MiniMax TTS region %s", source, pyrepr.Repr(region))}
+		return nil, &ttsValueError{msg: fmt.Sprintf("%s not set for MiniMax TTS region %s", source, errchain.Show(region))}
 	}
 	endpoint := miniMaxEndpoints[region]
 	if pyTruthy(mmConfig["base_url"]) {
@@ -714,7 +714,7 @@ func resolveMiniMaxTTSRuntime(env *tools.Env, ttsConfig map[string]any) (*miniMa
 		host = strings.ToLower(u.Hostname())
 	}
 	if miniMaxOfficialHosts[other][host] {
-		return nil, &ttsValueError{msg: fmt.Sprintf("tts.minimax.base_url points to the %s MiniMax endpoint but region is %s", pyrepr.Repr(other), pyrepr.Repr(region))}
+		return nil, &ttsValueError{msg: fmt.Sprintf("tts.minimax.base_url points to the %s MiniMax endpoint but region is %s", errchain.Show(other), errchain.Show(region))}
 	}
 	return &miniMaxTTSRuntime{Region: region, Endpoint: endpoint, CredentialSource: source, APIKey: apiKey}, nil
 }
@@ -939,7 +939,7 @@ func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, geminiConfig m
 		}
 		err = derr
 	}
-	pkgLog().Warn(fmt.Sprintf("Gemini TTS persona prompt file unavailable at %s: %s", path, pypath.OSErrorText(err)))
+	pkgLog().Warn(fmt.Sprintf("Gemini TTS persona prompt file unavailable at %s: %s", path, errchain.OSText(err)))
 	return ""
 }
 

@@ -47,7 +47,7 @@ func TestRejectUnsafeBlocksTypeAndKeyCombos(t *testing.T) {
 	if got := rejectUnsafe("click", map[string]any{"bring_to_front": true, "delivery_mode": "foreground"}); got != "" {
 		t.Fatalf("foreground bring_to_front blocked: %s", got)
 	}
-	if got := rejectUnsafe("key", map[string]any{"keys": "win+l"}); got != `{"error": "blocked key combo: ['l', 'win']", "hint": "Destructive system shortcuts are hard-blocked."}` {
+	if got := rejectUnsafe("key", map[string]any{"keys": "win+l"}); got != `{"error": "blocked key combo: l, win", "hint": "Destructive system shortcuts are hard-blocked."}` {
 		t.Fatalf("win+l answered %s", got)
 	}
 }
@@ -268,12 +268,12 @@ func TestSummarizeActionPrompts(t *testing.T) {
 		want   string
 	}{
 		{"click", map[string]any{"element": int64(3)}, "click element #3"},
-		{"double_click", map[string]any{"coordinate": []any{int64(10), int64(20)}, "delivery_mode": "foreground"}, "double_click at (10, 20)" + cuForegroundSuffix},
+		{"double_click", map[string]any{"coordinate": []any{int64(10), int64(20)}, "delivery_mode": "foreground"}, "double_click at 10, 20" + cuForegroundSuffix},
 		{"drag", map[string]any{"from_element": int64(1), "to_coordinate": []any{int64(5), int64(6)}}, "drag 1 → [5, 6]"},
 		{"scroll", map[string]any{}, "scroll ? x3"},
-		{"type", map[string]any{"text": long}, "type '" + strings.Repeat("a", 60) + "'..."},
-		{"key", map[string]any{"keys": "cmd+s"}, "key 'cmd+s'"},
-		{"focus_app", map[string]any{"app": "Notes", "raise_window": true, "delivery_mode": "foreground"}, "focus 'Notes' (raise)"},
+		{"type", map[string]any{"text": long}, "type " + strings.Repeat("a", 60) + "..."},
+		{"key", map[string]any{"keys": "cmd+s"}, "key cmd+s"},
+		{"focus_app", map[string]any{"app": "Notes", "raise_window": true, "delivery_mode": "foreground"}, "focus Notes (raise)"},
 		{"set_value", map[string]any{"delivery_mode": "foreground"}, "set_value" + cuForegroundSuffix},
 	} {
 		if got := summarizeAction(c.action, c.args); got != c.want {

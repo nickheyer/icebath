@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/base64"
 	"fmt"
 	"image"
@@ -16,6 +17,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/nickheyer/icebath/pkg/pet"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -156,20 +158,24 @@ func (p *petView) observe(ev gatewayEventMsg) tea.Cmd {
 	case "pet.changed":
 		return p.refresh()
 	case "pet.generate.progress":
-		return p.draftProgress(ev.Payload)
+		if progress, err := tuigateway.PetGenerateProgressEvent.Payload(ev.Payload); err == nil {
+			return p.draftProgress(progress)
+		}
 	case "pet.hatch.progress":
-		return p.rowProgress(ev.Payload)
+		if progress, err := tuigateway.PetHatchProgressEvent.Payload(ev.Payload); err == nil {
+			return p.rowProgress(progress)
+		}
 	}
 	return nil
 }
 
-// Gateway request whose failure leaves the pet as it is, the pet being cosmetic
-func (p *petView) quiet(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd {
-	return gatewayCall(p.a.gw, method, params, func(v any, err error) tea.Cmd {
+// Typed gateway request whose failure or misfit leaves the pet as it is, the pet being cosmetic
+func quietPet[P, R any](p *petView, m tuigateway.Method[P, R], params P, then func(*R) tea.Cmd) tea.Cmd {
+	return call(p.a.gw, m, params, func(r *R, err error) tea.Cmd {
 		if err != nil {
 			return then(nil)
 		}
-		return then(asRPCResult(v))
+		return then(r)
 	})
 }
 
@@ -180,29 +186,29 @@ func (p *petView) refresh() tea.Cmd {
 	}
 	p.syncing = true
 	state := p.state
-	return p.quiet("pet.info.meta", map[string]any{}, func(meta map[string]any) tea.Cmd {
+	return quietPet(p, tuigateway.PetInfoMeta, tuigateway.ProfileParams{}, func(meta *tuigateway.PetInfoMetaResult) tea.Cmd {
 		if meta == nil {
 			p.syncing = false
 			return nil
 		}
-		if !truthyJS(meta["enabled"]) {
+		if !meta.Enabled {
 			p.syncing = false
 			return p.disable()
 		}
-		slug, revision := stringOr(meta["slug"], ""), stringOr(meta["spritesheetRevision"], "")
-		scale, _ := meta["scale"].(float64)
+		slug, revision, scale := meta.Slug, meta.SpritesheetRevision, meta.Scale
 		var cmd tea.Cmd
 		if slug != p.slug || scale != p.scale || revision != p.revision {
 			cmd = p.forget()
 			p.slug, p.scale, p.revision = slug, scale, revision
 		}
-		p.name = stringOr(meta["displayName"], slug)
+		p.name = cmp.Or(meta.DisplayName, slug)
 		if _, cached := p.cells[slug+":"+state]; cached {
 			p.syncing = false
 			p.enabled = true
 			return tea.Batch(cmd, p.startTicking(), p.probe(), p.pullSheet())
 		}
-		return tea.Batch(cmd, p.quiet("pet.cells", map[string]any{"graphics": p.graphics, "state": state}, func(res map[string]any) tea.Cmd {
+		cells := tuigateway.PetCellsParams{Graphics: p.graphics, State: state}
+		return tea.Batch(cmd, quietPet(p, tuigateway.PetCells, cells, func(res *tuigateway.PetCellsResult) tea.Cmd {
 			p.syncing = false
 			return p.applyCells(state, meta, res)
 		}))
@@ -237,39 +243,37 @@ func (p *petView) disable() tea.Cmd {
 }
 
 // Takes a pet.cells answer, the frame answer winning over the probe when the selection moved between them
-func (p *petView) applyCells(state string, meta, res map[string]any) tea.Cmd {
+func (p *petView) applyCells(state string, meta *tuigateway.PetInfoMetaResult, res *tuigateway.PetCellsResult) tea.Cmd {
 	if res == nil {
 		p.enabled = true
 		return tea.Batch(p.startTicking(), p.probe(), p.pullSheet())
 	}
-	if !truthyJS(res["enabled"]) {
+	if !res.Enabled {
 		return p.disable()
 	}
-	slug := stringOr(res["slug"], stringOr(meta["slug"], ""))
-	scale, isNum := res["scale"].(float64)
-	if !isNum {
-		scale, _ = meta["scale"].(float64)
-	}
+	slug, scale := cmp.Or(res.Slug, meta.Slug), cmp.Or(res.Scale, meta.Scale)
 	var cmd tea.Cmd
 	if slug != p.slug || scale != p.scale {
 		cmd = p.forget()
-		if slug != stringOr(meta["slug"], "") {
+		if slug != meta.Slug {
 			p.revision = ""
 		}
 		p.slug, p.scale = slug, scale
 	}
-	frames, _ := res["frames"].([]any)
-	placeholder := stringList(res["placeholder"])
-	if stringOr(res["graphics"], "") == "kitty" && len(frames) > 0 && len(placeholder) > 0 {
-		id, _ := res["imageId"].(float64)
-		p.kittyID = int(id)
+	var frames tuigateway.PetCellFrames
+	if res.Frames != nil {
+		frames = *res.Frames
+	}
+	placeholder := res.Placeholder
+	if res.Graphics == "kitty" && len(frames.Kitty) > 0 && len(placeholder) > 0 {
+		p.kittyID = int(res.ImageID)
 		cols := 0
 		for _, row := range placeholder {
 			cols = max(cols, strings.Count(row, "\U0010eeee"))
 		}
 		p.cells[slug+":"+state] = &petFrames{cols: cols, high: len(placeholder),
-			kitty: &petKitty{escapes: stringList(res["frames"]), placeholder: placeholder, color: stringOr(res["color"], "#000001")}}
-	} else if grid := petCellFrames(frames); len(grid.rows) > 0 {
+			kitty: &petKitty{escapes: frames.Kitty, placeholder: placeholder, color: cmp.Or(res.Color, "#000001")}}
+	} else if grid := petCellFrames(frames.Cells); len(grid.rows) > 0 {
 		p.cells[slug+":"+state] = grid
 	}
 	p.enabled = true
@@ -357,14 +361,12 @@ func (p *petView) wanted() string {
 		Reasoning: s.turn.ReasoningActive, Busy: s.ui.Busy}))
 }
 
-// Configured display.pet.render_mode, auto for a missing or unknown one
+// Configured display.pet.render_mode, auto before the config arrived
 func (p *petView) renderMode() string {
-	conf, _ := p.a.store.ui.Pet.(map[string]any)
-	mode := strings.ToLower(trimJS(stringOr(conf["render_mode"], "")))
-	if !slices.Contains(pet.RenderModes, mode) {
-		return "auto"
+	if mode := p.a.store.ui.PetRenderMode; mode != "" {
+		return string(mode)
 	}
-	return mode
+	return "auto"
 }
 
 // Sixel or iTerm2 protocol the render mode and the terminal allow, kitty coming from pet.cells alone
@@ -405,22 +407,22 @@ func (p *petView) pullSheet() tea.Cmd {
 	}
 	p.sheetLoading = true
 	slug, scale := p.slug, p.scale
-	params := map[string]any{}
+	params := tuigateway.PetInfoParams{}
 	if p.sheet != nil && p.sheet.proto == proto && p.sheetRev != "" {
-		params["knownRevision"] = p.sheetRev
+		params.KnownRevision = p.sheetRev
 	}
-	return p.quiet("pet.info", params, func(info map[string]any) tea.Cmd {
-		if info == nil || !truthyJS(info["enabled"]) || stringOr(info["slug"], "") != slug {
+	return quietPet(p, tuigateway.PetInfo, params, func(info *tuigateway.PetInfoResult) tea.Cmd {
+		if info == nil || !info.Enabled || info.Slug != slug {
 			p.sheetLoading = false
 			return nil
 		}
-		revision := stringOr(info["spritesheetRevision"], "")
-		if truthyJS(info["spritesheetUnchanged"]) {
+		revision := info.SpritesheetRevision
+		if info.SpritesheetUnchanged {
 			p.sheetLoading, p.sheetRev = false, revision
 			return nil
 		}
 		return func() tea.Msg {
-			sheet, err := petSheetEscapes(info, proto, scale)
+			sheet, err := petSheetEscapes(&info.PetSprite, proto, scale)
 			return asyncDoneMsg{run: func() tea.Cmd {
 				p.sheetLoading = false
 				if err != nil || slug != p.slug {
@@ -435,8 +437,8 @@ func (p *petView) pullSheet() tea.Cmd {
 }
 
 // Every driven state of a pet.info spritesheet scaled and encoded by the reference renderer for one protocol
-func petSheetEscapes(info map[string]any, proto gfx.Protocol, scale float64) (*petSheet, error) {
-	raw, err := base64.StdEncoding.DecodeString(stringOr(info["spritesheetBase64"], ""))
+func petSheetEscapes(info *tuigateway.PetSprite, proto gfx.Protocol, scale float64) (*petSheet, error) {
+	raw, err := base64.StdEncoding.DecodeString(info.SpritesheetBase64)
 	if err != nil {
 		return nil, err
 	}
@@ -444,8 +446,8 @@ func petSheetEscapes(info map[string]any, proto gfx.Protocol, scale float64) (*p
 	if err != nil {
 		return nil, err
 	}
-	whole := func(key string, fallback int) int {
-		if n, isNum := info[key].(float64); isNum && n > 0 {
+	whole := func(n int64, fallback int) int {
+		if n > 0 {
 			return int(n)
 		}
 		return fallback
@@ -457,8 +459,8 @@ func petSheetEscapes(info map[string]any, proto gfx.Protocol, scale float64) (*p
 	sheet := toNRGBA(decoded)
 	out := &petSheet{proto: proto, frames: map[string][]string{}, size: map[string][2]int{}}
 	for _, state := range pet.States {
-		frames, w, h := pet.SheetFrameEscapes(sheet, string(state), mode, whole("frameW", pet.FrameW), whole("frameH", pet.FrameH),
-			whole("framesPerState", pet.FramesPerState), scale)
+		frames, w, h := pet.SheetFrameEscapes(sheet, string(state), mode, whole(info.FrameW, pet.FrameW), whole(info.FrameH, pet.FrameH),
+			whole(info.FramesPerState, pet.FramesPerState), scale)
 		out.frames[string(state)], out.size[string(state)] = frames, [2]int{w, h}
 	}
 	return out, nil
@@ -701,19 +703,15 @@ func halfBlockRows(grid [][]pet.Cell) []string {
 }
 
 // Painted frames of a pet.cells answer, each cell its top and bottom pixel as eight channel values
-func petCellFrames(list []any) *petFrames {
+func petCellFrames(list [][][][8]int64) *petFrames {
 	out := &petFrames{}
-	for _, f := range list {
-		grid, _ := f.([]any)
+	for _, grid := range list {
 		cells := make([][]pet.Cell, 0, len(grid))
-		for _, r := range grid {
-			row, _ := r.([]any)
+		for _, row := range grid {
 			line := make([]pet.Cell, len(row))
-			for x, c := range row {
-				values, _ := c.([]any)
-				for i := 0; i < 8 && i < len(values); i++ {
-					n, _ := values[i].(float64)
-					line[x][i/4][i%4] = uint8(min(max(int(n), 0), 255))
+			for x, values := range row {
+				for i, n := range values {
+					line[x][i/4][i%4] = uint8(min(max(n, 0), 255))
 				}
 			}
 			out.cols = max(out.cols, len(line))

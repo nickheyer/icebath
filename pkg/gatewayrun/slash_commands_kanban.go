@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gatewayrun
 
 import (
@@ -18,7 +20,7 @@ import (
 var kanbanCreatedRe = pyre.MustCompile(`Created\s+(t_[0-9a-f]+)\b`)
 
 // Kanban CLI output for the slash arguments, auto subscribing the chat to a task it created
-func (r *GatewayRunner) handleKanbanCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
+func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	text := pystr.LstripChars(pystr.Strip(event.Text), "/")
 	if strings.HasPrefix(text, "kanban") {
 		text = pystr.Lstrip(text[len("kanban"):])

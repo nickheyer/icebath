@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/lsp"
 )
 
 // Worktrees section of the active profile config with every field coerced
@@ -507,12 +506,15 @@ func indexMoved(path, captured string) string {
 
 // Stops this process's language servers for the tree before it is removed, never blocking removal
 func releaseLspClients(wtPath string) {
+	if lspReleaseWorkspace == nil {
+		return
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			envLog(nil).Debug(fmt.Sprintf("LSP release for worktree %s failed: %v", wtPath, r))
 		}
 	}()
-	lsp.ReleaseWorkspace(wtPath)
+	lspReleaseWorkspace(wtPath)
 }
 
 // ReleaseLspClients stops the language servers rooted at a worktree before its removal

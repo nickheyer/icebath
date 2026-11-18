@@ -299,7 +299,8 @@ func downloadMediaOnce(ctx context.Context, env *Env, rawURL, destination string
 	base := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if err := base(req, via); err != nil {
-			if strings.HasPrefix(err.Error(), "Blocked redirect") {
+			var blocked *BlockedRedirectError
+			if errors.As(err, &blocked) {
 				return &mediaValueError{msg: err.Error()}
 			}
 			return err

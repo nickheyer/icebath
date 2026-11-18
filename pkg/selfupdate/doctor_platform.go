@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
@@ -162,7 +163,7 @@ const doctorSQLiteHeaderMagic = "SQLite format 3\x00"
 // Why a database file could not be read, answered from metadata without opening it
 func doctorUnreadableReason(dbPath string) string {
 	if _, err := os.Stat(dbPath); err != nil {
-		return pyfs.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	if pyfs.Access(dbPath, 4) {
 		return "file could not be read"

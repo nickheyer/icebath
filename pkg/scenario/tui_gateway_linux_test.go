@@ -59,7 +59,7 @@ func TestScenarioTUIGatewayWebSocketTurn(t *testing.T) {
 		s.Failf("session-ticket granted %v", grant)
 	}
 	refused := s.value(s.UnixLine("gateway.sock", `{"protocol":1,"id":1,"verb":"session-ticket","params":{"profile_id":"${ICEBATH_HOME}","instance_id":"0000","purpose":"interactive"}}`))
-	s.HasJSON(refused, `{"ok": false, "error": "PermissionError: stale runtime instance"}`)
+	s.HasJSON(refused, `{"ok": false, "error": "stale runtime instance"}`)
 
 	url := "ws" + strings.TrimPrefix(origin, "http") + "/api/ws"
 	_, resp, err := websocket.DefaultDialer.Dial(url, http.Header{"Sec-WebSocket-Protocol": {"icebath-gateway-v1, icebath-gateway-ticket.not-a-ticket"}})

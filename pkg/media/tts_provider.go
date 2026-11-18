@@ -6,7 +6,6 @@ import (
 	"iter"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -78,7 +77,7 @@ func (d TTSProviderDefaults) DefaultVoice() string {
 // Refuses streaming so the dispatcher falls back to synthesize and a whole file read
 func (d TTSProviderDefaults) Stream(context.Context, string, TTSOptions) (iter.Seq2[[]byte, error], error) {
 	return nil, &TTSNotImplementedError{fmt.Sprintf("TTS provider %s does not implement streaming "+
-		"synthesis. Use synthesize() instead, or implement stream() if your backend supports it.", pyrepr.StrRepr(d.tts().Name()))}
+		"synthesis. Use synthesize() instead, or implement stream() if your backend supports it.", errchain.Show(d.tts().Name()))}
 }
 
 // Pre loads resident resources when speech output turns on, nothing unless overridden
@@ -247,7 +246,7 @@ func (h hostedTTSProvider) Stream(ctx context.Context, text string, opts TTSOpti
 			case string:
 				chunk = []byte(b)
 			default:
-				yield(nil, fmt.Errorf("TTS provider %s stream() yielded %T instead of bytes", pyrepr.StrRepr(h.Name()), item))
+				yield(nil, fmt.Errorf("TTS provider %s stream() yielded %T instead of bytes", errchain.Show(h.Name()), item))
 				return
 			}
 			if !yield(chunk, nil) {

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package app
 
 import (
@@ -12,6 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
+
+// Adds /browser to the slash dispatch table and the browser session reaper to shutdown
+func init() {
+	slashDispatch["browser"] = withArg((*CLI).handleBrowserCommand)
+	emergencyCleanupBrowsers = browser.EmergencyCleanupAllSessions
+}
 
 // Runs fn, a panic in the optional subsystem leaving the default result as the Python probe does
 func probeCall(fn func()) {

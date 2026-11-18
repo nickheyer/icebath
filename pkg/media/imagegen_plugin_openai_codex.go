@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -141,7 +142,7 @@ func codexLocalImageToDataURL(env *tools.Env, value string) (string, error) {
 	}
 	path, err := pypath.Resolve(pypath.Expanduser(value))
 	if err != nil {
-		return "", fmt.Errorf("%s", pypath.OSErrorText(err))
+		return "", fmt.Errorf("%s", errchain.OSText(err))
 	}
 	st, err := os.Stat(path)
 	if err != nil || !st.Mode().IsRegular() {
@@ -152,7 +153,7 @@ func codexLocalImageToDataURL(env *tools.Env, value string) (string, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("%s", pypath.OSErrorText(err))
+		return "", fmt.Errorf("%s", errchain.OSText(err))
 	}
 	return encodeCodexInputImage(raw, "Image input path exceeds 25MB cap: "+value, "Image input path is not a supported image: "+value)
 }

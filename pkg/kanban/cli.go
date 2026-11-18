@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -92,7 +93,7 @@ func parseWorkspaceFlag(value *string) (*string, *string, error) {
 		kind, expanded := pair[1], pypath.Expanduser(path)
 		return &kind, &expanded, nil
 	}
-	return nil, nil, &argumentTypeError{"unknown --workspace value " + pyrepr.Repr(*value) + ": use scratch, worktree, worktree:<path>, or dir:<path>"}
+	return nil, nil, &argumentTypeError{"unknown --workspace value " + errchain.Show(*value) + ": use scratch, worktree, worktree:<path>, or dir:<path>"}
 }
 
 // Normalized optional --branch name, refusing blank, dash leading and whitespace names
@@ -174,7 +175,7 @@ func KanbanCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) (i
 			return cliErr(errw, "kanban: --board requires a slug", 2), nil
 		}
 		if normed != DefaultBoard && !BoardExists(&normed) {
-			return cliErr(errw, fmt.Sprintf("kanban: board %s does not exist. Create it with `icebath kanban boards create %s`.", pyrepr.Repr(normed), normed), 1), nil
+			return cliErr(errw, fmt.Sprintf("kanban: board %s does not exist. Create it with `icebath kanban boards create %s`.", errchain.Show(normed), normed), 1), nil
 		}
 		c.ctx = ScopedCurrentBoard(c.ctx, normed)
 	}
@@ -186,7 +187,7 @@ func KanbanCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) (i
 	}
 	handler, ok := c.handlers()[action]
 	if !ok {
-		return cliErr(errw, "kanban: unknown action "+pyrepr.Repr(action), 2), nil
+		return cliErr(errw, "kanban: unknown action "+errchain.Show(action), 2), nil
 	}
 	rc, err := handler()
 	if err != nil {
@@ -342,15 +343,15 @@ func parseDuration(val any) (*int64, error) {
 		return &v, nil
 	}
 	if s == "" {
-		return nil, &ValueError{"malformed duration " + pyrepr.Repr(val) + " (expected 30s, 5m, 2h, 1d, or a number)"}
+		return nil, &ValueError{"malformed duration " + errchain.Show(val) + " (expected 30s, 5m, 2h, 1d, or a number)"}
 	}
 	unit, ok := durationUnits[s[len(s)-1]]
 	if !ok {
-		return nil, &ValueError{"malformed duration " + pyrepr.Repr(val) + " (expected 30s, 5m, 2h, 1d, or a number)"}
+		return nil, &ValueError{"malformed duration " + errchain.Show(val) + " (expected 30s, 5m, 2h, 1d, or a number)"}
 	}
 	n, err := pyint.ParseFloat(s[:len(s)-1])
 	if err != nil {
-		return nil, &ValueError{"malformed duration " + pyrepr.Repr(val)}
+		return nil, &ValueError{"malformed duration " + errchain.Show(val)}
 	}
 	total := n * unit
 	if math.IsNaN(total) {
@@ -2197,7 +2198,7 @@ func (c *kanbanCLI) runTriageSweep(verb, jsonKey string, listIDs func(*string) (
 			} else {
 				suffix := ""
 				if tenant != nil && *tenant != "" {
-					suffix = " for tenant " + pyrepr.Repr(*tenant)
+					suffix = " for tenant " + errchain.Show(*tenant)
 				}
 				fmt.Fprintln(c.w, "No triage tasks"+suffix+".")
 			}
@@ -2245,7 +2246,7 @@ func (c *kanbanCLI) runTriageSweep(verb, jsonKey string, listIDs func(*string) (
 // Retitle note of an outcome with a new title
 func retitledSuffix(newTitle *string) string {
 	if newTitle != nil && *newTitle != "" {
-		return " — retitled: " + pyrepr.Repr(*newTitle)
+		return " — retitled: " + errchain.Show(*newTitle)
 	}
 	return ""
 }

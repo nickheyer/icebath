@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -624,7 +623,7 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 			}
 		}
 		if !truthy(entry.Vals["url"]) && !truthy(entry.Vals["command"]) {
-			data.Problems = append(data.Problems, fmt.Sprintf("MCP server %s has no command or URL", pyrepr.StrRepr(name)))
+			data.Problems = append(data.Problems, fmt.Sprintf("MCP server %s has no command or URL", name))
 			continue
 		}
 		data.MCPServers.Set(name, entry)

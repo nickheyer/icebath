@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -156,7 +156,7 @@ func urlopenErrorText(err error) (string, bool) {
 	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
 		return "Remote end closed connection without response", true
 	case errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED):
-		return pyhttpx.OSErrorText(err), true
+		return errchain.OSText(err), true
 	}
 	return "", false
 }

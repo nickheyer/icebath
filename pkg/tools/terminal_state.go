@@ -47,12 +47,6 @@ var containerAliases = struct {
 	m map[string]string
 }{m: map[string]string{}}
 
-// Once per process guard for the docker orphan reaper
-var dockerOrphanReaper struct {
-	sync.Mutex
-	ran bool
-}
-
 // Bound session context variable, the engaged session map first, the session values and process env second
 func sessionContextValue(env *Env, name string) string {
 	if vars, _ := sessionContextState(env); vars != nil {
@@ -112,43 +106,6 @@ func containerProfile(env *Env) string {
 		return session
 	}
 	return homeProfileName(env)
-}
-
-// Runs the docker orphan reaper once per process when enabled
-func maybeReapDockerOrphans(env *Env, containerConfig map[string]any) error {
-	if v, ok := containerConfig["docker_orphan_reaper"]; ok && v != nil && !truthy(v) {
-		return nil
-	}
-	dockerOrphanReaper.Lock()
-	if dockerOrphanReaper.ran {
-		dockerOrphanReaper.Unlock()
-		return nil
-	}
-	dockerOrphanReaper.ran = true
-	dockerOrphanReaper.Unlock()
-	policy, err := terminalPolicy(env)
-	if err != nil {
-		return err
-	}
-	lifetime, err := parseTerminalInt(policy, "TERMINAL_LIFETIME_SECONDS", "300")
-	if err != nil {
-		lifetime = 300
-	}
-	if lifetime < 60 {
-		lifetime = 60
-	}
-	maxAge := lifetime * 2
-	sharedKey, _ := containerConfig["docker_shared_container_key"].(string)
-	profile := dockerContainerIdentity(env, sharedKey)
-	removed, err := dockerReapOrphanContainers(env, maxAge, profile)
-	if err != nil {
-		envLog(env).Debug("Docker orphan reaper raised", "error", err)
-		return nil
-	}
-	if removed > 0 {
-		envLog(env).Info("Docker orphan reaper removed stale containers", "count", removed, "profile", profile)
-	}
-	return nil
 }
 
 // RecordSessionCwd records the working directory a session finished in

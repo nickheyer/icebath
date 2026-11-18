@@ -8,10 +8,10 @@ import (
 	"os"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -67,7 +67,7 @@ func foreignDisplayTitle(parsed foreignParsed, source string) string {
 func foreignCandidates(source any) ([]foreignCandidate, error) {
 	switch source.(type) {
 	case []any, map[string]any:
-		return nil, &pyrepr.FormatError{Class: "TypeError", Msg: "unhashable type: '" + pyrepr.TypeName(source) + "'"}
+		return nil, &appClassedError{class: "TypeError", msg: "session source is " + errchain.Kind(source) + " where a source name was expected"}
 	}
 	if source != nil {
 		name, isText := source.(string)

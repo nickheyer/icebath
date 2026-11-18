@@ -215,7 +215,7 @@ func TestProcessErrorDetailMissingOrByteOutputDoesNotMaskTheFailure(t *testing.T
 		stderr, stdout any
 		expected       string
 	}{
-		{nil, nil, "returned non-zero exit status 1"},
+		{nil, nil, "exited with status 1"},
 		{nil, " stdout detail \n", "stdout detail"},
 		{[]byte(" bad \xff output \n"), nil, "bad � output"},
 	}

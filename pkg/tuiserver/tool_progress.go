@@ -398,22 +398,11 @@ func progressToolProgress(ctx context.Context, sid string, name, preview any, kw
 
 // Emits the risk badge of a tool row when the session shows tool progress
 func progressOutputRisk(ctx context.Context, sid string, name, preview any, kw map[string]any) {
-	metadata, ok := kw["risk_metadata"].(map[string]any)
-	if !ok || !toolProgressEnabled(sid) {
+	payload := tuihost.OutputRiskPayload(pyrepr.Str(name), kw)
+	if payload == nil || !toolProgressEnabled(sid) {
 		return
 	}
-	risk := "low"
-	if value := metadata["risk"]; truthy(value) {
-		risk = pyrepr.Str(value)
-	}
-	findings := []any{}
-	if list, ok := metadata["findings"].([]any); ok {
-		for _, item := range list {
-			findings = append(findings, pyrepr.Str(item))
-		}
-	}
-	emitEvent(ctx, "tool.output_risk", sid, map[string]any{"tool_id": strOr(kw["tool_call_id"]), "name": pyrepr.Str(name),
-		"risk": risk, "findings": findings, "redacted": truthy(metadata["redacted"])})
+	emitEvent(ctx, "tool.output_risk", sid, payload)
 }
 
 // Emits reasoning.available when the session shows reasoning

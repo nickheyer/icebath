@@ -5,7 +5,7 @@ package pm
 import (
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // MemberDir is one plugin member, the installed identity it answers to and the tree that supplies it
@@ -67,7 +67,7 @@ func EncodePluginInput(p PluginInput) map[string]any {
 func pluginInputField(value map[string]any, key string) (any, error) {
 	v, ok := value[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: "the plugin input has no " + key}
 	}
 	return v, nil
 }
@@ -96,7 +96,7 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 		if raw, ok := value["sources"]; ok {
 			list, ok := raw.([]any)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(raw))}
+				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugin input sources must be a list, got %s", errchain.Kind(raw))}
 			}
 			dirs := make([]MemberDir, 0, len(list))
 			for _, item := range list {
@@ -105,7 +105,7 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 					return nil, err
 				}
 				if len(pair) != 2 {
-					return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(pair))}
+					return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("a plugin input source must pair an identity with a path, got %d values", len(pair))}
 				}
 				dirs = append(dirs, MemberDir{Identity: pair[0], Source: pair[1]})
 			}
@@ -129,12 +129,12 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 		}
 		data, ok := raw.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not a mapping", pyrepr.TypeName(raw))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugin %s data must be a mapping, got %s", kind, errchain.Kind(raw))}
 		}
 		if kind == "selection" {
 			return &Selection{Data: data}, nil
 		}
 		return &StagedUpdate{Data: data}, nil
 	}
-	return nil, &PyError{Class: "ValueError", Message: "unknown plugin input kind: " + pyrepr.Repr(rawKind)}
+	return nil, &PyError{Class: "ValueError", Message: "unknown plugin input kind: " + errchain.Show(rawKind)}
 }

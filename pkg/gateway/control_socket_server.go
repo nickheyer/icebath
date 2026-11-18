@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const maxControlRequestBytes = 64 * 1024
@@ -394,6 +395,8 @@ func BuildIdentifyPayload() *pyjson.Object {
 	for _, pair := range codeIdentityFields() {
 		payload.Set(pair[0].(string), pair[1])
 	}
+	payload.Set("build_id", tuigateway.BuildID())
+	payload.Set("contract_version", int64(tuigateway.ContractVersion))
 	func() {
 		defer func() { _ = recover() }()
 		if status := ReadRuntimeStatus(""); status != nil {

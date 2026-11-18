@@ -16,7 +16,7 @@ import (
 func withCheckpoints[T any](ctx context.Context, session *tuihost.Session, fn func(mgr *tools.CheckpointManager, cwd string) T) T {
 	a := sessionAgent(session)
 	if a == nil {
-		panic(fmt.Errorf("'NoneType' object has no attribute '_checkpoint_mgr'"))
+		panic(fmt.Errorf("the session has no agent, so it has no checkpoints"))
 	}
 	return fn(a.CheckpointManager(), sessionCwd(ctx, session))
 }

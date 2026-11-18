@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
@@ -36,23 +35,7 @@ func (r *GatewayRunner) describeActiveWork(ctx context.Context) []map[string]any
 		}
 		units = append(units, unit)
 	}
-	func() {
-		defer func() { _ = recover() }()
-		wedged := cron.GetWedgedJobIDs(ctx)
-		for _, job := range cron.GetRunningJobDetails() {
-			jobPID := pid
-			if job.WorkerPID != nil && *job.WorkerPID != 0 {
-				jobPID = *job.WorkerPID
-			}
-			var elapsed any
-			if job.ElapsedS != nil {
-				elapsed = *job.ElapsedS
-			}
-			units = append(units, map[string]any{"kind": "cron", "job_id": job.JobID, "elapsed_s": elapsed,
-				"pid": jobPID, "external": job.WorkerPID != nil && *job.WorkerPID != 0,
-				"wedged": wedged[job.JobID], "restart_safe": job.RestartSafe})
-		}
-	}()
+	units = append(units, cronJobUnits(ctx, pid)...)
 	counts := []struct {
 		kind  string
 		count int

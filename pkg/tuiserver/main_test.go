@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -28,9 +28,9 @@ func TestMain(m *testing.M) {
 	home.DispatchScratchPruneEntry(context.Background())
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
-	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
+	tools.AsyncDelegationOwnerProbes.PidExists = gateway.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = func(pid int) (int64, bool) {
-		switch v := kanban.GatewayStatusProbes.ProcessStartTime(pid).(type) {
+		switch v := gateway.GetProcessStartTime(pid).(type) {
 		case int64:
 			return v, true
 		case int:
@@ -188,4 +188,34 @@ func testAgent(t *testing.T, o agent.AIAgentOptions) *agent.AIAgent {
 		t.Fatal(err)
 	}
 	return a
+}
+
+// Child mode of the test binary, a lease transition or a sleeping launcher stand in for another process
+func runTestChild() {
+	switch os.Getenv("ICEBATH_TEST_CHILD") {
+	case "":
+		return
+	case "lease-acquire":
+		if _, err := botdesktop.LeaseAcquire(os.Getenv("ICEBATH_TEST_VIEWER"), "", os.Getenv("ICEBATH_TEST_REASON")); err != nil {
+			os.Exit(1)
+		}
+	case "lease-release":
+		viewer := os.Getenv("ICEBATH_TEST_VIEWER")
+		if _, err := botdesktop.LeaseRelease(botdesktop.LeaseReleaseOptions{ViewerID: &viewer}); err != nil {
+			os.Exit(1)
+		}
+	case "sleep":
+		time.Sleep(30 * time.Second)
+	case "session-lease-holder":
+		sessionLeaseHolderChild()
+	}
+	os.Exit(0)
+}
+
+// Writes text to a file the test owns
+func writeFile(t *testing.T, path, text string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }

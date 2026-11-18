@@ -415,7 +415,7 @@ func (c *connectionManager) receiveLoop(ctx context.Context, ws wsConn) error {
 	adapter := c.adapter
 	name := adapter.Name()
 	if ws == nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] receive_loop exited: 'async for' requires an object with __aiter__ method, got NoneType", name))
+		pkgLog().Warn(fmt.Sprintf("[%s] receive_loop exited: the connection has no socket to read from", name))
 		c.scheduleReconnect(ctx)
 		return nil
 	}

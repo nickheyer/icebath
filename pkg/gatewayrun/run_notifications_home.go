@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -102,7 +103,7 @@ func (r *GatewayRunner) sendHomeChannelMessage(ctx context.Context, platform gat
 	} else if adapter, ok := transport.Adapter.(gateway.PlatformAdapter); ok {
 		result, err = adapter.Send(ctx, home.ChatID, message, "", nil)
 	} else {
-		err = fmt.Errorf("'%T' object has no attribute 'send'", transport.Adapter)
+		err = errors.New("the delivery transport has no adapter that can send")
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf(failureFmt, platform, home.ChatID, err))

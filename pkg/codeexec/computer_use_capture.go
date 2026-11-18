@@ -22,6 +22,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
@@ -117,7 +118,7 @@ func formatElements(elements []UIElement, maxLines int) []string {
 		if i >= maxLines {
 			break
 		}
-		line := fmt.Sprintf("  #%d %s %s ", e.Index, e.Role, pyrepr.Repr(pyPrefix(strings.ReplaceAll(e.Label, "\n", " "), 60)))
+		line := fmt.Sprintf("  #%d %s %s ", e.Index, e.Role, errchain.Show(pyPrefix(strings.ReplaceAll(e.Label, "\n", " "), 60)))
 		if boundsUnknown(e.Bounds) {
 			line += "@ bounds-unknown (click by element index)"
 		} else {
@@ -235,7 +236,7 @@ func captureSummaryLines(v *captureView) []string {
 	if v.boundsNote != "" {
 		n := v.boundsNote
 		if v.boundsScale != nil && *v.boundsScale != 0 {
-			s := pyrepr.Repr(*v.boundsScale)
+			s := errchain.Show(*v.boundsScale)
 			n += fmt.Sprintf("; estimated scale ~%sx (screenshot position x %s ≈ native coordinate)", s, s)
 		}
 		notes = append(notes, n)
@@ -262,7 +263,7 @@ func captureSummaryLines(v *captureView) []string {
 		head += " app=" + v.cap.App
 	}
 	if v.cap.WindowTitle != "" {
-		head += " window=" + pyrepr.Repr(v.cap.WindowTitle)
+		head += " window=" + errchain.Show(v.cap.WindowTitle)
 	}
 	lines := []string{head, fmt.Sprintf("%d interactable element(s):", v.total)}
 	for _, n := range notes {

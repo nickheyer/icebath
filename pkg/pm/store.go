@@ -22,8 +22,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"golang.org/x/text/encoding/charmap"
@@ -184,7 +182,7 @@ func pyIntHeader(value string) (int64, error) {
 		return 0, nil
 	}
 	if !pyIntLiteral.MatchString(value) {
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(value))
+		return 0, fmt.Errorf("the header value %s is not a whole number", value)
 	}
 	return strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(value), "_", ""), 10, 64)
 }
@@ -199,17 +197,17 @@ type TarFilterError struct {
 func (e *TarFilterError) Error() string {
 	switch e.Kind {
 	case "AbsolutePathError":
-		return fmt.Sprintf("member %s has an absolute path", tarRepr(e.Member))
+		return fmt.Sprintf("member %s has an absolute path", strconv.Quote(e.Member))
 	case "OutsideDestinationError":
-		return fmt.Sprintf("%s would be extracted to %s, which is outside the destination", tarRepr(e.Member), tarRepr(e.Path))
+		return fmt.Sprintf("%s would be extracted to %s, which is outside the destination", strconv.Quote(e.Member), strconv.Quote(e.Path))
 	case "SpecialFileError":
-		return fmt.Sprintf("%s is a special file", tarRepr(e.Member))
+		return fmt.Sprintf("%s is a special file", strconv.Quote(e.Member))
 	case "AbsoluteLinkError":
-		return fmt.Sprintf("%s is a link to an absolute path", tarRepr(e.Member))
+		return fmt.Sprintf("%s is a link to an absolute path", strconv.Quote(e.Member))
 	case "LinkFallbackError":
-		return fmt.Sprintf("link %s would be extracted as a copy of %s, which was rejected", tarRepr(e.Member), tarRepr(e.Path))
+		return fmt.Sprintf("link %s would be extracted as a copy of %s, which was rejected", strconv.Quote(e.Member), strconv.Quote(e.Path))
 	}
-	return fmt.Sprintf("%s would link to %s, which is outside the destination", tarRepr(e.Member), tarRepr(e.Path))
+	return fmt.Sprintf("%s would link to %s, which is outside the destination", strconv.Quote(e.Member), strconv.Quote(e.Path))
 }
 
 // Member failure tarfile reports as an ExtractError and skips instead of raising
@@ -518,7 +516,7 @@ func (x *tarExtraction) writeData(m *tarInfo, out *os.File) error {
 // Moves a file being written to an absolute offset, one past the C offset range a ValueError as in Python
 func tarSeekFile(out *os.File, pos *big.Int) error {
 	if !pos.IsInt64() {
-		return &TarReadError{Class: "ValueError", Message: "cannot fit 'int' into an offset-sized integer"}
+		return &TarReadError{Class: "ValueError", Message: "an archive offset is larger than a 64 bit integer holds"}
 	}
 	_, err := out.Seek(pos.Int64(), io.SeekStart)
 	return err
@@ -622,7 +620,7 @@ func (x *tarExtraction) makeLink(f *filteredMember, targetpath string) error {
 		if failed {
 			return &tarExtractError{message: "unable to resolve link inside archive"}
 		}
-		return &TarReadError{Class: "KeyError", Message: tarRepr(fmt.Sprintf("linkname %s not found", tarRepr(linkname)))}
+		return &TarReadError{Class: "KeyError", Message: fmt.Sprintf("linkname %s not found", strconv.Quote(linkname))}
 	}
 	renamed := *unfiltered
 	renamed.name = f.name

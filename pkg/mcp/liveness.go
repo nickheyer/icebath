@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -124,7 +125,7 @@ func ParseLiveness(raw any) (Liveness, error) {
 	if raw := m["fields"]; pyTruthy(raw) {
 		overrides, ok := raw.(map[string]any)
 		if !ok {
-			return Liveness{}, fmt.Errorf("'%s' object is not a mapping", pyTypeName(raw))
+			return Liveness{}, fmt.Errorf("server_json liveness fields are %s where a mapping was expected", errchain.Kind(raw))
 		}
 		for k, v := range overrides {
 			fields[k] = v

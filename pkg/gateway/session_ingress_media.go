@@ -172,7 +172,7 @@ func referenceItem(reference any, key string) (any, error) {
 	}
 	v, has := obj.Get(key)
 	if !has {
-		return nil, errors.New(pyrepr.Repr(key))
+		return nil, errors.New("missing " + key)
 	}
 	return v, nil
 }

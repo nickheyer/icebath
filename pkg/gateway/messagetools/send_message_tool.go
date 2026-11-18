@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -62,7 +63,7 @@ var adapterMediaGoMethod = map[string]string{"send_image_file": "SendImageFile",
 func sendLiveAdapterMedia(ctx context.Context, live any, chatID, message string, mediaFiles []gateway.MediaRef, threadID *string, metadata map[string]any, forceDocument bool) (map[string]any, error) {
 	adapter, ok := live.(gateway.PlatformAdapter)
 	if !ok {
-		return nil, fmt.Errorf("'%T' object has no attribute 'send'", live)
+		return nil, errors.New("the live adapter cannot send")
 	}
 	caption, separateText := mediaCaptionSplit(message, mediaFiles, defaultCaptionLimit)
 	var last *gateway.SendResult
@@ -129,7 +130,7 @@ func sendLiveAdapterMedia(ctx context.Context, live any, chatID, message string,
 	result := map[string]any{"success": true, "message_id": last.MessageID, "media_delivered": true}
 	if len(unconfirmed) > 0 {
 		result["delivery_unconfirmed"] = fmt.Sprintf("media file(s) %s of %d were sent but the platform never confirmed "+
-			"receipt; they may already be in the chat, so do not resend them", pyrepr.Repr(unconfirmed), total)
+			"receipt; they may already be in the chat, so do not resend them", errchain.Show(unconfirmed), total)
 	}
 	return result, nil
 }
@@ -218,7 +219,7 @@ func sendViaAdapter(ctx context.Context, platform gateway.Platform, pconfig *gat
 				makeCoro = func(ctx context.Context) (any, error) {
 					pa, ok := adapter.(gateway.PlatformAdapter)
 					if !ok {
-						return nil, fmt.Errorf("'%T' object has no attribute 'send'", adapter)
+						return nil, errors.New("the adapter cannot send")
 					}
 					return pa.Send(ctx, chatID, chunk, "", metadata)
 				}
@@ -281,12 +282,12 @@ func sendViaAdapter(ctx context.Context, platform gateway.Platform, pconfig *gat
 		}
 		return result, nil
 	}
-	typeName := "dict"
+	got := "a mapping with neither"
 	if result == nil {
-		typeName = "NoneType"
+		got = "nothing"
 	}
-	return map[string]any{"error": fmt.Sprintf("Plugin standalone send for '%s' returned an invalid result: "+
-		"expected a dict with 'success' or 'error' keys, got %s", platformName, typeName)}, nil
+	return map[string]any{"error": fmt.Sprintf("Plugin standalone send for %s returned an invalid result: "+
+		"expected a mapping with success or error, got %s", platformName, got)}, nil
 }
 
 // Sends each chunk in order, stopping at the first error payload, the last result otherwise

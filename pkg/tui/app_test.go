@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -222,10 +223,10 @@ func TestDropLastExchangeKeepsNotesAndEarlierTurns(t *testing.T) {
 
 func TestConnectionCardWalksTheTargets(t *testing.T) {
 	a := testApp(t)
-	a.store.applyConnectionRequest(map[string]any{"op_id": "op-1", "seq": float64(1), "deadline_at": float64(0), "targets": []any{
-		map[string]any{"name": "github", "state": "connected", "action": "connect"},
-		map[string]any{"name": "linear", "state": "pending", "action": "install", "description": "Issue tracker",
-			"required_env": []any{map[string]any{"name": "LINEAR_API_KEY", "secret": true, "required": true, "default": ""}}},
+	a.store.applyConnectionRequest(tuigateway.ConnectionRequestPayload{OpID: "op-1", Seq: 1, Targets: []tuigateway.ConnectionOperationTarget{
+		{Name: "github", Kind: "mcp", State: "connected", Action: "authorize"},
+		{Name: "linear", Kind: "mcp", State: "pending", Action: "install", Description: ptr("Issue tracker"),
+			RequiredEnv: []tuigateway.ConnectionTargetEnvField{{Name: "LINEAR_API_KEY", Secret: true, Required: true}}},
 	}})
 	a.Update(struct{}{})
 	d, isDialog := a.wm.Overlay().(*dialogCard)
@@ -233,29 +234,29 @@ func TestConnectionCardWalksTheTargets(t *testing.T) {
 		t.Fatalf("overlay %T", a.wm.Overlay())
 	}
 	view := ansi.Strip(d.View(80, 14))
-	for _, want := range []string{"● github · connected", "○ linear · pending", "Issue tracker", "install linear", "skip linear", "LINEAR_API_KEY"} {
+	for _, want := range []string{"● github · connected", "○ linear · pending", "Issue tracker", "Install linear", "Skip", "LINEAR_API_KEY"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("card lacks %q:\n%s", want, view)
 		}
 	}
 	target := a.activeConnectionTarget()
 	approved := connectionAnswer(target, "approved", []string{"lin_key"})
-	row := approved["targets"].([]any)[0].(map[string]any)
-	if row["name"] != "linear" || row["status"] != "approved" || row["env"].(map[string]any)["LINEAR_API_KEY"] != "lin_key" {
-		t.Fatalf("answer %v", approved)
+	if row := approved.Targets[0]; row.Name != "linear" || row.Status != "approved" || row.Env["LINEAR_API_KEY"] != "lin_key" {
+		t.Fatalf("answer %+v", approved)
 	}
-	if skipped := connectionAnswer(target, "skipped", nil)["targets"].([]any)[0].(map[string]any); skipped["status"] != "skipped" || skipped["env"] != nil {
-		t.Fatalf("skip %v", skipped)
+	if skipped := connectionAnswer(target, "skipped", nil).Targets[0]; skipped.Status != "skipped" || skipped.Env != nil {
+		t.Fatalf("skip %+v", skipped)
 	}
-	a.store.applyConnectionUpdate(map[string]any{"op_id": "op-1", "seq": float64(2), "targets": []any{
-		map[string]any{"name": "github", "state": "connected"}, map[string]any{"name": "linear", "state": "initiated", "connect_url": "https://linear.app/oauth"}}})
+	a.store.applyConnectionUpdate(tuigateway.ConnectionUpdatePayload{ConnectionOperationSnapshot: tuigateway.ConnectionOperationSnapshot{OpID: "op-1", Seq: 2,
+		Targets: []tuigateway.ConnectionOperationTarget{{Name: "github", Kind: "mcp", Action: "authorize", State: "connected"},
+			{Name: "linear", Kind: "mcp", Action: "install", State: "initiated", ConnectURL: ptr("https://linear.app/oauth")}}}})
 	a.Update(struct{}{})
 	next, _ := a.wm.Overlay().(*dialogCard)
 	if next == nil || next == d || !strings.Contains(ansi.Strip(next.View(80, 14)), "https://linear.app/oauth") {
 		t.Fatalf("card did not follow the update: %v", next)
 	}
-	if done := connectionAnswer(nil, "", nil); done["settled_by"] != "continue" {
-		t.Fatalf("continue %v", done)
+	if done := connectionAnswer(nil, "", nil); val(done.SettledBy) != "continue" {
+		t.Fatalf("continue %+v", done)
 	}
 }
 

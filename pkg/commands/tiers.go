@@ -15,7 +15,7 @@ var CLITiers = map[string]string{
 	"update-completion": linktier.Extras, "venv-sync": linktier.Extras, "source-completion": linktier.Extras, "import-health": linktier.Extras,
 	"pm": linktier.Extras, "security": linktier.Extras, "import-agent": linktier.Extras, "claw": linktier.Extras,
 	"slack": linktier.Plugins, "whatsapp": linktier.Plugins, "whatsapp-cloud": linktier.Plugins, "send": linktier.Plugins,
-	"camofox": linktier.Plugins, "google_chat": linktier.Plugins, "mcp-serve": linktier.Plugins, "meet": linktier.Plugins,
+	"camofox": linktier.Plugins, "google_chat": linktier.Plugins, "mcp-serve": linktier.Plugins, "meet": linktier.Extras,
 	"photon": linktier.Plugins, "spotify": linktier.Plugins, "teams-pipeline": linktier.Plugins,
 }
 
@@ -36,6 +36,11 @@ func SlashLinked(name string) bool {
 func SlashTierRefusal(name string) (string, bool) {
 	bare := strings.TrimLeft(strings.ToLower(name), "/")
 	return linktier.Refusal("/"+bare, SlashTiers[bare])
+}
+
+// Refusal of a top level CLI command whose tier this binary leaves out
+func CLITierRefusal(name string) (string, bool) {
+	return linktier.Refusal("icebath "+name, CLITiers[name])
 }
 
 // Hides every top level command of an unlinked tier and makes typing one name the build that has it

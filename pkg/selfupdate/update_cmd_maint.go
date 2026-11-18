@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -591,7 +592,7 @@ func resolvePreUpdateBackupMode(ctx context.Context, args map[string]any) string
 	}
 	mode, ok := backupModeAliases[strings.ToLower(pystr.Strip(pyrepr.Str(raw)))]
 	if !ok {
-		pkgLog().WarnContext(ctx, fmt.Sprintf("Unknown updates.pre_update_backup value %s — using 'quick'", pyrepr.Repr(raw)))
+		pkgLog().WarnContext(ctx, fmt.Sprintf("Unknown updates.pre_update_backup value %s — using 'quick'", errchain.Show(raw)))
 		return "quick"
 	}
 	return mode
@@ -712,11 +713,11 @@ func maintInt(v any) (int, error) {
 	case string:
 		n, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(t), "_", ""), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(t))
+			return 0, fmt.Errorf("%s is not a whole number", t)
 		}
 		return int(n), nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Runs the pre update backup, the quick snapshot id or nil when off or failed

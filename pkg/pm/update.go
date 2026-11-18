@@ -21,6 +21,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
@@ -341,7 +342,7 @@ func rowField(row any, key string) (any, error) {
 	}
 	v, ok := m[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: pyrepr.StrRepr(key)}
+		return nil, &PyError{Class: "KeyError", Message: "the artifact row has no " + key}
 	}
 	return v, nil
 }
@@ -471,7 +472,7 @@ func urlOrigin(raw string) (indexOrigin, error) {
 	if port != "" {
 		value, ok := asciiPort(port)
 		if !ok {
-			return indexOrigin{}, &PyError{Class: "ValueError", Message: "Port could not be cast to integer value as " + pyrepr.StrRepr(port)}
+			return indexOrigin{}, &PyError{Class: "ValueError", Message: "the port " + port + " is not a whole number"}
 		}
 		if value < 0 || value > 65535 {
 			return indexOrigin{}, &PyError{Class: "ValueError", Message: "Port out of range 0-65535"}
@@ -684,7 +685,7 @@ func jsonBytesText(b []byte) ([]byte, error) {
 		out, err = utf32.UTF32(utf32.LittleEndian, utf32.IgnoreBOM).NewDecoder().Bytes(b)
 	}
 	if err != nil {
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("'%s' codec can't decode bytes: %s", encoding, err)}
+		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("not valid %s text: %s", encoding, err)}
 	}
 	return out, nil
 }
@@ -766,7 +767,7 @@ func GetText(url string, headers map[string]string) (string, error) { return get
 func jsonGet(v any, key string, fallback any) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
 	}
 	if value, ok := m[key]; ok {
 		return value, nil
@@ -792,9 +793,9 @@ func jsonIter(v any) ([]any, error) {
 		}
 		return out, nil
 	case nil:
-		return nil, &PyError{Class: "TypeError", Message: "'NoneType' object is not iterable"}
+		return nil, &PyError{Class: "TypeError", Message: "expected a list, got nothing"}
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // String field of a decoded JSON object with a default
@@ -805,7 +806,7 @@ func jsonString(v any, key, fallback string) (string, error) {
 	}
 	s, ok := value.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(value))}
+		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("%s must be text, got %s", key, errchain.Kind(value))}
 	}
 	return s, nil
 }
@@ -930,7 +931,7 @@ func NpmDistTags(name string) (map[string]any, error) {
 	}
 	tags, ok := data.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(data))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the npm registry reply for %s must be a mapping, got %s", name, errchain.Kind(data))}
 	}
 	return tags, nil
 }

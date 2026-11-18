@@ -162,13 +162,16 @@ func RegisterNemoRelayBinding(load func() (*NemoRelay, error)) {
 	RegisterNemoRelayReadiness(nil)
 }
 
+// ErrRelayBindingMissing is the failure of a process that has no Relay runtime binding to load
+var ErrRelayBindingMissing = errors.New("the Relay runtime binding is not installed")
+
 // Loads the binding only when a producer or consumer needs Relay
 var loadNemoRelay = func() (*NemoRelay, error) {
 	relayBindingMu.Lock()
 	load := relayBindingLoader
 	relayBindingMu.Unlock()
 	if load == nil {
-		return nil, errors.New("the Relay runtime binding is not installed")
+		return nil, ErrRelayBindingMissing
 	}
 	return load()
 }

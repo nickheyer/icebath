@@ -386,11 +386,21 @@ func xSearchErrorJSON(message, errorType string) string {
 	return JSON(xSearchFailure{Success: false, Provider: "xai", Tool: "x_search", Error: message, ErrorType: errorType})
 }
 
+// Whether a request failure happened while dialing the server
+func dialFailed(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if op, ok := e.(*net.OpError); ok && op.Op == "dial" {
+			return true
+		}
+	}
+	return false
+}
+
 // Transport failure class of a request error, ReadTimeout and ConnectTimeout told apart from ConnectionError
 func xSearchTransportClass(err error) string {
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
-		if strings.Contains(err.Error(), "dial ") {
+		if dialFailed(err) {
 			return "ConnectTimeout"
 		}
 		return "ReadTimeout"

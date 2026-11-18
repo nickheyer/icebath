@@ -8,6 +8,8 @@ type Grant struct {
 	Protocols  []string
 	ProfileID  string
 	InstanceID string
+	// Build of an idle gateway the attach replaced by one of this build, empty when none was
+	Replaced string
 }
 
 // Outcome of a quick snapshot restore, the lines to show and whether the socket was released for it

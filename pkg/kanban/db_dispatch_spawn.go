@@ -173,14 +173,14 @@ func resolveWorkerCLIToolsets(ctx context.Context, icebathHome string) (toolsets
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLog().Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%v)", pyrepr.Repr(icebathHome), r))
+			pkgLog().Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%v)", errchain.Show(icebathHome), r))
 			toolsets = nil
 		}
 	}()
 	scoped := workerProfileScope(ctx, icebathHome, true)
 	cfg, err := config.LoadContext(scoped, icebathHome, os.LookupEnv)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%s)", pyrepr.Repr(icebathHome), pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban worker: could not resolve CLI toolsets for ICEBATH_HOME=%s (%s)", errchain.Show(icebathHome), pyrepr.ExceptionMessage(err)))
 		return nil
 	}
 	for name := range tools.Default.PlatformTools(scoped, "", cfg, "cli", tools.PlatformToolsOptions{}) {

@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -124,7 +125,7 @@ func WriteHostObligation(ctx context.Context, expectedSHA string, runtimes []any
 		return nil
 	})
 	if err != nil {
-		obligationLog().Debug(fmt.Sprintf("Could not lock the host update-restart obligation: %s", pypath.OSErrorText(err)))
+		obligationLog().Debug(fmt.Sprintf("Could not lock the host update-restart obligation: %s", errchain.OSText(err)))
 		return false
 	}
 	return written
@@ -148,11 +149,11 @@ func ArmHostObligation(ctx context.Context, marker, expectedSHA string, runtimes
 	}
 	hidden := ""
 	if err := ReplaceBytes(marker, []byte(strings.Join(lines, "\n")+"\n")); err != nil {
-		hidden = fmt.Sprintf(" or %s (%s)", marker, pypath.OSErrorText(err))
+		hidden = fmt.Sprintf(" or %s (%s)", marker, errchain.OSText(err))
 	}
 	if hidden == "" {
 		if exist, err := namedProfilesExist(); err != nil {
-			hidden = fmt.Sprintf(" (%s may hide it from other profiles: the profile list is unreadable: %s)", marker, pypath.OSErrorText(err))
+			hidden = fmt.Sprintf(" (%s may hide it from other profiles: the profile list is unreadable: %s)", marker, errchain.OSText(err))
 		} else if exist {
 			hidden = fmt.Sprintf(" (%s hides it from the other profiles)", marker)
 		}
@@ -237,7 +238,7 @@ func writeObligationLocked(ctx context.Context, path, expectedSHA string, runtim
 	if owner != "" {
 		var err error
 		if found, err = baselineFor(owner, existing, path); err != nil {
-			obligationLog().Debug(fmt.Sprintf("Could not read the host update-restart obligation: %s", pypath.OSErrorText(err)))
+			obligationLog().Debug(fmt.Sprintf("Could not read the host update-restart obligation: %s", errchain.OSText(err)))
 			return false
 		}
 	}
@@ -260,7 +261,7 @@ func writeObligationLocked(ctx context.Context, path, expectedSHA string, runtim
 		merged := existing.Copy()
 		merged.Update(fields)
 		if err := writeObligationRecord(path, merged); err != nil {
-			obligationLog().Debug(fmt.Sprintf("Could not amend host update-restart obligation: %s", pypath.OSErrorText(err)))
+			obligationLog().Debug(fmt.Sprintf("Could not amend host update-restart obligation: %s", errchain.OSText(err)))
 			return false
 		}
 		return true
@@ -275,11 +276,11 @@ func writeObligationLocked(ctx context.Context, path, expectedSHA string, runtim
 		payload.Set("inventory", pyjson.ObjectOf("version", 1, "runtimes", runtimes))
 	}
 	if _, err := home.MakeUserDir(ctx, filepath.Dir(path), 0o777, true, true); err != nil {
-		obligationLog().Debug(fmt.Sprintf("Could not write host update-restart obligation: %s", pypath.OSErrorText(err)))
+		obligationLog().Debug(fmt.Sprintf("Could not write host update-restart obligation: %s", errchain.OSText(err)))
 		return false
 	}
 	if err := writeObligationRecord(path, payload); err != nil {
-		obligationLog().Debug(fmt.Sprintf("Could not write host update-restart obligation: %s", pypath.OSErrorText(err)))
+		obligationLog().Debug(fmt.Sprintf("Could not write host update-restart obligation: %s", errchain.OSText(err)))
 		return false
 	}
 	return true
@@ -448,7 +449,7 @@ func ReplaceBytes(path string, data []byte) error {
 // Discharges the record this install's readers judged, never failing
 func ClearHostObligation() {
 	if err := os.Remove(owedPath()); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		obligationLog().Debug(fmt.Sprintf("Could not clear host update-restart obligation: %s", pypath.OSErrorText(err)))
+		obligationLog().Debug(fmt.Sprintf("Could not clear host update-restart obligation: %s", errchain.OSText(err)))
 	}
 }
 
@@ -490,7 +491,7 @@ func updateObligationRecord(ctx context.Context, change func(*pyjson.Object), wh
 		return writeObligationRecord(path, record)
 	})
 	if err != nil {
-		obligationLog().Debug(fmt.Sprintf("Could not %s host update-restart obligation: %s", what, pypath.OSErrorText(err)))
+		obligationLog().Debug(fmt.Sprintf("Could not %s host update-restart obligation: %s", what, errchain.OSText(err)))
 	}
 }
 

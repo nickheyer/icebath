@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
@@ -264,7 +265,7 @@ func (r *UpdateReceipt) appendTo(key string, entry *pyjson.Object) error {
 	}
 	list, ok := existing.([]any)
 	if !ok {
-		return fmt.Errorf("'%s' object has no attribute 'append'", pyrepr.TypeName(existing))
+		return fmt.Errorf("update receipt %s is %s where a list was expected", key, errchain.Kind(existing))
 	}
 	r.Data.Set(key, append(list, entry))
 	return nil
@@ -910,8 +911,8 @@ func FinalizeUpdateReceipt(ctx context.Context, outcome string, fleet []any, sto
 	st.mu.Unlock()
 	path, err := finalizeReceipt(ctx, receipt, outcome, fleet, stopReason)
 	if err != nil {
-		receiptLog().Warn(fmt.Sprintf("Could not write update receipt (%s): %s", outcome, pypath.OSErrorText(err)))
-		fmt.Fprintf(receiptStdout, "  ⚠ Update receipt not written: %s\n", pypath.OSErrorText(err))
+		receiptLog().Warn(fmt.Sprintf("Could not write update receipt (%s): %s", outcome, errchain.OSText(err)))
+		fmt.Fprintf(receiptStdout, "  ⚠ Update receipt not written: %s\n", errchain.OSText(err))
 		return ""
 	}
 	return path
@@ -1100,7 +1101,7 @@ func pruneOldReceipts(directory string) {
 func SettleLatestReceiptFleet(ctx context.Context, fleet []any, discharges func(map[string]any) bool) bool {
 	v, err := loadJSONFile(filepath.Join(receiptDir(ctx), "latest.json"))
 	if err != nil {
-		receiptLog().Debug(fmt.Sprintf("Could not settle latest update receipt from the live fleet: %s", pypath.OSErrorText(err)))
+		receiptLog().Debug(fmt.Sprintf("Could not settle latest update receipt from the live fleet: %s", errchain.OSText(err)))
 		return false
 	}
 	receipt, ok := v.(*pyjson.Object)
@@ -1124,7 +1125,7 @@ func SettleLatestReceiptFleet(ctx context.Context, fleet []any, discharges func(
 		err = writeLatest(ctx, payload)
 	}
 	if err != nil {
-		receiptLog().Debug(fmt.Sprintf("Could not settle latest update receipt from the live fleet: %s", pypath.OSErrorText(err)))
+		receiptLog().Debug(fmt.Sprintf("Could not settle latest update receipt from the live fleet: %s", errchain.OSText(err)))
 		return false
 	}
 	return true
@@ -1269,7 +1270,7 @@ func pyList(v any) ([]any, error) {
 		sort.Strings(keys)
 		return stringList(keys), nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("update receipt value is %s where a list was expected", errchain.Kind(v))
 }
 
 // Integer value of a JSON int, bool counting as Python int, false for anything else
@@ -1307,11 +1308,11 @@ func pyIntConvert(v any) (int64, error) {
 	case string:
 		n, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(t), "_", ""), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(t))
+			return 0, fmt.Errorf("%s is not a whole number", t)
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Python float() of a value, false when it raises

@@ -702,7 +702,7 @@ func (s *cuaDriverSession) callToolAsync(name string, args *pyjson.Object) func(
 		client := s.client
 		s.state.Unlock()
 		if client == nil {
-			return nil, errors.New("'NoneType' object has no attribute 'call_tool'")
+			return nil, errors.New("the computer use driver session has no MCP client")
 		}
 		raw, err := client.CallTool(ctx, name, args)
 		if err != nil {

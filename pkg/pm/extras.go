@@ -450,7 +450,7 @@ func DroppableExtras(projectRoot string) ([]string, error) {
 		for _, item := range items {
 			text, ok := item.(string)
 			if !ok {
-				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'replace'", tomlTypeName(item))}
+				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("optional dependency of extra %s must be text, got %s", next, tomlKind(item))}
 			}
 			match := selfRef.FindStringSubmatch(strings.ReplaceAll(text, " ", ""))
 			if match == nil {

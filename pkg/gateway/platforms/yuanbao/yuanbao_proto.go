@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -298,14 +299,17 @@ type part struct {
 }
 
 func typeErr(op string, v any) error {
-	return fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), op)
+	if op == "get" {
+		return fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
+	}
+	return fmt.Errorf("expected text, got %s", errchain.Kind(v))
 }
 
 func intOf(v any) (*big.Int, error) {
 	if n, ok := pyint.Instance(v); ok {
 		return n, nil
 	}
-	return nil, fmt.Errorf("'<' not supported between instances of '%s' and 'int'", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Encodes the parts whose value is set, S always and n whenever not None
@@ -335,7 +339,7 @@ func encodeParts(parts []part) ([]byte, error) {
 		case 'b':
 			body, ok := pt.val.([]any)
 			if !ok {
-				p.fail(fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(pt.val)))
+				p.fail(fmt.Errorf("expected a list, got %s", errchain.Kind(pt.val)))
 				continue
 			}
 			for _, el := range body {
@@ -570,7 +574,7 @@ func encodeMsgContent(contentValue any) ([]byte, error) {
 	if imgs := content["image_info_array"]; pyrepr.Truthy(imgs) {
 		list, ok := imgs.([]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(imgs))
+			return nil, fmt.Errorf("image_info_array must be a list, got %s", errchain.Kind(imgs))
 		}
 		for _, img := range list {
 			enc, err := encodeSpec(img, imageInfoSpec)

@@ -1,4 +1,4 @@
-package lsp
+package workspaces
 
 import (
 	"os"
@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	workspaceCacheCap = 512
-	maxWalk           = 64
+	WorktreeCacheCap = 512
+	maxWalk          = 64
 )
 
 // One cached worktree resolution
@@ -104,7 +104,7 @@ func FindGitWorktree(start string) string {
 	}
 	workspaceMu.Lock()
 	workspaceCache[startPath] = worktreeHit{root: resolved, found: resolved != ""}
-	if len(workspaceCache) > workspaceCacheCap {
+	if len(workspaceCache) > WorktreeCacheCap {
 		workspaceCache = map[string]worktreeHit{}
 	}
 	workspaceMu.Unlock()
@@ -240,4 +240,42 @@ func ClearWorkspaceCache() {
 	workspaceMu.Lock()
 	workspaceCache = map[string]worktreeHit{}
 	workspaceMu.Unlock()
+}
+
+// CachedWorktrees counts the worktree resolutions held in the cache
+func CachedWorktrees() int {
+	workspaceMu.Lock()
+	defer workspaceMu.Unlock()
+	return len(workspaceCache)
+}
+
+// PathList reads a config list of paths with the tilde expanded, false when not a list of strings
+func PathList(v any) ([]string, bool) {
+	if v == nil {
+		return []string{}, true
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, false
+	}
+	out := []string{}
+	for _, e := range list {
+		s, ok := e.(string)
+		if !ok {
+			return nil, false
+		}
+		if s != "" {
+			out = append(out, pypath.Expanduser(s))
+		}
+	}
+	return out, true
+}
+
+// TrustedWorkspaces reads lsp.trusted_workspaces as directories, false when the value is malformed
+func TrustedWorkspaces(value any) ([]string, bool) {
+	roots, ok := PathList(value)
+	if !ok {
+		return []string{}, false
+	}
+	return roots, true
 }

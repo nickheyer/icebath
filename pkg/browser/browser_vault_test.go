@@ -718,11 +718,11 @@ func TestEveryRegisteredToolSchemaDeclaresOpenaiStyleParameters(t *testing.T) {
 func TestSaveLoginPromptSavesToPageOriginAndNeverEchoesThePassword(t *testing.T) {
 	ctx, env, store, _ := vaultStore(t)
 	seen := map[string]string{}
-	SetSaveLoginPromptCallback(ctx, func(origin, site string) map[string]string {
+	tools.SetSaveLoginPromptCallback(ctx, func(origin, site string) map[string]string {
 		seen["origin"], seen["site"] = origin, site
 		return map[string]string{"identifier": "tek@acme.test", "password": "hunter2-very-secret"}
 	})
-	defer SetSaveLoginPromptCallback(ctx, nil)
+	defer tools.SetSaveLoginPromptCallback(ctx, nil)
 	pinPageOrigin(t, "https://acme.test")
 	pin(t, &vaultFillFn, func(context.Context, *tools.Env, string, string) (string, error) {
 		return `{"success": true, "filled_fields": 1}`, nil
@@ -745,8 +745,8 @@ func TestSaveLoginPromptSavesToPageOriginAndNeverEchoesThePassword(t *testing.T)
 func TestSaveLoginPromptDeclinedOrHeadlessStoresNothing(t *testing.T) {
 	ctx, env, store, _ := vaultStore(t)
 	pinPageOrigin(t, "https://acme.test")
-	SetSaveLoginPromptCallback(ctx, func(string, string) map[string]string { return nil })
-	defer SetSaveLoginPromptCallback(ctx, nil)
+	tools.SetSaveLoginPromptCallback(ctx, func(string, string) map[string]string { return nil })
+	defer tools.SetSaveLoginPromptCallback(ctx, nil)
 	canPrompt := true
 	pin(t, &vaultCanPromptHere, func(context.Context, *tools.Env) bool { return canPrompt })
 	text, err := browserVaultSaveLogin(ctx, env, "", "")
@@ -872,11 +872,11 @@ func TestTwoFactorSavedAuthenticatorKeyMintsCodesWithoutAsking(t *testing.T) {
 		t.Fatalf("meta %+v %v", got, err)
 	}
 	asked := []string{}
-	SetCodePromptCallback(ctx, func(site, _ string) string {
+	tools.SetCodePromptCallback(ctx, func(site, _ string) string {
 		asked = append(asked, site)
 		return "000000"
 	})
-	defer SetCodePromptCallback(ctx, nil)
+	defer tools.SetCodePromptCallback(ctx, nil)
 	pinCodePage(t, "https://github.com/sessions/two-factor",
 		`[{"index": 0, "type": "text", "name": "otp", "label": "Authentication code", "autocomplete": "one-time-code"}]`)
 	scripts := pinSecretEval(t, `{"filled": 1}`)
@@ -895,8 +895,8 @@ func TestTwoFactorWithoutAKeyTheUserIsAskedAndSplitBoxesGetOneDigitEach(t *testi
 	ctx, env := vaultProfile(t)
 	t.Cleanup(func() { tools.ClearVaultRedactionValues(ctx) })
 	answer := "246 810"
-	SetCodePromptCallback(ctx, func(string, string) string { return answer })
-	defer SetCodePromptCallback(ctx, nil)
+	tools.SetCodePromptCallback(ctx, func(string, string) string { return answer })
+	defer tools.SetCodePromptCallback(ctx, nil)
 	boxes := []string{}
 	for i := range 6 {
 		boxes = append(boxes, jsonText(pyjson.ObjectOf("index", int64(i), "type", "tel", "name", "digit"+string(rune('0'+i)), "label", "",

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -220,7 +221,7 @@ func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry
 		endReason := truthyText(rowField(pinnedRow, "end_reason"))
 		if userBoundaryEndReasons[endReason] {
 			pkgLog().Warn(fmt.Sprintf("Async-delegation completion pinned to user-closed session %s (end_reason=%s); dropping injection instead of resurrecting it (#55578 fail-closed).",
-				pinned, pyrepr.Repr(endReason)))
+				pinned, errchain.Show(endReason)))
 			return nil, nil
 		}
 		if endReason != "compression" {

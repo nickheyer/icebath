@@ -80,10 +80,7 @@ func (e *ManagerAbsentError) Error() string { return e.Line }
 
 // Refusal naming the build that carries the package manager
 func managerAbsent() error {
-	if line, refused := linktier.Refusal("the tool package manager", linktier.Extras); refused {
-		return &ManagerAbsentError{Line: line}
-	}
-	return &ManagerAbsentError{Line: "the tool package manager is in the full build of icebath, this binary was built without it"}
+	return &ManagerAbsentError{Line: linktier.Missing("the tool package manager", linktier.Extras)}
 }
 
 // Syncs an application caller's dependency environment, a foreign checkout through its worker, a projectless tree to its runtime set

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -191,7 +192,7 @@ func (e *sttNormalizeError) Error() string { return e.msg }
 // Python OSError text of a filesystem failure, the error text otherwise
 func sttOSErrorText(err error) string {
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }
@@ -305,11 +306,11 @@ func applyPreTranscriptionHook(ctx context.Context, filePath, providerName, mode
 				case k == "file_path":
 					pkgLog().Warn("pre_transcription hook attempted to change file_path (read-only) — ignoring the attempt.")
 				case !preTranscriptionMutableFields[k]:
-					pkgLog().Debug(fmt.Sprintf("pre_transcription hook returned unsupported field %s — ignoring.", pyrepr.Repr(k)))
+					pkgLog().Debug(fmt.Sprintf("pre_transcription hook returned unsupported field %s — ignoring.", errchain.Show(k)))
 				default:
 					s, ok := v.(string)
 					if !ok {
-						pkgLog().Debug(fmt.Sprintf("pre_transcription hook returned non-string value %s for field %s — ignoring.", pyrepr.Repr(v), pyrepr.Repr(k)))
+						pkgLog().Debug(fmt.Sprintf("pre_transcription hook returned non-string value %s for field %s — ignoring.", errchain.Show(v), errchain.Show(k)))
 						continue
 					}
 					overrides[k] = s

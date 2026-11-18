@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -95,10 +96,10 @@ func CanaryTimestamp(tag any) *string {
 func CanaryTagForDate(version, dateUTC string) (string, error) {
 	core := strings.TrimPrefix(version, "v")
 	if !updaterecord.StableTagRE.MatchString("v" + core) {
-		return "", &ValueError{Msg: "invalid stable version for canary: " + pyrepr.Repr(version)}
+		return "", &ValueError{Msg: "invalid stable version for canary: " + errchain.Show(version)}
 	}
 	if !canaryStampRE.MatchString(dateUTC) {
-		return "", &ValueError{Msg: "invalid canary UTC timestamp: " + pyrepr.Repr(dateUTC)}
+		return "", &ValueError{Msg: "invalid canary UTC timestamp: " + errchain.Show(dateUTC)}
 	}
 	return "v" + core + "+canary." + dateUTC, nil
 }
@@ -264,7 +265,7 @@ func AdoptRetiredChannel(ctx context.Context, request map[string]any) (bool, err
 	}
 	fields, ok := retirement.(map[string]any)
 	if !ok {
-		return false, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(retirement))
+		return false, fmt.Errorf("channel retirement record is %s where a mapping was expected", errchain.Kind(retirement))
 	}
 	source, err := requestString(request, "source")
 	if err != nil {
@@ -295,7 +296,7 @@ func AdoptRetiredChannel(ctx context.Context, request map[string]any) (bool, err
 
 type KeyError struct{ Key string }
 
-func (e *KeyError) Error() string { return pyrepr.Repr(e.Key) }
+func (e *KeyError) Error() string { return "missing " + e.Key }
 
 // Returns the string request[key] holds, the KeyError subscripting raises when it is absent
 func requestString(request map[string]any, key string) (string, error) {
@@ -305,7 +306,7 @@ func requestString(request map[string]any, key string) (string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return "", fmt.Errorf("expected str, bytes or os.PathLike object, not %s", pyrepr.TypeName(value))
+		return "", fmt.Errorf("update request %s is %s where a path was expected", key, errchain.Kind(value))
 	}
 	return text, nil
 }

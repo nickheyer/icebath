@@ -17,6 +17,8 @@ import (
 	"hash"
 	"os"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // resolveClientCert turns client_cert and client_key config into a TLS certificate or nil
@@ -28,7 +30,7 @@ func resolveClientCert(server string, rawCert any, rawKey any) (*tls.Certificate
 	expand := func(v any, label string) (string, error) {
 		s, ok := v.(string)
 		if !ok || strings.TrimSpace(s) == "" {
-			return "", fmt.Errorf("%s%s must be a non-empty string path (got %s)", prefix, label, pyTypeName(v))
+			return "", fmt.Errorf("%s%s must be a non-empty path (got %s)", prefix, label, errchain.Kind(v))
 		}
 		path := expandUser(strings.TrimSpace(s))
 		if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {

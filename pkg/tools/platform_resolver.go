@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -177,7 +179,7 @@ func pyExceptionClass(err error) string {
 	if os.IsPermission(err) {
 		return "PermissionError"
 	}
-	if pe, ok := err.(*os.PathError); ok && strings.Contains(pe.Err.Error(), "is a directory") {
+	if pe, ok := err.(*os.PathError); ok && errors.Is(pe.Err, syscall.EISDIR) {
 		return "IsADirectoryError"
 	}
 	if cls, ok := err.(interface{ PyTypeName() string }); ok {

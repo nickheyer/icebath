@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -59,7 +60,7 @@ func frozenRouteProvider(frozen map[string]any) (string, error) {
 	}
 	mapping, ok := block.(map[string]any)
 	if !ok {
-		return "", &gateway.PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(block) + "' object has no attribute 'get'"}
+		return "", &gateway.PyError{Kind: "AttributeError", Msg: "frozen route block is " + errchain.Kind(block) + " where a mapping was expected"}
 	}
 	if !pyrepr.Truthy(mapping["provider"]) {
 		return "", nil
@@ -167,7 +168,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 			keys = keys[:5]
 		}
 		if len(keys) > 0 {
-			listing = pyrepr.Repr(keys)
+			listing = errchain.Show(keys)
 		}
 		pkgLog().Debug(fmt.Sprintf("No session model override: session=%s config_model=%s override_keys=%s", skey, model, listing))
 	}

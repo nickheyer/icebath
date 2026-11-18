@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -518,15 +518,7 @@ func mcpStatusRows(ctx context.Context) []any {
 	if env == nil {
 		env = &tools.Env{Home: home.Dir(ctx)}
 	}
-	raw, err := json.Marshal(mcp.Status(ctx, env, nil, true))
-	if err != nil {
-		panic(err)
-	}
-	rows := []any{}
-	if err := json.Unmarshal(raw, &rows); err != nil {
-		panic(err)
-	}
-	return rows
+	return gateway.MCPStatusRows(mcp.Status(ctx, env, nil, true))
 }
 
 // Emits session info for a session holding an agent, swallowing any failure

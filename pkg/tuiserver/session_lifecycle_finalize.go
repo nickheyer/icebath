@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -100,8 +99,8 @@ func lockVaultManagers(session *tuihost.Session) {
 			pkgLog().Debug("vault manager lock on session end failed", "exc_info", failureText(failure))
 		}
 	}()
-	if sid := session.Get("_sid"); truthy(sid) {
-		browser.ReleaseVaultSession(strOr(sid))
+	if sid := session.Get("_sid"); truthy(sid) && releaseVaultSession != nil {
+		releaseVaultSession(strOr(sid))
 	}
 }
 

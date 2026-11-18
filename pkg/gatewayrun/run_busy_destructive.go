@@ -6,12 +6,9 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Acknowledges a slash command that falls through to the agent, onto the local command sink when one is bound
@@ -46,26 +43,6 @@ func commandOriginForSource(source *gateway.SessionSource) map[string]any {
 		threadID = *source.ThreadID
 	}
 	return map[string]any{"platform": string(source.Platform), "chat_id": source.ChatID, "chat_name": chatName, "thread_id": threadID}
-}
-
-// Runs suggestions through the shared handler with the event source as job origin
-func (r *GatewayRunner) handleSuggestionsCommand(ctx context.Context, event *gateway.MessageEvent) (any, error) {
-	reply, err := cron.HandleSuggestionsCommand(ctx, pystr.Strip(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("suggestions command failed: %s", err))
-		return i18n.T(ctx, "gateway.suggestions.failed", "", map[string]any{"error": err.Error()}), nil
-	}
-	return reply, nil
-}
-
-// Runs blueprint through the shared handler with the event source as job origin
-func (r *GatewayRunner) handleBlueprintCommand(ctx context.Context, event *gateway.MessageEvent) cron.BlueprintCommandResult {
-	result, err := cron.HandleBlueprintCommand(ctx, home.Dir(ctx), pystr.Strip(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("blueprint command failed: %s", err))
-		return cron.BlueprintCommandResult{Text: i18n.T(ctx, "gateway.blueprint.failed", "", map[string]any{"error": err.Error()})}
-	}
-	return result
 }
 
 // Gates a destructive session command behind a confirm prompt unless approvals.destructive_slash_confirm is off

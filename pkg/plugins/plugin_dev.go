@@ -651,7 +651,7 @@ func doctorErrorText(err error) string {
 	if isOSError(err) {
 		var tree *pyfs.CopyTreeError
 		if !errors.As(err, &tree) {
-			return pypath.OSErrorText(err)
+			return errchain.OSText(err)
 		}
 	}
 	return err.Error()

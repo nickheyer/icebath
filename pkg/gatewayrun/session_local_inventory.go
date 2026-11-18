@@ -26,7 +26,7 @@ func publishSettledInfo(ctx context.Context, t *TurnRunner, a *agent.AIAgent) {
 
 func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent) error {
 	if t.approvalOwner == nil {
-		return &pyTypeError{"cannot unpack non-iterable NoneType object"}
+		return &pyTypeError{"the turn has no approval owner to publish settled info for"}
 	}
 	authority, sessionID := t.approvalOwner.authority, t.approvalOwner.sessionID
 	var messageID any

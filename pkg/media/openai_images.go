@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -442,7 +443,7 @@ func openAIStatusError(resp *http.Response, raw []byte) error {
 	}
 	if parsed, err := pyjson.Loads(text); err == nil {
 		body = parsed
-		msg = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, pyrepr.Repr(parsed))
+		msg = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, errchain.Show(parsed))
 	}
 	if m, ok := pyjson.AsObject(body); ok {
 		if inner, ok := m.Get("error"); ok {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -38,7 +39,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		replyToText = *event.ReplyToText
 	}
 	pkgLog().Info(fmt.Sprintf("inbound message: platform=%s user=%s chat=%s msg=%s reply_to_id=%s reply_to_text=%s",
-		platformName, who, chat, pyrepr.Repr(logPreview(event.Text, 80)), optText(event.ReplyToMessageID), pyrepr.Repr(logPreview(replyToText, 80))))
+		platformName, who, chat, errchain.Show(logPreview(event.Text, 80)), optText(event.ReplyToMessageID), errchain.Show(logPreview(replyToText, 80))))
 	source, entry, sessionKey, err := r.hmwaResolveSession(ctx, event, source)
 	if err != nil || entry == nil {
 		return nil, err

@@ -23,9 +23,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -117,7 +117,7 @@ func BlobID(data []byte, like string) string {
 // Closure directory of a commit under the git dir, a ValueError for anything but a commit id
 func RecoveryClosureDirOf(root, pre string) (string, error) {
 	if !IsObjectID(pre) {
-		return "", fmt.Errorf("not a commit id: %s", pyrepr.StrRepr(pre))
+		return "", fmt.Errorf("not a commit id: %s", errchain.Show(pre))
 	}
 	gitDir, err := pm.CheckoutGitDir(root)
 	if err != nil {
@@ -738,7 +738,7 @@ func checkoutCustody(ctx context.Context, root string) (busy string, release fun
 func RestoreInterruptedPull(ctx context.Context, projectRoot string, afterFailure bool) bool {
 	changed, err := restoreInterruptedPull(ctx, projectRoot, afterFailure)
 	if err != nil {
-		fmt.Fprintf(restoreStderr, "⚠ Could not check for an interrupted `icebath update`: %s\n", pypath.OSErrorText(err))
+		fmt.Fprintf(restoreStderr, "⚠ Could not check for an interrupted `icebath update`: %s\n", errchain.OSText(err))
 		return false
 	}
 	return changed
@@ -837,7 +837,7 @@ func readHead(git restoreGit) (string, error) {
 	}
 	detail := strings.TrimSpace(head.stderr)
 	if detail == "" {
-		detail = fmt.Sprintf("git printed %s, exit %d", pyrepr.StrRepr(oid), head.returncode)
+		detail = fmt.Sprintf("git printed %s, exit %d", errchain.Show(oid), head.returncode)
 	}
 	fmt.Fprintf(restoreStderr, "⚠ Could not read HEAD to repair an interrupted `icebath update` (%s); the next launch retries.\n", detail)
 	return "", nil

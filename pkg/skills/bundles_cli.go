@@ -52,7 +52,7 @@ func bundleErrorClass(err error) (string, string) {
 	if errors.As(err, &be) {
 		return be.Class, be.Msg
 	}
-	return pypath.OSErrorClass(err), pypath.OSErrorText(err)
+	return pypath.OSErrorClass(err), errchain.OSText(err)
 }
 
 // Bundle info value as its Python str, empty when falsy

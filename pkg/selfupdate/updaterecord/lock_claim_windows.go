@@ -10,9 +10,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const noFollow = 0
@@ -148,7 +147,7 @@ func SwapUpdateTreeJob(handle windows.Handle) func() {
 func BindChildToUpdateTree(pid int) error {
 	err := bindToKillOnCloseJob(pid)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not bind update child %d to the update's job: %s", pid, pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not bind update child %d to the update's job: %s", pid, errchain.OSText(err)))
 	}
 	return err
 }

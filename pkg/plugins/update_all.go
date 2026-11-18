@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -91,7 +92,7 @@ func exceptionClassAndText(err error) (string, string) {
 	case errors.As(err, &pyErr):
 		return pyErr.Class, pyErr.Message
 	case pypath.IsOSError(err):
-		return pypath.OSErrorClass(err), pypath.OSErrorText(err)
+		return pypath.OSErrorClass(err), errchain.OSText(err)
 	}
 	if m := pyExceptionPrefix.FindStringSubmatch(err.Error()); m != nil {
 		return m[1], m[2]

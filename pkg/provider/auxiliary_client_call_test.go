@@ -297,7 +297,7 @@ func TestCallLLMRejectsUnknownAndMissingKeywords(t *testing.T) {
 	if _, err := CallLLM(context.Background(), map[string]any{"task": "title_generation"}); err == nil || !strings.Contains(err.Error(), "'messages'") {
 		t.Fatalf("missing messages %v", err)
 	}
-	if _, err := AsyncCallLLM(context.Background(), map[string]any{"messages": []any{}, "stream": true}); err == nil || !strings.Contains(err.Error(), "'stream'") {
+	if _, err := AsyncCallLLM(context.Background(), map[string]any{"messages": []any{}, "stream": true}); err == nil || !strings.Contains(err.Error(), "takes no argument named stream") {
 		t.Fatalf("async stream keyword %v", err)
 	}
 }

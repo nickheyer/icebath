@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/fetch"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -103,7 +104,7 @@ func newOpenWakeWordEngine(ctx context.Context, cfg map[string]any) (WakeEngine,
 	if modelRef == "" {
 		return nil, &WakeWordError{Class: "ValueError", Msg: "wake_word.openwakeword.model is not set. openWakeWord detects only the phrase " +
 			"its model file was trained for; set the path of that file, or set wake_word.provider to auto so the open vocabulary engine detects " +
-			pyrepr.StrRepr(WakePhrase(ctx, cfg)) + "."}
+			errchain.Show(WakePhrase(ctx, cfg)) + "."}
 	}
 	if err := wakeRequireExtra(ctx, "wake-openwakeword"); err != nil {
 		return nil, err

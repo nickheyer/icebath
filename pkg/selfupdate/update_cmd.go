@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
@@ -321,7 +322,7 @@ func gatewayPrompt(ctx context.Context, w io.Writer, promptText, def string, tim
 	if err := unlinkMissingOK(responsePath); err != nil {
 		return "", err
 	}
-	fmt.Fprintf(w, "  (no response after %ds, using default: %s)\n", int(timeout), pyrepr.Repr(def))
+	fmt.Fprintf(w, "  (no response after %ds, using default: %s)\n", int(timeout), errchain.Show(def))
 	return def, nil
 }
 

@@ -338,8 +338,11 @@ func (a *app) wantedDialog() (kind, id string) {
 		return "vaultCode", o.VaultCode.RequestID
 	case o.Connection != nil && a.store.connectionOp != nil && a.store.connectionOp.OpID == o.Connection.OpID:
 		op := a.store.connectionOp
-		target := a.activeConnectionTarget()
-		return "connection", op.OpID + ":" + jsString(op.Seq) + ":" + jsTemplate(target, "name") + ":" + jsTemplate(target, "state") + ":" + jsTemplate(target, "connect_url")
+		key := op.OpID + ":" + strconv.FormatInt(op.Seq, 10)
+		if target := a.activeConnectionTarget(); target != nil {
+			key += ":" + target.Name + ":" + string(target.State) + ":" + val(target.ConnectURL)
+		}
+		return "connection", key
 	case o.Clarify != nil:
 		return "clarify", o.Clarify.RequestID + ":" + a.activeClarifyQuestion()
 	case o.Confirm != nil:
@@ -440,7 +443,7 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 		d.title, d.danger = tr("prompt.approval.title"), true
 		d.body = []string{req.Description, req.Command}
 		if req.SmartDenied {
-			d.body = append(d.body, "The safety check denied this command, allowing it overrides that verdict")
+			d.body = append(d.body, tr("prompt.approval.smartDenied"))
 		}
 		choices := req.Choices
 		if len(choices) == 0 {
@@ -455,7 +458,15 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 		d.onAnswer = func(choice *dialogChoice, _ []string, _ []string) tea.Cmd { return a.answerApproval(req, choice.value) }
 		d.onCancel = func() tea.Cmd { return a.answerApproval(req, "deny") }
 	case "sudo":
-		return masked("sudo", tr("secure.sudo.title"), []string{"The command needs elevated rights, the password goes to sudo once and is never stored"}, "password", false)
+		req := o.Sudo
+		body := []string{tr("secure.sudo.body")}
+		if req.Command != "" {
+			body = []string{req.Command, tr("secure.sudo.body")}
+		}
+		if req.ProfileKey != "" {
+			body = []string{tr("secure.sudo.installBody", req.ProfileKey)}
+		}
+		return masked("sudo", tr("secure.sudo.title"), body, tr("secure.passwordLabel"), false)
 	case "secret":
 		req := o.Secret
 		return masked("secret", "secret "+tr("secure.secret.forEnvVar", req.EnvVar), []string{req.Prompt}, req.EnvVar, false)
@@ -465,15 +476,19 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 		if name == "" {
 			name = req.Backend
 		}
-		return masked("vaultUnlock", "Unlock "+name, []string{"Master password of " + name + ", used once to read the login and never stored"}, "password", false)
+		return masked("vaultUnlock", tr("secure.vault.unlockTitle", name), []string{tr("secure.vault.unlockBody", name)}, tr("secure.passwordLabel"), false)
 	case "vaultCode":
 		req := o.VaultCode
-		return masked("vaultCode", "Sign in code for "+req.Site, []string{req.Hint}, "code", true)
+		body := []string{tr("secure.vault.codeBody", req.Site)}
+		if req.Hint != "" {
+			body = []string{req.Hint, tr("secure.vault.codeBody", req.Site)}
+		}
+		return masked("vaultCode", tr("secure.vault.codeTitle", req.Site), body, tr("secure.vault.codeLabel"), true)
 	case "vaultSaveLogin":
 		req := o.VaultSaveLogin
-		d.title = "Save login for " + req.Site
-		d.body = []string{"The login is kept in the encrypted vault and filled in at " + req.Origin}
-		d.fields, d.focus = []dialogField{{label: "username"}, {label: "password", masked: true}}, 0
+		d.title = tr("secure.vault.saveTitle", req.Site)
+		d.body = []string{tr("secure.vault.saveBody", req.Origin)}
+		d.fields, d.focus = []dialogField{{label: tr("secure.vault.usernameLabel")}, {label: tr("secure.passwordLabel"), masked: true}}, 0
 		requestID := id
 		d.onAnswer = func(_ *dialogChoice, _ []string, fields []string) tea.Cmd {
 			value := ""
@@ -498,16 +513,16 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 		if q == nil {
 			return nil
 		}
-		d.title = "question"
+		d.title = tr("prompt.clarify.title")
 		if n := len(req.Questions); n > 1 {
-			d.title += fmt.Sprintf(" (%d of %d)", len(req.Answers)+1, n)
+			d.title = tr("prompt.clarify.titleOf", len(req.Answers)+1, n)
 		}
 		d.body = []string{q.Question}
 		d.multi = q.MultiSelect
 		for _, c := range q.Choices {
 			d.choices = append(d.choices, dialogChoice{label: c, value: c})
 		}
-		d.fields = []dialogField{{label: "answer"}}
+		d.fields = []dialogField{{label: tr("prompt.clarify.answerLabel")}}
 		if len(d.choices) == 0 {
 			d.focus = 0
 		}
@@ -559,17 +574,16 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 }
 
 // States a connection target no longer waits in
-var resolvedTargetStates = map[string]bool{"connected": true, "skipped": true, "not_connected": true}
+var resolvedTargetStates = map[tuigateway.ConnectionTargetState]bool{"connected": true, "skipped": true, "not_connected": true}
 
 // First target of the live connection operation that still waits on the user, nil once every target resolved
-func (a *app) activeConnectionTarget() map[string]any {
+func (a *app) activeConnectionTarget() *tuigateway.ConnectionOperationTarget {
 	op := a.store.connectionOp
 	if op == nil {
 		return nil
 	}
-	for _, target := range op.Targets {
-		state, _ := target["state"].(string)
-		if !resolvedTargetStates[state] && !truthyJS(target["resolved"]) {
+	for i := range op.Targets {
+		if target := &op.Targets[i]; !resolvedTargetStates[target.State] && !val(target.Resolved) {
 			return target
 		}
 	}
@@ -577,103 +591,141 @@ func (a *app) activeConnectionTarget() map[string]any {
 }
 
 // Answer of the connection card, one target approved with its credentials or skipped, or the operation continued
-func connectionAnswer(target map[string]any, status string, fields []string) map[string]any {
+func connectionAnswer(target *tuigateway.ConnectionOperationTarget, status tuigateway.ConnectionAnswerStatus, fields []string) tuigateway.ConnectionAnswer {
 	if target == nil {
-		return map[string]any{"settled_by": "continue"}
+		return tuigateway.ConnectionAnswer{SettledBy: ptr(tuigateway.ConnectionSettleReason("continue"))}
 	}
-	row := map[string]any{"name": target["name"], "status": status}
-	if required, _ := target["required_env"].([]any); status == "approved" && len(required) > 0 {
-		env := map[string]any{}
-		for i, raw := range required {
-			field, _ := raw.(map[string]any)
-			name, _ := field["name"].(string)
-			if i < len(fields) && name != "" {
-				env[name] = fields[i]
+	row := tuigateway.ConnectionAnswerTarget{Name: target.Name, Status: status}
+	if status == "approved" && len(target.RequiredEnv) > 0 {
+		row.Env = map[string]string{}
+		for i, field := range target.RequiredEnv {
+			if i < len(fields) && field.Name != "" {
+				row.Env[field.Name] = fields[i]
 			}
 		}
-		row["env"] = env
 	}
-	return map[string]any{"targets": []any{row}}
+	return tuigateway.ConnectionAnswer{Targets: []tuigateway.ConnectionAnswerTarget{row}}
 }
 
-// Sends an answer of the connection card to the owner of the operation
-func (a *app) respondConnection(result map[string]any) tea.Cmd {
-	op, sid := a.store.connectionOp, a.store.ui.Sid
-	if op == nil || sid == "" {
+// Owner of the live connection operation, the viewed session
+func (a *app) connectionOwner() tuigateway.SessionOwner {
+	return tuigateway.SessionOwner{Type: "session", SessionID: a.store.ui.Sid}
+}
+
+// Sends an answer of the connection card to the owner of the operation, a lost answer noticed
+func (a *app) respondConnection(answer tuigateway.ConnectionAnswer) tea.Cmd {
+	op := a.store.connectionOp
+	if op == nil || a.store.ui.Sid == "" {
 		return nil
 	}
-	params := map[string]any{"op_id": op.OpID, "owner": map[string]any{"session_id": sid, "type": "session"}, "result": result}
-	return a.events.rpc("connection.respond", params, nil)
+	params := tuigateway.ConnectionRespondParams{Owner: a.connectionOwner(), OpID: op.OpID, Result: answer}
+	return ask(a.events.rpc, a.sys, tuigateway.ConnectionRespond, params, func(r *tuigateway.ConnectionRespondResult) tea.Cmd {
+		if r == nil {
+			return wm.Notify(tr("connection.notice.answerNotDelivered"), wm.Warn)
+		}
+		return nil
+	})
+}
+
+// Runs a failed target of the live operation again, the card following the fresh snapshot
+func (a *app) retryConnection(name string) tea.Cmd {
+	if a.store.connectionOp == nil || a.store.ui.Sid == "" {
+		return nil
+	}
+	params := tuigateway.ConnectorsConnectParams{Owner: a.connectionOwner(), Connectors: []string{name}, Reconnect: true}
+	return ask(a.events.rpc, a.sys, tuigateway.ConnectorsConnect, params, func(r *tuigateway.ConnectionOperationSnapshot) tea.Cmd {
+		if r == nil {
+			return wm.Notify(tr("connection.notice.restartFailed"), wm.Warn)
+		}
+		for _, line := range a.store.applyConnectionSnapshot(*r) {
+			a.sys(line)
+		}
+		return nil
+	})
+}
+
+// Asks the watcher of the live operation to read the account now, after the browser step
+func (a *app) wakeConnection() tea.Cmd {
+	op := a.store.connectionOp
+	if op == nil || a.store.ui.Sid == "" {
+		return nil
+	}
+	params := tuigateway.ConnectionOperationParams{Owner: a.connectionOwner(), OpID: op.OpID}
+	return ask(a.events.rpc, a.sys, tuigateway.ConnectorsOperationWake, params, func(*tuigateway.ConnectionWakeResult) tea.Cmd { return nil })
+}
+
+// Verb of the step a target needs
+func connectionVerb(action tuigateway.ConnectionTargetAction) string {
+	switch action {
+	case "authorize":
+		return tr("connection.verb.authorize")
+	case "enable":
+		return tr("connection.verb.enable")
+	case "install":
+		return tr("connection.verb.install")
+	}
+	return tr("connection.verb.connect")
 }
 
 // Connection card, every target with its state and the step the first waiting one needs
 func (a *app) connectionDialog(d *dialogCard) *dialogCard {
 	op := a.store.connectionOp
 	target := a.activeConnectionTarget()
-	text := func(m map[string]any, key string) string {
-		s, _ := m[key].(string)
-		return trimJS(s)
-	}
-	d.title = "connections"
+	trimmed := func(s *string) string { return strings.TrimFunc(val(s), isJSSpace) }
+	d.title = tr("connection.title")
 	for _, row := range op.Targets {
 		mark := "○"
-		switch text(row, "state") {
+		switch row.State {
 		case "connected":
 			mark = "●"
 		case "skipped", "not_connected":
 			mark = "–"
 		case "initiated":
 			mark = "◌"
-		case "failed", "expired":
+		case "failed":
 			mark = "✗"
 		}
-		name := text(row, "display")
-		if name == "" {
-			name = text(row, "name")
-		}
-		line := mark + " " + name + " · " + strings.ReplaceAll(text(row, "state"), "_", " ")
-		if detail := text(row, "detail"); detail != "" {
+		line := mark + " " + connectionTargetName(row) + " · " + connectionStateWord(row.State)
+		if detail := trimmed(row.Detail); detail != "" {
 			line += " · " + detail
 		}
 		d.body = append(d.body, line)
 	}
 	if target == nil {
-		d.choices = []dialogChoice{{label: "continue", value: "continue"}}
+		d.choices = []dialogChoice{{label: tr("connection.authorized.continue"), value: "continue"}}
 		d.onAnswer = func(*dialogChoice, []string, []string) tea.Cmd {
 			return a.respondConnection(connectionAnswer(nil, "", nil))
 		}
 		d.onCancel = func() tea.Cmd { return a.respondConnection(connectionAnswer(nil, "", nil)) }
 		return d
 	}
-	for _, key := range []string{"description", "instructions", "hint", "discovery_error"} {
-		if line := text(target, key); line != "" {
+	for _, line := range []string{trimmed(target.Description), trimmed(target.Instructions), trimmed(target.Hint), trimmed(target.DiscoveryError)} {
+		if line != "" {
 			d.body = append(d.body, line)
 		}
 	}
-	name, action, link := text(target, "name"), text(target, "action"), text(target, "connect_url")
-	if action == "" {
-		action = "connect"
-	}
-	skip := dialogChoice{label: "skip " + name, value: "skip"}
+	name, link := target.Name, trimmed(target.ConnectURL)
+	skip := dialogChoice{label: tr("connection.selector.skip"), value: "skip"}
 	switch {
-	case link != "":
-		d.body = append(d.body, "Finish in the browser: "+link)
-		d.choices = []dialogChoice{{label: "open the link", value: "open"}, skip}
-	case text(target, "state") == "initiated":
-		d.body = append(d.body, "Waiting for "+name+"…")
-		d.choices = []dialogChoice{skip}
-	default:
-		required, _ := target["required_env"].([]any)
-		for _, raw := range required {
-			field, _ := raw.(map[string]any)
-			label := text(field, "prompt")
-			if label == "" {
-				label = text(field, "name")
-			}
-			d.fields = append(d.fields, dialogField{label: label, masked: truthyJS(field["secret"]), value: []rune(text(field, "default"))})
+	case target.State == "failed":
+		if trimmed(target.Detail) == "" {
+			d.body = append(d.body, tr("connection.failure.failed"))
 		}
-		d.choices = []dialogChoice{{label: action + " " + name, value: "approved"}, skip}
+		d.choices = []dialogChoice{{label: tr("connection.selector.tryAgain"), value: "retry"}, skip}
+	case link != "":
+		d.body = append(d.body, tr("connection.finishInBrowser", link))
+		d.choices = []dialogChoice{{label: tr("connection.selector.open"), value: "open"}, {label: tr("connection.selector.checkNow"), value: "wake"}, skip}
+	case target.State == "initiated":
+		d.body = append(d.body, tr("connection.waiting", connectionTargetName(*target)))
+		d.choices = []dialogChoice{{label: tr("connection.selector.checkNow"), value: "wake"}, skip}
+	default:
+		for _, field := range target.RequiredEnv {
+			label := firstText(trimmed(field.Prompt), field.Name)
+			d.fields = append(d.fields, dialogField{label: label, masked: field.Secret, value: []rune(field.Default)})
+		}
+		d.choices = []dialogChoice{{label: connectionVerb(target.Action) + " " + connectionTargetName(*target), value: "approved"}, skip}
 	}
+	required := target.RequiredEnv
 	d.onAnswer = func(choice *dialogChoice, _ []string, fields []string) tea.Cmd {
 		value := "approved"
 		if choice != nil {
@@ -682,11 +734,20 @@ func (a *app) connectionDialog(d *dialogCard) *dialogCard {
 		switch value {
 		case "open":
 			if !openExternalURL(link) {
-				return wm.Notify("the browser did not open, copy the link from the card", wm.Warn)
+				return wm.Notify(tr("connection.notice.browserDidNotOpen"), wm.Warn)
 			}
 			return nil
+		case "wake":
+			return a.wakeConnection()
+		case "retry":
+			return a.retryConnection(name)
 		case "skip":
 			return a.respondConnection(connectionAnswer(target, "skipped", nil))
+		}
+		for i, field := range required {
+			if field.Required && (i >= len(fields) || strings.TrimFunc(fields[i], isJSSpace) == "") {
+				return wm.Notify(tr("connection.field.required", firstText(trimmed(field.Prompt), field.Name)), wm.Warn)
+			}
 		}
 		return a.respondConnection(connectionAnswer(target, "approved", fields))
 	}

@@ -42,28 +42,28 @@ var slashDispatch = map[string]slashHandler{
 	"queue": withArg((*CLI).cmdQueue), "steer": withArg((*CLI).cmdSteer), "moa": withArg((*CLI).cmdMoa),
 	"approvals": withArg((*CLI).handleApprovalsCommand), "autoprune": withArg((*CLI).handleAutopruneCommand),
 	"background": withArg((*CLI).handleBackgroundCommand), "battery": withArg((*CLI).handleBatteryCommand),
-	"blueprint": withArg((*CLI).handleBlueprintCommand), "branch": withArg((*CLI).handleBranchCommand),
-	"browser": withArg((*CLI).handleBrowserCommand), "btw": withArg((*CLI).handleBtwCommand),
+	"branch":  withArg((*CLI).handleBranchCommand),
+	"btw":     withArg((*CLI).handleBtwCommand),
 	"bundles": withArg((*CLI).handleBundlesCommand), "busy": withArg((*CLI).handleBusyCommand),
-	"copy": withArg((*CLI).handleCopyCommand), "cron": withArg((*CLI).handleCronCommand),
+	"copy":    withArg((*CLI).handleCopyCommand),
 	"curator": withArg((*CLI).handleCuratorCommand), "debug": withArg((*CLI).handleDebugCommand),
 	"diff": withArg((*CLI).handleDiffCommand), "discard": withArg((*CLI).handleDiscardCommand),
 	"export": withArg((*CLI).handleExportCommand), "fast": withArg((*CLI).handleFastCommand),
 	"focus": withArg((*CLI).handleFocusCommand), "footer": withArg((*CLI).handleFooterCommand),
 	"goal": withArg((*CLI).handleGoalCommand), "handoff": (*CLI).handleHandoffCommand,
-	"hatch": withArg((*CLI).handleHatchCommand), "heartbeat": withArg((*CLI).handleHeartbeatCommand),
-	"image": withArg((*CLI).handleImageCommand), "import": withArg((*CLI).handleImportCommand),
+	"heartbeat": withArg((*CLI).handleHeartbeatCommand),
+	"image":     withArg((*CLI).handleImageCommand), "import": withArg((*CLI).handleImportCommand),
 	"indicator": withArg((*CLI).handleIndicatorCommand), "init": withArg((*CLI).handleInitCommand),
-	"journey": withArg((*CLI).handleJourneyCommand), "kanban": withArg((*CLI).handleKanbanCommand),
-	"learn": withArg((*CLI).handleLearnCommand),
-	"loop":  withArg((*CLI).handleLoopCommand), "memory": withArg((*CLI).handleMemoryCommand),
-	"personality": withArg((*CLI).handlePersonalityCommand), "pet": withArg((*CLI).handlePetCommand),
-	"plan": withArg((*CLI).handlePlanCommand), "prompt-compose": withArg((*CLI).handlePromptComposeCommand), "prompt_compose": withArg((*CLI).handlePromptComposeCommand),
+	"journey": withArg((*CLI).handleJourneyCommand),
+	"learn":   withArg((*CLI).handleLearnCommand),
+	"loop":    withArg((*CLI).handleLoopCommand), "memory": withArg((*CLI).handleMemoryCommand),
+	"personality": withArg((*CLI).handlePersonalityCommand),
+	"plan":        withArg((*CLI).handlePlanCommand), "prompt-compose": withArg((*CLI).handlePromptComposeCommand), "prompt_compose": withArg((*CLI).handlePromptComposeCommand),
 	"reasoning": withArg((*CLI).handleReasoningCommand), "refine": withArg((*CLI).handleRefineCommand),
 	"resume": withArg((*CLI).handleResumeCommand), "review": withArg((*CLI).handleReviewCommand),
 	"rollback": withArg((*CLI).handleRollbackCommand), "sessions": withArg((*CLI).handleSessionsCommand),
 	"skin": withArg((*CLI).handleSkinCommand), "snapshot": withArg((*CLI).handleSnapshotCommand),
-	"subgoal": withArg((*CLI).handleSubgoalCommand), "suggestions": withArg((*CLI).handleSuggestionsCommand),
+	"subgoal":    withArg((*CLI).handleSubgoalCommand),
 	"timestamps": withArg((*CLI).handleTimestampsCommand), "tools": withArg((*CLI).handleToolsCommand),
 	"usage": withArg((*CLI).handleUsageCommand),
 	"worktree": func(c *CLI, cmd string) bool {
@@ -85,7 +85,7 @@ func (c *CLI) processCommand(command string) bool {
 	cmdOriginal := strings.TrimSpace(command)
 	words := strings.Fields(cmdLower)
 	if len(words) == 0 {
-		panic("IndexError: list index out of range")
+		panic("the command is empty")
 	}
 	baseWord := strings.TrimLeft(words[0], "/")
 	def := commands.Resolve(baseWord)

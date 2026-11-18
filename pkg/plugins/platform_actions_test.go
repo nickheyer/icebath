@@ -139,7 +139,7 @@ func TestPlatformActionsGateDefaultOff(t *testing.T) {
 		ctx := paSetup(t, cfg, runner)
 		r := pa.AddReaction(ctx, "telegram", "123", "456", "\U0001F44D")
 		if r["ok"] != wantOK || !wantOK && (r["error"] != "capability_not_granted" ||
-			r["detail"] != "plugin 'p' lacks the 'gateway.platform_actions' capability (grant via consent flow or plugins.entries.p.allow_platform_actions)") {
+			r["detail"] != "plugin p lacks the gateway.platform_actions capability (grant via consent flow or plugins.entries.p.allow_platform_actions)") {
 			t.Fatalf("%q = %v", cfg, r)
 		}
 	}
@@ -268,7 +268,7 @@ func TestPlatformActionsContextWiringAndHostCall(t *testing.T) {
 	if err != nil || r.(map[string]any)["error"] != "capability_not_granted" {
 		t.Fatalf("host call %v %v", r, err)
 	}
-	if _, err := pa.HostCall(ctx, "add_reaction", []any{"telegram", "1", "2"}, nil); err == nil || !strings.Contains(err.Error(), "PlatformActions.add_reaction()") {
+	if _, err := pa.HostCall(ctx, "add_reaction", []any{"telegram", "1", "2"}, nil); err == nil || !strings.Contains(err.Error(), "PlatformActions.add_reaction needs emoji") {
 		t.Fatalf("binding err %v", err)
 	}
 }

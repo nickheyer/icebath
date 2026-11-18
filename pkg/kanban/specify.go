@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -152,7 +153,7 @@ func loadTriageTask(ctx context.Context, taskID string) (*Task, string, error) {
 		return nil, "unknown task id", nil
 	}
 	if task.Status != "triage" {
-		return nil, "task is not in triage (status=" + pyrepr.Repr(task.Status) + ")", nil
+		return nil, "task is not in triage (status=" + errchain.Show(task.Status) + ")", nil
 	}
 	return task, "", nil
 }

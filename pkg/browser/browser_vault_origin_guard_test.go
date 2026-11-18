@@ -81,13 +81,13 @@ func guardFixture(t *testing.T) guardVault {
 	backend := &recordingBackend{LocalLoginBackend: NewLocalLoginBackend(ctx)}
 	backend.Self = backend
 	asked := &[]string{}
-	SetCodePromptCallback(ctx, func(site, _ string) string {
+	tools.SetCodePromptCallback(ctx, func(site, _ string) string {
 		*asked = append(*asked, site)
 		return "000000"
 	})
 	t.Cleanup(func() {
-		SetCodePromptCallback(ctx, nil)
-		SetSaveLoginPromptCallback(ctx, nil)
+		tools.SetCodePromptCallback(ctx, nil)
+		tools.SetSaveLoginPromptCallback(ctx, nil)
 	})
 	pin(t, &loginBackendForHandle, func(context.Context, string) (LoginBackend, error) { return backend, nil })
 	pin(t, &vaultCanPromptHere, func(context.Context, *tools.Env) bool { return true })
@@ -213,7 +213,7 @@ func TestFillSaveLoginFillIsRefusedWhenThePageLeftTheSavedOrigin(t *testing.T) {
 	v := guardFixture(t)
 	page := &fakePage{href: "https://bank.example/login", controls: guardLoginControls}
 	onPage(t, page)
-	SetSaveLoginPromptCallback(v.ctx, func(string, string) map[string]string {
+	tools.SetSaveLoginPromptCallback(v.ctx, func(string, string) map[string]string {
 		page.href = "https://elsewhere.example/login"
 		return map[string]string{"identifier": "tester", "password": guardPassword}
 	})

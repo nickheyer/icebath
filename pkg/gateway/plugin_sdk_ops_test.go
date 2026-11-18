@@ -31,7 +31,7 @@ func TestServePluginSDKRejectsUnknownOp(t *testing.T) {
 func TestServePluginSDKBindsLikeAPythonSignature(t *testing.T) {
 	ctx, h := context.Background(), t.TempDir()
 	_, err := ServePluginSDK(ctx, h, "chat_catalog_ids", []any{1, 2}, nil)
-	if got := sdkTypeErrorText(t, err); got != "chat_catalog_ids() takes 1 positional argument but 2 were given" {
+	if got := sdkTypeErrorText(t, err); got != "chat_catalog_ids takes 1 unnamed argument, got 2" {
 		t.Fatal(got)
 	}
 	_, err = ServePluginSDK(ctx, h, "chat_catalog_ids", nil, nil)

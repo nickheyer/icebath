@@ -1,12 +1,25 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
+
+// Whether the attached gateway reported another build or contract version than this process runs
+var gatewayOtherBuild atomic.Bool
+
+// Text of an answer that does not fit its contract, naming the other gateway build when that is the cause
+func misfitText(text string) string {
+	if gatewayOtherBuild.Load() {
+		return tr("gatewayMsg.otherBuild.misfit", text)
+	}
+	return text
+}
 
 // Printing request wrapper of an app part, its failure reported and nil handed on
 type rpcVia func(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd
@@ -19,7 +32,7 @@ func ask[P, R any](via rpcVia, sys func(string), m tuigateway.Method[P, R], para
 		}
 		r, err := m.Result(res)
 		if err != nil {
-			sys("error: " + tr("session.common.invalidResponse", m.Name()) + " " + err.Error())
+			sys("error: " + misfitText(tr("session.common.invalidResponse", m.Name())) + " " + err.Error())
 			return then(nil)
 		}
 		return then(&r)
@@ -34,10 +47,36 @@ func call[P, R any](gw turnGateway, m tuigateway.Method[P, R], params P, then fu
 		}
 		r, err := m.Result(v)
 		if err != nil {
-			return then(nil, fmt.Errorf("%s %w", tr("session.common.invalidResponse", m.Name()), err))
+			return then(nil, fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", m.Name())), err))
 		}
 		return then(&r, nil)
 	})
+}
+
+// Typed request whose answer and failure nothing reads
+func fire[P, R any](gw turnGateway, m tuigateway.Method[P, R], params P) tea.Cmd {
+	return call(gw, m, params, func(*R, error) tea.Cmd { return nil })
+}
+
+// Typed request on the caller's goroutine, nil when it failed or its answer did not fit
+func quietAsk[P, R any](gw turnGateway, m tuigateway.Method[P, R], params P) *R {
+	raw, err := gw.request(context.Background(), m.Name(), wireParams(params), 0)
+	if err != nil {
+		return nil
+	}
+	r, err := m.Result(raw)
+	if err != nil {
+		return nil
+	}
+	return &r
+}
+
+// Pointer to a text, nil for an empty one
+func optionalText(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // Params of a typed request as the plain object the link sends
@@ -48,6 +87,9 @@ func wireParams(params any) map[string]any {
 	}
 	return plain
 }
+
+// Continuation of a typed request whose answer nothing reads
+func done[R any](*R) tea.Cmd { return nil }
 
 // Pointer to a value, for the optional fields of a typed request
 func ptr[T any](v T) *T { return &v }

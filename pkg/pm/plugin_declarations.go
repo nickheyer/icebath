@@ -11,10 +11,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // PluginManifestHost is the plugin manifest surface pkg/plugins installs at init, a package pm cannot import
@@ -59,7 +58,7 @@ func NativeManifestFile(pluginDir string) (string, error) {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", path, pypath.OSErrorText(err))}
+			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", path, errchain.OSText(err))}
 		}
 		return path, nil
 	}
@@ -94,7 +93,7 @@ func ReadNativeManifest(path string) (map[string]any, error) {
 	text, err := readUTF8SigText(path)
 	if err != nil {
 		var pyErr *PyError
-		message := pypath.OSErrorText(err)
+		message := errchain.OSText(err)
 		if errors.As(err, &pyErr) {
 			message = pyErr.Message
 		}
@@ -250,7 +249,7 @@ func (d *PythonDeclaration) PythonError(version string) (string, error) {
 	}
 	specs, err := parseSpecifierSet(*d.RequiresPython)
 	if err != nil {
-		return "", &PyError{Class: "InvalidSpecifier", Message: fmt.Sprintf("Invalid specifier: %s", pyrepr.StrRepr(*d.RequiresPython))}
+		return "", &PyError{Class: "InvalidSpecifier", Message: fmt.Sprintf("invalid requires-python specifier: %s", *d.RequiresPython)}
 	}
 	ok, err := specifierSetContains(specs, version)
 	if err != nil || ok {
@@ -306,11 +305,11 @@ func tomlStringList(v any) ([]string, bool) {
 	return out, true
 }
 
-// Whether any value of a decoded table is truthy, the AttributeError Python raises for a non table
-func tomlAnyValue(v any) (bool, error) {
+// Whether any value of a decoded table is truthy, an AttributeError naming the field for a non table
+func tomlAnyValue(v any, field string) (bool, error) {
 	obj, ok := v.(*OrderedObject)
 	if !ok {
-		return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'values'", tomlTypeName(v))}
+		return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("%s must be a table, got %s", field, tomlKind(v))}
 	}
 	for _, k := range obj.Keys {
 		if tomlTruthy(obj.Values[k]) {
@@ -367,7 +366,7 @@ func pyprojectDeclaration(project, text string, files []string, manifest map[str
 		if err != nil {
 			return nil, err
 		}
-		if installs, err = tomlAnyValue(optional); err != nil {
+		if installs, err = tomlAnyValue(optional, "optional-dependencies"); err != nil {
 			return nil, err
 		}
 	}
@@ -376,7 +375,7 @@ func pyprojectDeclaration(project, text string, files []string, manifest map[str
 		if err != nil {
 			return nil, err
 		}
-		if installs, err = tomlAnyValue(groups); err != nil {
+		if installs, err = tomlAnyValue(groups, "dependency-groups"); err != nil {
 			return nil, err
 		}
 	}

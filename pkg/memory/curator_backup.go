@@ -86,6 +86,9 @@ func curatorJobsList(parsed any) ([]any, bool) {
 	return list, ok
 }
 
+// Failure of a snapshot file whose bytes are not UTF-8 text
+var errCuratorNotUTF8 = errors.New("not valid UTF-8")
+
 // Text of a file decoded as utf-8-sig, an error for invalid UTF-8
 func curatorReadUTF8Sig(p string) (string, error) {
 	raw, err := os.ReadFile(p)
@@ -93,7 +96,7 @@ func curatorReadUTF8Sig(p string) (string, error) {
 		return "", err
 	}
 	if !utf8.Valid(raw) {
-		return "", fmt.Errorf("%s is not valid UTF-8", p)
+		return "", fmt.Errorf("%s is %w", p, errCuratorNotUTF8)
 	}
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
 }
@@ -375,7 +378,7 @@ func curatorPruneOld(ctx context.Context, keep int, protect map[string]bool) []s
 func curatorReadManifest(dir string) (any, error) {
 	text, err := curatorReadUTF8Sig(filepath.Join(dir, "manifest.json"))
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "codec") {
+		if !errors.Is(err, errCuratorNotUTF8) {
 			return pyjson.NewObject(), nil
 		}
 		return nil, err

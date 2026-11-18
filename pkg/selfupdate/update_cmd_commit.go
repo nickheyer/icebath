@@ -24,6 +24,7 @@ import (
 
 	"encoding/base64"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -317,7 +318,7 @@ func armTreeMove(ctx context.Context, gitCmd []string, root string, move treeMov
 // Copies the launch repair's modules as committed at pre beside the marker and returns the closure directory
 func publishRecoveryClosure(ctx context.Context, gitCmd []string, root, pre string) (string, error) {
 	if !IsObjectID(pre) {
-		return "", &pm.PyError{Class: "OSError", Message: "not a commit id: " + pyrepr.StrRepr(pre)}
+		return "", &pm.PyError{Class: "OSError", Message: "not a commit id: " + errchain.Show(pre)}
 	}
 	dest, err := RecoveryClosureDirOf(root, pre)
 	if err != nil {
@@ -341,7 +342,7 @@ func publishRecoveryClosure(ctx context.Context, gitCmd []string, root, pre stri
 				continue
 			}
 			if len(fields) < 3 {
-				return "", &pm.PyError{Class: "IndexError", Message: "list index out of range"}
+				return "", &pm.PyError{Class: "IndexError", Message: "git ls-tree printed a blob line without an object id"}
 			}
 			ids[rel] = fields[2]
 		}

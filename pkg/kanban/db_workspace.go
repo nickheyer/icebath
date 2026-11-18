@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -99,7 +99,7 @@ func excText(err error) string {
 		return state.ErrText(err)
 	}
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }
@@ -854,7 +854,7 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 			return "", "", &ValueError{fmt.Sprintf("task %s has workspace_kind=worktree but no workspace_path, "+
 				"and board %s has no default_workdir set. Set a board "+
 				"default workdir (a git repo) or create the task with "+
-				"--workspace worktree:<absolute-repo-path>.", task.ID, pyrepr.Repr(boardSlug))}
+				"--workspace worktree:<absolute-repo-path>.", task.ID, errchain.Show(boardSlug))}
 		}
 		anchor, err := pypath.PathExpanduser(boardDefault)
 		if err != nil {
@@ -862,12 +862,12 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 		}
 		if !pypath.IsAbs(anchor) {
 			return "", "", &ValueError{fmt.Sprintf("board %s default_workdir %s is not "+
-				"absolute; use an absolute path to a git repo", pyrepr.Repr(boardSlug), pyrepr.Repr(boardDefault))}
+				"absolute; use an absolute path to a git repo", errchain.Show(boardSlug), errchain.Show(boardDefault))}
 		}
 		repoRoot := gitToplevel(anchor)
 		if repoRoot == nil {
 			return "", "", &ValueError{fmt.Sprintf("task %s has workspace_kind=worktree but board "+
-				"%s default_workdir %s is not inside a git repo", task.ID, pyrepr.Repr(boardSlug), pyrepr.Repr(boardDefault))}
+				"%s default_workdir %s is not inside a git repo", task.ID, errchain.Show(boardSlug), errchain.Show(boardDefault))}
 		}
 		return anchoredWorktree(*repoRoot, task.ID, branchName)
 	}
@@ -877,7 +877,7 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 	}
 	if !pypath.IsAbs(requested) {
 		return "", "", &ValueError{fmt.Sprintf("task %s has non-absolute worktree path "+
-			"%s; use an absolute path", task.ID, pyrepr.Repr(*task.WorkspacePath))}
+			"%s; use an absolute path", task.ID, errchain.Show(*task.WorkspacePath))}
 	}
 	requestedResolved, err := pypath.Resolve(requested)
 	if err != nil {
@@ -926,7 +926,7 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 	}
 	if repoRoot == nil {
 		return "", "", &ValueError{fmt.Sprintf("task %s worktree path %s is not inside a git repo "+
-			"and does not point at a git repo root", task.ID, pyrepr.Repr(*task.WorkspacePath))}
+			"and does not point at a git repo root", task.ID, errchain.Show(*task.WorkspacePath))}
 	}
 	if err := ensureGitWorktree(*repoRoot, requested, branchName); err != nil {
 		return "", "", err
@@ -959,7 +959,7 @@ func ResolveWorkspace(ctx context.Context, task *Task, board *string) (string, e
 		}
 		if !pypath.IsAbs(expanded) {
 			return "", &ValueError{fmt.Sprintf("task %s has non-absolute workspace_path "+
-				"%s; workspace paths must be absolute", task.ID, pyrepr.Repr(*task.WorkspacePath))}
+				"%s; workspace paths must be absolute", task.ID, errchain.Show(*task.WorkspacePath))}
 		}
 		p = expanded
 	case kind == "dir":
@@ -973,7 +973,7 @@ func ResolveWorkspace(ctx context.Context, task *Task, board *string) (string, e
 		if !pypath.IsAbs(expanded) {
 			return "", &ValueError{fmt.Sprintf("task %s has non-absolute workspace_path "+
 				"%s; use an absolute path "+
-				"(relative paths are ambiguous against the dispatcher's CWD)", task.ID, pyrepr.Repr(*task.WorkspacePath))}
+				"(relative paths are ambiguous against the dispatcher's CWD)", task.ID, errchain.Show(*task.WorkspacePath))}
 		}
 		p = expanded
 	default:

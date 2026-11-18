@@ -135,7 +135,7 @@ func TestAuxiliaryTaskRegistrarKeepsPluginValuesAndRefusesNonMappingDefaults(t *
 		}
 	}
 	pairs := []any{[]any{"timeout", int64(5)}, "ab"}
-	if err := register("plug_pairs", plugins.AuxTaskOptions{DisplayName: "n", Description: "d", Defaults: pairs}); err == nil || err.Error() != "'list' object is not a mapping" {
+	if err := register("plug_pairs", plugins.AuxTaskOptions{DisplayName: "n", Description: "d", Defaults: pairs}); err == nil || err.Error() != "auxiliary task defaults are a list where a mapping was expected" {
 		t.Fatalf("pairs without inheritance %v", err)
 	}
 	if err := register("plug_pairs", plugins.AuxTaskOptions{DisplayName: "n", Description: "d", Defaults: pairs, InheritFrom: "plug_raw"}); err != nil {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -403,7 +404,7 @@ func ReconcileOrphanedRunning(ctx context.Context, conn state.SQLiteConn) ([]str
 		if requeued {
 			reconciled = append(reconciled, tid)
 		}
-		pkgLog().Info(fmt.Sprintf("kanban reconcile: requeued orphaned running task %s (claim_lock=%s, worker_pid=%s)", tid, pyrepr.Repr(row.Get("claim_lock")), pyrepr.Repr(pid)))
+		pkgLog().Info(fmt.Sprintf("kanban reconcile: requeued orphaned running task %s (claim_lock=%s, worker_pid=%s)", tid, errchain.Show(row.Get("claim_lock")), errchain.Show(pid)))
 	}
 	return reconciled, nil
 }
@@ -503,7 +504,7 @@ func classifyDeadWorker(ctx context.Context, pid int, claimer *string, exitCode 
 	dead := classifyDeadWorkerExit(ctx, pid, claimer, exitCode, taskID, board)
 	if taskID != nil && *taskID != "" && !dead.RateLimited {
 		if output := workerFinalOutput(ctx, *taskID, board); output != "" {
-			dead.ErrorText += WorkerOutputSep + pyrepr.Repr(output)
+			dead.ErrorText += WorkerOutputSep + errchain.Show(output)
 			dead.EventPayload.Set("worker_output", output)
 		}
 	}

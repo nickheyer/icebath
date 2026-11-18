@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -159,8 +160,8 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 			extra, isList := push.GetOr("msg_body", []any{}).([]any)
 			base, baseIsList := merged.GetOr("msg_body", []any{}).([]any)
 			if !isList || !baseIsList {
-				return &pyErr{"TypeError", fmt.Sprintf("can only concatenate list (not \"%s\") to list",
-					pyrepr.TypeName(push.GetOr("msg_body", []any{})))}
+				return &pyErr{"TypeError", fmt.Sprintf("msg_body must be a list, got %s",
+					errchain.Kind(push.GetOr("msg_body", []any{})))}
 			}
 			body := append(append(append([]any{}, base...), textElem("\n")), extra...)
 			merged.Set("msg_body", body)
@@ -296,7 +297,7 @@ func (p *AccessPolicy) IsGroupAllowed(ctx context.Context, groupCode any) (bool,
 	if p.GroupPolicy == "open" {
 		return p.OpenDMOptedIn(ctx)
 	}
-	code, err := strMethod(groupCode, "strip")
+	code, err := strMethod(groupCode, "the group code")
 	if err != nil {
 		return false, err
 	}

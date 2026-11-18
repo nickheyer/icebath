@@ -9,13 +9,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -166,7 +166,7 @@ func resolveExportFiles(ctx context.Context, args *Args) ([]string, int, error) 
 		if len(shown) > 60 {
 			shown = shown[:60]
 		}
-		c.PrintError(fmt.Sprintf("No file at %s. If that was the reply pasted here: a terminal cuts it short,", pyrepr.StrRepr(string(shown))))
+		c.PrintError(fmt.Sprintf("No file at %s. If that was the reply pasted here: a terminal cuts it short,", strconv.Quote(string(shown))))
 		c.PrintError("so copy it and just press Enter instead (or pipe it in with --source -).")
 	}
 	found := FindExportFiles(picked)

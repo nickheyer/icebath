@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -127,7 +128,7 @@ func applyNewSessionTitle(c *CLI, title string) (string, bool) {
 func writeSave(c *CLI, sessionID, format, filename string, render func() (string, error)) {
 	savedDir := filepath.Join(home.Dir(c.ctx), "sessions", "saved")
 	if err := os.MkdirAll(savedDir, 0o755); err != nil {
-		printLines(c.t("cli.session.save_dir_failed", map[string]any{"path": savedDir, "error": pypath.OSErrorText(err)}))
+		printLines(c.t("cli.session.save_dir_failed", map[string]any{"path": savedDir, "error": errchain.OSText(err)}))
 		return
 	}
 	var path string
@@ -145,7 +146,7 @@ func writeSave(c *CLI, sessionID, format, filename string, render func() (string
 		err = os.WriteFile(path, []byte(content), 0o644)
 	}
 	if err != nil {
-		printLines(c.t("cli.session.save_failed", map[string]any{"error": pypath.OSErrorText(err)}))
+		printLines(c.t("cli.session.save_failed", map[string]any{"error": errchain.OSText(err)}))
 		return
 	}
 	label := map[string]string{"json": "JSON", "md": c.t("cli.session.format_markdown", nil), "html": "HTML"}[format]

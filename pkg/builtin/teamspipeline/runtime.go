@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/teams"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -123,7 +124,7 @@ func BuildPipelineRuntimeConfig(gatewayConfig *gateway.GatewayConfig) (*pyjson.O
 			}
 		default:
 			if name := pyrepr.TypeName(value); name == "list" || name == "dict" || name == "set" {
-				return nil, pyError("TypeError", "unhashable type: '"+name+"'")
+				return nil, pyError("TypeError", "Teams delivery setting "+key+" is "+errchain.Kind(value)+" where a single value was expected")
 			}
 			teamsDelivery.Set(key, value)
 		}
@@ -189,7 +190,7 @@ func BindGatewayRuntime(ctx context.Context, host GatewayRuntimeHost) (bool, err
 	setScheduler := func(scheduler gateway.NotificationScheduler) error {
 		target, ok := adapter.(notificationSchedulerAdapter)
 		if !ok {
-			return pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'set_notification_scheduler'", pyrepr.TypeName(adapter)))
+			return pyError("AttributeError", "the Teams adapter cannot take a notification scheduler")
 		}
 		target.SetNotificationScheduler(scheduler)
 		return nil

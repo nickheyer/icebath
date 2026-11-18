@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/backup"
@@ -15,9 +16,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
@@ -112,6 +115,12 @@ func tuiAttachOwner(ctx context.Context, start, recover bool) (tui.Grant, error)
 			return tui.Grant{}, err
 		}
 	}
+	replaced := ""
+	if gateway.Attachable(receipt) {
+		if receipt, replaced, err = replaceOtherBuildOwner(ctx, h, receipt); err != nil {
+			return tui.Grant{}, err
+		}
+	}
 	if !gateway.Attachable(receipt) {
 		return tui.Grant{}, errors.New(tuiBootstrapFailureMessage(receipt))
 	}
@@ -135,7 +144,45 @@ func tuiAttachOwner(ctx context.Context, start, recover bool) (tui.Grant, error)
 		return tui.Grant{}, errors.New("gateway private bootstrap rejected")
 	}
 	url, protocols := gateway.GatewayWSTarget(endpoint, *answer.Result.Ticket)
-	return tui.Grant{URL: url, Protocols: protocols, ProfileID: endpoint.ProfileID, InstanceID: endpoint.InstanceID}, nil
+	return tui.Grant{URL: url, Protocols: protocols, ProfileID: endpoint.ProfileID, InstanceID: endpoint.InstanceID, Replaced: replaced}, nil
+}
+
+// Gateway builds this process replaced once and saw come back, kept from then on
+var reproducedBuilds sync.Map
+
+// Whether the owner reports no attached client and no running work, false when it cannot tell
+func ownerIdle(h string, endpoint *gateway.GatewayEndpoint) bool {
+	work := gateway.QueryGatewayControl(gateway.ControlHomeFor(h, endpoint), "active-work", nil, 5*time.Second)
+	if work == nil {
+		return false
+	}
+	agents, _ := work.Get("active_agents")
+	clients, _ := work.Get("clients")
+	return agents == int64(0) && clients == int64(0)
+}
+
+// Owner of another build or contract replaced by one of this build while idle and alone, with the build it replaced
+func replaceOtherBuildOwner(ctx context.Context, h string, receipt gateway.ObservedEndpoint) (gateway.ObservedEndpoint, string, error) {
+	other := receipt.Endpoint
+	if tuigateway.SameBuild(other.BuildID, other.ContractVersion) {
+		return receipt, "", nil
+	}
+	if _, reproduced := reproducedBuilds.Load(other.BuildID); reproduced || !ownerIdle(h, other) {
+		return receipt, "", nil
+	}
+	refusal := gateway.ReplaceIncompatibleOwner(ctx, h, pythread.Monotonic()+20)
+	fresh, err := gateway.EnsureGatewayRuntime(ctx, h, 30, true)
+	if err != nil || !gateway.Attachable(fresh) {
+		return fresh, "", err
+	}
+	if refusal != "" || !tuigateway.SameBuild(fresh.Endpoint.BuildID, fresh.Endpoint.ContractVersion) {
+		reproducedBuilds.Store(fresh.Endpoint.BuildID, true)
+		return fresh, "", nil
+	}
+	if other.BuildID == "" {
+		return fresh, "unknown", nil
+	}
+	return fresh, other.BuildID, nil
 }
 
 // Whether the state database of the home holds the session id

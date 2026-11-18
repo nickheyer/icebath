@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -350,7 +349,7 @@ func resumeFollowTip(r *resumeCtx) {
 
 // Refuses a kanban worker transcript and a runaway transcript before any history read
 func resumeGuard(r *resumeCtx) map[string]any {
-	if refusal := kanban.KanbanResumeRefusal(r.ctx, r.db, r.target); refusal != "" {
+	if refusal := tools.KanbanResumeRefusal(r.ctx, r.db, r.target); refusal != "" {
 		return rpcErr(r.rid, 4132, refusal, nil)
 	}
 	tipOnly := r.lazy || r.omitMessages || (r.deferHistory && !r.eagerBuild)

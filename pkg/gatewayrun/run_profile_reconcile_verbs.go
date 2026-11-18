@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -195,7 +196,7 @@ func migrateProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.C
 			return pyjson.ObjectOf("ok", true, "rekeyed", int64(rekeyed), "db", dbCounts), nil
 		}()
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Profile identity migration failed for %s->%s: %s", pyrepr.Repr(old), pyrepr.Repr(fresh), err))
+			pkgLog().Warn(fmt.Sprintf("Profile identity migration failed for %s->%s: %s", errchain.Show(old), errchain.Show(fresh), err))
 			return pyjson.ObjectOf("ok", false, "error", excText(err)), nil
 		}
 		return answer, nil
@@ -231,7 +232,7 @@ func purgeProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.Con
 			return pyjson.ObjectOf("ok", true, "dropped", int64(dropped), "db", dbCounts), nil
 		}()
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Profile identity purge failed for %s: %s", pyrepr.Repr(name), err))
+			pkgLog().Warn(fmt.Sprintf("Profile identity purge failed for %s: %s", errchain.Show(name), err))
 			return pyjson.ObjectOf("ok", false, "error", excText(err)), nil
 		}
 		return answer, nil

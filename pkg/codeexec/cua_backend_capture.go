@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -357,7 +358,7 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 	}
 	runningApps, err := b.ListApps()
 	if err != nil {
-		pkgLog(nil).Debug(fmt.Sprintf("computer_use list_apps fallback failed for %s: %v", pyrepr.Repr(app), err))
+		pkgLog(nil).Debug(fmt.Sprintf("computer_use list_apps fallback failed for %s: %v", errchain.Show(app), err))
 		runningApps = nil
 	}
 	exactPIDs, partialPIDs := map[int]bool{}, map[int]bool{}
@@ -458,14 +459,14 @@ func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, 
 			return isDesktopWindow(desktop[i], desktopBackdropNames) && !isDesktopWindow(desktop[j], desktopBackdropNames)
 		})
 		if len(desktop) == 0 {
-			return nil, b.failedCapture(mode, fmt.Sprintf(noDesktopWindowMsg, pyrepr.Repr(*app))), nil
+			return nil, b.failedCapture(mode, fmt.Sprintf(noDesktopWindowMsg, errchain.Show(*app))), nil
 		}
 		return desktop, nil, nil
 	}
 	if matched := b.matchWindowsForApp(windows, *app); len(matched) > 0 {
 		return matched, nil, nil
 	}
-	return nil, b.failedCapture(mode, fmt.Sprintf(noAppMatchMsg, pyrepr.Repr(*app))), nil
+	return nil, b.failedCapture(mode, fmt.Sprintf(noAppMatchMsg, errchain.Show(*app))), nil
 }
 
 // get_window_state args bounding the driver's accessibility walk by the configured element cap
@@ -643,14 +644,14 @@ func pyIntOf(v any) (int, error) {
 	case string:
 		n, ok := pyint.Parse(x)
 		if !ok {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(x))
+			return 0, fmt.Errorf("%s is not a whole number", x)
 		}
 		return int(n.Int64()), nil
 	}
 	if n, ok := pyrepr.Int(v); ok {
 		return int(n.Int64()), nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Composited whole screen grab through get_desktop_state with capture_scope switched and restored

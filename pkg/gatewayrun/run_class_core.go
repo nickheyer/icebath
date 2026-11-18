@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -147,7 +148,7 @@ func (r *GatewayRunner) profileNameForSource(ctx context.Context, source *gatewa
 		served, err := gateway.MultiplexProfileHomes(ctx, r.config)
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Rejecting profile route %s because the served-profile set could not be resolved: %v",
-				pyrepr.Repr(matched.Name), err))
+				errchain.Show(matched.Name), err))
 			return nil, &gateway.ProfileRouteRejected{Args: []any{matched.Name}}
 		}
 		for _, profile := range served {
@@ -156,7 +157,7 @@ func (r *GatewayRunner) profileNameForSource(ctx context.Context, source *gatewa
 			}
 		}
 		pkgLog().Warn(fmt.Sprintf("Rejecting profile route %s: target profile %s is not served",
-			pyrepr.Repr(matched.Name), pyrepr.Repr(matched.Profile)))
+			errchain.Show(matched.Name), errchain.Show(matched.Profile)))
 		return nil, &gateway.ProfileRouteRejected{Args: []any{matched.Name, matched.Profile}}
 	}
 	pkgLog().Debug(fmt.Sprintf("No profile route matched: platform=%s chat_id=%s thread_id=%s parent_chat_id=%s",
@@ -210,7 +211,7 @@ func (r *GatewayRunner) resolveProfileHomeForSource(ctx context.Context, source 
 	}
 	if explicit != nil && !profiles.ProfileExists(name) {
 		pkgLog().Warn(fmt.Sprintf("Profile %s does not exist for source %s/%s (guild_id=%s), "+
-			"falling back to global ICEBATH_HOME", pyrepr.Repr(*explicit), source.Platform, source.ChatID, guild))
+			"falling back to global ICEBATH_HOME", errchain.Show(*explicit), source.Platform, source.ChatID, guild))
 		return home.Dir(ctx), nil
 	}
 	return profileDir, nil

@@ -298,7 +298,7 @@ func (a *app) hubRequest(method, command string, show func(r map[string]any) tea
 			a.sys("error: " + rpcErrorMessage(err))
 			return nil
 		case r == nil:
-			a.sys("error: " + tr("session.common.invalidResponse", method))
+			a.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
 			return nil
 		}
 		return show(r)

@@ -27,14 +27,14 @@ func TestLockedExtrasFollowsPythonOnOddShapes(t *testing.T) {
 		want                []string
 		class, message      string
 	}{
-		{"table package", "[package]\nname = \"demo\"\n", "[project]\nname = \"demo\"\n", nil, "AttributeError", "'str' object has no attribute 'get'"},
-		{"string metadata", "[[package]]\nname = \"demo\"\nmetadata = \"x\"\n", "[project]\nname = \"demo\"\n", nil, "AttributeError", "'str' object has no attribute 'get'"},
+		{"table package", "[package]\nname = \"demo\"\n", "[project]\nname = \"demo\"\n", nil, "AttributeError", "expected a table holding name, got text"},
+		{"string metadata", "[[package]]\nname = \"demo\"\nmetadata = \"x\"\n", "[project]\nname = \"demo\"\n", nil, "AttributeError", "expected a table holding provides-extras, got text"},
 		{"string provides", "[[package]]\nname = \"demo\"\n[package.metadata]\nprovides-extras = \"ab\"\n", "[project]\nname = \"demo\"\n", []string{"a", "b"}, "", ""},
-		{"table provides", "[[package]]\nname = \"demo\"\n[package.metadata]\nprovides-extras = [{x = 1}]\n", "[project]\nname = \"demo\"\n", nil, "TypeError", "cannot use 'dict' as a set element (unhashable type: 'dict')"},
-		{"string project", "[[package]]\nname = \"demo\"\n", "project = \"demo\"\n", nil, "TypeError", "string indices must be integers, not 'str'"},
+		{"table provides", "[[package]]\nname = \"demo\"\n[package.metadata]\nprovides-extras = [{x = 1}]\n", "[project]\nname = \"demo\"\n", nil, "TypeError", "expected a single value, got a table"},
+		{"string project", "[[package]]\nname = \"demo\"\n", "project = \"demo\"\n", nil, "TypeError", "expected a table holding name, got text"},
 		{"list name", "[[package]]\nname = [\"a\"]\n[package.metadata]\nprovides-extras = [\"e\"]\n", "[project]\nname = [\"a\"]\n", []string{"e"}, "", ""},
 		{"float name equal to int", "[[package]]\nname = 1.0\n[package.metadata]\nprovides-extras = [\"e\", 3]\n", "[project]\nname = 1\n", []string{"e"}, "", ""},
-		{"integer package", "package = 5\n", "[project]\nname = \"demo\"\n", nil, "TypeError", "'int' object is not iterable"},
+		{"integer package", "package = 5\n", "[project]\nname = \"demo\"\n", nil, "TypeError", "expected a list, got a number"},
 		{"no name", "[[package]]\nname = \"demo\"\n", "[project]\nversion = \"1\"\n", []string{}, "", ""},
 	} {
 		t.Run(c.id, func(t *testing.T) {
@@ -59,13 +59,13 @@ func TestExtraRequirementsFollowsPythonOnOddShapes(t *testing.T) {
 		extras, want   []string
 		class, message string
 	}{
-		{"no project", "x = 1\n", []string{"a"}, nil, "KeyError", "'project'"},
-		{"integer name", "[project]\nname = 5\n[project.optional-dependencies]\na = [\"r\"]\n", []string{"a"}, nil, "TypeError", "decoding to str: need a bytes-like object, int found"},
+		{"no project", "x = 1\n", []string{"a"}, nil, "KeyError", "missing project"},
+		{"integer name", "[project]\nname = 5\n[project.optional-dependencies]\na = [\"r\"]\n", []string{"a"}, nil, "TypeError", "project.name must be text, got a number"},
 		{"integer name without rows", "[project]\nname = 5\n[project.optional-dependencies]\na = []\n", []string{"a"}, nil, "", ""},
-		{"list table", "[project]\nname = \"d\"\noptional-dependencies = [\"a\"]\n", []string{"a"}, nil, "TypeError", "list indices must be integers or slices, not str"},
-		{"string table hit", "[project]\nname = \"d\"\noptional-dependencies = \"abc\"\n", []string{"b"}, nil, "TypeError", "string indices must be integers, not 'str'"},
-		{"integer table", "[project]\nname = \"d\"\noptional-dependencies = 5\n", []string{"a"}, nil, "TypeError", "argument of type 'int' is not a container or iterable"},
-		{"integer requirement", "[project]\nname = \"d\"\n[project.optional-dependencies]\na = [5]\n", []string{"a"}, nil, "AttributeError", "'int' object has no attribute 'replace'"},
+		{"list table", "[project]\nname = \"d\"\noptional-dependencies = [\"a\"]\n", []string{"a"}, nil, "TypeError", "expected a table holding a, got a list"},
+		{"string table hit", "[project]\nname = \"d\"\noptional-dependencies = \"abc\"\n", []string{"b"}, nil, "TypeError", "expected a table holding b, got text"},
+		{"integer table", "[project]\nname = \"d\"\noptional-dependencies = 5\n", []string{"a"}, nil, "TypeError", "expected a table or list holding a, got a number"},
+		{"integer requirement", "[project]\nname = \"d\"\n[project.optional-dependencies]\na = [5]\n", []string{"a"}, nil, "AttributeError", "optional dependency of extra a must be text, got a number"},
 		{"string rows", "[project]\nname = \"d\"\n[project.optional-dependencies]\na = \"xy\"\n", []string{"a"}, []string{"x", "y"}, "", ""},
 		{"universal newlines", "[project]\r\nname = \"d\"\r\n[project.optional-dependencies]\r\na = [\"\"\"x\r\ny\"\"\"]\r\n", []string{"a"}, []string{"x\ny"}, "", ""},
 	} {
@@ -85,7 +85,7 @@ func TestExtraRequirementsFollowsPythonOnOddShapes(t *testing.T) {
 	root := t.TempDir()
 	peWrite(t, filepath.Join(root, "pyproject.toml"), "[project]\nname = \"d\"\noptional-dependencies = \"abc\"\n")
 	_, err := extraRequirements(root, []string{"z"})
-	oddWantPyError(t, err, "ValueError", "'z' is not an extra declared in "+filepath.Join(root, "pyproject.toml"))
+	oddWantPyError(t, err, "ValueError", "z is not an extra declared in "+filepath.Join(root, "pyproject.toml"))
 }
 
 func TestWorkerErrorRaisesWhatPythonRaises(t *testing.T) {
@@ -96,13 +96,13 @@ func TestWorkerErrorRaisesWhatPythonRaises(t *testing.T) {
 	}{
 		{"empty remedy takes the default", map[string]any{"package": "p", "type": "InstallError", "cause": "c", "remedy": ""}, "InstallError", "p: c — retry, or run `icebath pm doctor`"},
 		{"conflict", map[string]any{"package": "p", "type": "ResolutionConflict", "cause": "c", "remedy": "r"}, "ResolutionConflict", "p: c — r"},
-		{"install without type", map[string]any{"package": "p", "cause": "c", "remedy": "r"}, "KeyError", "'type'"},
-		{"install without remedy", map[string]any{"package": "p", "type": "InstallError", "cause": "c"}, "KeyError", "'remedy'"},
-		{"key error repr", map[string]any{"type": "KeyError", "message": "x"}, "KeyError", "'x'"},
-		{"unhashable type", map[string]any{"type": []any{"a"}, "message": "m"}, "TypeError", "cannot use 'list' as a dict key (unhashable type: 'list')"},
-		{"missing message", map[string]any{"type": "ValueError"}, "KeyError", "'message'"},
+		{"install without type", map[string]any{"package": "p", "cause": "c", "remedy": "r"}, "KeyError", "the worker error has no type"},
+		{"install without remedy", map[string]any{"package": "p", "type": "InstallError", "cause": "c"}, "KeyError", "the worker error has no remedy"},
+		{"key error text", map[string]any{"type": "KeyError", "message": "x"}, "KeyError", "x"},
+		{"list type", map[string]any{"type": []any{"a"}, "message": "m"}, "TypeError", "the worker error type must be text, got a list"},
+		{"missing message", map[string]any{"type": "ValueError"}, "KeyError", "the worker error has no message"},
 		{"unknown class", map[string]any{"type": "Weird", "message": "m"}, "RuntimeError", "m"},
-		{"paused without message", map[string]any{"type": "DownloadPaused"}, "KeyError", "'message'"},
+		{"paused without message", map[string]any{"type": "DownloadPaused"}, "KeyError", "the worker error has no message"},
 	} {
 		t.Run(c.id, func(t *testing.T) {
 			oddWantPyError(t, workerError(c.payload), c.class, c.message)
@@ -123,16 +123,16 @@ func TestWorkerExchangeRaisesOnMalformedLines(t *testing.T) {
 		class, message string
 		sent           string
 	}{
-		{"list line", "[1]\n", "TypeError", "list indices must be integers or slices, not str", ""},
-		{"no id", "{\"type\": \"result\"}\n", "KeyError", "'id'", ""},
+		{"list line", "[1]\n", "TypeError", "the worker message must be a mapping holding id, got a list", ""},
+		{"no id", "{\"type\": \"result\"}\n", "KeyError", "the worker message has no id", ""},
 		{"other id", "{\"id\": \"zzz\", \"type\": \"result\"}\n", "InstallError", "pm: worker returned a different request id — retry, or run `icebath pm doctor`", ""},
-		{"no type", "{\"id\": \"abc\"}\n", "KeyError", "'type'", ""},
-		{"no callback", "{\"id\": \"abc\", \"type\": \"callback\"}\n", "KeyError", "'callback'", ""},
-		{"no call", "{\"id\": \"abc\", \"type\": \"callback\", \"callback\": \"progress\", \"args\": []}\n", "KeyError", "'call'", ""},
+		{"no type", "{\"id\": \"abc\"}\n", "KeyError", "the worker message has no type", ""},
+		{"no callback", "{\"id\": \"abc\", \"type\": \"callback\"}\n", "KeyError", "the worker message has no callback", ""},
+		{"no call", "{\"id\": \"abc\", \"type\": \"callback\", \"callback\": \"progress\", \"args\": []}\n", "KeyError", "the worker message has no call", ""},
 		{"null args", "{\"id\": \"abc\", \"type\": \"callback\", \"callback\": \"progress\", \"args\": null, \"call\": 1}\n", "InstallError",
-			"pm: worker exited without a result — check the worker diagnostics on stderr", "TypeError: progress() argument after * must be an iterable, not NoneType"},
+			"pm: worker exited without a result — check the worker diagnostics on stderr", "the progress callback arguments must be a list, got nothing"},
 		{"unknown callback", "{\"id\": \"abc\", \"type\": \"callback\", \"callback\": 5, \"call\": 1}\n", "InstallError",
-			"pm: worker exited without a result — check the worker diagnostics on stderr", "KeyError: 5"},
+			"pm: worker exited without a result — check the worker diagnostics on stderr", "unknown callback 5"},
 	} {
 		t.Run(c.id, func(t *testing.T) {
 			sink := &oddSink{}
@@ -167,7 +167,7 @@ func TestPayloadPathsFollowPathlib(t *testing.T) {
 	checkout := sttMkdir(t, filepath.Join(tmp, "checkout"))
 	writeFile(t, filepath.Join(checkout, "install-stamp.json"), []byte("{\"runtimeDir\": 5}"), 0o666)
 	_, err = EnvironmentStoreRoot(ctx, checkout, false)
-	oddWantPyError(t, err, "TypeError", "argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'int'")
+	oddWantPyError(t, err, "TypeError", "the install stamp runtimeDir must be text, got a number")
 	if runtime.GOOS != "windows" {
 		writeFile(t, filepath.Join(checkout, "install-stamp.json"), []byte("{\"runtimeDir\": \"/a\\u0000b\"}"), 0o666)
 		_, err = EnvironmentStoreRoot(ctx, checkout, false)

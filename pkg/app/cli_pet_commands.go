@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package app
 
 import (
@@ -5,6 +7,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pet/generate"
 )
+
+// Adds /pet and /hatch to the slash dispatch
+func init() {
+	slashDispatch["pet"] = withArg((*CLI).handlePetCommand)
+	slashDispatch["hatch"] = withArg((*CLI).handleHatchCommand)
+}
 
 // Pets runner bound to this session's profile writing to the console
 func (c *CLI) petsRunner() *petsRun {

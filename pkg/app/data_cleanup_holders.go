@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -77,11 +78,11 @@ func drainTimeoutSeconds(v any) (float64, error) {
 	case string:
 		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
 		if err != nil {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyrepr.StrRepr(x))
+			return 0, fmt.Errorf("drain timeout %s is not a number", x)
 		}
 		return f, nil
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("drain timeout is %s where a number was expected", errchain.Kind(v))
 }
 
 // Drains the manual gateway of the home over its control socket and waits until it is gone
@@ -206,7 +207,7 @@ func refuseCronWriters(h string) error {
 			return holderErrorf("cron execution %s is being handed to a worker; wait for it to finish", pyrepr.Str(row["id"]))
 		}
 		if !isInt {
-			return fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(row["pid"]))
+			return fmt.Errorf("cron execution %s pid is %s where a whole number was expected", pyrepr.Str(row["id"]), errchain.Kind(row["pid"]))
 		}
 		if !gateway.PidExists(pid) {
 			continue
@@ -240,7 +241,7 @@ func refuseMultiplexer(h string) error {
 		case string:
 			listed = strings.Contains(x, name)
 		default:
-			return fmt.Errorf("argument of type '%s' is not iterable", pyrepr.TypeName(served))
+			return fmt.Errorf("gateway served_profiles is %s where a list was expected", errchain.Kind(served))
 		}
 		if listed {
 			return holderErrorf("the default gateway serves %s; stop the multiplexer explicitly before retrying", h)

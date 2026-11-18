@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tools
 
 import (
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/lsp"
+	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
 func lspDiag(line int64, message string, endLine int64) map[string]any {
@@ -155,7 +158,7 @@ func lspGitRepo(t *testing.T, root string) string {
 }
 
 func TestLSPOperatorWorkspaceRootsFollowTheSurfaceButNotScheduledWork(t *testing.T) {
-	lsp.ClearWorkspaceCache()
+	workspaces.ClearWorkspaceCache()
 	tmp := t.TempDir()
 	launch := lspGitRepo(t, filepath.Join(tmp, "launch"))
 	sibling := lspGitRepo(t, filepath.Join(tmp, "elsewhere", "clone"))

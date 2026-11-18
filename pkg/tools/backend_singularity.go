@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -293,8 +295,8 @@ func sweepSingularityScratchDir(scratch string) {
 	}
 }
 
-// SweepSingularityScratchAtExit removes the orphaned scratch entries of every Singularity scratch directory this process used
-func SweepSingularityScratchAtExit() {
+// Removes the orphaned scratch entries of every Singularity scratch directory this process used
+func sweepSingularityScratchAtExit() {
 	singularityExitSweep.Lock()
 	dirs := append([]string(nil), singularityExitSweep.dirs...)
 	singularityExitSweep.Unlock()
@@ -651,4 +653,5 @@ func init() {
 	if err := RegisterTerminalBackend(singularityBackend{}); err != nil {
 		panic(err)
 	}
+	addBackendExitSweep(sweepSingularityScratchAtExit)
 }

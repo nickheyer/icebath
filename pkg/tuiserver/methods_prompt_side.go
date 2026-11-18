@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -89,7 +90,7 @@ func promptBackground(ctx context.Context, rid any, params map[string]any) map[s
 	body := func(ctx context.Context) (string, error) {
 		parentAgent := sessionAgent(session)
 		if parentAgent == nil {
-			return "", errors.New("'NoneType' object has no attribute 'model'")
+			return "", errors.New("the session has no agent to run the background prompt with")
 		}
 		opts := backgroundAgentKwargs(ctx, parentAgent, taskID)
 		store, release, err := sideAgentSessionDB(ctx, opts.SessionDB)
@@ -138,7 +139,7 @@ func promptBtw(ctx context.Context, rid any, params map[string]any) map[string]a
 	body := func(ctx context.Context) (string, error) {
 		question, isText := text.(string)
 		if !isText {
-			return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(text))
+			return "", fmt.Errorf("the question must be text, got %s", errchain.Kind(text))
 		}
 		opts := agent.NewSideQuestionOptions()
 		opts.Parent, opts.MainRuntime = parentAgent, mainRuntime

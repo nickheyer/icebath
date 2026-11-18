@@ -61,7 +61,7 @@ var (
 	}
 	containerConfigKeys = []configKeyRow{
 		{"container_cpu", "container_cpu", 1}, {"container_memory", "container_memory", 5120}, {"container_disk", "container_disk", 51200},
-		{"container_persistent", "container_persistent", true}, {"vercel_runtime", "vercel_runtime", ""}, {"vercel_image", "vercel_image", ""},
+		{"container_persistent", "container_persistent", true}, {"modal_mode", "modal_mode", "auto"}, {"vercel_runtime", "vercel_runtime", ""}, {"vercel_image", "vercel_image", ""},
 		{"docker_volumes", "docker_volumes", []any{}}, {"docker_mount_cwd_to_workspace", "docker_mount_cwd_to_workspace", false}, {"docker_forward_env", "docker_forward_env", []any{}},
 		{"docker_env", "docker_env", map[string]any{}}, {"docker_run_as_host_user", "docker_run_as_host_user", false}, {"docker_extra_args", "docker_extra_args", []any{}},
 		{"docker_shm_size", "docker_shm_size", "1g"}, {"docker_network", "docker_network", true}, {"docker_persist_across_processes", "docker_persist_across_processes", true},
@@ -170,7 +170,10 @@ func pluginBackendNames() []string { return PluginBackendNames(context.Backgroun
 
 // Unknown environment type error naming every usable backend
 func unknownBackendError(envType string) error {
-	names := append(strings.Split(builtinBackendList, ", "), pluginBackendNames()...)
+	if line, refused := TerminalBackendRefusal(envType); refused {
+		return errors.New(line)
+	}
+	names := append(strings.Split(linkedBuiltinBackendList(), ", "), pluginBackendNames()...)
 	quoted := make([]string, 0, len(names))
 	for _, n := range names {
 		quoted = append(quoted, "'"+n+"'")
@@ -178,32 +181,9 @@ func unknownBackendError(envType string) error {
 	return fmt.Errorf("Unknown environment type: %s. Use %s", envType, strings.Join(quoted, ", "))
 }
 
-// Builds the docker container config with the session scoped lifecycle applied
-func dockerContainerConfig(env *Env, cc map[string]any, taskID string) (map[string]any, error) {
-	if err := maybeReapDockerOrphans(env, cc); err != nil {
-		return nil, err
-	}
-	isolated, err := dockerSessionIsolationEnabled(env)
-	if err != nil {
-		return nil, err
-	}
-	sessionScoped := isolated && taskID != "default" && !hasIsolationOverrides(env, taskID)
-	out := map[string]any{}
-	for k, v := range cc {
-		out[k] = v
-	}
-	for k, v := range sandboxResources(cc) {
-		out[k] = v
-	}
-	for k, v := range shapeConfig(cc, dockerKwargKeys) {
-		out[k] = v
-	}
-	if sessionScoped {
-		out["persist_across_processes"] = false
-		out["docker_persist_across_processes"] = false
-	}
-	out["session_scoped"] = sessionScoped
-	return out, nil
+// Backend that shapes its own container config, docker applying the session scoped lifecycle
+type containerConfigShaper interface {
+	shapeContainerConfig(env *Env, cc map[string]any, taskID string) (map[string]any, error)
 }
 
 // Environment creation seam
@@ -238,13 +218,15 @@ func createEnvironment(ctx context.Context, env *Env, envType, image, cwd string
 		for k, v := range sshConfig {
 			cc["ssh_"+k] = v
 		}
-	case "docker":
-		merged, err := dockerContainerConfig(env, cc, taskID)
-		if err != nil {
-			return nil, err
-		}
-		cc = merged
 	default:
+		if shaper, ok := provider.(containerConfigShaper); ok {
+			merged, err := shaper.shapeContainerConfig(env, cc, taskID)
+			if err != nil {
+				return nil, err
+			}
+			cc = merged
+			break
+		}
 		for k, v := range sandboxResources(cc) {
 			cc[k] = v
 		}
@@ -266,8 +248,11 @@ func checkRequirements(env *Env, envType string, cfg map[string]any) bool {
 	recordUnavailableReason("")
 	provider := GetTerminalBackend(envType)
 	if provider == nil {
+		if line, refused := TerminalBackendRefusal(envType); refused {
+			return rejectBackend(env, line)
+		}
 		return rejectBackend(env, fmt.Sprintf("Unknown TERMINAL_ENV '%s'. Use one of: %s, or a plugin-registered backend",
-			envType, builtinBackendList))
+			envType, linkedBuiltinBackendList()))
 	}
 	if err := provider.CheckRequirements(env, cfg); err != nil {
 		if builtinBackends[envType] {

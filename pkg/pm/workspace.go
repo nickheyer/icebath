@@ -251,7 +251,7 @@ func copyCoreInputs(source, destination string) error {
 	for _, pattern := range patterns {
 		text, ok := pattern.(string)
 		if !ok {
-			return &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'split'", tomlTypeName(pattern))}
+			return &PyError{Class: "AttributeError", Message: fmt.Sprintf("a tool.setuptools.packages.find.include pattern must be text, got %s", tomlKind(pattern))}
 		}
 		packageRoots[strings.SplitN(text, ".", 2)[0]] = true
 	}
@@ -371,7 +371,7 @@ func pathIsRelativeTo(path, base string) bool {
 func tomlSetDefaultTable(parent any, key string) (*OrderedObject, error) {
 	obj, ok := parent.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'setdefault'", tomlTypeName(parent))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(parent))}
 	}
 	value, present := obj.Get(key)
 	if !present {
@@ -381,7 +381,7 @@ func tomlSetDefaultTable(parent any, key string) (*OrderedObject, error) {
 	}
 	table, ok := value.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'setdefault'", tomlTypeName(value))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("%s must be a table, got %s", key, tomlKind(value))}
 	}
 	return table, nil
 }
@@ -544,11 +544,11 @@ func targetEnvironment(ctx context.Context, python string) (map[string]string, e
 	cmd.Stderr = &strings.Builder{}
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 60 seconds", pyrepr.Repr(argv))}
+		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("%s timed out after 60 seconds", strings.Join(argv, " "))}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return nil, &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(argv), pyReturnCode(exitErr))}
+		return nil, &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("%s exited with status %d", strings.Join(argv, " "), pyReturnCode(exitErr))}
 	}
 	if err != nil {
 		return nil, err
@@ -680,7 +680,7 @@ func selfReferences(specs []any, own string) ([]*pyRequirement, error) {
 	for _, spec := range specs {
 		text, ok := spec.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", tomlTypeName(spec))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a requirement must be text, got %s", tomlKind(spec))}
 		}
 		req, err := ParseRequirement(text)
 		if err != nil {
@@ -750,7 +750,7 @@ func selectedMemberExtras(document *OrderedObject, extras []string, target marke
 	}
 	optionalTable, ok := optional.(*OrderedObject)
 	if !ok {
-		return nil, nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'items'", tomlTypeName(optional))}
+		return nil, nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("project.optional-dependencies must be a table, got %s", tomlKind(optional))}
 	}
 	declared := map[string][]any{}
 	for _, key := range optionalTable.Keys {
@@ -1005,7 +1005,7 @@ func runtimeMemberMetadata(document *OrderedObject, extras []string, target mark
 	if optionalValue != nil && tomlTruthy(optionalValue) {
 		optional, ok := optionalValue.(*OrderedObject)
 		if !ok {
-			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'items'", tomlTypeName(optionalValue))}
+			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("project.optional-dependencies must be a table, got %s", tomlKind(optionalValue))}
 		}
 		selected, named, err := selectedMemberExtras(document, extras, target)
 		if err != nil {
@@ -1441,7 +1441,7 @@ func rebaseMemberSources(document *OrderedObject, pluginDir, identity string) (b
 	}
 	table, ok := sources.(*OrderedObject)
 	if !ok {
-		return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'values'", tomlTypeName(sources))}
+		return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("tool.uv.sources must be a table, got %s", tomlKind(sources))}
 	}
 	changed := false
 	resolvedPlugin := resolvePath(absoluteUnresolved(pluginDir))
@@ -1462,7 +1462,7 @@ func rebaseMemberSources(document *OrderedObject, pluginDir, identity string) (b
 			}
 			relative, ok := pathValue.(string)
 			if !ok {
-				return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", tomlTypeName(pathValue))}
+				return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("a tool.uv.sources path must be text, got %s", tomlKind(pathValue))}
 			}
 			if filepath.IsAbs(filepath.FromSlash(relative)) {
 				continue

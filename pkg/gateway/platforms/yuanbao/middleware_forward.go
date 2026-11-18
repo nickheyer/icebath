@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -46,7 +47,7 @@ var forwardMediaKinds = map[string]string{"image": "image", "file": "file", "doc
 
 // Marker text of one multimedia entry, with its media ref when a resource id and URL make it resolvable
 func mediaMarker(media map[string]any, plainText any) (string, *InboundMediaRef, error) {
-	typeText, err := strMethod(pyrepr.Or(dictGetOr(media, "type", ""), dictGetOr(media, "doc_type", "")), "strip")
+	typeText, err := strMethod(pyrepr.Or(dictGetOr(media, "type", ""), dictGetOr(media, "doc_type", "")), "the media type")
 	if err != nil {
 		return "", nil, err
 	}
@@ -158,7 +159,7 @@ func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body str
 		}
 		body, isStr := rendered.(string)
 		if !isStr {
-			return &pyErr{"TypeError", fmt.Sprintf("object of type '%s' has no len()", pyrepr.TypeName(rendered))}
+			return &pyErr{"TypeError", fmt.Sprintf("the rendered forward must be text, got %s", errchain.Kind(rendered))}
 		}
 		if pystr.Len(body) > forwardMsgTextMaxChars {
 			body = pystr.Slice(body, 0, forwardMsgTextMaxChars) + "…(已截断)"

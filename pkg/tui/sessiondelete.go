@@ -15,7 +15,7 @@ func (a *app) deleteStoredSession(id string, deleted func() tea.Cmd) tea.Cmd {
 				return nil
 			}
 			if result.Deleted != id {
-				a.sys("error: " + tr("session.common.invalidResponse", "session.delete"))
+				a.sys("error: " + misfitText(tr("session.common.invalidResponse", "session.delete")))
 				return nil
 			}
 			return deleted()
@@ -38,7 +38,7 @@ func (a *app) deleteStoredSession(id string, deleted func() tea.Cmd) tea.Cmd {
 			return nil
 		}
 		if m == nil || m.Result == nil {
-			a.sys("error: " + tr("session.common.invalidResponse", "session.mutate"))
+			a.sys("error: " + misfitText(tr("session.common.invalidResponse", "session.mutate")))
 			return nil
 		}
 		return deleted()

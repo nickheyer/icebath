@@ -52,7 +52,7 @@ func TestUnknownBackendErrorsNamingConfiguredAndAvailable(t *testing.T) {
 	if !errors.As(err, &le) {
 		t.Fatalf("err = %v, want a lookupError", err)
 	}
-	for _, want := range []string{"'nope'", "available: cua", "is not installed", "~/.icebath/plugins/<name>/", "`icebath tools`"} {
+	for _, want := range []string{"computer_use.backend is nope,", "available: cua", "is not installed", "~/.icebath/plugins/<name>/", "`icebath tools`"} {
 		if !strings.Contains(le.Error(), want) {
 			t.Fatalf("%q missing %q", le.Error(), want)
 		}

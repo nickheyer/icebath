@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -31,24 +32,25 @@ func skillsListAction(ctx context.Context, rid any, _ map[string]any, _ any) (ma
 	return ok(rid, map[string]any{"skills": Banner.AvailableSkills(ctx)}), nil
 }
 
-// Top twenty hub hits of the query, every hit failing the row build as SkillMeta has no describe
+// Top twenty hub hits of the query as name and description rows
 func skillsSearch(ctx context.Context, rid any, _ map[string]any, query any) (map[string]any, error) {
 	text, isText := query.(string)
 	if !isText {
-		return nil, fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(query))
+		return nil, fmt.Errorf("the search query must be text, got %s", errchain.Kind(query))
 	}
 	x := skillsHubCLI(ctx)
-	if raw := x.Hub.UnifiedSearch(ctx, text, x.ResolvedSources(), "all", 20); len(raw) > 0 {
-		return nil, errors.New("'SkillMeta' object has no attribute 'describe'")
+	rows := []any{}
+	for _, meta := range x.Hub.UnifiedSearch(ctx, text, x.ResolvedSources(), "all", 20) {
+		rows = append(rows, map[string]any{"name": meta.Name, "description": meta.Description})
 	}
-	return ok(rid, map[string]any{"results": []any{}}), nil
+	return ok(rid, map[string]any{"results": rows}), nil
 }
 
 // Installs without prompts, a failure answering 5031 with the last printed line and the log tail
 func skillsInstall(ctx context.Context, rid any, _ map[string]any, query any) (map[string]any, error) {
 	identifier, isText := query.(string)
 	if !isText {
-		return nil, fmt.Errorf("'%s' object has no attribute 'rstrip'", pyrepr.TypeName(query))
+		return nil, fmt.Errorf("the skill to install must be text, got %s", errchain.Kind(query))
 	}
 	var mu sync.Mutex
 	var lines []string
@@ -105,17 +107,17 @@ func skillsBrowse(ctx context.Context, rid any, params map[string]any, query any
 	}
 	page, err := pyint.Of(rawPage)
 	if err != nil {
-		return nil, err
+		return nil, errchain.Reword(err, "the page must be a whole number, got %s", errchain.Show(rawPage))
 	}
 	if page.Sign() == 0 {
 		text, isText := query.(string)
 		if !isText {
-			return nil, fmt.Errorf("'%s' object has no attribute 'isdigit'", pyrepr.TypeName(query))
+			return nil, fmt.Errorf("the browse query must be text, got %s", errchain.Kind(query))
 		}
 		page = big.NewInt(1)
 		if pystr.StrIsDigit(text) {
 			if page, err = pyint.Of(text); err != nil {
-				return nil, err
+				return nil, errchain.Reword(err, "the page must be a whole number, got %s", text)
 			}
 		}
 	}
@@ -125,7 +127,7 @@ func skillsBrowse(ctx context.Context, rid any, params map[string]any, query any
 	}
 	size, err := pyint.Of(rawSize)
 	if err != nil {
-		return nil, err
+		return nil, errchain.Reword(err, "the page size must be a whole number, got %s", errchain.Show(rawSize))
 	}
 	return ok(rid, skillsHubCLI(ctx).BrowseSkills(ctx, clampedInt(page), clampedInt(size), "all")), nil
 }
@@ -144,14 +146,14 @@ func skillsInspect(ctx context.Context, rid any, _ map[string]any, query any) (m
 				return ok(rid, map[string]any{"info": map[string]any{}}), nil
 			}
 		}
-		return nil, errors.New("'list' object has no attribute 'strip'")
+		return nil, errors.New("the skill to inspect must be text, got a list")
 	case map[string]any:
 		if _, slash := q["/"]; slash {
 			return ok(rid, map[string]any{"info": map[string]any{}}), nil
 		}
-		return nil, errors.New("'dict' object has no attribute 'strip'")
+		return nil, errors.New("the skill to inspect must be text, got a mapping")
 	}
-	return nil, fmt.Errorf("argument of type '%s' is not iterable", pyrepr.TypeName(query))
+	return nil, fmt.Errorf("the skill to inspect must be text, got %s", errchain.Kind(query))
 }
 
 // Action table of skills.manage

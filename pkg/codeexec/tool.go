@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -192,6 +193,6 @@ func getExecutionMode(env *tools.Env) string {
 			return value
 		}
 	}
-	pkgLog(env).Warn("Ignoring code_execution.mode=" + pyrepr.StrRepr(value) + " (expected one of ('project', 'strict')), falling back to 'project'")
+	pkgLog(env).Warn("Ignoring code_execution.mode=" + errchain.Show(value) + " (expected project or strict), falling back to 'project'")
 	return defaultExecutionMode
 }

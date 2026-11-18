@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -200,11 +201,11 @@ func (r *GatewayRunner) eachSecondaryLedger(ctx context.Context, profileHomes []
 			return fn(p.Home)
 		}()
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Could not replay async completions for profile %s", pyrepr.Repr(p.Name)), "exc_info", err)
+			pkgLog().Warn(fmt.Sprintf("Could not replay async completions for profile %s", errchain.Show(p.Name)), "exc_info", err)
 			continue
 		}
 		if count > 0 {
-			pkgLog().Info(fmt.Sprintf("%s %d undelivered async completion(s) for profile %s", verb, count, pyrepr.Repr(p.Name)))
+			pkgLog().Info(fmt.Sprintf("%s %d undelivered async completion(s) for profile %s", verb, count, errchain.Show(p.Name)))
 		}
 	}
 }

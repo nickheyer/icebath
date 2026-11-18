@@ -232,7 +232,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	}
 	if cronJob := pystr.Strip(args.CronJob); cronJob != "" {
 		if webhookRouteCronJob == nil {
-			refusal, _ := linktier.Refusal("--cron-job", linktier.Extras)
+			refusal := linktier.Missing("--cron-job", linktier.Extras)
 			fmt.Fprintf(w, "Error: %s\n", refusal)
 			return 1, nil
 		}

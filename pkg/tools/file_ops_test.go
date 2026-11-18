@@ -15,11 +15,19 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
+
+func remoteTestEnv(t *testing.T) *Env {
+	t.Helper()
+	h := t.TempDir()
+	return &Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}
+}
 
 var (
 	fileOpsReadSentinelRe  = regexp.MustCompile(`__ICEBATH_RF_[0-9a-f]{32}__`)

@@ -62,3 +62,11 @@ func Refusal(display, tier string) (string, bool) {
 	}
 	return display + " is in the " + buildName(tier) + " of icebath, this binary is the " + ThisBuild(), true
 }
+
+// Line for a feature of tier whose code this binary was built without, also in a binary no link file named
+func Missing(display, tier string) string {
+	if line, refused := Refusal(display, tier); refused {
+		return line
+	}
+	return display + " is in the " + buildName(tier) + " of icebath, this binary was built without it"
+}

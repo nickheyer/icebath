@@ -2,8 +2,6 @@ package gatewayrun
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -33,21 +31,6 @@ func cronTickProfileHomes(ctx context.Context, cfg *gateway.GatewayConfig) ([]pr
 		return homes, nil
 	}
 	return append(homes, profiles.ServedProfile{Name: active, Home: dir}), nil
-}
-
-// Whether the ticker visits home this cycle, false only when another gateway process owns it
-func cronProfileGate(name, profileHome string) (tick bool) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			pkgLog().Debug(fmt.Sprintf("Cron profile gate probe failed for %s (ticking it): %v", name, rec))
-			tick = true
-		}
-	}()
-	liveness := cronGateLiveness(gateway.LivenessOptions{
-		ProfileDir: profileHome, NoCache: true,
-		PidProbe: func(path string) (int, bool, error) { return gateway.GetRunningPid(path, false) },
-	})
-	return !(liveness.Running && liveness.PID != nil && !gateway.PyValuesEqual(liveness.PID, int64(os.Getpid())))
 }
 
 // Routes each profile's log records to its own logs directory when multiplexing, false when inert

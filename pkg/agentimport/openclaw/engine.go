@@ -16,10 +16,9 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -310,7 +309,7 @@ func isFile(path string) bool {
 }
 
 // Python str of an OSError
-func osErrText(err error) string { return pyfs.OSErrorText(err) }
+func osErrText(err error) string { return errchain.OSText(err) }
 
 var seededDefaultSoul = strip(config.DefaultIdentity)
 
@@ -405,7 +404,7 @@ func LoadYAMLFile(path string) (map[string]any, error) {
 	}
 	m, ok := data.(map[string]any)
 	if !ok {
-		return nil, &ConfigReadError{Msg: fmt.Sprintf("Refusing to overwrite %s: expected the existing file to hold a YAML mapping but found %s. Fix it with `icebath config edit` (or move it aside), then re-run the migration.", path, pyrepr.TypeName(data))}
+		return nil, &ConfigReadError{Msg: fmt.Sprintf("Refusing to overwrite %s: expected the existing file to hold a YAML mapping but found %s. Fix it with `icebath config edit` (or move it aside), then re-run the migration.", path, errchain.Kind(data))}
 	}
 	return m, nil
 }

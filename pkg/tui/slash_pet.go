@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/pet"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -34,16 +36,13 @@ type petGallery struct {
 }
 
 // Gallery of a pet.gallery answer
-func parsePetGallery(res map[string]any) petGallery {
-	g := petGallery{enabled: truthyJS(res["enabled"]), active: stringOr(res["active"], "")}
-	list, _ := res["pets"].([]any)
-	for _, raw := range list {
-		entry, _ := raw.(map[string]any)
-		slug := stringOr(entry["slug"], "")
-		if slug == "" {
+func parsePetGallery(res *tuigateway.PetGalleryResult) petGallery {
+	g := petGallery{enabled: res.Enabled, active: res.Active}
+	for _, entry := range res.Pets {
+		if entry.Slug == "" {
 			continue
 		}
-		g.pets = append(g.pets, petEntry{slug: slug, name: stringOr(entry["displayName"], slug), installed: truthyJS(entry["installed"]), curated: truthyJS(entry["curated"])})
+		g.pets = append(g.pets, petEntry{slug: entry.Slug, name: cmp.Or(entry.DisplayName, entry.Slug), installed: entry.Installed, curated: entry.Curated})
 	}
 	return g
 }
@@ -71,24 +70,27 @@ func (g petGallery) current() *petEntry {
 	return nil
 }
 
-// Pet verb of a command, its failure said in the pet's words, its answer dropped once the run is stale
-func (r *slashRun) petCall(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd {
-	return gatewayCall(r.a.gw, method, params, func(v any, err error) tea.Cmd {
+// Typed pet verb of a command, its failure or misfit said in the pet's words, its answer dropped once the run is stale
+func petCall[P, R any](r *slashRun, m tuigateway.Method[P, R], params P, then func(*R) tea.Cmd) tea.Cmd {
+	return gatewayCall(r.a.gw, m.Name(), wireParams(params), func(v any, err error) tea.Cmd {
 		if r.stale() {
 			return nil
 		}
-		res := asRPCResult(v)
-		switch {
-		case err != nil:
+		if err != nil {
 			r.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
 			return nil
-		case res == nil:
-			r.sys(tr("slashCmd.session.pet.error", tr("pickers.common.invalidResponse", method)))
+		}
+		res, misfit := m.Result(v)
+		if misfit != nil {
+			r.sys(tr("slashCmd.session.pet.error", misfitText(tr("pickers.common.invalidResponse", m.Name()))+" "+misfit.Error()))
 			return nil
 		}
-		return then(res)
+		return then(&res)
 	})
 }
+
+// Gallery of the installed pets only, the remote manifest skipped
+var localPets = tuigateway.PetGalleryParams{LocalOnly: true}
 
 // Slash command of the animated pet, every subcommand on the pet verbs
 func (a *app) petCommands() []slashCommand {
@@ -113,7 +115,7 @@ func (a *app) runPet(r *slashRun) tea.Cmd {
 	case low == "list" || low == "gallery" || low == "browse" || low == "all":
 		return a.openPetGallery(r)
 	case low == "off":
-		return r.petCall("pet.disable", map[string]any{}, func(map[string]any) tea.Cmd {
+		return petCall(r, tuigateway.PetDisable, tuigateway.ProfileParams{}, func(*tuigateway.PetOkResult) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.putAway"))
 			return nil
 		})
@@ -139,11 +141,11 @@ func (a *app) runPet(r *slashRun) tea.Cmd {
 
 // Flips the display, putting the shown pet away or turning it on with the configured slug kept
 func (a *app) petToggle(r *slashRun) tea.Cmd {
-	return r.petCall("pet.gallery", map[string]any{"localOnly": true}, func(res map[string]any) tea.Cmd {
+	return petCall(r, tuigateway.PetGallery, localPets, func(res *tuigateway.PetGalleryResult) tea.Cmd {
 		g := parsePetGallery(res)
 		cur := g.current()
 		if g.enabled {
-			return r.petCall("pet.disable", map[string]any{}, func(map[string]any) tea.Cmd {
+			return petCall(r, tuigateway.PetDisable, tuigateway.ProfileParams{}, func(*tuigateway.PetOkResult) tea.Cmd {
 				if cur != nil {
 					r.sys(tr("slashCmd.session.pet.putAwayNamed", cur.name))
 				} else {
@@ -156,7 +158,7 @@ func (a *app) petToggle(r *slashRun) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.error", tr("slashCmd.session.pet.noneInstalled")))
 			return nil
 		}
-		return r.petCall("pet.enable", map[string]any{}, func(map[string]any) tea.Cmd {
+		return petCall(r, tuigateway.PetEnable, tuigateway.ProfileParams{}, func(*tuigateway.PetOkResult) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.isOut", cur.name))
 			return nil
 		})
@@ -166,7 +168,7 @@ func (a *app) petToggle(r *slashRun) tea.Cmd {
 // Adopts a petdex pet by slug, installing it first when needed, a store refusal said as the CLI says it
 func (a *app) petSelect(r *slashRun, slug string) tea.Cmd {
 	r.sys(tr("slashCmd.session.pet.fetching", slug))
-	return gatewayCall(r.a.gw, "pet.select", map[string]any{"slug": slug}, func(v any, err error) tea.Cmd {
+	return call(r.a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: slug}, func(res *tuigateway.PetSlugResult, err error) tea.Cmd {
 		if r.stale() {
 			return nil
 		}
@@ -176,16 +178,11 @@ func (a *app) petSelect(r *slashRun, slug string) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.adoptFailed", slug, strings.TrimPrefix(refusal.Message, prefix)))
 			return nil
 		}
-		res := asRPCResult(v)
-		switch {
-		case err != nil:
+		if err != nil {
 			r.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
 			return nil
-		case res == nil:
-			r.sys(tr("slashCmd.session.pet.error", tr("pickers.common.invalidResponse", "pet.select")))
-			return nil
 		}
-		r.sys(tr("slashCmd.session.pet.isOut", stringOr(res["displayName"], slug)))
+		r.sys(tr("slashCmd.session.pet.isOut", cmp.Or(res.DisplayName, slug)))
 		return nil
 	})
 }
@@ -196,9 +193,8 @@ func (a *app) petScale(r *slashRun, value string) tea.Cmd {
 		r.sys(tr("slashCmd.session.pet.usageScale"))
 		return nil
 	}
-	return r.petCall("pet.scale", map[string]any{"scale": value}, func(res map[string]any) tea.Cmd {
-		scale, _ := res["scale"].(float64)
-		shown := strconv.FormatFloat(scale, 'g', 6, 64)
+	return petCall(r, tuigateway.PetScale, tuigateway.PetScaleParams{Scale: value}, func(res *tuigateway.PetScaleResult) tea.Cmd {
+		shown := strconv.FormatFloat(res.Scale, 'g', 6, 64)
 		r.sys(tr("slashCmd.session.pet.scaleSet", shown))
 		return nil
 	})
@@ -206,7 +202,7 @@ func (a *app) petScale(r *slashRun, value string) tea.Cmd {
 
 // Renames an installed pet, the named slug when the first word is one, else the pet the display resolves
 func (a *app) petRename(r *slashRun, rest string) tea.Cmd {
-	return r.petCall("pet.gallery", map[string]any{"localOnly": true}, func(res map[string]any) tea.Cmd {
+	return petCall(r, tuigateway.PetGallery, localPets, func(res *tuigateway.PetGalleryResult) tea.Cmd {
 		g := parsePetGallery(res)
 		target, name := (*petEntry)(nil), rest
 		if words := strings.Fields(rest); len(words) >= 2 {
@@ -221,8 +217,8 @@ func (a *app) petRename(r *slashRun, rest string) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.usageRename"))
 			return nil
 		}
-		return r.petCall("pet.rename", map[string]any{"slug": target.slug, "name": name}, func(out map[string]any) tea.Cmd {
-			r.sys(tr("slashCmd.session.pet.renamed", target.name, name, stringOr(out["slug"], target.slug)))
+		return petCall(r, tuigateway.PetRename, tuigateway.PetRenameParams{Slug: target.slug, Name: name}, func(out *tuigateway.PetSlugResult) tea.Cmd {
+			r.sys(tr("slashCmd.session.pet.renamed", target.name, name, cmp.Or(out.Slug, target.slug)))
 			return nil
 		})
 	})
@@ -230,7 +226,7 @@ func (a *app) petRename(r *slashRun, rest string) tea.Cmd {
 
 // Uninstalls a pet after a confirmation, the named one or the pet the display resolves
 func (a *app) petRemove(r *slashRun, slug string) tea.Cmd {
-	return r.petCall("pet.gallery", map[string]any{"localOnly": true}, func(res map[string]any) tea.Cmd {
+	return petCall(r, tuigateway.PetGallery, localPets, func(res *tuigateway.PetGalleryResult) tea.Cmd {
 		g := parsePetGallery(res)
 		target := g.current()
 		if slug != "" {
@@ -245,8 +241,8 @@ func (a *app) petRemove(r *slashRun, slug string) tea.Cmd {
 		}
 		return a.confirmDestructive(tr("slashCmd.session.pet.removeTitle", target.name), tr("slashCmd.session.pet.removeDetail"),
 			tr("slashCmd.session.pet.removeConfirm"), tr("slashCmd.session.pet.cancel"), func() tea.Cmd {
-				return r.petCall("pet.remove", map[string]any{"slug": target.slug}, func(out map[string]any) tea.Cmd {
-					if truthyJS(out["ok"]) {
+				return petCall(r, tuigateway.PetRemove, tuigateway.PetSlugParams{Slug: target.slug}, func(out *tuigateway.PetSlugResult) tea.Cmd {
+					if out.Ok {
 						r.sys(tr("slashCmd.session.pet.removed", target.name))
 					} else {
 						r.sys(tr("slashCmd.session.pet.notInstalled", target.slug))
@@ -259,7 +255,7 @@ func (a *app) petRemove(r *slashRun, slug string) tea.Cmd {
 
 // Writes the zip of a pet to a path, the pet named first or else the pet the display resolves
 func (a *app) petExport(r *slashRun, rest string) tea.Cmd {
-	return r.petCall("pet.gallery", map[string]any{"localOnly": true}, func(res map[string]any) tea.Cmd {
+	return petCall(r, tuigateway.PetGallery, localPets, func(res *tuigateway.PetGalleryResult) tea.Cmd {
 		g := parsePetGallery(res)
 		target, path := (*petEntry)(nil), rest
 		if words := strings.Fields(rest); len(words) > 0 {
@@ -274,13 +270,13 @@ func (a *app) petExport(r *slashRun, rest string) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.usageExport"))
 			return nil
 		}
-		return r.petCall("pet.export", map[string]any{"slug": target.slug}, func(out map[string]any) tea.Cmd {
-			data, err := base64.StdEncoding.DecodeString(stringOr(out["zipBase64"], ""))
+		return petCall(r, tuigateway.PetExport, tuigateway.PetSlugParams{Slug: target.slug}, func(out *tuigateway.PetExportResult) tea.Cmd {
+			data, err := base64.StdEncoding.DecodeString(out.ZipBase64)
 			if err != nil {
 				r.sys(tr("slashCmd.session.pet.error", err.Error()))
 				return nil
 			}
-			dest, err := a.exportPath(path, stringOr(out["filename"], target.slug+".zip"))
+			dest, err := a.exportPath(path, cmp.Or(out.Filename, target.slug+".zip"))
 			if err != nil {
 				r.sys(tr("slashCmd.session.pet.error", err.Error()))
 				return nil
@@ -342,39 +338,34 @@ func (a *app) writePetExport(name, dest string, data []byte) tea.Cmd {
 
 // Panel of the pet out now, its sheet, frames, state rows and the way the window draws it
 func (a *app) petInfo(r *slashRun) tea.Cmd {
-	return r.petCall("pet.info.meta", map[string]any{}, func(meta map[string]any) tea.Cmd {
-		if !truthyJS(meta["enabled"]) {
+	return petCall(r, tuigateway.PetInfoMeta, tuigateway.ProfileParams{}, func(meta *tuigateway.PetInfoMetaResult) tea.Cmd {
+		if !meta.Enabled {
 			r.sys(tr("slashCmd.session.pet.infoOff"))
 			return nil
 		}
-		return r.petCall("pet.info", map[string]any{"knownRevision": stringOr(meta["spritesheetRevision"], "")}, func(info map[string]any) tea.Cmd {
-			if !truthyJS(info["enabled"]) {
+		known := tuigateway.PetInfoParams{KnownRevision: meta.SpritesheetRevision}
+		return petCall(r, tuigateway.PetInfo, known, func(info *tuigateway.PetInfoResult) tea.Cmd {
+			if !info.Enabled {
 				r.sys(tr("slashCmd.session.pet.infoOff"))
 				return nil
 			}
-			whole := func(key string) int {
-				n, _ := info[key].(float64)
-				return int(n)
-			}
-			scale, _ := info["scale"].(float64)
-			shown := strconv.FormatFloat(scale, 'g', 6, 64)
-			counts, _ := info["framesByState"].(map[string]any)
+			shown := strconv.FormatFloat(info.Scale, 'g', 6, 64)
 			var frames []string
 			for _, state := range pet.States {
-				if n, isNum := counts[string(state)].(float64); isNum {
-					frames = append(frames, fmt.Sprintf("%s %d", state, int(n)))
+				if n, has := info.FramesByState[string(state)]; has {
+					frames = append(frames, fmt.Sprintf("%s %d", state, n))
 				}
 			}
 			rows := [][2]string{
-				{tr("slashCmd.session.pet.infoSlug"), stringOr(info["slug"], "")},
+				{tr("slashCmd.session.pet.infoSlug"), info.Slug},
 				{tr("slashCmd.session.pet.infoScale"), shown},
-				{tr("slashCmd.session.pet.infoSheet"), fmt.Sprintf("%s · %d×%d", stringOr(info["mime"], ""), whole("frameW"), whole("frameH"))},
+				{tr("slashCmd.session.pet.infoSheet"), fmt.Sprintf("%s · %d×%d", info.Mime, info.FrameW, info.FrameH)},
 				{tr("slashCmd.session.pet.infoFrames"), strings.Join(frames, " · ")},
-				{tr("slashCmd.session.pet.infoRows"), strings.Join(stringList(info["stateRows"]), " · ")},
-				{tr("slashCmd.session.pet.infoRevision"), stringOr(info["spritesheetRevision"], "")},
+				{tr("slashCmd.session.pet.infoRows"), strings.Join(info.StateRows, " · ")},
+				{tr("slashCmd.session.pet.infoRevision"), info.SpritesheetRevision},
 				{tr("slashCmd.session.pet.infoDrawing"), a.pet.drawing()},
 			}
-			a.panel(stringOr(info["displayName"], stringOr(info["slug"], "")), []panelSection{{Rows: rows}})
+			a.panel(cmp.Or(info.DisplayName, info.Slug), []panelSection{{Rows: rows}})
 			return nil
 		})
 	})
@@ -382,7 +373,7 @@ func (a *app) petInfo(r *slashRun) tea.Cmd {
 
 // Gallery picker of pet.gallery, typed text narrowing it and enter adopting the pet under the cursor
 func (a *app) openPetGallery(r *slashRun) tea.Cmd {
-	return tea.Batch(wm.Notify(tr("pickers.pet.loading"), wm.Info), r.petCall("pet.gallery", map[string]any{}, func(res map[string]any) tea.Cmd {
+	return tea.Batch(wm.Notify(tr("pickers.pet.loading"), wm.Info), petCall(r, tuigateway.PetGallery, tuigateway.PetGalleryParams{}, func(res *tuigateway.PetGalleryResult) tea.Cmd {
 		g := parsePetGallery(res)
 		var shown []petEntry
 		for _, e := range g.pets {
@@ -444,7 +435,7 @@ func (a *app) openPetGallery(r *slashRun) tea.Cmd {
 
 // Adopts the pet picked in the gallery, it lighting up once the pet view takes the new selection
 func (a *app) adoptPet(slug string) tea.Cmd {
-	return tea.Batch(wm.Notify(tr("pickers.pet.adopting"), wm.Info), gatewayCall(a.gw, "pet.select", map[string]any{"slug": slug}, func(_ any, err error) tea.Cmd {
+	return tea.Batch(wm.Notify(tr("pickers.pet.adopting"), wm.Info), call(a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: slug}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 		if err != nil {
 			a.sys(tr("pickers.common.error", rpcErrorMessage(err)))
 		}

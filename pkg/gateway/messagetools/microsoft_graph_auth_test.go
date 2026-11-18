@@ -190,7 +190,7 @@ func TestTokenResponseValidationAndErrorDetail(t *testing.T) {
 		{200, `{"access_token": "  ", "expires_in": 10}`, "Microsoft Graph token response did not include access_token."},
 		{200, `{"access_token": "tok"}`, "Microsoft Graph token response did not include a valid expires_in."},
 		{200, `{"access_token": "tok", "expires_in": "soon"}`, "Microsoft Graph token response did not include a valid expires_in."},
-		{200, `[]`, "'list' object has no attribute 'get'"},
+		{200, `[]`, "the Microsoft Graph token response must be a JSON object, got a list"},
 	}
 	for _, tc := range cases {
 		provider := NewMicrosoftGraphTokenProvider(NewGraphCredentials("tenant", "client", "secret"), MicrosoftGraphTokenProviderOptions{

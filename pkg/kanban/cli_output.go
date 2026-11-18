@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Status glyph of every default column plus the archived dash
@@ -203,7 +202,7 @@ func taskAttr(t *Task, name string) any {
 	case "block_kind":
 		return optStrValue(t.BlockKind)
 	}
-	panic("kanban: Task has no attribute " + pyrepr.Repr(name))
+	panic("kanban: task has no field " + name)
 }
 
 // Python attribute of a run by field name
@@ -234,7 +233,7 @@ func runAttr(r *Run, name string) any {
 	case "ended_at":
 		return optIntValue(r.EndedAt)
 	}
-	panic("kanban: Run has no attribute " + pyrepr.Repr(name))
+	panic("kanban: run has no field " + name)
 }
 
 // Python attribute of an attachment by field name
@@ -255,7 +254,7 @@ func attachmentAttr(a *Attachment, name string) any {
 	case "created_at":
 		return a.CreatedAt
 	}
-	panic("kanban: Attachment has no attribute " + pyrepr.Repr(name))
+	panic("kanban: attachment has no field " + name)
 }
 
 // Ordered mapping of the named fields read through attr

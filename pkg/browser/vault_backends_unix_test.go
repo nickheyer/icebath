@@ -186,8 +186,8 @@ func fakeBWBackend(t *testing.T) (context.Context, *tools.Env, *BitwardenLoginBa
 func TestLockedManagerIsReportedNotPromptedWhenHeadless(t *testing.T) {
 	ctx, env, _, log := fakeBWBackend(t)
 	t.Setenv("ICEBATH_CRON_SESSION", "1")
-	SetUnlockPromptCallback(ctx, func(string, string) string { return "correct horse" })
-	defer SetUnlockPromptCallback(ctx, nil)
+	tools.SetUnlockPromptCallback(ctx, func(string, string) string { return "correct horse" })
+	defer tools.SetUnlockPromptCallback(ctx, nil)
 	listText, err := browserVaultList(ctx, env)
 	listed := loadResult(t, listText, err)
 	if items, _ := anyGet(listed, "items").([]any); len(items) != 0 {
@@ -213,11 +213,11 @@ func TestLockedManagerIsReportedNotPromptedWhenHeadless(t *testing.T) {
 func TestUnlockUsesVendorPasswordenvContractThenFillRoutesByPrefix(t *testing.T) {
 	ctx, env, backend, log := fakeBWBackend(t)
 	prompts := [][2]string{}
-	SetUnlockPromptCallback(ctx, func(name, display string) string {
+	tools.SetUnlockPromptCallback(ctx, func(name, display string) string {
 		prompts = append(prompts, [2]string{name, display})
 		return "correct horse"
 	})
-	defer SetUnlockPromptCallback(ctx, nil)
+	defer tools.SetUnlockPromptCallback(ctx, nil)
 	pin(t, &vaultCurrentPageOrigin, func(context.Context, *tools.Env, string) string { return "https://example.com" })
 	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *pyjson.Object {
 		return pyjson.ObjectOf("success", true, "result", `[{"tag": "input", "type": "password", "name": "password", "id": "pw", `+
@@ -307,8 +307,8 @@ func TestLockDuringUnlockWinsAndOnlyTheOwningSessionReleaseDropsAToken(t *testin
 		t.Fatal("unlocked by a discarded token")
 	}
 	sid := "sess-A"
-	SetVaultSessionID(ctx, &sid)
-	defer SetVaultSessionID(ctx, nil)
+	tools.SetVaultSessionID(ctx, &sid)
+	defer tools.SetVaultSessionID(ctx, nil)
 	if err := backend.Unlock("correct horse"); err != nil {
 		t.Fatal(err)
 	}

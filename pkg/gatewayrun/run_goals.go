@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -363,7 +364,7 @@ func (r *GatewayRunner) loopWakeupFireOne(ctx context.Context, sid string, state
 	if adapter == nil {
 		if !warnedNoRoute[sid] {
 			warnedNoRoute[sid] = true
-			pkgLog().Debug(fmt.Sprintf("loop wakeup: no adapter for platform %s (session %s, profile %s)", pyrepr.Repr(platformName), sid, derefOrNoneText(profile)))
+			pkgLog().Debug(fmt.Sprintf("loop wakeup: no adapter for platform %s (session %s, profile %s)", errchain.Show(platformName), sid, derefOrNoneText(profile)))
 		}
 		return nil
 	}

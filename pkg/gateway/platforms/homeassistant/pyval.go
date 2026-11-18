@@ -6,9 +6,9 @@ import (
 	"math/big"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -20,9 +20,9 @@ type pyErr struct{ kind, msg string }
 func (e *pyErr) Error() string      { return e.msg }
 func (e *pyErr) PyTypeName() string { return e.kind }
 
-// AttributeError an attribute read raises on a value of another type
-func attrErr(v any, attr string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+// AttributeError of a value of the wrong kind, naming the field and the kind it needs
+func attrErr(v any, field, want string) error {
+	return &pyErr{"AttributeError", fmt.Sprintf("%s must be %s, got %s", field, want, errchain.Kind(v))}
 }
 
 // Whether a decoded value is a Python dict
@@ -50,7 +50,7 @@ func pyGet(v any, key string, def any) (any, error) {
 		}
 		return def, nil
 	}
-	return nil, attrErr(v, "get")
+	return nil, &pyErr{"AttributeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
 }
 
 // Subscript of a decoded value by a str key with the KeyError or TypeError Python raises
@@ -61,19 +61,15 @@ func pyIndex(v any, key string) (any, error) {
 			if val, ok := m.Get(key); ok {
 				return val, nil
 			}
-			return nil, &pyErr{"KeyError", pyrepr.Repr(key)}
+			return nil, &pyErr{"KeyError", "missing " + key}
 		}
 	case map[string]any:
 		if val, ok := m[key]; ok {
 			return val, nil
 		}
-		return nil, &pyErr{"KeyError", pyrepr.Repr(key)}
-	case string:
-		return nil, &pyErr{"TypeError", "string indices must be integers, not 'str'"}
-	case []any:
-		return nil, &pyErr{"TypeError", "list indices must be integers or slices, not str"}
+		return nil, &pyErr{"KeyError", "missing " + key}
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
+	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
 }
 
 // Keys of a dict in iteration order, a plain map's keys sorted
@@ -118,7 +114,7 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Distinct key type of an int past the int64 range
@@ -144,8 +140,7 @@ func pyIntOf(v any) (*big.Int, error) {
 		return nil, err
 	}
 	if digits := len(strings.TrimPrefix(n.String(), "-")); digits > 4300 {
-		return nil, &pyErr{"ValueError", fmt.Sprintf("Exceeds the limit (4300 digits) for integer string conversion: value has %d digits; "+
-			"use sys.set_int_max_str_digits() to increase the limit", digits)}
+		return nil, &pyErr{"ValueError", fmt.Sprintf("a number has %d digits, more than the 4300 allowed", digits)}
 	}
 	return n, nil
 }
@@ -154,8 +149,7 @@ func pyIntOf(v any) (*big.Int, error) {
 func hashKeyAs(v any, use string) (any, error) {
 	hk, err := hashKey(v)
 	if err != nil {
-		name := pyrepr.TypeName(v)
-		return nil, &pyErr{"TypeError", fmt.Sprintf("cannot use '%s' as a %s (unhashable type: '%s')", name, use, name)}
+		return nil, &pyErr{"TypeError", fmt.Sprintf("%s cannot be a %s", errchain.Kind(v), use)}
 	}
 	return hk, nil
 }
@@ -178,7 +172,7 @@ func hashKey(v any) (any, error) {
 		}
 		return t, nil
 	case []any, *pyjson.Object, map[string]any:
-		return nil, &pyErr{"TypeError", fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
+		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 	}
 	if n, ok := pyrepr.Int(v); ok {
 		if n.IsInt64() {
@@ -187,7 +181,7 @@ func hashKey(v any) (any, error) {
 		return bigKey(n.String()), nil
 	}
 	if !reflect.TypeOf(v).Comparable() {
-		return nil, &pyErr{"TypeError", fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
+		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 	}
 	return v, nil
 }
@@ -197,7 +191,7 @@ type keyedMap map[any]any
 
 // Value under a key with whether it is present, the TypeError of an unhashable key
 func (m keyedMap) get(k any) (any, bool, error) {
-	hk, err := hashKeyAs(k, "dict key")
+	hk, err := hashKeyAs(k, "mapping key")
 	if err != nil {
 		return nil, false, err
 	}
@@ -207,7 +201,7 @@ func (m keyedMap) get(k any) (any, bool, error) {
 
 // Stores a value under a key, the TypeError of an unhashable key
 func (m keyedMap) set(k, v any) error {
-	hk, err := hashKeyAs(k, "dict key")
+	hk, err := hashKeyAs(k, "mapping key")
 	if err != nil {
 		return err
 	}
@@ -226,7 +220,7 @@ func newPySet(v any) (pySet, error) {
 		return s, err
 	}
 	for _, item := range items {
-		hk, err := hashKeyAs(item, "set element")
+		hk, err := hashKeyAs(item, "set member")
 		if err != nil {
 			return s, err
 		}
@@ -240,7 +234,7 @@ func (s pySet) truthy() bool { return len(s.items) > 0 }
 
 // Membership of a value, the TypeError of an unhashable probe
 func (s pySet) has(v any) (bool, error) {
-	hk, err := hashKeyAs(v, "set element")
+	hk, err := hashKeyAs(v, "set member")
 	if err != nil {
 		return false, err
 	}
@@ -281,7 +275,7 @@ func jsonKey(k any) (string, error) {
 	if n, ok := pyrepr.Int(k); ok {
 		return n.String(), nil
 	}
-	return "", &pyErr{"TypeError", fmt.Sprintf("keys must be str, int, float, bool or None, not %s", pyrepr.TypeName(k))}
+	return "", &pyErr{"TypeError", fmt.Sprintf("a mapping key must be text, a number, true or false or nothing, got %s", errchain.Kind(k))}
 }
 
 // Pairs dict() reads from a list element, the errors dict raises for a bad element
@@ -291,10 +285,10 @@ func updatePair(index int, elem any) (any, any, error) {
 	case string, []any, *pyjson.Object, map[string]any:
 		parts, _ = pyIter(t)
 	default:
-		return nil, nil, &pyErr{"TypeError", "cannot convert dictionary update sequence element #" + strconv.Itoa(index) + " to a sequence"}
+		return nil, nil, &pyErr{"TypeError", fmt.Sprintf("item %d must be a pair of key and value, got %s", index, errchain.Kind(elem))}
 	}
 	if len(parts) != 2 {
-		return nil, nil, &pyErr{"ValueError", fmt.Sprintf("dictionary update sequence element #%d has length %d; 2 is required", index, len(parts))}
+		return nil, nil, &pyErr{"ValueError", fmt.Sprintf("item %d must be a pair of key and value, got %d values", index, len(parts))}
 	}
 	return parts[0], parts[1], nil
 }
@@ -317,7 +311,7 @@ func pyDict(data any) (*pyjson.Object, error) {
 	case []any, string:
 		elems, _ = pyIter(t)
 	default:
-		return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(data))}
+		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a mapping or a list of pairs, got %s", errchain.Kind(data))}
 	}
 	type entry struct {
 		key any
@@ -330,7 +324,7 @@ func pyDict(data any) (*pyjson.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		hk, err := hashKeyAs(k, "dict key")
+		hk, err := hashKeyAs(k, "mapping key")
 		if err != nil {
 			return nil, err
 		}

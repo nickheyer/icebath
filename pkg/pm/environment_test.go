@@ -76,7 +76,7 @@ func TestEnvironmentPipConfDecodeErrorPropagates(t *testing.T) {
 	conf := filepath.Join(root, "pip.conf")
 	writeFile(t, conf, []byte("[global]\nindex-url = \xff\n"), 0o666)
 	t.Setenv("PIP_CONFIG_FILE", conf)
-	if _, err := BaseEnvironment(nil); err == nil || !strings.Contains(err.Error(), "codec can't decode") {
+	if _, err := BaseEnvironment(nil); err == nil || !strings.Contains(err.Error(), "not valid UTF-8") {
 		t.Fatalf("got %v", err)
 	}
 	if env, err := BaseEnvironment(map[string]string{"PIP_CONFIG_FILE": conf, "PYTHONPATH": "x", "VIRTUAL_ENV": "v", "UV_PYTHON": "p", "UV_INDEX_URL": "i"}); err != nil ||

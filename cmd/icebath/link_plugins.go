@@ -10,7 +10,6 @@ import (
 	_ "github.com/nickheyer/icebath/pkg/builtin"
 	_ "github.com/nickheyer/icebath/pkg/builtin/camofox"
 	_ "github.com/nickheyer/icebath/pkg/builtin/diskcleanup"
-	"github.com/nickheyer/icebath/pkg/builtin/googlemeet"
 	"github.com/nickheyer/icebath/pkg/builtin/langfuse"
 	_ "github.com/nickheyer/icebath/pkg/builtin/mcpserveplugin"
 	_ "github.com/nickheyer/icebath/pkg/builtin/securityguidance"
@@ -49,7 +48,7 @@ func init() {
 	linktier.Link(linktier.Plugins)
 	tierArgvEntries = append(tierArgvEntries, containerinit.Dispatch)
 	tierStartup[phaseBeforeStart] = append(tierStartup[phaseBeforeStart], containerinit.DropRootInImage)
-	childEntriesAfterPrunePlugins = append(childEntriesAfterPrunePlugins, relayhost.DispatchRelayHostEntry, googlemeet.DispatchMeetBotEntry)
+	childEntriesAfterPrunePlugins = append(childEntriesAfterPrunePlugins, relayhost.DispatchRelayHostEntry)
 	childEntriesAfterStopMark = append(childEntriesAfterStopMark, stage.DispatchStageEntry)
 	tierWiring = append(tierWiring, installPluginsWiring)
 	tierCLI = append(tierCLI, func(cli *commands.CLI) {

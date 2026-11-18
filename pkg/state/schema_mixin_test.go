@@ -138,7 +138,7 @@ func TestStoreSystemPromptAndLegacyDedupe(t *testing.T) {
 	if _, err := storeSystemPrompt(ctx, conn, []byte("x")); !errors.As(err, &pe) || pe.Msg != "the system prompt is bytes, expected text" {
 		t.Fatalf("bytes prompt %v", err)
 	}
-	if _, err := storeSystemPrompt(ctx, conn, "a\xed\xa0\x80"); !errors.As(err, &pe) || pe.Kind != "UnicodeEncodeError" || !strings.Contains(pe.Msg, `'\ud800' in position 1`) {
+	if _, err := storeSystemPrompt(ctx, conn, "a\xed\xa0\x80"); !errors.As(err, &pe) || pe.Kind != "UnicodeEncodeError" || !strings.Contains(pe.Msg, "lone surrogate U+D800 at character 1") {
 		t.Fatalf("surrogate prompt %v", err)
 	}
 	mustExecConn(t, conn, "DELETE FROM system_prompts")

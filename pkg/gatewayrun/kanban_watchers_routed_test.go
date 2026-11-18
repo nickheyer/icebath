@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package gatewayrun
 
 import (
@@ -17,20 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
-
-// Profile routes parsed from route mappings
-func routesOf(t *testing.T, routes ...map[string]any) []*gateway.ProfileRoute {
-	t.Helper()
-	raw := make([]any, len(routes))
-	for i, r := range routes {
-		raw[i] = r
-	}
-	parsed, err := gateway.ParseProfileRoutes(context.Background(), raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return parsed
-}
 
 // Multiplexing runner with a Discord primary, profiles yuki and other and a yuki route on guild parent
 func setupRoutedRunner(t *testing.T) (*GatewayRunner, string, string) {

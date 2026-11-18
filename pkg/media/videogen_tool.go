@@ -173,12 +173,12 @@ func videoCoerceInt(value any) (*int, error) {
 	if err != nil {
 		var pe *pyint.Error
 		if errors.As(err, &pe) && pe.Kind == "OverflowError" {
-			return nil, &videoHandlerError{"OverflowError", pe.Msg}
+			return nil, &videoHandlerError{"OverflowError", fmt.Sprintf("%s is too large for a 64-bit integer", errchain.Show(value))}
 		}
 		return nil, nil
 	}
 	if !n.IsInt64() {
-		return nil, &videoHandlerError{"OverflowError", "Python int too large to convert to C ssize_t"}
+		return nil, &videoHandlerError{"OverflowError", fmt.Sprintf("%s is too large for a 64-bit integer", n)}
 	}
 	i := int(n.Int64())
 	return &i, nil

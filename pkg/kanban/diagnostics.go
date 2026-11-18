@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -132,13 +133,13 @@ func eventAttr(e *Event, name string) any {
 	case "run_id":
 		return optIntValue(e.RunID)
 	}
-	panic("kanban: Event has no attribute " + pyrepr.Repr(name))
+	panic("kanban: event has no field " + name)
 }
 
 // dict.get on a value that must be a dict, raising AttributeError otherwise
 func mustDictGet(d any, key string, def any) any {
 	if !isDict(d) {
-		diagFail("'%s' object has no attribute 'get'", pyrepr.TypeName(d))
+		diagFail("diagnostic record is %s where a mapping holding %s was expected", errchain.Kind(d), key)
 	}
 	if v, ok := dictGet(d, key); ok {
 		return v
@@ -264,7 +265,7 @@ func errorSnippet(lastErr any) string {
 	}
 	s, ok := lastErr.(string)
 	if !ok {
-		diagFail("'%s' object has no attribute 'strip'", pyrepr.TypeName(lastErr))
+		diagFail("last error is %s where text was expected", errchain.Kind(lastErr))
 	}
 	text := pystr.Strip(s)
 	if text == "" {
@@ -280,7 +281,7 @@ func errorSnippet(lastErr any) string {
 func snippetHeadline(snippet string) string {
 	lines := pystr.Splitlines(snippet, false)
 	if len(lines) == 0 {
-		diagFail("list index out of range")
+		diagFail("the error snippet has no lines")
 	}
 	return pystr.Slice(lines[0], 0, 160)
 }
@@ -309,7 +310,7 @@ func uniquePayloadIDs(hits []any, key string) []any {
 		}
 		items, ok := v.([]any)
 		if !ok {
-			diagFail("'%s' object is not iterable", pyrepr.TypeName(v))
+			diagFail("diagnostic %s is %s where a list was expected", key, errchain.Kind(v))
 		}
 		for _, pid := range items {
 			if !slices.ContainsFunc(out, func(x any) bool { return pyjson.Equal(x, pid) }) {
@@ -563,7 +564,7 @@ var outcomeLabels = map[string]string{"spawn_failed": "spawn", "timed_out": "tim
 // Python less than between a failure count and an integer, raising for unorderable values
 func diagLess(v any, threshold int64) bool {
 	if _, isStr := v.(string); isStr {
-		diagFail("'<' not supported between instances of 'str' and 'int'")
+		diagFail("diagnostic value is text where a number was expected")
 	}
 	if f, ok := v.(float64); ok {
 		return f < float64(threshold)
@@ -713,7 +714,7 @@ func graphList(graph any, key string) []any {
 	}
 	items, ok := v.([]any)
 	if !ok {
-		diagFail("'%s' object is not iterable", pyrepr.TypeName(v))
+		diagFail("diagnostic %s is %s where a list was expected", key, errchain.Kind(v))
 	}
 	return items
 }
@@ -970,7 +971,7 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg map[string
 	}
 	assignee, ok := assigneeValue.(string)
 	if !ok {
-		diagFail("'%s' object has no attribute 'strip'", pyrepr.TypeName(assigneeValue))
+		diagFail("task assignee is %s where text was expected", errchain.Kind(assigneeValue))
 	}
 	if pystr.Strip(assignee) == "" {
 		return nil
@@ -995,7 +996,7 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg map[string
 		Detail: fmt.Sprintf("This task has been ready for %s but nothing has claimed it. Common causes: "+
 			"assignee %s is misspelled, the profile was deleted, or the external worker "+
 			"pool for this lane is down. Confirm the assignee is correct and that a worker is "+
-			"actually polling for it.", ageStr, pyrepr.Repr(assignee)),
+			"actually polling for it.", ageStr, errchain.Show(assignee)),
 		Actions: []*DiagnosticAction{
 			{Kind: "reassign", Label: "Reassign to a different worker", Payload: pyjson.ObjectOf("current_assignee", assignee)},
 			cliHint("Check dispatcher status", "icebath kanban diagnostics", false),
@@ -1164,7 +1165,7 @@ func pyDictOf(v any) (map[string]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &TypeError{fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &TypeError{fmt.Sprintf("expected a mapping or a list of key and value pairs, got %s", errchain.Kind(v))}
 }
 
 // Diagnostics config from the kanban section, the threshold following kanban.failure_limit unless overridden

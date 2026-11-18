@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -112,7 +113,7 @@ func (r *GatewayRunner) startLoopHeartbeatTask(ctx context.Context) {
 	startTime := r.gatewayStartedAt
 	loop := r.gatewayLoop
 	if loop == nil {
-		pkgLog().Debug("Failed to start gateway loop heartbeat", "exc_info", fmt.Errorf("RuntimeError: no running event loop"))
+		pkgLog().Debug("Failed to start gateway loop heartbeat", "exc_info", errors.New("no running event loop"))
 		return
 	}
 	task := spawnGatewayTask(context.WithoutCancel(ctx), "gateway-loop-heartbeat", func(taskCtx context.Context) (any, error) {

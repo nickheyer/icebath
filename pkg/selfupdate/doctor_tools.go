@@ -495,8 +495,14 @@ func checkTerminalBackend(ctx context.Context, d *Doctor, shouldFix bool) (*Find
 			doctorCheckInfo(d.W, "Running inside a container — using local terminal backend (docker-in-docker is not configured by default)")
 			terminalEnv = "local"
 		}
-		if err := doctorCheckDockerBackend(ctx, d.W, terminalEnv, runningInContainer, &f.Issues); err != nil {
-			return err
+		if line, refused := tools.TerminalBackendRefusal(terminalEnv); refused {
+			doctorFailAndIssue(d.W, line, "", "Start `icebath` and type `/setup terminal` to switch backend.", &f.Issues)
+			return nil
+		}
+		if tools.GetTerminalBackend("docker") != nil {
+			if err := doctorCheckDockerBackend(ctx, d.W, terminalEnv, runningInContainer, &f.Issues); err != nil {
+				return err
+			}
 		}
 		if check, ok := doctorBackendChecks[terminalEnv]; ok {
 			return check(ctx, d, &f.Issues)

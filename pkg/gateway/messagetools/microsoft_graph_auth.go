@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -307,7 +308,7 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 	}
 	get, ok := jsonDict(payload)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(payload))
+		return nil, fmt.Errorf("the Microsoft Graph token response must be a JSON object, got %s", errchain.Kind(payload))
 	}
 	accessToken := ""
 	if v := get("access_token"); pyrepr.Truthy(v) {

@@ -61,7 +61,7 @@ func restartLaunchdGatewayAfterUpdate(ctx context.Context, w io.Writer, supervis
 		fmt.Fprintf(w, "  ⚠ Gateway restart failed: %s\n    The gateway may be DOWN on pre-update code. Recover manually: icebath gateway restart\n", pystr.Strip(called.Stderr))
 		return []string{}, []string{currentLabel}, nil
 	case isCommandMissing(failure):
-		fmt.Fprintf(w, "  ⚠ Could not restart the gateway (FileNotFoundError: %s).\n    Recover manually: icebath gateway restart\n", launchErrorText(failure))
+		fmt.Fprintf(w, "  ⚠ Could not restart the gateway (%s).\n    Recover manually: icebath gateway restart\n", launchErrorText(failure))
 		return []string{}, []string{currentLabel}, nil
 	case asCommandTimeout(failure) != nil:
 		fmt.Fprintf(w, "  ⚠ Could not restart the gateway (TimeoutExpired: %s).\n    Recover manually: icebath gateway restart\n", launchErrorText(failure))

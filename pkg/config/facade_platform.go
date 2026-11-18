@@ -11,6 +11,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -198,28 +199,7 @@ func pyStarItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("Value after * must be an iterable, not %s", pyTypeName(v))
-}
-
-// Python type name of a decoded YAML value
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int, int64, uint64:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Declared requires_env entries plus optional_env unless optional is false, a suffix named var a secret by default

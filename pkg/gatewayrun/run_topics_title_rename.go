@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -202,7 +203,7 @@ func (r *GatewayRunner) renameDiscordAutoThreadForSessionTitle(ctx context.Conte
 		opts = gateway.ThreadRenameOptions{PreferConnectorCreated: true, ParentChatID: parent}
 		lane = "relay"
 	}
-	pkgLog().Info(fmt.Sprintf("discord auto-thread rename: thread=%s lane=%s new_title=%s", targetThreadID, lane, pyrepr.Repr(threadName)))
+	pkgLog().Info(fmt.Sprintf("discord auto-thread rename: thread=%s lane=%s new_title=%s", targetThreadID, lane, errchain.Show(threadName)))
 	renamed, err := renamer.RenameThread(ctx, targetThreadID, threadName, opts)
 	switch {
 	case err != nil && isPyTypeError(err):
@@ -210,7 +211,7 @@ func (r *GatewayRunner) renameDiscordAutoThreadForSessionTitle(ctx context.Conte
 	case err != nil:
 		pkgLog().Debug("Failed to rename Discord auto-thread for generated session title", "exc_info", err)
 	default:
-		pkgLog().Info(fmt.Sprintf("discord auto-thread rename result: thread=%s applied=%s", targetThreadID, pyrepr.Repr(renamed)))
+		pkgLog().Info(fmt.Sprintf("discord auto-thread rename result: thread=%s applied=%s", targetThreadID, errchain.Show(renamed)))
 	}
 }
 

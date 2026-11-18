@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -125,8 +126,7 @@ func adoptableSessions(ctx context.Context, path string) ([]*pyjson.Object, erro
 		if chatID := rowGet(tip, "chat_id"); pyrepr.Truthy(chatID) {
 			text, ok := chatID.(string)
 			if !ok {
-				return nil, &pyrepr.FormatError{Class: "TypeError",
-					Msg: "can only concatenate str (not \"" + pyrepr.TypeName(chatID) + "\") to str"}
+				return nil, &appClassedError{class: "TypeError", msg: "session chat_id is " + errchain.Kind(chatID) + " where text was expected"}
 			}
 			key = text
 		}
@@ -185,7 +185,7 @@ func adoptSessions(ctx context.Context, rows []*pyjson.Object, report func(strin
 		}
 		subscriptionID, ok := snapshot["subscription_id"]
 		if !ok {
-			return 0, nil, &pyrepr.FormatError{Class: "KeyError", Msg: "'subscription_id'"}
+			return 0, nil, &appClassedError{class: "KeyError", msg: "session snapshot has no subscription_id"}
 		}
 		if _, err := client.RPC(ctx, "session.detach", map[string]any{"session_id": sessionID,
 			"subscription_id": subscriptionID}); err != nil {

@@ -233,7 +233,7 @@ func checkBracketedNetloc(netloc string) error {
 	}
 	addr, err := netip.ParseAddr(hostname)
 	if err != nil {
-		return fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", pyrepr.StrRepr(hostname))
+		return fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", hostname)
 	}
 	if addr.Is4() {
 		return errors.New("An IPv4 address cannot be in brackets")

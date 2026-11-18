@@ -268,7 +268,7 @@ func TestUnreadableReasonMissingFileKeepsTheOsErrorText(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux error text")
 	}
-	if reason := doctorUnreadableReason(filepath.Join(t.TempDir(), "gone.db")); !strings.Contains(reason, "No such file or directory") {
+	if reason := doctorUnreadableReason(filepath.Join(t.TempDir(), "gone.db")); !strings.Contains(reason, "no such file or directory") {
 		t.Fatalf("reason = %q", reason)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -40,7 +41,7 @@ func (c *kanbanCLI) dispatchBoards() (int, error) {
 	case "import":
 		handler = c.cmdBoardsImport
 	default:
-		return cliErr(c.errw, "kanban boards: unknown action "+pyrepr.Repr(sub), 2), nil
+		return cliErr(c.errw, "kanban boards: unknown action "+errchain.Show(sub), 2), nil
 	}
 	return handler()
 }
@@ -107,7 +108,7 @@ func (c *kanbanCLI) boardSlugArg(cmd string, mustExist bool) (string, int) {
 	}
 	if mustExist {
 		if normed == "" || !BoardExists(&normed) {
-			return "", cliErr(c.errw, fmt.Sprintf("kanban boards %s: board %s does not exist", cmd, pyrepr.Repr(raw)), 1)
+			return "", cliErr(c.errw, fmt.Sprintf("kanban boards %s: board %s does not exist", cmd, errchain.Show(raw)), 1)
 		}
 	} else if normed == "" {
 		return "", cliErr(c.errw, fmt.Sprintf("kanban boards %s: slug is required", cmd), 2)
@@ -192,12 +193,12 @@ func (c *kanbanCLI) cmdBoardsCreate() (int, error) {
 		verb = "already exists"
 	}
 	slugValue, _ := meta.Get("slug")
-	fmt.Fprintf(c.w, "Board %s %s.\n  Display name: %s\n  DB path:      %s\n", pyrepr.Repr(slugValue), verb, metaText(meta, "name"), metaText(meta, "db_path"))
+	fmt.Fprintf(c.w, "Board %s %s.\n  Display name: %s\n  DB path:      %s\n", errchain.Show(slugValue), verb, metaText(meta, "name"), metaText(meta, "db_path"))
 	if nsBool(c.ns, "switch") {
 		if _, err := SetCurrentBoard(c.ctx, pyrepr.Str(slugValue)); err != nil {
 			return 0, err
 		}
-		fmt.Fprintf(c.w, "  Switched to %s.\n", pyrepr.Repr(slugValue))
+		fmt.Fprintf(c.w, "  Switched to %s.\n", errchain.Show(slugValue))
 	} else {
 		fmt.Fprintf(c.w, "  Use `icebath kanban boards switch %s` to make it current.\n", pyrepr.Str(slugValue))
 	}
@@ -218,9 +219,9 @@ func (c *kanbanCLI) cmdBoardsRm() (int, error) {
 	slugValue, _ := res.Get("slug")
 	if action, _ := res.Get("action"); action == "archived" {
 		fmt.Fprintf(c.w, "Board %s archived → %s\nRecover by moving the directory back to <root>/kanban/boards/<slug>/ "+
-			"and deleting the archived tombstone board.json left in its place.\n", pyrepr.Repr(slugValue), metaText(res, "new_path"))
+			"and deleting the archived tombstone board.json left in its place.\n", errchain.Show(slugValue), metaText(res, "new_path"))
 	} else {
-		fmt.Fprintf(c.w, "Board %s deleted.\n", pyrepr.Repr(slugValue))
+		fmt.Fprintf(c.w, "Board %s deleted.\n", errchain.Show(slugValue))
 	}
 	return 0, nil
 }
@@ -233,19 +234,19 @@ func (c *kanbanCLI) cmdBoardsSwitch() (int, error) {
 	}
 	if !BoardExists(&normed) {
 		return cliErr(c.errw, fmt.Sprintf("kanban boards switch: board %s does not exist. Create it with `icebath kanban boards create %s`.",
-			pyrepr.Repr(normed), normed), 1), nil
+			errchain.Show(normed), normed), 1), nil
 	}
 	meta, err := ReadBoardMetadata(&normed)
 	if err != nil {
 		return 0, err
 	}
 	if v, _ := meta.Get("archived"); pyrepr.Truthy(v) {
-		return cliErr(c.errw, fmt.Sprintf("kanban boards switch: board %s is archived.", pyrepr.Repr(normed)), 1), nil
+		return cliErr(c.errw, fmt.Sprintf("kanban boards switch: board %s is archived.", errchain.Show(normed)), 1), nil
 	}
 	if _, err := SetCurrentBoard(c.ctx, normed); err != nil {
 		return 0, err
 	}
-	fmt.Fprintf(c.w, "Active board is now %s.\n", pyrepr.Repr(normed))
+	fmt.Fprintf(c.w, "Active board is now %s.\n", errchain.Show(normed))
 	return 0, nil
 }
 
@@ -280,7 +281,7 @@ func (c *kanbanCLI) cmdBoardsRename() (int, error) {
 		return 0, err
 	}
 	name, _ := meta.Get("name")
-	fmt.Fprintf(c.w, "Board %s renamed to %s.\n", pyrepr.Repr(normed), pyrepr.Repr(name))
+	fmt.Fprintf(c.w, "Board %s renamed to %s.\n", errchain.Show(normed), errchain.Show(name))
 	return 0, nil
 }
 
@@ -295,9 +296,9 @@ func (c *kanbanCLI) cmdBoardsSetDefaultWorkdir() (int, error) {
 		return 0, err
 	}
 	if v, _ := meta.Get("default_workdir"); pyrepr.Truthy(v) {
-		fmt.Fprintf(c.w, "Board %s default workdir set to %s.\n", pyrepr.Repr(normed), pyrepr.Repr(v))
+		fmt.Fprintf(c.w, "Board %s default workdir set to %s.\n", errchain.Show(normed), errchain.Show(v))
 	} else {
-		fmt.Fprintf(c.w, "Board %s default workdir cleared.\n", pyrepr.Repr(normed))
+		fmt.Fprintf(c.w, "Board %s default workdir cleared.\n", errchain.Show(normed))
 	}
 	return 0, nil
 }
@@ -350,7 +351,7 @@ func (c *kanbanCLI) cmdBoardsExport() (int, error) {
 	get := func(o *pyjson.Object, k string) any { v, _ := o.Get(k); return v }
 	size, _ := get(res, "size").(int64)
 	fmt.Fprintf(c.w, "Exported board %s → %s\n  Size:        %s\n  Tasks:       %s\n  Comments:    %s\n  Attachments: %s\nImport it with `icebath kanban boards import <archive>`.\n",
-		pyrepr.Repr(get(res, "board")), pyrepr.Str(get(res, "archive")), formatBytes(size),
+		errchain.Show(get(res, "board")), pyrepr.Str(get(res, "archive")), formatBytes(size),
 		pyrepr.Str(get(counts, "tasks")), pyrepr.Str(get(counts, "task_comments")), pyrepr.Str(get(counts, "attachment_files")))
 	return 0, nil
 }
@@ -368,9 +369,9 @@ func (c *kanbanCLI) cmdBoardsImport() (int, error) {
 		return 0, err
 	}
 	get := func(k string) any { v, _ := res.Get(k); return v }
-	fmt.Fprintf(c.w, "Imported board %s (%s).\n", pyrepr.Repr(get("board")), pyrepr.Str(get("name")))
+	fmt.Fprintf(c.w, "Imported board %s (%s).\n", errchain.Show(get("board")), pyrepr.Str(get("name")))
 	if get("renamed") == true {
-		fmt.Fprintf(c.w, "  Renamed from %s — that slug was taken.\n", pyrepr.Repr(get("requested_board")))
+		fmt.Fprintf(c.w, "  Renamed from %s — that slug was taken.\n", errchain.Show(get("requested_board")))
 	}
 	counts := get("counts").(*pyjson.Object)
 	tasks, _ := counts.Get("tasks")
@@ -379,7 +380,7 @@ func (c *kanbanCLI) cmdBoardsImport() (int, error) {
 		fmt.Fprintf(c.w, "  Note:  %s\n", pyrepr.Str(w))
 	}
 	if get("activated") == true {
-		fmt.Fprintf(c.w, "  Active board is now %s.\n", pyrepr.Repr(get("board")))
+		fmt.Fprintf(c.w, "  Active board is now %s.\n", errchain.Show(get("board")))
 	} else {
 		fmt.Fprintf(c.w, "  Switch to it with `icebath kanban boards switch %s`.\n", pyrepr.Str(get("board")))
 	}

@@ -309,7 +309,7 @@ func TestRenderFailsOpenForCallbackFailureWrongTypeAndAggregateBudget(t *testing
 	}
 	out := logs.String()
 	if !reflect.DeepEqual(ids, []string{"example.first", "example.second"}) || !strings.Contains(out, "plugin exploded") ||
-		!strings.Contains(out, "returned dict, not str") || !strings.Contains(out, "aggregate") {
+		!strings.Contains(out, "returned a mapping where text was expected") || !strings.Contains(out, "aggregate") {
 		t.Fatalf("ids %v logs %s", ids, out)
 	}
 }

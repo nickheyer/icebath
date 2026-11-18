@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -305,7 +306,7 @@ func (r *GatewayRunner) routePlaintextApprovalWhileBusy(ctx context.Context, eve
 	if err != nil {
 		return fail(err)
 	}
-	pkgLog().Info(fmt.Sprintf("Approval response via plain text: session=%s verb=%s args=%s", sessionKey, match.verb, pyrepr.Repr(match.args)))
+	pkgLog().Info(fmt.Sprintf("Approval response via plain text: session=%s verb=%s args=%s", sessionKey, match.verb, errchain.Show(match.args)))
 	adapter, err := r.deliveryAdapterFor(ctx, event.Source)
 	if err != nil {
 		return fail(err)

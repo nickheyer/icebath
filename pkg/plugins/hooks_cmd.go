@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -294,7 +293,7 @@ func hooksTest(ctx context.Context, args HooksArgs, w io.Writer) error {
 func readHookPayloadFile(path string) (any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s", pypath.OSErrorText(err))
+		return nil, fmt.Errorf("%s", errchain.OSText(err))
 	}
 	text, err := pycodecs.Decode(data, "utf-8-sig")
 	if err != nil {

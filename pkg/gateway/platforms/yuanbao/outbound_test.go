@@ -176,7 +176,7 @@ func TestStickerSendsBuildFaceElems(t *testing.T) {
 		t.Fatalf("random sticker %+v %v", result, err)
 	}
 	blank := ""
-	if result, err := adapter.SendSticker(ctx, "direct:alice", &blank, nil, "", nil); err != nil || result.Success || result.Error != "Sticker not found: ''" {
+	if result, err := adapter.SendSticker(ctx, "direct:alice", &blank, nil, "", nil); err != nil || result.Success || result.Error != "Sticker not found: empty text" {
 		t.Fatalf("blank sticker name %+v %v", result, err)
 	}
 }

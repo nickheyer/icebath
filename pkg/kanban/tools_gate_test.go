@@ -255,9 +255,9 @@ func TestSqliteBindMatchesTheSQLiteTextAffinity(t *testing.T) {
 		position int
 		want     string
 	}{
-		{[]any{1}, 3, "Error binding parameter 3: type 'list' is not supported"},
-		{pyjson.ObjectOf("a", 1), 1, "Error binding parameter 1: type 'dict' is not supported"},
-		{new(big.Int).Lsh(big.NewInt(1), 70), 6, "Python int too large to convert to SQLite INTEGER"},
+		{[]any{1}, 3, "SQL parameter 3 is a list, which SQLite cannot store"},
+		{pyjson.ObjectOf("a", 1), 1, "SQL parameter 1 is a mapping, which SQLite cannot store"},
+		{new(big.Int).Lsh(big.NewInt(1), 70), 6, "the number is too large for a SQLite INTEGER"},
 	} {
 		if _, err := sqliteBind(c.value, c.position); err == nil || err.Error() != c.want {
 			t.Fatalf("%#v -> %v", c.value, err)
@@ -282,34 +282,34 @@ func TestWorkerToolsReportPythonErrorsForWrongTypedArguments(t *testing.T) {
 	tid := toolWorkerEnv(t)
 	slug := "must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with '-' or '_'"
 	assertWrongTyped(t, []wrongTypedCase{
-		{"kanban_complete", `{"summary": "s", "metadata": "x"}`, "metadata must be an object/dict, got str"},
-		{"kanban_complete", `{"summary": "s", "created_cards": 5}`, "created_cards must be a list of task ids, got int"},
-		{"kanban_complete", `{"summary": "s", "artifacts": {"a": 1}}`, "artifacts must be a list of file paths, got dict"},
-		{"kanban_complete", `{"summary": "s", "result": []}`, "kanban_complete: Error binding parameter 1: type 'list' is not supported"},
+		{"kanban_complete", `{"summary": "s", "metadata": "x"}`, "metadata must be a mapping, got text"},
+		{"kanban_complete", `{"summary": "s", "created_cards": 5}`, "created_cards must be a list of task ids, got a number"},
+		{"kanban_complete", `{"summary": "s", "artifacts": {"a": 1}}`, "artifacts must be a list of file paths, got a mapping"},
+		{"kanban_complete", `{"summary": "s", "result": []}`, "kanban_complete: SQL parameter 1 is a list, which SQLite cannot store"},
 		{"kanban_block", `{"reason": []}`, "reason is required — explain what input you need"},
-		{"kanban_block", `{"reason": "r", "kind": ["x"]}`, "kanban_block: cannot use 'list' as a set element (unhashable type: 'list')"},
-		{"kanban_block", `{"reason": "r", "kind": 5}`, "kind must be one of ['capability', 'dependency', 'needs_input', 'transient'] (or omit it)"},
+		{"kanban_block", `{"reason": "r", "kind": ["x"]}`, "kanban_block: expected text, got a list"},
+		{"kanban_block", `{"reason": "r", "kind": 5}`, "kind must be one of capability, dependency, needs_input, transient (or omit it)"},
 		{"kanban_schedule", `{"reason": 5}`, "reason must be a string"},
-		{"kanban_request_review", `{"summary": "s", "metadata": []}`, "metadata must be an object/dict, got list"},
-		{"kanban_request_review", `{"summary": "s", "reviewer": 5}`, "reviewer profile '5' is not installed. Installed profiles: default"},
+		{"kanban_request_review", `{"summary": "s", "metadata": []}`, "metadata must be a mapping, got a list"},
+		{"kanban_request_review", `{"summary": "s", "reviewer": 5}`, "reviewer profile 5 is not installed. Installed profiles: default"},
 		{"kanban_request_changes", `{"reason": {}}`, "reason is required — describe the changes needed"},
 		{"kanban_comment", `{"task_id": 5, "body": "b"}`, "kanban_comment: unknown task 5"},
-		{"kanban_comment", `{"task_id": true, "body": "b"}`, "kanban_comment: unknown task True"},
-		{"kanban_comment", `{"task_id": [1], "body": "b"}`, "kanban_comment: Error binding parameter 1: type 'list' is not supported"},
+		{"kanban_comment", `{"task_id": true, "body": "b"}`, "kanban_comment: unknown task true"},
+		{"kanban_comment", `{"task_id": [1], "body": "b"}`, "kanban_comment: SQL parameter 1 is a list, which SQLite cannot store"},
 		{"kanban_comment", `{"task_id": "x", "body": {}}`, "body is required"},
-		{"kanban_attach_url", `{"url": 5}`, "kanban_attach_url: unsupported URL scheme ''; only http/https are allowed"},
-		{"kanban_attach", `{"filename": "f", "content_base64": 5}`, "content_base64 is not valid base64: Invalid base64-encoded string: number of data characters (1) cannot be 1 more than a multiple of 4"},
-		{"kanban_attach", `{"filename": "f", "content_base64": "not base64!"}`, "content_base64 is not valid base64: Only base64 data is allowed"},
+		{"kanban_attach_url", `{"url": 5}`, "kanban_attach_url: the URL has no scheme; only http/https are allowed"},
+		{"kanban_attach", `{"filename": "f", "content_base64": 5}`, "content_base64 is not valid base64"},
+		{"kanban_attach", `{"filename": "f", "content_base64": "not base64!"}`, "content_base64 is not valid base64"},
 		{"kanban_show", `{"task_id": 5}`, "task 5 not found"},
 		{"kanban_show", `{"board": 5.5}`, "kanban_show: invalid board slug 5.5: " + slug},
-		{"kanban_show", `{"board": ["x"]}`, "kanban_show: invalid board slug ['x']: " + slug},
-		{"kanban_show", `{"board": "Bad Slug"}`, "kanban_show: invalid board slug 'Bad Slug': " + slug},
-		{"kanban_link", `{"parent_id": 5, "child_id": "` + tid + `"}`, "kanban_link: sequence item 0: expected str instance, int found"},
-		{"kanban_link", `{"parent_id": "t_missing", "child_id": 2.5}`, "kanban_link: sequence item 1: expected str instance, float found"},
+		{"kanban_show", `{"board": ["x"]}`, "kanban_show: invalid board slug x: " + slug},
+		{"kanban_show", `{"board": "Bad Slug"}`, "kanban_show: invalid board slug Bad Slug: " + slug},
+		{"kanban_link", `{"parent_id": 5, "child_id": "` + tid + `"}`, "kanban_link: task id at position 0 is a number where text was expected"},
+		{"kanban_link", `{"parent_id": "t_missing", "child_id": 2.5}`, "kanban_link: task id at position 1 is a number where text was expected"},
 		{"kanban_link", `{"parent_id": "t_missing", "child_id": "` + tid + `"}`, "kanban_link: unknown task(s): t_missing"},
 		{"kanban_link", `{"parent_id": [1], "child_id": [1]}`, "kanban_link: a task cannot depend on itself"},
 		{"kanban_link", `{"parent_id": 1, "child_id": 1.0}`, "kanban_link: a task cannot depend on itself"},
-		{"kanban_link", `{"parent_id": "` + tid + `", "child_id": {"a": 1}}`, "kanban_link: Error binding parameter 2: type 'dict' is not supported"},
+		{"kanban_link", `{"parent_id": "` + tid + `", "child_id": {"a": 1}}`, "kanban_link: SQL parameter 2 is a mapping, which SQLite cannot store"},
 	})
 	if status := boardTask(t, tid).Status; status != "running" {
 		t.Fatal(status)
@@ -345,7 +345,7 @@ func TestCompleteKeepsAFalsyNonStringResultAsPythonDoes(t *testing.T) {
 func TestOrchestratorToolsReportPythonErrorsForWrongTypedArguments(t *testing.T) {
 	toolWorkerEnv(t)
 	unsetEnv(t, "ICEBATH_KANBAN_TASK")
-	statuses := "['archived', 'blocked', 'done', 'ready', 'review', 'running', 'scheduled', 'todo', 'triage']"
+	statuses := "archived, blocked, done, ready, review, running, scheduled, todo, triage"
 	assertWrongTyped(t, []wrongTypedCase{
 		{"kanban_list", `{"include_archived": "maybe"}`, "include_archived must be a boolean or 'true'/'false'"},
 		{"kanban_list", `{"include_archived": 1.0}`, "include_archived must be a boolean or 'true'/'false'"},
@@ -353,32 +353,32 @@ func TestOrchestratorToolsReportPythonErrorsForWrongTypedArguments(t *testing.T)
 		{"kanban_list", `{"limit": [1]}`, "limit must be an integer"},
 		{"kanban_list", `{"limit": 0}`, "limit must be >= 1"},
 		{"kanban_list", `{"limit": 201}`, "limit must be <= 200"},
-		{"kanban_list", `{"status": ["ready"]}`, "kanban_list: cannot use 'list' as a set element (unhashable type: 'list')"},
+		{"kanban_list", `{"status": ["ready"]}`, "kanban_list: expected text, got a list"},
 		{"kanban_list", `{"status": 5}`, "kanban_list: status must be one of " + statuses},
 		{"kanban_list", `{"assignee": 5}`, "kanban_list: profile name must be a string, got int: 5"},
-		{"kanban_list", `{"tenant": [1]}`, "kanban_list: Error binding parameter 1: type 'list' is not supported"},
-		{"kanban_list", `{"assignee": "a", "status": "ready", "tenant": {}}`, "kanban_list: Error binding parameter 3: type 'dict' is not supported"},
+		{"kanban_list", `{"tenant": [1]}`, "kanban_list: SQL parameter 1 is a list, which SQLite cannot store"},
+		{"kanban_list", `{"assignee": "a", "status": "ready", "tenant": {}}`, "kanban_list: SQL parameter 3 is a mapping, which SQLite cannot store"},
 		{"kanban_create", `{"title": "t", "assignee": []}`, "assignee is required — name the profile that should execute this task (the dispatcher will only spawn tasks with an assignee)"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "triage": "maybe"}`, "triage must be a boolean or 'true'/'false'"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "skills": 5}`, "skills must be a list of skill names, got int"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "skills": 5}`, "skills must be a list of skill names, got a number"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "provider": "p"}`, "'provider' requires 'model' to be set as well"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "parents": [5]}`, "kanban_create: sequence item 0: expected str instance, int found"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "parents": [5]}`, "kanban_create: task id at position 0 is a number where text was expected"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "parents": ["t_gone"]}`, "kanban_create: unknown parent task(s): t_gone"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "parents": [[1]]}`, "kanban_create: Error binding parameter 1: type 'list' is not supported"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "priority": "high", "model": 5}`, "kanban_create: invalid literal for int() with base 10: 'high'"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "model": 5}`, "kanban_create: 'int' object has no attribute 'strip'"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "parents": [[1]]}`, "kanban_create: SQL parameter 1 is a list, which SQLite cannot store"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "priority": "high", "model": 5}`, "kanban_create: high is not a whole number"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "model": 5}`, "kanban_create: expected text, got a number"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "model": "  ", "provider": "p"}`, "kanban_create: provider_override requires a model_override"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "completion_contract": 5}`, "kanban_create: completion_contract must be local-only, OWNER/REPO, or an exact GitHub PR URL"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "workspace_kind": 5}`, "kanban_create: workspace_kind must be one of ['dir', 'scratch', 'worktree'], got 5"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "workspace_kind": []}`, "kanban_create: cannot use 'list' as a set element (unhashable type: 'list')"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "body": [], "initial_status": "bogus"}`, "kanban_create: initial_status must be one of ['blocked', 'running']"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "body": [], "priority": 1180591620717411303424}`, "kanban_create: Error binding parameter 3: type 'list' is not supported"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "priority": 1180591620717411303424, "tenant": [1]}`, "kanban_create: Python int too large to convert to SQLite INTEGER"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "tenant": [1]}`, "kanban_create: Error binding parameter 13: type 'list' is not supported"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "parents": ["t_a", {"k": 1}]}`, "kanban_create: Error binding parameter 2: type 'dict' is not supported"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "idempotency_key": [1], "parents": ["t_a", {"k": 1}]}`, "kanban_create: Error binding parameter 1: type 'list' is not supported"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "idempotency_key": []}`, "kanban_create: Error binding parameter 14: type 'list' is not supported"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "max_runtime_seconds": 1180591620717411303424}`, "kanban_create: Python int too large to convert to SQLite INTEGER"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "workspace_kind": 5}`, "kanban_create: workspace_kind must be one of dir, scratch, worktree, got 5"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "workspace_kind": []}`, "kanban_create: expected text, got a list"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "body": [], "initial_status": "bogus"}`, "kanban_create: initial_status must be one of blocked, running"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "body": [], "priority": 1180591620717411303424}`, "kanban_create: SQL parameter 3 is a list, which SQLite cannot store"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "priority": 1180591620717411303424, "tenant": [1]}`, "kanban_create: the number is too large for a SQLite INTEGER"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "tenant": [1]}`, "kanban_create: SQL parameter 13 is a list, which SQLite cannot store"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "parents": ["t_a", {"k": 1}]}`, "kanban_create: SQL parameter 2 is a mapping, which SQLite cannot store"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "idempotency_key": [1], "parents": ["t_a", {"k": 1}]}`, "kanban_create: SQL parameter 1 is a list, which SQLite cannot store"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "idempotency_key": []}`, "kanban_create: SQL parameter 14 is a list, which SQLite cannot store"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "max_runtime_seconds": 1180591620717411303424}`, "kanban_create: the number is too large for a SQLite INTEGER"},
 		{"kanban_unblock", `{"task_id": 5}`, "could not unblock 5 (not blocked or unknown)"},
 	})
 	conn := mustConnect(t, "", nil)
@@ -401,9 +401,9 @@ func TestCreateReportsAnInsertBindingFailureOnlyAfterEveryEarlierValidation(t *t
 	}
 	assertWrongTyped(t, []wrongTypedCase{
 		{"kanban_create", `{"title": "t", "assignee": "a", "body": [], "skills": ["web"]}`,
-			"kanban_create: 'web' is a toolset name, not skill name(s). Put toolsets in the assignee profile's `toolsets:` config instead of per-task skills. Skills are named skill bundles (e.g. `blogwatcher`, `github-code-review`); toolsets are runtime capabilities (e.g. `web`, `browser`, `terminal`)."},
+			"kanban_create: web is a toolset name, not skill name(s). Put toolsets in the assignee profile's `toolsets:` config instead of per-task skills. Skills are named skill bundles (e.g. `blogwatcher`, `github-code-review`); toolsets are runtime capabilities (e.g. `web`, `browser`, `terminal`)."},
 		{"kanban_create", `{"title": "t", "assignee": "a", "body": [], "parents": ["t_gone"]}`, "kanban_create: unknown parent task(s): t_gone"},
-		{"kanban_create", `{"title": "t", "assignee": "Bad Name!", "body": []}`, "kanban_create: Error binding parameter 3: type 'list' is not supported"},
+		{"kanban_create", `{"title": "t", "assignee": "Bad Name!", "body": []}`, "kanban_create: SQL parameter 3 is a list, which SQLite cannot store"},
 	})
 	conn := mustConnect(t, "", nil)
 	defer conn.Close()

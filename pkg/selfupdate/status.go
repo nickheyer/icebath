@@ -316,6 +316,10 @@ func (s *statusRun) renderTerminal() error {
 		return fmt.Errorf("terminal.backend is %s, expected a backend name", errchain.Kind(terminalEnv))
 	}
 	name, isStr := terminalEnv.(string)
+	if line, refused := tools.TerminalBackendRefusal(name); isStr && refused {
+		s.kv("Build:", line)
+		return nil
+	}
 	rows, tabled := statusTerminalEnvRows[name]
 	switch {
 	case isStr && tabled:

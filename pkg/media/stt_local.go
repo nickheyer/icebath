@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -69,7 +70,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 		}
 	}
 	if !alpha || !shapeValid {
-		pkgLog().Warn(fmt.Sprintf("Local STT language %s is not a language code; using fallback", pyrepr.StrRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("Local STT language %s is not a language code; using fallback", errchain.Show(raw)))
 		return ""
 	}
 	if supported != nil {
@@ -80,7 +81,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 			}
 		}
 		if !found {
-			pkgLog().Warn(fmt.Sprintf("Local STT language %s is unsupported; using fallback", pyrepr.StrRepr(raw)))
+			pkgLog().Warn(fmt.Sprintf("Local STT language %s is unsupported; using fallback", errchain.Show(raw)))
 			return ""
 		}
 	}
@@ -130,7 +131,7 @@ func (s whisperCppSignature) same(o whisperCppSignature) bool {
 // Downloads and verifies the whisper.cpp base and VAD models on first use
 func ensureWhisperCppModels(ctx context.Context, modelName string) error {
 	if modelName != "base" {
-		return &sttValueError{msg: "Windows ARM64 whisper.cpp currently supports stt.local.model: base; requested " + pyrepr.StrRepr(modelName)}
+		return &sttValueError{msg: "Windows ARM64 whisper.cpp currently supports stt.local.model: base; requested " + errchain.Show(modelName)}
 	}
 	destination := whisperCppModelDir(ctx)
 	var pending []pm.Source
@@ -516,7 +517,7 @@ func joinConfidentSegments(segments []whisperSegment, localCfg map[string]any) s
 	for _, s := range segments {
 		if isHallucinatedSegment(s, noSpeech, logprob) {
 			pkgLog().Debug(fmt.Sprintf("Dropping probable hallucinated segment %s (no_speech_prob=%.3f, avg_logprob=%.3f)",
-				pyrepr.StrRepr(s.Text), *s.NoSpeechProb, *s.AvgLogprob))
+				errchain.Show(s.Text), *s.NoSpeechProb, *s.AvgLogprob))
 			continue
 		}
 		kept = append(kept, pystr.Strip(s.Text))

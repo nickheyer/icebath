@@ -94,7 +94,7 @@ func TestRunJobSummaryResultShapesAndStoredNotification(t *testing.T) {
 
 	pipeline.SummarizeFn = func(context.Context, *TeamsMeetingRef, string, []*MeetingArtifact) (any, error) { return nil, nil }
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-none")); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "'NoneType' object is not a mapping", "type", "TypeError")) {
+		!pyjson.Equal(job.ErrorInfo, obj("message", "the summarizer returned nothing", "type", "TypeError")) {
 		t.Fatalf("none summary %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
 	}
 	pipeline.SummarizeFn = func(context.Context, *TeamsMeetingRef, string, []*MeetingArtifact) (any, error) {
@@ -109,7 +109,7 @@ func TestRunJobSummaryResultShapesAndStoredNotification(t *testing.T) {
 	bare := &TeamsMeetingPipelineJob{JobID: "teams-job-bare", EventID: "e", DedupeKey: "e", SourceEventType: "manual", Status: "received",
 		MeetingRef: &TeamsMeetingRef{MeetingID: "meeting-1", Metadata: obj("join_web_url", nil)}}
 	if job, err = pipeline.RunJob(context.Background(), bare); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "'NoneType' object has no attribute 'get'", "type", "AttributeError")) {
+		!pyjson.Equal(job.ErrorInfo, obj("message", "expected a mapping, got nothing", "type", "AttributeError")) {
 		t.Fatalf("job without stored notification %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
 	}
 
@@ -277,7 +277,7 @@ func TestWriteSinksRunsEnabledSinksInOrderWithExistingRecords(t *testing.T) {
 	}
 	pipeline.Config.Notion = "on"
 	if job, err = pipeline.RunJob(context.Background(), job.JobID); err != nil || job.Status != "failed" || get(job.ErrorInfo, "type") != "AttributeError" ||
-		get(job.ErrorInfo, "message") != "'str' object has no attribute 'get'" {
+		get(job.ErrorInfo, "message") != "expected a mapping, got text" {
 		t.Fatalf("string sink config %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
 	}
 }
@@ -312,7 +312,7 @@ func TestRunJobRecordsRaisedPanicsAndMissingTranscriptionResult(t *testing.T) {
 	}
 	pipeline.TranscribeFn = func(context.Context, string, string) (map[string]any, error) { return nil, nil }
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-nil-stt")); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "'NoneType' object has no attribute 'get'", "type", "AttributeError")) {
+		!pyjson.Equal(job.ErrorInfo, obj("message", "the transcription returned nothing", "type", "AttributeError")) {
 		t.Fatalf("missing transcription result %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
 	}
 }
@@ -320,7 +320,7 @@ func TestRunJobRecordsRaisedPanicsAndMissingTranscriptionResult(t *testing.T) {
 func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 	payload := sinkPayload()
 	payload.Summary = int64(5)
-	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "sequence item 3: expected str instance, int found" {
+	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "summary line 3 is a number where text was expected" {
 		t.Fatalf("markdown %v", err)
 	}
 	transport := &sinkTransport{status: 200, body: `{"id": "p"}`}
@@ -329,7 +329,7 @@ func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := writer.WriteSummary(context.Background(), payload, obj("database_id", "db", "summary_property", "Summary"), nil); pyrepr.ExceptionName(err) != "TypeError" ||
-		pyrepr.ExceptionMessage(err) != "'int' object is not subscriptable" {
+		pyrepr.ExceptionMessage(err) != "the meeting summary is a number where text or a list was expected" {
 		t.Fatalf("summary property %v", err)
 	}
 	if _, err := writer.WriteSummary(context.Background(), payload, obj("database_id", "db"), nil); err != nil {
@@ -339,7 +339,7 @@ func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 		t.Fatalf("body %s", transport.bodies[0])
 	}
 	payload.Summary, payload.ConfidenceNotes = "S", []any{"n"}
-	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionMessage(err) != "sequence item 15: expected str instance, list found" {
+	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionMessage(err) != "summary line 15 is a list where text was expected" {
 		t.Fatalf("notes %v", err)
 	}
 	payload.ConfidenceNotes, payload.MeetingRef = nil, nil

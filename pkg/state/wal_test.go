@@ -80,7 +80,7 @@ func TestMountinfoFstypeEdges(t *testing.T) {
 		t.Fatalf("fstype = %q, %v", got, err)
 	}
 	mi = writeMountinfo(t, "1 2 3:4 / /data rw -    ")
-	if _, err := mountinfoFstype("/data/x", mi); err == nil || !strings.Contains(err.Error(), "IndexError") {
+	if _, err := mountinfoFstype("/data/x", mi); err == nil || !strings.Contains(err.Error(), "has no file system type") {
 		t.Fatalf("blank fstype tail = %v", err)
 	}
 	mi = writeMountinfo(t, `1 2 3:4 / /bad\x4 rw - virtiofs src rw`)

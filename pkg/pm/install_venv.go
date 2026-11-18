@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -54,16 +54,20 @@ func venvPackage() (VenvState, error) {
 func asVenvState(p Package) (VenvState, error) {
 	v, ok := p.(VenvState)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'project_root'", reflectTypeName(p))}
+		name := "nothing"
+		if p != nil {
+			name = "the " + p.Base().Name + " package"
+		}
+		return nil, &PyError{Class: "AttributeError", Message: name + " has no dependency environment"}
 	}
 	return v, nil
 }
 
-// Python class name of a Go value, the pointed to type for pointers
+// Go type name of a value, the pointed to type for pointers
 func reflectTypeName(v any) string {
 	t := reflect.TypeOf(v)
 	if t == nil {
-		return "NoneType"
+		return "nothing"
 	}
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -331,7 +335,7 @@ func featurePolicy(ctx context.Context, extras []string, repair bool) (shipped, 
 			}
 		}
 		if len(unsupported) > 0 {
-			return nil, nil, NewInstallError("venv", fmt.Sprintf("extras %s are not supported by this Python/platform", pyrepr.Repr(unsupported)),
+			return nil, nil, NewInstallError("venv", fmt.Sprintf("extras %s are not supported by this Python/platform", errchain.Show(unsupported)),
 				"choose a supported provider; no dependency environment was changed")
 		}
 	}
@@ -356,7 +360,7 @@ func featurePolicy(ctx context.Context, extras []string, repair bool) (shipped, 
 		}
 		if len(outside) > 0 {
 			return nil, nil, RefuseLazyFor(ctx, "venv", fmt.Sprintf(
-				"extras %s are outside this bundle's frozen feature set (security.allow_lazy_installs is false)", pyrepr.Repr(outside)))
+				"extras %s are outside this bundle's frozen feature set (security.allow_lazy_installs is false)", errchain.Show(outside)))
 		}
 	}
 	return shipped, frozen, nil
@@ -447,7 +451,7 @@ func recoverOnPanic(ctx context.Context) {
 // Receipt detail of a panic unwinding through a sync, its class and text
 func panicDetail(r any) string {
 	if err, ok := r.(error); ok {
-		return errorClass(err) + ": " + err.Error()
+		return err.Error()
 	}
 	return fmt.Sprintf("panic: %v", r)
 }
@@ -640,12 +644,12 @@ func refuseDeclined(ctx context.Context, p VenvState, extras []string, explicit 
 	var why []string
 	for _, extra := range dropped {
 		if reason, ok := reasons[ExtraKey(extra)]; ok {
-			why = append(why, fmt.Sprintf("an update left %s out because %s", pyrepr.StrRepr(extra), reason))
+			why = append(why, fmt.Sprintf("an update left %s out because %s", extra, reason))
 		}
 	}
 	cause := strings.Join(why, "; ")
 	if cause == "" {
-		cause = fmt.Sprintf("extras %s were removed with `icebath pm install --without`", pyrepr.Repr(dropped))
+		cause = fmt.Sprintf("extras %s were removed with `icebath pm install --without`", errchain.Show(dropped))
 	}
 	hints := make([]string, len(dropped))
 	for i, extra := range dropped {
@@ -752,7 +756,7 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 	if !current && !bare && !s.repair && !s.explicit && !LazyInstallsAllowedFor(ctx) {
 		what := "venv out of sync"
 		if len(extras) > 0 {
-			what = pyrepr.Repr(extras)
+			what = errchain.Show(extras)
 		}
 		return RefuseLazyFor(ctx, "venv", what)
 	}
@@ -791,7 +795,7 @@ func syncVenv(ctx context.Context, opts SyncVenvOptions) error {
 		}
 	}()
 	if err := syncVenvBody(ctx, opts); err != nil {
-		RecordStep(ctx, "dependency-sync", false, errorClass(err)+": "+err.Error())
+		RecordStep(ctx, "dependency-sync", false, err.Error())
 		return err
 	}
 	outcome = "ok"

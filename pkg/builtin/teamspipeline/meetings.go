@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
@@ -459,7 +460,7 @@ func jsonLen(v any) (int, error) {
 	case string:
 		return utf8.RuneCountInString(t), nil
 	}
-	return 0, fmt.Errorf("object of type '%s' has no len()", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected text, a list or a mapping, got %s", errchain.Kind(v))
 }
 
 // Call record artifact with its metrics, nil when absent, missing or denied while permission errors are allowed

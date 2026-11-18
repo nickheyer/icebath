@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -69,7 +70,7 @@ func IterPluginDirs(root string) ([]string, error) {
 			hasInit, err = pathlibProbe(filepath.Join(child, "__init__.py"), false)
 		}
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pypath.OSErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, errchain.OSText(err)))
 			continue
 		}
 		if hasInit {

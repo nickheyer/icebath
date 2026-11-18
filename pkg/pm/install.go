@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -232,7 +233,7 @@ func Installed(ctx context.Context, name string, allowOutdated bool) (*Installed
 // Installed uv or uvx launcher for a user declared MCP stdio command, empty when it is not installed
 func UvLauncher(ctx context.Context, name string) (string, error) {
 	if name != "uv" && name != "uvx" {
-		return "", &PyError{Class: "ValueError", Message: pyrepr.StrRepr(name) + " is not a uv launcher"}
+		return "", &PyError{Class: "ValueError", Message: name + " is not a uv launcher"}
 	}
 	p, err := GetPackage("uv")
 	if err != nil {
@@ -1215,7 +1216,7 @@ func pyIterStrings(v any) ([]string, error) {
 		for _, item := range t {
 			s, ok := item.(string)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(item))}
+				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected text, got %s", errchain.Kind(item))}
 			}
 			out = append(out, s)
 		}
@@ -1229,7 +1230,7 @@ func pyIterStrings(v any) ([]string, error) {
 	case map[string]any:
 		return sortedKeys(t), nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // DriftReport maps each unhealthy package to its reason in the order the problems were found

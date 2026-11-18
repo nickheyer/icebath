@@ -14,11 +14,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Venv is the project venv made true by a frozen uv sync of pyproject, uv.lock and the enabled extras
@@ -378,7 +378,7 @@ func UvCacheDir(ctx context.Context) (string, error) {
 	if data, err := os.ReadFile(marker); err == nil {
 		text := trimBOM(data)
 		if err := strictUTF8(text); err != nil {
-			return "", fmt.Errorf("UnicodeDecodeError: %s", err)
+			return "", fmt.Errorf("%s is %w", marker, err)
 		}
 		current = pystr.Strip(string(text)) == seed
 	}
@@ -386,7 +386,7 @@ func UvCacheDir(ctx context.Context) (string, error) {
 		return machine, nil
 	}
 	if err := seedPayloadCache(payloadCache, machine); err != nil {
-		pkgLog().Warn(fmt.Sprintf("uv cache seed incomplete, retrying on the next install: %s", pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("uv cache seed incomplete, retrying on the next install: %s", errchain.OSText(err)))
 		return machine, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(marker), 0o777); err == nil {

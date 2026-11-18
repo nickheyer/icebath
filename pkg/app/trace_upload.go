@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -196,7 +197,7 @@ func traceToolCallsToBlocks(toolCalls any, redact bool) ([]any, error) {
 		}
 		fn, ok := traceDict(fnVal)
 		if !ok {
-			return nil, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(fnVal) + "' object has no attribute 'get'"}
+			return nil, &appClassedError{class: "AttributeError", msg: "trace tool call function is " + errchain.Kind(fnVal) + " where a mapping was expected"}
 		}
 		parsed := traceParseToolArgs(traceGet(fn, "arguments", nil))
 		if redact {

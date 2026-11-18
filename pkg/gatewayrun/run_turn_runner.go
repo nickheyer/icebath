@@ -110,7 +110,7 @@ func newTurnRunner(ctx context.Context, runner *GatewayRunner, tc *TurnContext) 
 		return nil, err
 	}
 	if row == nil {
-		return nil, &pyTypeError{"'NoneType' object is not subscriptable"}
+		return nil, &pyTypeError{"the session row for this turn is missing"}
 	}
 	generation := gateway.RowInt(row, "runtime_generation")
 	if generation == nil {
@@ -177,7 +177,7 @@ func settleAPIRuntimeLock(ctx context.Context, a *agent.AIAgent, result map[stri
 	adapterValue, _ := api.Get("adapter")
 	source, ok := adapterValue.(turnRuntimeMetadataSource)
 	if !ok {
-		return &pyAttributeError{fmt.Sprintf("'%T' object has no attribute '_turn_runtime_metadata'", adapterValue)}
+		return &pyAttributeError{"the API adapter cannot report turn runtime metadata"}
 	}
 	usage, isMap := captured["usage"].(map[string]any)
 	if !isMap {

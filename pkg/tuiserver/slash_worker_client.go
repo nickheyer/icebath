@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -245,7 +246,7 @@ func (w *slashWorker) run(command string) (string, error) {
 		}
 		msg, isDict := pyjson.AsObject(raw)
 		if !isDict {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return "", fmt.Errorf("a slash worker message must be a mapping, got %s", errchain.Kind(raw))
 		}
 		if !pyjson.Equal(msg.GetOr("id", nil), rid) {
 			continue

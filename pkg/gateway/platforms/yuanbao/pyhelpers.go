@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -15,37 +16,37 @@ import (
 // The websocket client is compiled into this build
 var websocketsAvailable = true
 
-// AttributeError of reading an attribute the type of a value lacks
-func attrError(v any, attr string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+// AttributeError of a value that is not text
+func notText(v any) error {
+	return &pyErr{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 }
 
-// TypeError of using a list or dict where a hashable value is needed, nil for every other value
+// TypeError of using a list or dict where a single value is needed, nil for every other value
 func unhashable(v any) error {
 	switch v.(type) {
 	case []any:
-		return &pyErr{"TypeError", "unhashable type: 'list'"}
+		return &pyErr{"TypeError", "expected a single value, got a list"}
 	case *pyjson.Object, map[string]any:
-		return &pyErr{"TypeError", "unhashable type: 'dict'"}
+		return &pyErr{"TypeError", "expected a single value, got a mapping"}
 	}
 	return nil
 }
 
-// Dict behind a value, the AttributeError a get on any other value raises
+// Dict behind a value, the AttributeError naming the kind of any other value
 func dictOf(v any) (map[string]any, error) {
 	d, ok := asDict(v)
 	if !ok {
-		return nil, attrError(v, "get")
+		return nil, &pyErr{"AttributeError", fmt.Sprintf("expected a mapping, got %s", errchain.Kind(v))}
 	}
 	return d, nil
 }
 
-// Text a str method is called on, the AttributeError naming the method for any other value
-func strMethod(v any, method string) (string, error) {
+// Text of a value, the AttributeError naming the field for any other value
+func strMethod(v any, field string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", attrError(v, method)
+	return "", &pyErr{"AttributeError", fmt.Sprintf("%s must be text, got %s", field, errchain.Kind(v))}
 }
 
 // Items a for loop over a value visits, the TypeError of a value that is not iterable
@@ -67,7 +68,7 @@ func iterOf(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Parts joined by a separator, the TypeError str join raises for a part that is not text
@@ -76,7 +77,7 @@ func joinParts(sep string, parts []any) (string, error) {
 	for i, p := range parts {
 		s, ok := p.(string)
 		if !ok {
-			return "", &pyErr{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(p))}
+			return "", &pyErr{"TypeError", fmt.Sprintf("part %d must be text, got %s", i, errchain.Kind(p))}
 		}
 		texts[i] = s
 	}
@@ -91,7 +92,7 @@ func jsonLoads(v any) (any, error) {
 	case []byte:
 		return pyjson.LoadsBytes(t)
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("the JSON object must be str, bytes or bytearray, not %s", pyrepr.TypeName(v))}
+	return nil, &pyErr{"TypeError", fmt.Sprintf("expected JSON text, got %s", errchain.Kind(v))}
 }
 
 // Text of a protobuf string field, empty for a falsy value and the AttributeError encoding any other value raises
@@ -102,7 +103,7 @@ func protoText(v any) (string, error) {
 	if !pyrepr.Truthy(v) {
 		return "", nil
 	}
-	return "", attrError(v, "encode")
+	return "", notText(v)
 }
 
 // Text of a protobuf string field that is always written, the AttributeError encoding any other value raises
@@ -110,7 +111,7 @@ func encodeText(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", attrError(v, "encode")
+	return "", notText(v)
 }
 
 // Whether the path names an existing regular file

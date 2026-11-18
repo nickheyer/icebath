@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -128,13 +129,13 @@ func baselineDicts(v any) ([]map[string]any, error) {
 	}
 	list, ok := v.([]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("pause baselines are %s where a list was expected", errchain.Kind(v))
 	}
 	out := make([]map[string]any, 0, len(list))
 	for _, item := range list {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(item))
+			return nil, fmt.Errorf("pause baseline is %s where a mapping was expected", errchain.Kind(item))
 		}
 		out = append(out, m)
 	}
@@ -155,7 +156,7 @@ func StampTree(ctx context.Context, token map[string]any, root string) (map[stri
 	}
 	list, isList := token["baselines"].([]any)
 	if !isList {
-		return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(token["baselines"]))
+		return nil, fmt.Errorf("pause baselines are %s where a list was expected", errchain.Kind(token["baselines"]))
 	}
 	baselines, err := baselineDicts(list)
 	if err != nil {
@@ -306,7 +307,7 @@ func seenAtPause(root string, baseline map[string]any, path string) (bool, error
 	}
 	m, ok := digests.(map[string]any)
 	if !ok {
-		return false, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(digests))
+		return false, fmt.Errorf("pause baseline digests are %s where a mapping was expected", errchain.Kind(digests))
 	}
 	return pyrepr.Equal(m[path], fileDigest(filepath.Join(root, path))), nil
 }
@@ -393,7 +394,7 @@ func landedTorn(ctx context.Context, root, head string, changes []string, landed
 		}
 		m, ok := verdicts.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(verdicts))
+			return nil, fmt.Errorf("landed verdicts are %s where a mapping was expected", errchain.Kind(verdicts))
 		}
 		verdict, recorded := m[head]
 		var paths []string

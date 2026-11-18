@@ -627,7 +627,7 @@ func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs 
 		return toolErrorJSON(errMsg, nil), "", nil, true
 	}
 	if !ScopedDeferrableNames(ctx, env, currentDefs)[underlying] {
-		return toolErrorJSON(ScopeBlockReason(ctx, env, underlying), nil), "", nil, true
+		return toolErrorJSON(SessionScopeBlockReason(ctx, env, underlying, enabled, disabled), nil), "", nil, true
 	}
 	if probe := validateDeferredCallArgsAt(ctx, env, underlying, DeferredCallArguments(pyArgs), dispatchValidationFrameDepth); probe != "" {
 		return probe, "", nil, true

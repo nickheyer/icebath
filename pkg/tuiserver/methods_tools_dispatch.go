@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -40,15 +41,15 @@ func resolveName(name string) string {
 	return name
 }
 
-// Text of a string param, a non string value raising like the str method the Python calls on it
-func textParam(params map[string]any, key, method string) string {
+// Text of a string param, a non string value refused naming the param and its kind
+func textParam(params map[string]any, key string) string {
 	raw, present := params[key]
 	if !present {
 		return ""
 	}
 	text, isText := raw.(string)
 	if !isText {
-		panic(fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(raw), method))
+		panic(fmt.Errorf("%s must be text, got %s", key, errchain.Kind(raw)))
 	}
 	return text
 }
@@ -117,7 +118,7 @@ func init() { toolsDispatchRegistry.install() }
 
 // Routes a slash command through the quick, plugin, bound, bundle, skill and built in stages in the session home
 func commandDispatch(ctx context.Context, rid any, params map[string]any) map[string]any {
-	name := resolveName(strings.TrimLeft(textParam(params, "name", "lstrip"), "/"))
+	name := resolveName(strings.TrimLeft(textParam(params, "name"), "/"))
 	arg := strOr(params["arg"])
 	sid := strOr(params["session_id"])
 	session := tuihost.SessionRecord(sid)
@@ -149,7 +150,7 @@ func dispatchQuick(ctx context.Context, rid any, params map[string]any, session 
 	}
 	entry, isDict := qc.(map[string]any)
 	if !isDict {
-		panic(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(qc)))
+		panic(fmt.Errorf("the quick command %s must be a mapping, got %s", name, errchain.Kind(qc)))
 	}
 	if entry["type"] == "exec" {
 		env, err := tools.BuildSubprocessEnv(ctx, tools.ToolEnvFrom(ctx), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})

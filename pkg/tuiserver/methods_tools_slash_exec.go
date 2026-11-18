@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -127,7 +127,7 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 	if errResp != nil {
 		return errResp
 	}
-	cmd := pystr.Strip(textParam(params, "command", "strip"))
+	cmd := pystr.Strip(textParam(params, "command"))
 	if cmd == "" {
 		return rpcErr(rid, 4004, "empty command", nil)
 	}
@@ -196,7 +196,7 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 	if !isRunner {
 		closeSlashWorker(worker)
 		session.Set("slash_worker", nil)
-		return rpcErr(rid, 5030, fmt.Sprintf("'%s' object has no attribute 'run'", pyrepr.TypeName(worker)), nil)
+		return rpcErr(rid, 5030, "the slash worker of this session cannot run commands", nil)
 	}
 	output, err := runner.run(cmd)
 	if err != nil {
@@ -236,7 +236,7 @@ func shellExec(ctx context.Context, rid any, params map[string]any) map[string]a
 	}
 	cmd, isText := raw.(string)
 	if !isText {
-		panic(fmt.Errorf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(raw)))
+		panic(fmt.Errorf("the command must be text, got %s", errchain.Kind(raw)))
 	}
 	if hardline, desc := tools.DetectHardlineCommand(cmd); hardline {
 		return rpcErr(rid, 4005, fmt.Sprintf("blocked (hardline): %s. Use the agent for dangerous commands.", desc), nil)

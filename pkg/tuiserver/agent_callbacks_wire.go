@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -104,11 +103,11 @@ func wireCallbacks(ctx context.Context, sid string) {
 	}})
 	tools.SetProjectWorkspaceCallback(applyProjectWorkspace)
 	skills.SetContextSecretCaptureCallback(tuiSecretCapture)
-	browser.SetVaultSessionID(ctx, &sid)
-	browser.SetUnlockPromptCallback(ctx, func(backend, displayName string) string {
+	tools.SetVaultSessionID(ctx, &sid)
+	tools.SetUnlockPromptCallback(ctx, func(backend, displayName string) string {
 		return ask(ctx, "vault.unlock_prompt", sid, map[string]any{"backend": backend, "display_name": displayName}, &vaultTimeout)
 	})
-	browser.SetSaveLoginPromptCallback(ctx, func(origin, site string) map[string]string {
+	tools.SetSaveLoginPromptCallback(ctx, func(origin, site string) map[string]string {
 		raw := ask(ctx, "vault.save_login", sid, map[string]any{"origin": origin, "site": site}, &loginTimeout)
 		if raw == "" {
 			return nil
@@ -131,7 +130,7 @@ func wireCallbacks(ctx context.Context, sid string) {
 		}
 		return out
 	})
-	browser.SetCodePromptCallback(ctx, func(site, hint string) string {
+	tools.SetCodePromptCallback(ctx, func(site, hint string) string {
 		return ask(ctx, "vault.code", sid, map[string]any{"site": site, "hint": hint}, &loginTimeout)
 	})
 }

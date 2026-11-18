@@ -274,11 +274,11 @@ func TestPluginBackendGetsOnlyItsHandleNeverUnlockMaterial(t *testing.T) {
 		t.Fatal("a plugin backend asking for the master password prompt registered")
 	}
 	prompts := []string{}
-	SetUnlockPromptCallback(h.ctx, func(name, _ string) string {
+	tools.SetUnlockPromptCallback(h.ctx, func(name, _ string) string {
 		prompts = append(prompts, name)
 		return "dummy-master-55"
 	})
-	defer SetUnlockPromptCallback(h.ctx, nil)
+	defer tools.SetUnlockPromptCallback(h.ctx, nil)
 	if out := h.vaultResult(map[string]any{"action": "unlock", "backend": "gamma"}); anyGet(out, "success") != false {
 		t.Fatalf("unlock %v", out)
 	}
@@ -587,11 +587,11 @@ func TestPluginOtpOnAForeignOriginIsRefusedBeforeFillContext(t *testing.T) {
 	backend := ctxVault(t, h, loginControlsJSON[:len(loginControlsJSON)-1]+", "+isoOTPField+"]")
 	page.origin = "https://evil.example"
 	asked := []string{}
-	SetCodePromptCallback(h.ctx, func(site, _ string) string {
+	tools.SetCodePromptCallback(h.ctx, func(site, _ string) string {
 		asked = append(asked, site)
 		return "000000"
 	})
-	defer SetCodePromptCallback(h.ctx, nil)
+	defer tools.SetCodePromptCallback(h.ctx, nil)
 	out := h.vaultResult(map[string]any{"action": "enter_code", "handle": "ctxvault:1"})
 	if anyGet(out, "error_type") != "origin_mismatch" {
 		t.Fatalf("enter_code %v", out)

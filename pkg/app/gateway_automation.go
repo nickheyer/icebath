@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -126,7 +127,7 @@ func (r *automationRemote[S]) adopt(raw any) (*S, error) {
 	if pyrepr.Truthy(raw) {
 		text, isText := raw.(string)
 		if !isText {
-			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("the JSON object must be str, bytes or bytearray, not %s", pyrepr.TypeName(raw))}
+			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("the gateway sent an automation row that is %s where JSON text was expected", errchain.Kind(raw))}
 		}
 		parsed, err := r.fromJSON(text)
 		if err != nil {
@@ -190,7 +191,7 @@ func (a automationAnswer[S]) stateValue() (*S, error) {
 	if a.isState || a.value == nil {
 		return a.state, nil
 	}
-	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'status'", pyrepr.TypeName(a.value))}
+	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway answered with %s where an automation state was expected", errchain.Kind(a.value))}
 }
 
 // Loads the gateway's row into the mirror
@@ -342,7 +343,7 @@ func (m *GatewayGoalManager) AddGate(command string, timeoutSeconds, maxRetries 
 	}
 	gate, isGate := answer.value.(goals.GoalGate)
 	if !isGate {
-		return goals.GoalGate{}, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'command'", pyrepr.TypeName(mustAutomationValue(answer, nil)))}
+		return goals.GoalGate{}, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway answered with %s where a goal gate was expected", errchain.Kind(mustAutomationValue(answer, nil)))}
 	}
 	return gate, nil
 }
@@ -401,7 +402,7 @@ func (m *GatewayGoalManager) Command(arg string, lastUserMessage any) (goals.Goa
 	}
 	output, hasOutput := fields["output"]
 	if !hasOutput {
-		return goals.GoalCommandResult{}, &pyint.Error{Kind: "TypeError", Msg: "GoalCommandResult.__init__() missing 1 required positional argument: 'output'"}
+		return goals.GoalCommandResult{}, &pyint.Error{Kind: "TypeError", Msg: "the gateway goal command result has no output"}
 	}
 	result := goals.GoalCommandResult{Output: pyrepr.Str(output), Kickoff: pyrepr.Truthy(fields["kickoff"]), Error: pyrepr.Truthy(fields["error"])}
 	if prompt := fields["prompt"]; prompt != nil {

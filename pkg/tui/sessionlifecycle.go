@@ -89,7 +89,7 @@ func (l *sessionLifecycle) rpc(method string, params map[string]any, then func(m
 		case err != nil:
 			l.view.sys("error: " + rpcErrorMessage(err))
 		case asRPCResult(v) == nil:
-			l.view.sys("error: " + tr("session.common.invalidResponse", method))
+			l.view.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
 		default:
 			result = asRPCResult(v)
 		}
@@ -628,7 +628,7 @@ func (l *sessionLifecycle) activateLiveSession(id string) tea.Cmd {
 			}
 			cmd := l.applyAttachment(*a, hold)
 			if a.Connection != nil {
-				l.store.applyConnectionRequest(wireParams(a.Connection))
+				l.store.applyConnectionRequest(*a.Connection)
 			}
 			return done(tea.Batch(cmd, l.adoptAttachment(a.SessionID, a.SubscriptionID, previousSid, previousSubscription, false)))
 		})
@@ -698,7 +698,7 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 				}
 				cmd := l.applyAttachment(*a, hold)
 				if a.Connection != nil {
-					l.store.applyConnectionRequest(wireParams(a.Connection))
+					l.store.applyConnectionRequest(*a.Connection)
 				} else {
 					l.store.clearConnectionOperation()
 				}

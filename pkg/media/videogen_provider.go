@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -295,7 +296,7 @@ func (p *openAICompatibleVideoGenProvider) createAndPoll(ctx context.Context, cl
 				id = pyrepr.Str(raw)
 			}
 			return nil, fmt.Errorf("video job %s did not reach a terminal status within %ds (last status=%s)",
-				id, int(p.pollDeadline.Seconds()), pyrepr.Repr(video.get("status")))
+				id, int(p.pollDeadline.Seconds()), errchain.Show(video.get("status")))
 		}
 		if err := videoPollSleep(ctx, p.pollInterval); err != nil {
 			return nil, err
@@ -369,7 +370,7 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 		if text, ok := video.errorText(); ok {
 			return fail(text, "job_failed"), nil
 		}
-		return fail("video job ended with status="+pyrepr.Repr(status), "job_failed"), nil
+		return fail("video job ended with status="+errchain.Show(status), "job_failed"), nil
 	}
 	deliveryURL := ""
 	if items, ok := video.get("data").([]any); ok {

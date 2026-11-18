@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -226,7 +227,7 @@ func (e *doctorLiveEnv) doctorLiveKeyedProbe(spec doctorLiveKeyedSpec, timeout f
 // Launches and stops the local browser when one is available
 func (e *doctorLiveEnv) doctorLiveProbeBrowser(timeout float64) (doctorLiveProbeResult, error) {
 	if e.browserAvailable == nil {
-		line, _ := linktier.Refusal("browser automation", linktier.Extras)
+		line := linktier.Missing("browser automation", linktier.Extras)
 		return doctorLiveProbeResult{"Browser", "skip", "(" + line + ")"}, nil
 	}
 	if !e.browserAvailable() {
@@ -247,19 +248,19 @@ func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, ti
 	if section := cfg[kind]; pyrepr.Truthy(section) {
 		block, ok := section.(map[string]any)
 		if !ok {
-			return doctorLiveProbeResult{}, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(section))
+			return doctorLiveProbeResult{}, fmt.Errorf("config %s section is %s where a mapping was expected", kind, errchain.Kind(section))
 		}
 		if raw := block["provider"]; pyrepr.Truthy(raw) {
 			text, isStr := raw.(string)
 			if !isStr {
-				return doctorLiveProbeResult{}, fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(raw))
+				return doctorLiveProbeResult{}, fmt.Errorf("config %s provider is %s where text was expected", kind, errchain.Kind(raw))
 			}
 			providerName = pystr.Lower(pystr.Strip(text))
 		}
 	}
 	if doctorLiveLocalAudioProviders[providerName] {
 		if e.speak == nil {
-			line, _ := linktier.Refusal("local speech", linktier.Plugins)
+			line := linktier.Missing("local speech", linktier.Plugins)
 			return doctorLiveProbeResult{name, "skip", "(" + line + ")"}, nil
 		}
 		shown := providerName
@@ -347,7 +348,7 @@ func doctorLiveTimeout(cfg map[string]any) (float64, error) {
 	if section := cfg["doctor"]; pyrepr.Truthy(section) {
 		block, ok := section.(map[string]any)
 		if !ok {
-			return 0, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(section))
+			return 0, fmt.Errorf("config doctor section is %s where a mapping was expected", errchain.Kind(section))
 		}
 		if raw, has := block["live_probe_timeout"]; has {
 			switch v := raw.(type) {

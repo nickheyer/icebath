@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -49,7 +50,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 	}
 	if recovered != nil {
 		pkgLog().Info(fmt.Sprintf("telegram topic recovery: chat=%s user=%s %s -> %s",
-			source.ChatID, noneOrText(source.UserID), pyrepr.Repr(optAny(source.ThreadID)), *recovered))
+			source.ChatID, noneOrText(source.UserID), errchain.Show(optAny(source.ThreadID)), *recovered))
 		copied := *source
 		copied.ThreadID = recovered
 		source = &copied
@@ -96,7 +97,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 			return nil, nil, "", err
 		}
 		if authority == nil {
-			return nil, nil, "", &gateway.PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'pending_stops'"}
+			return nil, nil, "", &gateway.PyError{Kind: "AttributeError", Msg: "the gateway has no stop authority to read pending stops from"}
 		}
 		if authority.ClaimedTurnStopped(owner, generation) {
 			chain, err := authority.DB.GetCompressionChain(ctx, owner)

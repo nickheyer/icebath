@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -237,7 +238,7 @@ func (r *ownerRelay) pending(params map[string]any, admissionID string) error {
 	if truthy(payload) {
 		fields, isDict := payload.(map[string]any)
 		if !isDict {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(payload))
+			return fmt.Errorf("the pending list payload must be a mapping, got %s", errchain.Kind(payload))
 		}
 		rows = fields["pending"]
 	}

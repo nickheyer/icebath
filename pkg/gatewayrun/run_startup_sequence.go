@@ -289,7 +289,9 @@ func (r *GatewayRunner) startFinishWiring(ctx context.Context, connected int) er
 		return err
 	}
 	r.sendSessionDBWarningNotifications(ctx)
-	installCronStoreNotices(ctx, r, r.gatewayLoop)
+	if cronStoreNotices != nil {
+		cronStoreNotices(ctx, r, r.gatewayLoop)
+	}
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -308,15 +310,13 @@ func (r *GatewayRunner) startFinishWiring(ctx context.Context, connected int) er
 
 // Spawns the long lived supervised watchers in their upstream order around the reconnect watcher
 func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
-	pre := []struct {
-		name string
-		run  func(context.Context) error
-	}{
+	pre := []runnerWatcher{
 		{"session_housekeeping_watcher", func(c context.Context) error { return r.sessionHousekeepingWatcher(c, 300) }},
 		{"model_catalog_refresh_watcher", r.modelCatalogRefreshWatcher},
 		{"session_stall_watcher", func(c context.Context) error { return r.sessionStallWatcher(c, 30.0) }},
-		{"kanban_notifier_watcher", func(c context.Context) error { return r.kanbanNotifierWatcher(c, 5.0) }},
-		{"kanban_dispatcher_watcher", r.kanbanDispatcherWatcher},
+	}
+	if kanbanWatchers != nil {
+		pre = append(pre, kanbanWatchers(r)...)
 	}
 	for _, w := range pre {
 		r.spawnSupervised(w.run, w.name, true, 0, supervisedHooks{})
@@ -329,10 +329,7 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 		pkgLog().Info(fmt.Sprintf("Starting reconnection watcher for %d failed platform(s): %s", len(names), strings.Join(names, ", ")))
 	}
 	r.spawnReconnectWatcher(ctx, nil)
-	post := []struct {
-		name string
-		run  func(context.Context) error
-	}{
+	post := []runnerWatcher{
 		{"handoff_watcher", func(c context.Context) error { return r.handoffWatcher(c, 2.0, 30.0) }},
 		{"async_delegation_watcher", func(c context.Context) error { return r.asyncDelegationWatcher(c, 2.0) }},
 		{"loop_wakeup_watcher", func(c context.Context) error { return r.loopWakeupWatcher(c, 15.0) }},

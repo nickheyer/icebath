@@ -19,8 +19,14 @@ import (
 const (
 	errorSuffixMaxLen    = 48
 	degradedSuffixMaxLen = 200
-	unsafeFailureMarker  = "ROLLBACK FAILED"
+	// Lead of the read failure for a missing file, shortened to the file name in a failure suffix
+	fileNotFoundLead = "File not found: "
+	// Phrase of the memory tool failure for an add over the store limit
+	MemoryOverLimitPhrase = "exceed the limit"
 )
+
+// Marker of a skill batch whose rollback failed, the one failure a completion line never hides
+const RollbackFailedMarker = "ROLLBACK FAILED"
 
 // Tools whose refused calls render neutrally because the agent replans them itself
 var NeutralFailureTools = map[string]bool{"skill_manage": true}
@@ -159,8 +165,8 @@ func pyIntIndex(v any) (int, bool) {
 // Shrinks an error for inline display, long File not found paths become the filename
 func trimError(ctx context.Context, msg string) string {
 	msg = pystr.Strip(msg)
-	if strings.Contains(msg, "File not found:") {
-		_, tail, _ := strings.Cut(msg, "File not found:")
+	if strings.Contains(msg, strings.TrimSpace(fileNotFoundLead)) {
+		_, tail, _ := strings.Cut(msg, strings.TrimSpace(fileNotFoundLead))
 		tail = pystr.Strip(tail)
 		if i := strings.LastIndex(tail, "/"); i >= 0 {
 			msg = displayT(ctx, "display.failure.file_not_found", map[string]any{"name": tail[i+1:]})
@@ -200,7 +206,7 @@ func IsNeutralFailure(toolName string, result any) bool {
 	if pyrepr.Truthy(errValue) {
 		text = pyrepr.Str(errValue)
 	}
-	return !strings.Contains(text, unsafeFailureMarker)
+	return !strings.Contains(text, RollbackFailedMarker)
 }
 
 // Whether a tool result failed and the suffix its completion row shows
@@ -239,7 +245,7 @@ func DetectToolFailure(ctx context.Context, toolName string, result any) (bool, 
 			if !present {
 				errValue = ""
 			}
-			if displayContains(errValue, "exceed the limit") {
+			if displayContains(errValue, MemoryOverLimitPhrase) {
 				return true, displayT(ctx, "display.failure.memory_full", nil)
 			}
 		}

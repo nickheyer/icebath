@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -299,10 +300,10 @@ func groupsInt(value any) (int64, error) {
 	}
 	n, err := pyint.Of(value)
 	if err != nil {
-		return 0, err
+		return 0, errchain.Reword(err, "%s is not a whole number", errchain.Show(value))
 	}
 	if !n.IsInt64() {
-		return 0, fmt.Errorf("Python int too large to convert to C long")
+		return 0, fmt.Errorf("the number %s is larger than a 64 bit integer holds", n.String())
 	}
 	return n.Int64(), nil
 }

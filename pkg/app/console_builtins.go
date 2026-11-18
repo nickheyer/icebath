@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -109,19 +108,6 @@ func consoleFormatSessions(sessions []*pyjson.Object) string {
 	return strings.Join(lines, "\n")
 }
 
-// One cron job line naming the action, the job, its id and its effective state
-func consoleFormatJob(job *cron.Job, action string) string {
-	jobID := job.ID
-	if jobID == "" {
-		jobID = "?"
-	}
-	name := job.Name
-	if name == "" {
-		name = "(unnamed)"
-	}
-	return fmt.Sprintf("%s job: %s (%s) [%s]", action, name, jobID, cron.EffectiveJobState(job))
-}
-
 // Opens the session store of the process home, read only unless a command mutates it
 func consoleSessionDB(ctx context.Context, readOnly bool) (*state.SessionDB, error) {
 	return state.NewSessionDB(ctx, state.ResolveDefaultDBPath(ctx), readOnly)
@@ -160,11 +146,6 @@ func consoleConfigShow(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return 0, config.ShowConfig(os.Stdout, src)
-}
-
-// Cron scheduler status
-func consoleCronStatus(ctx context.Context) (int, error) {
-	return 0, cron.CronStatus(ctx, home.Dir(ctx), os.Stdout)
 }
 
 // Text of an optional string argument, empty for None
@@ -512,85 +493,6 @@ func consoleProfileStatus(e *ConsoleEngine, args []string) (string, error) {
 	return e.dispatch("profile", nil, nil, false)
 }
 
-// Scheduled jobs, disabled ones too with --all
-func consoleCronList(e *ConsoleEngine, args []string) (string, error) {
-	ns, err := consoleParse("cron list", args, consoleFlag("--all"))
-	if err != nil {
-		return "", err
-	}
-	all, _ := ns["all"].(bool)
-	return consoleCaptureOutput(func() (int, error) { return 0, cron.CronList(e.ctx, home.Dir(e.ctx), os.Stdout, all) })
-}
-
-// Runs a single job cron action on its one reference, an ambiguous name becoming a console error
-func consoleCronJobAction(args []string, usage, action string, run func(ref string) (*cron.Job, error)) (string, error) {
-	if len(args) != 1 {
-		return "", &ConsoleCommandError{Msg: "Usage: " + usage}
-	}
-	job, err := run(args[0])
-	var ambiguous *cron.AmbiguousJobReferenceError
-	if errors.As(err, &ambiguous) {
-		return "", &ConsoleCommandError{Msg: err.Error()}
-	}
-	if err != nil {
-		return "", err
-	}
-	if job == nil {
-		return "", &ConsoleCommandError{Msg: "Job not found: " + args[0]}
-	}
-	return consoleFormatJob(job, action), nil
-}
-
-// Pauses a job with the console as the recorded reason
-func consoleCronPause(e *ConsoleEngine, args []string) (string, error) {
-	reason := "paused from icebath console"
-	return consoleCronJobAction(args, "cron pause <job>", "Paused", func(ref string) (*cron.Job, error) {
-		return cron.PauseJob(e.ctx, home.Dir(e.ctx), ref, &reason)
-	})
-}
-
-// Resumes a paused job or re-arms a one shot at --at or now
-func consoleCronResume(e *ConsoleEngine, args []string) (string, error) {
-	ns, err := consoleParse("cron resume", args, consolePositional("job", "", nil), consoleOption(nil, false, "--at"),
-		consoleFlag("--run-now"))
-	if err != nil {
-		return "", err
-	}
-	at, runNow := consoleText(ns, "at"), ns["run_now"] == true
-	if at != "" && runNow {
-		return "", &ConsoleCommandError{Msg: "Use exactly one of --at or --run-now."}
-	}
-	h, ref := home.Dir(e.ctx), consoleText(ns, "job")
-	var job *cron.Job
-	switch {
-	case runNow:
-		job, err = cron.RearmOneshot(e.ctx, h, ref, cron.NowISO(h))
-	case at != "":
-		job, err = cron.RearmOneshot(e.ctx, h, ref, at)
-	default:
-		job, err = cron.ResumeJob(e.ctx, h, ref)
-	}
-	var ambiguous *cron.AmbiguousJobReferenceError
-	var invalid *cron.ValueError
-	if errors.As(err, &ambiguous) || errors.As(err, &invalid) {
-		return "", &ConsoleCommandError{Msg: err.Error()}
-	}
-	if err != nil {
-		return "", err
-	}
-	if job == nil {
-		return "", &ConsoleCommandError{Msg: "Job not found: " + ref}
-	}
-	return consoleFormatJob(job, "Resumed"), nil
-}
-
-// Schedules a job for the next scheduler tick
-func consoleCronRun(e *ConsoleEngine, args []string) (string, error) {
-	return consoleCronJobAction(args, "cron run <job>", "Triggered", func(ref string) (*cron.Job, error) {
-		return cron.TriggerJob(e.ctx, home.Dir(e.ctx), ref)
-	})
-}
-
 // One built in console command row, a non empty confirmation marking it mutating
 type consoleBuiltin struct {
 	path           []string
@@ -599,9 +501,12 @@ type consoleBuiltin struct {
 	confirmation   string
 }
 
+// Rows of built in commands the extras tier adds, the cron rows, empty in a build without them
+var consoleTierBuiltins []consoleBuiltin
+
 // Built in commands with their usage, summary and confirmation prompt, the _BUILTIN_COMMANDS table
 func consoleBuiltinCommands() []consoleBuiltin {
-	return []consoleBuiltin{
+	return append([]consoleBuiltin{
 		{[]string{"status"}, "status", "Show Icebath component status.", consoleStatus, ""},
 		{[]string{"version"}, "version", "Show Icebath version information.", consoleSimpleCommand("version", consoleVersion), ""},
 		{[]string{"doctor"}, "doctor", "Run diagnostics without auto-fix.", consoleSimpleCommand("doctor", consoleDoctor), ""},
@@ -610,14 +515,9 @@ func consoleBuiltinCommands() []consoleBuiltin {
 		{[]string{"sessions", "stats"}, "sessions stats", "Show session store statistics.", consoleSessionsStats, ""},
 		{[]string{"config", "show"}, "config show", "Show current configuration.", consoleSimpleCommand("config show", consoleConfigShow), ""},
 		{[]string{"config", "path"}, "config path", "Print config.yaml path.", consoleConfigPath, ""},
-		{[]string{"cron", "list"}, "cron list [--all]", "List scheduled jobs.", consoleCronList, ""},
-		{[]string{"cron", "status"}, "cron status", "Show cron scheduler status.", consoleSimpleCommand("cron status", consoleCronStatus), ""},
 		{[]string{"profile"}, "profile", "Show active profile status.", consoleProfileStatus, ""},
 		{[]string{"config", "set"}, "config set <key> <value>", "Set a configuration value.", consoleConfigSet,
 			"Update Icebath configuration?"},
-		{[]string{"cron", "pause"}, "cron pause <job>", "Pause a scheduled job.", consoleCronPause, "Pause this cron job?"},
-		{[]string{"cron", "resume"}, "cron resume <job>", "Resume a paused cron job.", consoleCronResume, "Resume this cron job?"},
-		{[]string{"cron", "run"}, "cron run <job>", "Run a job on the next scheduler tick.", consoleCronRun, "Trigger this cron job?"},
 		{[]string{"config", "migrate"}, "config migrate", "Update config with new options.", consoleCaptured(consoleConfigMigrate),
 			"Update Icebath configuration with missing defaults?"},
 		{[]string{"sessions", "export"}, "sessions export <output> [--source SOURCE] [--session-id ID]", "Export sessions to JSONL.",
@@ -628,5 +528,5 @@ func consoleBuiltinCommands() []consoleBuiltin {
 			consoleCaptured(consoleSessionsOptimize), "Optimize the session database?"},
 		{[]string{"sessions", "repair"}, "sessions repair [--check-only] [--no-backup]", "Repair a malformed session database schema.",
 			consoleCaptured(consoleSessionsRepair), "Repair the session database?"},
-	}
+	}, consoleTierBuiltins...)
 }

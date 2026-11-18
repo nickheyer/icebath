@@ -725,7 +725,7 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 	for i := 0; i < len(scored) && i < 5; i++ {
 		similar = append(similar, scored[i].path)
 	}
-	return &ReadResult{Error: "File not found: " + path, NotFound: true, SimilarFiles: similar}
+	return &ReadResult{Error: fileNotFoundLead + path, NotFound: true, SimilarFiles: similar}
 }
 
 // Size of the intersection of the character sets of two strings
@@ -790,7 +790,7 @@ func (s *shellFileOps) readFileBytes(path string, maxBytes int) *ReadResult {
 	fileSize, status := s.probeRegularFile(path)
 	switch status {
 	case "missing":
-		return &ReadResult{Error: "File not found: " + path, NotFound: true}
+		return &ReadResult{Error: fileNotFoundLead + path, NotFound: true}
 	case "not_regular":
 		return notRegularError(path)
 	case "ok":

@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -380,7 +381,7 @@ func (a *app) interpolate(text string, destination submissionDestination, item *
 			case err != nil:
 				results[index] = "(error: " + describeShellExecError(err) + ")"
 			case r == nil:
-				results[index] = "(error: " + tr("session.common.invalidResponse", "shell.exec") + ")"
+				results[index] = "(error: " + misfitText(tr("session.common.invalidResponse", "shell.exec")) + ")"
 			default:
 				var parts []string
 				for _, k := range []string{"stdout", "stderr"} {
@@ -405,7 +406,7 @@ func (a *app) setDetails(mode string) tea.Cmd {
 	ui := &a.store.ui
 	ui.DetailsMode, ui.DetailsModeCommandOverride = mode, true
 	a.card.view.invalidate()
-	return tea.Batch(a.events.quietRequest("config.set", map[string]any{"key": "details_mode", "value": mode}), wm.Notify("details "+mode, wm.Info))
+	return tea.Batch(a.saveSetting("details_mode", mode), wm.Notify("details "+mode, wm.Info))
 }
 
 // Opens reasoning as it arrives or leaves it folded
@@ -422,7 +423,7 @@ func (a *app) toggleThinking() tea.Cmd {
 	sections["thinking"] = next
 	ui.Sections = sections
 	a.card.view.invalidate()
-	return tea.Batch(a.events.quietRequest("config.set", map[string]any{"key": "details_mode.thinking", "value": next}), wm.Notify("thinking "+next, wm.Info))
+	return tea.Batch(a.saveSetting("details_mode.thinking", next), wm.Notify("thinking "+next, wm.Info))
 }
 
 // Next way an input typed during a turn is admitted, queue, steer or interrupt
@@ -435,7 +436,16 @@ func (a *app) cycleBusyMode() tea.Cmd {
 		}
 	}
 	a.store.ui.BusyInputMode = next
-	return tea.Batch(a.events.quietRequest("config.set", map[string]any{"key": "busy", "value": next}), wm.Notify("busy input: "+next, wm.Info))
+	params := tuigateway.ConfigSetParams{Key: "busy", Value: tuigateway.TextValue(next)}
+	if a.gw.canonical() {
+		params.SessionID = a.store.ui.Sid
+	}
+	return tea.Batch(fire(a.gw, tuigateway.ConfigSet, params), wm.Notify("busy input: "+next, wm.Info))
+}
+
+// Saves one display setting word, its answer and failure unread
+func (a *app) saveSetting(key, word string) tea.Cmd {
+	return fire(a.gw, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: key, Value: tuigateway.TextValue(word)})
 }
 
 // Keys of the terminal UI context the session window does not answer itself
@@ -521,8 +531,8 @@ func (a *app) toggleVoiceRecording() tea.Cmd {
 	if a.voiceRecording {
 		action = "stop"
 	}
-	sid := a.store.ui.Sid
-	return gatewayCall(a.gw, "voice.record", map[string]any{"action": action, "session_id": sid}, func(v any, err error) tea.Cmd {
+	params := tuigateway.VoiceRecordParams{Action: tuigateway.VoiceRecordAction(action), SessionID: a.store.ui.Sid}
+	return call(a.gw, tuigateway.VoiceRecord, params, func(_ *tuigateway.VoiceRecordResult, err error) tea.Cmd {
 		if err != nil {
 			a.sys("error: " + rpcErrorMessage(err))
 			return nil

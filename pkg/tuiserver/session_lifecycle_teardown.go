@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -372,10 +373,10 @@ func pyIntOf(v any) (int, error) {
 	}
 	n, err := pyint.Of(v)
 	if err != nil {
-		return 0, err
+		return 0, errchain.Reword(err, "%s is not a whole number", errchain.Show(v))
 	}
 	if !n.IsInt64() {
-		return 0, fmt.Errorf("Python int too large to convert to C long")
+		return 0, fmt.Errorf("the number %s is larger than a 64 bit integer holds", n.String())
 	}
 	return int(n.Int64()), nil
 }

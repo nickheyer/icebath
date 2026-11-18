@@ -267,10 +267,10 @@ func TestNestedPathPythonSemantics(t *testing.T) {
 		t.Fatal("empty path resolves only a literal empty key")
 	}
 	cases := []struct{ path, kind, msg string }{
-		{"custom_providers.x", "ValueError", "invalid literal for int() with base 10: 'x'"},
-		{"custom_providers.5", "IndexError", "list assignment index out of range"},
+		{"custom_providers.x", "ValueError", "x is not a list index"},
+		{"custom_providers.5", "IndexError", "the list has no item 5"},
 		{"custom_providers.x.name", "TypeError", "Cannot navigate into list at key 'custom_providers.x.name': segment 'x' is not a numeric index"},
-		{"custom_providers.9.name", "IndexError", "list index out of range"},
+		{"custom_providers.9.name", "IndexError", "the list has no item 9"},
 		{"label.inner.deep", "", ""},
 	}
 	for _, tc := range cases {

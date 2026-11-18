@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -100,32 +101,6 @@ func mcpRevision(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	return hex.EncodeToString(sum[:])[:12], nil
 }
 
-// Presentation only projection of the user config, redacted, with the local display keys winning
-func clientConfig(cfg map[string]any) map[string]any {
-	picked := map[string]any{}
-	for _, key := range []string{"display", "approvals", "paste_collapse_threshold", "paste_collapse_char_threshold"} {
-		if value, ok := cfg[key]; ok {
-			picked[key] = value
-		}
-	}
-	result, _ := config.RedactConfigValue(picked).(map[string]any)
-	if result == nil {
-		result = map[string]any{}
-	}
-	if display, ok := result["display"]; ok {
-		result["display"] = config.LocalDisplayConfig(display)
-	}
-	voice, _ := cfg["voice"].(map[string]any)
-	projected := map[string]any{}
-	for _, key := range []string{"record_key", "submit_mode"} {
-		if value, ok := voice[key]; ok {
-			projected[key] = value
-		}
-	}
-	result["voice"] = projected
-	return result
-}
-
 // Owner bound settings read, the session controls for their keys and the profile config for the rest
 func configGet(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
 	if paramsOutside(params, "session_id", "profile", "key", "cwd") {
@@ -171,16 +146,9 @@ func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	if err != nil {
 		return nil, err
 	}
-	rawDisplay := cfg["display"]
-	if !pyrepr.Truthy(rawDisplay) {
-		rawDisplay = map[string]any{}
-	}
-	displayValue := func(name string, def any) (map[string]any, error) {
-		value, err := pyGet(rawDisplay, name, def)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"value": value}, nil
+	settings := tuihost.ClientConfig(cfg)
+	displayValue := func(word string) (map[string]any, error) {
+		return map[string]any{"value": word}, nil
 	}
 	configPath := filepath.Join(profileHome, "config.yaml")
 	switch key {
@@ -189,7 +157,8 @@ func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"config": clientConfig(user)}, nil
+		full := tuihost.ClientConfig(user)
+		return tuigateway.Plain(tuigateway.ConfigGetResult{Config: &full}), nil
 	case "mtime":
 		version, err := config.ConfigVersionOrNone(sctx, configPath)
 		if err != nil {
@@ -218,13 +187,18 @@ func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 		}
 		return map[string]any{"value": value == true}, nil
 	case "skin":
-		return displayValue("skin", "default")
+		display, _ := cfg["display"].(map[string]any)
+		skin, isText := display["skin"].(string)
+		if !isText {
+			skin = "default"
+		}
+		return displayValue(skin)
 	case "theme":
-		return displayValue("tui_theme", "auto")
+		return displayValue(string(settings.Display.Theme))
 	case "indicator":
-		return displayValue("tui_status_indicator", home.DefaultIndicatorStyle)
+		return displayValue(string(settings.Display.Indicator))
 	case "details_mode":
-		return displayValue("details_mode", "collapsed")
+		return displayValue(string(settings.Display.DetailsMode))
 	case "approvals.mode", "approval_mode":
 		return map[string]any{"value": tools.GetApprovalMode(tools.EnvForProfileHome(sctx, nil, profileHome))}, nil
 	case "project":

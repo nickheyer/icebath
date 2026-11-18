@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -223,51 +222,6 @@ func (c *CLI) handlePersonalityCommand(cmd string) {
 	c.systemPrompt = prompt
 	retireAgent(c)
 	printLines(c.commandsT("personality.set_to", map[string]any{"face": face, "name": resolved, "scope": scope}), `  "`+ellipsize(prompt, 60)+`"`)
-}
-
-// Handles /cron, the scheduled task lines of the shared cron handler
-func (c *CLI) handleCronCommand(cmd string) {
-	lines, err := cron.CronCommandLines(c.ctx, home.Dir(c.ctx), commandArg(cmd, false))
-	if err != nil {
-		panic(err)
-	}
-	printLines(lines...)
-}
-
-// Handles /blueprint, listing or filling a blueprint, a seed running as the next turn
-func (c *CLI) handleBlueprintCommand(cmd string) {
-	parts := shlexArgs(cmd)
-	quoted := make([]string, len(parts))
-	for i, p := range parts {
-		quoted[i] = pyShlexQuote(p)
-	}
-	result, err := cron.HandleBlueprintCommand(c.ctx, home.Dir(c.ctx), strings.Join(quoted, " "), nil, "cli")
-	if err != nil {
-		c.consolePrint(c.commandsT("blueprint.failed", map[string]any{"error": err.Error()}))
-		return
-	}
-	c.consolePrint(result.Text)
-	if result.AgentSeed != nil && *result.AgentSeed != "" {
-		c.pendingAgentSeed = *result.AgentSeed
-	}
-}
-
-// Shell quoting of one token as shlex.quote does
-func pyShlexQuote(s string) string {
-	if s == "" {
-		return "''"
-	}
-	safe := true
-	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("@%+=:,./-_", r)) {
-			safe = false
-			break
-		}
-	}
-	if safe {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
 
 // Handles /skills, the write approval review words first, then the skills hub

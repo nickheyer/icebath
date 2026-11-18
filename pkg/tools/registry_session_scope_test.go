@@ -140,7 +140,7 @@ func TestNormalizeHandlerResultMatchesTheRegistryContract(t *testing.T) {
 		if got := NormalizeHandlerResult(env, "t", tc.result); got != want {
 			t.Fatalf("%#v gave %q", tc.result, got)
 		}
-		if !slices.Contains(rec.messages(), "Tool t handler returned unsupported result type: "+tc.typ) {
+		if !slices.Contains(rec.messages(), "Tool t handler returned an unsupported result: "+tc.typ) {
 			t.Fatalf("no error log for %s in %v", tc.typ, rec.messages())
 		}
 	}

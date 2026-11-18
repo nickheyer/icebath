@@ -51,12 +51,21 @@ const (
 )
 
 // ExtractionError reports a supported looking document that cannot be rendered as text
-type ExtractionError struct{ Msg string }
+type ExtractionError struct {
+	Msg string
+	// Unsupported marks a file type no extractor reads
+	Unsupported bool
+}
 
 func (e *ExtractionError) Error() string { return e.Msg }
 
 func extractionErr(format string, args ...any) error {
 	return &ExtractionError{Msg: fmt.Sprintf(format, args...)}
+}
+
+// Refusal of a file type no extractor reads
+func unsupportedDocument(p string) error {
+	return &ExtractionError{Msg: "Unsupported document type: " + pyReprStr(p), Unsupported: true}
 }
 
 // Final path component suffix with pathlib rules, empty for dotfiles and trailing dots
@@ -126,7 +135,7 @@ func ExtractDocumentText(ctx context.Context, env *Env, p string) (string, error
 	if nativeDocumentExtensions[ext] {
 		return extractNativeDocument(ctx, env, p)
 	}
-	return "", extractionErr("Unsupported document type: %s", pyReprStr(p))
+	return "", unsupportedDocument(p)
 }
 
 // ExtractDocumentBytes renders a document already fetched across a file backend boundary
@@ -139,7 +148,7 @@ func ExtractDocumentBytes(ctx context.Context, env *Env, data []byte, p string) 
 		return extractNativeDocumentBytes(ctx, env, data, p)
 	}
 	if !extractableExtensions[ext] {
-		return "", extractionErr("Unsupported document type: %s", pyReprStr(p))
+		return "", unsupportedDocument(p)
 	}
 	tmp, cleanup, err := tempDocumentCopy(data, ext)
 	if err != nil {

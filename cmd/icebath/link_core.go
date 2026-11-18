@@ -25,6 +25,8 @@ var (
 	childEntriesAfterPruneExtras []func(ctx context.Context)
 	// Hidden child entries dispatched after the systemd stop mark entry
 	childEntriesAfterStopMark []func(ctx context.Context)
+	// Hidden child entries dispatched after the cgroup cleanup entry
+	childEntriesAfterCgroup []func(ctx context.Context)
 	// Hidden child entries dispatched after the Codex tools MCP server entry
 	childEntriesAfterCodex []func(ctx context.Context)
 	// Hidden child entries dispatched after every core entry

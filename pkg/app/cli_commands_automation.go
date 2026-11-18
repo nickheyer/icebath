@@ -187,7 +187,7 @@ func (c *CLI) handleRefineCommand(cmd string) {
 	}
 	spawner, ok := a.(backgroundReviewSpawner)
 	if !ok {
-		missing := fmt.Sprintf("'%s' object has no attribute '_spawn_background_review'", pyrepr.TypeName(a))
+		missing := "this agent cannot start a background review"
 		cp("  " + c.commandsT("refine.failed", map[string]any{"error": missing}))
 		return
 	}

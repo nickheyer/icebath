@@ -379,7 +379,7 @@ func browserVaultUnlock(ctx context.Context, env *tools.Env, backendName string)
 			"session first.")), nil
 	}
 	master := ""
-	if prompt := GetUnlockPromptCallback(ctx); prompt != nil {
+	if prompt := tools.GetUnlockPromptCallback(ctx); prompt != nil {
 		master = prompt(backend.Name(), backend.DisplayName())
 	}
 	if master == "" {
@@ -414,7 +414,7 @@ func browserVaultSaveLogin(ctx context.Context, env *tools.Env, label, taskID st
 	if origin == "" {
 		return vaultDumps(vaultFail("error", "Open the site's login page first; the login is saved for that page's origin.")), nil
 	}
-	prompt := GetSaveLoginPromptCallback(ctx)
+	prompt := tools.GetSaveLoginPromptCallback(ctx)
 	if prompt == nil || !vaultCanPromptHere(ctx, env) {
 		return vaultDumps(vaultFail("error_type", "prompt_unavailable", "error",
 			"This session cannot ask the user for a login (headless/cron/API). Tell them to run "+
@@ -658,7 +658,7 @@ func enterVaultCode(ctx context.Context, env *tools.Env, handle, taskID string) 
 			return *written, nil
 		}
 	}
-	prompt := GetCodePromptCallback(ctx)
+	prompt := tools.GetCodePromptCallback(ctx)
 	if prompt == nil || !vaultCanPromptHere(ctx, env) {
 		return vaultDumps(vaultFail("error_type", "prompt_unavailable", "error", site+
 			" asks for a one-time code and this session cannot ask the user (headless/cron/API). "+

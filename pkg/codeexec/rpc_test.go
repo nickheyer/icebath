@@ -183,10 +183,10 @@ func TestSocketServerLoopTokenDecodeAndDispatch(t *testing.T) {
 		}
 		return out
 	}
-	if got := exchange("not json"); got["error"] != "Invalid RPC request: Expecting value: line 1 column 1 (char 0)" {
+	if got := exchange("not json"); got["error"] != "Invalid RPC request: the request is not valid JSON text" {
 		t.Fatalf("decode error %v", got)
 	}
-	if got := exchange("\xff\xfe"); !strings.HasPrefix(got["error"].(string), "Invalid RPC request: 'utf-8' codec can't decode byte 0xff in position 0") {
+	if got := exchange("\xff\xfe"); got["error"] != "Invalid RPC request: the request is not valid JSON text" {
 		t.Fatalf("utf-8 error %v", got)
 	}
 	if got := exchange(`{"tool":"read_file","args":{},"token":"nope"}`); got["error"] != "Unauthorized RPC request" {
@@ -274,7 +274,7 @@ func TestPrivateDirsAndCheckedRemoteWrite(t *testing.T) {
 		t.Fatalf("payload %q mode %v", b, st.Mode())
 	}
 	_, err := remoteWrite(t.Context(), sh, filepath.Join(root, "missing", "x"), "data", false, 30, true)
-	if err == nil || !strings.HasPrefix(err.Error(), "remote file ship for '"+filepath.Join(root, "missing", "x")+"' failed: '") {
+	if err == nil || !strings.HasPrefix(err.Error(), "remote file ship for "+filepath.Join(root, "missing", "x")+" failed: ") {
 		t.Fatalf("checked failure %v", err)
 	}
 }

@@ -913,7 +913,7 @@ func TestOrchestratorCompleteAnyTaskAllowed(t *testing.T) {
 func TestRunIDPastTheSQLiteRangeReachesTheBoardCallAndFailsAtItsBind(t *testing.T) {
 	tid := toolWorkerEnv(t)
 	t.Setenv("ICEBATH_KANBAN_RUN_ID", "9223372036854775808")
-	const overflow = "Python int too large to convert to SQLite INTEGER"
+	const overflow = "the number is too large for a SQLite INTEGER"
 	if got := errText(runKanbanTool(t, "kanban_heartbeat", `{"note": "alive"}`)); got != "kanban_heartbeat: "+overflow {
 		t.Fatalf("heartbeat %q", got)
 	}

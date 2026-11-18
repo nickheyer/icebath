@@ -3,6 +3,7 @@ package pm
 import (
 	"archive/zip"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -13,10 +14,10 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
@@ -117,7 +118,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		}
 		object, ok := value.(*pyjson.Object)
 		if !ok {
-			return false, &PyError{Class: "AttributeError", Message: "'" + pyrepr.TypeName(value) + "' object has no attribute 'get'"}
+			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("direct_url.json must hold a mapping, got %s", errchain.Kind(value))}
 		}
 		var url any = ""
 		if got, ok := object.Get("url"); ok {
@@ -125,7 +126,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		}
 		text, ok := url.(string)
 		if !ok {
-			return false, &PyError{Class: "AttributeError", Message: "'" + pyrepr.TypeName(url) + "' object has no attribute 'startswith'"}
+			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the url in direct_url.json must be text, got %s", errchain.Kind(url))}
 		}
 		if !strings.HasPrefix(text, "file:") {
 			continue
@@ -136,6 +137,10 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		}
 		local, err := pyurl.URL2Pathname(parsed.Path, false, false)
 		if err != nil {
+			var remote *pyurl.URLError
+			if errors.As(err, &remote) {
+				return false, errchain.Reword(err, "cannot use %s as a local path: %s", text, remote.Reason)
+			}
 			return false, err
 		}
 		source, err := pypath.Resolve(local)

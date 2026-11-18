@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -211,7 +212,7 @@ func (c *kanbanCLI) cmdDispatch() (int, error) {
 		if defaultAssignee != nil {
 			who = *defaultAssignee
 		}
-		fmt.Fprintf(c.w, "Auto-assigned to kanban.default_assignee=%s: %s\n", pyrepr.Repr(who), strings.Join(res.AutoAssignedDefault, ", "))
+		fmt.Fprintf(c.w, "Auto-assigned to kanban.default_assignee=%s: %s\n", errchain.Show(who), strings.Join(res.AutoAssignedDefault, ", "))
 	}
 	if len(res.SkippedUnassigned) > 0 {
 		fmt.Fprintf(c.w, "Skipped (unassigned): %s\n", strings.Join(res.SkippedUnassigned, ", "))

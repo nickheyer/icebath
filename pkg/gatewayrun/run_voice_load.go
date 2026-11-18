@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -38,7 +38,7 @@ func (r *GatewayRunner) loadVoiceModes() (*pydict.Dict[string, string], error) {
 		v, _ := data.Get(k)
 		switch v.(type) {
 		case []any, *pyjson.Object:
-			return nil, &pyTypeError{msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
+			return nil, &pyTypeError{msg: fmt.Sprintf("voice mode of %s is %s where text was expected", k, errchain.Kind(v))}
 		}
 		m, isStr := v.(string)
 		if !isStr || !voiceModeValues[m] {
@@ -53,7 +53,7 @@ func (r *GatewayRunner) loadVoiceModes() (*pydict.Dict[string, string], error) {
 	for _, k := range keys {
 		if !strings.Contains(k, ":") {
 			pkgLog().Warn(fmt.Sprintf("Skipping legacy unprefixed voice mode key %s during migration. "+
-				"Re-enable voice mode on that chat to rebuild the prefixed key.", pyrepr.Repr(k)))
+				"Re-enable voice mode on that chat to rebuild the prefixed key.", errchain.Show(k)))
 			continue
 		}
 		out.Set(k, items[k])

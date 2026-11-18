@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
 )
@@ -75,15 +75,13 @@ func parseLogSince(since string) (time.Time, bool, error) {
 	unit := map[string]int64{"s": 1, "m": 60, "h": 3600, "d": 86400}[m[2]]
 	total := new(big.Int).Mul(n, big.NewInt(unit))
 	days := new(big.Int).Div(total, big.NewInt(86400))
-	if days.Cmp(big.NewInt(math.MaxInt32)) > 0 {
-		return time.Time{}, false, &pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C int"}
-	}
-	if days.Int64() > 999999999 {
-		return time.Time{}, false, &pyint.Error{Kind: "OverflowError", Msg: fmt.Sprintf("days=%d; must have magnitude <= 999999999", days.Int64())}
+	tooFar := &pyint.Error{Kind: "OverflowError", Msg: "the --since window " + since + " reaches back before the year 1"}
+	if days.Cmp(big.NewInt(math.MaxInt32)) > 0 || days.Int64() > 999999999 {
+		return time.Time{}, false, tooFar
 	}
 	now := naiveLocalNow()
 	if total.Int64() > now.Unix()-time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix() {
-		return time.Time{}, false, &pyint.Error{Kind: "OverflowError", Msg: "date value out of range"}
+		return time.Time{}, false, tooFar
 	}
 	return time.Unix(now.Unix()-total.Int64(), int64(now.Nanosecond())).UTC(), true, nil
 }
@@ -350,7 +348,7 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 			names = append(names, k)
 		}
 		sort.Strings(names)
-		fmt.Fprintf(w, "Unknown log: %s. Available: %s\n", pyrepr.Repr(o.Name), strings.Join(names, ", "))
+		fmt.Fprintf(w, "Unknown log: %s. Available: %s\n", errchain.Show(o.Name), strings.Join(names, ", "))
 		return 1, nil
 	}
 	logPath, _ := logFilePath(ctx, o.Name)
@@ -366,7 +364,7 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 			return 1, err
 		}
 		if !ok {
-			fmt.Fprintf(w, "Invalid --since value: %s. Use format like '1h', '30m', '2d'.\n", pyrepr.Repr(o.Since))
+			fmt.Fprintf(w, "Invalid --since value: %s. Use format like '1h', '30m', '2d'.\n", errchain.Show(o.Since))
 			return 1, nil
 		}
 		f.since = &cutoff
@@ -375,7 +373,7 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 	if o.Level != "" {
 		minLevel = pystr.Upper(o.Level)
 		if _, ok := logLevelOrder[minLevel]; !ok {
-			fmt.Fprintf(w, "Invalid --level: %s. Use DEBUG, INFO, WARNING, ERROR, or CRITICAL.\n", pyrepr.Repr(o.Level))
+			fmt.Fprintf(w, "Invalid --level: %s. Use DEBUG, INFO, WARNING, ERROR, or CRITICAL.\n", errchain.Show(o.Level))
 			return 1, nil
 		}
 		f.minLevel = &minLevel
@@ -388,7 +386,7 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 				names = append(names, k)
 			}
 			sort.Strings(names)
-			fmt.Fprintf(w, "Unknown component: %s. Available: %s\n", pyrepr.Repr(o.Component), strings.Join(names, ", "))
+			fmt.Fprintf(w, "Unknown component: %s. Available: %s\n", errchain.Show(o.Component), strings.Join(names, ", "))
 			return 1, nil
 		}
 		f.componentPrefixes, f.hasComponent = prefixes, true

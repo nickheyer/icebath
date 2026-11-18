@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -115,7 +116,7 @@ func strippedArg(args map[string]any, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("%s must be text, got %s", key, errchain.Kind(v))
 	}
 	return pystr.Strip(s), nil
 }
@@ -536,7 +537,7 @@ func recordPlatformState(record *pyjson.Object, platformName string) (any, error
 	}
 	pobj, ok := platforms.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(platforms))
+		return nil, fmt.Errorf("platforms in the runtime record must be a mapping, got %s", errchain.Kind(platforms))
 	}
 	entry, has := pobj.Get(platformName)
 	if !has {
@@ -544,7 +545,7 @@ func recordPlatformState(record *pyjson.Object, platformName string) (any, error
 	}
 	eobj, ok := entry.(*pyjson.Object)
 	if !ok || eobj == nil {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(entry))
+		return nil, fmt.Errorf("the %s entry of the runtime record must be a mapping, got %s", platformName, errchain.Kind(entry))
 	}
 	st, _ := eobj.Get("state")
 	return st, nil
@@ -718,7 +719,7 @@ func EmitSendResult(stdout, stderr io.Writer, resultJSON string, jsonMode, quiet
 		fmt.Fprintln(stdout, text)
 	}
 	if !ok || obj == nil {
-		return 1, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(payload))
+		return 1, fmt.Errorf("the send result must be a JSON object, got %s", errchain.Kind(payload))
 	}
 	get := func(k string) any { v, _ := obj.Get(k); return v }
 	if !jsonMode && !quiet {

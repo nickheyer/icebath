@@ -124,7 +124,7 @@ func TestPauseMarkStopConsumedCheckpointsOnlyTheMatchingRequest(t *testing.T) {
 	if other, _ := ReadPauseRecord(claim); other["token"].(map[string]any)["stop_sent"] != nil {
 		t.Fatal("another install's claim was checkpointed")
 	}
-	if err := MarkStopConsumed(markerPath, pyjson.NewObject(), same); err == nil || err.Error() != "'target_pid'" {
+	if err := MarkStopConsumed(markerPath, pyjson.NewObject(), same); err == nil || err.Error() != "missing target_pid" {
 		t.Fatalf("missing target pid: %v", err)
 	}
 }

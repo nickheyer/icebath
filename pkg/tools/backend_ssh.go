@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -541,3 +543,6 @@ func (sshBackend) CreateEnvironment(ctx context.Context, env *Env, opts CreateOp
 	return NewSSHEnvironment(ctx, env, SSHOptions{Host: host, User: user, Cwd: opts.Cwd, KeyPath: key, Port: port, Timeout: opts.Timeout,
 		ProbeOnly: opts.ProbeOnly, SyncFiles: !opts.ProbeOnly, Persistent: persistent})
 }
+
+// File sync manager of the environment
+func (b *sshEnv) fileSyncManager() *FileSyncManager { return b.syncManager }

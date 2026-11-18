@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -241,7 +240,7 @@ func readCompletionAttempts(record string) (*big.Int, string, bool, error) {
 	if len(words) > 0 {
 		n, ok := pyint.Parse(words[0])
 		if !ok {
-			return nil, "", false, &pm.PyError{Class: "ValueError", Message: "invalid literal for int() with base 10: " + pyrepr.StrRepr(words[0])}
+			return nil, "", false, &pm.PyError{Class: "ValueError", Message: "completion attempt count " + words[0] + " is not a whole number"}
 		}
 		attempts = n
 	}

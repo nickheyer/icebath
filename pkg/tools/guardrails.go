@@ -524,7 +524,7 @@ func ClassifyToolFailure(toolName string, result *string) (bool, string) {
 		success, isBool := data["success"].(bool)
 		failed := isBool && !success
 		if toolName == "memory" && failed {
-			if e, ok := data["error"].(string); ok && strings.Contains(e, "exceed the limit") {
+			if e, ok := data["error"].(string); ok && strings.Contains(e, MemoryOverLimitPhrase) {
 				return true, " [full]"
 			}
 		}
@@ -1971,6 +1971,8 @@ type ToolValidationVerdict struct {
 type TurnValidationHost interface {
 	ValidToolNames() map[string]bool
 	RepairToolName(name string) string
+	// Tool result for a call whose name stays unresolved, known when it names a registered tool the request did not offer
+	InvalidToolContent(name string) (content string, known bool)
 	Messages() []*state.Message
 	AppendAssistantMessage()
 	AppendToolErrorResults(contentFor func(tc state.ToolCall) string)
@@ -2010,6 +2012,14 @@ func InvalidToolNameErrorContent(name string, validToolNames map[string]bool) st
 	}
 	sort.Strings(names)
 	return fmt.Sprintf("Tool '%s' does not exist. Available tools: %s", name, strings.Join(names, ", "))
+}
+
+// Status word for an unresolved tool name, unavailable when a registered tool has it
+func invalidToolLabel(host TurnValidationHost, name string) string {
+	if _, known := host.InvalidToolContent(name); known {
+		return "Unavailable tool"
+	}
+	return "Unknown tool"
 }
 
 // ValidateToolCalls repairs names, normalizes args, and applies the strike rules for one assistant turn
@@ -2060,11 +2070,11 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 				nValid++
 			}
 		}
-		host.BufferPrint(fmt.Sprintf("⚠️  Unknown tool '%s' in batch — erroring that call, executing %d valid call(s)", previewToolName(invalid[0]), nValid))
+		host.BufferPrint(fmt.Sprintf("⚠️  %s '%s' in batch — erroring that call, executing %d valid call(s)", invalidToolLabel(host, invalid[0]), previewToolName(invalid[0]), nValid))
 	} else if len(invalid) > 0 {
 		retries.InvalidTool++
 		preview := previewToolName(invalid[0])
-		host.BufferPrint(fmt.Sprintf("⚠️  Unknown tool '%s' — sending error to model for agent-correction (%d/3)", preview, retries.InvalidTool))
+		host.BufferPrint(fmt.Sprintf("⚠️  %s '%s' — sending error to model for agent-correction (%d/3)", invalidToolLabel(host, invalid[0]), preview, retries.InvalidTool))
 		if retries.InvalidTool >= 3 {
 			host.FlushStatusBuffer()
 			host.Print(host.LogPrefix()+"❌ Max retries (3) for invalid tool calls exceeded. Stopping as partial.", true)
@@ -2074,7 +2084,8 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 		host.AppendAssistantMessage()
 		host.AppendToolErrorResults(func(tc state.ToolCall) string {
 			if !validNames[tc.Function.Name] {
-				return InvalidToolNameErrorContent(tc.Function.Name, validNames)
+				content, _ := host.InvalidToolContent(tc.Function.Name)
+				return content
 			}
 			return "Skipped: another tool call in this turn used an invalid name. Please retry this tool call."
 		})

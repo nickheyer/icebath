@@ -573,7 +573,7 @@ func TestRetainDBToolDispatch(t *testing.T) {
 	if got := call("retaindb_search", map[string]any{"query": "q", "top_k": "x"}); got["error"] != "x is not a whole number" {
 		t.Fatalf("bad top_k %v", got)
 	}
-	if got := call("retaindb_forget", map[string]any{"memory_id": 7}); got["error"] != "quote() doesn't support 'int' objects" {
+	if got := call("retaindb_forget", map[string]any{"memory_id": 7}); got["error"] != "path segment is a number where text was expected" {
 		t.Fatalf("bad memory id %v", got)
 	}
 	binary := call("retaindb_read_file", map[string]any{"file_id": "f1"})

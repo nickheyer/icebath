@@ -117,3 +117,17 @@ func primaryAdapterBusyOriginUsesRoutedPrivacy(t *testing.T, mode string, second
 		t.Fatalf("pending slot holds %s", key)
 	}
 }
+
+// Profile routes parsed from route mappings
+func routesOf(t *testing.T, routes ...map[string]any) []*gateway.ProfileRoute {
+	t.Helper()
+	raw := make([]any, len(routes))
+	for i, r := range routes {
+		raw[i] = r
+	}
+	parsed, err := gateway.ParseProfileRoutes(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
+}

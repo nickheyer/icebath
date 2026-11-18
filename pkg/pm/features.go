@@ -3,17 +3,16 @@
 package pm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -72,7 +71,7 @@ func readFeatures(ctx context.Context) ([]string, error) {
 	}
 	record, ok := doc.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(doc))}
+		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("%s must hold a mapping, got %s", path, errchain.Kind(doc))}
 	}
 	list, ok := record["extras"].([]any)
 	if !ok {
@@ -120,7 +119,7 @@ func tomlStrings(items []any) ([]string, error) {
 	for i, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("'<' not supported between instances of '%s' and 'str'", tomlTypeName(item))}
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected names as text, got %s", tomlKind(item))}
 		}
 		out[i] = s
 	}
@@ -182,7 +181,7 @@ func optInExtras(repoDir string) ([]string, error) {
 		}
 	}
 	if len(unknown) > 0 {
-		return nil, &PyError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + pyrepr.Repr(unknown)}
+		return nil, &PyError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + errchain.Show(unknown)}
 	}
 	return sortedSet(names), nil
 }
@@ -219,11 +218,8 @@ func featureProbeDetail(result uvResult, err error) string {
 		if len(timeout.Stderr) == 0 {
 			return pystr.Strip(pyExceptionText(err))
 		}
-		if runtime.GOOS == "windows" {
-			text, _ := decodeUTF8Replace(timeout.Stderr, true)
-			return pystr.Strip(universalNewlines(text))
-		}
-		return pyrepr.BytesRepr(bytes.Trim(timeout.Stderr, " \t\n\r\x0b\x0c"))
+		text, _ := decodeUTF8Replace(timeout.Stderr, true)
+		return pystr.Strip(universalNewlines(text))
 	}
 	if result.Stderr != "" {
 		return pystr.Strip(result.Stderr)
@@ -251,7 +247,7 @@ func InstalledExtras(ctx context.Context, repoDir, venvDir, python string) ([]st
 	argv := []string{python, "-B", "-I", "-S", "-c", featureProbeSource, resolvePath(venvDir), string(asciiEscape(pySeparators(encoded)))}
 	result, err := runFeatureProbe(ctx, argv, repoDir)
 	if err == nil && result.Code != 0 {
-		err = fmt.Errorf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(argv), result.Code)
+		err = fmt.Errorf("the feature probe of %s exited with status %d", python, result.Code)
 	}
 	if err != nil {
 		return nil, &FeatureProbeError{Message: fmt.Sprintf("feature inventory failed on %s: %s", python, featureProbeDetail(result, err))}

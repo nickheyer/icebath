@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -335,7 +336,7 @@ func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename s
 	}
 	result, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("the upload info response must be a JSON object, got %s", errchain.Kind(decoded))
 	}
 	if code, present := result.Get("code"); present && code != nil && !pyjson.Equal(code, int64(0)) {
 		msg, ok := result.Get("msg")
@@ -350,7 +351,7 @@ func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename s
 	}
 	data, ok := dataValue.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(dataValue))
+		return nil, fmt.Errorf("the upload info data must be a mapping, got %s", errchain.Kind(dataValue))
 	}
 	var missing []any
 	for _, f := range []string{"bucketName", "location"} {
@@ -359,7 +360,7 @@ func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename s
 		}
 	}
 	if len(missing) > 0 {
-		return nil, &RuntimeError{fmt.Sprintf("genUploadInfo 返回字段不完整: 缺少字段 %s", pyrepr.Repr(missing))}
+		return nil, &RuntimeError{fmt.Sprintf("genUploadInfo 返回字段不完整: 缺少字段 %s", errchain.Show(missing))}
 	}
 	return data, nil
 }
@@ -413,7 +414,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 	if pyrepr.Truthy(startTime) {
 		n, ok := pyint.Instance(startTime)
 		if !ok {
-			return nil, fmt.Errorf("unsupported operand type(s) for +: '%s' and 'int'", pyrepr.TypeName(startTime))
+			return nil, fmt.Errorf("the upload start_time must be a whole number, got %s", errchain.Kind(startTime))
 		}
 		start = n
 	}
@@ -421,7 +422,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 	if pyrepr.Truthy(expiredTime) {
 		n, ok := pyint.Instance(expiredTime)
 		if !ok {
-			return nil, fmt.Errorf("'>' not supported between instances of '%s' and 'int'", pyrepr.TypeName(expiredTime))
+			return nil, fmt.Errorf("the upload expired_time must be a whole number, got %s", errchain.Kind(expiredTime))
 		}
 		if n.Cmp(now) > 0 {
 			expire = new(big.Int).Sub(n, now)

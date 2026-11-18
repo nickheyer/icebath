@@ -166,7 +166,7 @@ func (p *InboundPipeline) Execute(ctx context.Context, ic *InboundContext) error
 			}
 			var err error
 			if entry.handler == nil {
-				err = &pyErr{"TypeError", "'NoneType' object is not callable"}
+				err = &pyErr{"TypeError", "the pipeline step has no handler"}
 			} else {
 				err = entry.handler(ctx, ic, next)
 			}

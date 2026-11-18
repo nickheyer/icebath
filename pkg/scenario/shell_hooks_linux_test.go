@@ -35,7 +35,7 @@ func TestScenarioShellHooksListAndTest(t *testing.T) {
 	broken.Has("Firing 1 hook(s) for event 'post_tool_call':", "✗ error: command ", "cannot be parsed: its quotes or escapes are unbalanced",
 		"parsed: <none — hook contributed nothing to the dispatcher>")
 	unknown := s.Run("hooks", "test", "no_such_event").Exit(0)
-	unknown.Has("Unknown event: 'no_such_event'", "Valid events: ")
+	unknown.Has("Unknown event: no_such_event", "Valid events: ")
 	if !strings.Contains(unknown.Text(), "pre_tool_call") {
 		s.Failf("the valid events do not name pre_tool_call: %s", unknown.Text())
 	}

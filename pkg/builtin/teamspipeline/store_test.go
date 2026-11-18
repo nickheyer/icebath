@@ -301,7 +301,7 @@ func TestStoreUpsertRejectsNonePayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "'NoneType' object is not a mapping" {
+	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "the sink_records record to store is empty" {
 		t.Fatalf("err %v", err)
 	}
 	if s.GetSinkRecord("notion:m") != nil {

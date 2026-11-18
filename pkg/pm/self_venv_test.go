@@ -620,7 +620,7 @@ func TestSVFeaturesFileAndDeclarations(t *testing.T) {
 		t.Fatalf("droppable %v", got)
 	}
 	writeFile(t, filepath.Join(repo, "pyproject.toml"), []byte("[project.optional-dependencies]\nweb = []\n[tool.icebath]\nopt-in-extras = [\"ghost\"]\n"), 0o666)
-	if _, err := optInExtras(repo); errorClass(err) != "ValueError" || !strings.Contains(err.Error(), "['ghost']") {
+	if _, err := optInExtras(repo); errorClass(err) != "ValueError" || !strings.Contains(err.Error(), "undeclared extras: ghost") {
 		t.Fatalf("undeclared opt in gave %v", err)
 	}
 }
@@ -650,7 +650,7 @@ func TestSVCarriedTransientRefusalAndLeftOutRecord(t *testing.T) {
 	repo := svRepo(t)
 	failing := map[string]CarriedFailure{"fal": {Reason: "download reset", Verdict: false}, "web": {Reason: "no wheel", Verdict: true}}
 	err := refuseTransient(failing, errors.New("cause"))
-	svWantError(t, err, "the extras ['fal'] icebath carried over from the old venv could not be prepared: download reset")
+	svWantError(t, err, "the extras fal icebath carried over from the old venv could not be prepared: download reset")
 	svWantError(t, err, "`icebath pm install --without fal`")
 	if refuseTransient(map[string]CarriedFailure{"web": failing["web"]}, nil) != nil {
 		t.Fatal("verdicts alone are not transient")

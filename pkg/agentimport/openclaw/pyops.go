@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -86,7 +87,7 @@ func dget(v any, key string, def any) any {
 		}
 		return def
 	}
-	raisef("AttributeError", "'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	raisef("AttributeError", "expected a mapping holding %s, got %s", key, errchain.Kind(v))
 	return nil
 }
 
@@ -101,14 +102,10 @@ func dindex(v any, key string) any {
 		if x, ok := d[key]; ok {
 			return x
 		}
-	case string:
-		raisef("TypeError", "string indices must be integers, not 'str'")
-	case []any:
-		raisef("TypeError", "list indices must be integers or slices, not str")
 	default:
-		raisef("TypeError", "'%s' object is not subscriptable", pyrepr.TypeName(v))
+		raisef("TypeError", "expected a mapping holding %s, got %s", key, errchain.Kind(v))
 	}
-	raise(&PyError{Type: "KeyError", Msg: pyrepr.Repr(key)})
+	raise(&PyError{Type: "KeyError", Msg: "missing " + key})
 	return nil
 }
 
@@ -131,7 +128,7 @@ func pyIter(v any) []any {
 		}
 		return out
 	}
-	raisef("TypeError", "'%s' object is not iterable", pyrepr.TypeName(v))
+	raisef("TypeError", "expected a list, got %s", errchain.Kind(v))
 	return nil
 }
 
@@ -139,7 +136,7 @@ func pyIter(v any) []any {
 func lowerAttr(v any) string {
 	s, ok := v.(string)
 	if !ok {
-		raisef("AttributeError", "'%s' object has no attribute 'lower'", pyrepr.TypeName(v))
+		raisef("AttributeError", "expected text, got %s", errchain.Kind(v))
 	}
 	return lower(s)
 }
@@ -148,7 +145,7 @@ func lowerAttr(v any) string {
 func requireHashable(v any) {
 	switch v.(type) {
 	case []any, *pyjson.Object, map[string]any:
-		raisef("TypeError", "unhashable type: '%s'", pyrepr.TypeName(v))
+		raisef("TypeError", "expected a single value, got %s", errchain.Kind(v))
 	}
 }
 
@@ -165,18 +162,14 @@ func dset(v any, key string, value any) {
 			config.AppendMappingKey(d, key)
 		}
 		return
-	case []any:
-		raisef("TypeError", "list indices must be integers or slices, not str")
-	case string:
-		raisef("TypeError", "'str' object does not support item assignment")
 	}
-	raisef("TypeError", "'%s' object does not support item assignment", pyrepr.TypeName(v))
+	raisef("TypeError", "expected a mapping to hold %s, got %s", key, errchain.Kind(v))
 }
 
 // Python d.setdefault(key, {}) returning the stored value
 func dsetdefaultDict(v any, key string) any {
 	if !isDict(v) {
-		raisef("AttributeError", "'%s' object has no attribute 'setdefault'", pyrepr.TypeName(v))
+		raisef("AttributeError", "expected a mapping to hold %s, got %s", key, errchain.Kind(v))
 	}
 	if x, ok := dlookup(v, key); ok {
 		return x
@@ -220,11 +213,11 @@ func contains(container any, key any) bool {
 	case string:
 		k, ok := key.(string)
 		if !ok {
-			raisef("TypeError", "'in <string>' requires string as left operand, not %s", pyrepr.TypeName(key))
+			raisef("TypeError", "expected text to look for, got %s", errchain.Kind(key))
 		}
 		return strings.Contains(c, k)
 	}
-	raisef("TypeError", "argument of type '%s' is not iterable", pyrepr.TypeName(container))
+	raisef("TypeError", "expected a list, mapping or text to look in, got %s", errchain.Kind(container))
 	return false
 }
 
@@ -253,7 +246,7 @@ func ditems(v any) []kv {
 		}
 		return out
 	}
-	raisef("AttributeError", "'%s' object has no attribute 'items'", pyrepr.TypeName(v))
+	raisef("AttributeError", "expected a mapping, got %s", errchain.Kind(v))
 	return nil
 }
 
@@ -269,7 +262,7 @@ func pyLen(v any) int {
 	case string:
 		return pystr.Len(x)
 	}
-	raisef("TypeError", "object of type '%s' has no len()", pyrepr.TypeName(v))
+	raisef("TypeError", "expected a list, mapping or text, got %s", errchain.Kind(v))
 	return 0
 }
 
@@ -364,28 +357,28 @@ func pyInt(v any) (int, error) {
 	case string:
 		n, ok := pystr.IntText(x)
 		if !ok {
-			return 0, &PyError{Type: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(x)}
+			return 0, &PyError{Type: "ValueError", Msg: x + " is not a whole number"}
 		}
 		if !n.IsInt64() {
-			return 0, &PyError{Type: "OverflowError", Msg: "Python int too large to convert to C ssize_t"}
+			return 0, &PyError{Type: "OverflowError", Msg: "the number " + n.String() + " is larger than a 64 bit integer holds"}
 		}
 		return int(n.Int64()), nil
 	case float64:
 		if math.IsNaN(x) {
-			return 0, &PyError{Type: "ValueError", Msg: "cannot convert float NaN to integer"}
+			return 0, &PyError{Type: "ValueError", Msg: "NaN is not a whole number"}
 		}
 		if math.IsInf(x, 0) {
-			return 0, &PyError{Type: "OverflowError", Msg: "cannot convert float infinity to integer"}
+			return 0, &PyError{Type: "OverflowError", Msg: "infinity is not a whole number"}
 		}
 		return int(math.Trunc(x)), nil
 	}
 	if n, ok := pyrepr.Int(v); ok {
 		if !n.IsInt64() {
-			return 0, &PyError{Type: "OverflowError", Msg: "Python int too large to convert to C ssize_t"}
+			return 0, &PyError{Type: "OverflowError", Msg: "the number " + n.String() + " is larger than a 64 bit integer holds"}
 		}
 		return int(n.Int64()), nil
 	}
-	return 0, &PyError{Type: "TypeError", Msg: fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))}
+	return 0, &PyError{Type: "TypeError", Msg: "expected a whole number, got " + errchain.Kind(v)}
 }
 
 // Numeric value of an int, bool or float for arithmetic, false for any other type
@@ -409,7 +402,7 @@ func pyNumber(v any) (*big.Int, float64, bool, bool) {
 func floorDiv10Min200(v any) any {
 	n, f, isFloat, ok := pyNumber(v)
 	if !ok {
-		raisef("TypeError", "unsupported operand type(s) for //: '%s' and 'int'", pyrepr.TypeName(v))
+		raisef("TypeError", "expected a number, got %s", errchain.Kind(v))
 	}
 	if isFloat {
 		q := math.Floor(f / 10)
@@ -438,7 +431,7 @@ func uniqueInOrder(values []any) []any {
 	for _, v := range values {
 		switch v.(type) {
 		case []any, *pyjson.Object, map[string]any:
-			raisef("TypeError", "unhashable type: '%s'", pyrepr.TypeName(v))
+			raisef("TypeError", "expected a single value, got %s", errchain.Kind(v))
 		}
 		dup := false
 		for _, seen := range out {
@@ -471,10 +464,10 @@ func pySorted(values []any) []any {
 		if _, _, _, ok := pyNumber(out[i]); !ok {
 			for j := range out {
 				if pyrepr.TypeName(out[j]) != pyrepr.TypeName(out[i]) {
-					raisef("TypeError", "'<' not supported between instances of '%s' and '%s'", pyrepr.TypeName(out[j]), pyrepr.TypeName(out[i]))
+					raisef("TypeError", "cannot sort %s together with %s", errchain.Kind(out[j]), errchain.Kind(out[i]))
 				}
 			}
-			raisef("TypeError", "'<' not supported between instances of '%s' and '%s'", pyrepr.TypeName(out[i]), pyrepr.TypeName(out[i]))
+			raisef("TypeError", "%s cannot be sorted", errchain.Kind(out[i]))
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return numLess(out[i], out[j]) })

@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -256,11 +257,11 @@ func intArg(ns map[string]any, name string, def int) (int, error) {
 	case string:
 		i, err := strconv.Atoi(strings.ReplaceAll(pystr.Strip(n), "_", ""))
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(n))
+			return 0, fmt.Errorf("%s must be a whole number, got %s", name, n)
 		}
 		return i, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("%s must be a whole number, got %s", name, errchain.Kind(v))
 }
 
 // Store at the store_path argument or the resolved default path
@@ -380,14 +381,14 @@ func mapping(v any) (*pyjson.Object, error) {
 		}
 		return o, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not a mapping", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 }
 
 // Value under key of a mapping, the AttributeError of get on anything else
 func attrGet(v any, key string) (any, error) {
 	m, err := mapping(v)
 	if err != nil {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
 	return get(m, key), nil
 }
@@ -514,7 +515,7 @@ func cmdList(ctx context.Context, ns map[string]any) error {
 		}
 		job, err := mapping(jobs[i])
 		if err != nil {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(jobs[i]))
+			return fmt.Errorf("pipeline job is %s where a mapping was expected", errchain.Kind(jobs[i]))
 		}
 		ref, err := attrGet(orValue(get(job, "meeting_ref"), pyjson.NewObject()), "meeting_id")
 		if err != nil {
@@ -727,7 +728,7 @@ func cmdRenewSubscription(ctx context.Context, ns map[string]any) error {
 	if pyrepr.Truthy(result) {
 		m, err := mapping(result)
 		if err != nil {
-			return fmt.Errorf("'%s' object is not a mapping", pyrepr.TypeName(result))
+			return fmt.Errorf("subscription result is %s where a mapping was expected", errchain.Kind(result))
 		}
 		for _, k := range m.Keys {
 			merged.Set(k, m.Vals[k])

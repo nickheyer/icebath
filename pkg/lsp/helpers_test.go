@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/workspaces"
 	"log/slog"
 	"maps"
 	"os"
@@ -207,10 +208,10 @@ func writeFile(t *testing.T, path, text string) string {
 
 // Clears process caches between tests
 func resetCaches(t *testing.T) {
-	ClearWorkspaceCache()
+	workspaces.ClearWorkspaceCache()
 	resetAnnounceCaches()
 	t.Cleanup(func() {
-		ClearWorkspaceCache()
+		workspaces.ClearWorkspaceCache()
 		resetAnnounceCaches()
 	})
 }

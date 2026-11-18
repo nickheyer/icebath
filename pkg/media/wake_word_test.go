@@ -265,7 +265,7 @@ func TestBuildEngineDispatch(t *testing.T) {
 	}
 	_, err := wakeBuildEngine(ctx, map[string]any{"provider": "bogus"})
 	var we *WakeWordError
-	if !asError(err, &we) || we.Class != "ValueError" || we.Msg != "Unknown wake_word provider: 'bogus'" {
+	if !asError(err, &we) || we.Class != "ValueError" || we.Msg != "Unknown wake_word provider: bogus" {
 		t.Fatalf("bogus provider error = %v", err)
 	}
 }

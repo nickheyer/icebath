@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -94,7 +95,7 @@ func skillsAsAny(table skills.SkillCommands) map[string]any {
 func (c *CLI) runQuickCommand(baseCmd string, raw any, userArgs string) bool {
 	qcmd := config.AsMap(raw)
 	if qcmd == nil {
-		panic(&commands.RaisedError{Msg: fmt.Sprintf("'%s' object has no attribute 'get'", config.PyTypeName(raw))})
+		panic(&commands.RaisedError{Msg: fmt.Sprintf("quick command %s is %s where a mapping was expected", baseCmd, errchain.Kind(raw))})
 	}
 	qtype := qcmd["type"]
 	if qtype == "alias" {
@@ -102,7 +103,7 @@ func (c *CLI) runQuickCommand(baseCmd string, raw any, userArgs string) bool {
 		if value, has := qcmd["target"]; has {
 			text, isText := value.(string)
 			if !isText {
-				panic(&commands.RaisedError{Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", config.PyTypeName(value))})
+				panic(&commands.RaisedError{Msg: fmt.Sprintf("quick command %s field is %s where text was expected", baseCmd, errchain.Kind(value))})
 			}
 			target = pystr.Strip(text)
 		}

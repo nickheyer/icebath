@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -166,9 +167,11 @@ func sessionList(ctx context.Context, rid any, params map[string]any, db *state.
 		raw = 200
 	}
 	parsed, err := pyint.Of(raw)
-	panicIf(err)
+	if err != nil {
+		panic(errchain.Reword(err, "the limit must be a whole number, got %s", errchain.Show(raw)))
+	}
 	if !parsed.IsInt64() {
-		panic(&pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C ssize_t"})
+		panic(&pyint.Error{Kind: "OverflowError", Msg: fmt.Sprintf("the limit %s is larger than a 64 bit integer holds", parsed.String())})
 	}
 	limit := int(parsed.Int64())
 	includeSubagents := db.Path() != "" && state.ShowSubagentSessions(ctx, filepath.Dir(db.Path()))

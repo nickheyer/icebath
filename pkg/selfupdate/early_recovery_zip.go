@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -42,14 +42,14 @@ func zipSwapOwnerLock(root string, wait time.Duration) (ZipSwapLock, func()) {
 	lockPath := filepath.Join(root, ZipSwapJournal+".lock")
 	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
-		return ZipSwapLock{Reason: fmt.Sprintf("cannot open the ZIP swap lock %s: %s", lockPath, pypath.OSErrorText(err))}, nil
+		return ZipSwapLock{Reason: fmt.Sprintf("cannot open the ZIP swap lock %s: %s", lockPath, errchain.OSText(err))}, nil
 	}
 	deadline := time.Now().Add(wait)
 	for {
 		held, lockErr := tryZipSwapLock(f)
 		if lockErr != nil {
 			f.Close()
-			return ZipSwapLock{Reason: fmt.Sprintf("cannot lock the ZIP swap lock %s: %s", lockPath, pypath.OSErrorText(lockErr))}, nil
+			return ZipSwapLock{Reason: fmt.Sprintf("cannot lock the ZIP swap lock %s: %s", lockPath, errchain.OSText(lockErr))}, nil
 		}
 		if !held {
 			break
@@ -311,7 +311,7 @@ func RestoreInterruptedZipSwap(root string, stream io.Writer) bool {
 	}
 	rawBytes, err := os.ReadFile(journal)
 	if err != nil {
-		fmt.Fprintf(stream, "⚠ Could not read the interrupted ZIP update's journal (%s); the next launch retries.\n", pypath.OSErrorText(err))
+		fmt.Fprintf(stream, "⚠ Could not read the interrupted ZIP update's journal (%s); the next launch retries.\n", errchain.OSText(err))
 		return false
 	}
 	raw, _ := pystr.DecodeUTF8Sig(rawBytes)
@@ -329,7 +329,7 @@ func RestoreInterruptedZipSwap(root string, stream io.Writer) bool {
 		changed = changed || entryChanged
 		if err != nil {
 			failed = true
-			fmt.Fprintf(stream, "⚠ Could not settle %s after an interrupted ZIP update: %s\n", entries[i].name, pypath.OSErrorText(err))
+			fmt.Fprintf(stream, "⚠ Could not settle %s after an interrupted ZIP update: %s\n", entries[i].name, errchain.OSText(err))
 		}
 	}
 	if len(kept) > 0 {

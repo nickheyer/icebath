@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -439,7 +440,7 @@ func pluginsPresence(ctx context.Context, rid any, params map[string]any) (map[s
 			}
 			sort.Strings(names)
 		default:
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("the plugin names must be a list, got %s", errchain.Kind(raw))
 		}
 	}
 	found, err := plugins.PresenceFor(ctx, names)
@@ -467,12 +468,12 @@ func runAction[A any](rid any, params map[string]any, table map[string]A, label 
 	}
 	switch action.(type) {
 	case []any, map[string]any:
-		return nil, fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(action))
+		return nil, fmt.Errorf("the %s action must be text, got %s", label, errchain.Kind(action))
 	}
 	name, isText := action.(string)
 	handler, known := table[name]
 	if !isText || !known {
-		return rpcErr(rid, 4017, fmt.Sprintf("unknown %s action: %s", label, pyrepr.Str(action)), nil), nil
+		return rpcErr(rid, 4017, fmt.Sprintf("unknown %s action: %s", label, errchain.Show(action)), nil), nil
 	}
 	return invoke(handler)
 }

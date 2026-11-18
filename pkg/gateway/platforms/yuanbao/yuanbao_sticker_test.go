@@ -152,7 +152,7 @@ func TestBuildStickerMsgBody(t *testing.T) {
 	}
 	bare.Delete("sticker_id")
 	var ke *KeyError
-	if _, err = BuildStickerMsgBody(bare); !errors.As(err, &ke) || err.Error() != "'sticker_id'" {
+	if _, err = BuildStickerMsgBody(bare); !errors.As(err, &ke) || err.Error() != "the sticker has no sticker_id" {
 		t.Fatalf("missing key = %v", err)
 	}
 	face, _ := pyjson.Dumps(BuildFaceMsgBody(5, nil))

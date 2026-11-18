@@ -12,8 +12,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -215,7 +215,7 @@ func removeUserPlugin(ctx context.Context, dir, name, target string) (map[string
 // Text of a caught OSError or plugin operation error as Python formats it
 func pyErrorText(err error) string {
 	if isOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

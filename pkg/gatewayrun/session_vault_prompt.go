@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Seconds each vault prompt waits for a viewer, the main sidecar deadlines
@@ -48,17 +48,17 @@ func vaultPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) func
 	codePrompt := func(site, hint string) string {
 		return ask("vault.code", pyjson.ObjectOf("site", site, "hint", hint), vaultCodeTimeoutS)
 	}
-	prevUnlock, prevSave, prevCode := browser.GetUnlockPromptCallback(ctx), browser.GetSaveLoginPromptCallback(ctx), browser.GetCodePromptCallback(ctx)
-	prevSession := browser.VaultSessionID(ctx)
-	browser.SetUnlockPromptCallback(ctx, unlockPrompt)
-	browser.SetSaveLoginPromptCallback(ctx, saveLogin)
-	browser.SetCodePromptCallback(ctx, codePrompt)
-	browser.SetVaultSessionID(ctx, &sessionID)
+	prevUnlock, prevSave, prevCode := tools.GetUnlockPromptCallback(ctx), tools.GetSaveLoginPromptCallback(ctx), tools.GetCodePromptCallback(ctx)
+	prevSession := tools.VaultSessionID(ctx)
+	tools.SetUnlockPromptCallback(ctx, unlockPrompt)
+	tools.SetSaveLoginPromptCallback(ctx, saveLogin)
+	tools.SetCodePromptCallback(ctx, codePrompt)
+	tools.SetVaultSessionID(ctx, &sessionID)
 	return func() {
-		browser.SetUnlockPromptCallback(ctx, prevUnlock)
-		browser.SetSaveLoginPromptCallback(ctx, prevSave)
-		browser.SetCodePromptCallback(ctx, prevCode)
-		browser.SetVaultSessionID(ctx, prevSession)
+		tools.SetUnlockPromptCallback(ctx, prevUnlock)
+		tools.SetSaveLoginPromptCallback(ctx, prevSave)
+		tools.SetCodePromptCallback(ctx, prevCode)
+		tools.SetVaultSessionID(ctx, prevSession)
 	}
 }
 

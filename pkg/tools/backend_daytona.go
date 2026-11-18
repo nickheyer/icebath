@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -392,4 +394,11 @@ func (daytonaBackend) CreateEnvironment(ctx context.Context, env *Env, opts Crea
 	disk, _ := pyIntValue(res["disk"])
 	return NewDaytonaEnvironment(ctx, env, DaytonaOptions{Image: opts.Image, Cwd: opts.Cwd, Timeout: opts.Timeout, CPU: cpu, Memory: memory, Disk: disk,
 		Persistent: truthy(res["persistent_filesystem"]), TaskID: opts.TaskID})
+}
+
+// File sync manager of the environment
+func (b *daytonaEnv) fileSyncManager() *FileSyncManager {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	return b.syncManager
 }

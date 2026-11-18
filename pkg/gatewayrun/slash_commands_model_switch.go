@@ -208,12 +208,12 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 	return globalError
 }
 
-// Message of an error, its type name when the message is empty
+// Message of an error, no details given when the message is empty
 func errorTextOrType(err error) string {
 	if text := pyrepr.ExceptionMessage(err); text != "" {
 		return text
 	}
-	return pyrepr.TypeName(err)
+	return "no details given"
 }
 
 // Confirmation of a committed switch with context window, output cap, capabilities and scope

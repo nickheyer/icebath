@@ -20,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/tools"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -471,7 +472,7 @@ func (s *Store) addOverflow(target, content string, limit int) Result {
 	over := runeLen(strings.Join(append(append([]string(nil), s.entriesFor(target)...), content), EntryDelimiter)) - limit
 	return s.failureWithEntries(target, fmt.Sprintf(
 		"Memory at %s/%s chars; adding this entry (%d chars) "+
-			"would exceed the limit by %s chars. Retry as ONE 'operations' batch that "+
+			"would "+tools.MemoryOverLimitPhrase+" by %s chars. Retry as ONE 'operations' batch that "+
 			"removes or shortens (patch) stale entries from current_entries below to free at least "+
 			"%s chars AND adds this entry — the limit is checked only on the batch result.",
 		thousands(s.charCount(target)), thousands(limit), runeLen(content), thousands(over), thousands(over)))

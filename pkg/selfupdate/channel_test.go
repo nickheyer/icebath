@@ -350,10 +350,10 @@ func TestChannelCanaryTags(t *testing.T) {
 	if tag, err := CanaryTagForDate("v1.2.3", "20260819T171926Z"); err != nil || tag != "v1.2.3+canary.20260819T171926Z" {
 		t.Fatalf("%q %v", tag, err)
 	}
-	if _, err := CanaryTagForDate("2026.7.20", "20260819T171926Z"); err == nil || err.Error() != "invalid stable version for canary: '2026.7.20'" {
+	if _, err := CanaryTagForDate("2026.7.20", "20260819T171926Z"); err == nil || err.Error() != "invalid stable version for canary: 2026.7.20" {
 		t.Fatalf("got %v", err)
 	}
-	if _, err := CanaryTagForDate("1.2.3", "2026-08-19"); err == nil || err.Error() != "invalid canary UTC timestamp: '2026-08-19'" {
+	if _, err := CanaryTagForDate("1.2.3", "2026-08-19"); err == nil || err.Error() != "invalid canary UTC timestamp: 2026-08-19" {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -370,7 +370,7 @@ func TestChannelAdoptRetiredNoneOriginalAndMissingKeys(t *testing.T) {
 		t.Fatalf("a None original adopts unconditionally %v %v", adopted, err)
 	}
 	var key *KeyError
-	if _, err := AdoptRetiredChannel(context.Background(), map[string]any{"home": h, "channel_retirement": map[string]any{"original": nil, "destination": "stable"}}); !errors.As(err, &key) || err.Error() != "'source'" {
+	if _, err := AdoptRetiredChannel(context.Background(), map[string]any{"home": h, "channel_retirement": map[string]any{"original": nil, "destination": "stable"}}); !errors.As(err, &key) || err.Error() != "missing source" {
 		t.Fatalf("missing source %v", err)
 	}
 	if _, err := AdoptRetiredChannel(context.Background(), map[string]any{"source": root, "home": h, "channel_retirement": map[string]any{"original": nil}}); !errors.As(err, &key) || key.Key != "destination" {

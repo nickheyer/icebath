@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -708,7 +708,7 @@ type AgentImporter struct {
 // NewAgentImporter builds the importer of a supported agent, syncSkills naming skills an earlier import wrote with their digest
 func NewAgentImporter(ctx context.Context, agent, sourceRoot, targetRoot string, execute, overwrite bool, syncSkills map[string]any) (*AgentImporter, error) {
 	if _, ok := AgentDefaultDirs[agent]; !ok {
-		return nil, fmt.Errorf("Unsupported agent: %s", pyrepr.StrRepr(agent))
+		return nil, fmt.Errorf("Unsupported agent: %s", agent)
 	}
 	if syncSkills == nil {
 		syncSkills = map[string]any{}
@@ -861,7 +861,7 @@ func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) 
 }
 
 // Python str of an OS or decode error
-func pyErrText(err error) string { return pypath.OSErrorText(err) }
+func pyErrText(err error) string { return errchain.OSText(err) }
 
 // CLAUDE.md or AGENTS.md entries merged into memories/MEMORY.md
 func (a *AgentImporter) importContextFile(source, kind string) error {

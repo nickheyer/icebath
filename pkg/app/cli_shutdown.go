@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -99,9 +98,14 @@ func shutdownCachedAuxClients(ctx context.Context, env *tools.Env) {
 // Cleans up every terminal environment of the process
 func cleanupAllTerminals(ctx context.Context, env *tools.Env) { tools.CleanupAllEnvironments(env) }
 
+// Browser session reaper, bound by the extras tier that carries the browser and nil in a build without it
+var emergencyCleanupBrowsers func(ctx context.Context)
+
 // Closes every browser session of the process and reaps orphans of crashed processes
 func cleanupAllBrowsers(ctx context.Context, env *tools.Env) {
-	browser.EmergencyCleanupAllSessions(ctx)
+	if emergencyCleanupBrowsers != nil {
+		emergencyCleanupBrowsers(ctx)
+	}
 }
 
 var cleanupSteps = []func(context.Context, *tools.Env){stopCLIWakeWord, cleanupAllTerminals, cleanupAllBrowsers, shutdownCachedAuxClients}

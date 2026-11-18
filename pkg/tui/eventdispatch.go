@@ -59,16 +59,14 @@ func keepTerminalElseRunning(s string) string {
 	return "running"
 }
 
-// Labels of a tool event, nil when absent
-func toolLabelsOf(v any) []toolLabel {
-	list, isList := v.([]any)
-	if !isList {
+// Display labels of a tool event, nil when absent
+func toolLabelsOf(labels []tuigateway.ToolLabel) []toolLabel {
+	if len(labels) == 0 {
 		return nil
 	}
-	out := make([]toolLabel, 0, len(list))
-	for _, raw := range list {
-		l, _ := raw.(map[string]any)
-		out = append(out, toolLabel{Emoji: paramStr(l["emoji"]), Text: paramStr(l["text"]), Preview: paramStr(l["preview"])})
+	out := make([]toolLabel, 0, len(labels))
+	for _, l := range labels {
+		out = append(out, toolLabel{Emoji: l.Emoji, Text: l.Text, Preview: l.Preview})
 	}
 	return out
 }
@@ -81,13 +79,8 @@ func optionalNumber(p map[string]any, k string) *float64 {
 	return nil
 }
 
-// Text of a truthy payload value with ANSI escapes removed, empty otherwise
-func strippedText(v any) string {
-	if !truthyJS(v) {
-		return ""
-	}
-	return stripAnsi(jsValueString(v))
-}
+// Text of an optional payload field with ANSI escapes removed, empty when absent
+func strippedText(v *string) string { return stripAnsi(val(v)) }
 
 // Dispatches one gateway event to the store, the turn controller and the app
 func (h *eventHandler) handle(ev gatewayEventMsg) {
@@ -109,19 +102,19 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	}
 	p := ev.Payload
 	switch ev.Type {
-	case "connection.request":
-		if p != nil {
-			h.store.applyConnectionRequest(p)
+	case tuigateway.ConnectionRequestEvent.Name():
+		if request, ok := eventPayload(h, tuigateway.ConnectionRequestEvent, p); ok {
+			h.store.applyConnectionRequest(request)
 		}
-	case "connection.update":
-		if p != nil {
-			for _, line := range h.store.applyConnectionUpdate(p) {
+	case tuigateway.ConnectionUpdateEvent.Name():
+		if update, ok := eventPayload(h, tuigateway.ConnectionUpdateEvent, p); ok {
+			for _, line := range h.store.applyConnectionUpdate(update) {
 				h.app.sys(line)
 			}
 		}
 	case "gateway.ready":
 		if ready, ok := eventPayload(h, tuigateway.GatewayReadyEvent, p); ok {
-			h.handleReady(gatewaySkinOf(ready.Skin))
+			h.handleReady(ready)
 		}
 	case "skin.changed":
 		if skin, ok := eventPayload(h, tuigateway.SkinChangedEvent, p); ok && p != nil {
@@ -173,7 +166,9 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.app.sys(message)
 		}
 	case "voice.transcript":
-		h.handleVoiceTranscript(p)
+		if transcript, ok := eventPayload(h, tuigateway.VoiceTranscriptEvent, p); ok {
+			h.handleVoiceTranscript(transcript)
+		}
 	case "voice.interrupted":
 		h.setStatus(tr("gatewayMsg.status.voiceInterrupted"))
 		h.turn.restoreStatusAfter(statusNoteHold)
@@ -181,13 +176,28 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		h.resumeProgress(sid, p)
 	case "session.reclaimed":
 		h.sessionReclaimed(p)
-	case "display.status", "display.lease":
-		h.setStatus(screenEventNote(ev))
-		h.turn.restoreStatusAfter(statusNoteHold)
-	case "display.install.log", "display.install.done":
-		h.app.sys(screenInstallLine(ev))
+	case "display.status":
+		if status, ok := eventPayload(h, tuigateway.DisplayStatusEvent, p); ok {
+			h.setStatus(screenRunningNote(status.Running))
+			h.turn.restoreStatusAfter(statusNoteHold)
+		}
+	case "display.lease":
+		if lease, ok := eventPayload(h, tuigateway.DisplayLeaseEvent, p); ok {
+			h.setStatus(tr("screen.control", screenHolder(lease.Lease)))
+			h.turn.restoreStatusAfter(statusNoteHold)
+		}
+	case "display.install.log":
+		if line, ok := eventPayload(h, tuigateway.DisplayInstallLogEvent, p); ok {
+			h.app.sys("  " + line.Line)
+		}
+	case "display.install.done":
+		if done, ok := eventPayload(h, tuigateway.DisplayInstallDoneEvent, p); ok {
+			h.app.sys(screenInstallDone(done.Code))
+		}
 	case "wake.detected":
-		h.handleWakeDetected(p)
+		if wake, ok := eventPayload(h, tuigateway.WakeDetectedEvent, p); ok {
+			h.handleWakeDetected(wake)
+		}
 	case "gateway.start_timeout":
 		if timeout, ok := ev.Local.(gatewayStartTimeout); ok {
 			h.turn.reportGatewayStartTimeout(timeout.StderrTail, h.setStatus)
@@ -223,19 +233,33 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		if phase, ok := eventPayload(h, tuigateway.MoaPhaseEvent, p); ok && phase.Phase == "aggregator" {
 			h.turn.pushActivity(tr("gatewayMsg.moa.aggregating"), "info", "MoA")
 		}
-	case "tool.generating":
-		if truthyJS(p["name"]) {
-			h.turn.pushTrail("drafting " + jsValueString(p["name"]) + "…")
+	case tuigateway.ToolGeneratingEvent.Name():
+		if generating, ok := eventPayload(h, tuigateway.ToolGeneratingEvent, p); ok && generating.Name != "" {
+			h.turn.pushTrail(tr("tool.drafting", generating.Name))
 		}
 	case "reaction":
 		h.store.flashGoodVibes()
 		h.store.flashPet("jump", petFlashDefault)
-	case "tool.start":
-		if p != nil {
-			h.turn.recordToolStart(paramStr(p["tool_id"]), stringOr(p["name"], "tool"), stringOr(p["context"], ""), strippedText(p["args_text"]), toolLabelsOf(p["labels"]))
+	case tuigateway.ToolStartEvent.Name():
+		if start, ok := eventPayload(h, tuigateway.ToolStartEvent, p); ok {
+			h.turn.recordToolStart(start.ToolID, firstText(start.Name, "tool"), val(start.Context), strippedText(start.ArgsText), toolLabelsOf(start.Labels))
 		}
-	case "tool.complete":
-		h.toolComplete(p)
+	case tuigateway.ToolCompleteEvent.Name():
+		if complete, ok := eventPayload(h, tuigateway.ToolCompleteEvent, p); ok {
+			h.toolComplete(complete)
+		}
+	case tuigateway.ToolProgressEvent.Name():
+		if progress, ok := eventPayload(h, tuigateway.ToolProgressEvent, p); ok {
+			h.turn.recordToolProgress(progress.ToolID, toolProgressText(progress))
+		}
+	case tuigateway.ToolOutputRiskEvent.Name():
+		if risk, ok := eventPayload(h, tuigateway.ToolOutputRiskEvent, p); ok && risk.Risk != "low" {
+			h.app.sys("⚠ " + toolRiskText(risk))
+		}
+	case tuigateway.TodoUpdatedEvent.Name():
+		if todos, ok := eventPayload(h, tuigateway.TodoUpdatedEvent, p); ok {
+			h.turn.recordTodos(todos.Todos)
+		}
 	case "request.cancel":
 		if cancel, ok := eventPayload(h, tuigateway.RequestCancelEvent, p); ok {
 			h.requestCancel(cancel)
@@ -404,29 +428,42 @@ func (h *eventHandler) statusUpdate(update tuigateway.StatusUpdatePayload) {
 }
 
 // Finished tool call, an inline diff segment when the diff is shown, else its trail row
-func (h *eventHandler) toolComplete(p map[string]any) {
-	if p == nil {
-		return
-	}
-	if p["name"] == "clarify" {
+func (h *eventHandler) toolComplete(p tuigateway.ToolCompletePayload) {
+	if p.Name == "clarify" {
 		h.flushAbandonedClarify()
 	}
 	inlineDiff := ""
-	if truthyJS(p["inline_diff"]) && h.store.ui.InlineDiffs {
-		inlineDiff = strings.TrimFunc(stripAnsi(jsValueString(p["inline_diff"])), isJSSpace)
+	if h.store.ui.InlineDiffs {
+		inlineDiff = strings.TrimFunc(strippedText(p.InlineDiff), isJSSpace)
 	}
-	resultText := strippedText(p["result_text"])
-	toolID, name := paramStr(p["tool_id"]), paramStr(p["name"])
-	duration, labels := optionalNumber(p, "duration_s"), toolLabelsOf(p["labels"])
+	resultText := strippedText(p.ResultText)
+	duration, labels := p.DurationS, toolLabelsOf(p.Labels)
 	if inlineDiff != "" {
-		h.turn.recordInlineDiffToolComplete(inlineDiff, toolID, name, duration, resultText, labels)
+		h.turn.recordInlineDiffToolComplete(inlineDiff, p.ToolID, p.Name, duration, resultText, labels)
 		return
 	}
-	var todos any
-	if v, has := p["todos"]; has && v != nil {
-		todos = v
+	h.turn.recordToolComplete(p.ToolID, p.Name, val(p.Summary), duration, p.Todos, resultText, labels)
+}
+
+// Progress line of a running call, the server's message with the percent done when it reports a total
+func toolProgressText(p tuigateway.ToolProgressPayload) string {
+	message := strings.TrimFunc(stripAnsi(val(p.Message)), isJSSpace)
+	if p.Percent == nil {
+		return message
 	}
-	h.turn.recordToolComplete(toolID, name, paramStr(p["summary"]), duration, todos, resultText, labels)
+	if message == "" {
+		return tr("tool.progressPercent", *p.Percent)
+	}
+	return tr("tool.progressMessage", message, *p.Percent)
+}
+
+// Activity line of a tool output the injection scanner flagged, its findings named
+func toolRiskText(p tuigateway.ToolOutputRiskPayload) string {
+	name := toolTrailLabel(strings.TrimPrefix(p.Name, "mcp__"))
+	if len(p.Findings) == 0 {
+		return tr("tool.outputRisk", name, p.Risk)
+	}
+	return tr("tool.outputRiskFindings", name, p.Risk, strings.Join(p.Findings, ", "))
 }
 
 // Closes the prompt cards of a request the gateway cancelled, with its timeout notice
@@ -605,7 +642,7 @@ func eventPayload[T any](h *eventHandler, ev tuigateway.Event[T], p map[string]a
 
 // Prints an event payload or request that does not fit its contract as an invalid response naming the field
 func (h *eventHandler) misfit(name string, err error) {
-	h.app.sys("error: " + tr("session.common.invalidResponse", name) + " " + err.Error())
+	h.app.sys("error: " + misfitText(tr("session.common.invalidResponse", name)) + " " + err.Error())
 }
 
 // Model pick that did not apply at the turn boundary, a refusal named or a guarded target asked again

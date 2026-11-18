@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -331,7 +332,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 	for _, line := range pystr.Splitlines(promisor.Stdout, false) {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
-			return false, "", &pm.PyError{Class: "IndexError", Message: "list index out of range"}
+			return false, "", &pm.PyError{Class: "IndexError", Message: "git printed an empty status line"}
 		}
 		if pystr.Lower(fields[len(fields)-1]) != "false" {
 			return true, "unmerged:" + aheadCount.String(), nil
@@ -819,7 +820,7 @@ func npmLockfileOwners(repoRoot string) (map[string]bool, error) {
 	}
 	pkg, ok := pyjson.AsObject(parsed)
 	if !ok {
-		return nil, &pm.PyError{Class: "AttributeError", Message: "'" + pyrepr.TypeName(parsed) + "' object has no attribute 'get'"}
+		return nil, &pm.PyError{Class: "AttributeError", Message: "package-lock.json is " + errchain.Kind(parsed) + " where a mapping was expected"}
 	}
 	var workspaces any = []any{}
 	if value, set := pkg.Vals["workspaces"]; set {

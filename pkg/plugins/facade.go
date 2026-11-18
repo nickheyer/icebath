@@ -13,6 +13,7 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -283,7 +284,7 @@ func copyExampleFiles(pluginDir string, console *Console) {
 			continue
 		}
 		if err := pyfs.Copy2(example, realPath); err != nil {
-			console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] Failed to copy %s: %s", base, pyfs.OSErrorText(err)))
+			console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] Failed to copy %s: %s", base, errchain.OSText(err)))
 			continue
 		}
 		console.Print(fmt.Sprintf("[dim]  Created %s from %s[/dim]", realName, base))

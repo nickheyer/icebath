@@ -258,12 +258,12 @@ func (a *app) transcriptCommands() []slashCommand {
 		{name: "details", aliases: []string{"detail"}, help: "control agent detail visibility, global or per section", usage: "[hidden|collapsed|expanded|cycle]", suggest: modes, run: func(r *slashRun) tea.Cmd {
 			ui := &a.store.ui
 			if r.arg == "" {
-				return gatewayCall(a.gw, "config.get", map[string]any{"key": "details_mode"}, func(v any, err error) tea.Cmd {
+				return call(a.gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "details_mode"}, func(res *tuigateway.ConfigGetResult, err error) tea.Cmd {
 					if r.stale() {
 						return nil
 					}
 					mode := ui.DetailsMode
-					if parsed := parseDetailsMode(asRPCResult(v)["value"]); err == nil && parsed != "" {
+					if parsed := parseDetailsMode(configWord(res)); err == nil && parsed != "" {
 						mode = parsed
 						ui.DetailsMode, ui.DetailsModeCommandOverride = mode, false
 						a.card.view.invalidate()
@@ -757,27 +757,24 @@ func (a *app) opsCommands() []slashCommand {
 		{name: "reload-mcp", aliases: []string{"reload_mcp"}, help: "reload MCP servers in the live session", usage: "[now|always]", run: func(r *slashRun) tea.Cmd {
 			arg := strings.ToLower(trimJS(r.arg))
 			confirm := arg == "now" || arg == "approve" || arg == "once" || arg == "yes" || arg == "always"
-			params := map[string]any{"session_id": nilIfEmpty(r.sid)}
-			if confirm {
-				params["confirm"] = true
-			}
 			always := arg == "always" && !a.gw.canonical()
-			if always {
-				params["always"] = true
-			}
-			return r.rpc("reload.mcp", params, func(res map[string]any) tea.Cmd {
-				message, _ := res["message"].(string)
+			params := tuigateway.ReloadMCPParams{SessionID: optionalText(r.sid), Confirm: confirm, Always: always}
+			return ask(r.rpc, r.sys, tuigateway.ReloadMCP, params, func(res *tuigateway.ReloadMCPResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				message := val(res.Message)
 				switch {
 				case a.gw.canonical() && message != "":
 					r.sys(message)
-				case res["status"] == "confirm_required":
+				case res.Status == "confirm_required":
 					if message == "" {
 						message = tr("slashCmd.ops.reloadMcp.confirmRequired")
 					}
 					r.sys(message)
-				case res["status"] == "reloaded" && always:
+				case res.Status == "reloaded" && always:
 					r.sys(tr("slashCmd.ops.reloadMcp.reloadedAlways"))
-				case res["status"] == "reloaded" || a.gw.canonical():
+				case res.Status == "reloaded" || a.gw.canonical():
 					r.sys(tr("slashCmd.ops.reloadMcp.reloaded"))
 				default:
 					r.sys(tr("slashCmd.ops.reloadMcp.complete"))

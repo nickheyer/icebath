@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -100,7 +101,7 @@ func hostedHookHandler(handle any) hookHandler {
 	fn, ok := handle.(*plugins.HostedCallable)
 	if !ok {
 		return func(context.Context, string, map[string]any) (any, error) {
-			return nil, &pyTypeError{msg: fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(handle))}
+			return nil, &pyTypeError{msg: fmt.Sprintf("hook handler is %s where a function was expected", errchain.Kind(handle))}
 		}
 	}
 	return func(ctx context.Context, eventType string, hookContext map[string]any) (any, error) {
@@ -137,7 +138,7 @@ func hookEventNames(events any) ([]string, error) {
 		sort.Strings(out)
 		return out, nil
 	}
-	return nil, &pyTypeError{msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(events))}
+	return nil, &pyTypeError{msg: fmt.Sprintf("hook events are %s where a list was expected", errchain.Kind(events))}
 }
 
 // Discovers, loads and fires the event hooks of one home

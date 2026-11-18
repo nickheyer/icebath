@@ -9,14 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -42,86 +38,6 @@ func signalNumber(sig os.Signal) string {
 	return sig.String()
 }
 
-// Drives a kanban goal mode worker through the goal loop after its first turn
-func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any, error), log func(string)) error {
-	taskID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK"))
-	if taskID == "" {
-		return nil
-	}
-	rawRunID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_RUN_ID"))
-	var workerRunID *int64
-	if rawRunID != "" {
-		if n, ok := pyIntOf(rawRunID); ok {
-			id := int64(n)
-			workerRunID = &id
-		} else {
-			pkgLog().Warn(fmt.Sprintf("invalid ICEBATH_KANBAN_RUN_ID=%s", pyrepr.Repr(rawRunID)))
-		}
-	}
-	var task *kanban.Task
-	err := kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
-		t, gerr := kanban.GetTask(c.ctx, conn, taskID)
-		task = t
-		return gerr
-	})
-	if err != nil {
-		return err
-	}
-	if task == nil {
-		return nil
-	}
-	var parts []string
-	if task.Title != "" {
-		parts = append(parts, task.Title)
-	}
-	if task.Body != nil && *task.Body != "" {
-		parts = append(parts, *task.Body)
-	}
-	goalText := strings.TrimSpace(strings.Join(parts, "\n\n"))
-	if goalText == "" {
-		return nil
-	}
-	quietTurn := func(prompt string) (any, error) {
-		result, rerr := c.agentRef().RunConversation(c.turnCtx, prompt, agent.RunConversationOptions{ConversationHistory: c.conversationHistory})
-		if rerr != nil {
-			return nil, rerr
-		}
-		syncCLISessionIDFromAgent(c)
-		resp := cliStr(result["final_response"], "")
-		if resp != "" {
-			fmt.Fprintln(c.console.Out, resp)
-		}
-		return map[string]any{"response": resp, "failed": cliTruthy(result["failed"]), "failure_reason": result["failure_reason"]}, nil
-	}
-	taskStatus := func() (*string, error) {
-		var status *string
-		err := kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
-			s, serr := kanban.GoalRunStatus(c.ctx, conn, taskID, workerRunID)
-			status = s
-			return serr
-		})
-		return status, err
-	}
-	block := func(reason string) error {
-		return kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
-			return kanban.BlockTask(c.ctx, conn, taskID, reason, workerRunID)
-		})
-	}
-	if runTurn == nil {
-		runTurn = quietTurn
-	}
-	if log == nil {
-		log = func(m string) { pkgLog().Info(m) }
-	}
-	maxTurns := goals.DefaultGoalMaxTurns
-	if goalMax := kanban.TaskGoalMaxTurns(task); goalMax != nil && *goalMax > 0 {
-		maxTurns = int(*goalMax)
-	}
-	_, err = goals.RunKanbanGoalLoop(c.ctx, goals.GoalLoopOptions{TaskID: taskID, GoalText: goalText, RunTurn: runTurn,
-		TaskStatus: taskStatus, Block: block, MaxTurns: maxTurns, FirstResponse: firstResponse, Log: log})
-	return err
-}
-
 // Runs the -q worker goal loop with follow up turns through chat so the worker log keeps its tool feed
 func runKanbanGoalLoopChat(c *CLI, firstResponse string) error {
 	log := func(msg string) {
@@ -145,9 +61,8 @@ func syncCLISessionIDFromAgent(c *CLI) {
 
 // Maps a one shot turn result onto the process exit code for both -q and -Q
 func singleQueryExitCode(result map[string]any, credentialsRateLimited, credentialsTerminal bool) int {
-	return TurnExitCode(result, TurnExitOptions{KanbanWorker: kanban.KanbanTaskID() != "",
-		CredentialsRateLimited: credentialsRateLimited, CredentialsTerminal: credentialsTerminal,
-		TransientReasons: TransientProviderReasons, TerminalReasons: TerminalProviderReasons})
+	return tools.TurnExitCode(result, tools.TurnExitOptions{KanbanWorker: strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK")) != "",
+		CredentialsRateLimited: credentialsRateLimited, CredentialsTerminal: credentialsTerminal})
 }
 
 // Pops ICEBATH_TURN_AUTHOR from the process environment so tool subprocesses never inherit it
@@ -214,7 +129,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 			}
 			syncCLISessionIDFromAgent(c)
 		}
-		if _, rerr := kanban.RecoverFailedKanbanTurns(c.ctx, quietRecoverTurn, func() map[string]any { return result },
+		if rerr := recoverKanbanTurns(c.ctx, quietRecoverTurn, func() map[string]any { return result },
 			func(msg string) { fmt.Fprintln(stderrWriter(), msg) }); rerr != nil {
 			fmt.Fprintln(stderrWriter(), rerr.Error())
 			exitSingleQuery(1)
@@ -337,40 +252,6 @@ func routeSingleQueryImages(c *CLI, query string, effectiveQuery any, images, im
 	return textFallback()
 }
 
-// Adds the image paths and URLs of a Kanban worker's task body to the first turn's attachments
-func collectKanbanTaskImages(c *CLI, images *[]string) []string {
-	imageURLs := []string{}
-	taskID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK"))
-	if taskID == "" {
-		return imageURLs
-	}
-	var task *kanban.Task
-	err := kanban.ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
-		t, gerr := kanban.GetTask(c.ctx, conn, taskID)
-		task = t
-		return gerr
-	})
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("kanban image-ref extraction failed: %v", err))
-		return imageURLs
-	}
-	if task == nil || task.Body == nil || *task.Body == "" {
-		return imageURLs
-	}
-	paths, urls := tools.ExtractImageRefs(*task.Body)
-	seen := map[string]bool{}
-	for _, p := range *images {
-		seen[p] = true
-	}
-	for _, p := range paths {
-		if !seen[p] {
-			seen[p] = true
-			*images = append(*images, p)
-		}
-	}
-	return append(imageURLs, urls...)
-}
-
 // Kills the worker's foreground process group and exits without cleanup
 func killForegroundAndExit() {
 	tools.KillLiveForegroundProcesses(true)
@@ -413,7 +294,7 @@ func configureQuietAgent(a *GatewayAgent) {
 func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON bool) {
 	c.singleQueryMode = true
 	_ = os.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
-	if os.Getenv("ICEBATH_KANBAN_TASK") != "" && !kanban.RegisterCurrentWorkerFromEnv(c.ctx) {
+	if os.Getenv("ICEBATH_KANBAN_TASK") != "" && !registerKanbanWorker(c) {
 		fmt.Fprintln(stderrWriter(), i18n.T(c.ctx, "cli.single_query.kanban_run_reclaimed", "", nil))
 		panic(singleQueryExit{code: 0})
 	}
@@ -463,7 +344,7 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 	c.showSecurityAdvisories()
 	c.singleQueryTurnAuthor = takeTurnAuthorFromProcessEnv()
 	response, _ := c.chat(query, images)
-	if _, rerr := kanban.RecoverFailedKanbanTurns(c.ctx, func(nudge string) { response, _ = c.chat(nudge, nil) },
+	if rerr := recoverKanbanTurns(c.ctx, func(nudge string) { response, _ = c.chat(nudge, nil) },
 		func() map[string]any { return c.lastTurnResult }, func(msg string) { fmt.Fprintln(stderrWriter(), msg) }); rerr != nil {
 		fmt.Fprintln(stderrWriter(), rerr.Error())
 		exitSingleQuery(1)

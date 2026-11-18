@@ -35,10 +35,10 @@ func TestFeatureProbeDetailFollowsSubprocessErrors(t *testing.T) {
 		t.Fatalf("empty stderr detail %q", got)
 	}
 	silent := &uvTimeoutError{Argv: argv, Timeout: 60 * time.Second}
-	if got := featureProbeDetail(uvResult{}, silent); got != "Command '['python', '-c', 'probe']' timed out after 60 seconds" {
+	if got := featureProbeDetail(uvResult{}, silent); got != "python -c probe timed out after 60 seconds" {
 		t.Fatalf("silent timeout detail %q", got)
 	}
-	want := "b'partial'"
+	want := "partial"
 	if runtime.GOOS == "windows" {
 		want = "partial"
 	}

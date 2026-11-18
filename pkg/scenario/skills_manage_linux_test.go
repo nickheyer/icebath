@@ -20,12 +20,12 @@ func TestScenarioSkillsManageOverTheTUIGateway(t *testing.T) {
 		s.Failf("list answered no skills mapping")
 	}
 	s.HasJSON(call(map[string]any{"action": "bogus"}), `{"error": {"code": 4017, "message": "unknown skills action: bogus"}}`)
-	s.HasJSON(call(map[string]any{"action": []any{"list"}}), `{"error": {"code": 5024, "message": "unhashable type: 'list'"}}`)
-	s.HasJSON(call(map[string]any{"action": "search", "query": 7}), `{"error": {"code": 5024, "message": "'int' object has no attribute 'strip'"}}`)
-	s.HasJSON(call(map[string]any{"action": "install", "query": nil}), `{"error": {"code": 5024, "message": "'NoneType' object has no attribute 'rstrip'"}}`)
-	s.HasJSON(call(map[string]any{"action": "inspect", "query": 3}), `{"error": {"code": 5024, "message": "argument of type 'int' is not iterable"}}`)
-	s.HasJSON(call(map[string]any{"action": "browse", "page": "abc"}), `{"error": {"code": 5024, "message": "invalid literal for int() with base 10: 'abc'"}}`)
-	s.HasJSON(call(map[string]any{"action": "browse", "query": 2}), `{"error": {"code": 5024, "message": "'int' object has no attribute 'isdigit'"}}`)
+	s.HasJSON(call(map[string]any{"action": []any{"list"}}), `{"error": {"code": 5024, "message": "the skills action must be text, got a list"}}`)
+	s.HasJSON(call(map[string]any{"action": "search", "query": 7}), `{"error": {"code": 5024, "message": "the search query must be text, got a number"}}`)
+	s.HasJSON(call(map[string]any{"action": "install", "query": nil}), `{"error": {"code": 5024, "message": "the skill to install must be text, got nothing"}}`)
+	s.HasJSON(call(map[string]any{"action": "inspect", "query": 3}), `{"error": {"code": 5024, "message": "the skill to inspect must be text, got a number"}}`)
+	s.HasJSON(call(map[string]any{"action": "browse", "page": "abc"}), `{"error": {"code": 5024, "message": "the page must be a whole number, got abc"}}`)
+	s.HasJSON(call(map[string]any{"action": "browse", "query": 2}), `{"error": {"code": 5024, "message": "the browse query must be text, got a number"}}`)
 	s.HasJSON(call(map[string]any{"action": "profile-less", "profile": "ghost"}), `{"error": {"code": 4064, "message": "profile 'ghost' not found"}}`)
 
 	s.HasJSON(call(map[string]any{"action": "inspect", "query": "official/security/1password"}),
