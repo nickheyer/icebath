@@ -109,7 +109,7 @@ func TestModeSchemaMatchesConfigWithoutClaimingIsolation(t *testing.T) {
 	for mode, description := range map[string]string{"strict": "temp dir", "project": "session"} {
 		env := testEnv(t)
 		writeKernelConfig(t, env, map[string]any{"mode": mode})
-		text := strings.ToLower(buildExecuteCodeSchema(env, nil, "")["description"].(string))
+		text := strings.ToLower(buildExecuteCodeSchema(env, nil, "").Vals["description"].(string))
 		if !strings.Contains(text, description) {
 			t.Fatalf("%s schema lacks %q", mode, description)
 		}

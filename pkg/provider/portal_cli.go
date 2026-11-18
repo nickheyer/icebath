@@ -18,7 +18,6 @@ import (
 const (
 	DefaultPortalURL      = "https://portal.nousresearch.com"
 	PortalSubscriptionURL = "https://portal.nousresearch.com/manage-subscription"
-	portalDocsURL         = "https://hermes-agent.nousresearch.com/docs/user-guide/features/tool-gateway"
 )
 
 // Partners the Tool Gateway routes to today as key, label and partner
@@ -125,10 +124,6 @@ func portalCmdStatus(ctx context.Context, env PoolEnv, w io.Writer) (int, error)
 	for _, feat := range items {
 		fmt.Fprintf(w, "  %s   %s\n", pystr.Ljust(feat.Label, width), portalFeatureState(feat, "via Nous Portal"))
 	}
-	if !loggedIn {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, cliui.Color("  Docs: "+portalDocsURL, cliui.Dim))
-	}
 	return 0, nil
 }
 
@@ -196,7 +191,6 @@ func portalCmdTools(ctx context.Context, env PoolEnv, w, errw io.Writer) (int, e
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, cliui.Color("  Manage your subscription: "+PortalSubscriptionURL, cliui.Dim))
-	fmt.Fprintln(w, cliui.Color("  Docs: "+portalDocsURL, cliui.Dim))
 	return 0, nil
 }
 

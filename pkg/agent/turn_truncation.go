@@ -134,7 +134,7 @@ func windowFilledNotice(prompt, ctxLen int) string {
 func (a *AIAgent) promptFilledWindow(response any) (int, int, bool) {
 	ctxLen := 0
 	if a.contextCompressor != nil {
-		ctxLen = a.contextCompressor.Base().ContextLength
+		ctxLen = engineContextLength(a.contextCompressor)
 	}
 	usage := state.ToolCallField(response, "usage")
 	if ctxLen == 0 || !pyrepr.Truthy(usage) {

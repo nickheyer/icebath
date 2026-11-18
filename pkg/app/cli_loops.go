@@ -9,13 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Records that the agent moved this session's goal or loop state during the turn
-func (c *CLI) markAutomationStale() {
-	c.uiMu.Lock()
-	c.automationStale = true
-	c.uiMu.Unlock()
-}
-
 // Turn budget of a new goal from goals.max_turns, twenty when the config holds none or cannot be read
 func (c *CLI) goalMaxTurns() int {
 	cfg, err := config.Load(home.Dir(c.ctx), nil)

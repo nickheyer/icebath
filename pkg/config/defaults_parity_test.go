@@ -409,9 +409,6 @@ display.bell_on_prompt
 display.busy_input_mode
 display.busy_steer_ack_enabled
 display.cli_layout
-display.cli_multiline_shortcuts
-display.cli_rebuild_scrollback_on_redraw
-display.cli_refresh_interval
 display.compact
 display.copy_shortcut
 display.credits_notices
@@ -426,8 +423,6 @@ display.interim_assistant_messages
 display.language
 display.memory_notifications
 display.persist_prompts
-display.persistent_output
-display.persistent_output_max_lines
 display.personality
 display.pet.enabled
 display.pet.render_mode
@@ -470,7 +465,6 @@ display.turn_completion_explainer
 display.turn_summary
 display.user_message_preview.first_lines
 display.user_message_preview.last_lines
-display.vim_mode
 doctor.live_probe_timeout
 fallback.min_switch_reset_seconds
 fallback_providers
@@ -983,8 +977,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 57 || Version != 57 {
-		t.Errorf("schema version %v, want 57", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 58 || Version != 58 {
+		t.Errorf("schema version %v, want 58", Defaults()["_config_version"])
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -145,14 +146,14 @@ func (p *optionsDelegationProvider) options(config map[string]any) []any {
 	opts, _ := p.Settings(config)["options"].([]any)
 	return opts
 }
-func (p *optionsDelegationProvider) TaskParameters(config map[string]any) map[string]map[string]any {
+func (p *optionsDelegationProvider) TaskParameters(config map[string]any) *pyjson.Object {
 	names, descs := []any{}, []string{}
 	for _, o := range p.options(config) {
 		m := o.(map[string]any)
 		names = append(names, m["name"])
 		descs = append(descs, m["name"].(string)+": "+m["description"].(string))
 	}
-	return map[string]map[string]any{"option": {"type": "string", "enum": names, "description": strings.Join(descs, "; ")}}
+	return pyjson.ObjectOf("option", pyjson.ObjectOf("type", "string", "enum", names, "description", strings.Join(descs, "; ")))
 }
 func (*optionsDelegationProvider) Description(map[string]any) string {
 	return "Pick an `option` per task."
@@ -175,7 +176,7 @@ func TestPluginParametersNeverRedefineCoreOrRouteFields(t *testing.T) {
 	greedy.Self = greedy
 	registerTestDelegationProvider(t, greedy)
 	params, _ := SchemaExtension(context.Background(), map[string]any{"backend": "greedy"})
-	if len(params) != 1 || params["tier"] == nil {
+	if params.Len() != 1 || params.Vals["tier"] == nil {
 		t.Fatalf("params %v", params)
 	}
 }
@@ -185,9 +186,9 @@ type greedyDelegationProvider struct{ DelegationProviderDefaults }
 func (*greedyDelegationProvider) Name() string                   { return "greedy" }
 func (*greedyDelegationProvider) DisplayName() string            { return "greedy" }
 func (*greedyDelegationProvider) GetSetupSchema() map[string]any { return map[string]any{} }
-func (*greedyDelegationProvider) TaskParameters(map[string]any) map[string]map[string]any {
-	return map[string]map[string]any{"goal": {"type": "string"}, "model": {"type": "string"}, "api_key": {"type": "string"},
-		"tier": {"type": "string", "enum": []any{"a", "b"}}}
+func (*greedyDelegationProvider) TaskParameters(map[string]any) *pyjson.Object {
+	return pyjson.ObjectOf("goal", pyjson.ObjectOf("type", "string"), "model", pyjson.ObjectOf("type", "string"), "api_key", pyjson.ObjectOf("type", "string"),
+		"tier", pyjson.ObjectOf("type", "string", "enum", []any{"a", "b"}))
 }
 func (*greedyDelegationProvider) RouteTask(_, _ map[string]any) (map[string]any, error) {
 	return map[string]any{}, nil
@@ -199,13 +200,13 @@ func TestSelectedPluginBackendExtendsTheDelegateTaskSchema(t *testing.T) {
 	ctx := delegationHome(t, "delegation:\n  backend: probe-options\n  backends:\n    probe-options:\n      options:\n"+
 		"        - {name: fast, description: cheap and quick}\n        - {name: deep, description: slow and careful}\n")
 	def := buildDelegateDynamicSchemaOverrides(&Env{Home: home.Dir(ctx)})
-	props := def["parameters"].(map[string]any)["properties"].(map[string]any)["tasks"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	props := pyjson.Plain(def.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)["tasks"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
 	option := props["option"].(map[string]any)
 	if !reflect.DeepEqual(option["enum"], []any{"fast", "deep"}) || option["description"] != "fast: cheap and quick; deep: slow and careful" {
 		t.Fatalf("option %v", option)
 	}
-	if !strings.HasSuffix(def["description"].(string), "\nPick an `option` per task.") {
-		t.Fatalf("description %q", def["description"])
+	if !strings.HasSuffix(def.Vals["description"].(string), "\nPick an `option` per task.") {
+		t.Fatalf("description %q", def.Vals["description"])
 	}
 	if _, ok := props["group"]; ok {
 		t.Fatal("group is advertised without independent_completions")
@@ -218,7 +219,7 @@ func TestBackendSettingsComeFromItsOwnBackendsBlock(t *testing.T) {
 	registerTestDelegationProvider(t, p)
 	cfg := map[string]any{"backend": "probe-options", "options": probeOptions, "backends": map[string]any{"model_map": map[string]any{"options": probeOptions}}}
 	params, addendum := SchemaExtension(context.Background(), cfg)
-	if !reflect.DeepEqual(params["option"]["enum"], []any{}) || addendum != "Pick an `option` per task." {
+	if !reflect.DeepEqual(pyjson.Plain(params.Vals["option"]).(map[string]any)["enum"], []any{}) || addendum != "Pick an `option` per task." {
 		t.Fatalf("params %v addendum %q", params, addendum)
 	}
 }

@@ -17,13 +17,25 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // One header line as a Python client writes it, its spelling kept
 type HeaderLine struct{ Name, Value string }
 
 // Header lines in wire order with the case insensitive editing of httpx Headers
-type Headers struct{ lines []HeaderLine }
+type Headers struct {
+	lines []HeaderLine
+	// Host written at its carried slot as http.client writes a Host the caller set, else first as h11 writes it
+	hostInPlace bool
+}
+
+// Marks the lines as an http.client head whose carried Host keeps its slot
+func (h *Headers) HostInPlace() *Headers {
+	h.hostInPlace = true
+	return h
+}
 
 // Headers holding the lines in the order given
 func NewHeaders(lines ...HeaderLine) *Headers {
@@ -61,6 +73,16 @@ func (h *Headers) Set(name, value string) {
 	if at < 0 {
 		h.lines = append(h.lines, HeaderLine{name, value})
 	}
+}
+
+// First line of the name in any case
+func (h *Headers) line(name string) (HeaderLine, bool) {
+	for _, l := range h.lines {
+		if strings.EqualFold(l.Name, name) {
+			return l, true
+		}
+	}
+	return HeaderLine{}, false
 }
 
 // Drops every line of the name in any case
@@ -195,44 +217,75 @@ func (c *WireConn) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Request head with any proxy credentials and Host first, the carried lines, the framing lines, then other transport lines
+// Request head with proxy credentials first, Host first or at its carried slot for http.client, the carried lines in order with framing slotted or last
 func rewriteHead(head string, h *Headers) []byte {
 	rows := strings.Split(head, "\r\n")
 	var b bytes.Buffer
 	b.WriteString(rows[0] + "\r\n")
-	var proxy, host, framing, extra []string
+	var proxy []string
+	host, framing := map[string]string{}, map[string]string{}
+	var hostOrder, framingOrder []string
 	for _, row := range rows[1:] {
-		name, _, _ := strings.Cut(row, ":")
-		_, carried := h.Get(name)
-		switch {
-		case strings.EqualFold(name, "Host"):
-			host = append(host, row)
-		case strings.EqualFold(name, "Content-Length"), strings.EqualFold(name, "Transfer-Encoding"):
-			framing = append(framing, row)
-		case carried:
-		case strings.EqualFold(name, "Proxy-Authorization"):
-			proxy = append(proxy, row)
-		default:
-			extra = append(extra, row)
+		name, value, _ := strings.Cut(row, ":")
+		value = strings.TrimLeft(value, " \t")
+		switch lower := strings.ToLower(name); lower {
+		case "host":
+			host[lower], hostOrder = value, append(hostOrder, lower)
+		case "content-length", "transfer-encoding":
+			framing[lower], framingOrder = value, append(framingOrder, lower)
+		case "proxy-authorization":
+			if _, carried := h.Get(name); !carried {
+				proxy = append(proxy, row)
+			}
 		}
 	}
-	for _, row := range append(proxy, host...) {
+	slotted := map[string]bool{}
+	for _, l := range h.lines {
+		if _, ok := framing[strings.ToLower(l.Name)]; ok {
+			slotted[strings.ToLower(l.Name)] = true
+		}
+	}
+	for _, row := range proxy {
 		b.WriteString(row + "\r\n")
 	}
+	_, hostCarried := h.Get("Host")
+	hostCarried = hostCarried && h.hostInPlace
+	if !hostCarried {
+		for _, name := range hostOrder {
+			spelling := "Host"
+			if l, ok := h.line(name); ok {
+				spelling = l.Name
+			}
+			b.WriteString(spelling + ": " + host[name] + "\r\n")
+		}
+	}
 	for _, l := range h.lines {
-		if strings.EqualFold(l.Name, "Host") || strings.EqualFold(l.Name, "Content-Length") || strings.EqualFold(l.Name, "Transfer-Encoding") {
+		lower := strings.ToLower(l.Name)
+		switch lower {
+		case "host":
+			if v, ok := host[lower]; ok && hostCarried {
+				b.WriteString(l.Name + ": " + v + "\r\n")
+			}
+			continue
+		case "content-length", "transfer-encoding":
+			if v, ok := framing[lower]; ok {
+				b.WriteString(l.Name + ": " + v + "\r\n")
+			}
 			continue
 		}
 		b.WriteString(l.Name + ": " + l.Value + "\r\n")
 	}
-	for _, rows := range [][]string{framing, extra} {
-		for _, row := range rows {
-			b.WriteString(row + "\r\n")
+	for _, name := range framingOrder {
+		if !slotted[name] {
+			b.WriteString(canonicalFraming[name] + ": " + framing[name] + "\r\n")
 		}
 	}
 	b.WriteString("\r\n")
 	return b.Bytes()
 }
+
+// Spelling net/http writes for each framing line
+var canonicalFraming = map[string]string{"content-length": "Content-Length", "transfer-encoding": "Transfer-Encoding"}
 
 // Wire layer of a pooled connection, looked up through every NetConn wrapper short of TLS
 func wireConnOf(conn net.Conn) *WireConn {
@@ -258,6 +311,7 @@ type WireTransport struct {
 	Decoders []string
 }
 
+// Writes the request in its carried lines, a redirect hop also dropping each name its redirect policy removed
 func (t WireTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := context.WithValue(req.Context(), targetKey{}, req.URL)
 	h := WireOf(req)
@@ -267,6 +321,11 @@ func (t WireTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	hop := req.Response != nil && req.Response.Request != nil
 	if hop {
 		h = redirectLines(WireOf(req.Response.Request), req.Response.Request.URL, req.URL)
+		for _, l := range h.Lines() {
+			if !strings.EqualFold(l.Name, "Host") && req.Header.Values(l.Name) == nil {
+				h.Del(l.Name)
+			}
+		}
 		ctx = context.WithValue(ctx, wireKey{}, h)
 	}
 	var bound *WireConn
@@ -406,6 +465,13 @@ func (d *lazyDecoder) open() {
 			return
 		}
 		d.r = flate.NewReader(br)
+	case "zstd":
+		zr, err := zstd.NewReader(br, zstd.WithDecoderConcurrency(1))
+		if err != nil {
+			d.err = d.classify(err)
+			return
+		}
+		d.r = zr.IOReadCloser()
 	default:
 		d.r = br
 	}

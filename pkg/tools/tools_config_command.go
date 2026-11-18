@@ -29,7 +29,6 @@ func (s *ToolsSetup) ToolsCommand(ns map[string]any, firstInstall bool, cfg conf
 	s.printColor("☤ Icebath Tool Configuration", cliui.Cyan, cliui.Bold)
 	s.printColor("  Enable or disable tools per platform.", cliui.Dim)
 	s.printColor("  Tools that need API keys will be configured when enabled.", cliui.Dim)
-	s.printColor("  Guide: https://hermes-agent.nousresearch.com/docs/user-guide/features/tools", cliui.Dim)
 	s.println("")
 	if firstInstall {
 		return s.firstInstallFlow(cfg, enabledPlatforms)

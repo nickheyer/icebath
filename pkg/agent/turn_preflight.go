@@ -20,7 +20,7 @@ func runPreflightCompression(ctx context.Context, a *AIAgent, s *LoopState, comp
 	}
 	threshold, contextLength := 0, 0
 	if compressor != nil {
-		threshold, contextLength = compressor.Base().ThresholdTokens, compressor.Base().ContextLength
+		threshold, contextLength = engineThresholdTokens(compressor), engineContextLength(compressor)
 	}
 	cooldown := activeCompressionFailureCooldown(compressor)
 	eligible := a.compressionEnabled && len(s.Messages) > 1 && s.CompressionAttempts < s.MaxCompressionAttempts
@@ -99,7 +99,7 @@ func runPreflightCompression(ctx context.Context, a *AIAgent, s *LoopState, comp
 		}
 	case !a.compressionEnabled && len(s.Messages) > 1:
 		if a.contextCompressor != nil {
-			if ctxLen := a.contextCompressor.Base().ContextLength; ctxLen > 0 && tokens > ctxLen {
+			if ctxLen := engineContextLength(a.contextCompressor); ctxLen > 0 && tokens > ctxLen {
 				a.warnUncompressedContextOverflow(tokens, ctxLen)
 			}
 		}

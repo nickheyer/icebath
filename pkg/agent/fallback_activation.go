@@ -308,7 +308,7 @@ func (a *AIAgent) reresolveFallbackReasoningConfig(ctx context.Context) {
 		return
 	}
 	a.reasoningConfig = config.ResolveReasoningConfig(map[string]any(cfg), a.model)
-	chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, pyrepr.Repr(a.reasoningConfig)))
+	chatCompletionHelpersLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, pyrepr.Repr(dictOrNone(a.reasoningConfig))))
 }
 
 // Drops the old provider's injected extra_body keys still at their injected values, then merges the new provider's

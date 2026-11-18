@@ -215,8 +215,10 @@ type Job struct {
 	FailureStreak          int
 	Deliver                *string
 	Origin                 map[string]any
-	EnabledToolsets        []string
-	Workdir                *string
+	// Key order of Origin as read from disk, the reference creation order applying to keys it lacks
+	originKeys      []string
+	EnabledToolsets []string
+	Workdir         *string
 	// Keys persisted only when explicitly set
 	AttachToSession      *bool
 	ReasoningEffort      *string
@@ -250,11 +252,16 @@ type Job struct {
 	run runMarks
 	// Record arrived with enabled absent, which reads as true
 	enabledAbsent bool
+	// Optional keys the record holds as JSON null, saved back as null the way a dict merge keeps a None
+	nullKeys map[string]bool
 	// Key order the record was loaded with, kept on save the way a Python dict keeps insertion order
 	keyOrder []string
 	// Written with exactly the keyOrder keys, the way a raw jobs.json dict saves
 	onlyStoredKeys bool
 }
+
+// Optional keys create writes only when set, which an update or a hand edit may leave as null
+var nullableOptionalKeys = []string{"attach_to_session", "reasoning_effort", "failure_deliver", "interpreter", "grace_minutes", "catch_up", "fire_claim", "run_claim"}
 
 type kvPair struct {
 	key   string
@@ -315,6 +322,32 @@ func strOrNull(p *string) any {
 	return *p
 }
 
+// Key order the reference writes a captured origin in
+var originKeyOrder = []string{"platform", "chat_id", "chat_name", "thread_id", "user_id", "scope_id"}
+
+// Origin as an ordered object, keys read from disk first, then the creation order, then any others sorted
+func orderedOrigin(origin map[string]any, keys []string) *pyjson.Object {
+	out := pyjson.NewObject()
+	for _, group := range [][]string{keys, originKeyOrder} {
+		for _, k := range group {
+			if v, ok := origin[k]; ok {
+				out.Set(k, v)
+			}
+		}
+	}
+	rest := make([]string, 0, len(origin))
+	for k := range origin {
+		if _, done := out.Get(k); !done {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		out.Set(k, origin[k])
+	}
+	return out
+}
+
 func (j *Job) MarshalJSON() ([]byte, error) {
 	skills := j.Skills
 	if skills == nil {
@@ -342,7 +375,7 @@ func (j *Job) MarshalJSON() ([]byte, error) {
 	}
 	var origin any
 	if j.Origin != nil {
-		origin = j.Origin
+		origin = orderedOrigin(j.Origin, j.originKeys)
 	}
 	var monitorState any
 	if j.MonitorState != nil {
@@ -385,6 +418,11 @@ func (j *Job) MarshalJSON() ([]byte, error) {
 	}
 	if j.CatchUp != nil {
 		pairs = append(pairs, kvPair{"catch_up", *j.CatchUp})
+	}
+	for _, k := range nullableOptionalKeys {
+		if j.nullKeys[k] && j.optionalUnset(k) {
+			pairs = append(pairs, kvPair{k, nil})
+		}
 	}
 	if j.FireClaim != nil {
 		pairs = append(pairs, kvPair{"fire_claim", j.FireClaim})
@@ -588,9 +626,71 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Drops the value of an optional key a null now holds
+func (j *Job) clearOptional(k string) {
+	delete(j.Extra, k)
+	switch k {
+	case "attach_to_session":
+		j.AttachToSession = nil
+	case "reasoning_effort":
+		j.ReasoningEffort = nil
+	case "failure_deliver":
+		j.FailureDeliver = nil
+	case "interpreter":
+		j.Interpreter = nil
+	case "grace_minutes":
+		j.GraceMinutes = nil
+	case "catch_up":
+		j.CatchUp = nil
+	case "fire_claim":
+		j.FireClaim = nil
+	case "run_claim":
+		j.RunClaim = nil
+	}
+}
+
+// Sets an optional key to null, kept in the saved record the way assigning None keeps the key
+func (j *Job) setNull(k string) {
+	if j.nullKeys == nil {
+		j.nullKeys = map[string]bool{}
+	}
+	j.nullKeys[k] = true
+	j.clearOptional(k)
+}
+
+// Whether the optional key holds no value, the case its null marker applies to
+func (j *Job) optionalUnset(k string) bool {
+	switch k {
+	case "attach_to_session":
+		return j.AttachToSession == nil
+	case "reasoning_effort":
+		return j.ReasoningEffort == nil
+	case "failure_deliver":
+		return j.FailureDeliver == nil
+	case "interpreter":
+		return j.Interpreter == nil
+	case "grace_minutes":
+		return j.GraceMinutes == nil && j.Extra["grace_minutes"] == nil
+	case "catch_up":
+		return j.CatchUp == nil && j.Extra["catch_up"] == nil
+	case "fire_claim":
+		return j.FireClaim == nil
+	case "run_claim":
+		return j.RunClaim == nil
+	}
+	return true
+}
+
 // Assigns one raw JSON field onto the record, unknown keys landing in Extra
 func (j *Job) setField(k string, raw json.RawMessage) error {
 	isNull := string(bytes.TrimSpace(raw)) == "null"
+	if containsString(nullableOptionalKeys, k) {
+		if isNull {
+			j.setNull(k)
+			return nil
+		}
+		delete(j.nullKeys, k)
+	}
 	switch k {
 	case "id":
 		j.ID, _ = decodeText(raw)
@@ -698,6 +798,11 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 			var o map[string]any
 			if json.Unmarshal(raw, &o) == nil {
 				j.Origin = o
+				if ordered, err := pyjson.LoadsOrdered(raw); err == nil {
+					if obj, ok := ordered.(*pyjson.Object); ok {
+						j.originKeys = append([]string(nil), obj.Keys...)
+					}
+				}
 			} else {
 				j.putExtra("origin", raw)
 			}

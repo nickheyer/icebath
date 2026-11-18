@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"slices"
 	"sort"
@@ -10,7 +11,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -31,6 +31,7 @@ type slashRun struct {
 	flight      int
 	destination submissionDestination
 	typed       bool
+	observed    bool
 	submission  *slashSubmission
 }
 
@@ -81,12 +82,19 @@ func (r *slashRun) fail(err error) {
 	r.a.sys("error: " + rpcErrorMessage(err))
 }
 
-// Tells the gateway a typed command ran, so observers of the session see it
+// Tells a canonical gateway once that a typed command ran, a gateway refusing the verb never asked again
 func (r *slashRun) ran() tea.Cmd {
-	if !r.typed {
+	if !r.typed || r.observed || r.sid == "" || !r.a.gw.canonical() || r.a.observeUnsupported {
 		return nil
 	}
-	return r.a.events.quietRequest("command.observe", map[string]any{"arg": r.arg, "name": r.name, "session_id": nilIfEmpty(r.sid)})
+	r.observed = true
+	return gatewayCall(r.a.gw, "command.observe", map[string]any{"arg": r.arg, "name": r.name, "session_id": r.sid}, func(_ any, err error) tea.Cmd {
+		var refusal *rpcError
+		if err != nil && ((errors.As(err, &refusal) && refusal.HasCode && refusal.Code == jsonRPCMethodNotFound) || strings.Contains(rpcErrorMessage(err), "unknown_method")) {
+			r.a.observeUnsupported = true
+		}
+		return nil
+	})
 }
 
 func (r *slashRun) sys(text string) { r.a.sys(text) }
@@ -301,44 +309,6 @@ func (a *app) handleDispatch(run *slashRun, raw any, fromExec bool) tea.Cmd {
 	return nil
 }
 
-// Commands the composer completes, the local ones, the widgets and every command of the gateway catalog
-func (a *app) composerCommands() []cards.Command {
-	seen := map[string]bool{}
-	var out []cards.Command
-	add := func(name, desc string, suggest func(string) []string, arg string) {
-		name = strings.TrimPrefix(strings.ToLower(name), "/")
-		if name == "" || seen[name] {
-			return
-		}
-		seen[name] = true
-		required := ""
-		if strings.HasPrefix(arg, "<") {
-			required = arg
-		} else if arg != "" {
-			desc = arg + "  " + desc
-		}
-		out = append(out, cards.Command{Name: name, Desc: desc, Arg: required, Suggest: suggest})
-	}
-	for _, c := range a.localCommands {
-		add(c.name, c.help, c.suggest, c.usage)
-	}
-	for _, w := range a.widgets.list() {
-		add(w.ID, w.Help, nil, "")
-	}
-	if a.catalog != nil {
-		for _, pair := range a.catalog.Pairs {
-			name, usage, _ := strings.Cut(strings.TrimPrefix(pair[0], "/"), " ")
-			var suggest func(string) []string
-			if subs := a.catalog.Sub["/"+name]; len(subs) > 0 {
-				suggest = func(string) []string { return subs }
-			}
-			add(name, pair[1], suggest, usage)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
-}
-
 // Local commands as palette entries, so every one is reachable without typing its name
 func (a *app) slashPaletteCommands() []wm.Command {
 	var out []wm.Command
@@ -353,9 +323,6 @@ func (a *app) slashPaletteCommands() []wm.Command {
 	return out
 }
 
-// Catalog wording of the hotkeys whose help row follows the language of the session
-var hotkeyHints = map[string]string{"tui.suspend": "hints.suspend"}
-
 // Hotkeys of the session as the keymap binds them now
 func (a *app) hotkeyRows() [][2]string {
 	var rows [][2]string
@@ -365,11 +332,7 @@ func (a *app) hotkeyRows() [][2]string {
 			continue
 		}
 		if chord := a.keys.DisplayAll(action.ID); chord != "" && action.Doc != "" && (action.Context == tuiContext || !action.Quiet || strings.HasPrefix(action.ID, "composer.delete")) {
-			doc := action.Doc
-			if key, localized := hotkeyHints[action.ID]; localized {
-				doc = tr(key)
-			}
-			rows = append(rows, [2]string{chord, doc})
+			rows = append(rows, [2]string{chord, action.Doc})
 		}
 	}
 	return append(rows, [2]string{`\ + enter`, "continue the prompt on a new line"}, [2]string{"!<cmd>", "run a shell command in the session"}, [2]string{"{!<cmd>}", "put the output of a shell command into the prompt"})

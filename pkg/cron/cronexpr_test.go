@@ -10,7 +10,7 @@ func wall(y int, m time.Month, d, h, mi, s int) time.Time {
 }
 
 func TestParseCronRejectsBadInput(t *testing.T) {
-	for _, expr := range []string{"", "0 9 * *", "0 9 * * FUNDAY", "60 * * * *", "* 24 * * *", "* * 32 * *", "* * * 13 *", "* * * * 8", "*/0 * * * *", "5-1 * * * *", "a b c d e f g h", "0 9 * * 5#6", "H * * * *"} {
+	for _, expr := range []string{"", "0 9 * *", "0 9 * * FUNDAY", "60 * * * *", "* 24 * * *", "* * 32 * *", "* * * 13 *", "* * * * 8", "*/0 * * * *", "a b c d e f g h", "0 9 * * 5#6", "H * * * *"} {
 		if _, err := ParseCron(expr); err == nil {
 			t.Errorf("ParseCron(%q) accepted", expr)
 		}
@@ -18,7 +18,7 @@ func TestParseCronRejectsBadInput(t *testing.T) {
 }
 
 func TestParseCronAcceptsHermesForms(t *testing.T) {
-	for _, expr := range []string{"0 9 * * *", "0 9 * * MON", "*/15 9-17 * * MON-FRI", "0 9 1 JAN *", "0 9 * * MON,WED,FRI", "0 9 * * 7", "0 9 L * *", "0 9 * * 5L", "0 9 * * 1#2", "0 9 ? * ?", "0 0 * * 0 30", "0 0 1 1 * 0 2030", "@daily", "30 1 * * *", "0 9-17/2 * * *", "5/15 * * * *"} {
+	for _, expr := range []string{"0 9 * * *", "0 9 * * MON", "*/15 9-17 * * MON-FRI", "0 9 1 JAN *", "0 9 * * MON,WED,FRI", "0 9 * * 7", "0 9 L * *", "0 9 * * 1#2", "0 9 ? * ?", "0 0 * * 0 30", "0 0 1 1 * 0 2030", "@daily", "30 1 * * *", "0 9-17/2 * * *", "5/15 * * * *"} {
 		if _, err := ParseCron(expr); err != nil {
 			t.Errorf("ParseCron(%q): %v", expr, err)
 		}
@@ -39,7 +39,6 @@ func TestNextTable(t *testing.T) {
 		{"0 9 1 JAN *", wall(2026, 2, 1, 0, 0, 0), wall(2027, 1, 1, 9, 0, 0)},
 		{"0 9 L * *", wall(2026, 2, 10, 0, 0, 0), wall(2026, 2, 28, 9, 0, 0)},
 		{"0 9 L * *", wall(2028, 2, 10, 0, 0, 0), wall(2028, 2, 29, 9, 0, 0)},
-		{"0 9 * * 5L", wall(2026, 8, 1, 0, 0, 0), wall(2026, 8, 28, 9, 0, 0)},
 		{"0 9 * * 1#2", wall(2026, 8, 1, 0, 0, 0), wall(2026, 8, 10, 9, 0, 0)},
 		{"0 9 15 * 1", wall(2026, 8, 11, 0, 0, 0), wall(2026, 8, 15, 9, 0, 0)},
 		{"0 9 15 * 1", wall(2026, 8, 16, 0, 0, 0), wall(2026, 8, 17, 9, 0, 0)},

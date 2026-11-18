@@ -164,7 +164,7 @@ func isPyBool(v any, want bool) bool {
 func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	data, ok := asStringMap(raw)
 	if !ok {
-		logWarn("Plugin catalog: " + label + ": entry must be a mapping")
+		logPluginCatalog.warn("Plugin catalog: " + label + ": entry must be a mapping")
 		return nil
 	}
 	name := catalogField(data, "name", "")
@@ -186,18 +186,18 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 		problem = "category must be one of " + strings.Join(CatalogCategories, "/") + " (got " + pyrepr.StrRepr(category) + ")"
 	}
 	if problem != "" {
-		logWarn("Plugin catalog: " + label + ": " + problem)
+		logPluginCatalog.warn("Plugin catalog: " + label + ": " + problem)
 		return nil
 	}
 	caps, _ := asStringMap(data["capabilities"])
 	version := pystr.Strip(catalogField(data, "version", ""))
 	if version != "" && !catalogVersionRe.MatchString(version) {
-		logWarn("Plugin catalog: " + label + ": ignoring version " + pyrepr.StrRepr(version) + " (max 32 chars of [A-Za-z0-9._+-])")
+		logPluginCatalog.warn("Plugin catalog: " + label + ": ignoring version " + pyrepr.StrRepr(version) + " (max 32 chars of [A-Za-z0-9._+-])")
 		version = ""
 	}
 	image := pystr.Strip(catalogField(data, "image", ""))
 	if image != "" && !IsAllowedImageURL(image) {
-		logWarn("Plugin catalog: " + label + ": ignoring image " + pyrepr.StrRepr(image) + " (must be https on a GitHub host)")
+		logPluginCatalog.warn("Plugin catalog: " + label + ": ignoring image " + pyrepr.StrRepr(image) + " (must be https on a GitHub host)")
 		image = ""
 	}
 	declared := catalogStrList(data["screenshots"])
@@ -208,7 +208,7 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 		}
 	}
 	if len(screenshots) != len(declared) {
-		logWarn("Plugin catalog: " + label + ": ignoring screenshots off GitHub hosts")
+		logPluginCatalog.warn("Plugin catalog: " + label + ": ignoring screenshots off GitHub hosts")
 	}
 	requires := data["requires_icebath"]
 	if _, ok := data["requires_icebath"]; !ok {
@@ -259,16 +259,16 @@ func containsString(items []string, s string) bool {
 // Parsed YAML of one catalog file read as utf-8-sig, nil with a warning when unreadable or malformed
 func readCatalogYAML(raw []byte, readErr error, label string) any {
 	if readErr != nil {
-		logWarn("Plugin catalog: failed to read " + label + ": " + pypath.OSErrorText(readErr))
+		logPluginCatalog.warn("Plugin catalog: failed to read " + label + ": " + pypath.OSErrorText(readErr))
 		return nil
 	}
 	if err := strictUTF8(raw); err != nil {
-		logWarn("Plugin catalog: failed to read " + label + ": " + err.Error())
+		logPluginCatalog.warn("Plugin catalog: failed to read " + label + ": " + err.Error())
 		return nil
 	}
 	doc, err := config.FastSafeLoad(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
 	if err != nil {
-		logWarn("Plugin catalog: failed to read " + label + ": " + err.Error())
+		logPluginCatalog.warn("Plugin catalog: failed to read " + label + ": " + err.Error())
 		return nil
 	}
 	if !jsonTruthy(doc) {
@@ -346,7 +346,7 @@ func loadCatalog(dir string) ([]*PluginCatalogEntry, error) {
 func LoadCatalog(dir string) []*PluginCatalogEntry {
 	entries, err := loadCatalog(dir)
 	if err != nil {
-		logWarn("Plugin catalog: failed to list the catalog", "error", err)
+		logPluginCatalog.warn("Plugin catalog: failed to list the catalog", "error", err)
 	}
 	return entries
 }

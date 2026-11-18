@@ -28,7 +28,7 @@ func DiscoverEntrypointManifests(ctx context.Context) []*Manifest {
 	manifests := []*Manifest{}
 	entryPoints, err := pm.SelectedEntryPoints(ctx)
 	if err != nil {
-		logDebug(fmt.Sprintf("Entry-point scan failed: %v", err))
+		logPlugins.debug(fmt.Sprintf("Entry-point scan failed: %v", err))
 		return manifests
 	}
 	capabilityEPs := selectEntryPointGroup(entryPoints, pipEntryPointCapabilitiesGroup)

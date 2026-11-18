@@ -24,28 +24,26 @@ var gatewayHandlers map[string]func(a *GatewayAgent, payload map[string]any, str
 
 func init() {
 	gatewayHandlers = map[string]func(a *GatewayAgent, payload map[string]any, streamCallback func(string), starts map[string]time.Time){
-		"message.delta":          (*GatewayAgent).onDelta,
-		"message.interim":        (*GatewayAgent).onInterim,
-		"tool.generating":        (*GatewayAgent).onToolGenerating,
-		"tool.progress":          (*GatewayAgent).onToolProgress,
-		"tool.start":             (*GatewayAgent).onToolStart,
-		"tool.complete":          (*GatewayAgent).onToolComplete,
-		"todo.updated":           (*GatewayAgent).onTodo,
-		"session.control.update": (*GatewayAgent).onControlUpdate,
-		"thinking.delta":         (*GatewayAgent).onThinking,
-		"reasoning.delta":        (*GatewayAgent).onReasoning,
-		"reasoning.available":    (*GatewayAgent).onReasoningAvailable,
-		"moa.reference":          moaHandler("moa.reference"),
-		"moa.aggregating":        moaHandler("moa.aggregating"),
-		"notification.show":      (*GatewayAgent).onNotice,
-		"notification.clear":     (*GatewayAgent).onNoticeClear,
-		"reaction":               (*GatewayAgent).onReaction,
-		"agent.print":            (*GatewayAgent).onPrint,
-		"review.summary":         (*GatewayAgent).onReviewSummary,
-		"approval.request":       (*GatewayAgent).onApproval,
-		"clarify.request":        (*GatewayAgent).onClarify,
-		"connection.request":     (*GatewayAgent).onConnectionRequest,
-		"connection.update":      (*GatewayAgent).onConnectionUpdate,
+		"message.delta":       (*GatewayAgent).onDelta,
+		"message.interim":     (*GatewayAgent).onInterim,
+		"tool.generating":     (*GatewayAgent).onToolGenerating,
+		"tool.progress":       (*GatewayAgent).onToolProgress,
+		"tool.start":          (*GatewayAgent).onToolStart,
+		"tool.complete":       (*GatewayAgent).onToolComplete,
+		"todo.updated":        (*GatewayAgent).onTodo,
+		"thinking.delta":      (*GatewayAgent).onThinking,
+		"reasoning.delta":     (*GatewayAgent).onReasoning,
+		"reasoning.available": (*GatewayAgent).onReasoningAvailable,
+		"moa.reference":       moaHandler("moa.reference"),
+		"moa.aggregating":     moaHandler("moa.aggregating"),
+		"notification.show":   (*GatewayAgent).onNotice,
+		"notification.clear":  (*GatewayAgent).onNoticeClear,
+		"agent.print":         (*GatewayAgent).onPrint,
+		"review.summary":      (*GatewayAgent).onReviewSummary,
+		"approval.request":    (*GatewayAgent).onApproval,
+		"clarify.request":     (*GatewayAgent).onClarify,
+		"connection.request":  (*GatewayAgent).onConnectionRequest,
+		"connection.update":   (*GatewayAgent).onConnectionUpdate,
 	}
 }
 
@@ -234,15 +232,6 @@ func (a *GatewayAgent) setTodos(snapshot map[string]any) {
 	a.TodoStore().Restore(todos, snapshot["revision"])
 }
 
-func (a *GatewayAgent) onControlUpdate(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
-	a.mu.Lock()
-	cb := a.controlUpdateCallback
-	a.mu.Unlock()
-	if cb != nil {
-		cb()
-	}
-}
-
 func (a *GatewayAgent) onThinking(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
 	if cb := a.opts.ThinkingCallback; cb != nil {
 		cb(strOrEmpty(payload["text"]))
@@ -281,12 +270,6 @@ func (a *GatewayAgent) onNotice(payload map[string]any, streamCallback func(stri
 func (a *GatewayAgent) onNoticeClear(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
 	if cb := a.opts.NoticeClearCallback; cb != nil {
 		cb(noneOrStr(payload["key"]))
-	}
-}
-
-func (a *GatewayAgent) onReaction(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
-	if cb := a.opts.ReactionCallback; cb != nil {
-		cb(noneOrStr(payload["kind"]))
 	}
 }
 

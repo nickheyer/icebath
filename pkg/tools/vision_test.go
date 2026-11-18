@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"image"
 	"image/color"
 	"image/png"
@@ -1019,10 +1020,10 @@ func TestVideoAnalyze(t *testing.T) {
 func TestVisionToolsRegistered(t *testing.T) {
 	registerVisionTools()
 	v := Default.Get("vision_analyze")
-	if v == nil || v.Toolset != "vision" || v.Emoji != "\U0001F441️" || v.Schema["name"] != "vision_analyze" {
+	if v == nil || v.Toolset != "vision" || v.Emoji != "\U0001F441️" || v.Schema.Vals["name"] != "vision_analyze" {
 		t.Fatalf("vision_analyze %+v", v)
 	}
-	req := v.Schema["parameters"].(map[string]any)["required"].([]any)
+	req := pyjson.Plain(v.Schema.Vals["parameters"]).(map[string]any)["required"].([]any)
 	if len(req) != 2 || req[0] != "image_url" || req[1] != "question" {
 		t.Fatalf("required %v", req)
 	}

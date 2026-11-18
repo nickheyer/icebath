@@ -115,7 +115,6 @@ type gatewayAgentOptions struct {
 	ToolGenCallback          func(toolName string)
 	NoticeCallback           func(notice provider.AgentNotice)
 	NoticeClearCallback      func(key string)
-	ReactionCallback         func(kind string)
 	InterimAssistantCallback func(text any, alreadyStreamed bool)
 	ModelConfirmCallback     func(refusal map[string]any) bool
 	ModalWithdrawCallback    func(method string)
@@ -142,14 +141,12 @@ type GatewayAgent struct {
 	serviceTier           string
 	reasoningCallback     func(text string)
 	showReasoningSent     *gatewayShowReasoning
-	controlUpdateCallback func()
 	suppressStatusOutput  bool
 	printFn               func(string)
 	finite                bool
 	openRequest           *gatewayOpenRequest
 	sessionMessages       []map[string]any
 	pendingCLIUserMessage map[string]any
-	voiceTurnPending      bool
 	interruptRequested    bool
 	turnAskIndex          *int
 	usageStale            bool
@@ -769,7 +766,8 @@ func (a *GatewayAgent) Tools() []map[string]any {
 func (a *GatewayAgent) ValidToolNames() map[string]bool {
 	names := map[string]bool{}
 	for _, tool := range a.Tools() {
-		names[pyrepr.Str(tool["function"].(map[string]any)["name"])] = true
+		fn, _ := pyjson.Dict(tool["function"])
+		names[pyrepr.Str(fn["name"])] = true
 	}
 	return names
 }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -512,10 +512,7 @@ func ProbeOllamaLocalModels(ctx context.Context, baseURL string, timeout time.Du
 		ollamaLocalProbeFailures.pop(failureKey)
 	}
 	ollamaCacheMu.Unlock()
-	requestHeaders := map[string]string{"User-Agent": userAgent("icebath-cli")}
-	for k, v := range headers {
-		requestHeaders[k] = v
-	}
+	requestHeaders := pyhttpx.MergeHeaderMaps(pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "User-Agent", Value: userAgent("icebath-cli")}), headers)
 	var models []string
 	ok := false
 	if payload, err := modelsGetJSON(ctx, strings.TrimRight(root, "/")+"/api/tags", timeout, requestHeaders, nil); err == nil {
@@ -673,43 +670,25 @@ func clearOllamaLocalCaches() {
 	ollamaLocalProbeReachable.clear()
 }
 
-// Sends one catalog request with the credential dropping redirect policy, the body on a 2xx answer
+// Local server catalog request, urllib open_credentialed_url when it follows redirects and a with-block httpx client posting JSON when not
 func localCatalogDo(ctx context.Context, method, rawURL string, body []byte, timeout time.Duration, headers map[string]string, transport http.RoundTripper, follow bool) ([]byte, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if transport == nil {
-		transport = modelsTransport
+	var lines []pyhttpx.HeaderLine
+	for _, k := range pyhttpx.HeaderOrder(headers) {
+		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
 	}
-	if transport == nil {
-		transport = &http.Transport{
-			Proxy:               probeProxyFromEnvironment,
-			DialContext:         (&net.Dialer{Timeout: timeout}).DialContext,
-			TLSHandshakeTimeout: timeout,
+	var resp *http.Response
+	var err error
+	if follow {
+		if transport == nil {
+			transport = modelsTransport
 		}
+		resp, err = urllibOpen(ctx, urllibCall{method: method, url: rawURL, data: body, headers: lines, credentialed: true, timeout: timeout, base: transport})
+	} else {
+		resp, err = localHTTPXDo(ctx, method, rawURL, body, timeout, lines, transport)
 	}
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if !follow {
-				return http.ErrUseLastResponse
-			}
-			return credentialRedirectPolicy(rawURL)(req, via)
-		},
-	}
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, rawURL, reader)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -722,6 +701,39 @@ func localCatalogDo(ctx context.Context, method, rawURL string, body []byte, tim
 		return nil, &modelsHTTPError{URL: rawURL, Status: resp.StatusCode, Body: data}
 	}
 	return data, nil
+}
+
+// One request of an httpx client built with the given headers, a JSON body adding its length and type
+func localHTTPXDo(ctx context.Context, method, rawURL string, body []byte, timeout time.Duration, headers []pyhttpx.HeaderLine, transport http.RoundTripper) (*http.Response, error) {
+	if transport == nil {
+		tr, err := httpxWireTransportTLS(httpxDefaultLimits, timeout, nil, PlatformTLSConfig())
+		if err != nil {
+			return nil, err
+		}
+		tr.ResponseHeaderTimeout = timeout
+		transport = tr
+	}
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, reader)
+	if err != nil {
+		return nil, err
+	}
+	lines := httpxClientHeaders()
+	lines.Update(headers)
+	if body != nil {
+		if _, ok := lines.Get("Content-Length"); !ok {
+			lines.Set("Content-Length", strconv.Itoa(len(body)))
+		}
+		if _, ok := lines.Get("Content-Type"); !ok {
+			lines.Set("Content-Type", "application/json")
+		}
+	}
+	wire := pyhttpx.NewHeaders(append([]pyhttpx.HeaderLine{{Name: "Host", Value: httpxHost(req.URL)}}, lines.Lines()...)...)
+	client := &http.Client{Transport: pyhttpx.WireTransport{Base: transport, Decoders: httpxDecoders}, CheckRedirect: httpxNoRedirects, Timeout: timeout}
+	return client.Do(pyhttpx.WithWire(req, wire))
 }
 
 // JSON decode keeping integers distinct from floats as Python json does
@@ -745,11 +757,11 @@ func lmstudioNativeServerRoot(baseURL string) string {
 
 // User agent plus the bearer for LM Studio native API requests
 func lmstudioRequestHeaders(ctx context.Context, apiKey any) map[string]string {
-	headers := map[string]string{"User-Agent": userAgent("icebath-cli")}
+	lines := []pyhttpx.HeaderLine{{Name: "User-Agent", Value: userAgent("icebath-cli")}}
 	if token := modelsMaterializeProbeAPIKey(ctx, apiKey); token != "" {
-		headers["Authorization"] = "Bearer " + token
+		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + token})
 	}
-	return headers
+	return pyhttpx.OrderedHeaderMap(lines...)
 }
 
 // Raw api v1 models list of LM Studio, false on network or shape failures, an AuthError on 401 or 403
@@ -916,15 +928,15 @@ func EnsureLMStudioModelLoaded(ctx context.Context, model, baseURL string, apiKe
 	if !ok || len(loaded) > 0 {
 		return LMStudioLoadResult{}
 	}
-	payload := newOmap()
+	payload := pyjson.NewObject()
 	payload.Set("model", model)
 	payload.Set("echo_load_config", true)
 	if hasExplicit {
 		payload.Set("context_length", explicit)
 	}
-	body, _ := json.Marshal(payload)
-	headers := lmstudioRequestHeaders(ctx, apiKey)
-	headers["Content-Type"] = "application/json"
+	dumped, _ := pyjson.Dumps(payload)
+	body := []byte(dumped)
+	headers := pyhttpx.MergeHeaderMaps(lmstudioRequestHeaders(ctx, apiKey), pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Content-Type", Value: "application/json"}))
 	responseBody, err := localCatalogDo(ctx, http.MethodPost, serverRoot+"/api/v1/models/load", body, timeout, headers, nil, true)
 	if err != nil {
 		return LMStudioLoadResult{LoadAttempted: true}
@@ -978,11 +990,11 @@ func OllamaModelSupportsThinking(ctx context.Context, model, baseURL string, api
 	if serverURL == "" || bare == "" {
 		return false, false
 	}
-	headers := map[string]string{"Content-Type": "application/json"}
+	headers := map[string]string{}
 	if token := modelsMaterializeProbeAPIKey(ctx, apiKey); token != "" {
 		headers["Authorization"] = "Bearer " + token
 	}
-	body, _ := json.Marshal(map[string]string{"name": bare})
+	body, _ := pyhttpx.JSONBody(map[string]any{"name": bare})
 	data, err := localCatalogDo(ctx, http.MethodPost, serverURL+"/api/show", body, timeout, headers, ollamaThinkingTransport, false)
 	if err != nil {
 		return false, false

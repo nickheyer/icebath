@@ -464,12 +464,7 @@ func (a *AIAgent) createRequestOpenAIClient(ctx context.Context, reason string, 
 			"base_url": kwargText(requestKwargs["base_url"]), "api_key": kwargText(requestKwargs["api_key"]), "has_images": true,
 		}))
 		if len(imageHeaders) > 0 {
-			merged := stringHeaders(requestKwargs["default_headers"])
-			if merged == nil {
-				merged = map[string]string{}
-			}
-			maps.Copy(merged, imageHeaders)
-			requestKwargs["default_headers"] = merged
+			requestKwargs["default_headers"] = provider.MergeHeaderMaps(stringHeaders(requestKwargs["default_headers"]), imageHeaders)
 		}
 	}
 	cached, stale := a.checkoutRequestSlot(openAISlot, requestKwargs)

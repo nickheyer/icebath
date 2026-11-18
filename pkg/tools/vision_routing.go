@@ -429,13 +429,8 @@ func probeOllama(ctx context.Context, env *Env, provider, model string, cfg map[
 }
 
 // Capability probes after the config override in priority order
-var visionProbes = []struct {
-	label string
-	probe func(ctx context.Context, env *Env, provider, model string, cfg map[string]any) (bool, bool)
-}{
-	{"managed-runtime caps lookup", probeManagedRuntime},
-	{"caps lookup", probeModelsDev},
-	{"ollama vision probe", probeOllama},
+var visionProbes = []func(ctx context.Context, env *Env, provider, model string, cfg map[string]any) (bool, bool){
+	probeManagedRuntime, probeModelsDev, probeOllama,
 }
 
 // Vision capability from the config override then the probes, known false when nothing resolves it
@@ -451,11 +446,10 @@ func lookupSupportsVision(ctx context.Context, env *Env, provider, model string,
 	if provider == "" || model == "" {
 		return false, false
 	}
-	for _, p := range visionProbes {
-		if v, ok := p.probe(ctx, env, provider, model, cfg); ok {
+	for _, probe := range visionProbes {
+		if v, ok := probe(ctx, env, provider, model, cfg); ok {
 			return v, true
 		}
-		envLog(env).Debug("image_routing: probe gave no verdict", "probe", p.label, "provider", provider, "model", model)
 	}
 	return false, false
 }

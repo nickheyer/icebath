@@ -33,7 +33,7 @@ func IsolationMode(ctx context.Context, cfg map[string]any) string {
 	}
 	mode := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(text)), "-", "_")
 	if mode != IsolationInProcess && mode != IsolationHost {
-		logWarn(fmt.Sprintf("plugins.isolation=%s is not one of %s; loading plugins in-process", config.PyRepr(raw),
+		logPlugins.warn(fmt.Sprintf("plugins.isolation=%s is not one of %s; loading plugins in-process", config.PyRepr(raw),
 			IsolationHost+", "+IsolationInProcess))
 		return IsolationInProcess
 	}

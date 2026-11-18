@@ -286,7 +286,7 @@ func persistPluginSelection(ctx context.Context, keys []string, chosen, initial 
 	if len(off) > 0 {
 		shownOff = pyListRepr(off)
 	}
-	logInfo(fmt.Sprintf("plugins picker: enabled %s; disabled %s", shownOn, shownOff))
+	logPluginsCmdToggle.info(fmt.Sprintf("plugins picker: enabled %s; disabled %s", shownOn, shownOff))
 	return on, off, nil
 }
 

@@ -60,7 +60,7 @@ func readCompiledManifestInfo(tree fs.FS, d, prefix string) (string, any, any, s
 func scanCompiledLevel(tree fs.FS, base string, skip map[string]bool, prefix string, depth int, seen *entrySet) {
 	children, err := fs.ReadDir(tree, base)
 	if err != nil {
-		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
+		logPluginsCmd.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
 		return
 	}
 	for _, child := range children {
@@ -70,7 +70,7 @@ func scanCompiledLevel(tree fs.FS, base string, skip map[string]bool, prefix str
 		}
 		name, version, description, key, ok, err := readCompiledManifestInfo(tree, d, prefix)
 		if err != nil {
-			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
+			logPluginsCmd.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
 			continue
 		}
 		if !ok {

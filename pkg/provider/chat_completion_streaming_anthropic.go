@@ -35,7 +35,7 @@ type anthSDKMessageStream struct {
 	mu           sync.Mutex
 	resp         *http.Response
 	conn         net.Conn
-	sse          *sseReader
+	sse          sseFrameSource
 	snap         map[string]any
 	jsonBufs     map[int]string
 	pending      []any
@@ -59,7 +59,7 @@ func (c *anthropicSDKClient) MessagesStream(ctx context.Context, kwargs map[stri
 		}
 		return nil, &AnthropicConnectionError{Err: err}
 	}
-	s.resp, s.sse = resp, newSSEReader(resp.Body)
+	s.resp, s.sse = resp, c.inner.sseFrames(resp)
 	return s, nil
 }
 
@@ -148,11 +148,40 @@ func sdkStreamReadError(err error, resp *http.Response) error {
 	if errors.As(err, &ne) && ne.Timeout() {
 		out.Class, out.Message = "ReadTimeout", "timed out"
 	} else if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) {
-		out.Class, out.Message = "ReadError", pyhttpx.OSErrorText(err)
+		text := pyhttpx.OSErrorText(err)
+		out.Class, out.Message = "ReadError", text
+		out.Err = &AuxTransportError{Class: "ReadError", Message: text, Err: newOSConnectionError(err, text)}
 	}
 	out.Request = failedRequestOfResponse(resp)
 	return out
 }
+
+// OS level socket error at the root of the httpx and httpcore ReadError chain, the dropped socket's errno class
+type osConnectionError struct {
+	class, text string
+	errno       syscall.Errno
+}
+
+func newOSConnectionError(err error, text string) *osConnectionError {
+	out := &osConnectionError{class: "ConnectionError", text: text}
+	for errno, class := range osConnectionErrorClasses {
+		if errors.Is(err, errno) {
+			out.class, out.errno = class, errno
+		}
+	}
+	return out
+}
+
+// Python OSError subclass of each dropped socket errno
+var osConnectionErrorClasses = map[syscall.Errno]string{
+	syscall.ECONNRESET: "ConnectionResetError", syscall.EPIPE: "BrokenPipeError", syscall.ECONNABORTED: "ConnectionAbortedError",
+}
+
+func (e *osConnectionError) Error() string        { return e.text }
+func (e *osConnectionError) PyTypeName() string   { return e.class }
+func (e *osConnectionError) Is(target error) bool { return e.errno != 0 && target == e.errno }
+func (e *osConnectionError) Timeout() bool        { return false }
+func (e *osConnectionError) Temporary() bool      { return false }
 
 // Buffered request behind a response, nil without one
 func failedRequestOfResponse(resp *http.Response) *FailedStreamRequest {

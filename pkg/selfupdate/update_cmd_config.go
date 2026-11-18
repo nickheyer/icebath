@@ -33,17 +33,6 @@ var (
 	configMigrationSibling = migrateSiblingProfileConfigs
 )
 
-// Retired hook of an old updater, stops the run for the relaunch that migrates in fresh code
-func reloadConfigModules(ctx context.Context) error { return pm.StopForRelaunchIncomplete(ctx) }
-
-// Retired hook of an old updater, stops the run for the relaunch that checks the config in fresh code
-func runConfigCheckFresh(ctx context.Context) error { return pm.StopForRelaunchIncomplete(ctx) }
-
-// Retired hook of an old updater, stops the run for the relaunch that migrates in fresh code
-func runMigrateConfigFresh(ctx context.Context, interactive, quiet bool) error {
-	return pm.StopForRelaunchIncomplete(ctx)
-}
-
 // One sibling profile whose config format a quiet migration raised
 type siblingMigration struct {
 	Name     string

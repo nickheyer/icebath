@@ -80,6 +80,12 @@ func TestBundledPluginsRegisterThroughManager(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  enabled:\n    - egm\n    - hallmark\n    - impeccable\n"), 0o644)
+	for _, name := range []string{"egm", "hallmark", "impeccable"} {
+		os.MkdirAll(filepath.Join(h, "plugins", name), 0o755)
+		os.WriteFile(filepath.Join(h, "plugins", name, "plugin.yaml"), []byte("name: "+name+"\nkind: standalone\n"), 0o644)
+	}
+	os.WriteFile(filepath.Join(h, "plugins", ".install-metadata.json"), []byte(`{"egm": {"source": "builtin:egm"}, `+
+		`"hallmark": {"source": "builtin:hallmark"}, "impeccable": {"source": "builtin:impeccable"}}`), 0o600)
 	m := plugins.NewManager(h)
 	m.DiscoverAndLoad(context.Background(), true)
 	for _, q := range []string{"egm:egm-review", "egm:egm-zoom-out", "egm:egm-bootstrap-orchestrator", "hallmark:hallmark", "impeccable:impeccable"} {
@@ -114,6 +120,9 @@ func TestImpeccableCommandBuildsTheRenderedSkillTurn(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  enabled:\n    - impeccable\n"), 0o644)
+	os.MkdirAll(filepath.Join(h, "plugins", "impeccable"), 0o755)
+	os.WriteFile(filepath.Join(h, "plugins", "impeccable", "plugin.yaml"), []byte("name: impeccable\nkind: standalone\n"), 0o644)
+	os.WriteFile(filepath.Join(h, "plugins", ".install-metadata.json"), []byte(`{"impeccable": {"source": "builtin:impeccable"}}`), 0o600)
 	ctx := context.Background()
 	plugins.DiscoverPlugins(ctx, false)
 	host := &turnHost{task: "impeccable-turn-session", platform: "cli"}

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -136,18 +135,14 @@ func TestPMUsageErrors(t *testing.T) {
 		{[]string{"pm", "lock", "--bump", "uv"}, "icebath pm lock: error: --bump NAME and VERSION go together; run with neither to relock uv.lock"},
 		{[]string{"pm", "lock", "0.9.1"}, "icebath pm lock: error: --bump NAME and VERSION go together; run with neither to relock uv.lock"},
 		{[]string{"pm", "update", "--skip-target", "mars-x64"}, "argument --skip-target: invalid choice: 'mars-x64'"},
-		{[]string{"pm", "bundle"}, "'bundle' is not a `icebath pm` command."},
+		{[]string{"pm", "bundle"}, "icebath pm: error: argument cmd: invalid choice: 'bundle' (choose from 'lock', 'install', 'env', 'doctor', 'repair', 'environment', 'gc', 'status', 'update')"},
 		{[]string{"pm", "environment"}, "the following arguments are required: name"},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.argv, " "), func(t *testing.T) {
-			err := NewCLI().Execute(tc.argv)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error %v want %q", err, tc.want)
-			}
-			var exit *ExitError
-			if strings.Contains(tc.want, ": error: ") && (!errors.As(err, &exit) || exit.Code != 2) {
-				t.Fatalf("error %#v is not a status 2 usage error", err)
+			code, msg := ExitCode(NewCLI().Execute(tc.argv))
+			if code != 2 || !strings.Contains(msg, tc.want) {
+				t.Fatalf("exit %d %q want %q", code, msg, tc.want)
 			}
 		})
 	}

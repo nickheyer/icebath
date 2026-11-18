@@ -21,15 +21,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
-// Frames and rate of the build up animation, and the fewest chart and tree rows the window keeps
+// Play frames and rate, partial reveal frames, the chart row cap and the size watch period
 const (
-	journeyPlayFrames = 42
-	journeyPlayFPS    = 12
-	journeyChartRows  = 3
-	journeyTreeRows   = 6
+	journeyPlayFrames   = 42
+	journeyPlayFPS      = 12
+	journeyRevealFrames = 101
+	journeyMaxChartRows = 8
+	journeyWatchEvery   = 200 * time.Millisecond
 )
 
 // Show options of a /journey run as the journey parser reads them
@@ -61,11 +63,12 @@ type journeyRow struct {
 	last   bool
 }
 
-// Window of the learning journey, the chart at a reveal over the tree of slices and their nodes
+// Window of the learning journey, the pre-rendered timeline frames over the tree of slices and their nodes
 type journeyCard struct {
 	a       *app
 	opts    journeyOptions
-	payload map[string]any
+	data    map[string]any
+	frames  []map[string]any
 	buckets []journeyBucket
 	rows    []journeyRow
 	err     string
@@ -73,50 +76,125 @@ type journeyCard struct {
 	cursor  int
 	item    bool
 	scroll  int
-	reveal  float64
+	frame   int
 	gen     int
 	confirm bool
 	notice  string
 	busy    bool
-	width   int
+	viewW   int
+	viewH   int
+	seen    [2]int
+	asked   [2]int
 }
 
-// Opens the journey window and starts loading the learning graph
+// Opens the journey window, its first learning.frames request leaving once the window has a size
 func (a *app) openJourney(opts journeyOptions) tea.Cmd {
-	card := &journeyCard{a: a, opts: opts, reveal: opts.reveal}
-	if opts.play {
-		card.reveal = 0
-	}
-	return tea.Batch(a.wm.ShowOverlay(card), card.load())
+	card := &journeyCard{a: a, opts: opts}
+	return tea.Batch(a.wm.ShowOverlay(card), card.watch())
 }
 
-// Asks the gateway for the profile's learning graph and hands it to the card
-func (c *journeyCard) load() tea.Cmd {
-	c.gen++
-	gen := c.gen
-	return gatewayCall(c.a.gw, "learning.graph", map[string]any{}, func(v any, err error) tea.Cmd {
-		if err == nil && asRPCResult(v) == nil {
-			err = errors.New(tr("session.common.invalidResponse", "learning.graph"))
-		}
-		return c.loadedGraph(gen, asRPCResult(v), err)
+// Chart columns and rows a window of a size asks learning.frames for, the parser overrides first
+func (c *journeyCard) chartSize(w, h int) (int, int) {
+	cols := max(40, w-1)
+	if c.opts.width != 0 {
+		cols = max(24, max(40, c.opts.width)-2)
+	}
+	rows := max(5, min(journeyMaxChartRows, int(math.Floor(float64(max(16, h))*0.32))))
+	if c.opts.height != 0 {
+		rows = max(6, max(10, c.opts.height)-10-len(c.summary()))
+	}
+	return cols, rows
+}
+
+// Frames learning.frames renders for the run, the build up for a play and the reveal step for a partial reveal
+func (c *journeyCard) frameCount() int {
+	switch {
+	case c.opts.play:
+		return journeyPlayFrames
+	case c.opts.reveal == 0 || c.opts.reveal == 1:
+		return 2
+	}
+	return journeyRevealFrames
+}
+
+// Refetches the timeline once the window size settles on a chart it was not asked for, while the window shows
+func (c *journeyCard) watch() tea.Cmd {
+	return tea.Tick(journeyWatchEvery, func(time.Time) tea.Msg {
+		return asyncDoneMsg{run: func() tea.Cmd {
+			if c.a.wm.Overlay() != wm.Card(c) && c.viewW != 0 {
+				return nil
+			}
+			var load tea.Cmd
+			size := [2]int{c.viewW, c.viewH}
+			if cols, rows := c.chartSize(c.viewW, c.viewH); c.viewW != 0 && size == c.seen && c.asked != [2]int{cols, rows} {
+				load = c.refetch()
+			}
+			c.seen = size
+			return tea.Batch(load, c.watch())
+		}}
 	})
 }
 
-// Takes a fresh graph, keeping the cursor on the newest row, and starts the animation when asked
-func (c *journeyCard) loadedGraph(gen int, payload map[string]any, err error) tea.Cmd {
+// Asks for the timeline again at the chart size the window needs now
+func (c *journeyCard) refetch() tea.Cmd {
+	cols, rows := c.chartSize(c.viewW, c.viewH)
+	c.asked = [2]int{cols, rows}
+	return c.load(cols, rows)
+}
+
+// Asks the gateway for the timeline frames at a chart size and hands them to the card
+func (c *journeyCard) load(cols, rows int) tea.Cmd {
+	c.gen++
+	gen := c.gen
+	c.data, c.loaded, c.err = nil, false, ""
+	return gatewayCall(c.a.gw, "learning.frames", map[string]any{"cols": cols, "frames": c.frameCount(), "rows": rows}, func(v any, err error) tea.Cmd {
+		return c.loadedFrames(gen, asRPCResult(v), err)
+	})
+}
+
+// Takes fresh frames, the cursor on the newest row and the timeline view, and starts the animation when asked
+func (c *journeyCard) loadedFrames(gen int, data map[string]any, err error) tea.Cmd {
 	if gen != c.gen {
 		return nil
 	}
-	c.loaded, c.busy = true, false
+	c.loaded = true
 	if err != nil {
 		c.err = rpcErrorMessage(err)
 		return nil
 	}
-	c.payload, c.err, c.width = payload, "", 0
-	c.item, c.scroll = false, 0
-	if c.opts.play {
-		c.reveal = 0
+	c.data, c.frames = data, nil
+	if list, isList := data["frames"].([]any); isList {
+		for _, item := range list {
+			if frame, isDict := item.(map[string]any); isDict {
+				c.frames = append(c.frames, frame)
+			}
+		}
+	}
+	c.buckets = journeyBuckets(data["buckets"])
+	c.rows = nil
+	for b := range c.buckets {
+		bucket := &c.buckets[b]
+		if b > 0 {
+			c.rows = append(c.rows, journeyRow{kind: "gap"})
+		}
+		c.rows = append(c.rows, journeyRow{kind: "slice", bucket: bucket})
+		for n := range bucket.Nodes {
+			c.rows = append(c.rows, journeyRow{kind: "node", bucket: bucket, node: &bucket.Nodes[n], last: n == len(bucket.Nodes)-1})
+		}
+	}
+	c.cursor, c.item, c.scroll = max(0, len(c.rows)-1), false, 0
+	c.frame = max(0, len(c.frames)-1)
+	switch {
+	case c.opts.play:
+		c.frame = 0
 		return c.tick(gen, 0)
+	case c.opts.reveal == 0:
+		c.frame = 0
+	case c.opts.reveal != 1:
+		c.frame = min(len(c.frames)-1, int(math.RoundToEven(c.opts.reveal*float64(journeyRevealFrames-1))))
+	}
+	if _, rows := c.chartSize(c.viewW, c.viewH); c.opts.height != 0 && c.asked[1] != rows {
+		return c.refetch()
 	}
 	return nil
 }
@@ -129,55 +207,28 @@ func (c *journeyCard) tick(gen, frame int) tea.Cmd {
 			if gen != c.gen {
 				return nil
 			}
-			c.reveal = float64(frame) / float64(journeyPlayFrames-1)
-			if frame+1 < journeyPlayFrames {
+			c.frame = min(frame, len(c.frames)-1)
+			if frame+1 < len(c.frames) {
 				return c.tick(gen, frame+1)
 			}
-			c.reveal = 1
 			return nil
 		}}
 	})
 }
 
-// Chart columns and field rows of the render, the parser overrides first
-func (c *journeyCard) chartSize(w int, summary int) (int, int) {
-	if c.opts.width != 0 {
-		w = c.opts.width
-	}
-	cols := max(24, max(40, w)-2)
-	rows := 14
-	if c.opts.height != 0 {
-		rows = max(6, max(10, c.opts.height)-10-summary)
-	}
-	return cols, rows
-}
+// Summary lines of the timeline answer
+func (c *journeyCard) summary() []string { return rpcStrings(c.data["summary"]) }
 
-// Slices and nodes of the timeline for a chart width, rebuilt when the width changes
-func (c *journeyCard) layoutTree(w int) {
-	if c.width == w || c.payload == nil {
-		return
-	}
-	c.width = w
-	summary, _ := memory.BuildSummary(c.payload)
-	cols, rows := c.chartSize(w, len(summary))
-	frames, err := memory.RenderFrames(c.payload, cols, rows, 2)
-	if err != nil {
-		c.err = err.Error()
-		return
-	}
-	c.buckets = journeyBuckets(frames["buckets"])
-	c.rows = nil
-	for b := range c.buckets {
-		bucket := &c.buckets[b]
-		if b > 0 {
-			c.rows = append(c.rows, journeyRow{kind: "gap"})
-		}
-		c.rows = append(c.rows, journeyRow{kind: "slice", bucket: bucket})
-		for n := range bucket.Nodes {
-			c.rows = append(c.rows, journeyRow{kind: "node", bucket: bucket, node: &bucket.Nodes[n], last: n == len(bucket.Nodes)-1})
+// Legend or category items of the timeline answer
+func (c *journeyCard) legendItems(key string) []map[string]any {
+	var out []map[string]any
+	list, _ := c.data[key].([]any)
+	for _, item := range list {
+		if m, isDict := item.(map[string]any); isDict {
+			out = append(out, m)
 		}
 	}
-	c.cursor = max(0, len(c.rows)-1)
+	return out
 }
 
 // Buckets of the frames payload as typed slices
@@ -268,21 +319,18 @@ func (c *journeyCard) styleInk(p starmapPalette, style string, alpha float64) st
 	return hex
 }
 
-// Chart rows of the frame at the current reveal, each run inked from its style or category color
-func (c *journeyCard) chart(w int) ([]string, map[string]any) {
-	summary, _ := memory.BuildSummary(c.payload)
-	cols, rows := c.chartSize(w, len(summary))
-	frame, err := memory.RenderGraph(c.payload, cols, rows, c.reveal)
-	if err != nil {
-		return []string{c.ink(tr("journey.error", err.Error()), c.a.store.ui.Theme.Color.Error, false)}, nil
+// Chart rows of the frame shown, trajectory rows left out and the oldest past the cap dropped
+func (c *journeyCard) chart(chartCap int) ([]string, map[string]any) {
+	if c.frame >= len(c.frames) {
+		return nil, nil
 	}
+	frame := c.frames[c.frame]
 	p := c.palette()
 	grid, _ := frame["grid"].([]any)
 	var out []string
 	for _, rawRow := range grid {
 		row, _ := rawRow.([]any)
-		var b strings.Builder
-		b.WriteString("  ")
+		var b, plain strings.Builder
 		for _, rawRun := range row {
 			run, _ := rawRun.([]any)
 			if len(run) < 2 {
@@ -299,37 +347,47 @@ func (c *journeyCard) chart(w int) ([]string, map[string]any) {
 			if len(run) > 3 && pyrepr.Truthy(run[3]) {
 				hex = p.fadeHex(pyrepr.Str(run[3]), alpha)
 			}
+			plain.WriteString(text)
 			b.WriteString(c.ink(text, hex, false))
 		}
+		if strings.HasPrefix(strings.TrimLeftFunc(plain.String(), isJSSpace), "trajectory") {
+			continue
+		}
 		out = append(out, b.String())
+	}
+	if len(out) > chartCap {
+		out = out[len(out)-chartCap:]
 	}
 	return out, frame
 }
 
-// Header, legends, chart, axis and playhead footer at the card width, the oldest chart rows dropped past the cap
-func (c *journeyCard) header(w, chartCap int) []string {
+// Header, legends, chart, axis and playhead footer of the timeline answer at the chart width it was asked for
+func (c *journeyCard) header(chartCap int) []string {
 	t := c.a.store.ui.Theme
 	p := c.palette()
 	lines := []string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true) + c.ink(" "+tr("journey.subtitle"), t.Color.Muted, false)}
-	legend, _ := memory.BuildLegend(c.payload)
 	var b strings.Builder
-	for i, item := range legend {
+	for i, item := range c.legendItems("legend") {
 		if i > 0 {
 			b.WriteString("   ")
 		}
-		b.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", c.styleInk(p, pyrepr.Str(item["style"]), 1), false))
+		style := "dim"
+		if item["style"] != nil {
+			style = pyrepr.Str(item["style"])
+		}
+		b.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", c.styleInk(p, style, 1), false))
 		b.WriteString(c.ink(pyrepr.Str(item["label"]), t.Color.Muted, false))
 	}
 	lines = append(lines, b.String())
-	if categories, _ := memory.CategoryLegend(c.payload, 4); len(categories) > 0 {
+	if categories := c.legendItems("categories"); len(categories) > 0 {
 		var cb strings.Builder
 		for i, item := range categories {
 			if i > 0 {
 				cb.WriteString("  ")
 			}
 			hex := t.Color.Muted
-			if color := pyrepr.Str(item["color"]); item["color"] != nil && color != "" {
-				hex = p.fadeHex(color, 1)
+			if pyrepr.Truthy(item["color"]) {
+				hex = p.fadeHex(pyrepr.Str(item["color"]), 1)
 			}
 			cb.WriteString(c.ink(pyrepr.Str(item["glyph"])+" ", hex, false))
 			cb.WriteString(c.ink(pyrepr.Str(item["label"]), t.Color.Muted, false))
@@ -337,24 +395,20 @@ func (c *journeyCard) header(w, chartCap int) []string {
 		lines = append(lines, cb.String())
 	}
 	lines = append(lines, "")
-	chart, frame := c.chart(w)
-	if len(chart) > chartCap {
-		chart = chart[len(chart)-chartCap:]
-	}
+	chart, frame := c.chart(chartCap)
 	lines = append(lines, chart...)
-	axis, _ := memory.AxisLabels(c.payload)
-	cols, _ := c.chartSize(w, 0)
-	gap := max(1, cols-pystr.Len(axis["start"])-pystr.Len(axis["end"]))
-	lines = append(lines, "  "+c.ink(axis["start"]+strings.Repeat(" ", gap)+axis["end"], t.Color.Muted, false))
+	axis, _ := c.data["axis"].(map[string]any)
+	start, end := jsValueString(axis["start"]), jsValueString(axis["end"])
+	gap := max(1, c.asked[0]-2-pystr.Len(start)-pystr.Len(end))
+	lines = append(lines, c.ink(start+strings.Repeat(" ", gap)+end, t.Color.Muted, false))
 	if frame != nil {
 		date := pyrepr.Str(frame["date"])
 		if !pyrepr.Truthy(frame["date"]) {
 			date = "—"
 		}
-		count := len(journeyPayloadNodes(c.payload))
-		pct := int(math.RoundToEven(c.reveal * 100))
-		lines = append(lines, "  "+c.ink("◷ ", t.Color.Muted, false)+c.ink(date, t.Color.Primary, false)+
-			c.ink(fmt.Sprintf("   %s/%d revealed · %d%%", pyrepr.Str(frame["visible"]), count, pct), t.Color.Muted, false))
+		pct := int(math.RoundToEven(jsNumberOf(frame["reveal"]) * 100))
+		lines = append(lines, c.ink("◷ ", t.Color.Muted, false)+c.ink(date, t.Color.Primary, false)+
+			c.ink(fmt.Sprintf("   %s/%s revealed · %d%%", jsValueString(frame["visible"]), jsValueString(c.data["count"]), pct), t.Color.Muted, false))
 	}
 	return lines
 }
@@ -463,6 +517,7 @@ func (c *journeyCard) status() string {
 }
 
 func (c *journeyCard) View(w, h int) string {
+	c.viewW, c.viewH = w, h
 	t := c.a.store.ui.Theme
 	shell := func(line string) string {
 		return strings.Join([]string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true), line, c.ink(tr("journey.closeHint"), t.Color.Muted, false)}, "\n")
@@ -472,18 +527,21 @@ func (c *journeyCard) View(w, h int) string {
 		return shell(c.ink(tr("journey.error", c.err), t.Color.Error, false))
 	case !c.loaded:
 		return shell(c.ink(tr("journey.loading"), t.Color.Muted, false))
-	case len(journeyPayloadNodes(c.payload)) == 0:
+	case !truthyJS(c.data["count"]):
 		return shell(c.ink(tr("journey.empty"), t.Color.Muted, false))
 	}
-	c.layoutTree(w)
 	if c.item {
 		return c.itemView(w, h)
 	}
-	head := c.header(w, h)
+	chartCap := journeyMaxChartRows
+	if c.opts.height != 0 {
+		chartCap = c.asked[1]
+	}
+	head := c.header(chartCap)
 	var foot []string
 	if status := c.status(); status != "" {
 		foot = append(foot, status)
-	} else if summary, _ := memory.BuildSummary(c.payload); len(summary) > 0 {
+	} else if summary := c.summary(); len(summary) > 0 {
 		foot = append(foot, c.ink(ansi.Truncate(strings.Join(summary, " · "), w, "…"), t.Color.Muted, false))
 	}
 	node := c.activeNode()
@@ -496,10 +554,6 @@ func (c *journeyCard) View(w, h int) string {
 	}
 	hints = append(hints, tr("journey.hint.topBottom"), tr("journey.hint.close"))
 	foot = append(foot, c.ink(ansi.Truncate(strings.Join(hints, " · "), w, "…"), t.Color.Muted, false))
-	if spare := h - len(head) - len(foot) - 2 - journeyTreeRows; spare < 0 {
-		chartRows, _ := c.chart(w)
-		head = c.header(w, max(journeyChartRows, len(chartRows)+spare))
-	}
 	listH := max(3, h-len(head)-len(foot)-2)
 	start := max(0, min(max(0, len(c.rows)-listH), c.cursor-listH/2))
 	out := append(append([]string{}, head...), "")
@@ -575,7 +629,22 @@ func (c *journeyCard) snap(i int) int {
 // Key names of the palette actions the window manager fires at an overlay in place of the keys
 var journeyActionKeys = map[string]string{"palette.pick": "enter", "palette.up": "up", "palette.down": "down",
 	"palette.page.up": "pgup", "palette.page.down": "pgdown", "palette.left": "left", "palette.right": "right",
-	"palette.home": "g", "palette.end": "G", "palette.clear": "ctrl+u"}
+	"palette.home": "g", "palette.end": "G", "palette.clear": "ctrl+u", "tui.journey.back": "esc"}
+
+// Keymap context of the journey window, its Esc stepping back from a memory before it closes the window
+const journeyContext = "tui.journey"
+
+// Back key of the journey window, registered with the keymap of the app
+func registerJourneyKeys(km *keys.Map) {
+	if keys.ContextDocs[journeyContext] == "" {
+		if err := keys.AddContext(journeyContext, "learning journey window"); err != nil {
+			panic(err)
+		}
+	}
+	km.Register(keys.Action{ID: "tui.journey.back", Context: journeyContext, Label: "back", Doc: "step back from a memory to the timeline, or close the journey", Default: []string{"esc"}})
+}
+
+func (c *journeyCard) Contexts() []string { return []string{journeyContext} }
 
 func (c *journeyCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	if c.busy {
@@ -603,11 +672,11 @@ func (c *journeyCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		return c, nil
 	}
-	if k == "q" || k == "ctrl+c" || k == "esc" || (!c.item && (k == "left" || k == "h")) {
+	if k == "q" || k == "ctrl+c" || (!c.item && (k == "esc" || k == "left" || k == "h")) {
 		c.gen++
 		return c, wm.RequestDismissOf(c)
 	}
-	if !c.loaded || c.payload == nil {
+	if !c.loaded || c.data == nil {
 		return c, nil
 	}
 	_, h := c.a.wm.Size()
@@ -623,7 +692,7 @@ func (c *journeyCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	}
 	if c.item {
 		switch k {
-		case "left", "h":
+		case "esc", "left", "h":
 			c.item = false
 		case "up", "k":
 			c.scroll = max(0, c.scroll-2)
@@ -677,7 +746,7 @@ func (c *journeyCard) deleteActive() tea.Cmd {
 		res := asRPCResult(v)
 		c.notice = jsValueString(res["message"])
 		if truthyJS(res["ok"]) {
-			return c.load()
+			return c.refetch()
 		}
 		return nil
 	})
@@ -723,7 +792,7 @@ func (c *journeyCard) editActive() tea.Cmd {
 					res := asRPCResult(v)
 					c.notice = jsValueString(res["message"])
 					if truthyJS(res["ok"]) {
-						return c.load()
+						return c.refetch()
 					}
 					return nil
 				})
@@ -786,10 +855,14 @@ func parseJourneyArgs(arg string) journeyArgs {
 	for _, path := range []string{"journey", "journey list", "journey delete", "journey edit"} {
 		tree.Bind(path, handler)
 	}
+	top, _, _ := tree.Root.Find([]string{"journey"})
+	if top.Annotations == nil {
+		top.Annotations = map[string]string{}
+	}
+	top.Annotations["argparse_top"] = "/journey"
 	var help bytes.Buffer
 	tree.Root.SetOut(&help)
 	execErr := tree.Execute(append([]string{"journey"}, words...))
-	top, _, _ := tree.Root.Find([]string{"journey"})
 	switch {
 	case help.Len() > 0:
 		parsed.output = journeyProg(strings.TrimRight(help.String(), "\n"))

@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Longest wait every platform can express, DWORD milliseconds on Windows and one year elsewhere
@@ -409,6 +411,8 @@ func pyStr(v any) string {
 		return "False"
 	case nil:
 		return "None"
+	case map[string]any, []any, *pyjson.Object:
+		return pyrepr.Str(pythonDisplayValue(v))
 	}
 	return fmt.Sprint(v)
 }

@@ -37,7 +37,6 @@ const (
 	SpotifyDefaultAccountsBaseURL = "https://accounts.spotify.com"
 	SpotifyDefaultAPIBaseURL      = "https://api.spotify.com/v1"
 	SpotifyDefaultRedirectURI     = "http://127.0.0.1:43827/spotify/callback"
-	SpotifyDocsURL                = "https://hermes-agent.nousresearch.com/docs/user-guide/features/spotify"
 	SpotifyDashboardURL           = "https://developer.spotify.com/dashboard"
 	// Seconds before expiry a runtime read refreshes the access token
 	SpotifyAccessTokenRefreshSkewSeconds = 120
@@ -575,7 +574,6 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 		"Spotify requires every user to register their own lightweight\n"+
 		"developer app. This takes about two minutes and only has to be\n"+
 		"done once per machine.\n\n"+
-		"Full guide: %s\n\n"+
 		"Steps:\n"+
 		"  1. Opening %s in your browser...\n"+
 		"  2. Click 'Create app' and fill in:\n"+
@@ -585,7 +583,7 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 		"       API/SDK:      Web API\n"+
 		"  3. Agree to the terms, click Save.\n"+
 		"  4. Open the app's Settings page and copy the Client ID.\n"+
-		"  5. Paste it below.\n\n", rule, rule, SpotifyDocsURL, SpotifyDashboardURL, redirectURIHint)
+		"  5. Paste it below.\n\n", rule, rule, SpotifyDashboardURL, redirectURIHint)
 	if !isRemoteSession() {
 		_ = spotifyOpenBrowser(SpotifyDashboardURL)
 	}
@@ -599,7 +597,7 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 	}
 	raw := pystr.Strip(line)
 	if raw == "" {
-		fmt.Fprintf(out, "\nNo Client ID entered. See %s for the full guide.\n", SpotifyDocsURL)
+		fmt.Fprintln(out, "\nNo Client ID entered.")
 		return "", &AuthExitError{Code: 1, Message: "Spotify setup cancelled: empty Client ID."}
 	}
 	if err := config.SaveEnvValueContext(ctx, h, "ICEBATH_SPOTIFY_CLIENT_ID", raw); err != nil {
@@ -669,8 +667,8 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 	authorizeURL := spotifyBuildAuthorizeURL(clientID, redirectURI, scope, stateNonce, pkceCodeChallenge(codeVerifier), accountsBaseURL)
 	fmt.Fprintf(out, "Starting Spotify PKCE login...\nClient ID: %s\nRedirect URI: %s\n"+
 		"Make sure this redirect URI is allow-listed in your Spotify app settings.\n\n"+
-		"Open this URL to authorize Icebath:\n%s\n\nFull setup guide: %s\n\n", clientID, redirectURI, authorizeURL, SpotifyDocsURL)
-	printLoopbackSSHHint(out, redirectURI, SpotifyDocsURL)
+		"Open this URL to authorize Icebath:\n%s\n\n", clientID, redirectURI, authorizeURL)
+	printLoopbackSSHHint(out, redirectURI)
 	if !opts.NoBrowser && !isRemoteSession() && canOpenGraphicalBrowser() {
 		if spotifyOpenBrowser(authorizeURL) == nil {
 			fmt.Fprintln(out, "Browser opened for Spotify authorization.")
@@ -728,33 +726,6 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 	if err := store.Save(data); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Spotify login successful!\n  Auth state: %s\n  Provider state saved under providers.spotify\n  Docs: %s\n", store.Path(), SpotifyDocsURL)
+	fmt.Fprintf(out, "Spotify login successful!\n  Auth state: %s\n  Provider state saved under providers.spotify\n", store.Path())
 	return nil
-}
-
-// New spelling of an old icebath auth spotify call, empty for every other command
-func spotifyMovedCommandHint(prog, value, action string) string {
-	if prog != "icebath auth" || value != SpotifyProvider {
-		return ""
-	}
-	var parts []string
-	for _, p := range []string{"icebath auth", action, value} {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	verb := action
-	if verb == "" {
-		verb = "login"
-	}
-	return fmt.Sprintf("`%s` is now `icebath spotify %s`.", strings.Join(parts, " "), verb)
-}
-
-// Message for an icebath spotify the active home does not load because the built in plugin is turned off
-func spotifyDisabledCommandHint(h, prog, value string) string {
-	if prog != "icebath" || value != SpotifyProvider {
-		return ""
-	}
-	return fmt.Sprintf("Spotify is built in but not loaded in this profile. Enable it with: `%s`.",
-		strings.ReplaceAll(PluginInstallCommand(SpotifyProvider, h), " install ", " enable "))
 }

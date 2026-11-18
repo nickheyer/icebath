@@ -58,7 +58,7 @@ func ReadDocument(path string) (map[string]any, error) {
 		}
 		return nil, err
 	}
-	doc, err := FastSafeLoad(data)
+	doc, err := SafeLoadText(data, true)
 	if err != nil {
 		return nil, &InvalidUserConfigError{Path: path, Err: err}
 	}

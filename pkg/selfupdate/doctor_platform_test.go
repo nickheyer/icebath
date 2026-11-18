@@ -5,16 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -77,7 +76,7 @@ func TestDoctorPlatformHintsSqliteUpgradeHintAptStampNamesTermuxExternalUpdate(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(hint, "run `pkg upgrade icebath-agent`") || strings.Contains(hint, "icebath update") {
+	if !strings.Contains(hint, "run `"+config.TermuxInstallCommand+"`") || strings.Contains(hint, "icebath update") {
 		t.Fatalf("hint = %q", hint)
 	}
 }
@@ -131,17 +130,17 @@ func TestStagedRuntimeVenvUnreadablePmDegradesToNone(t *testing.T) {
 	}
 }
 
-func TestStagedRuntimeVenvNothingStagedKeepsLegacyInterpreterProbe(t *testing.T) {
+func TestStagedRuntimeVenvNothingStagedStatesTheGoRuntimeAlone(t *testing.T) {
 	d, out := toolsDoctor(t)
 	toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
-	toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) {
-		return &doctorPython{Version: [3]int{3, 11, 9}, Prefix: "/usr", BasePrefix: "/usr"}, nil
-	})
-	if _, err := checkPythonEnvironment(context.Background(), d, false); err != nil {
+	f, err := checkPythonEnvironment(context.Background(), d, false)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out.String(), "Runtime venv staged") || !strings.Contains(out.String(), "Not in virtual environment") {
-		t.Fatalf("output:\n%s", out.String())
+	text := out.String()
+	if !strings.Contains(text, "Go "+hostinfo.GoVersion()) || strings.Contains(text, "Runtime venv staged") ||
+		strings.Contains(text, "virtual environment") || strings.Contains(text, "Python") || len(f.Issues) != 0 {
+		t.Fatalf("output:\n%s issues %q", text, f.Issues)
 	}
 }
 
@@ -346,48 +345,34 @@ func TestFixPreservesUserManagedCommands(t *testing.T) {
 
 func TestDoctorReportsSelectedImportTreeNotInterpreterPrefix(t *testing.T) {
 	for _, layout := range []string{"legacy", "generation"} {
-		for _, active := range []bool{true, false} {
-			name := layout + "-outside"
-			if active {
-				name = layout + "-active"
+		t.Run(layout, func(t *testing.T) {
+			tree := commandInstallTree(t)
+			var selected string
+			if layout == "generation" {
+				selected = commandGeneration(t, tree.project)
+			} else {
+				selected = filepath.Join(tree.project, "venv")
+				writeTestFile(t, filepath.Join(selected, "pyvenv.cfg"), "home = fixture\nversion = 3.11.9\n", 0o644)
 			}
-			t.Run(name, func(t *testing.T) {
-				tree := commandInstallTree(t)
-				var selected string
-				if layout == "generation" {
-					selected = commandGeneration(t, tree.project)
-				} else {
-					selected = filepath.Join(tree.project, "venv")
-					writeTestFile(t, filepath.Join(selected, "pyvenv.cfg"), "home = fixture\nversion = 3.11.9\n", 0o644)
-				}
-				site, err := pm.SitePackages(selected)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.MkdirAll(site, 0o755); err != nil {
-					t.Fatal(err)
-				}
-				toolsSeam(t, &doctorSelectedVenvDir, func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, tree.project) })
-				toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) {
-					py := &doctorPython{Version: [3]int{3, 11, 9}, Prefix: selected, BasePrefix: "/usr", Path: []string{"/usr/lib/python3.11"}}
-					if active {
-						py.Prefix = "/usr"
-						py.Path = append([]string{site}, py.Path...)
-					}
-					return py, nil
-				})
-				if _, err := checkPythonEnvironment(context.Background(), tree.d, false); err != nil {
-					t.Fatal(err)
-				}
-				text := tree.out.String()
-				if !strings.Contains(text, selected) {
-					t.Fatalf("selected tree is not named:\n%s", text)
-				}
-				if strings.Contains(text, "active in this process") != active || strings.Contains(text, "runs outside it") == active {
-					t.Fatalf("output:\n%s", text)
-				}
-			})
-		}
+			site, err := pm.SitePackages(selected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(site, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			toolsSeam(t, &doctorSelectedVenvDir, func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, tree.project) })
+			if _, err := checkPythonEnvironment(context.Background(), tree.d, false); err != nil {
+				t.Fatal(err)
+			}
+			text := tree.out.String()
+			if !strings.Contains(text, selected) {
+				t.Fatalf("selected tree is not named:\n%s", text)
+			}
+			if strings.Contains(text, "active in this process") || !strings.Contains(text, "runs outside it") {
+				t.Fatalf("output:\n%s", text)
+			}
+		})
 	}
 }
 
@@ -407,17 +392,15 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 			writeTestFile(t, filepath.Join(tree.project, ".install_method"), tc.method, 0o644)
 			entry := filepath.Join(tree.project, "venv", "bin", "icebath")
 			writeTestFile(t, entry, "#!/bin/sh\nexit 0\n", 0o755)
-			toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
-			toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) { return nil, errors.New("no interpreter") })
-			findings := &Finding{}
-			for _, check := range []doctorCheckFunc{checkPythonEnvironment, checkCommandInstallation} {
-				f, err := check(context.Background(), tree.d, true)
-				if err != nil {
-					t.Fatal(err)
-				}
-				findings.Merge(f)
+			findings, err := checkCommandInstallation(context.Background(), tree.d, true)
+			if err != nil {
+				t.Fatal(err)
 			}
-			text := tree.out.String() + "\n" + strings.Join(append(findings.Issues, findings.ManualIssues...), "\n")
+			hint, err := doctorPythonRepairHint(context.Background(), tree.d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := tree.out.String() + "\n" + strings.Join(append(append(findings.Issues, findings.ManualIssues...), hint), "\n")
 			if !strings.Contains(text, tc.remedy) || strings.Contains(text, "pip install") {
 				t.Fatalf("output:\n%s", text)
 			}
@@ -438,64 +421,31 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 	}
 }
 
-func TestCheckPythonEnvironmentReportsAMissingInterpreterWithTheRepairHint(t *testing.T) {
+func TestCheckPythonEnvironmentRaisesNoIssueWithoutAManagedInterpreter(t *testing.T) {
 	d, out := toolsDoctor(t)
 	toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
 	toolsSeam(t, &doctorDetectInstallMethod, func(context.Context, string, string) (string, error) { return "git", nil })
-	toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) { return nil, errors.New("no interpreter") })
 	f, err := checkPythonEnvironment(context.Background(), d, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.Issues) != 1 || !strings.Contains(f.Issues[0], "icebath pm repair") {
-		t.Fatalf("issues = %q", f.Issues)
+	if len(f.Issues) != 0 || len(f.ManualIssues) != 0 {
+		t.Fatalf("issues = %q manual %q", f.Issues, f.ManualIssues)
 	}
-	if !strings.Contains(out.String(), "✗ Python (missing)") || !strings.Contains(out.String(), "SQLite ") || !strings.Contains(out.String(), "Not in virtual environment") {
+	if strings.Contains(out.String(), "Python (missing)") || !strings.Contains(out.String(), "SQLite ") {
 		t.Fatalf("output:\n%s", out.String())
 	}
 }
 
-func TestCheckPythonEnvironmentGradesTheInterpreterVersion(t *testing.T) {
-	const rlHint = "Python 3.11+ recommended for RL Training tools (tinker requires >= 3.11)"
-	for _, tc := range []struct {
-		version [3]int
-		line    string
-		issues  []string
-		rl      bool
-	}{
-		{[3]int{2, 7, 18}, "✗ Python 2.7.18 (3.10+ required)", []string{"Upgrade Python to 3.10+"}, false},
-		{[3]int{3, 7, 17}, "✗ Python 3.7.17 (3.10+ required)", []string{"Upgrade Python to 3.10+"}, false},
-		{[3]int{3, 8, 0}, "⚠ Python 3.8.0 (3.10+ recommended)", nil, false},
-		{[3]int{3, 9, 19}, "⚠ Python 3.9.19 (3.10+ recommended)", nil, false},
-		{[3]int{3, 10, 14}, "✓ Python 3.10.14", nil, true},
-		{[3]int{3, 11, 0}, "✓ Python 3.11.0", nil, false},
-		{[3]int{3, 13, 1}, "✓ Python 3.13.1", nil, false},
-		{[3]int{4, 0, 0}, "✓ Python 4.0.0", nil, false},
-	} {
-		t.Run(fmt.Sprintf("%d.%d.%d", tc.version[0], tc.version[1], tc.version[2]), func(t *testing.T) {
-			d, out := toolsDoctor(t)
-			toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
-			toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) {
-				return &doctorPython{Version: tc.version, Prefix: "/usr", BasePrefix: "/usr"}, nil
-			})
-			f, err := checkPythonEnvironment(context.Background(), d, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Equal(f.Issues, tc.issues) {
-				t.Fatalf("issues = %q, want %q", f.Issues, tc.issues)
-			}
-			text := out.String()
-			if toolsLineWith(t, text, "Python "+fmt.Sprintf("%d.%d.%d", tc.version[0], tc.version[1], tc.version[2])) != "  "+tc.line {
-				t.Fatalf("version row is not %q in:\n%s", tc.line, text)
-			}
-			if strings.Contains(text, rlHint) != tc.rl {
-				t.Fatalf("RL training hint shown = %v, want %v in:\n%s", !tc.rl, tc.rl, text)
-			}
-			if strings.Contains(text, "Python (missing)") || !strings.Contains(text, "SQLite ") {
-				t.Fatalf("output:\n%s", text)
-			}
-		})
+func TestCheckPythonEnvironmentStatesTheGoRuntimeVersion(t *testing.T) {
+	d, out := toolsDoctor(t)
+	toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
+	if _, err := checkPythonEnvironment(context.Background(), d, false); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if want := "Go " + hostinfo.GoVersion(); toolsLineWith(t, text, want) != "  ✓ "+want {
+		t.Fatalf("runtime row is not %q in:\n%s", want, text)
 	}
 }
 

@@ -353,7 +353,7 @@ func TestGCPTokenEndpointRetriesAndErrorText(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	data, err := gcpTokenEndpointRequest(context.Background(), srv.URL, url.Values{}, nil, nil, true, nil)
+	data, err := gcpTokenEndpointRequest(context.Background(), srv.URL, nil, nil, nil, true, nil)
 	if err != nil || data["access_token"] != "t" || calls != 3 {
 		t.Fatalf("data=%v err=%v calls=%d", data, err, calls)
 	}
@@ -362,7 +362,7 @@ func TestGCPTokenEndpointRetriesAndErrorText(t *testing.T) {
 		w.Write([]byte(`{"error":"invalid_grant","error_description":"Bad Request"}`))
 	}))
 	defer bad.Close()
-	_, err = gcpTokenEndpointRequest(context.Background(), bad.URL, url.Values{}, nil, nil, true, nil)
+	_, err = gcpTokenEndpointRequest(context.Background(), bad.URL, nil, nil, nil, true, nil)
 	var rerr *gcpRefreshError
 	if !errors.As(err, &rerr) || rerr.Msg != "invalid_grant: Bad Request" || rerr.Retryable {
 		t.Fatalf("err = %v", err)
@@ -576,7 +576,7 @@ func TestVertexAnthropicTransportPaths(t *testing.T) {
 		Model: "claude-sonnet-4-5", TokenSource: func(context.Context) (string, error) { return "tok", nil }}
 	tr, _ := vertexTransport(route)
 	req, err := tr.Request(context.Background(), anthOpMessages, map[string]any{"model": "claude-sonnet-4-5@20250929", "stream": true, "max_tokens": 5},
-		map[string]string{"anthropic-version": "2023-06-01", "anthropic-beta": "b1"})
+		anthHead{extra: &pyHeaderDict{entries: []pyHeaderEntry{{name: "anthropic-beta", value: "b1"}}}}, anthSDKCall{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,11 +590,11 @@ func TestVertexAnthropicTransportPaths(t *testing.T) {
 	if _, has := body["model"]; has || body["anthropic_version"] != vertexAnthropicVersion {
 		t.Fatalf("body = %v", body)
 	}
-	req, _ = tr.Request(context.Background(), anthOpMessages, map[string]any{"messages": []any{}}, nil)
+	req, _ = tr.Request(context.Background(), anthOpMessages, map[string]any{"messages": []any{}}, anthHead{}, anthSDKCall{})
 	if !strings.HasSuffix(req.URL.Path, "/models/claude-sonnet-4-5:rawPredict") {
 		t.Fatalf("non stream path %s", req.URL.Path)
 	}
-	req, _ = tr.Request(context.Background(), anthOpCountTokens, map[string]any{"model": "claude-sonnet-4-5"}, nil)
+	req, _ = tr.Request(context.Background(), anthOpCountTokens, map[string]any{"model": "claude-sonnet-4-5"}, anthHead{}, anthSDKCall{})
 	b, _ = io.ReadAll(req.Body)
 	if !strings.HasSuffix(req.URL.Path, "/publishers/anthropic/models/count-tokens:rawPredict") || !strings.Contains(string(b), `"model":"claude-sonnet-4-5"`) {
 		t.Fatalf("count tokens %s %s", req.URL.Path, b)

@@ -146,7 +146,7 @@ func (b *BasePlatformAdapter) recordDeliveryObligation(ctx context.Context, even
 		return &oid, nil
 	}()
 	if err != nil {
-		slog.Debug("delivery ledger record failed", "error", err)
+		platformBaseLog().Debug("delivery ledger record failed", "error", err)
 		return nil
 	}
 	return id
@@ -179,7 +179,7 @@ func (b *BasePlatformAdapter) finalizeDeliveryObligation(ctx context.Context, ob
 		return nil
 	}()
 	if err != nil {
-		slog.Debug("delivery ledger update failed", "error", err)
+		platformBaseLog().Debug("delivery ledger update failed", "error", err)
 	}
 }
 
@@ -216,7 +216,7 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 			result, err = self.SendVoice(ctx, chatID, path, "", "", metadata, map[string]any{"is_voice": isVoice})
 		case videoExts[ext]:
 			if mediaTag {
-				slog.Info(fmt.Sprintf("[%s] Sending video attachment (%s) to %s", self.Name(), ext, chatID))
+				platformBaseLog().Info(fmt.Sprintf("[%s] Sending video attachment (%s) to %s", self.Name(), ext, chatID))
 			}
 			result, err = self.SendVideo(ctx, chatID, path, "", "", metadata, nil)
 		default:
@@ -230,7 +230,7 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 			if mediaTag {
 				kind = "media"
 			}
-			slog.Warn(fmt.Sprintf("[%s] Failed to send %s (%s): %s", self.Name(), kind, ext, pyrepr.Str(result.Error)))
+			platformBaseLog().Warn(fmt.Sprintf("[%s] Failed to send %s (%s): %s", self.Name(), kind, ext, pyrepr.Str(result.Error)))
 			raw, _ := result.RawResponse.(map[string]any)
 			if raw == nil || !pyrepr.Truthy(raw["failure_notice_sent"]) {
 				b.notifyMediaDeliveryFailure(ctx, chatID, path, isVoice, metadata)
@@ -249,7 +249,7 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 		}
 	}
 	if len(queue) > 0 {
-		slog.Info(fmt.Sprintf("[%s] Delivering %d non-image MEDIA attachment(s)", self.Name(), len(queue)))
+		platformBaseLog().Info(fmt.Sprintf("[%s] Delivering %d non-image MEDIA attachment(s)", self.Name(), len(queue)))
 	}
 	for _, p := range localFiles {
 		if !asImage(p) {
@@ -269,9 +269,9 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 		if err != nil {
 			recordDelivery(SendResult{Success: false, Error: err.Error()})
 			if item.mediaTag {
-				slog.Warn(fmt.Sprintf("[%s] Error sending media: %v", self.Name(), err))
+				platformBaseLog().Warn(fmt.Sprintf("[%s] Error sending media: %v", self.Name(), err))
 			} else {
-				slog.Error(fmt.Sprintf("[%s] Error sending local file %s: %v", self.Name(), item.path, err))
+				platformBaseLog().Error(fmt.Sprintf("[%s] Error sending local file %s: %v", self.Name(), item.path, err))
 			}
 			continue
 		}
@@ -284,7 +284,7 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 func (b *BasePlatformAdapter) sendImageBatch(ctx context.Context, event *MessageEvent, images []ImageRef, metadata map[string]any, humanDelay float64, recordDelivery func(SendResult)) {
 	result, err := b.Self().SendMultipleImages(ctx, event.Source.ChatID, images, metadata, humanDelay)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("[%s] Error batching images: %v", b.Self().Name(), err))
+		platformBaseLog().Warn(fmt.Sprintf("[%s] Error batching images: %v", b.Self().Name(), err))
 		recordDelivery(SendResult{Success: false, Error: err.Error()})
 		return
 	}
@@ -294,7 +294,7 @@ func (b *BasePlatformAdapter) sendImageBatch(ctx context.Context, event *Message
 // Ledger bracket of a final text on the current transport, returning the result with the adapter that sent it
 func (b *BasePlatformAdapter) SendFinalLedgered(ctx context.Context, event *MessageEvent, sessionKey, textContent string, metadata map[string]any, replyTo *string, isEphemeral bool) (SendResult, PlatformAdapter, error) {
 	deliveryAdapter := b.finalDeliveryAdapter(ctx, event.Source)
-	slog.Info(fmt.Sprintf("[%s] Sending response (%d chars) to %s", deliveryAdapter.Name(), pystr.Len(textContent), event.Source.ChatID))
+	platformBaseLog().Info(fmt.Sprintf("[%s] Sending response (%d chars) to %s", deliveryAdapter.Name(), pystr.Len(textContent), event.Source.ChatID))
 	var obligationID *string
 	if recorder, overridden := b.Self().(deliveryObligationRecorder); overridden {
 		obligationID = recorder.RecordDeliveryObligation(ctx, event, sessionKey, textContent, deliveryAdapter, isEphemeral)
@@ -384,7 +384,7 @@ func (b *BasePlatformAdapter) notifyTurnError(ctx context.Context, event *Messag
 		return err
 	}()
 	if err != nil {
-		slog.Error(fmt.Sprintf("[%s] Failed to send error notification to user: %v", self.Name(), err))
+		platformBaseLog().Error(fmt.Sprintf("[%s] Failed to send error notification to user: %v", self.Name(), err))
 	}
 	return threadMetadata
 }
@@ -393,7 +393,7 @@ func (b *BasePlatformAdapter) notifyTurnError(ctx context.Context, event *Messag
 func (b *BasePlatformAdapter) deliverAttachments(ctx context.Context, event *MessageEvent, extracted *extractedResponse, metadata map[string]any, anythingSent bool, recordDelivery func(SendResult)) error {
 	humanDelay := b.getHumanDelay()
 	if len(extracted.images) > 0 {
-		slog.Info(fmt.Sprintf("[%s] Extracted %d image(s) to send as attachments", b.Self().Name(), len(extracted.images)))
+		platformBaseLog().Info(fmt.Sprintf("[%s] Extracted %d image(s) to send as attachments", b.Self().Name(), len(extracted.images)))
 		b.sendImageBatch(ctx, event, extracted.images, metadata, humanDelay, recordDelivery)
 		if err := taskCancelled(ctx); err != nil {
 			return err
@@ -405,7 +405,7 @@ func (b *BasePlatformAdapter) deliverAttachments(ctx context.Context, event *Mes
 	}
 	if !(anythingSent || len(extracted.images) > 0 || len(extracted.localFiles) > 0 || len(extracted.mediaFiles) > 0) &&
 		pystr.Strip(extracted.preExtract) != "" {
-		slog.Error(fmt.Sprintf("[%s] response_delivery_dropped: non-empty response "+
+		platformBaseLog().Error(fmt.Sprintf("[%s] response_delivery_dropped: non-empty response "+
 			"(%d chars) produced no delivered message or attachment "+
 			"for %s (empty after extract, recovery yielded nothing).", b.Self().Name(),
 			pystr.Len(extracted.preExtract), event.Source.ChatID))
@@ -447,7 +447,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 		}
 		text = pystr.Strip(text)
 		if len(images) > 0 {
-			slog.Info(fmt.Sprintf("[%s] extract_images found %d image(s) in response (%d chars)", name, len(images), pystr.Len(rest)))
+			platformBaseLog().Info(fmt.Sprintf("[%s] extract_images found %d image(s) in response (%d chars)", name, len(images), pystr.Len(rest)))
 		}
 		var localFiles []string
 		if !isEphemeral {
@@ -476,14 +476,14 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 				}
 			}
 			if len(suppressed) > 0 {
-				slog.Info(fmt.Sprintf("[%s] Suppressing %d bare local file path(s) already delivered in "+
+				platformBaseLog().Info(fmt.Sprintf("[%s] Suppressing %d bare local file path(s) already delivered in "+
 					"this session: %s", name, len(suppressed), pyrepr.Repr(suppressed)))
 				localFiles = kept
 			}
 		}
 	}
 	if len(localFiles) > 0 {
-		slog.Info(fmt.Sprintf("[%s] extract_local_files found %d file(s) in response", name, len(localFiles)))
+		platformBaseLog().Info(fmt.Sprintf("[%s] extract_local_files found %d file(s) in response", name, len(localFiles)))
 	}
 	if textContent == "" && len(images) == 0 && len(localFiles) == 0 && len(mediaFiles) == 0 {
 		recovered, err := stripMediaDirectives(ctx, response)
@@ -491,7 +491,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 			return nil, err
 		}
 		if recovered = pystr.Strip(recovered); recovered != "" {
-			slog.Warn(fmt.Sprintf("[%s] response_delivery_recovered: extract pipeline "+
+			platformBaseLog().Warn(fmt.Sprintf("[%s] response_delivery_recovered: extract pipeline "+
 				"reduced a non-empty response (%d chars) to empty with "+
 				"no attachment; delivering recovered original to %s", name, pystr.Len(preExtract), event.Source.ChatID))
 			textContent = recovered
@@ -524,7 +524,7 @@ func (b *BasePlatformAdapter) finishSessionTask(ctx context.Context, sessionKey 
 			return
 		}
 		b.mu.Unlock()
-		slog.Debug(fmt.Sprintf("[%s] Late-arrival pending message during cleanup — spawning drain task", b.Self().Name()))
+		platformBaseLog().Debug(fmt.Sprintf("[%s] Late-arrival pending message during cleanup — spawning drain task", b.Self().Name()))
 		b.spawnDrainTask(ctx, late, sessionKey, 0)
 		return
 	}
@@ -599,11 +599,11 @@ func (b *BasePlatformAdapter) ProcessMessageBackground(ctx context.Context, even
 		_, pendingNow := b.pendingMessages[sessionKey]
 		b.mu.Unlock()
 		if text != "" && interruptEvent.IsSet() && pendingNow {
-			slog.Info(fmt.Sprintf("[%s] Suppressing stale response for interrupted session %s", self.Name(), sessionKey))
+			platformBaseLog().Info(fmt.Sprintf("[%s] Suppressing stale response for interrupted session %s", self.Name(), sessionKey))
 			text = ""
 		}
 		if text == "" {
-			slog.Debug(fmt.Sprintf("[%s] Handler returned empty/None response for %s", self.Name(), chatID))
+			platformBaseLog().Debug(fmt.Sprintf("[%s] Handler returned empty/None response for %s", self.Name(), chatID))
 		} else {
 			extracted, err := b.extractResponseContent(ctx, text, event, sessionKey, isEphemeral)
 			if err != nil {
@@ -679,7 +679,7 @@ func (b *BasePlatformAdapter) ProcessMessageBackground(ctx context.Context, even
 				delete(b.pendingMessages, sessionKey)
 				b.mu.Unlock()
 			}
-			slog.Debug(fmt.Sprintf("[%s] Processing queued follow-up message", self.Name()))
+			platformBaseLog().Debug(fmt.Sprintf("[%s] Processing queued follow-up message", self.Name()))
 			b.clearSessionGuard(sessionKey)
 			b.stopTypingRefresh(ctx, chatID, typingTask, typingMetadata, 0.5, 2)
 			b.spawnDrainTask(ctx, pendingEvent, sessionKey, delay)
@@ -704,7 +704,7 @@ func (b *BasePlatformAdapter) ProcessMessageBackground(ctx context.Context, even
 	b.runProcessingHook(fctx, "on_processing_complete", func(c context.Context) error {
 		return self.OnProcessingComplete(c, event, ProcessingFailure)
 	})
-	slog.Error(fmt.Sprintf("[%s] Error handling message: %v", self.Name(), err))
+	platformBaseLog().Error(fmt.Sprintf("[%s] Error handling message: %v", self.Name(), err))
 	b.notifyTurnError(fctx, event, err)
 	return nil
 }
@@ -732,9 +732,9 @@ func (b *BasePlatformAdapter) requeueBackoffDelay(sessionKey string, pending, di
 	msg := fmt.Sprintf("[%s] Handler re-queued a pending event for %s again (session busy elsewhere); "+
 		"backing off %.2fs", b.Self().Name(), sessionKey, delay)
 	if attempts == 1 {
-		slog.Info(msg)
+		platformBaseLog().Info(msg)
 	} else {
-		slog.Debug(msg)
+		platformBaseLog().Debug(msg)
 	}
 	return delay
 }
@@ -832,7 +832,7 @@ func (b *BasePlatformAdapter) CancelBackgroundTasks(ctx context.Context) {
 					stragglers++
 				}
 			}
-			slog.Warn(fmt.Sprintf("[%s] %d background task(s) did not exit within 5s; "+
+			platformBaseLog().Warn(fmt.Sprintf("[%s] %d background task(s) did not exit within 5s; "+
 				"releasing tracking and letting them unwind in the background", b.Self().Name(), stragglers))
 			break
 		}
@@ -903,7 +903,7 @@ func (b *BasePlatformAdapter) BuildSource(ctx context.Context, chatID string, f 
 				rejectedProfile = &s
 			}
 		case err != nil:
-			slog.Warn(fmt.Sprintf("Profile resolution failed for %s/%s, defaulting to active profile", b.Platform, chatID), "error", err)
+			platformBaseLog().Warn(fmt.Sprintf("Profile resolution failed for %s/%s, defaulting to active profile", b.Platform, chatID), "error", err)
 		case routed != nil && *routed != "":
 			profile = routed
 		}
@@ -929,3 +929,6 @@ func (b *BasePlatformAdapter) ToolsetsForSource(source *SessionSource) ([]string
 func (b *BasePlatformAdapter) FormatMessage(content string) string {
 	return content
 }
+
+// Logger of the reference module gateway.platforms.base
+func platformBaseLog() *slog.Logger { return slog.Default().With("logger", "gateway.platforms.base") }

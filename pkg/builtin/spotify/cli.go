@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -36,21 +35,7 @@ func setupCLI(parser any) {
 	flags.StringVar(&scope, "scope", "", "Override requested Spotify scopes")
 	flags.BoolVar(&noBrowser, "no-browser", false, "Do not attempt to open the browser automatically")
 	flags.Float64Var(&timeout, "timeout", 0, "Callback/token exchange timeout in seconds")
-	cmd.Use = "spotify [{" + strings.Join(cliActions, ",") + "}]"
-	cmd.Args = func(cmd *cobra.Command, args []string) error {
-		if len(args) > 1 {
-			return &commands.ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(args[1:], " ")}
-		}
-		if len(args) == 1 && !containsString(cliActions, args[0]) {
-			quoted := make([]string, len(cliActions))
-			for i, a := range cliActions {
-				quoted[i] = pyrepr.StrRepr(a)
-			}
-			return &commands.ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument action: invalid choice: %s (choose from %s)",
-				pyrepr.StrRepr(args[0]), strings.Join(quoted, ", "))}
-		}
-		return nil
-	}
+	commands.PluginOptionalChoice(cmd, "action", "login", cliActions...)
 	optional := func(name, value string) any {
 		if cmd.Flags().Changed(name) {
 			return value
@@ -70,15 +55,6 @@ func setupCLI(parser any) {
 			"redirect_uri": optional("redirect-uri", redirectURI), "scope": optional("scope", scope),
 			"no_browser": noBrowser, "timeout": timeoutValue})
 	}
-}
-
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // Text of a namespace value, empty for None or a falsy value

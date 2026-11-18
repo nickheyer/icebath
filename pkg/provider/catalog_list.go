@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // DefaultCatalogURL is the master model catalog manifest
@@ -36,6 +36,9 @@ const (
 )
 
 var catalogLog = slog.Default()
+
+// Logger of the reference model catalog module
+var modelCatalogLog = slog.Default().With("logger", "hermes_cli.model_catalog")
 
 // CatalogConfig is the model_catalog config block with defaults filled in
 type CatalogConfig struct {
@@ -67,8 +70,6 @@ var fetchCatalogManifest = fetchCatalogManifestHTTP
 
 // Config seam so pickers can read a prepared block instead of the home config file
 var loadCatalogConfig = loadCatalogConfigFromHome
-
-var catalogHTTPClient = &http.Client{}
 
 // Sibling slice seams the refresh command drives
 var (
@@ -213,39 +214,33 @@ func decodeJSONBody(raw []byte) (any, error) {
 	return data, nil
 }
 
-// HTTP GET of a manifest URL returning a validated manifest or nil on any failure
+// urlopen GET of a manifest URL returning a validated manifest or nil on any failure
 func fetchCatalogManifestHTTP(url string, timeout time.Duration) map[string]any {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := urllibOpen(ctx, urllibCall{url: url, timeout: timeout,
+		headers: []pyhttpx.HeaderLine{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}})
 	if err != nil {
-		catalogLog.Info("model catalog fetch failed", "url", url, "error", err)
-		return nil
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", UserAgent("icebath-agent"))
-	resp, err := catalogHTTPClient.Do(req)
-	if err != nil {
-		catalogLog.Info("model catalog fetch failed", "url", url, "error", err)
+		modelCatalogLog.Info("model catalog fetch failed", "url", url, "error", err)
 		return nil
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		catalogLog.Info("model catalog fetch failed", "url", url, "error", err)
+		modelCatalogLog.Info("model catalog fetch failed", "url", url, "error", err)
 		return nil
 	}
 	if resp.StatusCode >= 400 {
-		catalogLog.Info("model catalog fetch failed", "url", url, "status", resp.StatusCode)
+		modelCatalogLog.Info("model catalog fetch failed", "url", url, "status", resp.StatusCode)
 		return nil
 	}
 	data, err := decodeJSONBody(raw)
 	if err != nil {
-		catalogLog.Info("model catalog fetch failed", "url", url, "error", err)
+		modelCatalogLog.Info("model catalog fetch failed", "url", url, "error", err)
 		return nil
 	}
 	if !ValidateCatalogManifest(data) {
-		catalogLog.Info("model catalog failed schema validation", "url", url)
+		modelCatalogLog.Info("model catalog failed schema validation", "url", url)
 		return nil
 	}
 	m, _ := asMap(data)
@@ -262,7 +257,7 @@ func fetchCatalogManifestWithFallback(primary string, timeout time.Duration, fal
 			continue
 		}
 		if data := fetchCatalogManifest(url, timeout); data != nil {
-			catalogLog.Info("model catalog primary URL failed, using fallback", "url", url)
+			modelCatalogLog.Info("model catalog primary URL failed, using fallback", "url", url)
 			return data
 		}
 	}
@@ -348,7 +343,7 @@ func readCatalogDiskCache(ctx context.Context) (map[string]any, time.Time) {
 
 func writeCatalogDiskCache(ctx context.Context, data map[string]any) {
 	if err := atomicJSONWrite(CatalogCachePath(ctx), data); err != nil {
-		catalogLog.Info("model catalog cache write failed", "error", err)
+		modelCatalogLog.Info("model catalog cache write failed", "error", err)
 	}
 }
 
@@ -598,16 +593,16 @@ func SeedCatalogCacheFromCheckout(ctx context.Context, projectRoot string) bool 
 	src := filepath.Join(projectRoot, "website", "static", "api", "model-catalog.json")
 	raw, err := os.ReadFile(src)
 	if err != nil {
-		catalogLog.Debug("model catalog seed from checkout skipped", "path", src, "error", err)
+		modelCatalogLog.Debug("model catalog seed from checkout skipped", "path", src, "error", err)
 		return false
 	}
 	data, err := decodeJSONBody(raw)
 	if err != nil {
-		catalogLog.Debug("model catalog seed from checkout skipped", "path", src, "error", err)
+		modelCatalogLog.Debug("model catalog seed from checkout skipped", "path", src, "error", err)
 		return false
 	}
 	if !ValidateCatalogManifest(data) {
-		catalogLog.Debug("model catalog seed from checkout skipped, invalid manifest", "path", src)
+		modelCatalogLog.Debug("model catalog seed from checkout skipped, invalid manifest", "path", src)
 		return false
 	}
 	m, _ := asMap(data)

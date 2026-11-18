@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -10,8 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -66,19 +63,6 @@ func catalogLines(text string) []string {
 // Indented notice that the session database cannot be opened
 func (c *CLI) dbUnavailableLine() string {
 	return "  " + state.FormatSessionDBUnavailable(c.ctx, state.SessionDBUnavailablePrefix, true)
-}
-
-// Resume recap panel rendered at the current terminal width for resize replay
-func (c *CLI) renderResumeHistoryPanelLines(panel pyrich.Panel) []string {
-	var buf strings.Builder
-	columns, _ := pyshutil.GetTerminalSize(80, 24)
-	console := pyrich.NewConsole(io.Writer(&buf))
-	console.Color, console.Terminal, console.ColorSystem, console.NoHighlight, console.Width = true, true, "truecolor", true, columns
-	func() {
-		defer suspendOutputHistory()()
-		console.PrintPanel(panel)
-	}()
-	return pystr.Splitlines(strings.TrimRight(buf.String(), "\n"), false)
 }
 
 // Recent CLI sessions for the in chat browse and resume affordances, empty without a store
@@ -241,13 +225,11 @@ func (c *CLI) handleResumeCommand(cmdOriginal string) {
 	if target == "" {
 		cp("  " + c.commandsT("resume.usage", nil))
 		if c.showRecentSessions("resume", 10) {
-			c.pendingResumeSessions = c.listRecentSessions(10)
 			return
 		}
 		cp("  " + c.commandsT("resume.tip_find_sessions", nil))
 		return
 	}
-	c.pendingResumeSessions = nil
 	if c.sessionDB == nil {
 		cp(c.dbUnavailableLine())
 		return

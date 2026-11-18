@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -175,6 +176,42 @@ func hostMethod(name string, params []pyParam, run func(ctx context.Context, h *
 	}
 }
 
+// Parameters of PluginContext.register_tool in signature order
+var registerToolParams = []pyParam{req("name"), req("toolset"), req("schema"), req("handler"),
+	opt("check_fn", nil), opt("requires_env", nil), opt("is_async", false), opt("description", ""), opt("emoji", ""), opt("override", false)}
+
+// Dict argument of the ctx call being served, read from its request frame so every object keeps its wire key order
+func orderedCtxArg(ctx context.Context, params []pyParam, name string, bound any) *pyjson.Object {
+	if frame := servingFrame(ctx); frame != nil {
+		if parsed, err := pyjson.LoadsBytes(frame); err == nil {
+			if msg, ok := parsed.(*pyjson.Object); ok {
+				if call, ok := msg.Vals["params"].(*pyjson.Object); ok {
+					if kwargs, ok := call.Vals["kwargs"].(*pyjson.Object); ok {
+						if v, ok := kwargs.Get(name); ok {
+							obj, _ := pyjson.AsObject(v)
+							return obj
+						}
+					}
+					args, _ := call.Vals["args"].([]any)
+					pos := 0
+					for _, p := range params {
+						if p.varKw || p.kwOnly {
+							continue
+						}
+						if p.name == name && pos < len(args) {
+							obj, _ := pyjson.AsObject(args[pos])
+							return obj
+						}
+						pos++
+					}
+				}
+			}
+		}
+	}
+	obj, _ := pyjson.AsObject(argMap(bound))
+	return obj
+}
+
 func argStr(v any) string {
 	if v == nil {
 		return ""
@@ -291,14 +328,13 @@ func init() {
 		"current_cron_execution": hostMethod("current_cron_execution", nil, func(ctx context.Context, _ *PluginHost, c *Context, _, _ map[string]any) (any, error) {
 			return c.CurrentCronExecution(ctx)
 		}),
-		"register_tool": hostMethod("register_tool", []pyParam{req("name"), req("toolset"), req("schema"), req("handler"),
-			opt("check_fn", nil), opt("requires_env", nil), opt("is_async", false), opt("description", ""), opt("emoji", ""), opt("override", false)},
+		"register_tool": hostMethod("register_tool", registerToolParams,
 			func(ctx context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				handler, err := argCallable("register_tool", "handler", a["handler"])
 				if err != nil {
 					return nil, err
 				}
-				spec := ToolSpec{Name: argStr(a["name"]), Toolset: argStr(a["toolset"]), Schema: argMap(a["schema"]),
+				spec := ToolSpec{Name: argStr(a["name"]), Toolset: argStr(a["toolset"]), Schema: orderedCtxArg(ctx, registerToolParams, "schema", a["schema"]),
 					Handler: hostedToolHandler(handler), RequiresEnv: argStrings(a["requires_env"]),
 					Description: argStr(a["description"]), Emoji: argStr(a["emoji"]), Override: config.PyTruthy(a["override"])}
 				if check, ok := a["check_fn"].(*HostedCallable); ok {

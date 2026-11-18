@@ -9,10 +9,8 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
-	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -87,17 +85,6 @@ func TestEverySeederKeepsEveryPlatformDisplayDefault(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := config.EditConfig(ctx, h); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"setup-agent-enter", func(t *testing.T, ctx context.Context, _, h string) {
-			var out strings.Builder
-			t.Cleanup(provider.WithSetupConsole(&cliui.Console{In: strings.NewReader(strings.Repeat("\n", 8)), Out: &out}))
-			cfg, err := config.LoadContext(ctx, h, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := provider.SetupAgentSettings(ctx, cfg); err != nil {
 				t.Fatal(err)
 			}
 		}},

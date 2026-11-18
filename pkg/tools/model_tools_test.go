@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -26,7 +27,7 @@ func modelToolsDispatcher(t *testing.T, handler Handler, names ...string) (*Disp
 	t.Helper()
 	r := NewRegistry()
 	for _, n := range names {
-		r.Register(Def{Name: n, Toolset: "test", Schema: map[string]any{"name": n, "description": n, "parameters": map[string]any{"type": "object"}}, Handler: handler})
+		r.Register(Def{Name: n, Toolset: "test", Schema: pyjson.ObjectOf("name", n, "description", n, "parameters", pyjson.ObjectOf("type", "object")), Handler: handler})
 	}
 	d := NewDispatcher(r)
 	log := &hookLog{}
@@ -411,8 +412,8 @@ func TestToolCallRejectsOutOfScopeAndUnwrapsInScope(t *testing.T) {
 	env := searchEnv(t)
 	var mu sync.Mutex
 	var calls []*Call
-	Default.Register(Def{Name: "mcp_x", Toolset: "mcp-x", Schema: map[string]any{"name": "mcp_x", "description": "x",
-		"parameters": map[string]any{"type": "object", "properties": map[string]any{"a": map[string]any{"type": "integer"}}}},
+	Default.Register(Def{Name: "mcp_x", Toolset: "mcp-x", Schema: pyjson.ObjectOf("name", "mcp_x", "description", "x",
+		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("a", pyjson.ObjectOf("type", "integer")))),
 		Handler: func(ctx context.Context, call *Call) string {
 			mu.Lock()
 			calls = append(calls, call)

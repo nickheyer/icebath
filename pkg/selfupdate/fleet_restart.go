@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -193,11 +192,6 @@ func fleetRestartSkipReason(ctx context.Context, plan *UpdatePlan) (string, bool
 		return "", false
 	}
 	return "every running gateway already serves the checkout code", true
-}
-
-// Historical retry hook that stops this run so the ordinary completion owner retries
-func runPendingFleetRestart(ctx context.Context) error {
-	return pm.StopForRelaunchIncomplete(ctx)
 }
 
 // Prints the incomplete update warning naming every unit that was not restarted

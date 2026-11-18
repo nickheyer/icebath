@@ -228,7 +228,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 			ack, readErr := readWorkerAck(ackPath)
 			_ = os.Remove(ackPath)
 			if readErr != nil {
-				s.log.Error(fmt.Sprintf("Cron external worker %s published an unreadable acknowledgement; treating handoff as ownership-uncertain: %s", executionID, readErr))
+				s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron external worker %s published an unreadable acknowledgement; treating handoff as ownership-uncertain: %s", executionID, readErr))
 				return waitOn(payloadPath, stderrPath)
 			}
 			var ackID any
@@ -236,11 +236,11 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 				ackID, _ = ack.Get("execution_id")
 			}
 			if ack == nil || ackID != executionID {
-				s.log.Error(fmt.Sprintf("Cron external worker acknowledgement mismatch for %s; treating handoff as ownership-uncertain", executionID))
+				s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron external worker acknowledgement mismatch for %s; treating handoff as ownership-uncertain", executionID))
 				return waitOn(payloadPath, stderrPath)
 			}
 			ackPID, _ := ack.Get("pid")
-			s.log.Info(fmt.Sprintf("Cron job '%s' handed to restart-safe worker pid=%s execution=%s dispatch=%s", jobID, pyrepr.Str(ackPID), executionID, dispatch.Mode))
+			s.logAs("cron.scheduler").Info(fmt.Sprintf("Cron job '%s' handed to restart-safe worker pid=%s execution=%s dispatch=%s", jobID, pyrepr.Str(ackPID), executionID, dispatch.Mode))
 			if !pyTruthy(ackPID) {
 				ackPID = pid
 			}
@@ -261,7 +261,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	s.log.Warn(fmt.Sprintf("Cron external worker for job '%s' did not acknowledge within %.0fs; leaving the durable execution claim untouched", jobID, HandoffAdoptionGraceSeconds))
+	s.logAs("cron.scheduler").Warn(fmt.Sprintf("Cron external worker for job '%s' did not acknowledge within %.0fs; leaving the durable execution claim untouched", jobID, HandoffAdoptionGraceSeconds))
 	return waitOn(payloadPath, ackPath, stderrPath)
 }
 
@@ -436,11 +436,11 @@ func runExternalWorkerPayload(ctx context.Context, payloadPath, ackPath string) 
 		return false
 	}
 	if adopted == nil {
-		s.log.Error(fmt.Sprintf("Cron external worker refused execution %s: durable ownership could not be established", executionID))
+		s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron external worker refused execution %s: durable ownership could not be established", executionID))
 		return false
 	}
 	if err := publishWorkerAck(ackPath, executionID); err != nil {
-		s.log.Error(fmt.Sprintf("Cron external worker could not publish ready acknowledgement for %s: %s", executionID, err))
+		s.logAs("cron.scheduler").Error(fmt.Sprintf("Cron external worker could not publish ready acknowledgement for %s: %s", executionID, err))
 		return false
 	}
 	old, had := os.LookupEnv(externalWorkerEnv)

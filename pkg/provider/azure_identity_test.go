@@ -21,6 +21,7 @@ import (
 	"errors"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -269,7 +270,16 @@ func TestDescribeActiveCredentialReportsEnvSourcesForManagedIdentity(t *testing.
 
 // AAD v2 token endpoint double recording each form
 func entraAuthorityServer(t *testing.T, calls *int32, forms chan map[string]string) *httptest.Server {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/common/discovery/instance":
+			json.NewEncoder(w).Encode(map[string]any{"tenant_discovery_endpoint": srv.URL + "/tenant-1/v2.0/.well-known/openid-configuration"})
+			return
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-configuration"):
+			json.NewEncoder(w).Encode(map[string]any{"token_endpoint": srv.URL + "/tenant-1/oauth2/v2.0/token"})
+			return
+		}
 		atomic.AddInt32(calls, 1)
 		r.ParseForm()
 		f := map[string]string{"path": r.URL.Path}
@@ -284,6 +294,15 @@ func entraAuthorityServer(t *testing.T, calls *int32, forms chan map[string]stri
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("AZURE_AUTHORITY_HOST", srv.URL)
+	toServer := srv.Client().Transport.(*http.Transport).Clone()
+	toServer.TLSClientConfig.InsecureSkipVerify = true
+	toServer.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}
+	origTransport, origClient := azureIdentityTransport, entraHTTPClient
+	azureIdentityTransport = toServer
+	entraHTTPClient = func() *http.Client { return &http.Client{Transport: toServer} }
+	t.Cleanup(func() { azureIdentityTransport, entraHTTPClient = origTransport, origClient })
 	return srv
 }
 

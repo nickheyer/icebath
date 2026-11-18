@@ -89,7 +89,7 @@ func info(lines ...*string) {
 // Line pointer for the info helper
 func ln(s string) *string { return &s }
 
-// BlueBubbles iMessage wizard of icebath setup and icebath gateway setup
+// BlueBubbles iMessage wizard of icebath gateway setup and /setup gateway
 func InteractiveSetup(ctx context.Context) error {
 	gateway.WizardCLI.PrintHeader("BlueBubbles (iMessage)")
 	declined, err := gateway.PlatformSetup.DeclinesReconfigure(ctx, "BlueBubbles", "Reconfigure BlueBubbles?", "BLUEBUBBLES_SERVER_URL")

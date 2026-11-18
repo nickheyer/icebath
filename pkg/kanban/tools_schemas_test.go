@@ -6,7 +6,7 @@ import (
 )
 
 func TestAgentToolStatusEnumCoversEveryStatus(t *testing.T) {
-	params := kanbanListSchema["parameters"].(map[string]any)
+	params := kanbanListSchema.Vals["parameters"].(map[string]any)
 	enum := params["properties"].(map[string]any)["status"].(map[string]any)["enum"].([]any)
 	got := map[string]bool{}
 	for _, s := range enum {

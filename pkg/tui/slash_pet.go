@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,7 +115,7 @@ func (a *app) runPet(r *slashRun) tea.Cmd {
 	case low == "off":
 		return r.petCall("pet.disable", map[string]any{}, func(map[string]any) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.putAway"))
-			return a.pet.refresh()
+			return nil
 		})
 	case low == "info":
 		return a.petInfo(r)
@@ -136,7 +137,7 @@ func (a *app) runPet(r *slashRun) tea.Cmd {
 	return a.petSelect(r, arg)
 }
 
-// Flips the display, putting the shown pet away or bringing out the configured or first installed one
+// Flips the display, putting the shown pet away or turning it on with the configured slug kept
 func (a *app) petToggle(r *slashRun) tea.Cmd {
 	return r.petCall("pet.gallery", map[string]any{"localOnly": true}, func(res map[string]any) tea.Cmd {
 		g := parsePetGallery(res)
@@ -148,26 +149,44 @@ func (a *app) petToggle(r *slashRun) tea.Cmd {
 				} else {
 					r.sys(tr("slashCmd.session.pet.putAway"))
 				}
-				return a.pet.refresh()
+				return nil
 			})
 		}
 		if cur == nil {
 			r.sys(tr("slashCmd.session.pet.error", tr("slashCmd.session.pet.noneInstalled")))
 			return nil
 		}
-		return r.petCall("pet.select", map[string]any{"slug": cur.slug}, func(sel map[string]any) tea.Cmd {
-			r.sys(tr("slashCmd.session.pet.isOut", stringOr(sel["displayName"], cur.name)))
-			return a.pet.refresh()
+		return r.petCall("pet.enable", map[string]any{}, func(map[string]any) tea.Cmd {
+			r.sys(tr("slashCmd.session.pet.isOut", cur.name))
+			return nil
 		})
 	})
 }
 
-// Adopts a petdex pet by slug, installing it first when needed
+// Adopts a petdex pet by slug, installing it first when needed, a store refusal said as the CLI says it
 func (a *app) petSelect(r *slashRun, slug string) tea.Cmd {
 	r.sys(tr("slashCmd.session.pet.fetching", slug))
-	return r.petCall("pet.select", map[string]any{"slug": slug}, func(res map[string]any) tea.Cmd {
+	return gatewayCall(r.a.gw, "pet.select", map[string]any{"slug": slug}, func(v any, err error) tea.Cmd {
+		if r.stale() {
+			return nil
+		}
+		var refusal *rpcError
+		prefix := "could not adopt '" + slug + "': "
+		if errors.As(err, &refusal) && refusal.Code == 5031 && strings.HasPrefix(refusal.Message, prefix) {
+			r.sys(tr("slashCmd.session.pet.adoptFailed", slug, strings.TrimPrefix(refusal.Message, prefix)))
+			return nil
+		}
+		res := asRPCResult(v)
+		switch {
+		case err != nil:
+			r.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+			return nil
+		case res == nil:
+			r.sys(tr("slashCmd.session.pet.error", tr("pickers.common.invalidResponse", "pet.select")))
+			return nil
+		}
 		r.sys(tr("slashCmd.session.pet.isOut", stringOr(res["displayName"], slug)))
-		return a.pet.refresh()
+		return nil
 	})
 }
 
@@ -185,7 +204,7 @@ func (a *app) petScale(r *slashRun, value string) tea.Cmd {
 			return nil
 		}
 		r.sys(tr("slashCmd.session.pet.scaleSet", shown))
-		return a.pet.refresh()
+		return nil
 	})
 }
 
@@ -208,7 +227,7 @@ func (a *app) petRename(r *slashRun, rest string) tea.Cmd {
 		}
 		return r.petCall("pet.rename", map[string]any{"slug": target.slug, "name": name}, func(out map[string]any) tea.Cmd {
 			r.sys(tr("slashCmd.session.pet.renamed", target.name, name, stringOr(out["slug"], target.slug)))
-			return a.pet.refresh()
+			return nil
 		})
 	})
 }
@@ -236,7 +255,7 @@ func (a *app) petRemove(r *slashRun, slug string) tea.Cmd {
 					} else {
 						r.sys(tr("slashCmd.session.pet.notInstalled", target.slug))
 					}
-					return a.pet.refresh()
+					return nil
 				})
 			})
 	})
@@ -417,8 +436,16 @@ func (a *app) openPetGallery(r *slashRun) tea.Cmd {
 		if len(shown) == 1 {
 			count = tr("pickers.pet.petCountOne", 1)
 		}
+		byID := map[string]petEntry{}
+		for _, e := range shown {
+			byID["pet:"+e.slug] = e
+		}
 		picker := wm.NewPalette(a.toolkit, items)
 		picker.Placeholder = tr("pickers.pet.title") + " · " + count
+		picker.Filter = func(query string, it wm.Item) bool {
+			needle, e := strings.ToLower(trimJS(query)), byID[it.ID]
+			return needle == "" || strings.Contains(strings.ToLower(e.slug), needle) || strings.Contains(strings.ToLower(e.name), needle)
+		}
 		return a.wm.ShowOverlay(picker)
 	}))
 }
@@ -427,9 +454,8 @@ func (a *app) openPetGallery(r *slashRun) tea.Cmd {
 func (a *app) adoptPet(slug string) tea.Cmd {
 	return tea.Batch(wm.Notify(tr("pickers.pet.adopting"), wm.Info), gatewayCall(a.gw, "pet.select", map[string]any{"slug": slug}, func(_ any, err error) tea.Cmd {
 		if err != nil {
-			a.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
-			return nil
+			a.sys(tr("pickers.common.error", rpcErrorMessage(err)))
 		}
-		return a.pet.refresh()
+		return nil
 	}))
 }

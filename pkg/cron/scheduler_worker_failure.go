@@ -35,7 +35,7 @@ func (s *Store) recordUnknownWorkerOutcome(ctx context.Context, job *Job, errTex
 		} else {
 			text = pyStrOrEmpty(execution["error"])
 		}
-		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, text))
+		s.logAs("cron.scheduler").Error(fmt.Sprintf("Job '%s': %s", job.ID, text))
 		var deliveryError *string
 		scopeCtx := s.installFireSecretScope(ctx)
 		deliveryError, _ = deliverCrashFailureSeam(s, scopeCtx, job, text, adapters, loop)

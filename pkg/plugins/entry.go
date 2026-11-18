@@ -93,7 +93,7 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 	}
 	children, err := os.ReadDir(base)
 	if err != nil {
-		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
+		logPluginsCmd.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
 		return
 	}
 	for _, child := range children {
@@ -104,7 +104,7 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 		}
 		name, version, description, key, ok, err := readManifestInfo(d, prefix)
 		if err != nil {
-			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
+			logPluginsCmd.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
 			continue
 		}
 		if !ok {

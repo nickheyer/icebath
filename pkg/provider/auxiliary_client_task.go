@@ -389,7 +389,7 @@ func auxResetAuxSemaphores() {
 
 // True when a profile payload carries a reasoning wire control at any depth
 func auxContainsProfileReasoningFields(value any) bool {
-	m, ok := value.(map[string]any)
+	m, ok := pyjson.Dict(value)
 	if !ok {
 		return false
 	}
@@ -474,8 +474,8 @@ func auxDedupeToolNames(tools []any, provider, model string) []any {
 
 // Provider profile projection of a request, partial when the projection raised
 type auxProfileProjection struct {
-	Body             map[string]any
-	ReasoningExtra   map[string]any
+	Body             *pyjson.Object
+	ReasoningExtra   *pyjson.Object
 	TopLevel         map[string]any
 	HandlesReasoning bool
 	MessagesWire     bool
@@ -499,7 +499,7 @@ func auxRoutesToCustomEndpoint(ctx context.Context, providerNorm string) bool {
 var auxProjectProviderProfileFn = auxProjectProviderProfile
 
 func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any, dataUse map[string]bool) auxProfileProjection {
-	p := auxProfileProjection{Body: map[string]any{}, ReasoningExtra: map[string]any{}, TopLevel: map[string]any{}}
+	p := auxProfileProjection{Body: pyjson.NewObject(), ReasoningExtra: pyjson.NewObject(), TopLevel: map[string]any{}}
 	if err := auxRecoverRaise(func() {
 		profile, found := auxGetProviderProfileFn(ctx, providerNorm)
 		if !found && auxRoutesToCustomEndpoint(ctx, providerNorm) {
@@ -533,56 +533,52 @@ func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, mode
 }
 
 // OpenAI compatible extra_body fallback for a route whose profile declares no reasoning shape
-func auxGenericNestedReasoning(reasoningConfig map[string]any) map[string]any {
+func auxGenericNestedReasoning(reasoningConfig map[string]any) *pyjson.Object {
 	if len(reasoningConfig) == 0 {
-		return map[string]any{}
+		return pyjson.NewObject()
 	}
 	if enabled, ok := reasoningConfig["enabled"].(bool); ok && !enabled {
-		return map[string]any{"reasoning": map[string]any{"enabled": false}}
+		return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", false))
 	}
 	effort := reasoningConfig["effort"]
 	if !auxTruthy(effort) {
 		effort = "medium"
 	}
-	return map[string]any{"reasoning": map[string]any{"enabled": true, "effort": effort}}
+	return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
 }
 
 // Caller extra_body merged with the profile body and reasoning, the generic reasoning fallback and Nous tags
-func auxMergeAuxExtraBody(ctx context.Context, extraBody map[string]any, projection auxProfileProjection, reasoningConfig map[string]any, providerNorm string) map[string]any {
-	merged := auxCloneMap(extraBody)
-	if merged == nil {
-		merged = map[string]any{}
+func auxMergeAuxExtraBody(ctx context.Context, extraBody any, projection auxProfileProjection, reasoningConfig map[string]any, providerNorm string) *pyjson.Object {
+	merged := pyjson.NewObject()
+	if src, ok := pyjson.AsObject(extraBody); ok {
+		merged = src.Copy()
 	}
-	callerReasoning := map[string]any{}
-	for k, v := range merged {
+	callerReasoning := pyjson.NewObject()
+	for _, k := range merged.Keys {
 		lk := strings.ToLower(strings.TrimSpace(k))
 		if auxProfileReasoningKeys[lk] && lk != "reasoning" {
-			callerReasoning[k] = v
+			callerReasoning.Set(k, merged.Vals[k])
 		}
 	}
 	if enabled, ok := reasoningConfig["enabled"].(bool); reasoningConfig != nil && ok && !enabled {
-		delete(merged, "reasoning")
+		merged.Delete("reasoning")
 	}
-	for _, part := range []map[string]any{projection.Body, projection.ReasoningExtra, callerReasoning} {
-		for k, v := range part {
-			merged[k] = v
-		}
-	}
+	merged.Update(projection.Body)
+	merged.Update(projection.ReasoningExtra)
+	merged.Update(callerReasoning)
 	if !projection.HandlesReasoning {
-		for k, v := range auxGenericNestedReasoning(reasoningConfig) {
-			merged[k] = v
-		}
+		merged.Update(auxGenericNestedReasoning(reasoningConfig))
 	}
-	if r, ok := merged["reasoning"].(map[string]any); ok {
-		merged["reasoning"] = clampReasoningConfigDict(r, openAICompatWireEfforts)
+	if r, ok := pyjson.AsObject(merged.Vals["reasoning"]); ok {
+		merged.Set("reasoning", clampReasoningConfigObject(r, openAICompatWireEfforts))
 	}
 	if auxNousProviderNames[providerNorm] {
-		if _, ok := merged["tags"]; !ok {
-			merged["tags"] = nousPortalTags(ctx, "")
+		if _, ok := merged.Get("tags"); !ok {
+			merged.Set("tags", nousPortalTags(ctx, ""))
 		}
-		if _, ok := merged["session_id"]; !ok {
+		if _, ok := merged.Get("session_id"); !ok {
 			if sticky := portalConversationContext(ctx); sticky != "" {
-				merged["session_id"] = sticky
+				merged.Set("session_id", sticky)
 			}
 		}
 	}
@@ -675,12 +671,12 @@ func auxBuildCallKwargs(ctx context.Context, provider, model string, messages an
 		kwargs[k] = v
 	}
 	merged := auxMergeAuxExtraBody(ctx, extraBody, projection, reasoningConfig, providerNorm)
-	if _, ok := merged["response_format"]; ok {
+	if _, ok := merged.Get("response_format"); ok {
 		if merged, err = WithoutUnsupportedResponseFormat(ctx, merged, providerNorm, effectiveBase, model, opts.Task); err != nil {
 			return nil, err
 		}
 	}
-	if len(merged) > 0 {
+	if merged.Len() > 0 {
 		kwargs["extra_body"] = merged
 	}
 	if len(reasoningConfig) > 0 {

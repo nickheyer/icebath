@@ -98,9 +98,6 @@ func (c *CLI) processCommand(command string) bool {
 	if !redispatch && !c.slashMetricsOff {
 		observability.RecordSlashCommand(c.ctx, canonical, "cli")
 	}
-	if canonical != "resume" && canonical != "sessions" {
-		c.pendingResumeSessions = nil
-	}
 	handler, ok := slashDispatch[canonical]
 	if ok && runGatewaySetting(c, canonical, cmdOriginal) {
 		return true

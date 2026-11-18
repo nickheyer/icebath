@@ -1,16 +1,20 @@
 package provider
 
+import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 // Profiles the bundled qwen-oauth plugin registers
 func qwenPluginProfiles() []Profile {
 	p := bundledRowProfile(profileRow{name: "qwen-oauth", keys: []string{"QWEN_API_KEY"}, base: "https://portal.qwen.ai/v1",
 		authType: AuthTypeOAuthExternal, maxTokens: 65536}, "qwen", "qwen-portal", "qwen-cli")
 	p.PrepareMessagesHook = qwenPrepareMessages
-	p.BuildExtraBodyHook = func(string, map[string]any) map[string]any { return map[string]any{"vl_high_resolution_images": true} }
-	p.BuildAPIKwargsExtrasHook = func(_ *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+	p.BuildExtraBodyHook = func(string, map[string]any) *pyjson.Object {
+		return pyjson.ObjectOf("vl_high_resolution_images", true)
+	}
+	p.BuildAPIKwargsExtrasHook = func(_ *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 		if md := kw["qwen_session_metadata"]; pyTruthy(md) {
-			return map[string]any{}, map[string]any{"metadata": md}
+			return pyjson.NewObject(), map[string]any{"metadata": md}
 		}
-		return map[string]any{}, map[string]any{}
+		return pyjson.NewObject(), map[string]any{}
 	}
 	return []Profile{p}
 }

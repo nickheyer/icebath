@@ -3,9 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -17,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -59,16 +56,8 @@ func (c *CLI) persistPromptSummary(icon, label, detail, outcome string) {
 		"icon": icon, "label": label, "detail": detail, "outcome": outcome}) + resetANSI)
 }
 
-var (
-	// Exit screen clear the summary runs first, the real console wipe in production
-	clearTerminalOnExit = (*CLI).wipeConsoleOnExit
-	// Executable lookup of the exit clear fallback, the PATH search in production
-	clearCommandWhich = func(name string) (string, bool) { return pyshutil.Which(name, nil) }
-	// Runs the exit clear fallback child, the real process in production
-	runClearCommand = (*exec.Cmd).Run
-	// Active profile lookup of the exit resume hint, the profile resolver in production
-	exitSummaryActiveProfileName = profiles.GetActiveProfileName
-)
+// Active profile lookup of the exit resume hint, the profile resolver in production
+var exitSummaryActiveProfileName = profiles.GetActiveProfileName
 
 // Active profile for the resume hint, default when the lookup fails
 func exitSummaryProfileName(ctx context.Context) (name string) {
@@ -80,42 +69,11 @@ func exitSummaryProfileName(ctx context.Context) (name string) {
 	return exitSummaryActiveProfileName(ctx)
 }
 
-// Clears the screen and scrollback of a real console, falling back to the platform clear command without a shell
-func (c *CLI) wipeConsoleOnExit() {
-	con := console()
-	if !con.StdoutIsTTY() {
-		return
-	}
-	_, err := io.WriteString(con.Out, "\033[3J\033[2J\033[H")
-	if flusher, ok := con.Out.(interface{ Flush() error }); ok && err == nil {
-		err = flusher.Flush()
-	}
-	if err == nil {
-		return
-	}
-	var argv []string
-	if IsWindows() {
-		argv = []string{"cmd", "/c", "cls"}
-	} else if clearBin, ok := clearCommandWhich("clear"); ok && clearBin != "" {
-		argv = []string{clearBin}
-	}
-	if len(argv) == 0 {
-		return
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	cmd.SysProcAttr = tools.WindowsHideAttr()
-	_ = runClearCommand(cmd)
-}
-
 // Session clock reading the wall time as datetime.now() does, swapped by tests
 var cliNow = pydatetime.Now
 
 // Prints the session resume commands, title, duration and message counts on exit
-func (c *CLI) printExitSummary(clearScreen bool) {
-	if clearScreen {
-		clearTerminalOnExit(c)
-	}
+func (c *CLI) printExitSummary() {
 	out := console().Out
 	fmt.Fprintln(out)
 	for _, message := range takeSessionEndMessages() {

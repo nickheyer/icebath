@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -126,7 +127,7 @@ func TestShutdownShutdownDeregistersRegisteredTools(t *testing.T) {
 	_, env := managerHome(t)
 	ctx := context.Background()
 	def := testToolDef("mcp__test__ping", "mcp-test")
-	def.Schema = map[string]any{"name": "mcp__test__ping", "description": "Ping", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+	def.Schema = pyjson.ObjectOf("name", "mcp__test__ping", "description", "Ping", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
 	tools.Default.Remove(def.Name)
 	tools.Default.Register(def)
 	t.Cleanup(func() { tools.Default.Remove(def.Name) })
@@ -373,7 +374,7 @@ func TestSanitizeMcpNameComponentSlashInServerAliasResolution(t *testing.T) {
 	isolateHome(t)
 	ctx := context.Background()
 	def := testToolDef("mcp__ai_exa_exa__search", "mcp-ai.exa/exa")
-	def.Schema = map[string]any{"name": "mcp__ai_exa_exa__search", "description": "Search", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+	def.Schema = pyjson.ObjectOf("name", "mcp__ai_exa_exa__search", "description", "Search", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
 	tools.Default.Remove(def.Name)
 	tools.Default.Register(def)
 	t.Cleanup(func() { tools.Default.Remove(def.Name) })
@@ -532,7 +533,7 @@ func TestParkedServerSelfProbesAndRevives(t *testing.T) {
 	writeMCPServers(t, "  srv:\n    command: x\n")
 	maxReconnectRetries = 1
 	parkedRetryInterval = 50 * time.Millisecond
-	s.tools = []*Tool{{Name: "tool", InputSchema: map[string]any{"type": "object"}}}
+	s.tools = []*Tool{{Name: "tool", InputSchema: pyjson.ObjectOf("type", "object")}}
 	s.toolNames = []string{"mcp__srv__tool"}
 	mcpMu.Lock()
 	mcpServers[ServerKey{Name: "srv"}] = s

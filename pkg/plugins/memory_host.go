@@ -76,7 +76,7 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 			return nil, nil
 		}
 		if _, err := hostCtxCall(ctx, h, c, method, args, kwargs); err != nil {
-			logDebug(fmt.Sprintf("Memory provider '%s' failed to register skill: %s", mc.name, err))
+			logMemory.debug(fmt.Sprintf("Memory provider '%s' failed to register skill: %s", mc.name, err))
 			return nil, nil
 		}
 		skill := kwargs["name"]
@@ -94,7 +94,7 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 	}
 	result, err := hostCtxCall(ctx, h, c, method, args, kwargs)
 	if err != nil {
-		logWarn(fmt.Sprintf("Memory provider '%s' failed to %s: %s", mc.name, method, err))
+		logMemory.warn(fmt.Sprintf("Memory provider '%s' failed to %s: %s", mc.name, method, err))
 		return nil, nil
 	}
 	return result, nil
@@ -170,7 +170,7 @@ func WarmMemoryProviderImport(ctx context.Context, name, providerDir, moduleName
 		root, err = hostPluginsRoot()
 	}
 	if err != nil {
-		logDebug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
+		logMemory.debug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
 		return false
 	}
 	params := map[string]any{"name": name, "path": providerDir, "module_name": moduleName, "parents": providerModuleParents,
@@ -180,7 +180,7 @@ func WarmMemoryProviderImport(ctx context.Context, name, providerDir, moduleName
 	}
 	raw, err := host.call(ctx, "warm_import", params, nil, 0, nil)
 	if err != nil {
-		logDebug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
+		logMemory.debug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
 		return false
 	}
 	imported, _ := raw.(bool)

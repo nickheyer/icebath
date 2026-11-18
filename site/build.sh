@@ -15,6 +15,7 @@ mkdir -p "$out"
 out=$(realpath "$out")
 cp -r "$site/public/." "$out/"
 cp "$site/../scripts/install.sh" "$out/install.sh"
+cp "$site/../scripts/install.ps1" "$out/install.ps1"
 mkdir -p "$out/apt/pool" "$out/apk/x86_64" "$out/apk/aarch64"
 cp "$pkgs"/*.deb "$out/apt/pool/"
 cp "$pkgs"/*.rpm "$out/rpm/"

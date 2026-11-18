@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 )
 
@@ -85,27 +86,27 @@ func copilotAPIProfile() Profile {
 func isCopilotHost(baseURL string) bool { return HostMatches(baseURL, copilotHost) }
 
 // Catalog gated GitHub Models reasoning in extra_body, medium when the caller set no reasoning config
-func copilotBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (extra map[string]any, top map[string]any) {
+func copilotBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (extra *pyjson.Object, top map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			extra, top = map[string]any{}, map[string]any{}
+			extra, top = pyjson.ObjectOf(), map[string]any{}
 		}
 	}()
 	model := hookString(kw, "model")
 	supports, _ := kw["supports_reasoning"].(bool)
 	if !supports || model == "" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	supported := githubModelReasoningEfforts(hookCtx(kw), model, nil, "")
 	if len(supported) == 0 {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	cfg := reasoningConfigMap(reasoning)
 	if len(cfg) == 0 {
-		return map[string]any{"reasoning": map[string]any{"effort": "medium"}}, map[string]any{}
+		return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("effort", "medium")), map[string]any{}
 	}
 	effort := clampGithubReasoningEffort(cpOrStr(cfg["effort"]), supported)
-	return map[string]any{"reasoning": map[string]any{"effort": effort}}, map[string]any{}
+	return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("effort", effort)), map[string]any{}
 }
 
 // Per model wire, the raw id pattern without a key and the normalized id with any key, empty included

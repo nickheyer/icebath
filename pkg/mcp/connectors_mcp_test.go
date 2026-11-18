@@ -154,7 +154,7 @@ func connFixture(t *testing.T, backend *fakeConnBackend) {
 		}
 		for _, toolName := range fb.registeredTools {
 			tools.Default.Register(tools.Def{Name: toolName, Toolset: "mcp-" + name,
-				Schema:  map[string]any{"name": toolName, "description": "Registered " + toolName, "parameters": map[string]any{}},
+				Schema:  pyjson.ObjectOf("name", toolName, "description", "Registered "+toolName, "parameters", pyjson.ObjectOf()),
 				Handler: func(context.Context, *tools.Call) string { return "{}" }})
 			registered = append(registered, toolName)
 		}

@@ -23,10 +23,9 @@ func installedTree(t *testing.T, tag, commit string) string {
 func TestApplyReleaseReplacesTheTreeBinaryWithThePlannedRelease(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	goos, goarch := hostKey()
-	name := BinaryAssetName(goos, goarch)
 	f := newReleaseFixture(t, []fixtureRelease{
-		{Tag: "v1.1.0", Target: "main", Published: "2026-10-01T00:00:00Z", Assets: map[string][]byte{name: fixtureBinary(t, "v1.1.0")}},
-		{Tag: "v1.2.0", Target: "main", Published: "2026-11-01T00:00:00Z", Assets: map[string][]byte{name: fixtureBinary(t, "v1.2.0")}},
+		{Tag: "v1.1.0", Target: "main", Published: "2026-10-01T00:00:00Z", Assets: map[string][]byte{ReleaseArchiveName("v1.1.0", goos, goarch): fixtureArchive(t, "v1.1.0")}},
+		{Tag: "v1.2.0", Target: "main", Published: "2026-11-01T00:00:00Z", Assets: map[string][]byte{ReleaseArchiveName("v1.2.0", goos, goarch): fixtureArchive(t, "v1.2.0")}},
 	}, nil)
 	dir := installedTree(t, "v1.1.0", "")
 	plan, err := PlanRelease(context.Background(), dir, f.repo, ReleaseQuery{Branch: "main"})

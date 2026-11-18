@@ -79,7 +79,25 @@ func Thumbnail(img *image.NRGBA, side int, hasAlpha bool) *image.NRGBA {
 	return pilResample(src, fw, fh, box)
 }
 
-// Block averages over fx by fy cells, partial edge cells averaged over the pixels they hold
+// Copy shrunk to fit the side box as Pillow 13 thumbnails an RGBA image with Lanczos, premultiplied with a reducing gap of two
+func ThumbnailLanczos(img *image.NRGBA, side int) *image.NRGBA {
+	w, h := img.Rect.Dx(), img.Rect.Dy()
+	fw, fh, ok := ThumbnailSize(w, h, side)
+	if !ok || (fw == w && fh == h) {
+		out := image.NewNRGBA(img.Rect)
+		copy(out.Pix, img.Pix)
+		return out
+	}
+	src, box := premultiply(img), [4]float64{0, 0, float64(w), float64(h)}
+	fx, fy := max(int(float64(w)/float64(fw)/2.0), 1), max(int(float64(h)/float64(fh)/2.0), 1)
+	if fx > 1 || fy > 1 {
+		src = pilReduce(src, fx, fy)
+		box = [4]float64{0, 0, float64(w) / float64(fx), float64(h) / float64(fy)}
+	}
+	return unpremultiply(pilResampleWith(src, fw, fh, box, pilLanczos))
+}
+
+// Block averages over fx by fy cells with the fixed point divide of Pillow Reduce.c, partial edge cells over the pixels they hold
 func pilReduce(img *image.NRGBA, fx, fy int) *image.NRGBA {
 	w, h := img.Rect.Dx(), img.Rect.Dy()
 	ow, oh := (w+fx-1)/fx, (h+fy-1)/fy
@@ -98,8 +116,9 @@ func pilReduce(img *image.NRGBA, fx, fy int) *image.NRGBA {
 				}
 			}
 			o := out.PixOffset(ox, oy)
+			multiplier := uint32(float32(4294967296) / float32(256*count))
 			for c := 0; c < 4; c++ {
-				out.Pix[o+c] = uint8((sum[c] + count/2) / count)
+				out.Pix[o+c] = uint8(((uint32(sum[c]) + uint32(count/2)) * multiplier) >> 24)
 			}
 		}
 	}
@@ -213,8 +232,11 @@ func ResizeLanczos(img *image.NRGBA, w, h int) *image.NRGBA {
 	return unpremultiply(pilResampleWith(premultiply(img), w, h, [4]float64{0, 0, float64(inW), float64(inH)}, pilLanczos))
 }
 
-// Two pass Pillow resample of a box of the source with the given kernel
+// Two pass Pillow resample of a box of the source with the given kernel, the box narrowed to the float32 Pillow parses
 func pilResampleWith(img *image.NRGBA, xsize, ysize int, box [4]float64, filter pilFilter) *image.NRGBA {
+	for i := range box {
+		box[i] = float64(float32(box[i]))
+	}
 	inW, inH := img.Rect.Dx(), img.Rect.Dy()
 	needH := xsize != inW || box[0] != 0 || box[2] != float64(xsize)
 	needV := ysize != inH || box[1] != 0 || box[3] != float64(ysize)

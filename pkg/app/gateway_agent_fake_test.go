@@ -42,13 +42,6 @@ func (f *fakeGatewayClient) SendFrame(text string) error {
 
 func (f *fakeGatewayClient) Close() error { return nil }
 
-// Methods the double was asked, in order
-func (f *fakeGatewayClient) called() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.calls...)
-}
-
 // Connection over a gateway double, closed when the case ends
 func fakeGatewayConnection(t *testing.T, handler func(method string, params map[string]any) (any, error)) (*gatewaycli.GatewayConnection, *fakeGatewayClient) {
 	t.Helper()

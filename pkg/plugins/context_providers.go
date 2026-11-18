@@ -75,7 +75,7 @@ func (c *Context) RegisterProvider(kind string, provider any) (*Registration, er
 func (c *Context) registerProviderRow(row scopedProviderRow, provider any) (*Registration, error) {
 	if row.admit != nil {
 		if refusal := row.admit(c.manager.home, c.manifest); refusal != "" {
-			logWarn(fmt.Sprintf(row.rejectMessage, c.manifest.Name, refusal))
+			logPluginsRegistrars.warn(fmt.Sprintf(row.rejectMessage, c.manifest.Name, refusal))
 			return nil, nil
 		}
 	}
@@ -85,7 +85,7 @@ func (c *Context) registerProviderRow(row scopedProviderRow, provider any) (*Reg
 	}
 	if row.identity {
 		if err := registry.Identity(provider); err != nil {
-			logWarn(fmt.Sprintf(row.rejectMessage, c.manifest.Name, err))
+			logPluginsRegistrars.warn(fmt.Sprintf(row.rejectMessage, c.manifest.Name, err))
 			return nil, nil
 		}
 	}
@@ -110,7 +110,7 @@ func (c *Context) registerProviderRow(row scopedProviderRow, provider any) (*Reg
 		if row.rejectMessage == "" {
 			return nil, err
 		}
-		logWarn(fmt.Sprintf(row.rejectMessage, c.manifest.Name, err))
+		logPlugins.warn(fmt.Sprintf(row.rejectMessage, c.manifest.Name, err))
 		return nil, nil
 	}
 	if (row.customAccept && !accepted) || !sameRegistration(registry.Snapshot(name, scope), provider) {
@@ -120,7 +120,7 @@ func (c *Context) registerProviderRow(row scopedProviderRow, provider any) (*Reg
 		registry.Restore(name, current, replacement, scope)
 		return nil
 	}, provider, previous, nil)
-	logInfo(fmt.Sprintf("Plugin '%s' registered %s: %s", c.manifest.Name, row.label, name))
+	logPlugins.info(fmt.Sprintf("Plugin '%s' registered %s: %s", c.manifest.Name, row.label, name))
 	return handle, nil
 }
 

@@ -361,13 +361,6 @@ func (a *GatewayAgent) SetPrintFn(fn func(string)) {
 	a.printFn = fn
 }
 
-// Installs the callback a mid turn control update calls
-func (a *GatewayAgent) SetControlUpdateCallback(fn func()) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.controlUpdateCallback = fn
-}
-
 // Marks the admissions this agent sends as finite, the one shot headless runs
 func (a *GatewayAgent) SetFinite(finite bool) {
 	a.mu.Lock()
@@ -387,13 +380,6 @@ func (a *GatewayAgent) SetPendingCLIUserMessage(row map[string]any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.pendingCLIUserMessage = row
-}
-
-// Marks the next turn as a voice turn
-func (a *GatewayAgent) SetVoiceTurnPending(pending bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.voiceTurnPending = pending
 }
 
 // Transcript rows of the last settled turn
@@ -662,7 +648,7 @@ func (a *GatewayAgent) NotificationTurn(ctx context.Context, muted bool, session
 	saved := a.opts
 	suppressed, mutedReply := a.suppressStatusOutput, a.muteNotificationReply
 	a.opts.StreamDeltaCallback, a.opts.ToolProgressCallback, a.opts.ToolCompleteCallback = nil, nil, nil
-	a.opts.ToolGenCallback, a.opts.ReactionCallback = nil, nil
+	a.opts.ToolGenCallback = nil
 	a.suppressStatusOutput, a.muteNotificationReply = true, true
 	a.mu.Unlock()
 	reasoning := a.ReasoningCallback()
@@ -670,7 +656,7 @@ func (a *GatewayAgent) NotificationTurn(ctx context.Context, muted bool, session
 	return agent.WithMutedSurface(ctx, sessionID), func() {
 		a.mu.Lock()
 		a.opts.StreamDeltaCallback, a.opts.ToolProgressCallback, a.opts.ToolCompleteCallback = saved.StreamDeltaCallback, saved.ToolProgressCallback, saved.ToolCompleteCallback
-		a.opts.ToolGenCallback, a.opts.ReactionCallback = saved.ToolGenCallback, saved.ReactionCallback
+		a.opts.ToolGenCallback = saved.ToolGenCallback
 		a.suppressStatusOutput, a.muteNotificationReply = suppressed, mutedReply
 		a.mu.Unlock()
 		a.SetReasoningCallback(reasoning)

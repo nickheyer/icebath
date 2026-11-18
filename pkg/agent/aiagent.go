@@ -243,6 +243,7 @@ type AIAgent struct {
 	delegateSavedToolNames             []string
 	handedOffProcesses                 []map[string]any
 	subagentID                         string
+	spawnSeq                           uint64
 	parentSubagentID                   string
 	delegateRole                       string
 	skipMemory                         bool

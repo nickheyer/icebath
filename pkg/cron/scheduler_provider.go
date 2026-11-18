@@ -135,7 +135,7 @@ func noteTickFailure(err error, failures int) int {
 func (s *Store) guardedStoreWrite(description string, action func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.log.Warn(fmt.Sprintf("Cron %s write failed: %v", description, r))
+			providerLog(s).Warn(fmt.Sprintf("Cron %s write failed: %v", description, r))
 		}
 	}()
 	action()
@@ -154,7 +154,7 @@ func (s *Store) existingProfileHomes(list []ProfileHome, fn func() ([]ProfileHom
 			return fn()
 		}()
 		if err != nil {
-			s.log.Warn(fmt.Sprintf("cron profile enumeration failed; skipping this cycle: %v", err))
+			providerLog(s).Warn(fmt.Sprintf("cron profile enumeration failed; skipping this cycle: %v", err))
 			return []ProfileHome{}
 		}
 	}
@@ -420,13 +420,13 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 			name = "unnamed"
 		}
 		if job.scheduleOrEmpty().Kind == "once" && overdue > oneshotGraceSeconds {
-			s.log.Warn(fmt.Sprintf("Misfire catch-up: one-shot job %s (%s) was due %s (%s min overdue) — outside the %ds one-shot grace window, not firing.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60), oneshotGraceSeconds))
+			providerLog(s).Warn(fmt.Sprintf("Misfire catch-up: one-shot job %s (%s) was due %s (%s min overdue) — outside the %ds one-shot grace window, not firing.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60), oneshotGraceSeconds))
 			continue
 		}
-		s.log.Warn(fmt.Sprintf("Misfire catch-up: job %s (%s) was due %s (%s min overdue) and no external fire arrived — firing locally.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60)))
+		providerLog(s).Warn(fmt.Sprintf("Misfire catch-up: job %s (%s) was due %s (%s min overdue) and no external fire arrived — firing locally.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60)))
 		claimed, err := schedulerClaimFire(ctx, p, job.ID, false, false)
 		if err != nil {
-			s.log.Warn(fmt.Sprintf("Misfire catch-up failed for job %s: %s: %v", job.ID, cronExceptionName(err), err))
+			providerLog(s).Warn(fmt.Sprintf("Misfire catch-up failed for job %s: %s: %v", job.ID, cronExceptionName(err), err))
 			continue
 		}
 		if claimed == nil {
@@ -476,7 +476,7 @@ func resolveCronScheduler(s *Store) CronScheduler {
 	if provider != nil {
 		return provider
 	}
-	s.log.Warn(warning)
+	providerLog(s).Warn(warning)
 	return &InProcessCronScheduler{}
 }
 
@@ -517,7 +517,7 @@ func (s *Store) loadConfiguredScheduler(name string) (provider CronScheduler, wa
 	} else {
 		label = provider.Name()
 	}
-	s.log.Info("Using cron scheduler provider: " + label)
+	providerLog(s).Info("Using cron scheduler provider: " + label)
 	return provider, ""
 }
 
@@ -529,7 +529,7 @@ func (s *Store) schedulerForProfileMode(p CronScheduler, multiplexProfiles bool)
 	if _, builtin := p.(*InProcessCronScheduler); !multiplexProfiles || builtin {
 		return p
 	}
-	s.log.Warn(fmt.Sprintf("cron.provider '%s' does not support multiplex_profiles; using built-in ticker", p.Name()))
+	providerLog(s).Warn(fmt.Sprintf("cron.provider '%s' does not support multiplex_profiles; using built-in ticker", p.Name()))
 	return &InProcessCronScheduler{}
 }
 
@@ -589,6 +589,9 @@ func containedTick(ctx context.Context, s *Store, o tickOptions) (err error) {
 // Seam over the tick the ticker drives, swapped by tests like a patched scheduler.tick
 var tickHook = schedulerTick
 
+// Logger named like the reference scheduler provider module
+func providerLog(s *Store) *slog.Logger { return s.log.With("logger", "cron.scheduler_provider") }
+
 // Seam over the monotonic clock the ticker schedules against
 var tickerMonotonic = func() float64 { return time.Since(tickerClockStart).Seconds() }
 
@@ -605,7 +608,7 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 	if o.Interval != nil {
 		interval = *o.Interval
 	}
-	s.log.Info(fmt.Sprintf("In-process cron scheduler started (interval=%ds)", int(interval)))
+	providerLog(s).Info(fmt.Sprintf("In-process cron scheduler started (interval=%ds)", int(interval)))
 	if o.ProfileHomesFn != nil || len(o.ProfileHomes) > 0 {
 		p.startMultiplex(ctx, s, stop, o, interval)
 		return
@@ -615,18 +618,18 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 		defer func() {
 			if r := recover(); r != nil {
 				err := recoveredError(r)
-				s.log.Error(fmt.Sprintf("Cron startup recovery error: %v", err))
+				providerLog(s).Error(fmt.Sprintf("Cron startup recovery error: %v", err))
 				s.guardedStoreWrite("startup error", func() { s.RecordTickerError(home.WithOverride(ctx, s.home), tickErrorText(err)) })
 			}
 		}()
 		recovered, err := schedulerRecoverInterrupted(ctx, p)
 		if err != nil {
-			s.log.Error(fmt.Sprintf("Cron startup recovery error: %v", err))
+			providerLog(s).Error(fmt.Sprintf("Cron startup recovery error: %v", err))
 			s.guardedStoreWrite("startup error", func() { s.RecordTickerError(home.WithOverride(ctx, s.home), tickErrorText(err)) })
 			return
 		}
 		if recovered > 0 {
-			s.log.Warn(fmt.Sprintf("Marked %d interrupted cron execution(s) unknown after restart", recovered))
+			providerLog(s).Warn(fmt.Sprintf("Marked %d interrupted cron execution(s) unknown after restart", recovered))
 		}
 		recordTickerHeartbeat(s, home.WithOverride(ctx, s.home), false)
 	}()
@@ -641,7 +644,7 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 				}
 			}()
 			if o.CanDispatch != nil && !o.CanDispatch() {
-				s.log.Debug("Cron dispatch paused while gateway drains existing work")
+				providerLog(s).Debug("Cron dispatch paused while gateway drains existing work")
 				return s.noteHeld(home.WithOverride(ctx, s.home), nil)
 			}
 			s.noteDispatching()
@@ -652,9 +655,9 @@ func (p *InProcessCronScheduler) Start(ctx context.Context, stop <-chan struct{}
 		} else {
 			var yielded *CronTickYielded
 			if errors.As(err, &yielded) {
-				s.log.Info(fmt.Sprintf("Cron tick yielded: %v", err))
+				providerLog(s).Info(fmt.Sprintf("Cron tick yielded: %v", err))
 			} else {
-				s.log.Error(fmt.Sprintf("Cron tick error: %v", err))
+				providerLog(s).Error(fmt.Sprintf("Cron tick error: %v", err))
 			}
 			s.guardedStoreWrite("tick error", func() { s.RecordTickerError(home.WithOverride(ctx, s.home), tickErrorText(err)) })
 			failures = noteTickFailure(err, failures)
@@ -710,12 +713,12 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 	if o.ProfileHomesFn != nil {
 		suffix = " (re-enumerated every cycle)"
 	}
-	s.log.Info(fmt.Sprintf("Multiplex cron scheduler started for %d profile(s): %s%s", len(initial), pyrepr.Repr(labels), suffix))
+	providerLog(s).Info(fmt.Sprintf("Multiplex cron scheduler started for %d profile(s): %s%s", len(initial), pyrepr.Repr(labels), suffix))
 	for _, e := range initial {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					s.log.Error(fmt.Sprintf("Cron startup recovery error for profile at %s: %v", e.Home, r))
+					providerLog(s).Error(fmt.Sprintf("Cron startup recovery error for profile at %s: %v", e.Home, r))
 				}
 			}()
 			leave, held := gateway.ProcessOwnership.Hold(e.Home)
@@ -726,11 +729,11 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 			pctx, ps := s.profileCronScope(ctx, e.Home)
 			recovered, err := schedulerRecoverInterrupted(pctx, p)
 			if err != nil {
-				s.log.Error(fmt.Sprintf("Cron startup recovery error for profile at %s: %v", e.Home, err))
+				providerLog(s).Error(fmt.Sprintf("Cron startup recovery error for profile at %s: %v", e.Home, err))
 				return
 			}
 			if recovered > 0 {
-				s.log.Warn(fmt.Sprintf("Marked %d interrupted cron execution(s) for profile at %s", recovered, e.Home))
+				providerLog(s).Warn(fmt.Sprintf("Marked %d interrupted cron execution(s) for profile at %s", recovered, e.Home))
 			}
 			recordTickerHeartbeat(ps, home.WithOverride(pctx, ps.home), false)
 		}()
@@ -748,7 +751,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 			defer func() {
 				if r := recover(); r != nil {
 					err := recoveredError(r)
-					s.log.Error(fmt.Sprintf("Cron profile enumeration error: %v", err))
+					providerLog(s).Error(fmt.Sprintf("Cron profile enumeration error: %v", err))
 					tickErr = tickErrorText(err)
 					failures = noteTickFailure(err, failures)
 				}
@@ -780,19 +783,19 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 			defer func() {
 				if r := recover(); r != nil {
 					err := recoveredError(r)
-					s.log.Error(fmt.Sprintf("Cron tick error: %v", err))
+					providerLog(s).Error(fmt.Sprintf("Cron tick error: %v", err))
 					tickErr = tickErrorText(err)
 					failures = noteTickFailure(err, failures)
 				}
 			}()
 			if o.CanDispatch != nil && !o.CanDispatch() {
-				s.log.Debug("Cron dispatch paused while gateway drains existing work")
+				providerLog(s).Debug("Cron dispatch paused while gateway drains existing work")
 				hs := make([]string, 0, len(cycle))
 				for _, e := range cycle {
 					hs = append(hs, e.Home)
 				}
 				if err := noteHeldProfiles(home.WithOverride(ctx, s.home), hs); err != nil {
-					s.log.Error(fmt.Sprintf("Cron tick error: %v", err))
+					providerLog(s).Error(fmt.Sprintf("Cron tick error: %v", err))
 					tickErr = tickErrorText(err)
 					failures = noteTickFailure(err, failures)
 				}
@@ -814,9 +817,9 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 				}
 				var yielded *CronTickYielded
 				if errors.As(err, &yielded) {
-					s.log.Info(fmt.Sprintf("Cron tick yielded for profile at %s: %v", e.Home, err))
+					providerLog(s).Info(fmt.Sprintf("Cron tick yielded for profile at %s: %v", e.Home, err))
 				} else {
-					s.log.Error(fmt.Sprintf("Cron tick error for profile at %s: %v", e.Home, err))
+					providerLog(s).Error(fmt.Sprintf("Cron tick error for profile at %s: %v", e.Home, err))
 					if cycleErr == nil || isFDExhaustion(err) {
 						cycleErr = err
 					}

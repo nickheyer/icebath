@@ -346,11 +346,72 @@ func asyncUUIDHex() string {
 }
 
 func asyncMap(v any) map[string]any {
-	m, _ := v.(map[string]any)
-	if m == nil {
-		return map[string]any{}
+	switch m := v.(type) {
+	case map[string]any:
+		if m != nil {
+			return m
+		}
+	case *pyjson.Object:
+		if m != nil {
+			out := make(map[string]any, len(m.Keys))
+			for _, k := range m.Keys {
+				out[k] = m.Vals[k]
+			}
+			return out
+		}
 	}
-	return m
+	return map[string]any{}
+}
+
+// Key order the reference builds a completion event in, single and batch payloads alike
+var asyncCompletionEventOrder = []string{"type", "delegation_id", "session_key", "origin_ui_session_id", "origin_session_id",
+	"parent_session_id", "goal", "goals", "context", "toolsets", "role", "model", "status", "is_batch", "results", "summary",
+	"live_transcripts", "error", "api_calls", "total_duration_seconds", "duration_seconds", "group", "dispatched_at", "completed_at",
+	"exit_reason", "scope_id", "user_id", "user_name", "stalled_after_quiet_seconds", "stall_threshold_seconds", "stall_phase",
+	"stall_grace_seconds"}
+
+// Key order of an owner died recovery event, its diagnostics ahead of the recorded results
+var asyncRecoveryEventOrder = []string{"type", "delegation_id", "session_key", "origin_ui_session_id", "origin_session_id",
+	"parent_session_id", "goal", "goals", "context", "toolsets", "role", "model", "is_batch", "status", "summary", "error",
+	"last_known_status", "task_transcripts", "transcript_tails", "git_state_hint", "results", "dispatched_at", "completed_at",
+	"scope_id", "user_id", "user_name"}
+
+// Key order of a unit result, joined batch, crashed or stalled unit, cron manual run, recovered unit
+func asyncResultOrder(m map[string]any) []string {
+	stall := []string{"stalled_after_quiet_seconds", "stall_threshold_seconds", "stall_phase", "stall_grace_seconds"}
+	if _, batch := m["results"]; batch && m["status"] == nil {
+		return append([]string{"results", "partial", "error", "total_duration_seconds", "process_notes", "live_transcripts", "group"}, stall...)
+	}
+	if _, cron := m["model"]; cron {
+		return []string{"status", "summary", "error", "duration_seconds", "model", "api_calls"}
+	}
+	return append([]string{"status", "summary", "error", "api_calls", "duration_seconds", "exit_reason", "last_known_status",
+		"task_transcripts", "transcript_tails", "git_state_hint", "results"}, stall...)
+}
+
+// Ordered object of a map, listed keys first in that order and any other key after them sorted
+func asyncOrdered(m map[string]any, order []string) *pyjson.Object {
+	out := pyjson.NewObject()
+	listed := make(map[string]bool, len(order))
+	for _, k := range order {
+		listed[k] = true
+		if v, ok := m[k]; ok {
+			out.Keys = append(out.Keys, k)
+			out.Vals[k] = v
+		}
+	}
+	var rest []string
+	for k := range m {
+		if !listed[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		out.Keys = append(out.Keys, k)
+		out.Vals[k] = m[k]
+	}
+	return out
 }
 
 func asyncCopyMap(m map[string]any) map[string]any {
@@ -469,8 +530,9 @@ func pruneDurableRecords(env *Env) error {
 
 // Writes the terminal event and result with forced redaction, leaving delivery pending
 func persistCompletion(env *Env, event, result map[string]any) error {
-	event = asyncMap(RedactCompletionEvent(env, event, true))
-	result = asyncMap(RedactChildResult(env, result, nil, true))
+	eventObj := RedactCompletionEvent(env, asyncOrdered(event, asyncCompletionEventOrder), true)
+	resultObj := RedactChildResult(env, asyncOrdered(result, asyncResultOrder(result)), nil, true)
+	event, result = asyncMap(eventObj), asyncMap(resultObj)
 	remote, err := WorkerLedger()
 	if err != nil {
 		return err
@@ -480,11 +542,11 @@ func persistCompletion(env *Env, event, result map[string]any) error {
 		return err
 	}
 	now := asyncTimeNow()
-	eventJSON, err := asyncDumps(event)
+	eventJSON, err := asyncDumps(eventObj)
 	if err != nil {
 		return err
 	}
-	resultJSON, err := asyncDumps(result)
+	resultJSON, err := asyncDumps(resultObj)
 	if err != nil {
 		return err
 	}
@@ -505,8 +567,9 @@ func persistCompletion(env *Env, event, result map[string]any) error {
 }
 
 // Durably records one finished child of a running multi child unit so a crash loses only unfinished children
-func RecordUnitChild(env *Env, delegationID string, entry map[string]any) error {
-	entry = asyncMap(RedactChildResult(env, entry, nil, true))
+func RecordUnitChild(env *Env, delegationID string, child any) error {
+	entryObj := RedactChildResult(env, child, nil, true)
+	entry := asyncMap(entryObj)
 	remote, err := WorkerLedger()
 	if err != nil {
 		return err
@@ -524,12 +587,12 @@ func RecordUnitChild(env *Env, delegationID string, entry map[string]any) error 
 		if raw == "" {
 			raw = "{}"
 		}
-		loaded, err := asyncLoads(raw)
+		loaded, err := pyjson.Loads(raw)
 		if err != nil {
 			return err
 		}
 		if !pyrepr.Truthy(loaded) {
-			loaded = map[string]any{}
+			loaded = pyjson.NewObject()
 		}
 		partial := asyncMap(RedactChildResult(env, loaded, nil, true))
 		var results []any
@@ -539,8 +602,8 @@ func RecordUnitChild(env *Env, delegationID string, entry map[string]any) error 
 				results = append(results, r)
 			}
 		}
-		results = append(results, entry)
-		payload, err := asyncDumps(map[string]any{"results": results, "partial": true})
+		results = append(results, entryObj)
+		payload, err := asyncDumps(pyjson.ObjectOf("results", results, "partial", true))
 		if err != nil {
 			return err
 		}
@@ -701,13 +764,11 @@ func RecoverAbandonedDelegations(env *Env) (int, error) {
 					event[k] = task[k]
 				}
 			}
-			event = asyncMap(RedactCompletionEvent(env, event, true))
-			result = asyncMap(RedactChildResult(env, result, nil, true))
-			eventJSON, err := asyncDumps(event)
+			eventJSON, err := asyncDumps(RedactCompletionEvent(env, asyncOrdered(event, asyncRecoveryEventOrder), true))
 			if err != nil {
 				return err
 			}
-			resultJSON, err := asyncDumps(result)
+			resultJSON, err := asyncDumps(RedactChildResult(env, asyncOrdered(result, asyncResultOrder(result)), nil, true))
 			if err != nil {
 				return err
 			}

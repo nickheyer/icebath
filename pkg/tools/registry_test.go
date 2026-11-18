@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 	"testing"
@@ -15,8 +16,8 @@ import (
 func registryWith(handlers map[string]Handler) *Dispatcher {
 	r := NewRegistry()
 	for name, h := range handlers {
-		r.Register(Def{Name: name, Toolset: "core", Schema: map[string]any{"name": name, "description": "Test tool " + name,
-			"parameters": map[string]any{"type": "object", "properties": map[string]any{}}}, Handler: h})
+		r.Register(Def{Name: name, Toolset: "core", Schema: pyjson.ObjectOf("name", name, "description", "Test tool "+name,
+			"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())), Handler: h})
 	}
 	return NewDispatcher(r)
 }

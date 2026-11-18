@@ -36,7 +36,7 @@ func installSelfGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command
 		Channel: str("channel"), Branch: str("branch"), Commit: str("commit"), Dir: str("dir"), Home: str("icebath-home"),
 		Binary: str("binary"), Version: str("version"), FromSelf: true,
 		NonInteractive: flag("non-interactive") || flag("skip-setup"), Verbose: flag("verbose"),
-		SkipBrowser: flag("skip-browser") || flag("no-playwright"), SkipComputerUse: flag("skip-computer-use"), InstallMethod: install.MethodScript,
+		SkipBrowser: flag("skip-browser") || flag("no-playwright"), SkipComputerUse: flag("skip-computer-use"), InstallMethod: str("install-method"),
 	}
 	if flag("show-resolved-paths") {
 		report, err := install.ResolvedPathsJSON(opts)

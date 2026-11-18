@@ -51,7 +51,7 @@ func TestDescribeTurnFailure(t *testing.T) {
 	t.Run("names where to start a switched-off local model server, and never suggests /retry", func(t *testing.T) {
 		text := describeTurnFailure(map[string]any{"error": "The local model server is turned off.", "error_surface": map[string]any{"code": "local_runtime_unavailable", "layer": "endpoint", "provider": "llamacpp", "retryable": false}})
 		mustLack(t, text, "/retry")
-		mustContain(t, text, "icebath model")
+		mustContain(t, text, "/setup model")
 	})
 	t.Run("falls back to the layer copy, and to a generic title, when the code is unknown", func(t *testing.T) {
 		mustContain(t, describeTurnFailure(map[string]any{"error": "peer closed connection", "error_surface": map[string]any{"code": "weird", "layer": "streaming", "retryable": true}}), "/retry")

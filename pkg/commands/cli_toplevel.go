@@ -23,7 +23,11 @@ func (c *CLI) rootArgparseShape(root *cobra.Command) {
 	dest(root, "continue", "continue_last")
 	constTrue(root, "continue")
 	dest(root, "native", "tui_native")
+	dest(root, "dev", "tui_dev")
 }
+
+// Help of the dev flag that runs the TUI from the Go sources instead of the built binary
+const devFlagHelp = "Run the TUI built from the icebath Go sources of this checkout (skip the installed binary)"
 
 // Gives the chat flags their argparse dests and the SUPPRESS defaults that keep top level values alive
 func (c *CLI) chatArgparseShape(chat *cobra.Command) {
@@ -33,10 +37,11 @@ func (c *CLI) chatArgparseShape(chat *cobra.Command) {
 	dest(chat, "continue", "continue_last")
 	constTrue(chat, "continue")
 	dest(chat, "native", "tui_native")
+	dest(chat, "dev", "tui_dev")
 	noneDefault(chat, "max-turns", "run-budget")
 	suppress(chat, "model", "toolsets", "reasoning", "skills", "provider", "base-url", "api-key", "verbose", "resume",
 		"no-restore-cwd", "in", "continue", "create-if-missing", "worktree", "accept-hooks", "checkpoints", "yolo",
-		"pass-session-id", "ignore-user-config", "ignore-rules", "safe-mode", "native")
+		"pass-session-id", "ignore-user-config", "ignore-rules", "safe-mode", "native", "dev")
 }
 
 // Install command when a top level word names a catalog memory plugin that resolves nowhere, else empty

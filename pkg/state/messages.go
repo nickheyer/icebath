@@ -68,6 +68,8 @@ type Message struct {
 	Persisted bool `json:"-"`
 	// Dict keys the struct has no field for, such as underscore bookkeeping keys and data_use
 	Extra map[string]any `json:"-"`
+	// Dict key order of the source when known, the restore order for rows the live replay loaded
+	Keys []string `json:"-"`
 }
 
 // Text of a message, content parts joined when the content is a list

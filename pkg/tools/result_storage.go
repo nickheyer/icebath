@@ -5,7 +5,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -20,7 +23,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
 )
@@ -209,7 +214,7 @@ func pruneSpilloverOnce(env *Env) {
 		return
 	}
 	if removed := CleanupSpilloverCache(env, -1); removed > 0 {
-		toolsLogger(env).Debug("Pruned expired spillover file(s)", "count", removed)
+		storageLog(env).Debug(fmt.Sprintf("Pruned %d expired spillover file(s)", removed))
 	}
 }
 
@@ -225,31 +230,60 @@ func isHostSideEnvironment(sandbox Environment) bool {
 	return sandbox == nil || sandbox.UsesHostFilesystem()
 }
 
+// Logger named like the reference tool result storage module
+func storageLog(env *Env) *slog.Logger {
+	return toolsLogger(env).With("logger", "tools.tool_result_storage")
+}
+
 // Writes host side under cache/spillover with the size verified before the model hears about it
 func writeToSpillover(env *Env, content, filename string) string {
 	data := []byte(content)
 	dir := SpilloverDir(env)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		toolsLogger(env).Warn("Spillover write failed", "file", filename, "error", err)
+	if err := mkdirParentsExistOK(dir); err != nil {
+		storageLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
 		return ""
 	}
 	path := filepath.Join(dir, filename)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		toolsLogger(env).Warn("Spillover write failed", "file", filename, "error", err)
+	if err := os.WriteFile(path, data, 0o666); err != nil {
+		storageLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
 		return ""
 	}
 	st, err := os.Stat(path)
 	if err != nil {
-		toolsLogger(env).Warn("Spillover write failed", "file", filename, "error", err)
+		storageLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
 		return ""
 	}
 	if st.Size() != int64(len(data)) {
-		toolsLogger(env).Warn("Spillover write is not lossless, discarding archive", "file", filename, "on_disk", st.Size(), "expected", len(data))
+		storageLog(env).Warn(fmt.Sprintf("Spillover write for %s is not lossless (%d bytes on disk, expected %d) — discarding archive", filename, st.Size(), len(data)))
 		os.Remove(path)
 		return ""
 	}
 	pruneSpilloverOnce(env)
 	return path
+}
+
+// Path.mkdir with parents and exist_ok, failing like Python when a non directory occupies the path
+func mkdirParentsExistOK(dir string) error {
+	err := os.Mkdir(dir, 0o777)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return err
+		}
+		if perr := mkdirParentsExistOK(parent); perr != nil {
+			return perr
+		}
+		if err = os.Mkdir(dir, 0o777); err == nil {
+			return nil
+		}
+	}
+	if st, serr := os.Stat(dir); serr == nil && st.IsDir() {
+		return nil
+	}
+	return err
 }
 
 // SandboxSyncer is implemented by file synced backends that must push host files before a probe
@@ -264,7 +298,7 @@ func sandboxVisibleSpilloverPath(ctx context.Context, env *Env, hostPath string,
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					toolsLogger(env).Debug(fmt.Sprintf("Spillover sync failed: %v", r))
+					storageLog(env).Debug(fmt.Sprintf("Spillover sync failed: %v", r))
 				}
 			}()
 			syncer.SyncFiles(true)
@@ -272,7 +306,7 @@ func sandboxVisibleSpilloverPath(ctx context.Context, env *Env, hostPath string,
 	}
 	res, err := sandbox.Execute(ctx, "test -r "+shQuote(visible), ExecOptions{Timeout: 15})
 	if err != nil {
-		toolsLogger(env).Debug("Spillover readability probe failed", "error", err)
+		storageLog(env).Debug(fmt.Sprintf("Spillover readability probe failed: %v", err))
 		return ""
 	}
 	if res == nil || res.ReturnCode != 0 {
@@ -324,14 +358,14 @@ func safeResultFilename(toolUseID string) string {
 
 // GeneratePreview truncates at the last newline within maxChars and reports whether more follows
 func GeneratePreview(content string, maxChars int) (string, bool) {
-	if len(content) <= maxChars {
+	if pystr.Len(content) <= maxChars {
 		return content, false
 	}
-	lastNL := strings.LastIndex(content[:maxChars], "\n")
-	if lastNL > maxChars/2 {
-		return content[:lastNL+1], true
+	head := pystr.Slice(content, 0, maxChars)
+	if cut := strings.LastIndex(head, "\n"); cut >= 0 && pystr.Len(head[:cut]) > maxChars/2 {
+		return head[:cut+1], true
 	}
-	return content[:maxChars], true
+	return head, true
 }
 
 // Rewrites an MCP handler result envelope into the text it wraps with metadata appended
@@ -387,7 +421,7 @@ func writeToSandbox(ctx context.Context, env *Env, content, remotePath string, s
 	expected := len(content)
 	probe, err := sandbox.Execute(ctx, "wc -c < "+shQuote(remotePath), ExecOptions{Timeout: 15})
 	if err != nil {
-		toolsLogger(env).Debug("Sandbox size probe failed", "path", remotePath, "error", err)
+		storageLog(env).Debug(fmt.Sprintf("Sandbox size probe failed for %s: %v", remotePath, err))
 		return true
 	}
 	if probe == nil || probe.ReturnCode != 0 {
@@ -404,7 +438,7 @@ func writeToSandbox(ctx context.Context, env *Env, content, remotePath string, s
 	if persisted == expected {
 		return true
 	}
-	toolsLogger(env).Warn("Sandbox spill is not lossless, discarding archive", "path", remotePath, "in_sandbox", persisted, "expected", expected)
+	storageLog(env).Warn(fmt.Sprintf("Sandbox spill for %s is not lossless (%d bytes in sandbox, expected %d) — discarding archive", remotePath, persisted, expected))
 	sandbox.Execute(ctx, "rm -f "+shQuote(remotePath), ExecOptions{Timeout: 15})
 	return false
 }
@@ -429,7 +463,7 @@ func BuildPersistedMessage(preview string, hasMore bool, originalSize int, fileP
 		"remote API; the archive is kept while this session's transcript references " +
 		"it. If it is missing, inspect the current state before retrying — the call " +
 		"that produced it may already have taken effect.\n\n" +
-		fmt.Sprintf("Preview (first %d chars):\n", len(preview)) +
+		fmt.Sprintf("Preview (first %d chars):\n", pystr.Len(preview)) +
 		preview + more + "\n" + PersistedOutputClosingTag
 }
 
@@ -450,15 +484,15 @@ func MaybePersistToolResult(ctx context.Context, env *Env, sandbox Environment, 
 	if threshold == ThresholdResolve {
 		threshold = cfg.ResolveThreshold(env, toolName)
 	}
-	if threshold == BudgetUnlimited || len(content) <= threshold {
+	if threshold == BudgetUnlimited || pystr.Len(content) <= threshold {
 		return content
 	}
 	persistedContent := pageableText(content)
 	filename := safeResultFilename(toolUseID)
 	preview, hasMore := GeneratePreview(persistedContent, cfg.PreviewSize)
 	persisted := func(path, hostSuffix string) string {
-		toolsLogger(env).Info("Persisted large tool result", "tool", toolName, "id", toolUseID, "chars", len(persistedContent), "path", path+hostSuffix)
-		return BuildPersistedMessage(preview, hasMore, len(persistedContent), path)
+		storageLog(env).Info(fmt.Sprintf("Persisted large tool result: %s (%s, %d chars -> %s%s)", toolName, toolUseID, pystr.Len(persistedContent), path, hostSuffix))
+		return BuildPersistedMessage(preview, hasMore, pystr.Len(persistedContent), path)
 	}
 	hostPath := writeToSpillover(env, persistedContent, filename)
 	hostSide := isHostSideEnvironment(sandbox)
@@ -478,22 +512,22 @@ func MaybePersistToolResult(ctx context.Context, env *Env, sandbox Environment, 
 			return persisted(remotePath, "")
 		}
 	}
-	toolsLogger(env).Info("Inline-truncating large tool result", "tool", toolName, "chars", len(content))
-	return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(len(content)))
+	storageLog(env).Info(fmt.Sprintf("Inline-truncating large tool result: %s (%d chars, no sandbox write)", toolName, pystr.Len(content)))
+	return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(pystr.Len(content)))
 }
 
 // Characters of text a tool message carries, text parts summed for a multimodal list
 func contentTextSize(content any) int {
 	switch t := content.(type) {
 	case string:
-		return len(t)
+		return pystr.Len(t)
 	case []any:
 		total := 0
 		for _, p := range t {
 			if part, ok := p.(map[string]any); ok {
 				if kind, _ := part["type"].(string); kind == "text" {
 					text, _ := part["text"].(string)
-					total += len(text)
+					total += pystr.Len(text)
 				}
 			}
 		}
@@ -517,8 +551,8 @@ func spillLargestTextPart(ctx context.Context, env *Env, sandbox Environment, pa
 		if !ok || strings.Contains(text, PersistedOutputTag) {
 			continue
 		}
-		if len(text) > bestLen {
-			bestIdx, bestLen = i, len(text)
+		if n := pystr.Len(text); n > bestLen {
+			bestIdx, bestLen = i, n
 		}
 	}
 	if bestIdx < 0 {
@@ -537,7 +571,7 @@ func spillLargestTextPart(ctx context.Context, env *Env, sandbox Environment, pa
 	}
 	replaced["text"] = replacement
 	out[bestIdx] = replaced
-	return out, len(text) - len(replacement)
+	return out, pystr.Len(text) - pystr.Len(replacement)
 }
 
 // EnforceTurnBudget persists the largest non persisted results until the turn's aggregate fits
@@ -580,16 +614,16 @@ func EnforceTurnBudget(ctx context.Context, env *Env, sandbox Environment, toolM
 			if saved > 0 {
 				total -= saved
 				msg.Content = newParts
-				toolsLogger(env).Info("Budget enforcement: persisted a text part of tool result", "id", toolUseID, "chars", saved)
+				storageLog(env).Info(fmt.Sprintf("Budget enforcement: persisted a text part of tool result %s (%d chars)", toolUseID, saved))
 			}
 			continue
 		}
 		content, _ := msg.Content.(string)
 		replacement := MaybePersistToolResult(ctx, env, sandbox, content, budgetToolName, toolUseID, cfg, 0)
 		if replacement != content {
-			total += len(replacement) - c.size
+			total += pystr.Len(replacement) - c.size
 			msg.Content = replacement
-			toolsLogger(env).Info("Budget enforcement: persisted tool result", "id", toolUseID, "chars", c.size)
+			storageLog(env).Info(fmt.Sprintf("Budget enforcement: persisted tool result %s (%d chars)", toolUseID, c.size))
 		}
 	}
 	return toolMessages
@@ -662,14 +696,14 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 	if maxChars <= 0 {
 		maxChars = SpillDefaultMaxChars
 	}
-	if len(text) <= maxChars {
+	if pystr.Len(text) <= maxChars {
 		return text
 	}
 	head, tail := c.PreviewHead, c.PreviewTail
 	savedPath := ""
 	spillDir := resolveSpillDir(env, c.Directory, sessionID)
 	if err := EnsureSpillDir(spillDir, true); err != nil {
-		toolsLogger(env).Warn("hook output spill failed", "error", err)
+		toolsLogger(env).With("logger", "tools.hook_output_spill").Warn(fmt.Sprintf("hook output spill failed: %v", err))
 	} else {
 		spillPath := filepath.Join(spillDir, strings.ReplaceAll(uuid.NewString(), "-", "")+".txt")
 		body := text
@@ -677,12 +711,12 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 			body += "\n"
 		}
 		if err := WriteTextExclusive(spillPath, body, true, false); err != nil {
-			toolsLogger(env).Warn("hook output spill failed", "error", err)
+			toolsLogger(env).With("logger", "tools.hook_output_spill").Warn(fmt.Sprintf("hook output spill failed: %v", err))
 		} else {
 			savedPath = spillPath
 		}
 	}
-	total := len(text)
+	total := pystr.Len(text)
 	first := fmt.Sprintf("[%s output truncated — %s chars; full content ", source, commaInt(total))
 	if savedPath != "" {
 		first += "saved to " + savedPath + "]"
@@ -690,19 +724,11 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 		first += "unavailable — spill write failed]"
 	}
 	parts := []string{first}
-	if head > 0 && len(text) > 0 {
-		h := head
-		if h > len(text) {
-			h = len(text)
-		}
-		parts = append(parts, "--- head ---", text[:h])
+	if head > 0 && total > 0 {
+		parts = append(parts, "--- head ---", pystr.Slice(text, 0, head))
 	}
 	if tail > 0 && total > head {
-		t := tail
-		if t > len(text) {
-			t = len(text)
-		}
-		parts = append(parts, "--- tail ---", text[len(text)-t:])
+		parts = append(parts, "--- tail ---", pystr.Slice(text, max(total-tail, 0), total))
 	}
 	return strings.Join(parts, "\n")
 }

@@ -54,6 +54,7 @@ func registerSpawnTreeKeys(km *keys.Map) {
 			}
 		}
 	}
+	km.Register(keys.Action{ID: "tui.agents.dock", Context: tuiContext, Label: "agents dock", Doc: "fold or unfold the dock of working agents and background processes", Default: []string{"f7", "ctrl+r"}})
 	km.Register(keys.Action{ID: "tui.spawntree.back", Context: spawnTreeContext, Label: "back", Doc: "step back from a node to the tree, or close the spawn tree", Default: []string{"esc"}})
 	km.Register(keys.Action{ID: "tui.spawntrees.load", Context: spawnTreesContext, Label: "load", Doc: "replay the saved spawn tree", Default: []string{"enter"}})
 }
@@ -846,7 +847,7 @@ func (c *spawnTreeCard) killOne(v spawnView, id string) tea.Cmd {
 	})
 }
 
-// Stops an agent and every agent below it, a failed stop named in the notice
+// Stops an agent and every agent below it in tree order, a failed stop named in the notice
 func (c *spawnTreeCard) killSubtree(v spawnView, node *spawnNode) tea.Cmd {
 	return c.guardLive(v, func() tea.Cmd {
 		ids := append([]string{node.item.ID}, spawnDescendantIDs(node)...)
@@ -864,7 +865,7 @@ func (c *spawnTreeCard) killSubtree(v spawnView, node *spawnNode) tea.Cmd {
 		} else {
 			c.flash = tr("hubs.agents.flash.killingSubtreeOther", len(ids))
 		}
-		return tea.Batch(cmds...)
+		return tea.Sequence(cmds...)
 	})
 }
 
@@ -1309,35 +1310,216 @@ func (c *spawnTreeCard) rowLine(n *spawnNode, index int, active bool, peak float
 // Background processes of the session under the tree, running ones with their time
 func (c *spawnTreeCard) processLines(w int) []string {
 	t := c.a.store.ui.Theme
-	rows := c.a.store.currentProcessRows(c.now)
-	if len(rows) == 0 {
+	block := buildProcessBlock(c.a.store.currentProcessRows(c.now), 0)
+	if block.total == 0 {
 		return nil
 	}
-	running := 0
-	for _, r := range rows {
-		if r.Status == "running" {
-			running++
-		}
-	}
-	var parts []string
-	if running > 0 {
-		parts = append(parts, tr("hubs.agentsPanel.running", running))
-	}
-	if done := len(rows) - running; done > 0 {
-		parts = append(parts, tr("hubs.agentsPanel.done", done))
-	}
-	lines := []string{"", spawnInk(truncateEnd(tr("hubs.agents.processes")+" · "+strings.Join(parts, " · "), w), t.Color.Accent, true, "")}
-	for _, r := range rows {
-		glyph, tone := processGlyph(r.Status, t)
-		activity := r.Detail
-		if r.Status == "running" {
-			activity = fmtSpawnDuration(r.ElapsedSeconds) + " · " + r.Detail
-		}
-		command := compactPreview(r.Command, max(8, w-2-ansi.StringWidth(activity)-6))
-		line := spawnInk(glyph+" ", tone, false, "") + spawnInk(command, t.Color.Text, false, "") + spawnInk(" · "+activity, t.Color.Muted, false, "")
-		lines = append(lines, ansi.Truncate(line, w, "…"))
+	lines := []string{"", spawnInk(truncateEnd(tr("hubs.agents.processes")+" · "+processSummary(block), w), t.Color.Accent, true, "")}
+	for _, r := range block.rows {
+		lines = append(lines, processRowLine(r, w, t))
 	}
 	return lines
+}
+
+// Process rows the dock or the tree shows, the rows cut by a height bound and the running count
+type processBlock struct {
+	rows    []processRow
+	hidden  int
+	running int
+	total   int
+}
+
+// Process rows bounded to a row budget, no bound for a budget of zero or less
+func buildProcessBlock(rows []processRow, maxRows int) processBlock {
+	shown := rows
+	if maxRows > 0 && len(rows) > maxRows {
+		shown = rows[:maxRows]
+	}
+	block := processBlock{rows: shown, hidden: len(rows) - len(shown), total: len(rows)}
+	for _, r := range rows {
+		if r.Status == "running" {
+			block.running++
+		}
+	}
+	return block
+}
+
+// Running and finished counts of a process block as one line
+func processSummary(block processBlock) string {
+	var parts []string
+	if block.running > 0 {
+		parts = append(parts, tr("hubs.agentsPanel.running", block.running))
+	}
+	if done := block.total - block.running; done > 0 {
+		parts = append(parts, tr("hubs.agentsPanel.done", done))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// One process as its glyph, command and activity, the exit verdict standing in for the activity once it ended
+func processRowLine(r processRow, w int, t theme) string {
+	glyph, tone := processGlyph(r.Status, t)
+	activity := r.Detail
+	if r.Status == "running" {
+		activity = fmtSpawnDuration(r.ElapsedSeconds) + " · " + r.Detail
+	}
+	command := compactPreview(r.Command, max(8, w-ansi.StringWidth(activity)-6))
+	line := spawnInk(glyph+" ", tone, false, "") + spawnInk(command, t.Color.Text, false, "") + spawnInk(" · "+activity, t.Color.Muted, false, "")
+	return ansi.Truncate(line, w, "…")
+}
+
+// Height bound of the agents dock, every row it paints being a row the transcript loses
+const agentDockMaxRows = 5
+
+// Statuses of an agent still at work
+var agentInFlight = map[string]bool{"dispatched": true, "finalizing": true, "queued": true, "running": true}
+
+// Rows the dock paints on a screen of a height, at least one
+func dockRowLimit(height int) int {
+	return max(1, min(agentDockMaxRows, int(math.Floor(float64(height-10)/6))))
+}
+
+// Dock budget split between agents and processes so neither block hides the other
+func splitDockBudget(limit, agents, processes int) (int, int) {
+	if processes == 0 {
+		return limit, 0
+	}
+	agentBudget := min(agents, max(1, limit-max(1, limit/2)))
+	return agentBudget, max(1, limit-agentBudget)
+}
+
+// One working agent of the dock, its goal, status, time at work and newest activity
+type agentDockRow struct {
+	goal    string
+	status  string
+	detail  string
+	elapsed *float64
+}
+
+// Working agents of the roster in roster order bounded to a row budget, with the count of all working agents
+func buildAgentDockRows(agents []subagentProgress, nowMs float64, maxRows int) (rows []agentDockRow, hidden, running int) {
+	for _, s := range agents {
+		if !agentInFlight[s.Status] {
+			continue
+		}
+		running++
+		row := agentDockRow{goal: s.Goal, status: s.Status, detail: tr("libText.agentRows.starting")}
+		if row.goal == "" {
+			row.goal = tr("libText.agentRows.agent")
+		}
+		switch {
+		case len(s.Notes) > 0 && s.Notes[len(s.Notes)-1] != "":
+			row.detail = s.Notes[len(s.Notes)-1]
+		case len(s.OutputTail) > 0 && s.OutputTail[len(s.OutputTail)-1].Preview != "":
+			row.detail = s.OutputTail[len(s.OutputTail)-1].Preview
+		case len(s.Tools) > 0 && s.Tools[len(s.Tools)-1] != "":
+			row.detail = s.Tools[len(s.Tools)-1]
+		}
+		if s.DurationSeconds != nil {
+			row.elapsed = s.DurationSeconds
+		} else if s.StartedAt != nil {
+			at := math.Max(0, (nowMs-*s.StartedAt)/1000)
+			row.elapsed = &at
+		}
+		rows = append(rows, row)
+	}
+	if maxRows > 0 && len(rows) > maxRows {
+		hidden = len(rows) - maxRows
+		rows = rows[:maxRows]
+	}
+	return rows, hidden, running
+}
+
+// Whether the dock shows, working agents or background processes of the session in view
+func (a *app) dockLive(nowMs float64) bool {
+	_, _, running := buildAgentDockRows(a.store.currentAgentRoster(), nowMs, 0)
+	return running > 0 || len(a.store.currentProcessRows(nowMs)) > 0
+}
+
+// Dock above the status row, working agents with their newest activity and background processes, one line when folded
+func (a *app) dockRows(width int, rc renderCtx) []string {
+	t := rc.t
+	now := a.store.nowMillis()
+	roster := a.store.currentAgentRoster()
+	procRows := a.store.currentProcessRows(now)
+	_, height := a.wm.Size()
+	agentBudget, procBudget := splitDockBudget(dockRowLimit(height), len(roster), len(procRows))
+	rows, hidden, running := buildAgentDockRows(roster, now, agentBudget)
+	procs := buildProcessBlock(procRows, procBudget)
+	if running == 0 && procs.total == 0 {
+		return nil
+	}
+	cols := max(width-2, 8)
+	ink := func(text string) string { return "  " + spawnInk(ansi.Truncate(text, cols, "…"), t.Color.Accent, true, "") }
+	if a.agentDockCollapsed {
+		var counts []string
+		if running > 0 {
+			counts = append(counts, tr("hubs.agentsPanel.liveAgents", running))
+		}
+		switch {
+		case procs.running > 0:
+			counts = append(counts, tr("hubs.agentsPanel.procs", procs.running))
+		case procs.total > 0:
+			counts = append(counts, tr("hubs.agentsPanel.procsDone", procs.total))
+		}
+		summary, hints := "▸ "+strings.Join(counts, " · "), tr("hubs.agentsPanel.collapsedHint")
+		first := ""
+		if len(rows) > 0 {
+			first = rows[0].detail
+		} else if len(procs.rows) > 0 {
+			first = procs.rows[0].Detail
+		}
+		activity := ""
+		if room := cols - ansi.StringWidth(summary+hints) - 3; first != "" && room >= 12 {
+			activity = " · " + compactPreview(first, room)
+		}
+		return []string{ink(summary + activity + hints)}
+	}
+	var out []string
+	if running > 0 {
+		more := ""
+		if hidden > 0 {
+			more = tr("hubs.agentsPanel.moreHidden", hidden)
+		}
+		out = append(out, ink("▾ "+tr("hubs.agentsPanel.liveAgents", running)+more+tr("hubs.agentsPanel.expandedHint")))
+	}
+	for _, row := range rows {
+		glyph, tone := agentStatusGlyph(row.status, t)
+		elapsed := ""
+		if row.elapsed != nil {
+			elapsed = fmtSpawnDuration(*row.elapsed)
+		}
+		line := spawnInk(glyph+" ", tone, false, "") + spawnInk(compactPreview(row.goal, max(8, cols-18)), t.Color.Text, false, "") + spawnInk(" "+elapsed, t.Color.Muted, false, "")
+		out = append(out, "  "+ansi.Truncate(line, cols, "…"), "  "+spawnInk(ansi.Truncate("  ↳ "+compactPreview(row.detail, cols-4), cols, "…"), t.Color.Muted, false, ""))
+	}
+	if procs.total > 0 {
+		head := "▾ " + tr("hubs.agentsPanel.processes") + " · " + processSummary(procs)
+		if procs.hidden > 0 {
+			head += tr("hubs.agentsPanel.moreHidden", procs.hidden)
+		}
+		if running == 0 {
+			head += tr("hubs.agentsPanel.expandedHint")
+		}
+		out = append(out, ink(head))
+		for _, r := range procs.rows {
+			out = append(out, "  "+processRowLine(r, cols, t))
+		}
+	}
+	return out
+}
+
+// Repaints the dock every second while it shows agents or processes, the clock stopping once it empties
+func (a *app) armDockClock() tea.Cmd {
+	if a.dockClockArmed || !a.dockLive(a.store.nowMillis()) {
+		return nil
+	}
+	a.dockClockArmed = true
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return asyncDoneMsg{run: func() tea.Cmd {
+			a.dockClockArmed = false
+			return a.armDockClock()
+		}}
+	})
 }
 
 // Scrolled pane of the node detail or its live transcript, a scrollbar beside it when it overflows
@@ -1626,7 +1808,7 @@ func (a *app) openSavedSpawnTrees(entries []any) tea.Cmd {
 	list := cards.NewList(a.cardEnv(), cards.ListSpec{
 		Title: tr("slashCmd.ops.replay.archivedTitle"), Glyph: a.toolkit.Glyphs.Agent, Key: "tui:spawntrees", Context: spawnTreesContext, Primary: "tui.spawntrees.load",
 		Columns: []render.Column{{Title: tr("slashCmd.ops.replay.columnFinished")}, {Title: tr("slashCmd.ops.replay.columnAgents"), Right: true},
-			{Title: tr("slashCmd.ops.replay.columnLabel"), Flex: 2}, {Title: tr("slashCmd.ops.replay.columnPath"), Flex: 3}},
+			{Title: tr("slashCmd.ops.replay.columnLabel"), Flex: 3}, {Title: tr("slashCmd.ops.replay.columnPath"), Flex: 2}},
 		Rows: func() [][]string {
 			out := make([][]string, len(rows))
 			for i, r := range rows {

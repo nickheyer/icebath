@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"sync"
@@ -81,7 +82,14 @@ func agentToolDicts(list []any) []map[string]any {
 
 // Request kwargs of the active api mode carrying the conversation affinity headers on every transport
 func (a *AIAgent) buildAPIKwargs(apiMessages []map[string]any, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
-	ctx := a.homeContext()
+	return a.buildAPIKwargsIn(context.Background(), apiMessages, toolsForAPI, toolsOverride)
+}
+
+// Request kwargs built under the turn context so its ambient values such as the affinity scope reach the profile hooks
+func (a *AIAgent) buildAPIKwargsIn(ctx context.Context, apiMessages []map[string]any, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
+	if a.env != nil && a.env.Home != "" {
+		ctx = home.WithOverride(ctx, a.env.Home)
+	}
 	kwargs, err := a.buildAPIKwargsForMode(ctx, apiMessages, toolsForAPI, toolsOverride)
 	if err != nil {
 		return nil, err
@@ -190,7 +198,7 @@ func (a *AIAgent) aliasToolSearchBridgeForXAI(t provider.Transport, toolsForAPI 
 		if !pyrepr.Truthy(fn) {
 			continue
 		}
-		fnMap, ok := fn.(map[string]any)
+		fnMap, ok := pyjson.Dict(fn)
 		if !ok {
 			chatCompletionHelpersLog().Warn(fmt.Sprintf("%s⚠️ Failed to alias tool_search bridge for xAI: '%s' object has no attribute 'get'", a.logPrefix, pyrepr.TypeName(fn)))
 			return toolsForAPI
@@ -347,7 +355,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 		if sid == "" {
 			sid = "icebath"
 		}
-		qwenMeta = map[string]any{"sessionId": sid, "promptId": uuid.NewString()}
+		qwenMeta = pyjson.ObjectOf("sessionId", sid, "promptId", uuid.NewString())
 	}
 	profile := a.chatProviderProfile(ctx)
 	ephemeral := a.consumeEphemeralMaxOutput()
@@ -366,6 +374,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 		"reasoning_config": dictOrNone(reasoningConfig), "request_overrides": requestOverrides, "session_id": a.sessionID,
 		"cache_scope_id": cacheScopeID, "ollama_num_ctx": intOrNone(a.ollamaNumCtx), "provider_preferences": prefsOrNone,
 		"openrouter_min_coding_score": a.openrouterMinCodingScore, "supports_reasoning": a.supportsReasoningExtraBody(ctx),
+		provider.HookCtxKey: ctx,
 	}
 	if isLMStudio {
 		lmOptions = a.lmstudioReasoningOptionsCached(ctx)

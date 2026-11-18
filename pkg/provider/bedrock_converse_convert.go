@@ -1,15 +1,12 @@
 package provider
 
 import (
-	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strings"
 	"sync"
-	"unicode/utf16"
 )
 
 // ---- tool use and prompt cache support ----
@@ -309,7 +306,7 @@ func convertToolsToConverse(tools []map[string]any) []any {
 		}
 		params, has := f["parameters"]
 		if !has {
-			params = map[string]any{"type": "object", "properties": map[string]any{}}
+			params = pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
 		}
 		out = append(out, map[string]any{"toolSpec": map[string]any{"name": name, "description": description,
 			"inputSchema": map[string]any{"json": params}}})
@@ -515,14 +512,9 @@ func bedrockParseToolArgs(args any) any {
 	if !ok {
 		return args
 	}
-	dec := json.NewDecoder(strings.NewReader(s))
-	dec.UseNumber()
-	var out any
-	if err := dec.Decode(&out); err != nil || dec.More() {
-		return map[string]any{}
-	}
-	if _, err := dec.Token(); err == nil {
-		return map[string]any{}
+	out, err := pyjson.Loads(s)
+	if err != nil {
+		return pyjson.NewObject()
 	}
 	return out
 }
@@ -602,7 +594,7 @@ func bedrockReasoningDetailsBlocks(msg map[string]any, claude, own bool) []any {
 	var blocks []any
 	details, _ := asList(msg["reasoning_details"])
 	for _, item := range details {
-		d, ok := asMap(item)
+		d, ok := pyjson.Dict(item)
 		if !ok {
 			continue
 		}
@@ -811,51 +803,13 @@ func convertMessagesToConverse(messages []map[string]any, resolve func(string) s
 	return system, turns
 }
 
-// Python json.dumps text with default separators and ASCII escapes, map keys sorted
+// Python json.dumps text with default separators and ASCII escapes, dicts in their own order
 func bedrockPyDumps(v any) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	text, err := pyjson.Dumps(v)
+	if err != nil {
 		return pyStr(v)
 	}
-	compact := bytes.TrimRight(buf.Bytes(), "\n")
-	var b strings.Builder
-	inString, escaped := false, false
-	for _, r := range string(compact) {
-		switch {
-		case inString:
-			switch {
-			case escaped:
-				escaped = false
-				b.WriteRune(r)
-			case r == '\\':
-				escaped = true
-				b.WriteRune(r)
-			case r == '"':
-				inString = false
-				b.WriteRune(r)
-			case r > 0x7e:
-				if r > 0xffff {
-					hi, lo := utf16.EncodeRune(r)
-					fmt.Fprintf(&b, `\u%04x\u%04x`, hi, lo)
-				} else {
-					fmt.Fprintf(&b, `\u%04x`, r)
-				}
-			default:
-				b.WriteRune(r)
-			}
-		case r == '"':
-			inString = true
-			b.WriteRune(r)
-		case r == ':' || r == ',':
-			b.WriteRune(r)
-			b.WriteByte(' ')
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+	return text
 }
 
 // ---- reasoning switches and kwargs ----

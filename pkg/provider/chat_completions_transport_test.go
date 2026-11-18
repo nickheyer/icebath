@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Chat completions transport kwargs for a user ping, failing the test on a build error
@@ -618,11 +620,11 @@ func ccNousTags() []any {
 }
 
 func TestProfileHookWithoutLMStudioKeywordStillCalled(t *testing.T) {
-	old := Profile{Name: "old-signature", BuildAPIKwargsExtrasHook: func(_ *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+	old := Profile{Name: "old-signature", BuildAPIKwargsExtrasHook: func(_ *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 		if _, has := kw["lmstudio_reasoning_options"]; has {
 			t.Fatal("lmstudio_reasoning_options reached a hook whose caller passed none")
 		}
-		return map[string]any{}, map[string]any{"reasoning_effort": "low"}
+		return pyjson.NewObject(), map[string]any{"reasoning_effort": "low"}
 	}}
 	if kw := ccTransportKwargs(t, "m", []map[string]any{{"role": "user", "content": "Hi"}}, map[string]any{"provider_profile": old}); kw["reasoning_effort"] != "low" {
 		t.Fatal(kw)

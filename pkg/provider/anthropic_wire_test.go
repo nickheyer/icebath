@@ -186,7 +186,7 @@ func TestAnthropicOutputFieldsDoNotLeakIntoInput(t *testing.T) {
 	if sanitizeReplayBlock(map[string]any{"type": "server_tool_use", "foo": 1}) != nil {
 		t.Fatal("unknown block type must drop")
 	}
-	anthAssertClean(t, convertContentPartToAnthropic(map[string]any{"type": "text", "text": "hello", "parsed_output": nil, "citations": nil}))
+	anthAssertClean(t, convertContentPartToAnthropic(map[string]any{"type": "text", "text": "hello", "parsed_output": nil, "citations": nil}).(map[string]any))
 
 	blocks := anthConvertAssistant(t, `{"role":"assistant","anthropic_content_blocks":[{"type":"thinking","thinking":"plan","signature":"s1"},
 		{"type":"text","text":"doing it","parsed_output":null,"citations":null},{"type":"tool_use","id":"toolu_1","name":"read_file","input":{"path":"a"},"caller":{"type":"agent"}}]}`)

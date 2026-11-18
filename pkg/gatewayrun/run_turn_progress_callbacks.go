@@ -19,7 +19,7 @@ type voiceAckPlayer interface {
 // Tool lifecycle callback of the agent feeding the progress queue, the log queue and the live status
 func (t *TurnRunner) progressCallback(eventType, toolName, preview string, args map[string]any, kwargs map[string]any) {
 	tc := t.ctx
-	ctx := t.turnCtx
+	ctx := t.callbackCtx()
 	if kwargs == nil {
 		kwargs = map[string]any{}
 	}

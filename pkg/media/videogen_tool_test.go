@@ -143,7 +143,7 @@ func schemaWith(t *testing.T, caps map[string]any, modelMeta map[string]any) map
 	videoResolveActiveProvider = func(context.Context, *tools.Env) VideoGenProvider { return p }
 	readConfiguredVideoModel = func(context.Context, *tools.Env) string { return "m1" }
 	defer func() { videoResolveActiveProvider, readConfiguredVideoModel = prevResolve, prevModel }()
-	return buildDynamicVideoSchema(nil)
+	return pyjson.Plain(buildDynamicVideoSchema(nil)).(map[string]any)
 }
 
 func TestFleetCapabilityCoverageAlwaysOnAudioSurfacesInDescriptionNotParam(t *testing.T) {
@@ -226,7 +226,7 @@ func TestDynamicSchemaBuilderBuilderWiredIntoRegistry(t *testing.T) {
 	prev := ensurePluginsDiscoveredHook
 	ensurePluginsDiscoveredHook = func(context.Context, bool) {}
 	defer func() { ensurePluginsDiscoveredHook = prev }()
-	if _, ok := entry.DynamicSchema(nil)["description"]; !ok {
+	if _, ok := entry.DynamicSchema(nil).Vals["description"]; !ok {
 		t.Fatal("no description")
 	}
 }
@@ -267,7 +267,7 @@ func TestDynamicSchemaBuilderI2vOnlyModelDoesNotClaimTextToVideo(t *testing.T) {
 		caps:   map[string]any{"modalities": []any{"text", "image"}, "min_duration": 1, "max_duration": 30}}, "")
 	cfgHome(t, config.Tree{"video_gen": map[string]any{"provider": "dual-i2v", "model": "gemini-like"}})
 	schema := buildDynamicVideoSchema(nil)
-	desc := schema["description"].(string)
+	desc := schema.Vals["description"].(string)
 	if !strings.Contains(desc, "image-to-video only") || strings.Contains(desc, "supports both text-to-video") {
 		t.Fatal(desc)
 	}
@@ -465,7 +465,7 @@ func TestModelIsNeverAnAgentChoice(t *testing.T) {
 	if res["success"] != true || res["model"] != "pixverse-v6" || m.fal[0].endpoint != "fal-ai/pixverse/v6/text-to-video" {
 		t.Fatal(res, m.fal)
 	}
-	for _, schema := range []map[string]any{buildDynamicVideoSchema(&tools.Env{Home: m.home}), xaiVideoEditSchema(), xaiVideoExtendSchema()} {
+	for _, schema := range []*pyjson.Object{buildDynamicVideoSchema(&tools.Env{Home: m.home}), xaiVideoEditSchema(), xaiVideoExtendSchema()} {
 		if _, ok := schemaProps(schema)["model"]; ok {
 			t.Fatal(schema)
 		}

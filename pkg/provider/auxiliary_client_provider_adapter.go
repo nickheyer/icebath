@@ -287,7 +287,11 @@ func (AuxAdapter) Complete(ctx context.Context, messages []*state.Message, opts 
 		dicts = append(dicts, messageToDict(m))
 	}
 	kwargs := auxAdapterKwargs(dicts, nil, opts)
-	resp, err := CallLLM(ctx, kwargs)
+	call := CallLLM
+	if opts.Async {
+		call = AsyncCallLLM
+	}
+	resp, err := call(ctx, kwargs)
 	if err != nil {
 		return "", err
 	}

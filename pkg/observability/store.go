@@ -26,7 +26,9 @@ const (
 	storeSchemaVersion         = "2"
 	busyTimeoutMS              = 250
 	schemaBusyTimeoutMS        = 5000
+	backgroundBusyTimeoutMS    = 5000
 	deferredWritesMax          = 1024
+	batchIdleCommit            = 25 * time.Millisecond
 	localHistoryRetentionDays  = 30
 	activeInstallStateKey      = "client_active_recorded_at"
 	installSnapshotStateKey    = "install_snapshot_recorded_at"
@@ -222,10 +224,33 @@ type SharedMetricsStore struct {
 	batch           *storeBatch
 }
 
-// Write transaction a flush holds open with the writes that ran in it, replayed after a contended commit
+// Writes a flush groups into transactions opened at the first write and committed once writes pause
 type storeBatch struct {
-	conn state.SQLiteConn
-	ran  []storeWrite
+	store  *SharedMetricsStore
+	ctx    context.Context
+	conn   state.SQLiteConn
+	ran    []storeWrite
+	idle   *time.Timer
+	closed bool
+	err    error
+}
+
+var (
+	storeWriteLocksMu sync.Mutex
+	storeWriteLocks   = map[string]*sync.Mutex{}
+)
+
+// In process lock every write transaction on one database file holds, so writers queue instead of spinning on SQLITE_BUSY
+func storeWriteLock(path string) *sync.Mutex {
+	key := filepath.Clean(path)
+	storeWriteLocksMu.Lock()
+	defer storeWriteLocksMu.Unlock()
+	lock := storeWriteLocks[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		storeWriteLocks[key] = lock
+	}
+	return lock
 }
 
 // Resource dimensions of one aggregate row keyed by column, values in column order
@@ -310,7 +335,7 @@ func (s *SharedMetricsStore) recordOncePerInterval(ctx context.Context, stateKey
 	}
 	now := utcNow()
 	recorded := false
-	err := s.write(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		value, found, err := stateValue(ctx, conn, stateKey)
 		if err != nil {
 			return err
@@ -433,7 +458,7 @@ func (s *SharedMetricsStore) RecordCounterOncePerDay(ctx context.Context, metric
 	}
 	key := dailyOnceStatePrefix + metricName + ":" + compactJSON(keyDims)
 	recorded := false
-	err := s.write(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		res, err := conn.ExecContext(ctx, "INSERT INTO telemetry_state(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE"+
 			" SET value = excluded.value WHERE telemetry_state.value != excluded.value", key, today)
 		if err != nil {
@@ -457,7 +482,7 @@ func (s *SharedMetricsStore) RecordCounterOncePerDay(ctx context.Context, metric
 // Keys latched under a state prefix with the prefix removed
 func (s *SharedMetricsStore) latched(ctx context.Context, prefix string) (ValueSet, error) {
 	out := ValueSet{}
-	err := s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.connection(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		rows, err := conn.QueryContext(ctx, "SELECT key FROM telemetry_state WHERE key LIKE ?", prefix+"%")
 		if err != nil {
 			return err
@@ -484,7 +509,7 @@ func (s *SharedMetricsStore) recordOnceEver(ctx context.Context, stateKey, metri
 	}
 	now := utcNow()
 	recorded := false
-	err := s.write(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		res, err := conn.ExecContext(ctx, "INSERT INTO telemetry_state(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
 			stateKey, isoformat(now))
 		if err != nil {
@@ -533,7 +558,7 @@ func recordCounterInTransaction(ctx context.Context, conn state.SQLiteConn, metr
 // Commits every pending delta package, one per period, then exports the outbox
 func (s *SharedMetricsStore) CreateAndExportPackage(ctx context.Context) ([]string, error) {
 	var count int
-	err := s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.connection(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		return conn.QueryRowContext(ctx, pendingPeriodCountSQL).Scan(&count)
 	})
 	if err != nil {
@@ -606,38 +631,37 @@ func (s *SharedMetricsStore) keepDeferred(writes []storeWrite) {
 	}
 }
 
-// Runs body with every store write joining one write transaction committed after it, writing unbatched when none opens
+// Runs body with its store writes grouped into transactions that commit when writes pause and when body returns
 func (s *SharedMetricsStore) Batch(ctx context.Context, body func() error) error {
 	if !s.batchOpen.TryLock() {
 		return body()
 	}
 	defer s.batchOpen.Unlock()
-	opened := false
-	var bodyErr error
-	err := s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
-		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-			return err
+	batch := &storeBatch{store: s, ctx: ctx}
+	s.setBatch(batch)
+	defer s.closeBatch(batch)
+	if err := body(); err != nil {
+		if commitErr := s.closeBatch(batch); commitErr != nil {
+			slog.Warn("Unable to commit batched shared-metrics updates", "error", commitErr)
 		}
-		opened = true
-		batch := &storeBatch{conn: conn}
-		s.setBatch(batch)
-		func() {
-			defer s.setBatch(nil)
-			bodyErr = body()
-		}()
-		return s.commitBatch(ctx, batch)
-	})
-	if !opened {
-		slog.Debug("Shared-metrics batch transaction did not open, each write commits alone", "error", err)
-		return body()
+		return err
 	}
-	if bodyErr != nil {
-		if err != nil {
-			slog.Warn("Unable to commit batched shared-metrics updates", "error", err)
-		}
-		return bodyErr
+	return s.closeBatch(batch)
+}
+
+// Detaches and commits the batch once, a later call returning nothing, so a panicking body never keeps the file
+func (s *SharedMetricsStore) closeBatch(batch *storeBatch) error {
+	s.batchMu.Lock()
+	defer s.batchMu.Unlock()
+	if batch.closed {
+		return nil
 	}
-	return err
+	if s.batch == batch {
+		s.batch = nil
+	}
+	batch.closed = true
+	batch.commit()
+	return batch.err
 }
 
 // Installs or clears the open batch, waiting for the write that runs in it
@@ -647,24 +671,73 @@ func (s *SharedMetricsStore) setBatch(batch *storeBatch) {
 	s.batchMu.Unlock()
 }
 
-// Commits the batch, keeping the writes that ran in it for a later drain when another writer holds the store
-func (s *SharedMetricsStore) commitBatch(ctx context.Context, batch *storeBatch) error {
-	_, err := batch.conn.ExecContext(ctx, "COMMIT")
+// Opens the batch transaction under the file's write lock, the caller holding the store batch mutex
+func (b *storeBatch) open(ctx context.Context) error {
+	lock := storeWriteLock(b.store.DatabasePath)
+	lock.Lock()
+	conn, err := state.ConnectSQLite(b.store.DatabasePath, state.SQLiteConfig{Timeout: float64(backgroundBusyTimeoutMS) / 1000})
 	if err == nil {
-		return nil
+		if _, err = conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", backgroundBusyTimeoutMS)); err == nil {
+			_, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE")
+		}
+		if err != nil {
+			conn.Close()
+		}
 	}
-	if _, rerr := batch.conn.ExecContext(ctx, "ROLLBACK"); rerr != nil && !isSQLiteOperational(rerr) {
-		return rerr
+	if err != nil {
+		lock.Unlock()
+		return err
 	}
-	if isSQLiteOperational(err) && isContention(err) {
-		s.keepDeferred(batch.ran)
-		return nil
-	}
-	return fmt.Errorf("Unable to commit %d batched shared-metrics updates: %w", len(batch.ran), err)
+	b.conn = conn
+	return nil
 }
 
-// Runs body in a savepoint of the batch, a failure rolling back only its own changes
+// Commits the open transaction and releases the file, keeping its writes for a later drain when another writer holds the store
+func (b *storeBatch) commit() {
+	if b.idle != nil {
+		b.idle.Stop()
+		b.idle = nil
+	}
+	if b.conn == nil {
+		return
+	}
+	ran := b.ran
+	_, err := b.conn.ExecContext(b.ctx, "COMMIT")
+	if err != nil {
+		if _, rerr := b.conn.ExecContext(b.ctx, "ROLLBACK"); rerr != nil && !isSQLiteOperational(rerr) && b.err == nil {
+			b.err = rerr
+		}
+		if isSQLiteOperational(err) && isContention(err) {
+			b.store.keepDeferred(ran)
+		} else if b.err == nil {
+			b.err = fmt.Errorf("Unable to commit %d batched shared-metrics updates: %w", len(ran), err)
+		}
+	}
+	b.conn.Close()
+	b.conn, b.ran = nil, nil
+	storeWriteLock(b.store.DatabasePath).Unlock()
+}
+
+// Commits after writes paused for the idle window so a long flush never holds the file
+func (b *storeBatch) commitIdle() {
+	b.store.batchMu.Lock()
+	defer b.store.batchMu.Unlock()
+	if !b.closed {
+		b.commit()
+	}
+}
+
+// Runs body in a savepoint of the batch transaction, opening one when none is open, a failure rolling back only its own changes
 func (b *storeBatch) run(ctx context.Context, body func(conn state.SQLiteConn) error) error {
+	if b.conn == nil {
+		if err := b.open(ctx); err != nil {
+			return err
+		}
+	}
+	if b.idle != nil {
+		b.idle.Stop()
+	}
+	b.idle = time.AfterFunc(batchIdleCommit, b.commitIdle)
 	if _, err := b.conn.ExecContext(ctx, "SAVEPOINT batch_write"); err != nil {
 		return err
 	}
@@ -788,7 +861,7 @@ func (s *SharedMetricsStore) connection(ctx context.Context, busyTimeout int, bo
 	return body(conn)
 }
 
-// Runs body in a savepoint of the open batch, else on a fresh connection inside one IMMEDIATE write transaction
+// Runs body in a savepoint of the open batch, else on a fresh connection inside one IMMEDIATE transaction under the file write lock
 func (s *SharedMetricsStore) write(ctx context.Context, busyTimeout int, body func(conn state.SQLiteConn) error) error {
 	s.batchMu.Lock()
 	if batch := s.batch; batch != nil {
@@ -796,6 +869,9 @@ func (s *SharedMetricsStore) write(ctx context.Context, busyTimeout int, body fu
 		return batch.run(ctx, body)
 	}
 	s.batchMu.Unlock()
+	lock := storeWriteLock(s.DatabasePath)
+	lock.Lock()
+	defer lock.Unlock()
 	return s.connection(ctx, busyTimeout, func(conn state.SQLiteConn) error {
 		return state.WriteTxn(ctx, conn, func() error { return body(conn) })
 	})
@@ -892,7 +968,7 @@ func parseStateTimestamp(value string) *time.Time {
 // Packages every pending period unless a package was already committed today
 func (s *SharedMetricsStore) createPendingPackagesIfDue(ctx context.Context) error {
 	now := utcNow()
-	return s.write(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	return s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		var one int
 		err := conn.QueryRowContext(ctx, "SELECT 1 FROM package_outbox WHERE substr(created_at, 1, 10) >= ? LIMIT 1",
 			utcDate(now)).Scan(&one)
@@ -914,7 +990,7 @@ func (s *SharedMetricsStore) createPendingPackagesIfDue(ctx context.Context) err
 // Packages the oldest pending period in its own transaction
 func (s *SharedMetricsStore) createPackage(ctx context.Context) (map[string]any, error) {
 	var payload map[string]any
-	err := s.write(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		var err error
 		payload, err = s.createPackageInTransaction(ctx, conn, utcNow())
 		return err
@@ -1085,7 +1161,7 @@ func packageMetric(row packagedRow) (map[string]any, error) {
 func (s *SharedMetricsStore) exportPendingPackages(ctx context.Context) ([]string, error) {
 	type outboxRow struct{ id, payload string }
 	var pending []outboxRow
-	err := s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.connection(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		rows, err := conn.QueryContext(ctx, "SELECT package_id, payload_json FROM package_outbox"+
 			" WHERE exported_at IS NULL ORDER BY created_at, package_id")
 		if err != nil {
@@ -1114,7 +1190,7 @@ func (s *SharedMetricsStore) exportPendingPackages(ctx context.Context) ([]strin
 		if err := writePackageFile(ctx, path, decoded); err != nil {
 			return nil, err
 		}
-		err = s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+		err = s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 			_, err := conn.ExecContext(ctx, "UPDATE package_outbox SET exported_at = ?"+
 				" WHERE package_id = ? AND exported_at IS NULL", isoformat(utcNow()), row.id)
 			return err
@@ -1145,7 +1221,7 @@ func (s *SharedMetricsStore) pruneExpiredHistory(ctx context.Context, now time.T
 	cutoff := now.Add(-localHistoryRetentionDays * 24 * time.Hour)
 	cutoffTimestamp := isoformat(cutoff)
 	var ids []string
-	err := s.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	err := s.connection(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		rows, err := conn.QueryContext(ctx, "SELECT package_id FROM package_outbox"+
 			" WHERE exported_at IS NOT NULL AND exported_at < ?"+
 			" ORDER BY exported_at, package_id", cutoffTimestamp)
@@ -1173,7 +1249,7 @@ func (s *SharedMetricsStore) pruneExpiredHistory(ctx context.Context, now time.T
 		}
 		removable = append(removable, id)
 	}
-	return s.write(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
+	return s.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
 		if _, err := conn.ExecContext(ctx, "UPDATE package_outbox SET payload_json = ''"+
 			" WHERE exported_at IS NOT NULL AND send_state IN ('sent', 'rejected')"+
 			" AND payload_json != ''"); err != nil {

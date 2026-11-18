@@ -62,19 +62,12 @@ func RuntimeRequirements() ([]RuntimeRequirement, error) {
 
 // Requirements file pinning each package of the set by version, marker and the hashes of its artifacts
 func (s *RuntimeSet) requirementsText() ([]byte, error) {
-	reqs, err := s.Requirements()
-	if err != nil {
-		return nil, err
-	}
-	target, err := CurrentTarget()
+	reqs, err := s.served()
 	if err != nil {
 		return nil, err
 	}
 	var b strings.Builder
 	for _, r := range reqs {
-		if !r.ServesTarget(target) {
-			continue
-		}
 		b.WriteString(r.Name + "==" + r.Version + " ; " + r.Marker)
 		for _, f := range r.Files {
 			b.WriteString(" \\\n    --hash=sha256:" + f.SHA256)

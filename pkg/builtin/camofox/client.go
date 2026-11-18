@@ -112,7 +112,7 @@ func cfgGet(cfg map[string]any, def any, keys ...string) any {
 func (s *scope) camofoxConfig() map[string]any {
 	raw, err := s.rawConfig()
 	if err != nil {
-		slog.Warn(fmt.Sprintf("camofox config read failed, using defaults: %v", err))
+		clientLog().Warn(fmt.Sprintf("camofox config read failed, using defaults: %v", err))
 		return map[string]any{}
 	}
 	if block := config.AsMap(cfgGet(raw, map[string]any{}, "browser", "camofox")); block != nil {
@@ -148,7 +148,7 @@ func (s *scope) commandTimeout() int64 {
 			return max(clampSeconds(n), 5)
 		}
 	}
-	slog.Debug(fmt.Sprintf("Could not read browser.command_timeout: %v", err))
+	clientLog().Debug(fmt.Sprintf("Could not read browser.command_timeout: %v", err))
 	return defaultTimeout
 }
 
@@ -175,7 +175,7 @@ func (s *scope) flag(envName string, cfg map[string]any, key string) bool {
 		return false
 	}
 	if raw != "" {
-		slog.Debug(fmt.Sprintf("Ignoring invalid boolean env %s=%s", envName, pyrepr.Repr(raw)))
+		clientLog().Debug(fmt.Sprintf("Ignoring invalid boolean env %s=%s", envName, pyrepr.Repr(raw)))
 	}
 	return pyrepr.Truthy(cfg[key])
 }
@@ -592,7 +592,7 @@ func (s *scope) adoptExistingTab(ss *session) *session {
 		return tabs, err
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Camofox tab adoption failed for %s: %v", ss.userID, err))
+		clientLog().Debug(fmt.Sprintf("Camofox tab adoption failed for %s: %v", ss.userID, err))
 		return ss
 	}
 	list, _ := tabs.([]any)
@@ -610,7 +610,7 @@ func (s *scope) adoptExistingTab(ss *session) *session {
 	tabID, _ := get(candidates[len(candidates)-1], "tabId", nil)
 	if id, ok := tabID.(string); ok && id != "" {
 		ss.setTab(id)
-		slog.Debug(fmt.Sprintf("Adopted existing Camofox tab %s for %s", id, ss.userID))
+		clientLog().Debug(fmt.Sprintf("Adopted existing Camofox tab %s for %s", id, ss.userID))
 	}
 	return ss
 }
@@ -663,7 +663,7 @@ func (s *scope) resyncTab(ss *session) bool {
 		return tabs, err
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Camofox tab resync failed for %s: %v", ss.userID, err))
+		clientLog().Debug(fmt.Sprintf("Camofox tab resync failed for %s: %v", ss.userID, err))
 		return false
 	}
 	list, _ := tabs.([]any)
@@ -735,7 +735,7 @@ func (s *scope) softCleanup(taskID string) bool {
 	cfg := s.camofoxConfig()
 	if managedPersistenceEnabled(cfg) || s.identityOverride(taskID, cfg) != nil {
 		s.dropSession(taskID)
-		slog.Debug(fmt.Sprintf("Camofox soft cleanup for task %s (managed persistence)", logTask(taskID)))
+		clientLog().Debug(fmt.Sprintf("Camofox soft cleanup for task %s (managed persistence)", logTask(taskID)))
 		return true
 	}
 	return false
@@ -754,4 +754,9 @@ func (s *scope) closeSession(taskID string) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// Logger of the reference camofox_client module
+func clientLog() *slog.Logger {
+	return slog.Default().With("logger", "hermes_plugins.camofox.camofox_client")
 }

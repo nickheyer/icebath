@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -44,8 +45,8 @@ func secretProbe(name string) func(*Env) bool {
 	}
 }
 
-func checkSchema(name string) map[string]any {
-	return map[string]any{"name": name, "description": "test-only probe", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+func checkSchema(name string) *pyjson.Object {
+	return pyjson.ObjectOf("name", name, "description", "test-only probe", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
 }
 
 // Snapshot of the recorded log records
@@ -110,8 +111,8 @@ func TestCoreToolDropAfterSuccessWarnsOnceNeverConfiguredStaysInfo(t *testing.T)
 	core := true
 	coreGate := func(*Env) bool { return core }
 	neverGate := func(*Env) bool { return false }
-	r.Register(Def{Name: "core_probe_tool", Toolset: "core_probe_tool", Schema: map[string]any{"name": "core_probe_tool"}, Handler: constHandler("{}"), Check: coreGate})
-	r.Register(Def{Name: "never_probe_tool", Toolset: "never_probe_tool", Schema: map[string]any{"name": "never_probe_tool"}, Handler: constHandler("{}"), Check: neverGate})
+	r.Register(Def{Name: "core_probe_tool", Toolset: "core_probe_tool", Schema: pyjson.ObjectOf("name", "core_probe_tool"), Handler: constHandler("{}"), Check: coreGate})
+	r.Register(Def{Name: "never_probe_tool", Toolset: "never_probe_tool", Schema: pyjson.ObjectOf("name", "never_probe_tool"), Handler: constHandler("{}"), Check: neverGate})
 	ctx := context.Background()
 	if !r.checkCached(ctx, env, coreGate) || r.checkCached(ctx, env, neverGate) {
 		t.Fatal("initial verdicts wrong")

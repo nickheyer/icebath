@@ -16,12 +16,9 @@ var shippedPlatformDirs = []string{"a2a", "bluebubbles", "buzz", "dingtalk", "di
 	"line", "matrix", "mattermost", "ntfy", "photon", "qqbot", "raft", "signal", "simplex", "slack", "sms", "teams", "telegram",
 	"wecom", "weixin", "whatsapp", "whatsapp_cloud", "yuanbao"}
 
-// Directory names of the catalog platform plugins icebath compiles in beside the shipped ones
-var builtInPlatformDirs = []string{"homeassistant"}
-
 // Every platform directory of the compiled tree in sorted order
 func compiledPlatformDirs() []string {
-	return slices.Sorted(slices.Values(slices.Concat(shippedPlatformDirs, builtInPlatformDirs)))
+	return slices.Sorted(slices.Values(shippedPlatformDirs))
 }
 
 // Unsets the bundled override and clears the scan cache so the test reads the tree compiled into the binary
@@ -130,16 +127,8 @@ func TestCompiledTreeServesEveryShippedPlatformWithoutOverride(t *testing.T) {
 			}
 		}
 	}
-	for _, dir := range builtInPlatformDirs {
-		if p, err := ParsePlatform(ctx, dir); err != nil || p != Platform(dir) {
-			t.Fatalf("%q parsed %q %v", dir, p, err)
-		}
-		if !CoreShipsPlatform(dir) {
-			t.Fatalf("core ships %q", dir)
-		}
-		if !slices.Contains(labels, dir) || !slices.Contains(gate, dir) {
-			t.Fatalf("label %q missing from %v or %v", dir, labels, gate)
-		}
+	if CoreShipsPlatform("homeassistant") {
+		t.Fatal("core ships homeassistant before its catalog plugin is installed")
 	}
 	if !slices.Equal(config.BundledPlatformDirNames(t.TempDir()), compiledPlatformDirs()) {
 		t.Fatalf("config dir names %v", config.BundledPlatformDirNames(t.TempDir()))

@@ -85,7 +85,7 @@ func venvFact(f *Facts) map[string]any {
 	return fact
 }
 
-// Recorded venv selection of this binary's own state, then of the store, then empty
+// Recorded venv selection of this binary's own state, then of the store, then of a provisioned binary base environment
 func recordedVenvFact(ctx context.Context, runtimeFacts *Facts) (map[string]any, error) {
 	if fact := venvFact(runtimeFacts); len(fact) > 0 {
 		return fact, nil
@@ -97,7 +97,7 @@ func recordedVenvFact(ctx context.Context, runtimeFacts *Facts) (map[string]any,
 	if fact := venvFact(facts); len(fact) > 0 {
 		return fact, nil
 	}
-	return map[string]any{}, nil
+	return binaryBaseSelection(ctx, RepoRoot())
 }
 
 // Reports a recorded selection whose stamp and selected environment match what the sync must reach
@@ -273,7 +273,11 @@ func venvIsCurrent(ctx context.Context, extras []string, plugins PluginInput, pr
 		value = shipped.packages["venv"]
 	}
 	if value == nil {
-		return false, nil
+		base, err := binaryBaseSelection(ctx, root)
+		if err != nil || len(base) == 0 {
+			return false, err
+		}
+		value = base
 	}
 	fact, recorded, err := recordedSelection(value)
 	if err != nil {

@@ -230,7 +230,7 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 
 func TestUpdateCommandsByMethod(t *testing.T) {
 	for method, want := range map[string]string{
-		"docker": "docker pull ghcr.io/nickheyer/icebath:latest", "apt": "pkg upgrade icebath-agent",
+		"docker": "docker pull ghcr.io/nickheyer/icebath:latest", "apt": TermuxInstallCommand,
 		"nix": nixUpdateMsg, "nixos": nixUpdateMsg, "home-manager": nixUpdateMsg, "git": "icebath update", "unknown": "icebath update",
 		"script": "icebath update", "setup-app": "icebath update", "chocolatey": "choco upgrade icebath", "pip": "pipx upgrade icebath-cli",
 		"homebrew": "brew upgrade --cask icebath", "scoop": "scoop update icebath", "winget": "winget upgrade --id nickheyer.icebath",

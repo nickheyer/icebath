@@ -13,24 +13,6 @@ removed:
 - name: github-copilot
   reason: "Built into icebath: the copilot and copilot-acp providers ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove github-copilot`; your Copilot logins and settings keep working."
   date: "2026-11-15"
-- name: mcp-serve
-  reason: "Built into icebath: `icebath mcp-serve` ships with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove mcp-serve`; MCP client configs with args [\"mcp-serve\"] keep working."
-  date: "2026-11-15"
-- name: agent-importers
-  reason: "Built into icebath: `icebath import-agent` and `icebath claw` ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove agent-importers`; your import-sync.json sync sources keep working."
-  date: "2026-11-15"
-- name: camofox
-  reason: "Built into icebath: the camofox toolset and `icebath camofox setup` ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove camofox`; CAMOFOX_URL and the browser.camofox settings keep working."
-  date: "2026-11-15"
-- name: homeassistant
-  reason: "Built into icebath: the Home Assistant platform and the homeassistant toolset ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove homeassistant`; HASS_TOKEN, HASS_URL and platforms.homeassistant keep working."
-  date: "2026-11-15"
-- name: langfuse
-  reason: "Built into icebath: the langfuse plugin ships with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove langfuse` and turn the built-in on with `icebath plugins enable langfuse`; your ICEBATH_LANGFUSE_* settings keep working."
-  date: "2026-11-15"
 - name: singularity
   reason: "Built into icebath: the singularity terminal backend ships with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove singularity`; terminal.backend singularity and terminal.singularity_image keep working."
-  date: "2026-11-15"
-- name: spotify
-  reason: "Built into icebath: the spotify toolset and `icebath spotify login` ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove spotify`; your Spotify login keeps working."
   date: "2026-11-15"

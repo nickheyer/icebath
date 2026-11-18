@@ -18,6 +18,9 @@ func (r *ConsentRefusal) Error() string { return r.Text }
 
 // Consent gate for the Node and Python dependencies a plugin declares, nothing installed on a decline
 func installPluginPythonDeps(ctx context.Context, manifest map[string]any, target string, console *Console, assumeYes bool) (bool, *ConsentRefusal) {
+	if runsAsPort(target) {
+		return true, nil
+	}
 	declaration, err := pm.ReadPythonDeclaration(target)
 	var deps []string
 	hasPython := false
@@ -81,6 +84,9 @@ func consentPythonDeps(ctx context.Context, pluginName string, deps []string, co
 
 // Python requirements of an installed tree for the install result, a read failure added to the warnings
 func pythonDependencySummary(target string, warnings *[]string) []string {
+	if runsAsPort(target) {
+		return []string{}
+	}
 	declaration, err := pm.ReadPythonDeclaration(target)
 	var deps []string
 	if err == nil {

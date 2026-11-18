@@ -245,7 +245,7 @@ func BuildMemoryContextBlock(rawContext string) string {
 	}
 	sanitized := SanitizeContext(rawContext)
 	if sanitized != rawContext {
-		slog.Default().Warn("memory provider returned pre-wrapped context; stripped")
+		slog.Default().With("logger", "agent.memory_context").Warn("memory provider returned pre-wrapped context; stripped")
 	}
 	clean := dropRepeatedRecallLines(sanitized)
 	return "<memory-context>\n" +

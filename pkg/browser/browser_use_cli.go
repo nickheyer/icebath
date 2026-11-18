@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -77,21 +78,21 @@ const execLocalDescription = "Drive the user's own local browser (an Icebath-man
 	"accounts, their sessions. No-op when the backend is already local. Default false."
 
 // Static browser_exec schema, its description tailored per session by the overrides
-func BrowserExecSchema() map[string]any {
-	return map[string]any{
-		"name":        "browser_exec",
-		"description": execHeaderBase + execHelpersDigest,
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"code":    map[string]any{"type": "string", "description": "Python code to execute using the pre-imported browser helpers. Use print(...) for any data you need back."},
-				"session": map[string]any{"type": "string", "description": "Named isolated browser session \u2014 its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session."},
-				"timeout_s": map[string]any{"type": "integer", "default": execDefaultTimeoutS,
-					"description": fmt.Sprintf("Max seconds to wait for the code to finish (default %d, max %d).", execDefaultTimeoutS, execMaxTimeoutS)},
-			},
-			"required": []any{"code"},
-		},
-	}
+func BrowserExecSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name", "browser_exec",
+		"description", execHeaderBase+execHelpersDigest,
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"code", pyjson.ObjectOf("type", "string", "description", "Python code to execute using the pre-imported browser helpers. Use print(...) for any data you need back."),
+				"session", pyjson.ObjectOf("type", "string", "description", "Named isolated browser session \u2014 its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session."),
+				"timeout_s", pyjson.ObjectOf("type", "integer", "default", execDefaultTimeoutS,
+					"description", fmt.Sprintf("Max seconds to wait for the code to finish (default %d, max %d).", execDefaultTimeoutS, execMaxTimeoutS)),
+			),
+			"required", []any{"code"},
+		),
+	)
 }
 
 // Real profile consent of the active profile, read on every call
@@ -109,21 +110,15 @@ func execDescriptionHeader(env *tools.Env) string {
 }
 
 // Session tailored description, plus the local parameter only when real profile browsing is consented
-func BrowserExecSchemaOverrides(env *tools.Env) map[string]any {
-	overrides := map[string]any{"description": execDescriptionHeader(env) + execHelpersDigest}
+func BrowserExecSchemaOverrides(env *tools.Env) *pyjson.Object {
+	overrides := pyjson.ObjectOf("description", execDescriptionHeader(env)+execHelpersDigest)
 	if realProfileConsented(env) {
-		static := BrowserExecSchema()["parameters"].(map[string]any)
-		props := map[string]any{}
-		for k, v := range static["properties"].(map[string]any) {
-			props[k] = v
-		}
-		props["local"] = map[string]any{"type": "boolean", "default": false, "description": execLocalDescription}
-		params := map[string]any{}
-		for k, v := range static {
-			params[k] = v
-		}
-		params["properties"] = props
-		overrides["parameters"] = params
+		static := BrowserExecSchema().Vals["parameters"].(*pyjson.Object)
+		props := static.Vals["properties"].(*pyjson.Object).Copy()
+		props.Set("local", pyjson.ObjectOf("type", "boolean", "default", false, "description", execLocalDescription))
+		params := static.Copy()
+		params.Set("properties", props)
+		overrides.Set("parameters", params)
 	}
 	return overrides
 }

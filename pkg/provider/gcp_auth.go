@@ -31,6 +31,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 const (
@@ -187,25 +191,27 @@ func gcpParsePrivateKey(pemText string) (crypto.Signer, error) {
 	return signer, nil
 }
 
-// Compact JWS over the payload, RS256 for RSA keys and ES256 for EC keys, with the key id header
-func gcpEncodeJWT(signer crypto.Signer, keyID string, payload map[string]any) (string, error) {
-	header := map[string]any{"typ": "JWT", "alg": "RS256"}
+// Compact JWS of google-auth jwt.encode, header and payload in json.dumps form, RS256 or ES256 with the key id
+func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *pyjson.Object) (string, error) {
+	header := pyjson.NewObject()
+	header.Set("typ", "JWT")
+	header.Set("alg", "RS256")
 	if _, ok := signer.(*ecdsa.PrivateKey); ok {
-		header["alg"] = "ES256"
+		header.Set("alg", "ES256")
 	}
 	if keyID != "" {
-		header["kid"] = keyID
+		header.Set("kid", keyID)
 	}
-	hb, err := json.Marshal(header)
+	hb, err := pyjson.Dumps(header)
 	if err != nil {
 		return "", err
 	}
-	pb, err := json.Marshal(payload)
+	pb, err := pyjson.Dumps(payload)
 	if err != nil {
 		return "", err
 	}
 	enc := base64.RawURLEncoding
-	signing := enc.EncodeToString(hb) + "." + enc.EncodeToString(pb)
+	signing := enc.EncodeToString([]byte(hb)) + "." + enc.EncodeToString([]byte(pb))
 	digest := sha256.Sum256([]byte(signing))
 	var sig []byte
 	switch k := signer.(type) {
@@ -267,17 +273,17 @@ func gcpTokenErrorDetails(data any) string {
 }
 
 // Posts to a token endpoint, retrying retryable failures three times with jittered exponential backoff
-func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form url.Values, jsonBody any, header http.Header, canRetry bool, client *http.Client) (map[string]any, error) {
+func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form [][2]string, jsonBody *pyjson.Object, header http.Header, canRetry bool, client *http.Client) (map[string]any, error) {
 	var payload []byte
 	contentType := "application/x-www-form-urlencoded"
 	if jsonBody != nil {
-		b, err := json.Marshal(jsonBody)
+		b, err := pyjson.Dumps(jsonBody)
 		if err != nil {
 			return nil, err
 		}
-		payload, contentType = b, "application/json"
+		payload, contentType = []byte(b), "application/json"
 	} else {
-		payload = []byte(form.Encode())
+		payload = []byte(pyurl.URLEncode(form))
 	}
 	if client == nil {
 		client = gcpHTTPClient()
@@ -297,13 +303,16 @@ func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form url.Valu
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Content-Type", contentType)
-		for k, vs := range header {
-			for _, v := range vs {
-				req.Header.Add(k, v)
+		call := []pyhttpx.HeaderLine{{Name: "Content-Type", Value: contentType}}
+		for _, k := range sortedHeaderKeys(header) {
+			for _, v := range header[k] {
+				call = append(call, pyhttpx.HeaderLine{Name: k, Value: v})
 			}
 		}
-		resp, err := client.Do(req)
+		lines := requestsLines(call...)
+		lines.Set("Content-Length", strconv.Itoa(len(payload)))
+		req.Host = httpxHost(req.URL)
+		resp, err := gcpWireClient(client).Do(pyhttpx.WithWire(req, lines))
 		if err != nil {
 			return nil, &gcpTransportError{Msg: err.Error()}
 		}
@@ -370,20 +379,19 @@ func gcpServiceAccountFromInfo(info map[string]any, scopes []string) (*gcpCreden
 		now := gcpNow().UTC()
 		expiry := now.Add(gcpTokenLifetime)
 		if universe != gcpDefaultUniverse {
-			payload := map[string]any{"iss": email, "sub": email, "iat": now.Unix(), "exp": expiry.Unix()}
+			payload := gcpObject("iss", email, "sub", email, "iat", now.Unix(), "exp", expiry.Unix())
 			if len(scopes) > 0 {
-				payload["scope"] = gcpScopesString(scopes)
+				payload.Set("scope", gcpScopesString(scopes))
 			}
 			jwt, err := gcpEncodeJWT(signer, keyID, payload)
 			return jwt, expiry, err
 		}
-		assertion, err := gcpEncodeJWT(signer, keyID, map[string]any{
-			"iat": now.Unix(), "exp": expiry.Unix(), "iss": email, "aud": gcpOAuth2TokenEndpoint, "scope": gcpScopesString(scopes),
-		})
+		assertion, err := gcpEncodeJWT(signer, keyID, gcpObject("iat", now.Unix(), "exp", expiry.Unix(), "iss", email, "aud", gcpOAuth2TokenEndpoint, "scope", gcpScopesString(scopes)))
 		if err != nil {
 			return "", time.Time{}, err
 		}
-		data, err := gcpTokenEndpointRequest(ctx, tokenURI, url.Values{"assertion": {assertion}, "grant_type": {gcpJWTGrantType}}, nil, nil, true, nil)
+		data, err := gcpTokenEndpointRequest(ctx, tokenURI, [][2]string{{"assertion", assertion}, {"grant_type", gcpJWTGrantType}}, nil,
+			gcpMetricsHeader("auth-request-type/at cred-type/sa"), true, nil)
 		if err != nil {
 			return "", time.Time{}, err
 		}
@@ -419,14 +427,14 @@ func gcpAuthorizedUserFromInfo(info map[string]any, scopes []string) (*gcpCreden
 			return "", time.Time{}, &gcpRefreshError{Msg: "The credentials do not contain the necessary fields need to refresh the access token. " +
 				"You must specify refresh_token, token_uri, client_id, and client_secret."}
 		}
-		form := url.Values{"grant_type": {gcpRefreshGrantType}, "client_id": {clientID}, "client_secret": {clientSecret}, "refresh_token": {refreshToken}}
+		form := [][2]string{{"grant_type", gcpRefreshGrantType}, {"client_id", clientID}, {"client_secret", clientSecret}, {"refresh_token", refreshToken}}
 		if len(scopes) > 0 {
-			form.Set("scope", gcpScopesString(scopes))
+			form = append(form, [2]string{"scope", gcpScopesString(scopes)})
 		}
 		if rapt != "" {
-			form.Set("rapt", rapt)
+			form = append(form, [2]string{"rapt", rapt})
 		}
-		data, err := gcpTokenEndpointRequest(ctx, tokenURI, form, nil, nil, true, nil)
+		data, err := gcpTokenEndpointRequest(ctx, tokenURI, form, nil, gcpMetricsHeader("cred-type/u"), true, nil)
 		if err != nil {
 			return "", time.Time{}, err
 		}
@@ -920,7 +928,7 @@ func gcpGDCHFromInfo(info map[string]any) (*gcpCredentials, error) {
 	c := &gcpCredentials{kind: "gdch_service_account", projectID: gcpStr(info, "project")}
 	c.mint = func(ctx context.Context) (string, time.Time, error) {
 		now := gcpNow().UTC()
-		jwt, err := gcpEncodeJWT(signer, keyID, map[string]any{"iss": issuer, "sub": issuer, "aud": tokenURI, "iat": now.Unix(), "exp": now.Add(gcpTokenLifetime).Unix()})
+		jwt, err := gcpEncodeJWT(signer, keyID, gcpObject("iss", issuer, "sub", issuer, "aud", tokenURI, "iat", now.Unix(), "exp", now.Add(gcpTokenLifetime).Unix()))
 		if err != nil {
 			return "", time.Time{}, err
 		}
@@ -934,11 +942,9 @@ func gcpGDCHFromInfo(info map[string]any) (*gcpCredentials, error) {
 			pool.AppendCertsFromPEM(pemCA)
 			client.Transport = &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
 		}
-		data, err := gcpTokenEndpointRequest(ctx, tokenURI, nil, map[string]any{
-			"grant_type": "urn:ietf:params:oauth:token-type:token-exchange", "audience": nil,
-			"requested_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": jwt,
-			"subject_token_type": "urn:k8s:params:oauth:token-type:serviceaccount",
-		}, nil, true, client)
+		data, err := gcpTokenEndpointRequest(ctx, tokenURI, nil, gcpObject("grant_type", "urn:ietf:params:oauth:token-type:token-exchange", "audience", nil,
+			"requested_token_type", "urn:ietf:params:oauth:token-type:access_token", "subject_token", jwt,
+			"subject_token_type", "urn:k8s:params:oauth:token-type:serviceaccount"), nil, true, client)
 		if err != nil {
 			return "", time.Time{}, err
 		}
@@ -1546,3 +1552,31 @@ var (
 	gcpWorkforcePoolAudience = regexp.MustCompile(`^//iam\.googleapis\.com/locations/[^/]+/workforcePools/`)
 	gcpAWSEnvironmentID      = regexp.MustCompile(`^aws(\d+)$`)
 )
+
+// x-goog-api-client header of a google-auth token request, the python and library versions then the request kind
+func gcpMetricsHeader(kind string) http.Header {
+	return http.Header{"x-goog-api-client": {"gl-python/" + pinnedPythonRuntimeVersion() + " auth/" + googleAuthVersion + " " + kind}}
+}
+
+// Version of the pinned google-auth whose metrics header the token requests carry
+const googleAuthVersion = "2.62.0"
+
+// Client sending a requests session head, the given client's transport or a requests stack pool with environment proxies
+func gcpWireClient(client *http.Client) *http.Client {
+	out := *client
+	base := client.Transport
+	if base == nil {
+		base = pyStackWireTransport(pyhttpx.RequestsProxy, 120*time.Second, 10)
+	}
+	out.Transport = pyhttpx.WireTransport{Base: base, Decoders: requestsDecoders}
+	return &out
+}
+
+// Python dict literal of alternating keys and values in insertion order
+func gcpObject(kv ...any) *pyjson.Object {
+	o := pyjson.NewObject()
+	for i := 0; i+1 < len(kv); i += 2 {
+		o.Set(kv[i].(string), kv[i+1])
+	}
+	return o
+}

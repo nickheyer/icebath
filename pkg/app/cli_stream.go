@@ -100,7 +100,6 @@ func (c *CLI) onThinking(text any) {
 		}
 		c.uiMu.Lock()
 		c.spinnerText = shown
-		c.toolStartTime = 0
 		c.uiMu.Unlock()
 		return nil
 	}
@@ -713,24 +712,18 @@ func (c *CLI) slowCommandStatus(command string) string {
 	return c.t("cli.stream.processing_command", nil)
 }
 
-// Shows a busy state in the TUI while fn runs, reserving the composer when blocksInput is set
-func (c *CLI) busyCommand(status string, blocksInput bool, fn func()) (err error) {
+// Prints the busy status then runs fn with the command marked running
+func (c *CLI) busyCommand(status string, fn func()) {
 	c.uiMu.Lock()
-	previousBlocksInput := c.commandBlocksInput
 	c.commandRunning = true
-	c.commandBlocksInput = blocksInput
-	c.commandStatus = status
 	c.uiMu.Unlock()
 	defer func() {
 		c.uiMu.Lock()
 		c.commandRunning = false
-		c.commandBlocksInput = previousBlocksInput
-		c.commandStatus = ""
 		c.uiMu.Unlock()
 	}()
 	cprint("⏳ " + status)
 	fn()
-	return nil
 }
 
 // Describes attached images through the vision model and prepends the descriptions to the user text
@@ -914,22 +907,10 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 		return
 	}
 	isError := pyrepr.Truthy(extra["is_error"])
-	switch {
-	case eventType == "tool.started":
-		c.uiMu.Lock()
-		c.petReasoning = false
-		c.uiMu.Unlock()
+	if eventType == "tool.started" {
 		c.streamMu.Lock()
 		c.toolGenAnnounced = nil
 		c.streamMu.Unlock()
-	case eventType == "tool.completed" && isError:
-		c.uiMu.Lock()
-		c.petTurnError = true
-		c.uiMu.Unlock()
-	case strings.HasPrefix(eventType, "reasoning"):
-		c.uiMu.Lock()
-		c.petReasoning = true
-		c.uiMu.Unlock()
 	}
 	if eventType == "tool.completed" {
 		c.onToolCompletedProgress(functionName, extra, isError)
@@ -965,15 +946,11 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 	c.streamMu.Unlock()
 	c.uiMu.Lock()
 	c.spinnerText = spinner
-	c.toolStartTime = monotonic()
 	c.uiMu.Unlock()
 }
 
 // Commits the scrollback line of one completed tool call and the one time long tool hint
 func (c *CLI) onToolCompletedProgress(functionName string, extra map[string]any, isError bool) {
-	c.uiMu.Lock()
-	c.toolStartTime = 0
-	c.uiMu.Unlock()
 	c.streamMu.Lock()
 	c.forgetToolLabel(functionName)
 	c.streamMu.Unlock()

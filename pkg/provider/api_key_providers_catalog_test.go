@@ -16,7 +16,7 @@ import (
 func pricingPayloadStub(t *testing.T, payload any, seen func(url string, headers map[string]string, timeout time.Duration)) {
 	t.Helper()
 	prev := pricingGetJSON
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		if seen != nil {
 			seen(url, headers, timeout)
 		}

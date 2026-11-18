@@ -46,16 +46,17 @@ func teardownEnv(env *Env, e Environment, taskID string, forceRemove bool, doneM
 	} else {
 		err = cleanupEnv(e, forceRemove)
 	}
+	log := envLog(env).With("logger", "tools.terminal_tool")
 	if err == nil {
-		envLog(env).Info(doneMsg, "task", taskID)
+		log.Info(fmt.Sprintf(doneMsg, taskID))
 		return
 	}
 	text := err.Error()
 	if strings.Contains(text, "404") || strings.Contains(strings.ToLower(text), "not found") {
-		envLog(env).Info("Environment for task already cleaned up", "task", taskID)
+		log.Info(fmt.Sprintf("Environment for task %s already cleaned up", taskID))
 		return
 	}
-	envLog(env).Warn("Error cleaning up environment for task", "task", taskID, "error", err)
+	log.Warn(fmt.Sprintf("Error cleaning up environment for task %s: %v", taskID, err))
 }
 
 // Pops a task from the env cache, activity map and creation locks, returning the env
@@ -149,9 +150,9 @@ func cleanupInactiveEnvs(env *Env, lifetime time.Duration) {
 		}
 		ClearFileOpsCache(s.task)
 		if _, ok := s.env.(IdleStopper); ok && isWorkspaceKey(s.task) {
-			teardownEnv(env, s.env, s.task, false, "Cleaned up inactive environment for task", true)
+			teardownEnv(env, s.env, s.task, false, "Cleaned up inactive environment for task: %s", true)
 		} else {
-			teardownEnv(env, s.env, s.task, false, "Cleaned up inactive environment for task", false)
+			teardownEnv(env, s.env, s.task, false, "Cleaned up inactive environment for task: %s", false)
 		}
 	}
 }
@@ -324,7 +325,7 @@ func CleanupAllEnvironments(env *Env) int {
 		cleaned++
 	}
 	if cleaned > 0 {
-		envLog(env).Info("Cleaned environments", "count", cleaned)
+		envLog(env).With("logger", "tools.terminal_tool").Info(fmt.Sprintf("Cleaned %d environments", cleaned))
 	}
 	return cleaned
 }
@@ -336,7 +337,7 @@ func CleanupVM(env *Env, taskID string, forceRemove bool) {
 	if e == nil {
 		return
 	}
-	teardownEnv(env, e, taskID, forceRemove, "Manually cleaned up environment for task", false)
+	teardownEnv(env, e, taskID, forceRemove, "Manually cleaned up environment for task: %s", false)
 }
 
 // Drops any cached env of a task and its collapsed key after an infrastructure failure

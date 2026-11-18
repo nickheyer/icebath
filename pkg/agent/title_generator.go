@@ -103,12 +103,12 @@ func buildTitlePromptTemplate() string {
 }
 
 // Response format constraining the reply to one title field
-func titleResponseFormat() map[string]any {
-	return map[string]any{
-		"type": "json_schema",
-		"json_schema": map[string]any{"name": "session_title", "strict": true, "schema": map[string]any{
-			"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string"}}, "required": []any{"title"}, "additionalProperties": false}},
-	}
+func titleResponseFormat() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "json_schema",
+		"json_schema", pyjson.ObjectOf("name", "session_title", "strict", true, "schema", pyjson.ObjectOf(
+			"type", "object", "properties", pyjson.ObjectOf("title", pyjson.ObjectOf("type", "string")), "required", []any{"title"}, "additionalProperties", false)),
+	)
 }
 
 // Read only config of the active profile

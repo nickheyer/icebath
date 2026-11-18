@@ -14,6 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
+// Python frames under coerce_output_schema and validate_output when delegate_task runs in the reference tool worker thread
+const (
+	coerceOutputSchemaFrameDepth = 24
+	validateOutputFrameDepth     = 30
+)
+
 // Schema object when usable, an error message when not, both empty when no schema was requested
 func CoerceOutputSchema(raw any) (any, string) {
 	if raw == nil {
@@ -32,10 +38,43 @@ func CoerceOutputSchema(raw any) (any, string) {
 	if !isJSONObject(raw) {
 		return nil, fmt.Sprintf("output_schema must be a JSON Schema object, got %s.", pyrepr.TypeName(raw))
 	}
-	if err := pyjsonschema.CheckSchema(raw); err != nil {
-		return nil, "output_schema is not a valid JSON Schema: " + err.Error()
+	if err := pyjsonschema.CheckSchema(raw, coerceOutputSchemaFrameDepth); err != nil {
+		text, failed := pyjsonschema.Str(err, coerceOutputSchemaFrameDepth)
+		if failed != nil {
+			panic(failed)
+		}
+		return nil, "output_schema is not a valid JSON Schema: " + text
 	}
 	return raw, ""
+}
+
+// Task list with each task's output_schema swapped for its Python valued copy, the dict delegate_task parsed
+func WithPythonTaskSchemas(tasks, pyTasks any) any {
+	list, ok := tasks.([]any)
+	pyList, pyOK := pyTasks.([]any)
+	if !ok || !pyOK || len(list) != len(pyList) {
+		return tasks
+	}
+	out := make([]any, len(list))
+	for i, t := range list {
+		out[i] = t
+		pyTask, isObject := pyList[i].(*pyjson.Object)
+		m, isMap := t.(map[string]any)
+		if !isObject || !isMap {
+			continue
+		}
+		schema, has := pyTask.Vals["output_schema"]
+		if !has {
+			continue
+		}
+		cp := make(map[string]any, len(m))
+		for k, v := range m {
+			cp[k] = v
+		}
+		cp["output_schema"] = schema
+		out[i] = cp
+	}
+	return out
 }
 
 func isJSONObject(v any) bool {
@@ -107,6 +146,11 @@ func ExtractJSONCandidate(text string) string {
 
 // Validity of a final answer against schema with retry ready error strings, at most ten
 func ValidateOutput(text string, schema any) (bool, []string, error) {
+	return ValidateOutputAt(text, schema, validateOutputFrameDepth)
+}
+
+// ValidateOutput whose validator runs validateDepth Python frames deep, the depth of the reference call site it mirrors
+func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []string, error) {
 	candidate := ExtractJSONCandidate(text)
 	if pystr.Strip(candidate) == "" {
 		return false, []string{"Response was empty — expected a JSON object matching the schema."}, nil
@@ -115,7 +159,7 @@ func ValidateOutput(text string, schema any) (bool, []string, error) {
 	if err != nil {
 		return false, []string{"Response is not valid JSON: " + err.Error()}, nil
 	}
-	errs, err := pyjsonschema.IterErrors(parsed, schema)
+	errs, err := pyjsonschema.IterErrors(parsed, schema, validateDepth)
 	if err != nil {
 		return false, nil, err
 	}

@@ -617,7 +617,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		APIMode: rt.APIMode, MaxIterations: c.maxTurns, QuietMode: !c.verbose, ToolProgressMode: c.toolProgressMode,
 		ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier, PushReasoning: c.reasoningUserSet && !oneTurn, OneTurn: oneTurn,
 		ReasoningCallback: c.currentReasoningCallback(), ThinkingCallback: c.onThinking, ToolProgressCallback: c.onToolProgress,
-		NoticeCallback: c.onNotice, NoticeClearCallback: c.onNoticeClear, ReactionCallback: c.onReaction, ToolEnv: c.env,
+		NoticeCallback: c.onNotice, NoticeClearCallback: c.onNoticeClear, ToolEnv: c.env,
 		ApprovalCallback: c.approvalCallback, SudoPasswordCallback: c.sudoPasswordCallback}
 	if oneTurn {
 		o.OneTurnReasoning = strOrEmpty(pendingOneTurn["one_turn_reasoning"])
@@ -649,7 +649,6 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 	}
 	c.setAgent(a)
 	setActiveAgent(a)
-	a.SetControlUpdateCallback(c.markAutomationStale)
 	a.SetPrintFn(c.agentStatusPrint)
 	a.SetFinite(c.singleQueryMode)
 	bindGatewayAgent(a)

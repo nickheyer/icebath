@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"sort"
 	"strings"
@@ -107,7 +108,7 @@ func TestExtractIncludesLiveToolRegistryGeneration(t *testing.T) {
 		t.Fatalf("generation %#v, registry %d", before, tools.Default.Generation())
 	}
 	name := "gatewayrun_generation_probe"
-	tools.Default.Register(tools.Def{Name: name, Toolset: "gatewayrun_probe", Schema: map[string]any{"name": name},
+	tools.Default.Register(tools.Def{Name: name, Toolset: "gatewayrun_probe", Schema: pyjson.ObjectOf("name", name),
 		Handler: func(context.Context, *tools.Call) string { return "" }})
 	t.Cleanup(func() { _ = tools.Default.Deregister(name, "", "") })
 	after := ExtractCacheBustingConfig(context.Background(), map[string]any{})["tools.registry_generation"]

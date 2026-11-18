@@ -297,7 +297,7 @@ func adoptProviderContextLimit(ctx context.Context, a *AIAgent, errorMsg string,
 // Context length recovery, the output cap clamp for a stated budget else provider limit adoption and compression
 func recoverContextLength(r *overflowRecovery, errorMsg string) (PhaseVerdict, error) {
 	a, s := r.a, r.s
-	oldCtx := a.contextCompressor.Base().ContextLength
+	oldCtx := engineContextLength(a.contextCompressor)
 	if availableOut, ok := provider.ParseAvailableOutputTokensFromError(errorMsg); ok {
 		return clampOutputCap(r, availableOut, oldCtx)
 	}
@@ -312,7 +312,7 @@ func recoverContextLength(r *overflowRecovery, errorMsg string) (PhaseVerdict, e
 		})
 	}
 	newCtx, adopted := adoptProviderContextLimit(r.ctx, a, errorMsg, oldCtx)
-	window := a.contextCompressor.Base().ContextLength
+	window := engineContextLength(a.contextCompressor)
 	requestTokens := r.requestTokens() + max(0, a.maxTokensOrZero())
 	if provider.IsLocalEndpoint(a.baseURL) && !quotedTokenCountRe.MatchString(errorMsg) && window > 0 &&
 		float64(requestTokens) < float64(window)*unexplainedRejectionFraction {

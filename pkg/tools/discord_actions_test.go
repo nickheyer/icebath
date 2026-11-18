@@ -84,7 +84,7 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	if err := os.WriteFile(path, []byte(seeded), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if schema := discordGetDynamicSchema(env, true, "discord"); schema == nil || !strings.Contains(schema["description"].(string), "fetch_messages(channel_id)") || strings.Contains(schema["description"].(string), "search_members(") {
+	if schema := discordGetDynamicSchema(env, true, "discord"); schema == nil || !strings.Contains(schema.Vals["description"].(string), "fetch_messages(channel_id)") || strings.Contains(schema.Vals["description"].(string), "search_members(") {
 		t.Fatalf("allowlisted schema %#v", schema)
 	}
 	env.Config = nil
@@ -95,7 +95,7 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := discordGetDynamicSchema(env, true, "discord")
-	desc := schema["description"].(string)
+	desc := schema.Vals["description"].(string)
 	if strings.Contains(desc, "search_members(") || !strings.Contains(desc, "NOTE: Bot does NOT have the MESSAGE_CONTENT privileged intent. fetch_messages will return") {
 		t.Fatalf("intent filtered schema %s", desc)
 	}

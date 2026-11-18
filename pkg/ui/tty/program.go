@@ -59,7 +59,7 @@ func (p *Program) Send(msg tea.Msg) {
 	p.tea.Send(msg)
 }
 
-// Model wrapper that hands each view to the renderer and runs exec and suspend requests on the event loop
+// Model wrapper that hands each view to the renderer and runs exec requests on the event loop
 type host struct {
 	inner tea.Model
 	p     *Program
@@ -73,7 +73,7 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.p.runExec(req)
 		return h, nil
 	case suspendRequest:
-		h.p.suspend(req.notice)
+		h.p.suspend(req.line)
 		return h, nil
 	}
 	in, cmd := h.inner.Update(msg)
@@ -281,12 +281,12 @@ func (p *Program) failLocked(err error) {
 	go p.tea.Kill()
 }
 
-// Request to suspend the program to the shell, the notice printed on the cooked terminal first
-type suspendRequest struct{ notice string }
+// Stop request of the model with the line written to the terminal it gave back
+type suspendRequest struct{ line string }
 
-// Suspends the program the way Ctrl+Z suspends a shell job, doing nothing where no job control can resume it
-func Suspend(notice string) tea.Cmd {
-	return func() tea.Msg { return suspendRequest{notice: notice} }
+// Gives the terminal back, writes the line and stops the process group until the shell continues it
+func Suspend(line string) tea.Cmd {
+	return func() tea.Msg { return suspendRequest{line: line} }
 }
 
 // Command handed to the program to run on its terminal

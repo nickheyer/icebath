@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,15 +24,15 @@ func TestSchemaBuilderReadsConfigOnlyOnFirstAccess(t *testing.T) {
 	writeConfig("at registration")
 	var reads atomic.Int32
 	r := NewRegistry()
-	r.Register(Def{Name: "lazy_probe", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() map[string]any {
+	r.Register(Def{Name: "lazy_probe", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() *pyjson.Object {
 		reads.Add(1)
 		tree, err := config.LoadReadonly(context.Background(), dir, config.NewSecrets(dir).Lookup())
 		if err != nil {
 			panic(err)
 		}
 		section, _ := tree["lazy_probe"].(map[string]any)
-		return map[string]any{"name": "lazy_probe", "description": section["description"],
-			"parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+		return pyjson.ObjectOf("name", "lazy_probe", "description", section["description"],
+			"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
 	}})
 	if n := reads.Load(); n != 0 {
 		t.Fatalf("registration loaded config %d times", n)
@@ -58,7 +59,7 @@ func TestSchemaBuilderReadsConfigOnlyOnFirstAccess(t *testing.T) {
 	entries := append(got, r.Get("lazy_probe"), r.Lookup(ctx, "", "lazy_probe"), r.Entry(ctx, &Env{}, "lazy_probe"),
 		r.SnapshotRegistration("", "lazy_probe"), r.Snapshot(ctx, "")[0])
 	for _, d := range entries {
-		if d != got[0] || d.Schema["description"] != "at first access" || d.Description != "at first access" {
+		if d != got[0] || d.Schema.Vals["description"] != "at first access" || d.Description != "at first access" {
 			t.Fatalf("entry %p schema %v description %q", d, d.Schema, d.Description)
 		}
 	}
@@ -80,12 +81,12 @@ func TestSchemaBuilderRunsOnEveryReaderPath(t *testing.T) {
 	for name, read := range readers {
 		r := NewRegistry()
 		builds := 0
-		r.Register(Def{Name: "lazy_path", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() map[string]any {
+		r.Register(Def{Name: "lazy_path", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() *pyjson.Object {
 			builds++
-			return map[string]any{"name": "lazy_path", "description": "built " + name}
+			return pyjson.ObjectOf("name", "lazy_path", "description", "built "+name)
 		}})
 		d := read(r)
-		if builds != 1 || d.Schema["description"] != "built "+name || d.Description != "built "+name {
+		if builds != 1 || d.Schema.Vals["description"] != "built "+name || d.Description != "built "+name {
 			t.Fatalf("%s: builds %d schema %v description %q", name, builds, d.Schema, d.Description)
 		}
 	}
@@ -94,14 +95,14 @@ func TestSchemaBuilderRunsOnEveryReaderPath(t *testing.T) {
 // A set Schema wins over the builder and an explicit description survives the build
 func TestSchemaBuilderKeepsGivenSchemaAndDescription(t *testing.T) {
 	r := NewRegistry()
-	r.Register(Def{Name: "eager", Toolset: "lazy", Handler: constHandler("{}"), Schema: map[string]any{"name": "eager", "description": "given"},
-		SchemaBuilder: func() map[string]any { panic("builder ran for a given schema") }})
-	if d := r.Get("eager"); d.Schema["description"] != "given" || d.Description != "given" {
+	r.Register(Def{Name: "eager", Toolset: "lazy", Handler: constHandler("{}"), Schema: pyjson.ObjectOf("name", "eager", "description", "given"),
+		SchemaBuilder: func() *pyjson.Object { panic("builder ran for a given schema") }})
+	if d := r.Get("eager"); d.Schema.Vals["description"] != "given" || d.Description != "given" {
 		t.Fatalf("eager entry %+v", d)
 	}
 	r.Register(Def{Name: "lazy_desc", Toolset: "lazy", Handler: constHandler("{}"), Description: "explicit",
-		SchemaBuilder: func() map[string]any { return map[string]any{"name": "lazy_desc", "description": "from schema"} }})
-	if d := r.Get("lazy_desc"); d.Schema["description"] != "from schema" || d.Description != "explicit" {
+		SchemaBuilder: func() *pyjson.Object { return pyjson.ObjectOf("name", "lazy_desc", "description", "from schema") }})
+	if d := r.Get("lazy_desc"); d.Schema.Vals["description"] != "from schema" || d.Description != "explicit" {
 		t.Fatalf("lazy entry %+v", d)
 	}
 }
@@ -109,7 +110,7 @@ func TestSchemaBuilderKeepsGivenSchemaAndDescription(t *testing.T) {
 // A malformed built schema passes registration and panics at the first read like Register
 func TestSchemaBuilderMalformedSchemaPanicsOnFirstRead(t *testing.T) {
 	r := NewRegistry()
-	r.Register(Def{Name: "lazy_bad", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() map[string]any { return nil }})
+	r.Register(Def{Name: "lazy_bad", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() *pyjson.Object { return nil }})
 	defer func() {
 		if rec := recover(); rec != "tools: Tool 'lazy_bad': schema must be a dict, got NoneType" {
 			t.Fatalf("recovered %v", rec)

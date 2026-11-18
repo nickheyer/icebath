@@ -359,7 +359,7 @@ func (r *PlatformRegistry) resolve(ctx context.Context, name, scope string) {
 	}
 	if !isLoader && loading[key] {
 		r.mu.Unlock()
-		slog.Warn(fmt.Sprintf("Deferred platform '%s' recursively requested while loading", name))
+		platformRegistryLog().Warn(fmt.Sprintf("Deferred platform '%s' recursively requested while loading", name))
 		return
 	}
 	r.mu.Unlock()
@@ -559,10 +559,10 @@ func (r *PlatformRegistry) register(entry *PlatformEntry, scope string) {
 	delete(r.consumedLoaders, loadKey{scope, entry.Name})
 	delete(deferred, entry.Name)
 	if prev, _ := entries.Get(entry.Name); prev != nil {
-		slog.Info(fmt.Sprintf("Platform '%s' re-registered (was %s, now %s)", entry.Name, prev.Source, entry.Source))
+		platformRegistryLog().Info(fmt.Sprintf("Platform '%s' re-registered (was %s, now %s)", entry.Name, prev.Source, entry.Source))
 	}
 	entries.Set(entry.Name, entry)
-	slog.Debug(fmt.Sprintf("Registered platform adapter: %s (%s)", entry.Name, entry.Source))
+	platformRegistryLog().Debug(fmt.Sprintf("Registered platform adapter: %s (%s)", entry.Name, entry.Source))
 }
 
 // Removes an entry, true when it existed, the scope inferred from the caller when not given
@@ -710,13 +710,13 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 	probe := func(fn func() (bool, error), failureMsg string) (ok bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Warn(fmt.Sprintf(failureMsg, entry.Label, pyrepr.Str(rec)))
+				platformRegistryLog().Warn(fmt.Sprintf(failureMsg, entry.Label, pyrepr.Str(rec)))
 				ok = false
 			}
 		}()
 		got, err := fn()
 		if err != nil {
-			slog.Warn(fmt.Sprintf(failureMsg, entry.Label, err))
+			platformRegistryLog().Warn(fmt.Sprintf(failureMsg, entry.Label, err))
 			return false
 		}
 		return got
@@ -728,7 +728,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		return entry.RunCheck(ctx), nil
 	}, "Platform '%s' check_fn raised: %s")
 	if !depsOK && entry.EnsureDepsFn != nil {
-		slog.Info(fmt.Sprintf("Platform '%s' dependencies missing — attempting install...", entry.Label))
+		platformRegistryLog().Info(fmt.Sprintf("Platform '%s' dependencies missing — attempting install...", entry.Label))
 		depsOK = probe(func() (bool, error) { return entry.EnsureDepsFn(ctx) }, "Platform '%s' dependency install raised: %s")
 	}
 	if !depsOK {
@@ -736,17 +736,17 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		if entry.InstallHint != "" {
 			hint = " (" + entry.InstallHint + ")"
 		}
-		slog.Warn(fmt.Sprintf("Platform '%s' requirements not met%s", entry.Label, hint))
+		platformRegistryLog().Warn(fmt.Sprintf("Platform '%s' requirements not met%s", entry.Label, hint))
 		return nil
 	}
 	if entry.HasValidateConfig() {
 		valid, err := guardedCall(func() (bool, error) { return entry.RunValidateConfig(ctx, cfg) })
 		if err != nil {
-			slog.Warn(fmt.Sprintf("Platform '%s' config validation error: %s", entry.Label, err))
+			platformRegistryLog().Warn(fmt.Sprintf("Platform '%s' config validation error: %s", entry.Label, err))
 			return nil
 		}
 		if !valid {
-			slog.Warn(fmt.Sprintf("Platform '%s' config validation failed", entry.Label))
+			platformRegistryLog().Warn(fmt.Sprintf("Platform '%s' config validation failed", entry.Label))
 			return nil
 		}
 	}
@@ -757,7 +757,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		return entry.AdapterFactory(ctx, cfg)
 	})
 	if err != nil {
-		slog.Error(fmt.Sprintf("Failed to create adapter for platform '%s': %s", entry.Label, err))
+		platformRegistryLog().Error(fmt.Sprintf("Failed to create adapter for platform '%s': %s", entry.Label, err))
 		return nil
 	}
 	return adapter
@@ -875,3 +875,6 @@ func (s platformRegistryService) Unregister(name string) {
 	}
 	s.r.unregister(ctx, name, inferred)
 }
+
+// Logger of the reference module gateway.platform_registry
+func platformRegistryLog() *slog.Logger { return slog.Default().With("logger", "gateway.platform_registry") }

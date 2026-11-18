@@ -90,7 +90,7 @@ func firePostAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, assis
 		firstChunkAt = *a.lastAPIFirstChunkAt
 	}
 	if a.contextCompressor != nil {
-		contextLength = a.contextCompressor.Base().ContextLength
+		contextLength = engineContextLength(a.contextCompressor)
 	}
 	if finishReason != "" {
 		finish = finishReason

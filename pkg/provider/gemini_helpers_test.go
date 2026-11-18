@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -51,7 +52,7 @@ func gemAt(v any, path ...any) any {
 	for _, p := range path {
 		switch k := p.(type) {
 		case string:
-			m, _ := v.(map[string]any)
+			m, _ := pyjson.Dict(v)
 			v = m[k]
 		case int:
 			switch l := v.(type) {

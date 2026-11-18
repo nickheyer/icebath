@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -112,12 +113,32 @@ func NewDownloadTransportError(rawURL string, cause error) *DownloadError {
 	if refused == "" && (status == 401 || status == 403) {
 		refused = "the host refused access"
 	}
-	reason := cause.Error()
+	reason := urllibErrorText(cause)
 	if refused != "" {
-		reason = fmt.Sprintf("%s; %s", cause, refused)
+		reason = fmt.Sprintf("%s; %s", reason, refused)
 	}
 	return &DownloadError{Kind: DownloadTransportFailed, Message: fmt.Sprintf("download failed from %s: %s", rawURL, reason),
 		URL: rawURL, Status: status, FallbackAllowed: fallback, Cause: cause}
+}
+
+// str of the urllib exception a failed request raises, a connection failure inside the urlopen error brackets
+func urllibErrorText(cause error) string {
+	var httpErr *HTTPError
+	if errors.As(cause, &httpErr) {
+		return httpErr.Error()
+	}
+	var urlErr *url.Error
+	if errors.As(cause, &urlErr) {
+		if urlErr.Timeout() {
+			return "<urlopen error timed out>"
+		}
+		return "<urlopen error " + pyhttpx.OSErrorText(urlErr.Err) + ">"
+	}
+	var netErr net.Error
+	if errors.As(cause, &netErr) && netErr.Timeout() {
+		return "The read operation timed out"
+	}
+	return pyhttpx.OSErrorText(cause)
 }
 
 // Refuses a redirect that leaves https, plain http staying allowed only from loopback to loopback

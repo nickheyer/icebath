@@ -6,10 +6,47 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
+
+// Prefixes of the icebath owned User PATH entries, the managed bin only when it is about to be deleted
+func icebathPathMarkers(h string, includeManagedBin bool) []string {
+	root := strings.TrimRight(h, `\/`)
+	subs := []string{"icebath-agent", "git", "node", "venv"}
+	if includeManagedBin {
+		subs = append(subs, "bin")
+	}
+	out := make([]string, len(subs))
+	for i, sub := range subs {
+		out[i] = root + `\` + sub
+	}
+	return out
+}
+
+// Splits a User PATH value into the kept entries and the icebath owned ones by marker prefix
+func splitUserPath(pathValue string, markers []string) (kept, removed []string) {
+	lowered := make([]string, len(markers))
+	for i, m := range markers {
+		lowered[i] = pystr.Lower(m)
+	}
+	for _, entry := range strings.Split(pathValue, ";") {
+		if entry == "" {
+			continue
+		}
+		probe := pystr.Lower(strings.TrimRight(entry, `\/`))
+		if slices.ContainsFunc(lowered, func(m string) bool { return strings.HasPrefix(probe, m) }) {
+			removed = append(removed, entry)
+		} else {
+			kept = append(kept, entry)
+		}
+	}
+	return kept, removed
+}
 
 // Opens the user Environment key read write and runs edit, returning what edit removed even after a later failure
 func editUserEnvironment(w io.Writer, edit func(key registry.Key, removed *[]string) error, warnLabel string) []string {

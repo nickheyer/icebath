@@ -65,9 +65,10 @@ RUN set -eu; \
 # Hash pinned tools and the NeMo Relay runtime from pm, the tools linked onto PATH by image-tools
 ENV ICEBATH_RUNTIME_DIR=/opt/icebath/tools
 RUN set -eu; \
-    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install chromium npm ffmpeg ripgrep --extra nemo-relay; \
+    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install python chromium npm ffmpeg ripgrep --extra nemo-relay; \
     ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath container-stage image-tools; \
     ffmpeg -version >/dev/null; ffprobe -version >/dev/null; rg --version >/dev/null; \
+    python3 --version; node --version; npm --version; npx --version; \
     "$(cat /etc/icebath/chromium-executable-path)" --version; \
     /opt/icebath/venv/bin/python -I -c 'import nemo_relay'; \
     rm -rf /tmp/icebath-image-home /opt/icebath/venv-runtime/uv-cache; \

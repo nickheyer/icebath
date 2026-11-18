@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/setupflow"
 )
 
-// Runs an icebath setup flow with its questions put to a host, reporting the model it leaves and a stop
+// Runs a setup flow with its questions put to a host, reporting the model it leaves and a stop
 func RunHostedSetupFlow(ctx context.Context, ask SetupAsker, out io.Writer, run func(ctx context.Context, ask setupflow.Asker) error) (HostedModelResult, bool, error) {
 	h := home.Dir(ctx)
 	before, err := config.LoadContext(ctx, h, nil)

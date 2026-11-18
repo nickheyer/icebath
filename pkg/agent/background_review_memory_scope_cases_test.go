@@ -128,7 +128,10 @@ func brConsolidationStore(t *testing.T) (*memory.Store, *tools.Env) {
 // Parsed memory tool answer
 func brMemoryCall(t *testing.T, env *tools.Env, store *memory.Store, action, content, oldText string) (string, map[string]any) {
 	t.Helper()
-	raw := memory.MemoryTool(context.Background(), env, store, action, "memory", content, nilIfEmpty(oldText), nil, nil)
+	raw, err := memory.MemoryTool(context.Background(), env, store, action, "memory", content, nilIfEmpty(oldText), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out map[string]any
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		t.Fatalf("non JSON result %q", raw)

@@ -337,7 +337,7 @@ func (s *Store) inflightMinAllowanceMinutes() float64 {
 				return v
 			}
 		} else {
-			s.log.Warn("Invalid ICEBATH_CRON_INFLIGHT_MAX_MINUTES=" + pyrepr.StrRepr(raw) + "; using default 30.0")
+			s.logAs("cron.scheduler").Warn("Invalid ICEBATH_CRON_INFLIGHT_MAX_MINUTES=" + pyrepr.StrRepr(raw) + "; using default 30.0")
 		}
 	}
 	return inflightMinAllowanceMinutes

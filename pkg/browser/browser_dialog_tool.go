@@ -22,27 +22,27 @@ const dialogDescription = "Accept or dismiss a native JS dialog (alert/confirm/p
 	"``browser.cdp_url`` in config.yaml."
 
 // Static browser_dialog schema
-func BrowserDialogSchema() map[string]any {
-	return map[string]any{
-		"name":        "browser_dialog",
-		"description": dialogDescription,
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action": map[string]any{"type": "string", "enum": []any{"accept", "dismiss"},
-					"description": "'accept' clicks OK / returns the prompt text. " +
+func BrowserDialogSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name",        "browser_dialog",
+		"description", dialogDescription,
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"action", pyjson.ObjectOf("type", "string", "enum", []any{"accept", "dismiss"},
+					"description", "'accept' clicks OK / returns the prompt text. " +
 						"'dismiss' clicks Cancel / returns null from prompt(). " +
 						"For ``beforeunload`` dialogs: 'accept' allows the " +
-						"navigation, 'dismiss' keeps the page."},
-				"prompt_text": map[string]any{"type": "string", "description": "Response string for a ``prompt()`` dialog. Ignored for " +
-					"other dialog types. Defaults to empty string."},
-				"dialog_id": map[string]any{"type": "string", "description": "Specific dialog to respond to, from " +
+						"navigation, 'dismiss' keeps the page."),
+				"prompt_text", pyjson.ObjectOf("type", "string", "description", "Response string for a ``prompt()`` dialog. Ignored for " +
+					"other dialog types. Defaults to empty string."),
+				"dialog_id", pyjson.ObjectOf("type", "string", "description", "Specific dialog to respond to, from " +
 					"the candidate ids a previous call listed. Required " +
-					"only when multiple dialogs are queued."},
-			},
-			"required": []any{"action"},
-		},
-	}
+					"only when multiple dialogs are queued."),
+			),
+			"required", []any{"action"},
+		),
+	)
 }
 
 func dumpsASCII(v any) string {

@@ -234,7 +234,7 @@ func TestWorkerToolBareCallOutsideWorkerErrorIsActionable(t *testing.T) {
 func TestKanbanTaskIDDescriptionsStateTheNonWorkerCase(t *testing.T) {
 	var seen []string
 	for _, tool := range kanbanTools {
-		params := tool.schema["parameters"].(map[string]any)
+		params := tool.schema.Vals["parameters"].(map[string]any)
 		props := params["properties"].(map[string]any)
 		prop, _ := props["task_id"].(map[string]any)
 		desc, _ := prop["description"].(string)
@@ -242,12 +242,12 @@ func TestKanbanTaskIDDescriptionsStateTheNonWorkerCase(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(desc, "worker") {
-			t.Fatal(tool.schema["name"], "env default promised without the non-worker case (#91431)")
+			t.Fatal(tool.schema.Vals["name"], "env default promised without the non-worker case (#91431)")
 		}
 		if !strings.Contains(desc, "no default") && !strings.Contains(desc, "orientation") {
-			t.Fatal(tool.schema["name"], "must state what a non-worker bare call does (#91431)")
+			t.Fatal(tool.schema.Vals["name"], "must state what a non-worker bare call does (#91431)")
 		}
-		seen = append(seen, tool.schema["name"].(string))
+		seen = append(seen, tool.schema.Vals["name"].(string))
 	}
 	if !slices.Contains(seen, "kanban_show") {
 		t.Fatal(seen)

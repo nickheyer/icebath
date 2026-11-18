@@ -32,6 +32,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
@@ -1212,16 +1213,11 @@ func keylessHTTP(ctx context.Context, method, target string, params map[string]s
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := webHTTPClient(keylessTimeout).Do(req)
+	resp, err := pyrequests.Send(ctx, webHTTPTransport, pyrequests.Seconds(keylessTimeout.Seconds()), req)
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	defer resp.Body.Close()
-	raw, err := readBodyLimited(resp, 64<<20)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	return resp.StatusCode, resp.Header, raw, nil
+	return resp.Status, resp.Header, resp.Body, nil
 }
 
 // Body decoded with the declared charset else UTF-8, undecodable bytes replaced like _response_text

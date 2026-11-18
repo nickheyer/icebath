@@ -1,7 +1,10 @@
 package selfupdate
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -86,12 +89,33 @@ func newRPSource(t *testing.T, history []string, releases ...rpRelease) *rpSourc
 	return s
 }
 
-func (s *rpSource) asset() string { return install.BinaryAssetName(runtime.GOOS, runtime.GOARCH) }
+func (s *rpSource) asset(tag string) string {
+	return install.ReleaseArchiveName(tag, runtime.GOOS, runtime.GOARCH)
+}
+
+// Release archive holding binary at its root under the name the host's archive gives it
+func rpArchive(binary []byte) []byte {
+	var buf bytes.Buffer
+	if runtime.GOOS == "windows" {
+		zw := zip.NewWriter(&buf)
+		w, _ := zw.Create("icebath.exe")
+		w.Write(binary)
+		zw.Close()
+		return buf.Bytes()
+	}
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.WriteHeader(&tar.Header{Name: "icebath", Mode: 0o755, Size: int64(len(binary)), Typeflag: tar.TypeReg})
+	tw.Write(binary)
+	tw.Close()
+	gz.Close()
+	return buf.Bytes()
+}
 
 func (s *rpSource) apiJSON(rel rpRelease) map[string]any {
 	base := s.srv.URL + "/o/r/releases/download/" + rel.tag + "/"
 	return map[string]any{"tag_name": rel.tag, "target_commitish": rel.target, "draft": false, "prerelease": false, "published_at": rel.published,
-		"assets": []any{map[string]any{"name": s.asset(), "browser_download_url": base + s.asset()},
+		"assets": []any{map[string]any{"name": s.asset(rel.tag), "browser_download_url": base + s.asset(rel.tag)},
 			map[string]any{"name": "checksums.txt", "browser_download_url": base + "checksums.txt"}}}
 }
 
@@ -149,12 +173,12 @@ func (s *rpSource) serve(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if name == "checksums.txt" {
-				sum := sha256.Sum256(rel.binary)
-				fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), s.asset())
+				sum := sha256.Sum256(rpArchive(rel.binary))
+				fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), s.asset(rel.tag))
 				return
 			}
-			if name == s.asset() {
-				w.Write(rel.binary)
+			if name == s.asset(rel.tag) {
+				w.Write(rpArchive(rel.binary))
 				return
 			}
 		}

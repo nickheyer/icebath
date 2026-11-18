@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"math"
 	"strings"
@@ -627,19 +628,17 @@ func MergeNousPortalMessagesExtraBody(ctx context.Context, agent ChatCompletionA
 			return
 		}
 		existing, present := anthropicKwargs["extra_body"]
-		extra, isMap := existing.(map[string]any)
+		extra, isMap := pyjson.AsObject(existing)
 		if present && !isMap {
 			nonStreamLog.Debug(fmt.Sprintf("Nous Portal extra_body merge failed: '%s' object has no attribute 'update'", pyrepr.TypeName(existing)))
 			return
 		}
 		if !present {
-			extra = map[string]any{}
-			anthropicKwargs["extra_body"] = extra
+			extra = pyjson.NewObject()
 		}
+		anthropicKwargs["extra_body"] = extra
 		body := profile.BuildExtraBody(agent.SessionID(), map[string]any{hookCtxKey: ctx, "data_use": state.DataUseRequirement(apiMessages)})
-		for k, v := range body {
-			extra[k] = v
-		}
+		extra.Update(body)
 	}()
 	return anthropicKwargs
 }

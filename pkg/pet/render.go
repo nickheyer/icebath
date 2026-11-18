@@ -472,6 +472,23 @@ func (r *Renderer) Frame(state string, index int) string {
 	}()
 }
 
+// Frames of a state of a decoded sheet scaled and encoded as the renderer frame does in sixel or iterm mode, with their pixel size
+func SheetFrameEscapes(sheet *image.NRGBA, state, mode string, frameW, frameH, framesPerState int, scale float64) ([]string, int, int) {
+	scaleW, scaleH := max(1, int(float64(frameW)*scale)), max(1, int(float64(frameH)*scale))
+	encode := encodeIterm
+	if mode == "sixel" {
+		encode = encodeSixel
+	}
+	var out []string
+	for _, f := range SheetFrames(sheet, state, frameW, frameH, framesPerState) {
+		if scaleW != frameW || scaleH != frameH {
+			f = pypil.ResizeLanczos(f, scaleW, scaleH)
+		}
+		out = append(out, encode(f))
+	}
+	return out, scaleW, scaleH
+}
+
 // Python modulo of an index by a positive length
 func pyMod(i, n int) int { return ((i % n) + n) % n }
 

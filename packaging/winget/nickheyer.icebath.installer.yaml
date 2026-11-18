@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+PackageIdentifier: nickheyer.icebath
+PackageVersion: "@VERSION@"
+InstallerLocale: en-US
+InstallerType: zip
+NestedInstallerType: exe
+NestedInstallerFiles:
+  - RelativeFilePath: icebath.exe
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+InstallerSwitches:
+  Silent: install-self --install-method winget --non-interactive
+  SilentWithProgress: install-self --install-method winget --non-interactive
+  Interactive: install-self --install-method winget
+  InstallLocation: --dir "<INSTALLPATH>"
+UpgradeBehavior: install
+ElevationRequirement: elevationProhibited
+Commands:
+  - icebath
+ReleaseDate: "@DATE@"
+AppsAndFeaturesEntries:
+  - DisplayName: icebath
+    Publisher: Nicholas W. Heyer
+    DisplayVersion: "@VERSION@"
+    ProductCode: nickheyer.icebath
+    InstallerType: exe
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/nickheyer/icebath/releases/download/@TAG@/icebath_@VERSION@_windows_amd64.zip
+    InstallerSha256: "@SHA256_AMD64@"
+  - Architecture: arm64
+    InstallerUrl: https://github.com/nickheyer/icebath/releases/download/@TAG@/icebath_@VERSION@_windows_arm64.zip
+    InstallerSha256: "@SHA256_ARM64@"
+ManifestType: installer
+ManifestVersion: 1.12.0

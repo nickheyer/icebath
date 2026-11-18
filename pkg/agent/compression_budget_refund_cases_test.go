@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -76,7 +77,7 @@ func runMarathonTurn(t *testing.T, iterations, providerPromptTokens int) (*AIAge
 	a.contextCompressor = engine
 	reg := tools.NewRegistry()
 	payload := `{"ok": true, "payload": "` + strings.Repeat("x", 60_000) + `"}`
-	schema := map[string]any{"name": "web_search", "description": "web_search tool", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+	schema := pyjson.ObjectOf("name", "web_search", "description", "web_search tool", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
 	reg.Register(tools.Def{Name: "web_search", Toolset: "web", Schema: schema, Handler: func(context.Context, *tools.Call) string { return payload }})
 	a.toolDispatcher = tools.NewDispatcher(reg)
 	a.tools = []any{map[string]any{"type": "function", "function": schema}}

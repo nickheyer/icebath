@@ -60,7 +60,7 @@ var storageFailures = map[string]storageFailureCopy{
 		"Nothing is lost. Quit every icebath process on this profile (TUI, " +
 			"`icebath {profile_arg}gateway stop`, cron), run `icebath {profile_arg}doctor` — it names " +
 			"any process still holding the log — then start icebath again. Do not run `doctor --fix` or delete " +
-			"any state.db files while they run. Guide: " + StorageRecoveryDocsURL,
+			"any state.db files while they run.",
 	},
 	"compression": {
 		"storage_busy",

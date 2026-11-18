@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"hash/fnv"
 	"math"
 	"runtime"
@@ -410,11 +411,11 @@ func cachedTools(raws []any) []*Tool {
 		if !ok || !pyTruthy(row["name"]) {
 			continue
 		}
-		t := &Tool{Name: pyStr(row["name"]), InputSchema: map[string]any{}}
+		t := &Tool{Name: pyStr(row["name"]), InputSchema: pyjson.NewObject()}
 		if pyTruthy(row["description"]) {
 			t.Description = pyStr(row["description"])
 		}
-		if schema, ok := row["inputSchema"].(map[string]any); ok {
+		if schema, ok := pyjson.AsObject(row["inputSchema"]); ok {
 			t.InputSchema = schema
 		}
 		if ann, ok := row["annotations"].(map[string]any); ok {
@@ -435,7 +436,7 @@ func cachedTools(raws []any) []*Tool {
 type candidate struct {
 	registryName string
 	origin       string
-	schema       map[string]any
+	schema       *pyjson.Object
 	handler      tools.Handler
 }
 
@@ -453,7 +454,7 @@ func toolCandidates(serverName string, list []*Tool, shouldRegister func(string)
 		scanDescription(serverName, t.Name, t.Description)
 		schema := convertToolSchema(serverName, t)
 		out = append(out, candidate{
-			registryName: pyStr(schema["name"]), origin: "tool " + pyReprStr(t.Name), schema: schema,
+			registryName: pyStr(schema.Vals["name"]), origin: "tool " + pyReprStr(t.Name), schema: schema,
 			handler: makeToolHandler(serverName, t.Name, toolTimeout, true),
 		})
 	}
@@ -468,14 +469,14 @@ func utilityCandidates(serverName string, entries []any, toolTimeout float64) []
 		if !ok {
 			continue
 		}
-		schema, ok := row["schema"].(map[string]any)
+		schema, ok := pyjson.AsObject(row["schema"])
 		key, isStr := row["handler_key"].(string)
 		factory, known := utilityHandlerFactories[key]
-		if !ok || !isStr || !known || !pyTruthy(schema["name"]) {
+		if !ok || !isStr || !known || !pyTruthy(schema.Vals["name"]) {
 			continue
 		}
 		out = append(out, candidate{
-			registryName: pyStr(schema["name"]), origin: utilityOriginPrefix + pyReprStr(key), schema: schema,
+			registryName: pyStr(schema.Vals["name"]), origin: utilityOriginPrefix + pyReprStr(key), schema: schema,
 			handler: factory(serverName, toolTimeout),
 		})
 	}
@@ -589,7 +590,7 @@ func registerCandidates(ctx context.Context, serverName string, candidates []can
 			}
 			continue
 		}
-		desc, _ := c.schema["description"].(string)
+		desc, _ := c.schema.Vals["description"].(string)
 		err := tools.Default.RegisterScoped(scopeValue, tools.Def{
 			Name: c.registryName, Toolset: toolset, Schema: c.schema, Handler: c.handler, Check: check,
 			Description: desc, Timeout: executionTimeout(timeout),
@@ -631,7 +632,7 @@ func writeSchemaCache(ctx context.Context, serverName string, s *serverTask, cfg
 		}
 		schema := t.InputSchema
 		if schema == nil {
-			schema = map[string]any{}
+			schema = pyjson.NewObject()
 		}
 		payload = append(payload, map[string]any{
 			"name": t.Name, "description": t.Description, "inputSchema": schema,

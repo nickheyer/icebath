@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -32,12 +33,12 @@ func auxFreshStructuredMemo(t *testing.T) context.Context {
 
 func auxStrippedFormat(t *testing.T, ctx context.Context, provider, model, baseURL string, format map[string]any) bool {
 	t.Helper()
-	extra := map[string]any{"response_format": format}
+	extra := pyjson.ObjectOf("response_format", format)
 	got, err := WithoutUnsupportedResponseFormat(ctx, extra, provider, baseURL, model, "title_generation")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rf, kept := got["response_format"]
+	rf, kept := got.Vals["response_format"]
 	if kept && !reflect.DeepEqual(rf, format) {
 		t.Fatalf("response_format rewritten to %v", rf)
 	}

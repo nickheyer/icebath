@@ -35,7 +35,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const releaseURLBase = "https://github.com/NousResearch/hermes-agent/releases/tag"
+const releaseURLBase = "https://github.com/nickheyer/icebath/releases/tag"
 
 const bannerSnapshotVersion = 1
 

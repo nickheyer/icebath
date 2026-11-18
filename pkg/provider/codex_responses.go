@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -68,28 +69,25 @@ func (c *codexResponsesClient) DropUnverifiedReplay(messageLists ...[]*state.Mes
 	return c.transport.DropUnverifiedReplay(messageLists...)
 }
 
-// HTTP client with a cached transport per connect timeout
-func (c *codexResponsesClient) httpClient(connect time.Duration) *http.Client {
-	if c.route.Transport != nil {
-		return &http.Client{Transport: c.route.Transport}
-	}
-	c.transportsMu.Lock()
-	defer c.transportsMu.Unlock()
-	tr, ok := c.transports[connect]
-	if !ok {
-		tr = &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
-			TLSClientConfig:       PlatformTLSConfig(),
-			TLSHandshakeTimeout:   connect,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			ExpectContinueTimeout: time.Second,
+// HTTP client writing the SDK head over the route transport or a cached httpx pool per connect timeout
+func (c *codexResponsesClient) httpClient(connect time.Duration) (*http.Client, error) {
+	base := c.route.Transport
+	if base == nil {
+		c.transportsMu.Lock()
+		tr, ok := c.transports[connect]
+		if !ok {
+			built, err := httpxWireTransport(stainlessLimits, connect, nil)
+			if err != nil {
+				c.transportsMu.Unlock()
+				return nil, err
+			}
+			tr = auxTrackPoolConns(built)
+			c.transports[connect] = tr
 		}
-		c.transports[connect] = auxTrackPoolConns(tr)
+		c.transportsMu.Unlock()
+		base = tr
 	}
-	return &http.Client{Transport: tr}
+	return &http.Client{Transport: pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}}, nil
 }
 
 // Overall request timeout and whether configuration supplied it
@@ -398,17 +396,30 @@ func (c *codexResponsesClient) requestHeaders(ctx context.Context, kwargs map[st
 	return headers, nil
 }
 
+// Responses request with the head the OpenAI SDK writes, the bearer as api_key, the other headers as client defaults and the call headers over them
 func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared, body []byte) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	for k, v := range p.headers {
-		httpReq.Header.Set(k, v)
+	key := ""
+	var custom []pyhttpx.HeaderLine
+	for _, k := range pyhttpx.HeaderOrder(p.headers) {
+		if v := p.headers[k]; key == "" && strings.EqualFold(k, "Authorization") && strings.HasPrefix(v, "Bearer ") {
+			key = strings.TrimPrefix(v, "Bearer ")
+			continue
+		}
+		custom = append(custom, pyhttpx.HeaderLine{Name: k, Value: p.headers[k]})
 	}
-	applyProviderRequestHeaders(ctx, httpReq.Header)
+	sdk := newAuxOpenAIClient(key, p.url, auxOpenAIOptions{DefaultHeaders: pyhttpx.OrderedHeaderMap(custom...), Timeout: p.timeout.Seconds()})
+	r := &auxSDKRequest{headers: map[string]any{}, timeout: auxUniformTimeouts(sdk.timeout, sdk.hasTimeout), readTimeoutText: sdk.timeoutText}
+	extra := providerRequestHeaders(ctx)
+	for _, k := range pyhttpx.HeaderOrder(extra) {
+		r.headers[k] = extra[k]
+		r.headerOrder = append(r.headerOrder, k)
+	}
+	httpReq.Host = httpxHost(httpReq.URL)
+	httpReq = pyhttpx.WithWire(httpReq, sdk.wireHeaders(key, r, 0))
 	codexCompressRequest(httpReq, c.route.BaseURL, body)
 	return httpReq, nil
 }
@@ -629,7 +640,11 @@ func (c *codexResponsesClient) streamOnce(ctx context.Context, req *Request, p *
 	if err != nil {
 		return nil, 0, err
 	}
-	resp, err := c.httpClient(connect).Do(httpReq)
+	hc, err := c.httpClient(connect)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp, err := hc.Do(httpReq)
 	if err != nil {
 		if ctx.Err() == nil && errors.Is(attemptCtx.Err(), context.DeadlineExceeded) {
 			return nil, 0, &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.", p.timeout.Seconds())}

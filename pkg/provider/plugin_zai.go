@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math/big"
 	"strings"
 	"unicode"
@@ -58,9 +59,9 @@ func zaiGLM52ReasoningEffort(reasoning *Reasoning, model string) string {
 }
 
 // Thinking toggle in the extra body plus the GLM 5.2 native effort, 5.3 never accepting disabled thinking
-func zaiBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func zaiBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	model := hookString(kw, "model")
-	extra, top := map[string]any{}, map[string]any{}
+	extra, top := pyjson.ObjectOf(), map[string]any{}
 	is52 := zaiModelHasToken(model, glm52Tokens)
 	if !glmSupportsThinking(model) && !is52 {
 		return extra, top
@@ -72,9 +73,9 @@ func zaiBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[strin
 			top["reasoning_effort"] = "low"
 		}
 		if enabled {
-			extra["thinking"] = map[string]any{"type": "enabled", "clear_thinking": false}
+			extra.Set("thinking", pyjson.ObjectOf("type", "enabled", "clear_thinking", false))
 		} else {
-			extra["thinking"] = map[string]any{"type": "disabled"}
+			extra.Set("thinking", pyjson.ObjectOf("type", "disabled"))
 		}
 	}
 	if is52 {

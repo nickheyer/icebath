@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -18,19 +19,22 @@ func OneshotToolSchemas(schemas []map[string]any) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(schemas))
 	for _, tool := range schemas {
 		raw := tool["function"]
-		fn, isMap := raw.(map[string]any)
+		fn, isMap := pyjson.AsObject(raw)
 		if !isMap && pyrepr.Truthy(raw) {
 			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
 		}
-		if name, _ := fn["name"].(string); name != "delegate_task" {
+		if !isMap {
+			fn = pyjson.NewObject()
+		}
+		if name, _ := fn.Vals["name"].(string); name != "delegate_task" {
 			out = append(out, tool)
 			continue
 		}
-		params, hasParams := fn["parameters"].(map[string]any)
+		params, hasParams := pyjson.Dict(fn.Vals["parameters"])
 		if !hasParams {
 			return nil, fmt.Errorf("KeyError: 'parameters'")
 		}
-		if _, hasProps := params["properties"].(map[string]any); !hasProps {
+		if _, hasProps := pyjson.Dict(params["properties"]); !hasProps {
 			return nil, fmt.Errorf("KeyError: 'properties'")
 		}
 		variant := tools.OneshotDelegateFunction(fn)

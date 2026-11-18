@@ -489,3 +489,11 @@ func (e *porcupineEngine) Process(frame []int16) (bool, error) {
 }
 
 func (e *porcupineEngine) Close() { e.porcupine.Delete() }
+
+// Python sys.platform of the host, win32 on Windows and the GOOS name elsewhere
+func sysPlatform() string {
+	if runtime.GOOS == "windows" {
+		return "win32"
+	}
+	return runtime.GOOS
+}

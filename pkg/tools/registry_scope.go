@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -377,7 +378,7 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 	if lazy {
 		d.schemaOnce = new(sync.Once)
 	} else if d.Description == "" {
-		if s, ok := d.Schema["description"].(string); ok {
+		if s, ok := d.Schema.Vals["description"].(string); ok {
 			d.Description = s
 		}
 	}
@@ -678,7 +679,7 @@ func (r *Registry) MaxResultSize(ctx context.Context, scope, name string, fallba
 }
 
 // Schema returns a visible tool's raw schema bypassing availability checks
-func (r *Registry) Schema(ctx context.Context, scope, name string) map[string]any {
+func (r *Registry) Schema(ctx context.Context, scope, name string) *pyjson.Object {
 	if d := r.Lookup(ctx, scope, name); d != nil {
 		return d.Schema
 	}

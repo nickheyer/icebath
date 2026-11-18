@@ -90,7 +90,7 @@ func (s *GatewayControlServer) privateHandler(verb string) (ControlPrivateHandle
 func (s *GatewayControlServer) Start() bool {
 	if err := s.startPlatform(); err != nil {
 		s.Stop()
-		slog.Warn(fmt.Sprintf("Gateway control socket failed to start: %s", pyrepr.ExceptionMessage(err)))
+		controlSocketLog().Warn(fmt.Sprintf("Gateway control socket failed to start: %s", pyrepr.ExceptionMessage(err)))
 		return false
 	}
 	return true
@@ -422,3 +422,6 @@ func BuildStatusPayload() *pyjson.Object {
 	payload.Set("answering_pid", int64(os.Getpid()))
 	return payload
 }
+
+// Logger of the reference module gateway.control_socket
+func controlSocketLog() *slog.Logger { return slog.Default().With("logger", "gateway.control_socket") }

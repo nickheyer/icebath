@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strconv"
 	"strings"
@@ -176,6 +177,6 @@ func TestBudgetForContextWindow(t *testing.T) {
 }
 
 func probeDef(name string, maxChars int) Def {
-	return Def{Name: name, Toolset: "test", MaxResultChars: maxChars, Schema: map[string]any{"name": name},
+	return Def{Name: name, Toolset: "test", MaxResultChars: maxChars, Schema: pyjson.ObjectOf("name", name),
 		Handler: func(context.Context, *Call) string { return "" }}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,7 +204,7 @@ func TestGetToolEmojiCustomDefault(t *testing.T) {
 
 func TestGetToolEmojiSkinOverrideOnlyForMatchingTool(t *testing.T) {
 	env := &Env{Home: t.TempDir()}
-	if err := Default.RegisterScoped(ScopeKey(envHome(env)), Def{Name: "web_search", Toolset: "web", Emoji: "\U0001f50d", Handler: func(context.Context, *Call) string { return "" }, Schema: map[string]any{"name": "web_search", "description": "search", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}}); err != nil {
+	if err := Default.RegisterScoped(ScopeKey(envHome(env)), Def{Name: "web_search", Toolset: "web", Emoji: "\U0001f50d", Handler: func(context.Context, *Call) string { return "" }, Schema: pyjson.ObjectOf("name", "web_search", "description", "search", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))}); err != nil {
 		t.Fatal(err)
 	}
 	SetSkinToolEmojis(func() map[string]string { return map[string]string{"terminal": "\u2694"} })

@@ -9,7 +9,6 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"gopkg.in/yaml.v3"
 )
 
 // Key order and failed read marker carried by one live map, dropped once the map is collected
@@ -19,6 +18,7 @@ type mapMeta struct {
 	keys   []string
 	failed error
 	pyKeys map[string]any
+	class  string
 }
 
 var (
@@ -152,7 +152,7 @@ func copyMeta(dst, src map[string]any) {
 		return
 	}
 	mapMetaMu.Lock()
-	keys, failed := append([]string(nil), meta.keys...), meta.failed
+	keys, failed, class := append([]string(nil), meta.keys...), meta.failed, meta.class
 	pyKeys := make(map[string]any, len(meta.pyKeys))
 	for k, v := range meta.pyKeys {
 		pyKeys[k] = v
@@ -165,6 +165,29 @@ func copyMeta(dst, src map[string]any) {
 	for k, v := range pyKeys {
 		SetMappingPyKey(dst, k, v)
 	}
+	if class != "" {
+		SetMappingClass(dst, class)
+	}
+}
+
+// Records the Python dict subclass a mapping loaded as, such as ordereddict for a YAML omap
+func SetMappingClass(m map[string]any, class string) {
+	if meta := attachMeta(m); meta != nil {
+		mapMetaMu.Lock()
+		meta.class = class
+		mapMetaMu.Unlock()
+	}
+}
+
+// Python dict subclass name recorded for a mapping, empty for a plain dict
+func MappingClass(m map[string]any) string {
+	meta := lookupMeta(m)
+	if meta == nil {
+		return ""
+	}
+	mapMetaMu.Lock()
+	defer mapMetaMu.Unlock()
+	return meta.class
 }
 
 // Records that a string key of a mapping stands for a non str Python key such as True, 1 or None
@@ -194,46 +217,3 @@ func MappingPyKey(m map[string]any, key string) (any, bool) {
 // Map key under which a non str Python key is stored, never equal to a key a YAML str produces
 func PyKeyString(pyKey any) string { return "\x00" + pyrepr.Repr(pyKey) }
 
-// Records the file order of every mapping in a decoded document from the node it was decoded from
-func recordNodeOrder(node *yaml.Node, value any) {
-	for node != nil && (node.Kind == yaml.DocumentNode || node.Kind == yaml.AliasNode) {
-		if node.Kind == yaml.DocumentNode {
-			if len(node.Content) == 0 {
-				return
-			}
-			node = node.Content[0]
-		} else {
-			node = node.Alias
-		}
-	}
-	if node == nil {
-		return
-	}
-	switch v := value.(type) {
-	case map[string]any:
-		if node.Kind != yaml.MappingNode {
-			return
-		}
-		keys := make([]string, 0, len(node.Content)/2)
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			k := node.Content[i]
-			if k.Kind == yaml.ScalarNode && k.Tag == "!!merge" {
-				continue
-			}
-			child, ok := v[k.Value]
-			if !ok {
-				continue
-			}
-			keys = append(keys, k.Value)
-			recordNodeOrder(node.Content[i+1], child)
-		}
-		SetMappingKeys(v, keys)
-	case []any:
-		if node.Kind != yaml.SequenceNode {
-			return
-		}
-		for i := 0; i < len(v) && i < len(node.Content); i++ {
-			recordNodeOrder(node.Content[i], v[i])
-		}
-	}
-}

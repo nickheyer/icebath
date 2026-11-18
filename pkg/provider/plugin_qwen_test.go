@@ -14,7 +14,7 @@ func TestQwenPluginProfileMatchesUpstreamRegistration(t *testing.T) {
 		t.Fatalf("extra body = %v", got)
 	}
 	md := map[string]any{"sessionId": "abc"}
-	if extra, top := p.BuildAPIKwargsExtras(nil, map[string]any{"qwen_session_metadata": md}); len(extra) != 0 || !reflect.DeepEqual(top, map[string]any{"metadata": md}) {
+	if extra, top := p.BuildAPIKwargsExtras(nil, map[string]any{"qwen_session_metadata": md}); extra.Len() != 0 || !reflect.DeepEqual(top, map[string]any{"metadata": md}) {
 		t.Fatalf("kwargs = %v %v", extra, top)
 	}
 	if _, top := p.BuildAPIKwargsExtras(nil, map[string]any{"qwen_session_metadata": map[string]any{}}); len(top) != 0 {

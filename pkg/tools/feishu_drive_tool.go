@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -81,88 +82,88 @@ const (
 	feishuAddCommentURI = "/open-apis/drive/v1/files/:file_token/new_comments"
 )
 
-func feishuFileTokenProp() map[string]any {
-	return map[string]any{"type": "string", "description": "The document file token."}
+func feishuFileTokenProp() *pyjson.Object {
+	return Dict("type", "string", "description", "The document file token.")
 }
 
-func feishuFileTypeProp() map[string]any {
-	return map[string]any{"type": "string", "description": "File type (default: docx).", "default": "docx"}
+func feishuFileTypeProp() *pyjson.Object {
+	return Dict("type", "string", "description", "File type (default: docx).", "default", "docx")
 }
 
-func feishuPageTokenProp() map[string]any {
-	return map[string]any{"type": "string", "description": "Pagination token for next page."}
+func feishuPageTokenProp() *pyjson.Object {
+	return Dict("type", "string", "description", "Pagination token for next page.")
 }
 
-func feishuDriveSchema(name, description string, properties map[string]any, required ...any) map[string]any {
-	return map[string]any{"name": name, "description": description,
-		"parameters": map[string]any{"type": "object", "properties": properties, "required": required}}
+func feishuDriveSchema(name, description string, properties *pyjson.Object, required ...any) *pyjson.Object {
+	return Dict("name", name, "description", description,
+		"parameters", Dict("type", "object", "properties", properties, "required", required))
 }
 
 var feishuDriveListCommentsSchema = feishuDriveSchema("feishu_drive_list_comments",
 	"List comments on a Feishu document. "+
 		"Use is_whole=true to list whole-document comments only.",
-	map[string]any{
-		"file_token": feishuFileTokenProp(),
-		"file_type":  feishuFileTypeProp(),
-		"is_whole": map[string]any{
-			"type":        "boolean",
-			"description": "If true, only return whole-document comments.",
-			"default":     false,
-		},
-		"page_size": map[string]any{
-			"type":        "integer",
-			"description": "Number of comments per page (max 100).",
-			"default":     100,
-		},
-		"page_token": feishuPageTokenProp(),
-	}, "file_token")
+	Dict(
+		"file_token", feishuFileTokenProp(),
+		"file_type", feishuFileTypeProp(),
+		"is_whole", Dict(
+			"type", "boolean",
+			"description", "If true, only return whole-document comments.",
+			"default", false,
+		),
+		"page_size", Dict(
+			"type", "integer",
+			"description", "Number of comments per page (max 100).",
+			"default", 100,
+		),
+		"page_token", feishuPageTokenProp(),
+	), "file_token")
 
 var feishuDriveListRepliesSchema = feishuDriveSchema("feishu_drive_list_comment_replies",
 	"List all replies in a comment thread on a Feishu document.",
-	map[string]any{
-		"file_token": feishuFileTokenProp(),
-		"comment_id": map[string]any{
-			"type":        "string",
-			"description": "The comment ID to list replies for.",
-		},
-		"file_type": feishuFileTypeProp(),
-		"page_size": map[string]any{
-			"type":        "integer",
-			"description": "Number of replies per page (max 100).",
-			"default":     100,
-		},
-		"page_token": feishuPageTokenProp(),
-	}, "file_token", "comment_id")
+	Dict(
+		"file_token", feishuFileTokenProp(),
+		"comment_id", Dict(
+			"type", "string",
+			"description", "The comment ID to list replies for.",
+		),
+		"file_type", feishuFileTypeProp(),
+		"page_size", Dict(
+			"type", "integer",
+			"description", "Number of replies per page (max 100).",
+			"default", 100,
+		),
+		"page_token", feishuPageTokenProp(),
+	), "file_token", "comment_id")
 
 var feishuDriveReplySchema = feishuDriveSchema("feishu_drive_reply_comment",
 	"Reply to a local comment thread on a Feishu document. "+
 		"Use this for local (quoted-text) comments. "+
 		"For whole-document comments, use feishu_drive_add_comment instead.",
-	map[string]any{
-		"file_token": feishuFileTokenProp(),
-		"comment_id": map[string]any{
-			"type":        "string",
-			"description": "The comment ID to reply to.",
-		},
-		"content": map[string]any{
-			"type":        "string",
-			"description": "The reply text content (plain text only, no markdown).",
-		},
-		"file_type": feishuFileTypeProp(),
-	}, "file_token", "comment_id", "content")
+	Dict(
+		"file_token", feishuFileTokenProp(),
+		"comment_id", Dict(
+			"type", "string",
+			"description", "The comment ID to reply to.",
+		),
+		"content", Dict(
+			"type", "string",
+			"description", "The reply text content (plain text only, no markdown).",
+		),
+		"file_type", feishuFileTypeProp(),
+	), "file_token", "comment_id", "content")
 
 var feishuDriveAddCommentSchema = feishuDriveSchema("feishu_drive_add_comment",
 	"Add a new whole-document comment on a Feishu document. "+
 		"Use this for whole-document comments or as a fallback when "+
 		"reply_comment fails with code 1069302.",
-	map[string]any{
-		"file_token": feishuFileTokenProp(),
-		"content": map[string]any{
-			"type":        "string",
-			"description": "The comment text content (plain text only, no markdown).",
-		},
-		"file_type": feishuFileTypeProp(),
-	}, "file_token", "content")
+	Dict(
+		"file_token", feishuFileTokenProp(),
+		"content", Dict(
+			"type", "string",
+			"description", "The comment text content (plain text only, no markdown).",
+		),
+		"file_type", feishuFileTypeProp(),
+	), "file_token", "content")
 
 var handleFeishuListComments = feishuCommentOp([]string{"file_token"}, "file_token is required", "List comments", "GET", feishuCommentsURI,
 	func(a map[string]any) []larkQuery {
@@ -191,7 +192,7 @@ var handleFeishuAddComment = feishuCommentOp([]string{"file_token", "content"}, 
 
 func init() {
 	for _, t := range []struct {
-		schema      map[string]any
+		schema      *pyjson.Object
 		handler     Handler
 		desc, emoji string
 	}{
@@ -200,7 +201,7 @@ func init() {
 		{feishuDriveReplySchema, handleFeishuReplyComment, "Reply to a document comment", "✉️"},
 		{feishuDriveAddCommentSchema, handleFeishuAddComment, "Add a whole-document comment", "✉️"},
 	} {
-		Register(Def{Name: t.schema["name"].(string), Toolset: "feishu_drive", Schema: t.schema, Handler: t.handler,
+		Register(Def{Name: t.schema.Vals["name"].(string), Toolset: "feishu_drive", Schema: t.schema, Handler: t.handler,
 			Check: feishuToolsReady, RequiresEnv: []string{}, Description: t.desc, Emoji: t.emoji})
 	}
 }

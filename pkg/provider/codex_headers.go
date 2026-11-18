@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Reports whether a base URL is OpenAI's own Codex backend rather than a proxy
@@ -26,18 +28,15 @@ func isOfficialCodexBaseURL(baseURL string) bool {
 
 // Identity and account headers for the Codex backend, icebath identity on the official host
 func codexCloudflareHeaders(accessToken, baseURL string) map[string]string {
-	headers := map[string]string{}
+	lines := []pyhttpx.HeaderLine{{Name: "User-Agent", Value: "codex_cli_rs/0.0.0 (Icebath Agent)"}, {Name: "originator", Value: "codex_cli_rs"}}
 	if isOfficialCodexBaseURL(baseURL) {
-		headers["User-Agent"] = "IcebathAgent/" + Version
-		headers["originator"] = "icebath-agent"
-	} else {
-		headers["User-Agent"] = "codex_cli_rs/0.0.0 (Icebath Agent)"
-		headers["originator"] = "codex_cli_rs"
+		lines = []pyhttpx.HeaderLine{{Name: "User-Agent", Value: userAgent("IcebathAgent")}, {Name: "originator", Value: "icebath-agent"}}
 	}
-	for k, v := range codexAccountHeaders(accessToken) {
-		headers[k] = v
+	account := codexAccountHeaders(accessToken)
+	for _, k := range pyhttpx.HeaderOrder(account) {
+		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: account[k]})
 	}
-	return headers
+	return pyhttpx.OrderedHeaderMap(lines...)
 }
 
 // Codex backend identity and account headers for an access token and base url
@@ -60,17 +59,18 @@ func codexAccountHeaders(accessToken string) map[string]string {
 	if auth == nil {
 		return headers
 	}
+	var lines []pyhttpx.HeaderLine
 	if acct, ok := auth["chatgpt_account_id"].(string); ok && acct != "" {
-		headers["ChatGPT-Account-ID"] = acct
+		lines = append(lines, pyhttpx.HeaderLine{Name: "ChatGPT-Account-ID", Value: acct})
 	}
 	residency, _ := auth["chatgpt_data_residency"].(string)
 	if residency == "" {
 		residency, _ = auth["chatgpt_compute_residency"].(string)
 	}
 	if strings.TrimSpace(residency) != "" {
-		headers["x-openai-internal-codex-residency"] = strings.TrimSpace(residency)
+		lines = append(lines, pyhttpx.HeaderLine{Name: "x-openai-internal-codex-residency", Value: strings.TrimSpace(residency)})
 	}
-	return headers
+	return pyhttpx.OrderedHeaderMap(lines...)
 }
 
 // Zstd compresses a Responses POST body for the official Codex backend and stamps the encoding header
@@ -90,6 +90,10 @@ func codexCompressRequest(req *http.Request, baseURL string, body []byte) []byte
 	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(compressed)), nil }
 	req.Header.Set("Content-Encoding", "zstd")
 	req.Header.Set("Content-Length", strconv.Itoa(len(compressed)))
+	if wire := pyhttpx.WireOf(req); wire != nil {
+		wire.Set("Content-Length", strconv.Itoa(len(compressed)))
+		wire.Set("Content-Encoding", "zstd")
+	}
 	return compressed
 }
 
@@ -99,16 +103,14 @@ func applyRequiredCodexHeaders(headers map[string]string, accessToken, baseURL s
 		return headers
 	}
 	required := codexCloudflareHeaders(accessToken, baseURL)
-	out := map[string]string{}
-	for name, value := range headers {
-		if _, taken := requiredLower(required)[strings.ToLower(name)]; !taken {
-			out[name] = value
+	taken := requiredLower(required)
+	var lines []pyhttpx.HeaderLine
+	for _, name := range pyhttpx.HeaderOrder(headers) {
+		if _, ok := taken[strings.ToLower(name)]; !ok {
+			lines = append(lines, pyhttpx.HeaderLine{Name: name, Value: headers[name]})
 		}
 	}
-	for name, value := range required {
-		out[name] = value
-	}
-	return out
+	return pyhttpx.MergeHeaderMaps(pyhttpx.OrderedHeaderMap(lines...), required)
 }
 
 // ApplyRequiredCodexHeaders adds the identity headers the official Codex endpoint requires

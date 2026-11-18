@@ -29,8 +29,6 @@ var OfferChoices = []OfferChoice{{"Share with Nous", true, true}, {"No thanks", 
 var noThanks = len(OfferChoices) - 1
 
 const (
-	// DocsURL is the developer guide page describing shared metrics
-	DocsURL = "https://hermes-agent.nousresearch.com/docs/developer-guide/relay-shared-metrics"
 	// OfferVersion is bumped only when every earlier answer must be asked again
 	OfferVersion = 2
 	reaskNote    = "Asking once more: an earlier version could save \"No thanks\" before you saw this question."
@@ -43,7 +41,6 @@ var offerDescription = strings.Join([]string{
 		"files, paths, setting values or error text. Sharing sends them to Nous once a " +
 		"day. Apart from a one-time install note, data from before you opt in is never " +
 		"sent.",
-	"Details: " + DocsURL,
 	"Change it any time: start icebath and type /setup telemetry",
 }, "\n")
 

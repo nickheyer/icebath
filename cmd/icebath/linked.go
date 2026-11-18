@@ -4,10 +4,12 @@ package main
 import (
 	_ "github.com/nickheyer/icebath/pkg/agentimport/openclaw"
 	_ "github.com/nickheyer/icebath/pkg/builtin"
+	_ "github.com/nickheyer/icebath/pkg/builtin/agentimporters"
 	_ "github.com/nickheyer/icebath/pkg/builtin/camofox"
 	_ "github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	_ "github.com/nickheyer/icebath/pkg/builtin/diskcleanup"
 	_ "github.com/nickheyer/icebath/pkg/builtin/langfuse"
+	_ "github.com/nickheyer/icebath/pkg/builtin/mcpserveplugin"
 	_ "github.com/nickheyer/icebath/pkg/builtin/securityguidance"
 	_ "github.com/nickheyer/icebath/pkg/builtin/spotify"
 	_ "github.com/nickheyer/icebath/pkg/builtin/teamspipeline"

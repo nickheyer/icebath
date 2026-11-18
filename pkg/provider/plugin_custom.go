@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"time"
 )
@@ -25,10 +26,10 @@ func customPluginProfiles() []Profile {
 }
 
 // Ollama num_ctx option, reasoning off as effort none with think false on Ollama, Groq default, else the clamped effort
-func customBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
-	extraBody, topLevel := map[string]any{}, map[string]any{}
+func customBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+	extraBody, topLevel := pyjson.ObjectOf(), map[string]any{}
 	if numCtx := kw["ollama_num_ctx"]; pyTruthy(numCtx) {
-		extraBody["options"] = map[string]any{"num_ctx": numCtx}
+		extraBody.Set("options", pyjson.ObjectOf("num_ctx", numCtx))
 	}
 	cfg := reasoningConfigMap(reasoning)
 	if len(cfg) == 0 {
@@ -41,7 +42,7 @@ func customBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[st
 	case effort == "none" || cfg["enabled"] == false:
 		topLevel["reasoning_effort"] = "none"
 		if looksLikeOllamaEndpoint(baseURL) {
-			extraBody["think"] = false
+			extraBody.Set("think", false)
 		}
 	case effort != "" && baseURLHostMatches(baseURL, "api.groq.com"):
 		topLevel["reasoning_effort"] = "default"

@@ -43,7 +43,7 @@ func registerSearchTool(t *testing.T, name, toolset string, params map[string]an
 	Default.mu.RLock()
 	previous := Default.tools[name]
 	Default.mu.RUnlock()
-	Default.Register(Def{Name: name, Toolset: toolset, Schema: map[string]any{"name": name, "description": "desc " + name, "parameters": params},
+	Default.Register(Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name, "description", "desc "+name, "parameters", params),
 		Handler: func(ctx context.Context, call *Call) string {
 			return jsonCompact(map[string]any{"ok": true, "args": call.Args})
 		}})

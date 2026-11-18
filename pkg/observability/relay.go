@@ -498,7 +498,7 @@ func (r *Runtime) emitClientActiveLocked(ctx context.Context, session *metricsSe
 	return nil
 }
 
-// Install snapshot mark at most once per store latch, rereading the latch hourly
+// Install snapshot mark at most once per store latch, rereading it hourly and again next activation after a busy read
 func (r *Runtime) emitInstallSnapshotIfDue(ctx context.Context, session *metricsSession) error {
 	now := monotonicNS()
 	r.snapshotMu.Lock()
@@ -509,6 +509,12 @@ func (r *Runtime) emitInstallSnapshotIfDue(ctx context.Context, session *metrics
 	r.snapshotAt = &now
 	r.snapshotMu.Unlock()
 	due, err := r.Subscriber.Store.InstallSnapshotDue(ctx)
+	if err != nil && isSQLiteOperational(err) && isContention(err) {
+		r.snapshotMu.Lock()
+		r.snapshotAt = nil
+		r.snapshotMu.Unlock()
+		return nil
+	}
 	if err != nil || !due {
 		return err
 	}

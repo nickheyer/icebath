@@ -21,19 +21,6 @@ func sameJSON(a, b any) bool {
 	return errA == nil && errB == nil && left == right
 }
 
-// Event frame of the scripted session for generation seven, admission adm-1 unless another is named
-func scriptFrame(kind string, payload map[string]any, admission ...string) map[string]any {
-	params := map[string]any{"type": kind, "session_id": scriptSID, "execution_generation": 7, "payload": payload}
-	adm := "adm-1"
-	if len(admission) > 0 {
-		adm = admission[0]
-	}
-	if adm != "" {
-		params["admission_id"] = adm
-	}
-	return map[string]any{"jsonrpc": "2.0", "method": "event", "params": params}
-}
-
 type scriptedCall struct {
 	method string
 	params map[string]any

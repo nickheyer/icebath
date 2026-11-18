@@ -106,9 +106,9 @@ func FileCacheVersionOf(path string, fi os.FileInfo) []any {
 	return fileCacheVersionOf(path, fi, false)
 }
 
-// Parsed YAML root of bytes under the shared safe_load policy, nil for an empty document, mappings string keyed
+// Parsed YAML root of file bytes read as utf-8 text under the shared safe_load policy, nil for an empty document
 func FastSafeLoad(data []byte) (any, error) {
-	return loadYAMLDocument(data)
+	return SafeLoadText(data, false)
 }
 
 type yamlFileCacheEntry struct {

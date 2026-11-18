@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"sort"
@@ -254,7 +255,7 @@ var backfillDetailKeys = []string{"signature", "id", "format", "index"}
 
 // Readable text of a reasoning detail delta, never opaque replay material
 func streamedReasoningDetailText(detail any) string {
-	dm, ok := detail.(map[string]any)
+	dm, ok := pyjson.Dict(detail)
 	if !ok {
 		return ""
 	}
@@ -274,32 +275,54 @@ func detailValueEmpty(v any) bool {
 	return ok && s == ""
 }
 
+// Wire ordered copy of one reasoning detail entry, a plain map taking its keys in sorted order
+func reasoningDetailObject(detail any) *pyjson.Object {
+	out := pyjson.NewObject()
+	switch d := detail.(type) {
+	case *pyjson.Object:
+		if d == nil {
+			return nil
+		}
+		for _, k := range d.Keys {
+			out.Set(k, d.Vals[k])
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(d))
+		for k := range d {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			out.Set(k, d[k])
+		}
+	default:
+		return nil
+	}
+	return out
+}
+
 // Accumulates one streamed reasoning_details entry, merging consecutive text and summary fragments
-func appendStreamedReasoningDetail(acc []map[string]any, detail any) []map[string]any {
-	dm, ok := detail.(map[string]any)
-	if !ok {
+func appendStreamedReasoningDetail(acc []*pyjson.Object, detail any) []*pyjson.Object {
+	entry := reasoningDetailObject(detail)
+	if entry == nil {
 		return acc
 	}
-	dtype := stringOf(dm["type"])
+	dtype := stringOf(entry.Vals["type"])
 	mergeKey, mergeable := mergeableDetailTextKeys[dtype]
 	if len(acc) > 0 && mergeable {
 		last := acc[len(acc)-1]
-		if frag, isStr := dm[mergeKey].(string); isStr && stringOf(last["type"]) == dtype {
-			prev, _ := last[mergeKey].(string)
-			last[mergeKey] = prev + frag
+		if frag, isStr := entry.Vals[mergeKey].(string); isStr && stringOf(last.Vals["type"]) == dtype {
+			prev, _ := last.Vals[mergeKey].(string)
+			last.Set(mergeKey, prev+frag)
 			for _, k := range backfillDetailKeys {
-				if detailValueEmpty(last[k]) && !detailValueEmpty(dm[k]) {
-					last[k] = dm[k]
+				if detailValueEmpty(last.Vals[k]) && !detailValueEmpty(entry.Vals[k]) {
+					last.Set(k, entry.Vals[k])
 				}
 			}
 			return acc
 		}
 	}
-	cp := make(map[string]any, len(dm))
-	for k, v := range dm {
-		cp[k] = v
-	}
-	return append(acc, cp)
+	return append(acc, entry)
 }
 
 // Delta prefixed with a paragraph break when it opens a closed bold heading onto mid line text
@@ -916,7 +939,7 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 		fixed = fixed[:len(fixed)-1]
 	}
 	if jsonLoadsOK(fixed) {
-		catalogLog.Warn(fmt.Sprintf("Repaired malformed tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(fixed, 80)))
+		slog.Default().With("logger", "agent.message_sanitization").Warn(fmt.Sprintf("Repaired malformed tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(fixed, 80)))
 		return fixed
 	}
 	escaped := escapeInvalidCharsInJSONStrings(fixed)
@@ -924,7 +947,7 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 		catalogLog.Warn(fmt.Sprintf("Repaired control-char-laced tool_call arguments for %s: %s → %s", toolName, truncate(stripped, 80), truncate(escaped, 80)))
 		return escaped
 	}
-	catalogLog.Warn(fmt.Sprintf("Unrepairable tool_call arguments for %s — replaced with empty object (was: %s)", toolName, truncate(stripped, fullArgsLogBound)))
+	slog.Default().With("logger", "agent.message_sanitization").Warn(fmt.Sprintf("Unrepairable tool_call arguments for %s — replaced with empty object (was: %s)", toolName, truncate(stripped, fullArgsLogBound)))
 	return "{}"
 }
 

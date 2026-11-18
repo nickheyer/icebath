@@ -734,15 +734,15 @@ func runPeerPool(ctx context.Context, matches []peerMatch, message, contextID st
 	return results
 }
 
-func strProp(description string) map[string]any {
-	return map[string]any{"type": "string", "description": description}
+func strProp(description string) *pyjson.Object {
+	return pyjson.ObjectOf("type", "string", "description", description)
 }
 
 type a2aTool struct {
 	name        string
 	handler     func(context.Context, map[string]any) string
 	description string
-	properties  map[string]any
+	properties  *pyjson.Object
 	required    []string
 }
 
@@ -750,31 +750,31 @@ var a2aTools = []a2aTool{
 	{"a2a_discover", A2ADiscover,
 		"Fetch a remote agent's A2A Agent Card (name, capabilities, skills) from a URL. " +
 			"Use this to find out what a remote agent can do before calling it.",
-		map[string]any{"url": strProp("Base URL of the remote A2A agent, e.g. http://localhost:9999")}, []string{"url"}},
+		pyjson.ObjectOf("url", strProp("Base URL of the remote A2A agent, e.g. http://localhost:9999")), []string{"url"}},
 	{"a2a_call", A2ACall,
 		"Send a natural-language task to a remote A2A agent and return its reply. The agent is a peer " +
 			"(any A2A-compliant framework), not a sub-agent you control. Pass 'context_id' from a previous " +
 			"reply to continue a multi-turn exchange.",
-		map[string]any{"agent": strProp("Configured peer name (from a2a_agents) or a full http(s):// URL."),
-			"message":    strProp("The task / message to send the peer, in natural language."),
-			"context_id": strProp("Optional: context id from a prior reply, to continue the conversation.")},
+		pyjson.ObjectOf("agent", strProp("Configured peer name (from a2a_agents) or a full http(s):// URL."),
+			"message",    strProp("The task / message to send the peer, in natural language."),
+			"context_id", strProp("Optional: context id from a prior reply, to continue the conversation.")),
 		[]string{"agent", "message"}},
-	{"a2a_list", A2AList, "List configured A2A peer agents, persisted A2A conversations, and metrics.", map[string]any{}, nil},
+	{"a2a_list", A2AList, "List configured A2A peer agents, persisted A2A conversations, and metrics.", pyjson.ObjectOf(), nil},
 	{"a2a_history", A2AHistory,
 		"Recall a persisted A2A conversation transcript by context_id. It survives restarts and " +
 			"context compaction; use a2a_list to see known context ids.",
-		map[string]any{"context_id": strProp("Context id of the conversation to recall."),
-			"limit": map[string]any{"type": "integer", "description": "Max messages to return (default 50, max 200)."}},
+		pyjson.ObjectOf("context_id", strProp("Context id of the conversation to recall."),
+			"limit", pyjson.ObjectOf("type", "integer", "description", "Max messages to return (default 50, max 200).")),
 		[]string{"context_id"}},
 	{"a2a_orchestrate", A2AOrchestrate,
 		"Fan-out a task to multiple peer agents by capability. Peers are matched from config.yaml " +
 			"a2a_agents.*.capabilities. Modes: 'all' (return all replies), 'first' (first successful), " +
 			"'best' (longest successful reply).",
-		map[string]any{"capability": strProp("Capability to match (e.g. 'research', 'code') or '*' for all peers."),
-			"message": strProp("The task to send to all matching peers."),
-			"mode": map[string]any{"type": "string", "enum": []any{"all", "first", "best"},
-				"description": "How to aggregate results. Default: 'all'."},
-			"context_id": strProp("Optional: shared context id for all peers.")},
+		pyjson.ObjectOf("capability", strProp("Capability to match (e.g. 'research', 'code') or '*' for all peers."),
+			"message", strProp("The task to send to all matching peers."),
+			"mode", pyjson.ObjectOf("type", "string", "enum", []any{"all", "first", "best"},
+				"description", "How to aggregate results. Default: 'all'."),
+			"context_id", strProp("Optional: shared context id for all peers.")),
 		[]string{"capability", "message"}},
 }
 
@@ -825,13 +825,13 @@ func a2aToolsAvailable(env *tools.Env) (available bool) {
 func toolSpecs() []plugins.ToolSpec {
 	specs := make([]plugins.ToolSpec, 0, len(a2aTools))
 	for _, t := range a2aTools {
-		parameters := map[string]any{"type": "object", "properties": t.properties}
+		parameters := pyjson.ObjectOf("type", "object", "properties", t.properties)
 		if len(t.required) > 0 {
-			parameters["required"] = t.required
+			parameters.Set("required", t.required)
 		}
 		handler := t.handler
 		specs = append(specs, plugins.ToolSpec{Name: t.name, Toolset: "a2a", Description: t.description,
-			Schema:  map[string]any{"name": t.name, "description": t.description, "parameters": parameters},
+			Schema:  pyjson.ObjectOf("name", t.name, "description", t.description, "parameters", parameters),
 			Handler: func(ctx context.Context, call *tools.Call) string { return handler(ctx, call.Args) },
 			Emoji:   "\U0001f9e9", Check: a2aToolsAvailable})
 	}

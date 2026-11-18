@@ -136,7 +136,7 @@ func cmdUpdateCheck(ctx context.Context, w io.Writer, branch string, branchExpli
 		return err
 	}
 	if fetchResult.ReturnCode != 0 {
-		if err := printFetchFailure(ctx, w, fetchResult.Stderr, gitCmd, root); err != nil {
+		if err := printFetchFailure(ctx, w, fetchResult.Stderr, gitCmd, root, branch); err != nil {
 			return err
 		}
 		return &pm.SystemExit{Code: 1}

@@ -180,7 +180,7 @@ func TestAdmissionSourceCheckoutOnTermuxHostRefusesWithAptHint(t *testing.T) {
 	if refused == nil || refused.Code != "apt-termux" {
 		t.Fatalf("refusal = %+v", refused)
 	}
-	if !strings.Contains(refused.Message, "pkg install icebath-agent") || refused.UpdateCommand != "pkg install icebath-agent" {
+	if !strings.Contains(refused.Message, config.TermuxInstallCommand) || refused.UpdateCommand != config.TermuxInstallCommand {
 		t.Fatalf("refusal = %+v", refused)
 	}
 	if strings.Contains(refused.UpdateCommand, "icebath update") {
@@ -200,7 +200,7 @@ func TestAdmissionAptTermuxRefusesWithPkgUpgrade(t *testing.T) {
 	if refused == nil || refused.Code != "apt-termux" {
 		t.Fatalf("refusal = %+v", refused)
 	}
-	if !strings.Contains(refused.Message, "pkg upgrade icebath-agent") || !strings.Contains(refused.UpdateCommand, "pkg upgrade icebath-agent") {
+	if !strings.Contains(refused.Message, config.TermuxInstallCommand) || !strings.Contains(refused.UpdateCommand, config.TermuxInstallCommand) {
 		t.Fatalf("refusal = %+v", refused)
 	}
 }

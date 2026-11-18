@@ -344,7 +344,7 @@ func (a *AIAgent) switchModel(ctx context.Context, newModel, newProvider, apiKey
 		log.Debug(fmt.Sprintf("switch_model: could not re-resolve reasoning_config: %s", err.Error()))
 	} else {
 		a.reasoningConfig = config.ResolveReasoningConfig(map[string]any(cfg), a.model)
-		log.Info(fmt.Sprintf("switch_model: reasoning_config resolved for %s: %s", a.model, pyrepr.Repr(a.reasoningConfig)))
+		log.Info(fmt.Sprintf("switch_model: reasoning_config resolved for %s: %s", a.model, pyrepr.Repr(dictOrNone(a.reasoningConfig))))
 	}
 	a.cachedSystemPrompt = ""
 	a.runtimeCapabilities = destination

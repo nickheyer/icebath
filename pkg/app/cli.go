@@ -18,8 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -176,13 +174,6 @@ type voiceInputMessage struct{ Text string }
 
 func (m *voiceInputMessage) String() string { return m.Text }
 
-// seededQueryMessage marks a -q prompt seeded into an interactive session, taken literally
-type seededQueryMessage struct {
-	Text        string
-	Images      []string
-	AdmissionID string
-}
-
 // chatTurn holds the per turn state the chat phases and the agent worker share
 type chatTurn struct {
 	mu                    sync.Mutex
@@ -197,7 +188,6 @@ type chatTurn struct {
 	streamCallback        func(string)
 	stopEvent             *syncEvent
 	ttsNormalExit         bool
-	voicePrefix           string
 }
 
 // cliRuntime snapshots the resolved provider routing an agent is built from
@@ -220,68 +210,56 @@ type CLI struct {
 	console *cliui.Console
 	config  map[string]any
 
-	compact                      bool
-	toolProgressMode             string
-	focusViewEnabled             bool
-	focusSavedToolProgress       string
-	focusLastCountedTool         string
-	focusHiddenLines             int
-	resumeDisplay                string
-	bellOnComplete               bool
-	bellOnPrompt                 bool
-	showReasoning                bool
-	reasoningFull                bool
-	modernLayout                 bool
-	busyInputMode                string
-	verbose                      bool
-	streamingEnabled             bool
-	showTimestamps               bool
-	timestampFormat              string
-	finalResponseMarkdown        string
-	inlineDiffsEnabled           bool
-	turnSummaryEnabled           bool
-	spinnerTokenFlowEnabled      bool
-	turnSummaryCollector         *agent.TurnSummaryCollector
-	turnSummaryStart             float64
-	turnTokenBaseline            int
-	interactiveTurn              bool
-	userMessagePreviewFirstLines int
-	userMessagePreviewLastLines  int
-	streamBuf                    string
-	reasoningPreviewBuf          string
-	streamStarted                bool
-	streamBoxOpened              bool
-	streamBoxLive                bool
-	streamedTextThisTurn         string
-	heldStatusLines              []string
-	streamTableBuf               []string
-	inStreamTable                bool
-	streamMu                     sync.Mutex
-	streamPrefilt                string
-	streamMidLine                bool
-	streamTextANSI               string
-	inReasoningBlock             bool
-	reasoningBoxOpened           bool
-	reasoningBuf                 string
-	reasoningStartedAt           float64
-	reasoningShownThisTurn       bool
-	pendingCreditNotices         [][2]string
-	toolGenAnnounced             map[string]bool
-	runningToolLabels            map[string][]string
-	longToolHintFired            bool
-	lastTurnFailed               bool
-	pendingModelSwitchNote       string
-	pendingSkillsReloadNote      string
-	deferToolWarnings            bool
-	reloadMCPHook                func()
-	pendingMoaConfig             map[string]any
-	pendingMoaDisableAfterTurn   bool
-	pendingMoaRestoreModel       map[string]string
-	pendingEditSnapshots         map[string]*tools.LocalEditSnapshot
-	lastInputModeRecovery        *float64
-	lastTermiosDriftCheck        *float64
-	inputModeRecoveryNoticeShown bool
-	termiosDriftNoticeShown      bool
+	compact                    bool
+	toolProgressMode           string
+	focusViewEnabled           bool
+	focusSavedToolProgress     string
+	focusLastCountedTool       string
+	focusHiddenLines           int
+	resumeDisplay              string
+	bellOnComplete             bool
+	bellOnPrompt               bool
+	showReasoning              bool
+	reasoningFull              bool
+	modernLayout               bool
+	busyInputMode              string
+	verbose                    bool
+	streamingEnabled           bool
+	showTimestamps             bool
+	timestampFormat            string
+	finalResponseMarkdown      string
+	inlineDiffsEnabled         bool
+	turnSummaryCollector       *agent.TurnSummaryCollector
+	streamBuf                  string
+	reasoningPreviewBuf        string
+	streamStarted              bool
+	streamBoxOpened            bool
+	streamBoxLive              bool
+	streamedTextThisTurn       string
+	heldStatusLines            []string
+	streamTableBuf             []string
+	inStreamTable              bool
+	streamMu                   sync.Mutex
+	streamPrefilt              string
+	streamMidLine              bool
+	streamTextANSI             string
+	inReasoningBlock           bool
+	reasoningBoxOpened         bool
+	reasoningBuf               string
+	reasoningStartedAt         float64
+	reasoningShownThisTurn     bool
+	pendingCreditNotices       [][2]string
+	toolGenAnnounced           map[string]bool
+	runningToolLabels          map[string][]string
+	longToolHintFired          bool
+	pendingModelSwitchNote     string
+	pendingSkillsReloadNote    string
+	deferToolWarnings          bool
+	reloadMCPHook              func()
+	pendingMoaConfig           map[string]any
+	pendingMoaDisableAfterTurn bool
+	pendingMoaRestoreModel     map[string]string
+	pendingEditSnapshots       map[string]*tools.LocalEditSnapshot
 
 	explicitModelOverride    bool
 	model                    string
@@ -310,11 +288,7 @@ type CLI struct {
 	explicitToolsets         bool
 	typedToolsets            []string
 	disabledToolsets         []string
-	checkpointsEnabled       bool
 	explicitCheckpoints      bool
-	checkpointMaxSnapshots   int
-	checkpointMaxTotalSizeMB int
-	checkpointMaxFileSizeMB  int
 	passSessionID            bool
 	ignoreRules              bool
 	explicitIgnoreRules      bool
@@ -348,8 +322,6 @@ type CLI struct {
 	pendingTitle               string
 	resumed                    bool
 	sessionID                  string
-	historyFile                string
-	lastInvalidate             *float64
 	resumeReadID               string
 	resumeHistoryError         string
 	resumeDisplayHistory       []map[string]any
@@ -364,15 +336,9 @@ type CLI struct {
 	interruptQueue                 *inputQueue
 	agentRunning                   bool
 	shouldExit                     bool
-	detachOnExit                   bool
 	lastTurnInterrupted            bool
-	deleteSessionOnExit            bool
-	pendingRelaunch                []string
-	lastCtrlCTime                  float64
 	clarifyState                   *clarifyModalState
-	clarifyMultiBase               *[]string
 	clarifyFreetext                bool
-	clarifyPrefill                 string
 	sudoState                      *sudoModalState
 	approvalState                  *approvalModalState
 	slashConfirmState              *slashConfirmModalState
@@ -380,34 +346,15 @@ type CLI struct {
 	clarifyDeadline                *float64
 	sudoDeadline                   float64
 	approvalDeadline               float64
-	slashConfirmDeadline           float64
 	approvalLock                   sync.Mutex
 	composerPlaceholder            string
-	commandPaletteState            *commandPaletteModalState
-	secretState                    *secretModalState
-	pendingResumeSessions          []map[string]any
 	pendingAgentSeed               any
 	slashWorker                    bool
 	slashMetricsOff                bool
-	secretDeadline                 float64
-	toolStartTime                  float64
 	pendingToolInfo                map[string][]map[string]any
 	spinnerText                    string
-	commandStatus                  string
 	lastScrollbackTool             string
 	commandRunning                 bool
-	commandBlocksInput             bool
-	petRenderer                    *pet.Renderer
-	petAnimRunning                 bool
-	petAnimStop                    chan struct{}
-	petSlug                        string
-	petKittyPending                string
-	petEnabled                     bool
-	petCols                        int
-	petScale                       float64
-	petFramesCache                 map[string][][][]pet.Cell
-	petKittyCache                  map[string]*petKittyEntry
-	petAnimDone                    chan struct{}
 	statusBarTitleSessionID        string
 	statusBarTitleCache            string
 	statusBarTitleCheckedAt        float64
@@ -415,20 +362,10 @@ type CLI struct {
 	statusBarFieldSetLoaded        bool
 	voiceRecordKeyDisplayCache     string
 	goalManager                    goals.Manager
-	automationStale                bool
-	petKittyImageID                int
-	petFrameIdx                    int
-	petLock                        sync.Mutex
-	petCfgChecked                  float64
-	petEventUntil                  float64
-	petEvent                       string
-	petReasoning                   bool
-	petTurnError                   bool
 	attachedImages                 []string
 	imageCounter                   int
 	promptStash                    *config.PromptStash
 	preloadedSkills                []string
-	startupSkillsLineShown         bool
 	autoLoadSkillsResult           *skillsPromptResult
 	preloadSkillsDone              chan struct{}
 	preloadSkillsResult            *skillsPromptResult
@@ -444,7 +381,6 @@ type CLI struct {
 	voiceContinuous                bool
 	voiceRecorder                  any
 	voiceTTSStop                   *syncEvent
-	voiceLiveText                  string
 	voiceTTSDone                   *syncEvent
 	voiceBargeCapture              *syncEvent
 	voiceLastTTSText               string
@@ -452,12 +388,7 @@ type CLI struct {
 	voiceExtra                     cliVoiceExtra
 	statusBarVisible               bool
 	batteryVisible                 bool
-	vimMode                        bool
 	statusBarSuppressedAfterResize atomic.Bool
-	resizeRecoveryPending          bool
-	resizeRecoveryTimer            *time.Timer
-	statusBarUnsuppressTimer       *time.Timer
-	lastResizeWidth                *int
 	backgroundTasks                map[string]chan struct{}
 	backgroundTaskCounter          int
 	cacheHitBaselinePrompt         int
@@ -468,7 +399,6 @@ type CLI struct {
 	gatewayPluginCommands          *gatewayPluginCatalog
 	gatewaySkills                  *gatewaySkillCatalog
 	gatewayPluginToolsetCache      *gatewayToolsetCatalog
-	gatewayCommandWait             *pythread.Event
 	observeUnsupported             *gatewayBoundary
 	observeNoticeShown             bool
 	turnCtx                        context.Context
@@ -477,12 +407,6 @@ type CLI struct {
 	uiMu                           sync.Mutex
 	connectionState                any
 	cliCommandState
-}
-
-// petKittyEntry is one cached kitty payload of a pet state with the image id it was encoded for
-type petKittyEntry struct {
-	payload *pet.KittyPayload
-	imageID int
 }
 
 // skillsPromptResult is the (prompt, loaded names, missing names) triple a skills preload renders
@@ -518,12 +442,6 @@ var (
 	skillCacheMu                             sync.Mutex
 	reverseAliasCache                        map[string]string
 	reverseAliasMu                           sync.Mutex
-	outputHistoryMu                          sync.Mutex
-	outputHistoryEnabled                     = true
-	outputHistoryReplaying                   bool
-	outputHistorySuppressed                  bool
-	outputHistoryMaxLines                    = 200
-	outputHistory                            []any
 	osExit                                   = os.Exit
 	TryAcquireActiveSession                  func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error)
 	FormatRefusalStderr                      func(message *activesessions.Refusal) string
@@ -661,28 +579,6 @@ func markSessionHandedOff(sessionID string) {
 	sessionIDSetsMu.Lock()
 	handedOffSessionIDs[sessionID] = true
 	sessionIDSetsMu.Unlock()
-}
-
-// Configures the recent CLI output replayed after terminal redraws
-func configureOutputHistory(enabled bool, maxLines any) {
-	outputHistoryMu.Lock()
-	defer outputHistoryMu.Unlock()
-	outputHistoryEnabled = enabled
-	outputHistoryMaxLines = coerceOutputHistoryLimit(maxLines)
-	outputHistory = nil
-}
-
-// Suppresses output history recording until the returned restore function runs
-func suspendOutputHistory() func() {
-	outputHistoryMu.Lock()
-	old := outputHistorySuppressed
-	outputHistorySuppressed = true
-	outputHistoryMu.Unlock()
-	return func() {
-		outputHistoryMu.Lock()
-		outputHistorySuppressed = old
-		outputHistoryMu.Unlock()
-	}
 }
 
 // Returns the cached interactive skill commands, scanning them on first use

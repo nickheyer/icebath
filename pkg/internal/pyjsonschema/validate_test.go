@@ -22,7 +22,7 @@ func TestValidateMessagesFollowPythonJsonschema(t *testing.T) {
 	} {
 		instance, _ := pyjson.Loads(tc.instance)
 		schema, _ := pyjson.Loads(tc.schema)
-		err := Validate(instance, schema)
+		err := Validate(instance, schema, 1)
 		got := ""
 		if err != nil {
 			got = err.Error()
@@ -36,7 +36,7 @@ func TestValidateMessagesFollowPythonJsonschema(t *testing.T) {
 func TestIterErrorsYieldEveryErrorInSchemaOrder(t *testing.T) {
 	instance, _ := pyjson.Loads(`{"zip": 5, "tags": ["a", 1]}`)
 	schema, _ := pyjson.Loads(`{"type": "object", "required": ["city", "country"], "properties": {"zip": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}}`)
-	errs, err := IterErrors(instance, schema)
+	errs, err := IterErrors(instance, schema, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestIterErrorsYieldEveryErrorInSchemaOrder(t *testing.T) {
 
 func TestCheckSchemaRendersTheFirstMetaschemaError(t *testing.T) {
 	schema, _ := pyjson.Loads(`{"type": 42}`)
-	err := CheckSchema(schema)
+	err := CheckSchema(schema, 1)
 	want := "42 is not valid under any of the given schemas\n\n" +
 		"Failed validating 'anyOf' in metaschema['allOf'][3]['properties']['type']:\n" +
 		"    {'anyOf': [{'$ref': '#/$defs/simpleTypes'},\n" +
@@ -68,11 +68,11 @@ func TestCheckSchemaRendersTheFirstMetaschemaError(t *testing.T) {
 		t.Fatalf("check_schema error\n%v", err)
 	}
 	good, _ := pyjson.Loads(`{"type": "object", "properties": {"a": {"pattern": "^x"}}}`)
-	if err := CheckSchema(good); err != nil {
+	if err := CheckSchema(good, 1); err != nil {
 		t.Fatal(err)
 	}
 	badPattern, _ := pyjson.Loads(`{"pattern": "["}`)
-	if err := CheckSchema(badPattern); err == nil || !strings.HasPrefix(err.Error(), "'[' is not a 'regex'") {
+	if err := CheckSchema(badPattern, 1); err == nil || !strings.HasPrefix(err.Error(), "'[' is not a 'regex'") {
 		t.Fatalf("regex format error %v", err)
 	}
 }

@@ -39,7 +39,7 @@ var (
 )
 
 // Logger of the plugin module
-func lfLog() *slog.Logger { return slog.Default().With("logger", "icebath_plugins.langfuse") }
+func lfLog() *slog.Logger { return slog.Default().With("logger", "hermes_plugins.langfuse") }
 
 // Stripped process env value, the default stripped when unset
 func envStr(name, def string) string {

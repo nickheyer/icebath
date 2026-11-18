@@ -67,16 +67,6 @@ func CodexApprovalPrompt(env *Env) func(command, description string, allowPerman
 	}
 }
 
-// Running full screen prompt applications, the prompt_toolkit get_app_or_none check of the input fallback
-var promptAppsRunning atomic.Int32
-
-// Marks a full screen prompt application as owning the terminal until the returned release runs
-func EnterPromptApp() func() {
-	promptAppsRunning.Add(1)
-	var once sync.Once
-	return func() { once.Do(func() { promptAppsRunning.Add(-1) }) }
-}
-
 // Prints the prompt and reads one stdin line a byte at a time, end of input or a read error giving what was read
 var readTerminalChoice = func(prompt string) string {
 	fmt.Print(prompt)
@@ -173,11 +163,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	onceOnly := o.smartDenied || !o.allowSession
 	asker := resolveCLIApprovalCallback(env, o.approvalCallback)
 	if asker == nil {
-		if promptAppsRunning.Load() == 0 {
-			return askTerminal(ctx, env, o, displayCommand, displayDescription, onceOnly)
-		}
-		envLog(env).Warn(fmt.Sprintf("Dangerous-command approval requested on a thread with no approval callback while prompt_toolkit is active; failing closed to avoid stdin deadlock. command=%s description=%s", pyrepr.Repr(o.command), pyrepr.Repr(o.description)))
-		return unanswered("no approval callback is registered on this thread while prompt_toolkit owns the terminal, so the prompt could not be shown")
+		return askTerminal(ctx, env, o, displayCommand, displayDescription, onceOnly)
 	}
 	if callback, ok := asker.(ApprovalCallbackAsker); ok {
 		answer, err := callback.ApprovalCallback(ctx, displayCommand, displayDescription, ApprovalCallbackOptions{

@@ -318,52 +318,52 @@ func anyStringsOf(values []string) []any {
 	return out
 }
 
-var clarifySchema = map[string]any{
-	"name": "clarify",
-	"description": "Ask the user one or more questions when you need a decision or feedback. " +
-		"Pass every question " +
-		fmt.Sprintf("in `questions` (1-%d entries) — a single question is a ", clarifyMaxQuestions) +
-		"one-entry array, and several INDEPENDENT questions belong in ONE " +
-		"call (one form beats a chain of clarify calls; if one answer would " +
-		"change another question, ask separately). Per question: " +
-		fmt.Sprintf("single-select (up to %d choices — put your recommended ", clarifyMaxChoices) +
-		"option FIRST, the UI marks it '(Recommended)' and auto-appends an " +
-		"'Other' free-text row), multi-select (multi_select=true), or " +
-		"open-ended (omit choices). Options go ONLY in `choices`, never " +
-		"enumerated inside the question text (choices render as pickable " +
-		"rows; options written into the question are dead prose the user " +
-		"can't click). Result: {responses: [...], outcome} in question order. " +
-		"Each response has status answered, skipped or unanswered " +
-		"(user_response is null unless answered); outcome is submitted, " +
-		"cancelled, timed_out or undelivered, with a notice saying why " +
-		"when the wait ended without a submit. Prefer deciding " +
-		"low-stakes questions yourself; don't use this for dangerous-command " +
+var clarifySchema = Dict(
+	"name", "clarify",
+	"description", "Ask the user one or more questions when you need a decision or feedback. "+
+		"Pass every question "+
+		fmt.Sprintf("in `questions` (1-%d entries) — a single question is a ", clarifyMaxQuestions)+
+		"one-entry array, and several INDEPENDENT questions belong in ONE "+
+		"call (one form beats a chain of clarify calls; if one answer would "+
+		"change another question, ask separately). Per question: "+
+		fmt.Sprintf("single-select (up to %d choices — put your recommended ", clarifyMaxChoices)+
+		"option FIRST, the UI marks it '(Recommended)' and auto-appends an "+
+		"'Other' free-text row), multi-select (multi_select=true), or "+
+		"open-ended (omit choices). Options go ONLY in `choices`, never "+
+		"enumerated inside the question text (choices render as pickable "+
+		"rows; options written into the question are dead prose the user "+
+		"can't click). Result: {responses: [...], outcome} in question order. "+
+		"Each response has status answered, skipped or unanswered "+
+		"(user_response is null unless answered); outcome is submitted, "+
+		"cancelled, timed_out or undelivered, with a notice saying why "+
+		"when the wait ended without a submit. Prefer deciding "+
+		"low-stakes questions yourself; don't use this for dangerous-command "+
 		"confirmation (the terminal tool handles that).",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"questions": map[string]any{
-				"type":     "array",
-				"minItems": 1,
-				"maxItems": clarifyMaxQuestions,
-				"description": "The question(s). Each: question text (options excluded), " +
-					"optional choices (recommended first; omit for free-text), " +
-					"optional multi_select. Responses come back in question " +
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"questions", Dict(
+				"type", "array",
+				"minItems", 1,
+				"maxItems", clarifyMaxQuestions,
+				"description", "The question(s). Each: question text (options excluded), "+
+					"optional choices (recommended first; omit for free-text), "+
+					"optional multi_select. Responses come back in question "+
 					"order with the question text echoed.",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"question":     map[string]any{"type": "string"},
-						"choices":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": clarifyMaxChoices},
-						"multi_select": map[string]any{"type": "boolean"},
-					},
-					"required": []any{"question"},
-				},
-			},
-		},
-		"required": []any{"questions"},
-	},
-}
+				"items", Dict(
+					"type", "object",
+					"properties", Dict(
+						"question", Dict("type", "string"),
+						"choices", Dict("type", "array", "items", Dict("type", "string"), "maxItems", clarifyMaxChoices),
+						"multi_select", Dict("type", "boolean"),
+					),
+					"required", []any{"question"},
+				),
+			),
+		),
+		"required", []any{"questions"},
+	),
+)
 
 // Registers the clarify tool, always available
 func registerClarifyTool() {

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Longest server requested retry wait the send path sleeps inline before handing redelivery to the ledger
@@ -163,8 +164,19 @@ func sendFailureIsTransient(result SendResult, errorText string) bool {
 	return result.Retryable || isRateLimitedError(errorText) || result.RetryAfter != nil || isRetryableError(errorText)
 }
 
-// Sends with exponential backoff on transient errors, plain text fallback on permanent ones, a notice after exhaustion
+// Sends with retry and counts the one logical delivery, retries and fallback included, in shared metrics
 func (b *BasePlatformAdapter) SendWithRetry(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, maxRetries int, baseDelay float64) (SendResult, error) {
+	var result SendResult
+	_, err := observability.RecordsDelivery(ctx, b.Self(), chatID, func() (any, error) {
+		var sendErr error
+		result, sendErr = b.sendWithRetry(ctx, chatID, content, replyTo, metadata, maxRetries, baseDelay)
+		return result, sendErr
+	})
+	return result, err
+}
+
+// Sends with exponential backoff on transient errors, plain text fallback on permanent ones, a notice after exhaustion
+func (b *BasePlatformAdapter) sendWithRetry(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, maxRetries int, baseDelay float64) (SendResult, error) {
 	self := b.Self()
 	send := func(text string) (SendResult, error) {
 		return self.Send(ctx, chatID, text, replyTo, metadata)

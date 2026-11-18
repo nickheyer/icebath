@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -160,7 +161,7 @@ func TestSamplingCallbackText(t *testing.T) {
 	t.Run("test_server_tools_with_object_schema_are_normalized", func(t *testing.T) {
 		h, aux := newTestSampler(t, map[string]any{}, llmResponse("LLM response", "stop", nil))
 		params := samplingParams()
-		params.Tools = []SamplingTool{{Name: "ask", Description: "Ask Crawl4AI", InputSchema: map[string]any{"type": "object"}}}
+		params.Tools = []SamplingTool{{Name: "ask", Description: "Ask Crawl4AI", InputSchema: pyjson.ObjectOf("type", "object")}}
 		if _, rpcErr := h.CreateMessage(context.Background(), params); rpcErr != nil {
 			t.Fatal(rpcErr)
 		}

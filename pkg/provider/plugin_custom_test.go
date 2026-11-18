@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"testing"
 )
 
@@ -75,7 +76,7 @@ func TestCustomReasoningWireShape(t *testing.T) {
 	}
 	for _, c := range cases {
 		eb, tl := p.BuildAPIKwargsExtras(c.r, c.kw)
-		assertExtras(t, c.label, eb, tl, c.eb, c.tl)
+		assertExtras(t, c.label, pyjson.Plain(eb).(map[string]any), tl, c.eb, c.tl)
 	}
 }
 

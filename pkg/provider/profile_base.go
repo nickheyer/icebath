@@ -10,7 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -184,11 +187,11 @@ func (h *LazyHeaders) Items() [][2]string {
 
 // Copy returns a plain resolved map
 func (h *LazyHeaders) Copy() map[string]string {
-	out := map[string]string{}
+	var lines []pyhttpx.HeaderLine
 	for _, kv := range h.Items() {
-		out[kv[0]] = kv[1]
+		lines = append(lines, pyhttpx.HeaderLine{Name: kv[0], Value: kv[1]})
 	}
-	return out
+	return pyhttpx.OrderedHeaderMap(lines...)
 }
 
 // Set stores a value after resolving, appending a new key at the end
@@ -358,11 +361,7 @@ func (p Profile) DefaultHeaders() map[string]string {
 	if p.LazyHeaders != nil {
 		return p.LazyHeaders.Copy()
 	}
-	out := make(map[string]string, len(p.Headers))
-	for k, v := range p.Headers {
-		out[k] = v
-	}
-	return out
+	return pyhttpx.MergeHeaderMaps(p.Headers)
 }
 
 // ModelAliasMap returns the provider native model alias table
@@ -427,11 +426,11 @@ func (p Profile) PrepareMessages(messages []map[string]any) []map[string]any {
 }
 
 // BuildExtraBody returns provider specific extra_body fields, empty by default
-func (p Profile) BuildExtraBody(sessionID string, context map[string]any) map[string]any {
+func (p Profile) BuildExtraBody(sessionID string, context map[string]any) *pyjson.Object {
 	if p.BuildExtraBodyHook != nil {
 		return p.BuildExtraBodyHook(sessionID, context)
 	}
-	return map[string]any{}
+	return pyjson.NewObject()
 }
 
 // DefaultReasoningConfig returns the reasoning config applied when the user set none
@@ -443,11 +442,11 @@ func (p Profile) DefaultReasoningConfig(model string) *Reasoning {
 }
 
 // BuildAPIKwargsExtras returns extra_body and top level request fields, both empty by default
-func (p Profile) BuildAPIKwargsExtras(reasoning *Reasoning, context map[string]any) (map[string]any, map[string]any) {
+func (p Profile) BuildAPIKwargsExtras(reasoning *Reasoning, context map[string]any) (*pyjson.Object, map[string]any) {
 	if p.BuildAPIKwargsExtrasHook != nil {
 		return p.BuildAPIKwargsExtrasHook(reasoning, context)
 	}
-	return map[string]any{}, map[string]any{}
+	return pyjson.NewObject(), map[string]any{}
 }
 
 // BuildClientKwargsExtras returns client constructor extras, empty by default
@@ -604,15 +603,16 @@ func (p Profile) FetchModels(ctx context.Context, apiKey, baseURL string, timeou
 			target = strings.TrimRight(effectiveBase, "/") + "/models"
 		}
 	}
-	headers := map[string]string{}
+	var lines []pyhttpx.HeaderLine
 	if apiKey != "" {
-		headers["Authorization"] = "Bearer " + apiKey
+		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
 	}
-	headers["Accept"] = "application/json"
-	headers["User-agent"] = profileUserAgent()
-	for k, v := range p.DefaultHeaders() {
-		headers[canonicalHeaderKey(k)] = v
+	lines = append(lines, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()})
+	defaults := p.DefaultHeaders()
+	for _, k := range pyhttpx.HeaderOrder(defaults) {
+		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: defaults[k]})
 	}
+	headers := pyhttpx.OrderedHeaderMap(lines...)
 	data, err := modelsGetJSON(ctx, target, timeout, headers, nil)
 	if err != nil {
 		slog.Debug("fetch_models(" + p.Name + "): " + err.Error())
@@ -629,14 +629,6 @@ func (p Profile) FetchModels(ctx context.Context, apiKey, baseURL string, timeou
 		return nil, false
 	}
 	return ChatCatalogIDs(items), true
-}
-
-// Header key in the capitalized form urllib stores so a profile header replaces the generic one
-func canonicalHeaderKey(k string) string {
-	if k == "" {
-		return k
-	}
-	return strings.ToUpper(k[:1]) + strings.ToLower(k[1:])
 }
 
 // LiveContextLength returns the context window from the live credentialed catalog, zero for none

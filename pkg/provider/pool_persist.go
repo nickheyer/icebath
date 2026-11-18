@@ -257,7 +257,7 @@ func writeThroughProviderStateToGlobalRoot(env PoolEnv, providerID string, state
 		return
 	}
 	if _, err := env.Store.PersistProviderStateToStore(providerID, state, globalPath, false); err != nil {
-		env.log().Debug(fmt.Sprintf("%s pool refresh: write-through to global root failed: %v", providerID, err))
+		env.logAs("agent.credential_pool").Debug(fmt.Sprintf("%s pool refresh: write-through to global root failed: %v", providerID, err))
 	}
 }
 
@@ -345,7 +345,7 @@ func PersistPoolEntries(env PoolEnv, provider string, payloads []map[string]any,
 		if globalPath := borrowedSingleUsePoolRoot(env); globalPath != "" {
 			written, err := updateRootPoolRows(env, provider, payloads, globalPath, statusClearedIDs, tokenBases)
 			if err != nil {
-				env.log().Warn(fmt.Sprintf("%s pool: write-through of borrowed root grant failed (%v); not materializing a profile-local copy", provider, err))
+				env.logAs("agent.credential_pool").Warn(fmt.Sprintf("%s pool: write-through of borrowed root grant failed (%v); not materializing a profile-local copy", provider, err))
 				return nil, false
 			}
 			return written, true
@@ -353,7 +353,7 @@ func PersistPoolEntries(env PoolEnv, provider string, payloads []map[string]any,
 	}
 	written, err := env.Store.WriteCredentialPool(provider, payloads, removedIDs, statusClearedIDs, tokenBases)
 	if err != nil {
-		env.log().Warn(fmt.Sprintf("%s pool: persist failed (%v)", provider, err))
+		env.logAs("agent.credential_pool").Warn(fmt.Sprintf("%s pool: persist failed (%v)", provider, err))
 		return nil, false
 	}
 	return written, true
@@ -723,7 +723,7 @@ var qwenCredentialsForSeed = func(env PoolEnv, refreshIfExpiring bool) (map[stri
 func seedQwenSingleton(seed *seeder) {
 	creds, err := qwenCredentialsForSeed(seed.env, false)
 	if err != nil {
-		seed.env.log().Debug(fmt.Sprintf("Qwen OAuth token seed failed: %v", err))
+		seed.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Qwen OAuth token seed failed: %v", err))
 		return
 	}
 	token := anyString(creds["api_key"])
@@ -748,7 +748,7 @@ func seedQwenSingleton(seed *seeder) {
 func seedMinimaxSingleton(seed *seeder) {
 	state, err := seed.env.Store.GetProviderAuthState("minimax-oauth")
 	if err != nil {
-		seed.env.log().Debug(fmt.Sprintf("MiniMax OAuth token seed failed: %v", err))
+		seed.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("MiniMax OAuth token seed failed: %v", err))
 		return
 	}
 	access := anyString(state["access_token"])
@@ -860,7 +860,7 @@ func warnEnvIngestionOnce(env PoolEnv, provider, envVar string) {
 	if provider == "openrouter" {
 		spend = "OpenRouter"
 	}
-	env.log().Warn(fmt.Sprintf("Ingested %s from environment into the %s credential pool — this enables %s spend. Remove the key or run icebath auth remove %s <n> to suppress.", envVar, provider, spend, provider))
+	env.logAs("agent.credential_pool").Warn(fmt.Sprintf("Ingested %s from environment into the %s credential pool — this enables %s spend. Remove the key or run icebath auth remove %s <n> to suppress.", envVar, provider, spend, provider))
 }
 
 func envPayload(env PoolEnv, envVar, token, baseURL string) map[string]any {
@@ -1015,7 +1015,7 @@ func LoadPool(env PoolEnv, provider string) *Pool {
 	}
 	raw, err := env.Store.ReadCredentialPool(provider)
 	if err != nil {
-		env.log().Warn(fmt.Sprintf("%s pool: auth store unreadable (%v); loading an empty pool", provider, err))
+		env.logAs("agent.credential_pool").Warn(fmt.Sprintf("%s pool: auth store unreadable (%v); loading an empty pool", provider, err))
 		raw = nil
 	}
 	diskIDs := map[string]bool{}

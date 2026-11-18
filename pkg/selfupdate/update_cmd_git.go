@@ -652,19 +652,33 @@ func pushSyncedFork(ctx context.Context, w io.Writer, gitCmd []string, cwd strin
 		"    Your local repo is updated, but your fork on GitHub may be behind.\n")
 }
 
-// Repair text for a checkout git rejects, the installer pointed at this very checkout
-func damagedCheckoutMessage(root string) string {
-	var repair string
+// Shell line moving a checkout aside, then cloning the update branch in its place and building it with setup-icebath
+func freshCheckoutCommand(root, branch string) string {
+	aside := root + ".damaged-" + time.Now().Format("20060102-150405")
+	repo := releaseRepository(root)
 	if custodyWindows() {
-		quoted := "'" + strings.ReplaceAll(root, "'", "''") + "'"
-		repair = "& ([scriptblock]::Create((irm https://hermes-agent.nousresearch.com/install.ps1))) -InstallDir " + quoted
-	} else {
-		repair = "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --dir " + pyshlex.Quote(root)
+		quote := func(text string) string { return "'" + strings.ReplaceAll(text, "'", "''") + "'" }
+		clone := "git clone " + quote(repo) + " " + quote(root)
+		if branch != "" {
+			clone = "git clone --branch " + quote(branch) + " " + quote(repo) + " " + quote(root)
+		}
+		return "Move-Item -LiteralPath " + quote(root) + " " + quote(aside) + "; if ($?) { " + clone + " }; if ($?) { & " +
+			quote(strings.TrimRight(root, `\/`)+`\setup-icebath.ps1`) + " }"
 	}
+	clone := "git clone " + pyshlex.Quote(repo) + " " + pyshlex.Quote(root)
+	if branch != "" {
+		clone = "git clone --branch " + pyshlex.Quote(branch) + " " + pyshlex.Quote(repo) + " " + pyshlex.Quote(root)
+	}
+	return "mv " + pyshlex.Quote(root) + " " + pyshlex.Quote(aside) + " && " + clone + " && " +
+		pyshlex.Quote(strings.TrimRight(root, "/")+"/setup-icebath.sh")
+}
+
+// Repair text for a checkout git rejects, a fresh checkout of the update branch set up in its place
+func damagedCheckoutMessage(ctx context.Context, root, branch string) string {
 	return "✗ This Icebath checkout's git data is damaged (git no longer recognizes " + pypath.PathJoin(root, ".git") + ")," +
 		" so it cannot be updated in place.\n" +
-		"  Run the installer again to repair it; it moves the damaged checkout aside and keeps" +
-		" your config and chats:\n    " + repair
+		"  Move it aside and set up a fresh checkout; your config and chats in " + home.Display(home.Dir(ctx)) +
+		" stay where they are:\n    " + freshCheckoutCommand(root, branch)
 }
 
 // Whether a fetch failed because git cannot open root itself instead of its remote
@@ -697,8 +711,8 @@ func checkoutRejectedByGit(ctx context.Context, stderr string, gitCmd []string, 
 	return pypath.Normcase(seen) != pypath.Normcase(own), nil
 }
 
-// Prints the classified fetch diagnosis and bounded raw stderr, the installer repair for a rejected checkout
-func printFetchFailure(ctx context.Context, w io.Writer, stderr string, gitCmd []string, root string) error {
+// Prints the classified fetch diagnosis and bounded raw stderr, a fresh checkout of branch for a rejected one
+func printFetchFailure(ctx context.Context, w io.Writer, stderr string, gitCmd []string, root, branch string) error {
 	stderr = pystr.Strip(stderr)
 	damaged := false
 	if root != "" {
@@ -709,7 +723,7 @@ func printFetchFailure(ctx context.Context, w io.Writer, stderr string, gitCmd [
 		damaged = rejected
 	}
 	if damaged {
-		fmt.Fprintln(w, damagedCheckoutMessage(pypath.PathStr(root)))
+		fmt.Fprintln(w, damagedCheckoutMessage(ctx, pypath.PathStr(root), branch))
 	} else {
 		fmt.Fprintln(w, ClassifyFetchFailure(stderr))
 	}

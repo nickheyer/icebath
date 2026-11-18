@@ -1253,7 +1253,6 @@ func initBaseEnv(b *baseEnv, self envSelf, env *Env, cwd string, timeout int, ch
 	if b.snapshotTimeout == 0 {
 		b.snapshotTimeout = 30
 	}
-	b.persistent = true
 }
 
 // Env returns the tool environment the backend serves
@@ -1453,7 +1452,7 @@ func (b *baseEnv) snapshotScriptArgs(cwd string) snapshotScriptArgs {
 // Captures the login shell environment into the snapshot, falling back to bash -l or bash -c per command
 func (b *baseEnv) initSession(ctx context.Context) {
 	bootstrap := snapshotBootstrapScript(b.snapshotScriptArgs(b.Cwd()), b.snapshotExcludedPassthroughNames())
-	log := toolsLogger(b.env)
+	log := toolsLogger(b.env).With("logger", "tools.environments.base")
 	err := func() error {
 		p, err := b.self.runBash(ctx, bootstrap, true, b.snapshotTimeout, nil)
 		if err != nil {
@@ -1470,7 +1469,7 @@ func (b *baseEnv) initSession(ctx context.Context) {
 		return nil
 	}()
 	if err == nil {
-		log.Info("Session snapshot created", "session", b.sessionID, "cwd", b.Cwd())
+		log.Info(fmt.Sprintf("Session snapshot created (session=%s, cwd=%s)", b.sessionID, b.Cwd()))
 		return
 	}
 	prefer, detail := b.probeNonloginFallback(ctx, err.Error())

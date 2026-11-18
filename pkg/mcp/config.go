@@ -28,7 +28,7 @@ import (
 )
 
 // Logger every MCP diagnostic goes through, read at call time so tests can swap the default
-func mcpLogger() *slog.Logger { return slog.Default() }
+func mcpLogger() *slog.Logger { return slog.Default().With("logger", "tools.mcp_tool") }
 
 // Python str of a config value
 func pyStr(v any) string {

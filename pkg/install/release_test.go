@@ -8,16 +8,15 @@ import (
 func TestParseRepoForms(t *testing.T) {
 	cases := []struct {
 		raw, web, api string
-		official      bool
 	}{
-		{"https://github.com/nickheyer/icebath.git", "https://github.com/nickheyer/icebath", "https://api.github.com/repos/nickheyer/icebath", true},
-		{"git@github.com:NickHeyer/Icebath.git", "https://github.com/NickHeyer/Icebath", "https://api.github.com/repos/NickHeyer/Icebath", true},
-		{"ssh://git@github.com/fork/icebath", "https://github.com/fork/icebath", "https://api.github.com/repos/fork/icebath", false},
-		{"http://127.0.0.1:9/o/r.git", "http://127.0.0.1:9/o/r", "http://127.0.0.1:9/api/v3/repos/o/r", false},
+		{"https://github.com/nickheyer/icebath.git", "https://github.com/nickheyer/icebath", "https://api.github.com/repos/nickheyer/icebath"},
+		{"git@github.com:NickHeyer/Icebath.git", "https://github.com/NickHeyer/Icebath", "https://api.github.com/repos/NickHeyer/Icebath"},
+		{"ssh://git@github.com/fork/icebath", "https://github.com/fork/icebath", "https://api.github.com/repos/fork/icebath"},
+		{"http://127.0.0.1:9/o/r.git", "http://127.0.0.1:9/o/r", "http://127.0.0.1:9/api/v3/repos/o/r"},
 	}
 	for _, c := range cases {
 		r, err := ParseRepo(c.raw)
-		if err != nil || r.Web != c.web || r.API != c.api || r.Official != c.official {
+		if err != nil || r.Web != c.web || r.API != c.api {
 			t.Fatalf("%s: %+v %v", c.raw, r, err)
 		}
 	}

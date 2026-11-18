@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -95,6 +96,8 @@ func auxGeminiCallTimeouts(kwargs map[string]any) (auxGeminiTimeouts, error) {
 		seconds = float64(v)
 	case time.Duration:
 		seconds = v.Seconds()
+	case pyhttpx.Timeout:
+		return auxGeminiTimeouts{connect: v.Connect, read: v.Read, write: v.Write}, nil
 	default:
 		return auxGeminiTimeouts{}, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", pyrepr.Repr(v))
 	}
@@ -107,6 +110,9 @@ type auxDeadlineConn struct {
 	net.Conn
 	read, write time.Duration
 }
+
+// Socket under the deadline layer, the path the wire layer lookup walks
+func (c *auxDeadlineConn) NetConn() net.Conn { return c.Conn }
 
 func (c *auxDeadlineConn) Read(p []byte) (int, error) {
 	if c.read > 0 {
@@ -123,32 +129,29 @@ func (c *auxDeadlineConn) Write(p []byte) (int, error) {
 }
 
 // Pooled transport for one timeout set, reused across calls until the facade closes
-func (c *auxGeminiNativeClient) transport(t auxGeminiTimeouts) *http.Transport {
+func (c *auxGeminiNativeClient) transport(t auxGeminiTimeouts) (*http.Transport, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if tr, ok := c.transports[t]; ok {
-		return tr
+		return tr, nil
 	}
-	tr := auxDeadlineTransport(t.connect, t.read, t.write)
+	tr, err := auxDeadlineTransport(httpxDefaultLimits, t.connect, t.read, t.write)
+	if err != nil {
+		return nil, err
+	}
 	c.transports[t] = tr
-	return tr
+	return tr, nil
 }
 
-// Pooled transport whose dial, TLS handshake, reads and writes carry the httpx connect, read and write timeouts
-func auxDeadlineTransport(connect, read, write time.Duration) *http.Transport {
-	dialer := &net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}
-	return auxTrackPoolConns(&http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, network, addr)
-			if err != nil {
-				return nil, err
-			}
-			return &auxDeadlineConn{Conn: conn, read: read, write: write}, nil
-		},
-		TLSClientConfig: PlatformTLSConfig(), TLSHandshakeTimeout: connect, ForceAttemptHTTP2: true,
-		MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, ExpectContinueTimeout: time.Second,
+// Pooled httpx wire transport whose dial, TLS handshake, reads and writes carry the httpx connect, read and write timeouts
+func auxDeadlineTransport(limits httpxLimits, connect, read, write time.Duration) (*http.Transport, error) {
+	tr, err := httpxWireTransport(limits, connect, func(conn net.Conn) net.Conn {
+		return &auxDeadlineConn{Conn: conn, read: read, write: write}
 	})
+	if err != nil {
+		return nil, err
+	}
+	return auxTrackPoolConns(tr), nil
 }
 
 // Messages kwarg as the list the Gemini request builder reads
@@ -175,12 +178,29 @@ func (c *auxGeminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs
 	c.mu.Lock()
 	route := c.route
 	c.mu.Unlock()
-	route.Transport = c.transport(timeouts)
+	tr, err := c.transport(timeouts)
+	if err != nil {
+		return nil, err
+	}
+	route.Transport = tr
 	built, err := newGeminiNativeClient(route)
 	if err != nil {
 		return nil, err
 	}
-	native := built.(*geminiNativeClient)
+	return built.(*geminiNativeClient).createChatCompletion(ctx, kwargs, timeouts.connect)
+}
+
+// Chat completions surface of the native client for the agent's request clients, the route transport carrying the call
+func (c *geminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs map[string]any) (any, error) {
+	timeouts, err := auxGeminiCallTimeouts(kwargs)
+	if err != nil {
+		return nil, err
+	}
+	return c.createChatCompletion(ctx, kwargs, timeouts.connect)
+}
+
+// Native generateContent call for OpenAI kwargs over this client, long decode hops joined, or a chunk stream when stream is set
+func (native *geminiNativeClient) createChatCompletion(ctx context.Context, kwargs map[string]any, connect time.Duration) (any, error) {
 	extra, _ := kwargs["extra_body"].(map[string]any)
 	if extra == nil {
 		extra = map[string]any{}
@@ -206,7 +226,7 @@ func (c *auxGeminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs
 	}
 	request := buildGeminiRequest(geminiRequestInput{Messages: auxGeminiMessages(kwargs["messages"]), Tools: kwargs["tools"],
 		ToolChoice: kwargs["tool_choice"], Temperature: kwargs["temperature"], MaxTokens: maxTokens, TopP: kwargs["top_p"], Stop: kwargs["stop"],
-		ThinkingConfig: thinking, ResponseFormat: responseFormat, Model: model, ToolsAsJSONSchema: geminiAcceptsParametersJSONSchema(c.baseURL)})
+		ThinkingConfig: thinking, ResponseFormat: responseFormat, Model: model, ToolsAsJSONSchema: geminiAcceptsParametersJSONSchema(native.base)})
 	baseURL, auth, err := native.credentials(ctx)
 	if err != nil {
 		return nil, err
@@ -214,16 +234,16 @@ func (c *auxGeminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs
 	bare := bareGeminiModelID(model)
 	p := &geminiPrepared{request: request, model: bare, url: baseURL + "/models/" + bare + ":", extra: extra, auth: auth, baseURL: baseURL}
 	if stream, _ := kwargs["stream"].(bool); stream {
-		return newAuxGeminiStream(ctx, native, p, timeouts.connect), nil
+		return newAuxGeminiStream(ctx, native, p, connect), nil
 	}
-	first, _, _, err := native.generate(ctx, p, request, timeouts.connect)
+	first, _, _, err := native.generate(ctx, p, request, connect)
 	if err != nil {
 		return nil, err
 	}
 	hops := []map[string]any{first}
 	maxHops := geminiMaxHops(request)
 	for token := continuationToken(hops[len(hops)-1]); token != "" && len(hops) < maxHops; token = continuationToken(hops[len(hops)-1]) {
-		next, _, _, err := native.generate(ctx, p, geminiWithToken(request, token), timeouts.connect)
+		next, _, _, err := native.generate(ctx, p, geminiWithToken(request, token), connect)
 		if err != nil {
 			return nil, err
 		}

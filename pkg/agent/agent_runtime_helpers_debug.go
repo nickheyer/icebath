@@ -113,6 +113,9 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 				body[k] = v
 			}
 		}
+		if msgs, ok := body["messages"]; ok {
+			body["messages"] = provider.OrderRecordedMessages(msgs)
+		}
 	}
 	apiKey := a.liveClientAPIKey()
 	endpoint := "/chat/completions"

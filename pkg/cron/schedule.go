@@ -225,11 +225,12 @@ func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Invalid timestamp '%s': %v", schedule, err)
 		}
-		dt := v.Time
+		runAt := FormatISO(v.Time)
 		if !v.Aware {
-			dt, _ = wallInZone(v.Time, s.clk.zone())
+			fold0, _ := wallInZone(v.Time, s.clk.zone())
+			runAt = isoWallAt(v.Time, fold0)
 		}
-		return &Schedule{Kind: "once", RunAt: FormatISO(dt), Display: "once at " + dt.Format("2006-01-02 15:04")}, nil
+		return &Schedule{Kind: "once", RunAt: runAt, Display: "once at " + v.Time.Format("2006-01-02 15:04")}, nil
 	}
 	if strings.HasPrefix(lower, "in ") {
 		durationStr := pystr.Strip(schedule[3:])
@@ -378,13 +379,9 @@ func (s *Store) scheduleCadenceSeconds(sched *Schedule) (float64, bool) {
 	}
 	var result *float64
 	if e, err := ParseCron(expr); err == nil {
-		now := s.clk.now()
-		zone := now.Location()
-		if w1, err := e.Next(wallOf(now)); err == nil {
-			if w2, err := e.Next(w1); err == nil {
-				first, _ := wallInZone(w1, zone)
-				second, _ := wallInZone(w2, zone)
-				if gap := second.Sub(first).Seconds(); gap > 0 {
+		if first, err := e.NextAt(s.clk.now()); err == nil {
+			if second, err := e.NextAt(first); err == nil {
+				if gap := wallOf(second).Sub(wallOf(first)).Seconds(); gap > 0 {
 					result = &gap
 				}
 			}
@@ -414,7 +411,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, rec
 	}
 	path := filepath.Join(s.cronDir, filename)
 	if err := ensureCronDir(filepath.Dir(path)); err != nil {
-		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
+		s.logAs("cron.jobs").Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 		return
 	}
 	text, err := pyjson.Dumps(entry)
@@ -429,7 +426,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, rec
 		}
 	}
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
+		s.logAs("cron.jobs").Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 	}
 }
 
@@ -470,11 +467,12 @@ func cronNextRunMatchesExpr(sched *Schedule, next time.Time) bool {
 	if err != nil {
 		return true
 	}
-	prev, err := e.Prev(wallOf(next).Add(time.Second))
+	start, _ := wallInZone(wallOf(next).Add(time.Second), next.Location())
+	prev, err := e.PrevAt(start)
 	if err != nil {
 		return true
 	}
-	return math.Abs(prev.Sub(wallOf(next)).Seconds()) < 1
+	return math.Abs(wallOf(prev).Sub(wallOf(next)).Seconds()) < 1
 }
 
 // Why a stored next_run_at misses the cron lattice, an expression edit or an offset migration
@@ -569,7 +567,7 @@ func (s *Store) computeNextRunFor(sched *Schedule, lastRunAt *string, timezone *
 			fold0, fold1 := wallInZone(nextWall, zone)
 			for _, candidate := range []time.Time{fold0, fold1} {
 				if candidate.After(base) {
-					out := FormatISO(candidate)
+					out := isoWallAt(nextWall, candidate)
 					return &out, nil
 				}
 			}
@@ -578,10 +576,16 @@ func (s *Store) computeNextRunFor(sched *Schedule, lastRunAt *string, timezone *
 			}
 		}
 		fold0, _ := wallInZone(nextWall, zone)
-		out := FormatISO(fold0)
+		out := isoWallAt(nextWall, fold0)
 		return &out, nil
 	}
 	return nil, nil
+}
+
+// Isoformat of a wall clock carrying the offset of one of its resolutions, a gap wall kept unnormalized
+func isoWallAt(wall, resolved time.Time) string {
+	return FormatISO(time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), wall.Second(),
+		wall.Nanosecond(), time.FixedZone(resolved.Location().String(), int(wall.Sub(resolved).Seconds()))))
 }
 
 // Value rounded to one decimal the way Python round does on the exact binary value

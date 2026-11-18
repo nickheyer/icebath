@@ -937,7 +937,7 @@ func portablePluginManifest(child, source, prefix string) (*Manifest, error) {
 		return nil, err
 	}
 	for _, d := range diags {
-		logWarn("portable plugin diagnostic", "plugin", child, "message", d.Message)
+		logPlugins.warn("portable plugin diagnostic", "plugin", child, "message", d.Message)
 	}
 	name := data["name"].(string)
 	key := name

@@ -221,6 +221,9 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 		s, _ := truncateRunes(v.Error(), caps.MaxString)
 		return s
 	case map[string]any:
+		if o, ok := orderedByRecorded(v); ok {
+			return hookJSONable(o, depth, caps)
+		}
 		return hookJSONableMap(reflect.ValueOf(v), recurse, caps)
 	case map[string]string:
 		return hookJSONableMap(reflect.ValueOf(v), recurse, caps)

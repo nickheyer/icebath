@@ -48,6 +48,9 @@ type publishOptions struct {
 
 // Asks the dependency consent of an active replacement, an error naming the refusal when it is declined
 func consentActiveReplacement(ctx context.Context, staged, target string, exists bool) error {
+	if publishesPort(staged, target) {
+		return nil
+	}
 	active, err := activePluginTree(ctx, target, true)
 	if err != nil || !active {
 		return err
@@ -75,7 +78,7 @@ func consentActiveReplacement(ctx context.Context, staged, target string, exists
 func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newMetadata map[string]any, opts publishOptions) error {
 	_, statErr := os.Stat(target)
 	exists := statErr == nil
-	if isFilePath(filepath.Join(staged, "__init__.py")) {
+	if isFilePath(filepath.Join(staged, "__init__.py")) && !publishesPort(staged, target) {
 		manifest, err := ReadManifestForInstall(staged)
 		if err != nil {
 			return err
@@ -241,7 +244,7 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 		if err != nil {
 			return "", err
 		}
-		if revision, err = clonePluginRepo(ctx, h, staged, gitURL, entry.Sha, ""); err != nil {
+		if revision, err = fetchPluginSource(ctx, h, staged, gitURL, entry.Sha, subdir); err != nil {
 			return "", err
 		}
 		if subdir != "" {

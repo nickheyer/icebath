@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -48,7 +47,7 @@ func auxDeepinfraStrictVisionBackend(ctx context.Context, model string) (AuxClie
 		visionModel = auxResolveProviderVisionDefault(ctx, "deepinfra")
 	}
 	if visionModel == "" {
-		slog.Debug("Vision auto-detect: deepinfra catalog unreachable or returned no vision-tagged models — skipping")
+		auxClientLog().Debug("Vision auto-detect: deepinfra catalog unreachable or returned no vision-tagged models — skipping")
 		return nil, "", nil
 	}
 	return auxResolveProviderClientFn(ctx, "deepinfra", visionModel, ProviderClientOptions{IsVision: true})
@@ -149,15 +148,15 @@ func auxVisionMainProviderClient(ctx context.Context, mainProvider, mainModel st
 		if err != nil || syncClient == nil {
 			return nil, "", err
 		}
-		slog.Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(defaultModel, resolvedModel, mainModel)))
+		auxClientLog().Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(defaultModel, resolvedModel, mainModel)))
 		return syncClient, defaultModel, nil
 	}
 	if auxProvidersWithoutVision[mainProvider] {
-		slog.Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (no vision support) — falling through to aggregator chain", mainProvider))
+		auxClientLog().Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (no vision support) — falling through to aggregator chain", mainProvider))
 		return nil, "", nil
 	}
 	if !auxMainModelSupportsVision(ctx, mainProvider, visionModel) {
-		slog.Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (reports no vision capability) — falling through to aggregator chain", mainProvider))
+		auxClientLog().Debug(fmt.Sprintf("Vision auto-detect: skipping main provider %s (reports no vision capability) — falling through to aggregator chain", mainProvider))
 		return nil, "", nil
 	}
 	var rpcBaseURL string
@@ -193,7 +192,7 @@ func auxVisionMainProviderClient(ctx context.Context, mainProvider, mainModel st
 	if err != nil || rpcClient == nil {
 		return nil, "", err
 	}
-	slog.Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(rpcModel, visionModel)))
+	auxClientLog().Info(fmt.Sprintf("Vision auto-detect: using main provider %s (%s)", mainProvider, auxFirstNonEmpty(rpcModel, visionModel)))
 	return rpcClient, auxFirstNonEmpty(rpcModel, visionModel), nil
 }
 
@@ -231,7 +230,7 @@ func auxVisionAutoRoute(ctx context.Context, runtime map[string]any, resolvedMod
 			return p, c, m, nil
 		}
 	}
-	slog.Debug("Auxiliary vision client: none available")
+	auxClientLog().Debug("Auxiliary vision client: none available")
 	return "", nil, "", nil
 }
 

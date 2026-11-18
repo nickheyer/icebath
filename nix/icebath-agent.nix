@@ -25,6 +25,8 @@ buildGoModule {
       ../cmd
       ../pkg
       ../third_party
+      ../cli-config.yaml.example
+      ../.env.example
     ];
   };
   vendorHash = "sha256-8YhWpB4posMj45EeDvhHDksvsvst2jv/w7CKyers2GQ=";
@@ -41,6 +43,8 @@ buildGoModule {
   nativeBuildInputs = lib.optional (extraPythonPackages != [ ]) makeWrapper;
   postInstall = ''
     printf 'nix\n' > $out/bin/.install_method
+    install -Dm644 cli-config.yaml.example $out/bin/cli-config.yaml.example
+    install -Dm644 .env.example $out/bin/.env.example
     ln -s ${relayRuntime} $out/bin/venv
   ''
   + lib.optionalString (extraPythonPackages != [ ]) ''

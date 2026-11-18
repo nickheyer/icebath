@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -358,85 +357,10 @@ func activeBranding(ctx context.Context, key, fallback string) string {
 	return GetActiveSkin(ctx).GetBranding(key, fallback)
 }
 
-// Prompt symbol of the active skin trimmed and followed by one space
-func GetActivePromptSymbol(ctx context.Context, fallback string) string {
-	symbol := activeBranding(ctx, "prompt_symbol", fallback)
-	if symbol == "" {
-		symbol = fallback
-	}
-	if cleaned := pystr.Strip(symbol); cleaned != "" {
-		return cleaned + " "
-	}
-	return pystr.Strip(fallback) + " "
-}
-
 func GetActiveHelpHeader(ctx context.Context, fallback string) string {
 	return activeBranding(ctx, "help_header", fallback)
 }
 
 func GetActiveGoodbye(ctx context.Context, fallback string) string {
 	return activeBranding(ctx, "goodbye", fallback)
-}
-
-var skinTemplateField = regexp.MustCompile(`\{[a-z_]+\}`)
-
-var skinStylePalette = [][3]string{
-	{"prompt", "prompt", ""}, {"input_rule", "input_rule", "#CD7F32"},
-	{"title", "banner_title", "#FFD700"}, {"text", "banner_text", "#FFF8DC"},
-	{"dim", "banner_dim", "#555555"}, {"label", "ui_label", "@title"}, {"warn", "ui_warn", "#FF8C00"},
-	{"error", "ui_error", "#FF6B6B"}, {"status_bg", "status_bar_bg", "#1a1a2e"},
-	{"status_text", "status_bar_text", "@text"}, {"status_strong", "status_bar_strong", "@title"},
-	{"status_dim", "status_bar_dim", "@dim"}, {"ok", "ui_ok", "#8FBC8F"},
-	{"status_good", "status_bar_good", "@ok"}, {"status_warn", "status_bar_warn", "@warn"},
-	{"accent", "banner_accent", "@warn"}, {"status_bad", "status_bar_bad", "@accent"},
-	{"status_critical", "status_bar_critical", "@error"}, {"voice_bg", "voice_status_bg", "@status_bg"},
-	{"menu_bg", "completion_menu_bg", "#1a1a2e"}, {"menu_current_bg", "completion_menu_current_bg", "#333355"},
-	{"menu_meta_bg", "completion_menu_meta_bg", "@menu_bg"},
-	{"menu_meta_current_bg", "completion_menu_meta_current_bg", "@menu_current_bg"},
-}
-
-var skinStyleTemplates = map[string]string{
-	"input-area": "", "placeholder": "{dim} italic", "prompt": "{prompt}", "prompt-working": "{dim} italic",
-	"hint":       "{dim} italic",
-	"status-bar": "bg:{status_bg} {status_text}", "status-bar-strong": "bg:{status_bg} {status_strong} bold",
-	"status-bar-session-title": "bg:{badge_bg} {badge_fg} bold",
-	"status-bar-dim":           "bg:{status_bg} {status_dim}", "status-bar-good": "bg:{status_bg} {status_good} bold",
-	"status-bar-warn": "bg:{status_bg} {status_warn} bold", "status-bar-bad": "bg:{status_bg} {status_bad} bold",
-	"status-bar-critical":    "bg:{status_bg} {status_critical} bold",
-	"subagent-dock":          "bg:{status_bg} {status_text}",
-	"subagent-dock.heading":  "bg:{status_bg} {status_strong} bold",
-	"subagent-dock.selected": "bg:{menu_current_bg} {text} bold",
-	"input-rule":             "{input_rule}", "image-badge": "{label} bold",
-	"completion-menu": "bg:{menu_bg} {text}", "completion-menu.completion": "bg:{menu_bg} {text}",
-	"completion-menu.completion.current":      "bg:{menu_current_bg} {title}",
-	"completion-menu.meta.completion":         "bg:{menu_meta_bg} {dim}",
-	"completion-menu.meta.completion.current": "bg:{menu_meta_current_bg} {label}",
-	"clarify-border":                          "{input_rule}", "clarify-title": "{title} bold", "clarify-question": "{text} bold",
-	"clarify-choice": "{dim}", "clarify-selected": "{title} bold", "clarify-active-other": "{title} italic",
-	"clarify-countdown": "{input_rule}",
-	"sudo-prompt":       "{error} bold", "sudo-border": "{input_rule}", "sudo-title": "{error} bold",
-	"sudo-text":       "{text}",
-	"approval-border": "{input_rule}", "approval-title": "{warn} bold", "approval-desc": "{text} bold",
-	"approval-cmd": "{dim} italic", "approval-choice": "{dim}", "approval-selected": "{title} bold",
-	"voice-status": "bg:{voice_bg} {label}", "voice-status-recording": "bg:{voice_bg} {error} bold",
-}
-
-// Prompt toolkit class styles derived from the active skin palette
-func GetPromptToolkitStyleOverrides(ctx context.Context) map[string]string {
-	skin := GetActiveSkin(ctx)
-	palette := map[string]string{}
-	for _, row := range skinStylePalette {
-		fallback := row[2]
-		if strings.HasPrefix(fallback, "@") {
-			fallback = palette[fallback[1:]]
-		}
-		palette[row[0]] = skin.GetColor(row[1], fallback)
-	}
-	palette["badge_bg"] = PyStr(getOr(skin.Colors, "status_bar_strong", getOr(skin.Colors, "banner_title", "#FFD700")))
-	palette["badge_fg"] = PyStr(getOr(skin.Colors, "status_bar_bg", "#1a1a2e"))
-	out := make(map[string]string, len(skinStyleTemplates))
-	for cls, tpl := range skinStyleTemplates {
-		out[cls] = skinTemplateField.ReplaceAllStringFunc(tpl, func(field string) string { return palette[field[1:len(field)-1]] })
-	}
-	return out
 }

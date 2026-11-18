@@ -136,7 +136,7 @@ var (
 	planCachedPricingFn  = CachedPricing
 	planFeaturedModelsFn = planFeaturedModels
 	planPortalFreeFn     = portalFreeModels
-	planContextLengthFn  = GetModelContextLength
+	planContextLengthFn  = func(ctx context.Context, req ContextLengthRequest) int { return GetModelContextLength(ctx, req) }
 	planFitsContextFn    = fitsPlanContext
 	planSuggestModelsFn  = SuggestModels
 )

@@ -706,16 +706,16 @@ var discordToolDescriptions = map[string][2]string{
 }
 
 // Parameter schemas every discord action shares
-func discordSchemaProperties() map[string]any {
-	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
-	return map[string]any{
-		"guild_id": str("Discord server (guild) ID."), "channel_id": str("Discord channel ID."), "user_id": str("Discord user ID."),
-		"role_id": str("Discord role ID."), "message_id": str("Discord message ID."),
-		"query": str("Member name prefix to search for (search_members)."), "name": str("New thread name (create_thread)."),
-		"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "Max results (default 50). Applies to fetch_messages, search_members."},
-		"before": str("Snowflake ID for reverse pagination (fetch_messages)."), "after": str("Snowflake ID for forward pagination (fetch_messages)."),
-		"auto_archive_duration": map[string]any{"type": "integer", "enum": []any{60, 1440, 4320, 10080}, "description": "Thread archive duration in minutes (create_thread, default 1440)."},
-	}
+func discordSchemaProperties() *pyjson.Object {
+	str := func(desc string) *pyjson.Object { return Dict("type", "string", "description", desc) }
+	return Dict(
+		"guild_id", str("Discord server (guild) ID."), "channel_id", str("Discord channel ID."), "user_id", str("Discord user ID."),
+		"role_id", str("Discord role ID."), "message_id", str("Discord message ID."),
+		"query", str("Member name prefix to search for (search_members)."), "name", str("New thread name (create_thread)."),
+		"limit", Dict("type", "integer", "minimum", 1, "maximum", 100, "description", "Max results (default 50). Applies to fetch_messages, search_members."),
+		"before", str("Snowflake ID for reverse pagination (fetch_messages)."), "after", str("Snowflake ID for forward pagination (fetch_messages)."),
+		"auto_archive_duration", Dict("type", "integer", "enum", []any{60, 1440, 4320, 10080}, "description", "Thread archive duration in minutes (create_thread, default 1440)."),
+	)
 }
 
 const discordContentNote = "\n\nNOTE: Bot does NOT have the MESSAGE_CONTENT privileged intent. %s will return message metadata (author, " +
@@ -723,7 +723,7 @@ const discordContentNote = "\n\nNOTE: Bot does NOT have the MESSAGE_CONTENT priv
 	"Enable the intent in the Discord Developer Portal to see all content."
 
 // Tool schema of the filtered action list, nil when no action remains so the tool is dropped
-func discordBuildSchema(actions []string, caps *pyjson.Object, toolName string) map[string]any {
+func discordBuildSchema(actions []string, caps *pyjson.Object, toolName string) *pyjson.Object {
 	if len(actions) == 0 {
 		return nil
 	}
@@ -750,15 +750,15 @@ func discordBuildSchema(actions []string, caps *pyjson.Object, toolName string) 
 	if !ok {
 		desc = discordToolDescriptions["discord"]
 	}
-	properties := discordSchemaProperties()
-	properties["action"] = map[string]any{"type": "string", "enum": enumValues(actions)}
-	return map[string]any{"name": toolName,
-		"description": desc[0] + "\n\nAvailable actions:\n" + strings.Join(lines, "\n") + "\n\n" + desc[1] + contentNote,
-		"parameters":  map[string]any{"type": "object", "properties": properties, "required": []any{"action"}}}
+	properties := Dict("action", Dict("type", "string", "enum", enumValues(actions)))
+	properties.Update(discordSchemaProperties())
+	return Dict("name", toolName,
+		"description", desc[0]+"\n\nAvailable actions:\n"+strings.Join(lines, "\n")+"\n\n"+desc[1]+contentNote,
+		"parameters", Dict("type", "object", "properties", properties, "required", []any{"action"}))
 }
 
 // Schema of the action subset filtered by the bot's intents and the config allowlist, nil when none remain
-func discordGetDynamicSchema(env *Env, core bool, toolName string) map[string]any {
+func discordGetDynamicSchema(env *Env, core bool, toolName string) *pyjson.Object {
 	token := discordBotToken(env)
 	if token == "" {
 		return nil

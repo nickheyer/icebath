@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"os"
 	"os/exec"
-	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -101,146 +100,153 @@ func IsSQLiteWALResetVulnerable(info VersionTuple) bool {
 		(info.Cmp(NewVersionTuple(3, 44, 6)) >= 0 && info.Cmp(NewVersionTuple(3, 45, 0)) < 0))
 }
 
-// SQLite details reported by one exact Python executable
+// Hidden verb the icebath binary answers with the facts of the SQLite linked into it
+const SQLiteRuntimeVerb = "sqlite-runtime"
+
+// SQLite facts one icebath binary reports about the library linked into it
 type SQLiteRuntimeInfo struct {
-	Executable          string
-	BasePrefix          string
-	PythonVersion       VersionTuple
 	SQLiteVersion       VersionTuple
 	SQLiteVersionString string
-	SQLiteSourceID      string
+	MissingFeatures     []string
 }
 
-// Whether the interpreter's linked SQLite carries the WAL reset bug
+// Whether the binary's linked SQLite carries the WAL reset bug
 func (i *SQLiteRuntimeInfo) WALResetVulnerable() bool {
 	return IsSQLiteWALResetVulnerable(i.SQLiteVersion)
 }
 
-const sqliteProbeScript = `
-import json, sqlite3, sys
-conn = sqlite3.connect(":memory:")
-try:
-    row = conn.execute("SELECT sqlite_source_id()").fetchone()
-finally:
-    conn.close()
-print(json.dumps({
-    "base_prefix": sys.base_prefix, "executable": sys.executable,
-    "python_version": list(sys.version_info[:3]), "sqlite_version": list(sqlite3.sqlite_version_info),
-    "sqlite_version_string": sqlite3.sqlite_version,
-    "sqlite_source_id": str(row[0]) if row and row[0] is not None else "",
-}))
-`
-
-// Environment with conda, uv, venv and PYTHON overrides stripped so a child interpreter reports its own runtime
-func IsolatedInterpreterEnv() map[string]string {
-	env := map[string]string{}
-	for _, kv := range os.Environ() {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok {
-			continue
-		}
-		if k == "" && runtime.GOOS == "windows" {
-			k2, v2, _ := strings.Cut(v, "=")
-			k, v = "="+k2, v2
-		}
-		if runtime.GOOS == "windows" {
-			k = strings.ToUpper(k)
-		}
-		env[k] = v
-	}
-	for _, key := range []string{"CONDA_DEFAULT_ENV", "CONDA_PREFIX", "PYTHONHOME", "PYTHONPATH", "UV_PROJECT_ENVIRONMENT",
-		"UV_PYTHON", "VIRTUAL_ENV"} {
-		delete(env, key)
-	}
-	return env
+// Whether the linked SQLite is free of the WAL reset bug and has every feature the session store needs
+func (i *SQLiteRuntimeInfo) Safe() bool {
+	return !i.WALResetVulnerable() && len(i.MissingFeatures) == 0
 }
 
-// Value of a payload key, the TypeError of subscripting a non dict and the KeyError of a missing key
-func pyPayloadItem(payload any, key string) (any, error) {
-	obj, ok := payload.(pyObject)
-	if !ok {
-		return nil, &pyConvError{"TypeError", "payload is not subscriptable by str"}
-	}
-	for _, kv := range obj {
-		if kv.Key == key {
-			return kv.Value, nil
-		}
-	}
-	return nil, &pyConvError{"KeyError", pyRepr(key)}
+// Wire shape of the report the hidden verb prints
+type sqliteRuntimeReport struct {
+	SQLiteVersion       []int64  `json:"sqlite_version"`
+	SQLiteVersionString string   `json:"sqlite_version_string"`
+	SQLiteSourceID      string   `json:"sqlite_source_id"`
+	MissingFeatures     []string `json:"missing_features"`
 }
 
-// Builds the runtime info from a probe payload, any error being one Python would raise from the constructor
-func sqliteRuntimeFromPayload(payload any) (*SQLiteRuntimeInfo, error) {
-	item := func(key string) (any, error) { return pyPayloadItem(payload, key) }
-	executable, err := item("executable")
+// Features the session store schema relies on, each proven by statements against an in memory database
+var storeFeatureProbes = []struct {
+	name  string
+	check func(ctx context.Context, conn SQLiteConn) error
+}{
+	{"FTS5", func(ctx context.Context, conn SQLiteConn) error {
+		_, err := conn.ExecContext(ctx, "CREATE VIRTUAL TABLE temp.probe_fts USING fts5(content)")
+		return err
+	}},
+	{"the FTS5 trigram tokenizer", func(ctx context.Context, conn SQLiteConn) error {
+		if _, err := conn.ExecContext(ctx, "CREATE VIRTUAL TABLE temp.probe_trigram USING fts5(content, tokenize='trigram')"); err != nil {
+			return err
+		}
+		if _, err := conn.ExecContext(ctx, "INSERT INTO temp.probe_trigram VALUES ('icebath')"); err != nil {
+			return err
+		}
+		var n int64
+		if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM temp.probe_trigram WHERE probe_trigram MATCH 'eba'").Scan(&n); err != nil {
+			return err
+		}
+		if n != 1 {
+			return fmt.Errorf("trigram match found %d rows", n)
+		}
+		return nil
+	}},
+	{"the JSON functions", func(ctx context.Context, conn SQLiteConn) error {
+		var value, count int64
+		err := conn.QueryRowContext(ctx, "SELECT json_extract(json_set('{}', '$.a', 7), '$.a'), "+
+			"(SELECT count(*) FROM json_each(json_array(1, 2)))").Scan(&value, &count)
+		if err == nil && (value != 7 || count != 2) {
+			err = fmt.Errorf("json functions returned %d and %d", value, count)
+		}
+		return err
+	}},
+	{"RETURNING", func(ctx context.Context, conn SQLiteConn) error {
+		if _, err := conn.ExecContext(ctx, "CREATE TEMP TABLE probe_returning(id INTEGER PRIMARY KEY)"); err != nil {
+			return err
+		}
+		var id int64
+		return conn.QueryRowContext(ctx, "INSERT INTO temp.probe_returning DEFAULT VALUES RETURNING id").Scan(&id)
+	}},
+}
+
+// Writes the linked SQLite version, its source id and the store features it lacks as one JSON line
+func WriteSQLiteRuntimeReport(ctx context.Context, w io.Writer) error {
+	conn, err := ConnectSQLite(":memory:", SQLiteConfig{Timeout: 5.0})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	basePrefix, err := item("base_prefix")
-	if err != nil {
-		return nil, err
+	defer conn.Close()
+	report := sqliteRuntimeReport{MissingFeatures: []string{}}
+	if err := conn.QueryRowContext(ctx, "SELECT sqlite_version(), sqlite_source_id()").Scan(&report.SQLiteVersionString, &report.SQLiteSourceID); err != nil {
+		return err
 	}
-	pyVersion, err := item("python_version")
-	if err != nil {
-		return nil, err
+	for _, part := range strings.Split(report.SQLiteVersionString, ".") {
+		n, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			return fmt.Errorf("SQLite reports the malformed version %q", report.SQLiteVersionString)
+		}
+		report.SQLiteVersion = append(report.SQLiteVersion, n)
 	}
-	pythonVersion, err := versionTuple(pyVersion)
-	if err != nil {
-		return nil, err
+	for _, feature := range storeFeatureProbes {
+		if feature.check(ctx, conn) != nil {
+			report.MissingFeatures = append(report.MissingFeatures, feature.name)
+		}
 	}
-	sqlVersion, err := item("sqlite_version")
+	data, err := json.Marshal(report)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	sqliteVersion, err := versionTuple(sqlVersion)
-	if err != nil {
-		return nil, err
+	_, err = fmt.Fprintf(w, "%s\n", data)
+	return err
+}
+
+// Builds the runtime info from the verb's output, an error naming what makes the report unusable
+func sqliteRuntimeFromReport(stdout []byte) (*SQLiteRuntimeInfo, error) {
+	var report sqliteRuntimeReport
+	if err := json.Unmarshal(bytes.TrimSpace(stdout), &report); err != nil {
+		return nil, fmt.Errorf("unreadable report %q: %w", strings.TrimSpace(string(stdout)), err)
 	}
-	versionString, err := item("sqlite_version_string")
-	if err != nil {
-		return nil, err
-	}
-	sourceID, err := item("sqlite_source_id")
-	if err != nil {
-		sourceID = ""
+	switch {
+	case len(report.SQLiteVersion) == 0 || report.SQLiteVersionString == "":
+		return nil, errors.New("the report names no SQLite version")
+	case report.SQLiteSourceID == "":
+		return nil, errors.New("the report names no SQLite source id, so no query ran")
+	case report.MissingFeatures == nil:
+		return nil, errors.New("the report lists no feature check")
 	}
 	return &SQLiteRuntimeInfo{
-		Executable: pathlibStr(pyStr(executable)), BasePrefix: pathlibStr(pyStr(basePrefix)),
-		PythonVersion: pythonVersion, SQLiteVersion: sqliteVersion,
-		SQLiteVersionString: pyStr(versionString), SQLiteSourceID: pyStr(sourceID),
+		SQLiteVersion: NewVersionTuple(report.SQLiteVersion...), SQLiteVersionString: report.SQLiteVersionString,
+		MissingFeatures: report.MissingFeatures,
 	}, nil
 }
 
-// Probes SQLite inside the given interpreter, nil when it cannot run, fails, times out or prints an unusable payload
-func ProbeSQLiteRuntime(python string, timeout float64) (*SQLiteRuntimeInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout*float64(time.Second)))
+// Report of an icebath binary's hidden SQLite verb, an error when it fails, times out or prints nothing usable
+func ProbeSQLiteRuntime(binary string, timeout float64) (*SQLiteRuntimeInfo, error) {
+	limit := time.Duration(timeout * float64(time.Second))
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, python, "-I", "-c", sqliteProbeScript)
+	cmd := exec.CommandContext(ctx, binary, SQLiteRuntimeVerb)
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
 	}
-	env := IsolatedInterpreterEnv()
-	cmd.Env = make([]string, 0, len(env))
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-	var stdout bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, io.Discard
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	cmd.WaitDelay = time.Second
-	if err := cmd.Run(); err != nil {
-		return nil, nil
-	}
-	payload, err := pyLoads(pyDecodeUTF8Replace(stdout.Bytes()))
-	if err != nil {
-		return nil, nil
-	}
-	info, err := sqliteRuntimeFromPayload(payload)
-	var conv *pyConvError
-	if errors.As(err, &conv) && conv.Class == "OverflowError" {
-		return nil, err
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("%s %s timed out after %s", binary, SQLiteRuntimeVerb, limit)
 	}
 	if err != nil {
-		return nil, nil
+		if lines := strings.Split(strings.TrimSpace(stderr.String()), "\n"); lines[len(lines)-1] != "" {
+			return nil, fmt.Errorf("%s %s: %w: %s", binary, SQLiteRuntimeVerb, err, lines[len(lines)-1])
+		}
+		return nil, fmt.Errorf("%s %s: %w", binary, SQLiteRuntimeVerb, err)
+	}
+	info, err := sqliteRuntimeFromReport(stdout.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", binary, SQLiteRuntimeVerb, err)
 	}
 	return info, nil
 }

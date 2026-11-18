@@ -76,7 +76,7 @@ func TestGeneratedFileRPCKwargsCorrelationAndAuthority(t *testing.T) {
 		if def == nil {
 			t.Fatalf("%s is not registered", c.name)
 		}
-		params, _ := def.Schema["parameters"].(map[string]any)
+		params, _ := def.Schema.Vals["parameters"].(map[string]any)
 		props, _ := params["properties"].(map[string]any)
 		for key := range props {
 			blocked := c.name == "terminal" && slices.Contains(terminalBlockedParams, key)

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Keys of the provider registry of the bound home in storage order, alias keys included
@@ -65,7 +67,7 @@ func BedrockFoundationModelCount(ctx context.Context, region string) (int, error
 		return 0, err
 	}
 	c := newAWSServiceClient(awsClientConfig{service: "bedrock", signingName: "bedrock", region: region, session: opts,
-		bearer: resolveBedrockBearerTokenCtx(ctx), readTimeout: 10 * time.Second, totalMaxAttempts: 1})
+		bearer: resolveBedrockBearerTokenCtx(ctx), readTimeout: 10 * time.Second, totalMaxAttempts: 1, routed: home.Override(ctx) != ""})
 	var out struct {
 		ModelSummaries []json.RawMessage `json:"modelSummaries"`
 	}

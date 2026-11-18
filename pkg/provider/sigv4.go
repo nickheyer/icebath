@@ -24,7 +24,12 @@ const (
 )
 
 // Headers botocore never signs because intermediaries rewrite or drop them
-var sigV4UnsignedHeaders = map[string]bool{"expect": true, "transfer-encoding": true, "user-agent": true, "x-amzn-trace-id": true, "connection": true}
+var sigV4UnsignedHeaders = map[string]bool{"baggage": true, "connection": true, "expect": true, "keep-alive": true, "proxy-authenticate": true,
+	"proxy-authorization": true, "te": true, "traceparent": true, "tracestate": true, "trailer": true, "transfer-encoding": true, "upgrade": true,
+	"user-agent": true, "x-amzn-trace-id": true}
+
+// Date header botocore writes, email.utils.formatdate of the signing second in UTC
+const botocoreDateFormat = "Mon, 02 Jan 2006 15:04:05 -0000"
 
 // One AWS access key set with its expiry, zero Expires never expires
 type awsCredentials struct {
@@ -249,7 +254,7 @@ func sigV4Sign(req *http.Request, body []byte, creds awsCredentials, service, re
 	if req.Header.Get("Date") != "" {
 		req.Header.Del("Date")
 		req.Header.Del("X-Amz-Date")
-		req.Header.Set("Date", ts.Format(http.TimeFormat))
+		req.Header.Set("Date", ts.Format(botocoreDateFormat))
 	} else {
 		req.Header.Set("X-Amz-Date", ts.Format(sigV4TimeFormat))
 	}

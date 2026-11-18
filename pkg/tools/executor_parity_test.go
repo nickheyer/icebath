@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"sync"
@@ -24,8 +25,8 @@ func webSearchExecutor(t *testing.T) (*Executor, *fakeExecutorHost, func() []rec
 	var mu sync.Mutex
 	var calls []recordedCall
 	r := NewRegistry()
-	r.Register(Def{Name: "web_search", Toolset: "web", Schema: map[string]any{"name": "web_search", "description": "search",
-		"parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
+	r.Register(Def{Name: "web_search", Toolset: "web", Schema: pyjson.ObjectOf("name", "web_search", "description", "search",
+		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())),
 		Handler: func(_ context.Context, c *Call) string {
 			mu.Lock()
 			calls = append(calls, recordedCall{c.Name, c.Args, c.ToolCallID})

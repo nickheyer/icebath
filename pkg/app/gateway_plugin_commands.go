@@ -328,17 +328,11 @@ func gatewayPluginLookup(c *CLI, name string) (*bool, error) {
 // Runs slash.exec unbounded on its own socket, stopped on Ctrl+C, the interrupt returned after the stopped line
 func callUnbounded(c *CLI, connection *gatewaycli.GatewayConnection, name, command string) (any, bool, error) {
 	wake := &pythread.Event{}
-	c.uiMu.Lock()
-	c.gatewayCommandWait = wake
-	c.uiMu.Unlock()
 	answering := &gatewayAnswering{}
 	memory.SpawnContextThread(c.ctx, "icebath-command-choices", func(ctx context.Context) {
 		answerGatewayChoices(c, connection, wake, answering)
 	}).Start()
 	defer func() {
-		c.uiMu.Lock()
-		c.gatewayCommandWait = nil
-		c.uiMu.Unlock()
 		if answering.active() {
 			c.withdrawGatewayModal("clarify")
 		}

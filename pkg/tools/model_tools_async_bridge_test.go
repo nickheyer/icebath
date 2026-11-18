@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"image"
 	"image/color"
 	"image/png"
@@ -25,7 +26,7 @@ import (
 func bridgeDispatcher(t *testing.T, name string, handler Handler) (*Dispatcher, *Env) {
 	t.Helper()
 	r := NewRegistry()
-	r.Register(Def{Name: name, Toolset: "web", Schema: map[string]any{"name": name, "description": name, "parameters": map[string]any{"type": "object"}},
+	r.Register(Def{Name: name, Toolset: "web", Schema: pyjson.ObjectOf("name", name, "description", name, "parameters", pyjson.ObjectOf("type", "object")),
 		Check: func(*Env) bool { return true }, Handler: handler})
 	return NewDispatcher(r), newTestToolEnv(t)
 }

@@ -93,7 +93,7 @@ func (m *toolMatcher) postInit(kind string) {
 	}
 	re, err := pyre.CompileFullmatch(m.Matcher)
 	if err != nil {
-		logWarn(fmt.Sprintf("%s matcher %s is invalid (%v) — treating as literal equality", kind, pyrepr.StrRepr(m.Matcher), err))
+		logShellHooks.warn(fmt.Sprintf("%s matcher %s is invalid (%v) — treating as literal equality", kind, pyrepr.StrRepr(m.Matcher), err))
 	}
 	m.compiled = re
 }
@@ -266,7 +266,7 @@ func RegisterShellHooksFromConfig(ctx context.Context, cfg any, acceptHooks, int
 		if ok {
 			consented = append(consented, spec)
 		} else {
-			logWarn(fmt.Sprintf("shell hook for %s (%s) not allowlisted in %s — skipped. Use --accept-hooks / "+
+			logShellHooks.warn(fmt.Sprintf("shell hook for %s (%s) not allowlisted in %s — skipped. Use --accept-hooks / "+
 				"ICEBATH_ACCEPT_HOOKS=1 / hooks_auto_accept: true, or approve it at a CLI prompt "+
 				"for this profile.", spec.Event, spec.Command, ShellHookAllowlistPath(ctx)))
 		}
@@ -304,7 +304,7 @@ func SyncShellHooksFromConfig(ctx context.Context, loadCfg func() any) {
 			wanted = append(wanted, spec)
 		} else if k := [3]string{homeKey, spec.Event, spec.Command}; !shellHookSkipLogged[k] {
 			shellHookSkipLogged[k] = true
-			logWarn(fmt.Sprintf("shell hook for %s (%s) not allowlisted in %s — skipped. Approve it at a CLI "+
+			logShellHooks.warn(fmt.Sprintf("shell hook for %s (%s) not allowlisted in %s — skipped. Approve it at a CLI "+
 				"prompt for this profile, or use --accept-hooks / ICEBATH_ACCEPT_HOOKS=1 / "+
 				"hooks_auto_accept: true.", spec.Event, spec.Command, ShellHookAllowlistPath(ctx)))
 		}
@@ -320,7 +320,7 @@ func SyncShellHooksFromConfig(ctx context.Context, loadCfg func() any) {
 			if !readable {
 				reason = "the allowlist is unreadable"
 			}
-			logWarn(fmt.Sprintf("shell hooks: %s, so removed or revoked hooks stay registered until it is fixed", reason))
+			logShellHooks.warn(fmt.Sprintf("shell hooks: %s, so removed or revoked hooks stay registered until it is fixed", reason))
 		}
 		shellHooksRegisteredMu.Unlock()
 		shellHooksSyncMu.Unlock()
@@ -369,7 +369,7 @@ func SyncShellHooksFromConfig(ctx context.Context, loadCfg func() any) {
 		return stale[i].event+"\x00"+stale[i].command < stale[j].event+"\x00"+stale[j].command
 	})
 	for _, k := range stale {
-		logInfo(fmt.Sprintf("shell hook unregistered (removed from config or allowlist): %s -> %s", k.event, k.command))
+		logShellHooks.info(fmt.Sprintf("shell hook unregistered (removed from config or allowlist): %s -> %s", k.event, k.command))
 	}
 }
 
@@ -421,7 +421,7 @@ func shellHookSpecs(cfg any) (specs []*ShellHookSpec, run bool, complete bool) {
 		return nil, false, true
 	}
 	if envEnabled("ICEBATH_SAFE_MODE") {
-		logInfo("ICEBATH_SAFE_MODE=1 — shell-hook registration skipped")
+		logShellHooks.info("ICEBATH_SAFE_MODE=1 — shell-hook registration skipped")
 		return nil, false, true
 	}
 	specs, complete = parseShellHooks(cfgDict["hooks"])
@@ -451,7 +451,7 @@ func wireShellHooks(manager *Manager, homeKey string, specs []*ShellHookSpec) []
 		if spec.Matcher != "" {
 			matcher = spec.Matcher
 		}
-		logInfo(fmt.Sprintf("shell hook registered: %s -> %s (matcher=%s, timeout=%ds, fail_closed=%s)",
+		logShellHooks.info(fmt.Sprintf("shell hook registered: %s -> %s (matcher=%s, timeout=%ds, fail_closed=%s)",
 			spec.Event, spec.Command, matcher, spec.Timeout, pyrepr.Repr(spec.FailClosed)))
 	}
 	return registered
@@ -552,15 +552,15 @@ func parseShellHooks(hooksCfg any) ([]*ShellHookSpec, bool) {
 			continue
 		}
 		if shellUnsupportedHooks[eventName] {
-			logWarn(fmt.Sprintf("hook event %s is Python-plugin-only: shell hooks cannot return its directive, "+
+			logShellHooks.warn(fmt.Sprintf("hook event %s is Python-plugin-only: shell hooks cannot return its directive, "+
 				"so this registration is refused rather than silently ignored", pyrepr.StrRepr(eventName)))
 			continue
 		}
 		if !validHooks[eventName] {
 			if suggestion := pydifflib.GetCloseMatches(eventName, ValidHooks(), 1, 0.6); len(suggestion) > 0 {
-				logWarn(fmt.Sprintf("unknown hook event %s in hooks: config — did you mean %s?", pyrepr.StrRepr(eventName), pyrepr.StrRepr(suggestion[0])))
+				logShellHooks.warn(fmt.Sprintf("unknown hook event %s in hooks: config — did you mean %s?", pyrepr.StrRepr(eventName), pyrepr.StrRepr(suggestion[0])))
 			} else {
-				logWarn(fmt.Sprintf("unknown hook event %s in hooks: config (valid: %s)", pyrepr.StrRepr(eventName), strings.Join(ValidHooks(), ", ")))
+				logShellHooks.warn(fmt.Sprintf("unknown hook event %s in hooks: config (valid: %s)", pyrepr.StrRepr(eventName), strings.Join(ValidHooks(), ", ")))
 			}
 			complete = false
 			continue
@@ -570,7 +570,7 @@ func parseShellHooks(hooksCfg any) ([]*ShellHookSpec, bool) {
 		}
 		list, ok := entries.([]any)
 		if !ok {
-			logWarn(fmt.Sprintf("hooks.%s must be a list of hook definitions; got %s", eventName, pyrepr.TypeName(entries)))
+			logShellHooks.warn(fmt.Sprintf("hooks.%s must be a list of hook definitions; got %s", eventName, pyrepr.TypeName(entries)))
 			complete = false
 			continue
 		}
@@ -587,7 +587,7 @@ func parseShellHooks(hooksCfg any) ([]*ShellHookSpec, bool) {
 
 // One validated hooks entry, nil with a warning when malformed
 func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
-	warn := func(msg string) { logWarn(fmt.Sprintf("hooks.%s[%d]", event, index) + msg) }
+	warn := func(msg string) { logShellHooks.warn(fmt.Sprintf("hooks.%s[%d]", event, index) + msg) }
 	entry, ok := shellHookDict(raw)
 	if !ok {
 		warn(fmt.Sprintf(" must be a mapping with a 'command' key; got %s", pyrepr.TypeName(raw)))
@@ -769,9 +769,9 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 	blocking := shellHookBlockingEvents[spec.Event]
 	failClosed := spec.FailClosed && blocking
 	if r.Error != "" {
-		logWarn(fmt.Sprintf("shell hook failed (event=%s command=%s): %s", spec.Event, spec.Command, r.Error))
+		logShellHooks.warn(fmt.Sprintf("shell hook failed (event=%s command=%s): %s", spec.Event, spec.Command, r.Error))
 	} else if r.TimedOut {
-		logWarn(fmt.Sprintf("shell hook timed out after %.2fs (event=%s command=%s)", r.ElapsedSeconds, spec.Event, spec.Command))
+		logShellHooks.warn(fmt.Sprintf("shell hook timed out after %.2fs (event=%s command=%s)", r.ElapsedSeconds, spec.Event, spec.Command))
 	}
 	if r.Error != "" || r.TimedOut {
 		if !failClosed {
@@ -786,7 +786,7 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 	stderr := pystr.Strip(r.Stderr)
 	limited := pystr.Slice(stderr, 0, shellHookStderrLimit)
 	if stderr != "" {
-		logDebug(fmt.Sprintf("shell hook stderr (event=%s command=%s): %s", spec.Event, spec.Command, limited))
+		logShellHooks.debug(fmt.Sprintf("shell hook stderr (event=%s command=%s): %s", spec.Event, spec.Command, limited))
 	}
 	code := 0
 	if r.ReturnCode != nil {
@@ -800,11 +800,11 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 		if message == "" {
 			message = shellHookDefaultBlockMessage
 		}
-		logInfo(fmt.Sprintf("shell hook exited %d — blocking (event=%s command=%s): %s", ShellHookBlockExitCode, spec.Event, spec.Command, message))
+		logShellHooks.info(fmt.Sprintf("shell hook exited %d — blocking (event=%s command=%s): %s", ShellHookBlockExitCode, spec.Event, spec.Command, message))
 		return map[string]any{"action": "block", "message": message}
 	}
 	if code != 0 {
-		logWarn(fmt.Sprintf("shell hook exited %d (event=%s command=%s); stderr=%s", code, spec.Event, spec.Command, limited))
+		logShellHooks.warn(fmt.Sprintf("shell hook exited %d (event=%s command=%s); stderr=%s", code, spec.Event, spec.Command, limited))
 	}
 	stdout := pystr.Strip(r.Stdout)
 	parsed := parseShellHookResponse(spec.Event, stdout)
@@ -904,7 +904,7 @@ func parseShellHookResponse(event, stdout string) map[string]any {
 	}
 	v, err := pyjson.Loads(stdout)
 	if err != nil {
-		logWarn(fmt.Sprintf("shell hook stdout was not valid JSON (event=%s): %s", event, pystr.Slice(stdout, 0, 200)))
+		logShellHooks.warn(fmt.Sprintf("shell hook stdout was not valid JSON (event=%s): %s", event, pystr.Slice(stdout, 0, 200)))
 		return nil
 	}
 	obj, ok := v.(*pyjson.Object)
@@ -965,7 +965,7 @@ func SaveShellHookAllowlist(ctx context.Context, data map[string]any) error {
 	p := ShellHookAllowlistPath(ctx)
 	err := shellHookAtomicWrite(ctx, p, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true))
 	if err != nil && isOSError(err) {
-		logWarn(fmt.Sprintf("Failed to persist shell hook allowlist to %s: %s. The approval holds for this process "+
+		logShellHooks.warn(fmt.Sprintf("Failed to persist shell hook allowlist to %s: %s. The approval holds for this process "+
 			"only (a gateway keeps a launch's --accept-hooks until it restarts); a gateway session "+
 			"opened from a CLI prompt skips the hook, and the next run re-prompts.", p, pypath.OSErrorText(err)))
 		return nil
@@ -995,7 +995,7 @@ func promptAndRecordShellHook(ctx context.Context, event, command string, accept
 		if err := recordShellHookApproval(ctx, event, command); err != nil {
 			return false, err
 		}
-		logInfo(fmt.Sprintf("shell hook auto-approved via --accept-hooks / env / config: %s -> %s", event, command))
+		logShellHooks.info(fmt.Sprintf("shell hook auto-approved via --accept-hooks / env / config: %s -> %s", event, command))
 		return true, nil
 	}
 	if !shellHookStdinIsTTY() {

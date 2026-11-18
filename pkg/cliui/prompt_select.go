@@ -207,7 +207,7 @@ func (p *listPrompt) reconcile() {
 
 // Styled runs of a segment row, plain runs bold and frosted under the cursor
 func (p *listPrompt) segments(item RadioItem, atCursor bool) []span {
-	t := activeTheme()
+	t := promptTheme
 	spans := make([]span, 0, len(item))
 	for _, seg := range item {
 		style := textStyle{}
@@ -232,7 +232,7 @@ func (p *listPrompt) segments(item RadioItem, atCursor bool) []span {
 
 // Key hint rows for the state the prompt is in
 func (p *listPrompt) hintLines(body int) []string {
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	if p.escArmed {
 		return p.c.hintRows([]string{"press esc again to cancel"}, body, t.Warn)
 	}
@@ -259,7 +259,7 @@ func (p *listPrompt) hintLines(body int) []string {
 
 // Painted description rows wrapped to the body, stars in the warning tone and usage gauges by how full they are
 func (p *listPrompt) descLines(body int) []string {
-	t := activeTheme()
+	t := promptTheme
 	var out []string
 	for _, text := range p.desc {
 		var spans []span
@@ -298,7 +298,7 @@ func (p *listPrompt) descShown(desc []string, budget, body int) []string {
 	if budget >= len(desc) {
 		return desc
 	}
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	for keep := budget - 1; keep >= 0; keep-- {
 		more := fmt.Sprintf("%s %d more description lines (enlarge terminal)", g.ellipsis, len(desc)-keep)
 		note := hung(p.c.textRows(more, textStyle{color: t.Faint}, body), "    ", "    ")
@@ -311,7 +311,7 @@ func (p *listPrompt) descShown(desc []string, budget, body int) []string {
 
 // Rows of the filter query after its slash, the caret closing the last row while the filter is open
 func (p *listPrompt) searchLines(body int) []string {
-	t := activeTheme()
+	t := promptTheme
 	rows := measure(p.search.Query).solid().rows(body - 4)
 	if len(rows) == 0 {
 		rows = []string{""}
@@ -324,7 +324,7 @@ func (p *listPrompt) searchLines(body int) []string {
 
 // Lines of the prompt for a terminal of maxRows by cols, the list scrolled to its cursor row
 func (p *listPrompt) frame(maxRows, cols int) []string {
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	body := bodyWidth(cols)
 	lay := p.layout(body)
 	lines := p.c.titleLines(p.title, body)
@@ -386,7 +386,7 @@ func (p *listPrompt) frame(maxRows, cols int) []string {
 
 // Count beside an arrow of what lies past an edge of the view, cursor row lines before whole rows
 func (p *listPrompt) hidden(arrow string, cut, rows int) string {
-	faint := textStyle{color: activeTheme().Faint}
+	faint := textStyle{color: promptTheme.Faint}
 	switch {
 	case cut == 1:
 		return "    " + p.c.paint(arrow+" 1 line", faint)
@@ -541,7 +541,7 @@ func (p *listPrompt) rowName(row listRow) string {
 
 // Answer line a finished prompt leaves, naming the choice, the checked items or the cancellation
 func (p *listPrompt) answer(outcome listOutcome) []string {
-	t := activeTheme()
+	t := promptTheme
 	switch outcome {
 	case listBack:
 		return nil
@@ -574,7 +574,6 @@ func (p *listPrompt) run() (outcome listOutcome, err error) {
 		return listCancelled, err
 	}
 	defer release()
-	defer p.c.graceQuiet()
 	region := p.c.openRegion()
 	defer region.close(nil)
 	keys := p.c.newKeyReader()

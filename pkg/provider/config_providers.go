@@ -15,6 +15,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -644,23 +645,9 @@ func ApplyCustomProviderTLSToClientKwargs(clientKwargs map[string]any, baseURL s
 	}
 }
 
-// NormalizeExtraHeaders renders a raw extra_headers mapping as string pairs, dropping nil values
+// NormalizeExtraHeaders renders a raw extra_headers mapping as string pairs in declaration order, dropping nil values
 func NormalizeExtraHeaders(extraHeaders any) map[string]string {
-	if typed, ok := extraHeaders.(map[string]string); ok {
-		return copyStringMap(typed)
-	}
-	m, ok := extraHeaders.(map[string]any)
-	if !ok || len(m) == 0 {
-		return map[string]string{}
-	}
-	out := make(map[string]string, len(m))
-	for k, v := range m {
-		if v == nil {
-			continue
-		}
-		out[k] = cfgString(v)
-	}
-	return out
+	return pyhttpx.OrderedHeaderMap(orderedExtraHeaders(extraHeaders)...)
 }
 
 // CustomProviderExtraHeaders returns the headers of the first route matching entry declaring any
@@ -679,17 +666,18 @@ func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, 
 	if len(extra) == 0 {
 		return
 	}
-	merged := make(map[string]string, len(extra))
-	switch existing := clientKwargs["default_headers"].(type) {
+	var existing map[string]string
+	switch typed := clientKwargs["default_headers"].(type) {
 	case map[string]string:
-		maps.Copy(merged, existing)
+		existing = typed
 	case map[string]any:
-		for k, v := range existing {
-			merged[k] = fmt.Sprint(v)
+		var lines []pyhttpx.HeaderLine
+		for _, k := range config.MappingKeys(typed) {
+			lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: fmt.Sprint(typed[k])})
 		}
+		existing = pyhttpx.OrderedHeaderMap(lines...)
 	}
-	maps.Copy(merged, extra)
-	clientKwargs["default_headers"] = merged
+	clientKwargs["default_headers"] = pyhttpx.MergeHeaderMaps(existing, extra)
 }
 
 // MergeExtraHeaders layers route headers over default headers with the route winning
@@ -698,14 +686,7 @@ func MergeExtraHeaders(defaults map[string]string, baseURL string, customProvide
 	if len(extra) == 0 {
 		return defaults
 	}
-	merged := make(map[string]string, len(defaults)+len(extra))
-	for k, v := range defaults {
-		merged[k] = v
-	}
-	for k, v := range extra {
-		merged[k] = v
-	}
-	return merged
+	return pyhttpx.MergeHeaderMaps(defaults, extra)
 }
 
 // CustomProviderSessionAffinityHeader is the header name a route matching entry opted into or empty

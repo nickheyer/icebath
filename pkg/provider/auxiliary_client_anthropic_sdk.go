@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -102,14 +104,23 @@ func buildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 	if kwargs.defaultQuery != nil {
 		normalized = strings.TrimRight(normalized, "/")
 	}
-	tr := auxDeadlineTransport(kwargs.connect, kwargs.timeout, kwargs.timeout)
+	limits := stainlessLimits
+	if route.TokenSource != nil {
+		limits = httpxDefaultLimits
+	}
+	tr, err := auxDeadlineTransport(limits, kwargs.connect, kwargs.timeout, kwargs.timeout)
+	if err != nil {
+		return nil, err
+	}
 	route.Transport = tr
 	built, err := newAnthropicClient(route)
 	if err != nil {
 		return nil, err
 	}
+	inner := built.(*anthropicClient)
+	inner.sdkTimeout = kwargs.timeout
 	keyAttr, tokenAttr := anthSDKKeyAttributes(apiKey, baseURL)
-	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: normalized, transport: tr,
+	return &anthropicSDKClient{inner: inner, baseURL: normalized, transport: tr,
 		betas: anthCommonBetasForBaseURL(normalized, dropContext1MBeta), apiKey: keyAttr, authToken: tokenAttr}, nil
 }
 
@@ -123,33 +134,27 @@ func BuildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 }
 
 // Client whose default headers merge the given headers over its own, the SDK with_options call
-func (c *anthropicSDKClient) withDefaultHeaders(headers map[string]string) *anthropicSDKClient {
-	merged := map[string]string{}
-	for k, v := range c.inner.route.Headers {
-		merged[k] = v
-	}
-	for k, v := range headers {
-		merged[k] = v
-	}
-	c.inner.route.Headers = merged
+func (c *anthropicSDKClient) withDefaultHeaders(headers []pyhttpx.HeaderLine) *anthropicSDKClient {
+	c.inner.defaultHeaders = stainlessMergeHeaders(c.inner.defaultHeaders, pyHeaderDictOf(headers...))
 	return c
 }
 
-// Request body and per call headers of SDK kwargs, extra_body merged and extra_headers lifted out
+// Request body and per call headers of SDK kwargs, extra_body kept whole for the encoder to merge after the params and extra_headers lifted out
 func anthSDKRequest(apiKwargs map[string]any, stream bool) (map[string]any, map[string]any) {
 	body := make(map[string]any, len(apiKwargs)+1)
 	var extraHeaders map[string]any
 	for k, v := range apiKwargs {
 		switch k {
-		case "stream", "extra_body", "extra_query", "timeout":
+		case "stream", "extra_query", "timeout":
+		case "extra_body":
+			if extra, ok := pyjson.AsObject(v); ok && extra.Len() > 0 {
+				body["extra_body"] = extra
+			}
 		case "extra_headers":
 			extraHeaders, _ = v.(map[string]any)
 		default:
 			body[k] = v
 		}
-	}
-	if extra, ok := apiKwargs["extra_body"].(map[string]any); ok {
-		anthMergeExtraBody(body, extra)
 	}
 	if stream {
 		body["stream"] = true
@@ -223,6 +228,31 @@ func anthRequestTimeout(raw any) (pyhttpx.Timeout, bool) {
 	return pyhttpx.Timeout{Connect: d, Read: d, Write: d, Pool: d}, true
 }
 
+// Call options of SDK kwargs, the timeout keyword in the str forms the Stainless headers carry
+func anthCallOptions(apiKwargs map[string]any) anthSDKCall {
+	raw, present := apiKwargs["timeout"]
+	if !present {
+		return anthSDKCall{}
+	}
+	text := ""
+	switch v := raw.(type) {
+	case nil:
+		return anthSDKCall{timeoutText: "None", timeoutNone: true}
+	case pyhttpx.Timeout:
+		if v.Read <= 0 {
+			return anthSDKCall{timeoutText: "None", timeoutNone: true}
+		}
+		text = pyFloatRepr(v.Read.Seconds())
+	case float64:
+		text = pyFloatRepr(v)
+	case float32:
+		text = pyFloatRepr(float64(v))
+	default:
+		text = pyrepr.Str(v)
+	}
+	return anthSDKCall{timeoutText: text, readTimeout: text}
+}
+
 // Posts the Messages request and returns the response with its body still open
 func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any, stream bool) (*http.Response, error) {
 	body, extraHeaders := anthSDKRequest(apiKwargs, stream)
@@ -230,12 +260,15 @@ func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	httpReq, err := c.inner.transport.Request(ctx, anthOpMessages, body, headers)
+	httpReq, err := c.inner.transport.Request(ctx, anthOpMessages, body, headers, anthCallOptions(apiKwargs))
 	if err != nil {
 		return nil, err
 	}
 	_, connect := anthClientTimeout(0)
-	client := c.inner.httpClient(connect)
+	client, err := c.inner.httpClient(connect)
+	if err != nil {
+		return nil, err
+	}
 	if limits, ok := anthRequestTimeout(apiKwargs["timeout"]); ok {
 		scoped := *client
 		scoped.Transport = pyhttpx.PhaseTimeoutTransport(client.Transport, limits)
@@ -266,7 +299,7 @@ func (c *anthropicSDKClient) streamFinalMessage(ctx context.Context, apiKwargs m
 	defer resp.Body.Close()
 	anthOfferResponse(call, resp)
 	onStreamEvent := call.onStreamEvent
-	events := newAnthSSEEvents(resp.Body, resp.Header)
+	events := &anthSSEEvents{r: c.inner.sseFrames(resp), headers: resp.Header}
 	acc := newAnthAccumulator()
 	var stopDetails any
 	sawStop := false
@@ -344,15 +377,19 @@ func buildAnthropicBedrockClient(ctx context.Context, region string, timeout flo
 	}
 	read, connect := anthClientTimeout(secondsDuration(timeout))
 	betas := append(cloneStrings(anthropicCommonBetas), anthropicContext1MBeta)
-	headers := bedrockGuardrailHeaders(bedrockProcessConfig(ctx))
-	tr := auxDeadlineTransport(connect, read, read)
-	route := Route{Provider: "bedrock", Mode: ModeAnthropicMessages, Auth: AuthAWSSigV4, Region: region, Headers: headers, Transport: tr,
+	tr, err := auxDeadlineTransport(stainlessLimits, connect, read, read)
+	if err != nil {
+		return nil, err
+	}
+	route := Route{Provider: "bedrock", Mode: ModeAnthropicMessages, Auth: AuthAWSSigV4, Region: region, Transport: tr,
 		AccessKeyID: scoped.AccessKeyID, SecretAccessKey: scoped.SecretAccessKey, SessionToken: scoped.SessionToken}
 	built, err := newAnthropicClient(route)
 	if err != nil {
 		return nil, err
 	}
-	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: "https://bedrock-runtime." + region + ".amazonaws.com", transport: tr,
+	inner := built.(*anthropicClient)
+	inner.sdkTimeout = read
+	return &anthropicSDKClient{inner: inner, baseURL: "https://bedrock-runtime." + region + ".amazonaws.com", transport: tr,
 		betas: betas, apiKey: bearer}, nil
 }
 

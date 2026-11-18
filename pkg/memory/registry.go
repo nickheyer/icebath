@@ -238,7 +238,7 @@ func LoadMemoryProviderWithSkills(ctx context.Context, env *tools.Env, name stri
 }
 
 func loadMemoryProvider(ctx context.Context, env *tools.Env, name string, registerSkills bool) Provider {
-	log := envLog(env)
+	log := moduleLog(env, "plugins.memory")
 	r := FindProvider(ctx, env, name)
 	if r == nil {
 		log.Debug(fmt.Sprintf("Memory provider '%s' not found in bundled, user plugins, or entry points", name))

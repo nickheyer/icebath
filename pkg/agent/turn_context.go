@@ -334,7 +334,7 @@ func failClosedAfterPreflightTimeout(a *AIAgent, requestTokens int) error {
 	}
 	if fits := requestExceedsModelWindow(a, requestTokens); fits != nil && !*fits {
 		turnContextLog().Warn(fmt.Sprintf("Preflight compression timed out but the request (~%s tokens) fits the model window (%s); sending it uncompressed this turn",
-			groupThousands(requestTokens), groupThousands(a.contextCompressor.Base().ContextLength)))
+			groupThousands(requestTokens), groupThousands(engineContextLength(a.contextCompressor))))
 		return nil
 	}
 	return &PreflightCompressionTimedOut{Msg: "Context compression timed out before it could commit while the request " +
@@ -350,7 +350,7 @@ func failClosedOnInsufficientProgress(a *AIAgent, requestTokens int) error {
 	if compressionBlockedTransiently(a) {
 		return nil
 	}
-	window := a.contextCompressor.Base().ContextLength
+	window := engineContextLength(a.contextCompressor)
 	return &PreflightCompressionTimedOut{Msg: "Context compression could not bring this session under the model's context window " +
 		fmt.Sprintf("(~%s tokens vs %s). The provider call was not ", groupThousands(requestTokens), groupThousands(window)) +
 		"sent. Start a new session with /new; this session is too large to compress further."}
@@ -1080,8 +1080,11 @@ func buildAPIMessages(ctx context.Context, a *AIAgent, messages []*state.Message
 	}
 	canonical := append(canonicalizeReplayHistory(messages[:split], a.currentTurnTimestamp), messages[split:]...)
 	apiMessages := make([]map[string]any, 0, len(canonical)+1)
+	tracks := make([]*wireKeyTrack, 0, len(canonical))
 	for idx, msg := range canonical {
-		apiMsg := cloneMessageForSend(wireDictOf(msg)).(map[string]any)
+		dict := wireDictOf(msg)
+		apiMsg := cloneMessageForSend(dict).(map[string]any)
+		track := newWireKeyTrack(state.MessageKeyOrder(msg, dict), apiMsg)
 		sidecar, _ := apiMsg["api_content"].(string)
 		delete(apiMsg, "api_content")
 		for key := range state.PersistenceOnlyMessageFields {
@@ -1096,18 +1099,27 @@ func buildAPIMessages(ctx context.Context, a *AIAgent, messages []*state.Message
 		} else if sidecar != "" && (msg.Role == "user" || msg.Role == "assistant") {
 			apiMsg["content"] = sidecar
 		}
+		track.sync(apiMsg)
+		detailsBefore := apiMsg["reasoning_details"]
 		a.copyReasoningContentForAPI(msg, apiMsg)
+		track.sync(apiMsg, "reasoning_content", "reasoning", "reasoning_details")
+		track.reinserted(apiMsg, "reasoning_details", detailsBefore)
 		delete(apiMsg, "finish_reason")
 		fillEmptyNonFinalWirePayload(apiMsg, idx == len(canonical)-1)
+		track.sync(apiMsg)
 		delete(apiMsg, "_length_continuation_fragment")
 		delete(apiMsg, "_length_continuation_nudge")
 		if a.shouldSanitizeToolCalls() {
 			sanitizeToolCallsForStrictAPI(apiMsg, sanitizeModelFor(a, moaConfig), a.baseURL, a.provider)
 		}
 		apiMessages = append(apiMessages, apiMsg)
+		tracks = append(tracks, track)
 	}
 	replayForAgent(ctx, a, apiMessages)
 	applyRejectedThinkingSuppression(a, apiMessages)
+	for i, apiMsg := range apiMessages {
+		tracks[i].attach(apiMsg)
+	}
 	effective := activeSystemPrompt
 	if a.ephemeralSystemPrompt != "" {
 		effective = strings.TrimSpace(effective + "\n\n" + a.ephemeralSystemPrompt)

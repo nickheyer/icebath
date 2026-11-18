@@ -74,6 +74,7 @@ func NewDaytonaEnvironment(ctx context.Context, env *Env, o DaytonaOptions) (*da
 	d := &daytonaEnv{persistent: o.Persistent, taskID: o.TaskID}
 	d.stdinMode = "payload"
 	initBaseEnv(&d.baseEnv, d, env, o.Cwd, o.Timeout, nil, true)
+	d.baseEnv.persistent = d.persistent
 	client, err := newDaytonaClient(env)
 	if err != nil {
 		return nil, err

@@ -54,9 +54,6 @@ func (a *GatewayAgent) submitParams(userMessage, persistUserMessage any, turnAut
 	if len(turnAuthor) > 0 {
 		params["turn_author"] = turnAuthor
 	}
-	if a.voiceTurnPending {
-		params["voice_turn"] = true
-	}
 	if staged := a.pendingCLIUserMessage; staged != nil && pyrepr.Truthy(staged["display_kind"]) {
 		params["display_kind"] = staged["display_kind"]
 	}

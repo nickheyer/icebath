@@ -496,6 +496,9 @@ func hallmarkManagerHome(t *testing.T) string {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  enabled:\n    - hallmark\n"), 0o644)
+	os.MkdirAll(filepath.Join(h, "plugins", "hallmark"), 0o755)
+	os.WriteFile(filepath.Join(h, "plugins", "hallmark", "plugin.yaml"), []byte("name: hallmark\nkind: standalone\n"), 0o644)
+	os.WriteFile(filepath.Join(h, "plugins", ".install-metadata.json"), []byte(`{"hallmark": {"source": "builtin:hallmark"}}`), 0o600)
 	return h
 }
 

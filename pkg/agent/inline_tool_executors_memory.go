@@ -20,7 +20,10 @@ func memoryInlineExecutor(ctx context.Context, host tools.ExecutorHost, args map
 	}
 	a := h.AIAgent
 	ctx = tools.WithEnvHome(ctx, a.env)
-	result := memory.MemoryTool(ctx, a.env, a.memoryStore, args["action"], args["target"], args["content"], args["old_text"], args["new_text"], args["operations"])
+	result, err := memory.MemoryTool(ctx, a.env, a.memoryStore, args["action"], args["target"], args["content"], args["old_text"], args["new_text"], args["operations"])
+	if err != nil {
+		return "", err
+	}
 	if a.memoryManager != nil {
 		a.memoryManager.NotifyMemoryToolWriteContext(ctx, result, args, func() map[string]any {
 			return buildMemoryWriteMetadata(a, "", "", ictx.TaskID, ictx.ToolCallID)

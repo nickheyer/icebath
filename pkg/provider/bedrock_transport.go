@@ -3,13 +3,18 @@ package provider
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // InvokeModel body version the AnthropicBedrock client stamps on every Messages body
@@ -59,30 +64,41 @@ func bedrockHeaderValue(headers map[string]string, name string) (string, bool) {
 	return "", false
 }
 
-// InvokeModel form of a Messages body, model and stream lifted out and the betas moved into the body
-func bedrockInvokeBody(body map[string]any, headers map[string]string) (map[string]any, string, bool) {
-	inner := make(map[string]any, len(body)+2)
-	for k, v := range body {
-		inner[k] = v
+// InvokeModel form of a Messages body as AnthropicBedrock prepares it, version and betas set by default, model and stream lifted out, extra_body merged last
+func bedrockInvokeBody(body map[string]any, op anthOperation, headers map[string]string) (*pyjson.Object, string, bool, error) {
+	params, extra, err := anthWireParams(body, op)
+	if err != nil {
+		return nil, "", false, err
 	}
-	model := stringOf(inner["model"])
-	stream, _ := inner["stream"].(bool)
-	delete(inner, "model")
-	delete(inner, "stream")
-	if _, has := inner["anthropic_version"]; !has {
-		inner["anthropic_version"] = bedrockAnthropicVersion
+	inner := params.Copy()
+	if _, has := inner.Get("anthropic_version"); !has {
+		inner.Set("anthropic_version", bedrockAnthropicVersion)
 	}
 	if betas, ok := bedrockHeaderValue(headers, "anthropic-beta"); ok && betas != "" {
-		if _, has := inner["anthropic_beta"]; !has {
-			inner["anthropic_beta"] = strings.Split(betas, ",")
+		if _, has := inner.Get("anthropic_beta"); !has {
+			list := []any{}
+			for _, b := range strings.Split(betas, ",") {
+				list = append(list, b)
+			}
+			inner.Set("anthropic_beta", list)
 		}
 	}
-	return inner, model, stream
+	modelValue, _ := inner.Pop("model")
+	streamValue, _ := inner.Pop("stream")
+	stream, _ := streamValue.(bool)
+	return anthMergedWireBody(inner, extra), stringOf(modelValue), stream, nil
 }
 
-// Request posts the InvokeModel, InvokeModelWithResponseStream or CountTokens call, bearer or SigV4 signed
-func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, body map[string]any, headers map[string]string) (*http.Request, error) {
-	inner, model, stream := bedrockInvokeBody(body, headers)
+// Request posts the InvokeModel, InvokeModelWithResponseStream or CountTokens call under the AnthropicBedrock head, bearer or SigV4 signed
+func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, body map[string]any, head anthHead, call anthSDKCall) (*http.Request, error) {
+	callBetas := map[string]string{}
+	if betas, ok := head.extra.get("anthropic-beta"); ok {
+		callBetas["anthropic-beta"] = betas
+	}
+	inner, model, stream, err := bedrockInvokeBody(body, op, callBetas)
+	if err != nil {
+		return nil, err
+	}
 	if model == "" {
 		model = t.route.Model
 	}
@@ -96,18 +112,18 @@ func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, bo
 	switch {
 	case op == anthOpCountTokens:
 		operation = "count-tokens"
-		if _, has := inner["max_tokens"]; !has {
-			inner["max_tokens"] = 1
+		if _, has := inner.Get("max_tokens"); !has {
+			inner.Set("max_tokens", 1)
 		}
-		encoded, err := json.Marshal(inner)
+		encoded, err := pyhttpx.JSONBody(inner)
 		if err != nil {
 			return nil, fmt.Errorf("provider: encode bedrock count tokens body: %w", err)
 		}
-		payload = map[string]any{"input": map[string]any{"invokeModel": map[string]any{"body": encoded}}}
+		payload = pyjson.ObjectOf("input", pyjson.ObjectOf("invokeModel", pyjson.ObjectOf("body", base64.StdEncoding.EncodeToString(encoded))))
 	case stream:
 		operation = "invoke-with-response-stream"
 	}
-	data, err := json.Marshal(payload)
+	data, err := pyhttpx.JSONBody(payload)
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode bedrock invoke body: %w", err)
 	}
@@ -120,38 +136,44 @@ func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, bo
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	for k, v := range headers {
-		if strings.EqualFold(k, "anthropic-version") {
-			continue
-		}
-		req.Header.Set(k, v)
+	lines, err := head.lines(stream && op == anthOpMessages, call)
+	if err != nil {
+		return nil, err
 	}
-	for k, v := range bedrockGuardrailHeaders(bedrockProcessConfig(ctx)) {
-		if _, has := bedrockHeaderValue(headers, k); !has {
-			req.Header.Set(k, v)
-		}
+	req.Host = httpxHost(req.URL)
+	signed, err := t.authorize(ctx, req, httpxPreparedLines(req, lines, len(data)), data, client, region)
+	if err != nil {
+		return nil, err
 	}
-	return req, t.authorize(ctx, req, data, client, region)
+	return pyhttpx.WithWire(req, signed), nil
 }
 
-// Signs with the route key as bearer, else the route's static keys, else the client's bearer or credential chain
-func (t *anthBedrockTransport) authorize(ctx context.Context, req *http.Request, data []byte, client *awsServiceClient, region string) error {
-	if bedrockRealAPIKey(t.route.APIKey) {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(t.route.APIKey))
-		return nil
+// Lines the _prepare_request hook leaves, the route key or client bearer set as Authorization, else botocore SigV4 over the route keys or credential chain
+func (t *anthBedrockTransport) authorize(ctx context.Context, req *http.Request, lines *pyhttpx.Headers, data []byte, client *awsServiceClient, region string) (*pyhttpx.Headers, error) {
+	bearer := ""
+	switch {
+	case bedrockRealAPIKey(t.route.APIKey):
+		bearer = strings.TrimSpace(t.route.APIKey)
+	case t.route.AccessKeyID == "" && t.route.SecretAccessKey == "":
+		bearer = client.bearer
 	}
+	if bearer != "" {
+		out := pyhttpx.NewHeaders(lines.Lines()...)
+		out.Set("Authorization", "Bearer "+bearer)
+		return out, nil
+	}
+	var creds awsCredentials
+	var err error
 	if t.route.AccessKeyID != "" || t.route.SecretAccessKey != "" {
-		creds, err := awsStaticProvider{creds: awsCredentials{AccessKeyID: t.route.AccessKeyID, SecretAccessKey: t.route.SecretAccessKey,
+		creds, err = awsStaticProvider{creds: awsCredentials{AccessKeyID: t.route.AccessKeyID, SecretAccessKey: t.route.SecretAccessKey,
 			SessionToken: t.route.SessionToken, Source: "route"}}.Retrieve(ctx)
-		if err != nil {
-			return err
-		}
-		_, err = sigV4Sign(req, data, creds, "bedrock", region, awsNow())
-		return err
+	} else {
+		creds, err = client.creds.Retrieve(ctx)
 	}
-	return client.authorize(ctx, req, data)
+	if err != nil {
+		return nil, err
+	}
+	return botocoreSignedLines(req, lines, data, creds, "bedrock", region, awsNow())
 }
 
 // Events decodes the AWS event stream chunks into Anthropic stream events
@@ -194,4 +216,67 @@ func (t *anthBedrockTransport) Betas(dropContext1M bool) []string {
 		betas = append(betas, anthropicContext1MBeta)
 	}
 	return betas
+}
+
+// Frame source the SDK stream readers consume, SSE frames of a body or the chunk events of an AWS event stream
+type sseFrameSource interface {
+	Next() (*sseFrame, error)
+}
+
+// Frames the SDK reads from a streamed response, the AWSEventStreamDecoder of the AnthropicBedrock client on Bedrock
+func (c *anthropicClient) sseFrames(resp *http.Response) sseFrameSource {
+	if c.variant == "bedrock" {
+		return &bedrockSSEFrames{r: newAWSEventStreamReader(resp.Body)}
+	}
+	return newSSEReader(resp.Body)
+}
+
+// SSE frames AWSEventStreamDecoder yields, one per chunk event named by its type, error frames raised as its ValueError
+type bedrockSSEFrames struct{ r *awsEventStreamReader }
+
+func (s *bedrockSSEFrames) Next() (*sseFrame, error) {
+	for {
+		m, err := s.r.Next()
+		if err != nil {
+			return nil, err
+		}
+		if kind := m.header(":message-type"); kind == "error" || kind == "exception" {
+			return nil, &ValueError{Message: "Bad response code, expected 200: " + awsResponseDictRepr(m, 400)}
+		}
+		if m.header(":event-type") != "chunk" {
+			continue
+		}
+		var chunk struct {
+			Bytes *string `json:"bytes"`
+		}
+		if json.Unmarshal(m.Payload, &chunk) != nil || chunk.Bytes == nil || *chunk.Bytes == "" {
+			continue
+		}
+		raw, err := base64.StdEncoding.DecodeString(*chunk.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("binascii.Error: %w", err)
+		}
+		if !utf8.Valid(raw) {
+			return nil, fmt.Errorf("UnicodeDecodeError: 'utf-8' codec can't decode the chunk bytes")
+		}
+		event := "completion"
+		var data any
+		if json.Unmarshal(raw, &data) == nil {
+			if payload, ok := data.(map[string]any); ok {
+				if t, ok := payload["type"].(string); ok {
+					event = t
+				}
+			}
+		}
+		return &sseFrame{Event: event, Data: string(raw)}, nil
+	}
+}
+
+// Python repr of the response dict botocore EventStreamMessage.to_response_dict builds for a frame
+func awsResponseDictRepr(m *awsEventStreamMessage, status int) string {
+	var headers []string
+	for _, h := range m.Headers {
+		headers = append(headers, pyrepr.StrRepr(h.Name)+": "+pyrepr.Repr(h.Value))
+	}
+	return fmt.Sprintf("{'status_code': %d, 'headers': {%s}, 'body': %s}", status, strings.Join(headers, ", "), pyrepr.BytesRepr(m.Payload))
 }

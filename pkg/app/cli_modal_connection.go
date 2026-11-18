@@ -6,14 +6,12 @@ import (
 
 // connectionModalState is the open connection setup card
 type connectionModalState struct {
-	Payload     map[string]any
-	TargetIndex int
-	Target      map[string]any
-	Fields      []map[string]any
-	FieldIndex  int
-	Selected    int
-	Phase       string
-	Drafts      map[string]map[string]string
+	Payload  map[string]any
+	Target   map[string]any
+	Fields   []map[string]any
+	Selected int
+	Phase    string
+	Drafts   map[string]map[string]string
 }
 
 // Rows of a payload list as maps
@@ -106,7 +104,7 @@ func (c *CLI) connectionShowTarget(payload map[string]any, index int) {
 		}
 	}
 	c.uiMu.Lock()
-	c.connectionState = &connectionModalState{Payload: payload, TargetIndex: index, Target: target, Fields: fields,
+	c.connectionState = &connectionModalState{Payload: payload, Target: target, Fields: fields,
 		Phase: connectionOpeningPhase(target), Drafts: drafts}
 	c.uiMu.Unlock()
 }
@@ -182,17 +180,6 @@ func (c *CLI) connectionOnChange(snapshot map[string]any) {
 	case targetState == "pending" && len(connectionFields(target)) > 0:
 		if state.Phase == "form" {
 			return
-		}
-		missing := map[string]bool{}
-		for _, field := range connectionFields(target) {
-			missing[cliStr(field["name"], "")] = true
-		}
-		state.FieldIndex = 0
-		for i, field := range state.Fields {
-			if missing[cliStr(field["name"], "")] {
-				state.FieldIndex = i
-				break
-			}
 		}
 		state.Phase = "form"
 	case targetState == "connected" && pyTruthy(target["discovery_error"]):

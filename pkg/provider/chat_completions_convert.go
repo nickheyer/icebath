@@ -435,9 +435,9 @@ func clampReasoningCfg(c reasoningCfg, supported []string) reasoningCfg {
 }
 
 // Moonshot or DeepSeek style thinking toggle and top level effort split
-func thinkingToggleExtras(c reasoningCfg, efforts []string, overrides map[string]string, alwaysToggle bool) (map[string]any, map[string]any) {
+func thinkingToggleExtras(c reasoningCfg, efforts []string, overrides map[string]string, alwaysToggle bool) (*pyjson.Object, map[string]any) {
 	if c.set && c.disabled {
-		return map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{}
+		return pyjson.ObjectOf("thinking", pyjson.ObjectOf("type", "disabled")), map[string]any{}
 	}
 	effort := requestedEffort(c)
 	if effort == "none" {
@@ -445,13 +445,13 @@ func thinkingToggleExtras(c reasoningCfg, efforts []string, overrides map[string
 	}
 	clamped := clampEffort(effort, efforts, overrides)
 	if effort != "" && containsStr(efforts, clamped) {
-		extra := map[string]any{}
+		extra := pyjson.ObjectOf()
 		if alwaysToggle {
-			extra["thinking"] = map[string]any{"type": "enabled"}
+			extra.Set("thinking", pyjson.ObjectOf("type", "enabled"))
 		}
 		return extra, map[string]any{"reasoning_effort": clamped}
 	}
-	return map[string]any{"thinking": map[string]any{"type": "enabled"}}, map[string]any{}
+	return pyjson.ObjectOf("thinking", pyjson.ObjectOf("type", "enabled")), map[string]any{}
 }
 
 func tokenhubEffort(requested string) string {
@@ -462,33 +462,33 @@ func tokenhubEffort(requested string) string {
 }
 
 // Generic nested reasoning fallback for routes without a declared shape
-func genericNestedReasoning(c reasoningCfg) map[string]any {
+func genericNestedReasoning(c reasoningCfg) *pyjson.Object {
 	if !c.set {
-		return map[string]any{}
+		return pyjson.ObjectOf()
 	}
 	if c.disabled {
-		return map[string]any{"reasoning": map[string]any{"enabled": false}}
+		return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", false))
 	}
 	effort := c.effort
 	if effort == "" {
 		effort = "medium"
 	}
-	return map[string]any{"reasoning": map[string]any{"enabled": true, "effort": effort}}
+	return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
 }
 
 var dashscopePreserveModels = []string{"qwen3.6", "qwen3.7", "qwen3.8", "kimi-k2.6", "kimi-k2.7"}
 
-func dashscopePreserveThinkingExtras(model string) map[string]any {
+func dashscopePreserveThinkingExtras(model string) *pyjson.Object {
 	m := strings.ToLower(strings.TrimSpace(model))
 	for _, tok := range dashscopePreserveModels {
 		if strings.Contains(m, tok) {
-			return map[string]any{"preserve_thinking": true}
+			return pyjson.ObjectOf("preserve_thinking", true)
 		}
 	}
 	if strings.HasPrefix(m, "glm-5") {
-		return map[string]any{"clear_thinking": false}
+		return pyjson.ObjectOf("clear_thinking", false)
 	}
-	return map[string]any{}
+	return pyjson.ObjectOf()
 }
 
 var lmValidEfforts = map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
@@ -1166,12 +1166,12 @@ func chatToolName(t map[string]any) string {
 }
 
 func chatToolRename(t map[string]any, alias string) map[string]any {
-	fn, _ := pyjson.Dict(t["function"])
-	nf := make(map[string]any, len(fn))
-	for k, v := range fn {
-		nf[k] = v
+	fn, _ := pyjson.AsObject(t["function"])
+	nf := pyjson.NewObject()
+	if fn != nil {
+		nf = fn.Copy()
 	}
-	nf["name"] = alias
+	nf.Set("name", alias)
 	nt := make(map[string]any, len(t))
 	for k, v := range t {
 		nt[k] = v
@@ -1222,11 +1222,11 @@ func isMoonshotModel(model string) bool {
 	return strings.Contains(bare, "moonshot") || strings.Contains(bare, "/kimi") || strings.HasPrefix(bare, "kimi")
 }
 
-func moonshotEmptyObject() map[string]any {
-	return map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}
+func moonshotEmptyObject() *pyjson.Object {
+	return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject(), "required", []any{})
 }
 
-// Schema node rewritten into the Moonshot flavored JSON schema subset
+// Schema node rewritten into the Moonshot flavored JSON schema subset, dicts rebuilt in their own key order
 func moonshotRepairSchema(node any) any {
 	switch n := node.(type) {
 	case []any:
@@ -1235,37 +1235,32 @@ func moonshotRepairSchema(node any) any {
 			out[i] = moonshotRepairSchema(it)
 		}
 		return out
-	case map[string]any:
-		repaired := make(map[string]any, len(n))
-		for k, v := range n {
+	case *pyjson.Object, map[string]any:
+		src, _ := pyjson.AsObject(n)
+		repaired := pyjson.NewObject()
+		for _, k := range src.Keys {
+			v := src.Vals[k]
+			_, isDict := pyjson.Dict(v)
+			_, isList := v.([]any)
 			switch {
-			case moonshotSchemaMapKeys[k]:
-				if vm, ok := v.(map[string]any); ok {
-					sub := make(map[string]any, len(vm))
-					for sk, sv := range vm {
-						sub[sk] = moonshotRepairSchema(sv)
-					}
-					repaired[k] = sub
-					continue
+			case moonshotSchemaMapKeys[k] && isDict:
+				vm, _ := pyjson.AsObject(v)
+				sub := pyjson.NewObject()
+				for _, sk := range vm.Keys {
+					sub.Set(sk, moonshotRepairSchema(vm.Vals[sk]))
 				}
-			case moonshotSchemaListKeys[k]:
-				if _, ok := v.([]any); ok {
-					repaired[k] = moonshotRepairSchema(v)
-					continue
-				}
-			case moonshotSchemaNodeKeys[k]:
-				if _, ok := v.(map[string]any); ok {
-					repaired[k] = moonshotRepairSchema(v)
-					continue
-				}
+				repaired.Set(k, sub)
+			case moonshotSchemaListKeys[k] && isList, moonshotSchemaNodeKeys[k] && isDict:
+				repaired.Set(k, moonshotRepairSchema(v))
+			default:
+				repaired.Set(k, v)
 			}
-			repaired[k] = v
 		}
-		if anyOf, ok := repaired["anyOf"].([]any); ok {
-			delete(repaired, "type")
+		if anyOf, ok := repaired.Vals["anyOf"].([]any); ok {
+			repaired.Delete("type")
 			var nonNull []any
 			for _, b := range anyOf {
-				bm, isDict := b.(map[string]any)
+				bm, isDict := pyjson.Dict(b)
 				if !isDict {
 					continue
 				}
@@ -1278,27 +1273,25 @@ func moonshotRepairSchema(node any) any {
 				return repaired
 			}
 			if len(nonNull) > 1 {
-				repaired["anyOf"] = nonNull
+				repaired.Set("anyOf", nonNull)
 				return repaired
 			}
-			merged := map[string]any{}
-			for k, v := range repaired {
+			merged := pyjson.NewObject()
+			for _, k := range repaired.Keys {
 				if k != "anyOf" {
-					merged[k] = v
+					merged.Set(k, repaired.Vals[k])
 				}
 			}
-			if only, ok := nonNull[0].(map[string]any); ok {
-				for k, v := range only {
-					merged[k] = v
-				}
+			if only, ok := pyjson.AsObject(nonNull[0]); ok {
+				merged.Update(only)
 			}
 			repaired = merged
 		}
-		delete(repaired, "nullable")
-		if _, hasRef := repaired["$ref"]; !hasRef {
+		repaired.Delete("nullable")
+		if _, hasRef := repaired.Get("$ref"); !hasRef {
 			repaired = moonshotFillMissingType(repaired)
 		}
-		if enum, ok := repaired["enum"].([]any); ok && moonshotScalarTypes[stringOf(repaired["type"])] {
+		if enum, ok := repaired.Vals["enum"].([]any); ok && moonshotScalarTypes[stringOf(repaired.Vals["type"])] {
 			var cleaned []any
 			for _, v := range enum {
 				if v == nil || v == "" {
@@ -1307,12 +1300,12 @@ func moonshotRepairSchema(node any) any {
 				cleaned = append(cleaned, v)
 			}
 			if len(cleaned) > 0 {
-				repaired["enum"] = cleaned
+				repaired.Set("enum", cleaned)
 			} else {
-				delete(repaired, "enum")
+				repaired.Delete("enum")
 			}
 		}
-		if stringOf(repaired["type"]) == "object" {
+		if stringOf(repaired.Vals["type"]) == "object" {
 			repaired = moonshotEnsureRequired(repaired)
 		}
 		return repaired
@@ -1320,9 +1313,9 @@ func moonshotRepairSchema(node any) any {
 	return node
 }
 
-func moonshotEnsureRequired(node map[string]any) map[string]any {
-	props, hasProps := node["properties"].(map[string]any)
-	if req, ok := node["required"].([]any); ok {
+func moonshotEnsureRequired(node *pyjson.Object) *pyjson.Object {
+	props, hasProps := pyjson.Dict(node.Vals["properties"])
+	if req, ok := node.Vals["required"].([]any); ok {
 		if hasProps {
 			kept := make([]any, 0, len(req))
 			for _, r := range req {
@@ -1332,16 +1325,22 @@ func moonshotEnsureRequired(node map[string]any) map[string]any {
 					}
 				}
 			}
-			node["required"] = kept
+			node.Set("required", kept)
 		}
 		return node
 	}
-	node["required"] = []any{}
+	node.Set("required", []any{})
 	return node
 }
 
-func moonshotFillMissingType(node map[string]any) map[string]any {
-	if list, ok := node["type"].([]any); ok {
+// Copy of the node with an inferred type set in place, the node itself when it already has one
+func moonshotFillMissingType(node *pyjson.Object) *pyjson.Object {
+	withType := func(t string) *pyjson.Object {
+		out := node.Copy()
+		out.Set("type", t)
+		return out
+	}
+	if list, ok := node.Vals["type"].([]any); ok {
 		concrete := "string"
 		for _, t := range list {
 			if ts, ok := t.(string); ok && ts != "" && ts != "null" {
@@ -1349,60 +1348,58 @@ func moonshotFillMissingType(node map[string]any) map[string]any {
 				break
 			}
 		}
-		node["type"] = concrete
+		return withType(concrete)
+	}
+	if t, present := node.Get("type"); present && t != nil && t != "" {
 		return node
 	}
-	if t, ok := node["type"].(string); ok && t != "" {
-		return node
-	}
-	_, hasProps := node["properties"]
-	_, hasReq := node["required"]
-	_, hasAdd := node["additionalProperties"]
-	_, hasItems := node["items"]
-	_, hasPrefix := node["prefixItems"]
+	_, hasProps := node.Get("properties")
+	_, hasReq := node.Get("required")
+	_, hasAdd := node.Get("additionalProperties")
+	_, hasItems := node.Get("items")
+	_, hasPrefix := node.Get("prefixItems")
 	switch {
 	case hasProps || hasReq || hasAdd:
-		node["type"] = "object"
+		return withType("object")
 	case hasItems || hasPrefix:
-		node["type"] = "array"
-	default:
-		if enum, ok := node["enum"].([]any); ok && len(enum) > 0 {
-			switch enum[0].(type) {
-			case bool:
-				node["type"] = "boolean"
-			case float64:
-				if f := enum[0].(float64); f == float64(int64(f)) {
-					node["type"] = "integer"
-				} else {
-					node["type"] = "number"
-				}
-			default:
-				node["type"] = "string"
+		return withType("array")
+	}
+	if enum, ok := node.Vals["enum"].([]any); ok && len(enum) > 0 {
+		switch v := enum[0].(type) {
+		case bool:
+			return withType("boolean")
+		case int, int64:
+			return withType("integer")
+		case float64:
+			return withType("number")
+		case json.Number:
+			if _, err := v.Int64(); err == nil && !strings.ContainsAny(v.String(), ".eE") {
+				return withType("integer")
 			}
+			return withType("number")
+		}
+		return withType("string")
+	}
+	for _, k := range []string{"if", "then", "else"} {
+		if _, ok := node.Get(k); ok {
 			return node
 		}
-		for _, k := range []string{"if", "then", "else"} {
-			if _, ok := node[k]; ok {
-				return node
-			}
-		}
-		node["type"] = "string"
 	}
-	return node
+	return withType("string")
 }
 
-func sanitizeMoonshotToolParameters(params any) map[string]any {
-	pm, ok := params.(map[string]any)
+// Deep copied Moonshot compatible object schema, the input never mutated
+func sanitizeMoonshotToolParameters(params any) *pyjson.Object {
+	if _, ok := pyjson.Dict(params); !ok {
+		return moonshotEmptyObject()
+	}
+	repaired, ok := moonshotRepairSchema(pyjson.Clone(params)).(*pyjson.Object)
 	if !ok {
 		return moonshotEmptyObject()
 	}
-	repaired, ok := moonshotRepairSchema(deepCopyJSON(pm)).(map[string]any)
-	if !ok {
-		return moonshotEmptyObject()
-	}
-	repaired["type"] = "object"
-	if _, ok := repaired["properties"]; !ok {
-		repaired["properties"] = map[string]any{}
+	repaired.Set("type", "object")
+	if _, ok := repaired.Get("properties"); !ok {
+		repaired.Set("properties", pyjson.NewObject())
 	}
 	return moonshotEnsureRequired(repaired)
 }
@@ -1414,17 +1411,14 @@ func sanitizeMoonshotTools(tools []map[string]any) []map[string]any {
 	out := make([]map[string]any, 0, len(tools))
 	anyChange := false
 	for _, tool := range tools {
-		fn, ok := pyjson.Dict(tool["function"])
+		fn, ok := pyjson.AsObject(tool["function"])
 		if !ok {
 			out = append(out, tool)
 			continue
 		}
 		anyChange = true
-		nf := make(map[string]any, len(fn))
-		for k, v := range fn {
-			nf[k] = v
-		}
-		nf["parameters"] = sanitizeMoonshotToolParameters(fn["parameters"])
+		nf := fn.Copy()
+		nf.Set("parameters", sanitizeMoonshotToolParameters(fn.Vals["parameters"]))
 		nt := make(map[string]any, len(tool))
 		for k, v := range tool {
 			nt[k] = v
@@ -1520,8 +1514,8 @@ func contentCacheKey(instructions string, tools []map[string]any, scope string) 
 		sort.SliceStable(sorted, func(i, j int) bool {
 			return toolSortName(sorted[i]) < toolSortName(sorted[j])
 		})
-		b, _ := json.Marshal(sorted)
-		toolsPart = string(b)
+		text, _ := pyjson.Dumps(sorted, pyjson.SortKeys(true), pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+		toolsPart = text
 	}
 	sum := sha256.Sum256([]byte(scope + "\x00" + instructions + "\x00" + toolsPart))
 	return "pck_" + hex.EncodeToString(sum[:])[:24]
@@ -2389,14 +2383,12 @@ func (c *ccRoute) serviceTier(req *Request) string {
 func (c *ccRoute) applyProviderReasoning(req *Request, rcfg reasoningCfg, supports bool, settings wireSettings, body, extra *omap, top map[string]any) {
 	sticky := cacheScopeFromSessionID(firstNonEmpty(req.CacheScope, req.SessionID))
 	known := knownProviders[c.provider]
-	putExtra := func(m map[string]any) {
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
+	putExtra := func(m *pyjson.Object) {
+		if m == nil {
+			return
 		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			extra.Set(k, m[k])
+		for _, k := range m.Keys {
+			extra.Set(k, m.Vals[k])
 		}
 	}
 	switch {
@@ -2485,8 +2477,8 @@ func (c *ccRoute) applyProviderReasoning(req *Request, rcfg reasoningCfg, suppor
 		}
 	case c.provider == "kimi-coding" || c.provider == "kimi-coding-cn":
 		e, t := thinkingToggleExtras(rcfg, kimiK3Efforts, kimiK3Overrides, false)
-		if th, ok := e["thinking"].(map[string]any); ok && th["type"] == "enabled" && strings.Contains(c.modelLower, "k2") {
-			th["keep"] = "all"
+		if th, ok := e.Vals["thinking"].(*pyjson.Object); ok && th.Vals["type"] == "enabled" && strings.Contains(c.modelLower, "k2") {
+			th.Set("keep", "all")
 		}
 		putExtra(e)
 		for k, v := range t {

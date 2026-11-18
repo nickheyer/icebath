@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 const (
@@ -456,35 +457,37 @@ func (t *anthVertexTransport) bearer(ctx context.Context) (string, error) {
 }
 
 // Request posts the body at the model rawPredict or streamRawPredict path, or the count-tokens model
-func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, body map[string]any, headers map[string]string) (*http.Request, error) {
+func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, body map[string]any, head anthHead, call anthSDKCall) (*http.Request, error) {
 	origin, project, region, err := t.target(ctx)
 	if err != nil {
 		return nil, err
 	}
-	payload := make(map[string]any, len(body)+1)
-	for k, v := range body {
-		payload[k] = v
+	params, extra, err := anthWireParams(body, op)
+	if err != nil {
+		return nil, err
 	}
-	if _, ok := payload["anthropic_version"]; !ok {
-		payload["anthropic_version"] = vertexAnthropicVersion
+	payload := params.Copy()
+	if _, ok := payload.Get("anthropic_version"); !ok {
+		payload.Set("anthropic_version", vertexAnthropicVersion)
 	}
 	prefix := fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/anthropic/models/", origin, project, region)
 	var target string
+	stream, _ := payload.Vals["stream"].(bool)
 	if op == anthOpCountTokens {
 		target = prefix + "count-tokens:rawPredict"
 	} else {
-		model, _ := payload["model"].(string)
-		delete(payload, "model")
+		modelValue, _ := payload.Pop("model")
+		model, _ := modelValue.(string)
 		if model == "" {
 			model = t.route.Model
 		}
 		specifier := "rawPredict"
-		if stream, _ := payload["stream"].(bool); stream {
+		if stream {
 			specifier = "streamRawPredict"
 		}
 		target = prefix + model + ":" + specifier
 	}
-	data, err := json.Marshal(payload)
+	data, err := pyhttpx.JSONBody(anthMergedWireBody(payload, extra))
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode vertex anthropic body: %w", err)
 	}
@@ -492,23 +495,18 @@ func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, bod
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if stream, _ := payload["stream"].(bool); stream {
-		req.Header.Set("Accept", "text/event-stream")
-	}
-	for k, v := range headers {
-		if strings.EqualFold(k, "anthropic-version") || strings.EqualFold(k, "x-api-key") || strings.EqualFold(k, "authorization") {
-			continue
-		}
-		req.Header.Set(k, v)
+	lines, err := head.lines(stream && op == anthOpMessages, call)
+	if err != nil {
+		return nil, err
 	}
 	token, err := t.bearer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	return req, nil
+	req.Host = httpxHost(req.URL)
+	prepared := httpxPreparedLines(req, lines, len(data))
+	prepared.Set("Authorization", "Bearer "+token)
+	return pyhttpx.WithWire(req, prepared), nil
 }
 
 func (t *anthVertexTransport) Events(resp *http.Response) anthEventSource {

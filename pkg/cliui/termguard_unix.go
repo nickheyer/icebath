@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	xterm "github.com/charmbracelet/x/term"
-	"golang.org/x/sys/unix"
 )
 
 // Restores the terminal when a terminating signal arrives during a hold, then lets that signal end the process
@@ -39,17 +38,6 @@ func watchTermination(g *termGuard) func() {
 	}
 }
 
-// Stops the terminal echoing typed keys, leaving every other mode as it is
-func muteEcho(f *os.File) {
-	fd := int(f.Fd())
-	t, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
-	if err != nil {
-		return
-	}
-	t.Lflag &^= unix.ECHO
-	unix.IoctlSetTermios(fd, ioctlSetTermios, t)
-}
-
 // Hands the terminal back to the shell for a stop request and takes it again once the process continues
 func (c *Console) suspend() bool {
 	g := c.termGuard()
@@ -67,11 +55,8 @@ func (c *Console) suspend() bool {
 	syscall.Kill(0, syscall.SIGTSTP)
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	switch {
-	case g.holds > 0:
+	if g.holds > 0 {
 		xterm.MakeRaw(g.file.Fd())
-	case g.quiet > 0:
-		muteEcho(g.file)
 	}
 	for _, m := range g.modes {
 		io.WriteString(m.out, m.on)

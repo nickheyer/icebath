@@ -119,14 +119,18 @@ func TestProvidersDictApiModeAnthropicMessagesResolveProviderClientReturnsAnthro
 	if syncModel != "claude-opus-4-7" {
 		t.Fatalf("model %q", syncModel)
 	}
-	sdkHeaders, _, err := anth.realClient.inner.requestHeaders(ctx, anth.realClient.betas, nil)
+	head, _, err := anth.realClient.inner.requestHeaders(ctx, anth.realClient.betas, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := auxHeaderValue(sdkHeaders, "X-Gateway-Token"); v != "gw-1" {
-		t.Fatalf("headers %v", sdkHeaders)
+	sdkHeaders, err := head.lines(false, anthSDKCall{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, has := auxHeaderValue(sdkHeaders, "anthropic-beta"); !has {
+	if v, _ := sdkHeaders.Get("X-Gateway-Token"); v != "gw-1" {
+		t.Fatalf("headers %v", sdkHeaders.Lines())
+	}
+	if _, has := sdkHeaders.Get("anthropic-beta"); !has {
 		t.Fatalf("entry headers must merge onto, not replace, the builder's headers: %v", sdkHeaders)
 	}
 	asyncClient, asyncModel, err := ResolveProviderClient(ctx, "myrelay", "", ProviderClientOptions{AsyncMode: true})

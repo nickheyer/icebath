@@ -36,7 +36,7 @@ var installedPurelib = func() (string, bool) {
 func committedDependencySitePackages(s *Store, ctx context.Context, projectRoot string) (string, error) {
 	environment, err := pm.CommittedVenv(ctx, projectRoot)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("cron worker: could not read the committed dependency environment: %s", err))
+		s.logAs("cron.scheduler_worker_env").Warn(fmt.Sprintf("cron worker: could not read the committed dependency environment: %s", err))
 		return "", nil
 	}
 	if environment == "" {

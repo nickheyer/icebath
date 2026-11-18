@@ -275,7 +275,9 @@ func TestSealedPayloadVenvFollowsAMovedStoreInterpreter(t *testing.T) {
 	}
 	svHealedOnto(t, venv, storePython)
 	text := string(readFile(t, cfg))
-	if !strings.HasPrefix(text, "include-system-site-packages = false\n") || !strings.Contains(text, "\nversion = ") || strings.Count(text, "home") != 1 {
+	_, homeLine, hasHome := pyvenvHome(text)
+	_, _, secondHome := pyvenvHome(strings.Join(strings.SplitAfter(text, "\n")[homeLine+1:], ""))
+	if !strings.HasPrefix(text, "include-system-site-packages = false\n") || !strings.Contains(text, "\nversion = ") || !hasHome || secondHome {
 		t.Fatalf("pyvenv.cfg lost its other keys %q", text)
 	}
 	if info, err := os.Stat(cfg); err != nil || info.Mode().Perm() != 0o640 {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"strings"
@@ -232,7 +233,7 @@ func TestLivenessDescribePrefersThePluginTitleOverTheServerSlug(t *testing.T) {
 func registerHiddenTool(t *testing.T, name, toolset string) {
 	t.Helper()
 	def := testToolDef(name, toolset)
-	def.Schema = map[string]any{"name": name, "description": "fixture", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+	def.Schema = pyjson.ObjectOf("name", name, "description", "fixture", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
 	def.Check = func(*tools.Env) bool { return false }
 	tools.Default.Register(def)
 	t.Cleanup(func() { _ = tools.Default.Deregister(name, "", "") })

@@ -45,6 +45,7 @@ func newSessionCard(a *app) *sessionCard {
 	c.composer.Hint = composerHint()
 	c.composer.Seed(a.inputs.entries())
 	c.composer.OnRemember = a.inputs.push
+	c.composer.Apply = a.applyOffer
 	return c
 }
 
@@ -154,7 +155,11 @@ func (c *sessionCard) action(id string) tea.Cmd {
 		if cmd, handled := c.app.tuiAction(id); handled {
 			return cmd
 		}
+		before := c.composer.Value()
 		cmd := c.composer.Action(id)
+		if (id == "composer.send" || id == "complete.accept") && trimJS(before) != "" && c.composer.Value() == "" {
+			return c.app.typed(cmd)
+		}
 		return tea.Batch(c.app.typed(cmd), c.app.syncTokens())
 	}
 	return nil
@@ -343,5 +348,12 @@ func (c *sessionCard) Hints() []wm.Hint {
 	if c.app.store.ui.Busy {
 		return []wm.Hint{{Action: "composer.send", Label: c.app.store.ui.BusyInputMode}, {Action: "interrupt"}, {Action: "mode.cycle", Label: "busy mode"}}
 	}
-	return []wm.Hint{{Action: "composer.send"}, {Action: "tui.editor"}, {Action: "palette"}}
+	hints := []wm.Hint{{Action: "composer.send"}, {Action: "tui.editor"}, {Action: "palette"}}
+	if c.composer.CanUndo() {
+		hints = append(hints, wm.Hint{Action: "composer.undo"})
+	}
+	if c.composer.CanRedo() {
+		hints = append(hints, wm.Hint{Action: "composer.redo"})
+	}
+	return hints
 }

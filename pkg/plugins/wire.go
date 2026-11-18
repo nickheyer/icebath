@@ -454,6 +454,17 @@ func withServingRequest(ctx context.Context, id any) context.Context {
 	return context.WithValue(ctx, servingKey{}, id)
 }
 
+type servingFrameKey struct{}
+
+// Request frame text of the peer request the code under ctx is serving, nil outside one
+func servingFrame(ctx context.Context) []byte {
+	if ctx == nil {
+		return nil
+	}
+	frame, _ := ctx.Value(servingFrameKey{}).([]byte)
+	return frame
+}
+
 // Peer request the code under ctx is running for, nil when none
 func servingRequest(ctx context.Context) any {
 	if ctx == nil {
@@ -628,11 +639,11 @@ func (c *Channel) dispatchFrame(line []byte) {
 		if len(text) > 200 {
 			text = text[:200]
 		}
-		logWarn(fmt.Sprintf("%s: dropped a malformed frame: %s", c.name, text))
+		logPlugins.warn(fmt.Sprintf("%s: dropped a malformed frame: %s", c.name, text))
 		return
 	}
 	if _, isRequest := message["method"]; isRequest {
-		go c.serve(message)
+		go c.serve(message, line)
 		return
 	}
 	id, _ := wireInt(message["id"])
@@ -643,12 +654,39 @@ func (c *Channel) dispatchFrame(line []byte) {
 	}
 	c.pendingMu.Unlock()
 	if reply != nil {
+		message[replyFrameKey] = line
 		reply <- message
 	}
 }
 
+// Private reply map key holding the reply frame text, never sent and never read outside Call
+const replyFrameKey = "\x00frame"
+
+type orderedResultKey struct{}
+
+// Context whose host calls return dict results with their keys in wire order
+func WithOrderedResult(ctx context.Context) context.Context {
+	return context.WithValue(ctx, orderedResultKey{}, true)
+}
+
+// Result of a reply frame decoded with every object in its wire key order, false when it carries an error
+func orderedResultOf(frame []byte) (any, bool) {
+	parsed, err := pyjson.LoadsBytes(frame)
+	if err != nil {
+		return nil, false
+	}
+	msg, ok := parsed.(*pyjson.Object)
+	if !ok {
+		return nil, false
+	}
+	if _, failed := msg.Get("error"); failed {
+		return nil, false
+	}
+	return msg.Vals["result"], true
+}
+
 // Serves one peer request on its own goroutine in the caller context its origin names
-func (c *Channel) serve(message map[string]any) {
+func (c *Channel) serve(message map[string]any, frame []byte) {
 	id := message["id"]
 	origin := message["origin"]
 	var ctx context.Context
@@ -658,7 +696,7 @@ func (c *Channel) serve(message map[string]any) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx = withServingRequest(ctx, id)
+	ctx = context.WithValue(withServingRequest(ctx, id), servingFrameKey{}, frame)
 	params, _ := message["params"].(map[string]any)
 	if params == nil {
 		params = map[string]any{}
@@ -670,7 +708,7 @@ func (c *Channel) serve(message map[string]any) {
 				if ui, ok := r.(*UserInterrupt); ok {
 					typeName, r = "KeyboardInterrupt", ui.Err
 				}
-				logWarn(fmt.Sprintf("%s: request %s raised %s", c.name, config.PyStr(message["method"]), typeName))
+				logPlugins.warn(fmt.Sprintf("%s: request %s raised %s", c.name, config.PyStr(message["method"]), typeName))
 				reply = map[string]any{"id": id, "error": map[string]any{"type": typeName, "message": config.PyStr(r)}}
 			}
 		}()
@@ -713,6 +751,13 @@ func (c *Channel) Call(ctx context.Context, method string, params map[string]any
 	if err != nil {
 		return nil, err
 	}
+	if ordered, _ := ctx.Value(orderedResultKey{}).(bool); ordered {
+		if frame, ok := reply[replyFrameKey].([]byte); ok {
+			if result, ok := orderedResultOf(frame); ok {
+				return result, nil
+			}
+		}
+	}
 	return c.resultOf(reply)
 }
 
@@ -734,7 +779,7 @@ func (c *Channel) close(reason string) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logDebug(fmt.Sprintf("%s: on_close raised", c.name))
+					logPlugins.debug(fmt.Sprintf("%s: on_close raised", c.name))
 				}
 			}()
 			c.onClose(reason)

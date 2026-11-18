@@ -254,7 +254,7 @@ func TestMemoryDriftIsRefusedWithBackupLikeMemoryTool(t *testing.T) {
 	if len(backups) != 1 || readText(t, backups[0]) != raw {
 		t.Fatalf("backups = %v", backups)
 	}
-	if want := driftError(path, backups[0]).Data["error"]; res["message"] != want {
+	if want := driftError(path, backups[0]).Data.Vals["error"]; res["message"] != want {
 		t.Fatalf("message = %v, want %v", res["message"], want)
 	}
 	if res := mustNode(t)(DeleteNode(ctx, nil, "memory:memory:0")); res["ok"] != true {

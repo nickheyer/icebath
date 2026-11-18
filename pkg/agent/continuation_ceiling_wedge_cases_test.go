@@ -83,13 +83,13 @@ func TestContinuationCeilingWedge(t *testing.T) {
 		a, ctx := thinkingLoopAgent(t, script)
 		var seen [][]map[string]any
 		prev := loopBuildAPIKwargs
-		loopBuildAPIKwargs = func(agent *AIAgent, apiMessages, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
+		loopBuildAPIKwargs = func(ctx context.Context, agent *AIAgent, apiMessages, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
 			batch := make([]map[string]any, len(apiMessages))
 			for i, m := range apiMessages {
 				batch[i] = shallowRow(m)
 			}
 			seen = append(seen, batch)
-			return prev(agent, apiMessages, toolsForAPI, toolsOverride)
+			return prev(ctx, agent, apiMessages, toolsForAPI, toolsOverride)
 		}
 		t.Cleanup(func() { loopBuildAPIKwargs = prev })
 		result := wedgeRun(t, a, ctx, "write me a long report", nil)

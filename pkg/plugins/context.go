@@ -66,7 +66,7 @@ func (c *Context) HasPlugin(pluginID string) bool {
 func (c *Context) segments(key string) ([]string, error) {
 	segments, err := PluginRelativeSegments(key)
 	if err != nil {
-		logWarn(fmt.Sprintf("Rejected config path %s from plugin %s", config.PyRepr(key), c.PluginID()))
+		logPlugins.warn(fmt.Sprintf("Rejected config path %s from plugin %s", config.PyRepr(key), c.PluginID()))
 	}
 	return segments, err
 }
@@ -112,7 +112,7 @@ func (c *Context) track(kind, key string, release func() error) *Registration {
 // Appends a callback under a key, warning on unknown keys, and leases its removal
 func trackCallback[T any](c *Context, kind, key string, entry *T, mapping map[string][]*T, valid map[string]bool) *Registration {
 	if !valid[key] {
-		logWarn(fmt.Sprintf("Plugin '%s' registered unknown %s '%s' (valid: %s)", c.manifest.Name, kind, key,
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' registered unknown %s '%s' (valid: %s)", c.manifest.Name, kind, key,
 			strings.Join(sortedSet(valid), ", ")))
 	}
 	c.manager.mu.Lock()
@@ -122,7 +122,7 @@ func trackCallback[T any](c *Context, kind, key string, entry *T, mapping map[st
 		removeCallback(c.manager, mapping, key, entry)
 		return nil
 	})
-	logDebug(fmt.Sprintf("Plugin %s registered %s: %s", c.manifest.Name, kind, key))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered %s: %s", c.manifest.Name, kind, key))
 	return handle
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var nonStreamLog = slog.Default()
+var nonStreamLog = slog.Default().With("logger", "agent.chat_completion_helpers")
 
 const (
 	interruptedWaitStaleSeconds = 30.0

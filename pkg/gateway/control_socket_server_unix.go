@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -49,7 +48,7 @@ func (s *GatewayControlServer) startPosix() error {
 		if pointerFile != "" || !errors.Is(err, syscall.EOPNOTSUPP) && !errors.Is(err, syscall.ENOTSUP) {
 			return err
 		}
-		slog.Warn(fmt.Sprintf("Control socket cannot be created in %s (%s); listening in a private temp directory", s.home, controlStrerror(err)))
+		controlSocketLog().Warn(fmt.Sprintf("Control socket cannot be created in %s (%s); listening in a private temp directory", s.home, controlStrerror(err)))
 		pointerFile = filepath.Join(s.home, controlPointerFilename)
 		fallback, ferr := fallbackSocketPath(s.home)
 		if ferr != nil {
@@ -79,7 +78,7 @@ func (s *GatewayControlServer) startPosix() error {
 			return err
 		}
 	}
-	slog.Info(fmt.Sprintf("Gateway control socket listening at %s", bound))
+	controlSocketLog().Info(fmt.Sprintf("Gateway control socket listening at %s", bound))
 	return nil
 }
 
@@ -103,7 +102,7 @@ func (s *GatewayControlServer) bindPOSIX(bindPath, pointerFile string) (string, 
 			return "", err
 		}
 		if !private {
-			slog.Warn(fmt.Sprintf("Fallback control directory %s is not private; using a fresh one", filepath.Dir(bindPath)))
+			controlSocketLog().Warn(fmt.Sprintf("Fallback control directory %s is not private; using a fresh one", filepath.Dir(bindPath)))
 			moved, err := squatProofFallback(bindPath)
 			if err != nil {
 				return "", err

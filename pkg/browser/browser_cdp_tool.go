@@ -53,29 +53,29 @@ const cdpDescription = "Send a raw Chrome DevTools Protocol (CDP) command. Escap
 	"routing."
 
 // Static browser_cdp schema
-func BrowserCDPSchema() map[string]any {
-	return map[string]any{
-		"name":        "browser_cdp",
-		"description": cdpDescription,
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"method": map[string]any{"type": "string", "description": "CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."},
-				"params": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": true,
-					"description": "Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters."},
-				"target_id": map[string]any{"type": "string", "description": "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for " +
-					"page-level methods at the top-level tab scope. Mutually exclusive with frame_id."},
-				"frame_id": map[string]any{"type": "string", "description": "Optional. Out-of-process iframe (OOPIF) frame id from Page.getFrameTree. " +
+func BrowserCDPSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name",        "browser_cdp",
+		"description", cdpDescription,
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"method", pyjson.ObjectOf("type", "string", "description", "CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
+				"params", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf(), "additionalProperties", true,
+					"description", "Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters."),
+				"target_id", pyjson.ObjectOf("type", "string", "description", "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for " +
+					"page-level methods at the top-level tab scope. Mutually exclusive with frame_id."),
+				"frame_id", pyjson.ObjectOf("type", "string", "description", "Optional. Out-of-process iframe (OOPIF) frame id from Page.getFrameTree. " +
 					"When set, routes the call through the CDP supervisor's live session for " +
 					"that iframe. Essential for Runtime.evaluate inside cross-origin iframes, especially on " +
 					"Browserbase where fresh per-call CDP connections can't keep up with signed URL rotation. For " +
 					"same-origin iframes, use parent contentWindow/contentDocument from Runtime.evaluate at the " +
-					"top-level page instead."},
-				"timeout": map[string]any{"type": "number", "default": 30, "description": "Timeout in seconds (default 30, max 300)."},
-			},
-			"required": []any{"method"},
-		},
-	}
+					"top-level page instead."),
+				"timeout", pyjson.ObjectOf("type", "number", "default", 30, "description", "Timeout in seconds (default 30, max 300)."),
+			),
+			"required", []any{"method"},
+		),
+	)
 }
 
 // Inspection and tab management methods that never read page body, cookies, DOM or storage

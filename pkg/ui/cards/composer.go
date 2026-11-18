@@ -3,9 +3,9 @@ package cards
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
@@ -31,18 +31,6 @@ const minInputRows = 2
 // Rows the completion popup shows at most
 const popupRows = 8
 
-// Slash command the composer completes and hands to the app
-type Command struct {
-	Name string
-	Desc string
-	// Takes an argument, shown after the name
-	Arg string
-	// Values the argument may take, offered as the argument is typed
-	Suggest func(prefix string) []string
-	// Keymap action that does the same, its key shown beside the command
-	Action string
-}
-
 // One file attached to the next message
 type attachment struct {
 	Path  string
@@ -50,16 +38,20 @@ type attachment struct {
 	Data  []byte
 }
 
-// Candidates offered for the token under the cursor
+// Candidates the app offers for the prompt, the highlighted one and the offset they replace from
 type completion struct {
-	items []string
-	descs []string
-	acts  []string
-	idx   int
-	start int
-	end   int
-	slash bool
-	arg   bool
+	items   []string
+	descs   []string
+	texts   []string
+	idx     int
+	replace int
+}
+
+// Candidate an app completion source offers, its text put in from the replace offset
+type Offer struct {
+	Text    string
+	Display string
+	Meta    string
 }
 
 // Clickable send button on the first input row, in composer coordinates
@@ -67,7 +59,16 @@ type sendButton struct {
 	x, y, w int
 }
 
-// Multi line prompt with history, slash commands listed as typed, path completion, attachments and a draft kept per session
+// Most edits the undo trail keeps
+const undoLimit = 200
+
+// Prompt an undo or redo returns to, its text and the cursor as a rune offset
+type composerSnap struct {
+	value  string
+	cursor int
+}
+
+// Multi line prompt with history, the app's completion candidates, attachments and a draft kept per session
 type Composer struct {
 	ta          textarea.Model
 	focused     bool
@@ -80,7 +81,6 @@ type Composer struct {
 	dir         string
 	draftPath   string
 	historyPath string
-	commands    []Command
 	last        string
 	baseDir     func() string
 	theme       theme.Theme
@@ -90,6 +90,7 @@ type Composer struct {
 	cut         int
 	ask         *asking
 	width       int
+	undo, redo  []composerSnap
 	SessionID   string
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
@@ -99,6 +100,8 @@ type Composer struct {
 	Hint string
 	// Called with each line the history takes, for an app keeping its own history file
 	OnRemember func(text string)
+	// Puts the highlighted offer in from its replace offset when the popup is accepted
+	Apply func(text string, replace int) tea.Cmd
 }
 
 // File the draft of a session is kept in under dir
@@ -229,28 +232,26 @@ func editorStyles(t theme.Theme) textarea.Styles {
 	return st
 }
 
-// Replaces the slash commands offered as they are typed
-func (c *Composer) SetCommands(cmds []Command) { c.commands = cmds }
-
 // Tells the send button whether a run is going, so it offers to steer it
 func (c *Composer) SetBusy(on bool) { c.busy = on }
 
 // Text typed so far
 func (c *Composer) Value() string { return c.ta.Value() }
 
-// Replaces the text with the cursor at its end, the completion popup following what it now reads
+// Replaces the text with the cursor at its end, the completion popup closed until the app offers again
 func (c *Composer) SetValue(text string) tea.Cmd {
+	c.forget()
 	c.ta.SetValue(text)
 	c.ta.MoveToEnd()
 	c.comp = nil
-	c.autoComplete()
 	return c.persist()
 }
 
 // Inserts text at the cursor as if typed
 func (c *Composer) Insert(text string) tea.Cmd {
+	before := c.snap()
 	c.ta.InsertString(text)
-	c.autoComplete()
+	c.tracked(before)
 	return c.persist()
 }
 
@@ -290,6 +291,26 @@ func (c *Composer) Completions() []string {
 // Reports whether the completion popup is open
 func (c *Composer) Completing() bool { return c.comp != nil }
 
+// Shows the app's candidates for the prompt as it stands, the first one highlighted, none closing the popup
+func (c *Composer) Offer(offers []Offer, replace int) {
+	if len(offers) == 0 || c.ta.Value() == c.quiet {
+		c.comp = nil
+		return
+	}
+	c.quiet = ""
+	comp := &completion{replace: replace}
+	for _, o := range offers {
+		label := o.Display
+		if label == "" {
+			label = o.Text
+		}
+		comp.items = append(comp.items, label)
+		comp.descs = append(comp.descs, o.Meta)
+		comp.texts = append(comp.texts, o.Text)
+	}
+	c.comp = comp
+}
+
 // Rows the composer wants, two at least, growing with the wrapped text, the question waiting and the completion popup
 func (c *Composer) Height() int {
 	rows := max(c.ta.Height(), minInputRows)
@@ -322,9 +343,10 @@ func (c *Composer) SetFocus(on bool) tea.Cmd {
 func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.PasteMsg:
+		before := c.snap()
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
-		c.autoComplete()
+		c.tracked(before)
 		return tea.Batch(cmd, c.persist())
 	case tea.KeyPressMsg:
 		if msg.Text == "" {
@@ -333,10 +355,10 @@ func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 		if cmd, ok := c.questionDigit(msg.Text); ok {
 			return cmd
 		}
-		c.comp = nil
+		before := c.snap()
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
-		c.autoComplete()
+		c.tracked(before)
 		if c.ask != nil && strings.TrimSpace(c.ta.Value()) != "" {
 			c.ask.idx = c.ask.other()
 		}
@@ -359,7 +381,10 @@ func (c *Composer) Action(id string) tea.Cmd {
 			c.comp.idx = (c.comp.idx - 1 + len(c.comp.items)) % len(c.comp.items)
 			return nil
 		case "complete.accept":
-			return c.pick()
+			if c.Apply == nil {
+				return nil
+			}
+			return c.Apply(c.comp.texts[c.comp.idx], c.comp.replace)
 		case "complete.close":
 			c.quiet = c.ta.Value()
 			c.comp = nil
@@ -369,13 +394,19 @@ func (c *Composer) Action(id string) tea.Cmd {
 	switch id {
 	case "composer.send":
 		if c.escaped() {
+			before := c.snap()
 			c.breakLine()
+			c.tracked(before)
 			return c.persist()
 		}
 		return c.submit()
-	case "composer.complete":
-		c.complete()
-		return nil
+	case "composer.undo", "composer.redo":
+		if id == "composer.undo" {
+			c.swap(&c.undo, &c.redo)
+		} else {
+			c.swap(&c.redo, &c.undo)
+		}
+		return c.persist()
 	case "composer.up":
 		if c.ta.Line() == 0 {
 			c.recall(-1)
@@ -397,11 +428,75 @@ func (c *Composer) Action(id string) tea.Cmd {
 	if press.Code == 0 {
 		return nil
 	}
-	c.comp = nil
+	before := c.snap()
 	var cmd tea.Cmd
 	c.ta, cmd = c.ta.Update(press)
-	c.autoComplete()
+	c.tracked(before)
 	return tea.Batch(cmd, c.persist())
+}
+
+// Prompt text and cursor offset now
+func (c *Composer) snap() composerSnap {
+	lines := strings.Split(c.ta.Value(), "\n")
+	row := min(c.ta.Line(), len(lines)-1)
+	off := 0
+	for _, line := range lines[:row] {
+		off += utf8.RuneCountInString(line) + 1
+	}
+	return composerSnap{value: c.ta.Value(), cursor: off + min(c.ta.Column(), utf8.RuneCountInString(lines[row]))}
+}
+
+// Puts the prompt back to a snapshot with the cursor at its offset
+func (c *Composer) restore(s composerSnap) {
+	c.ta.SetValue(s.value)
+	lines := strings.Split(s.value, "\n")
+	row, col := 0, s.cursor
+	for row < len(lines)-1 && col > utf8.RuneCountInString(lines[row]) {
+		col -= utf8.RuneCountInString(lines[row]) + 1
+		row++
+	}
+	c.ta.MoveToBegin()
+	for c.ta.Line() < row {
+		line, at := c.ta.Line(), c.ta.Column()
+		c.ta.CursorDown()
+		if c.ta.Line() == line && c.ta.Column() == at {
+			break
+		}
+	}
+	c.ta.SetCursorColumn(col)
+}
+
+// Records the prompt before a changing edit on the undo trail and drops the redo trail
+func (c *Composer) tracked(before composerSnap) {
+	if c.ta.Value() == before.value {
+		return
+	}
+	c.undo = append(c.undo, before)
+	if len(c.undo) > undoLimit {
+		c.undo = c.undo[len(c.undo)-undoLimit:]
+	}
+	c.redo = nil
+}
+
+// Drops both trails when the prompt is replaced from outside the typing
+func (c *Composer) forget() { c.undo, c.redo = nil, nil }
+
+// Whether an undo has an edit to take back
+func (c *Composer) CanUndo() bool { return len(c.undo) > 0 }
+
+// Whether a redo has an undone edit to bring back
+func (c *Composer) CanRedo() bool { return len(c.redo) > 0 }
+
+// Steps back or forward one edit, the prompt left behind recorded on the other trail
+func (c *Composer) swap(from, to *[]composerSnap) {
+	n := len(*from)
+	if n == 0 {
+		return
+	}
+	entry := (*from)[n-1]
+	*from = (*from)[:n-1]
+	*to = append(*to, c.snap())
+	c.restore(entry)
 }
 
 // Turns the backslash before the cursor into a line break, leaving the cursor at the start of the new line
@@ -482,6 +577,7 @@ func (c *Composer) recall(d int) {
 		return
 	}
 	c.cursor = next
+	c.forget()
 	if next == len(c.history) {
 		c.ta.SetValue(c.draft)
 	} else {
@@ -497,6 +593,7 @@ func (c *Composer) submit() tea.Cmd {
 		return nil
 	}
 	c.remember(text)
+	c.forget()
 	c.ta.Reset()
 	c.comp = nil
 	c.quiet = ""
@@ -564,7 +661,7 @@ func (c *Composer) attach(path string) tea.Cmd {
 // Attaches the image at the path, as the attach command does
 func (c *Composer) Attach(path string) tea.Cmd { return c.attach(path) }
 
-// Directory relative paths complete against
+// Directory relative attachment paths resolve against
 func (c *Composer) base() string {
 	if c.baseDir != nil {
 		if dir := c.baseDir(); dir != "" {
@@ -573,209 +670,6 @@ func (c *Composer) base() string {
 	}
 	wd, _ := os.Getwd()
 	return wd
-}
-
-// First line of the text and the cursor column inside it, -1 when the cursor is on a later line
-func (c *Composer) firstLine() (string, int) {
-	line, _, _ := strings.Cut(c.ta.Value(), "\n")
-	if c.ta.Line() != 0 {
-		return line, -1
-	}
-	return line, min(c.ta.Column(), len([]rune(line)))
-}
-
-// Command named by the first word of a slash line
-func (c *Composer) command(name string) *Command {
-	for i := range c.commands {
-		if c.commands[i].Name == strings.ToLower(name) {
-			return &c.commands[i]
-		}
-	}
-	return nil
-}
-
-// Opens the popup over the commands or argument values a slash line matches, closing it anywhere else
-func (c *Composer) autoComplete() {
-	line, col := c.firstLine()
-	text := c.ta.Value()
-	if col < 0 || !strings.HasPrefix(line, "/") || text == c.quiet {
-		if c.comp != nil && (c.comp.slash || c.comp.arg) {
-			c.comp = nil
-		}
-		return
-	}
-	c.quiet = ""
-	runes := []rune(line)
-	typed := string(runes[1:col])
-	name, rest, hasSpace := strings.Cut(typed, " ")
-	if !hasSpace {
-		var items, descs, acts []string
-		for _, cmd := range c.commands {
-			if strings.HasPrefix(cmd.Name, strings.ToLower(name)) {
-				items = append(items, "/"+cmd.Name)
-				descs = append(descs, cmd.Desc)
-				acts = append(acts, cmd.Action)
-			}
-		}
-		c.setPopup(items, descs, 0, col, true, false)
-		if c.comp != nil {
-			c.comp.acts = acts
-		}
-		return
-	}
-	cmd := c.command(name)
-	if cmd == nil || cmd.Suggest == nil {
-		c.comp = nil
-		return
-	}
-	start := 1 + len([]rune(name)) + 1
-	var items []string
-	for _, v := range cmd.Suggest(rest) {
-		if strings.HasPrefix(strings.ToLower(v), strings.ToLower(rest)) {
-			items = append(items, v)
-		}
-	}
-	c.setPopup(items, nil, start, col, false, true)
-}
-
-func (c *Composer) setPopup(items, descs []string, start, end int, slash, arg bool) {
-	if len(items) == 0 {
-		c.comp = nil
-		return
-	}
-	idx := 0
-	if c.comp != nil && c.comp.idx < len(items) && (c.comp.slash == slash && c.comp.arg == arg) {
-		idx = c.comp.idx
-	}
-	c.comp = &completion{items: items, descs: descs, idx: idx, start: start, end: end, slash: slash, arg: arg}
-}
-
-// Takes the popup choice, sending a finished command at once and otherwise leaving the cursor after it
-func (c *Composer) pick() tea.Cmd {
-	comp := c.comp
-	c.accept()
-	cmd := c.persist()
-	if comp == nil {
-		return cmd
-	}
-	if comp.arg {
-		return tea.Batch(cmd, c.submit())
-	}
-	if comp.slash {
-		line, _ := c.firstLine()
-		name := strings.TrimPrefix(strings.TrimSpace(line), "/")
-		if known := c.command(name); known != nil && known.Arg == "" {
-			return tea.Batch(cmd, c.submit())
-		}
-		c.autoComplete()
-	}
-	return cmd
-}
-
-// Token the cursor sits in or just after, on the current line, with its offsets inside the line
-func (c *Composer) token() (line string, start, end int) {
-	lines := strings.Split(c.ta.Value(), "\n")
-	row := min(c.ta.Line(), len(lines)-1)
-	line = lines[row]
-	col := min(c.ta.Column(), len([]rune(line)))
-	runes := []rune(line)
-	start = col
-	for start > 0 && runes[start-1] != ' ' {
-		start--
-	}
-	end = col
-	return line, start, end
-}
-
-// Offers paths for the token under the cursor, taking the only candidate at once
-func (c *Composer) complete() {
-	line, start, end := c.token()
-	runes := []rune(line)
-	prefix := string(runes[start:end])
-	if c.ta.Line() == 0 && strings.HasPrefix(line, "/") {
-		c.autoComplete()
-		if c.comp != nil && len(c.comp.items) == 1 {
-			c.accept()
-			c.autoComplete()
-		}
-		return
-	}
-	items := c.paths(prefix)
-	if len(items) == 0 {
-		c.comp = nil
-		return
-	}
-	c.comp = &completion{items: items, start: start, end: end}
-	if len(items) == 1 {
-		c.accept()
-	}
-}
-
-// Paths starting with the prefix, directories trailing a slash, sorted
-func (c *Composer) paths(prefix string) []string {
-	pattern := prefix
-	if strings.HasPrefix(pattern, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			pattern = filepath.Join(home, pattern[2:])
-		}
-	}
-	if !filepath.IsAbs(pattern) {
-		pattern = filepath.Join(c.base(), pattern)
-		if strings.HasSuffix(prefix, "/") || prefix == "" {
-			pattern += string(filepath.Separator)
-		}
-	}
-	matches, err := filepath.Glob(pattern + "*")
-	if err != nil {
-		return nil
-	}
-	base := c.base()
-	var items []string
-	for _, m := range matches {
-		item := m
-		if !filepath.IsAbs(prefix) && !strings.HasPrefix(prefix, "~") {
-			if rel, err := filepath.Rel(base, m); err == nil {
-				item = rel
-			}
-		}
-		if st, err := os.Stat(m); err == nil && st.IsDir() {
-			item += "/"
-		}
-		items = append(items, item)
-	}
-	sort.Strings(items)
-	if len(items) > 50 {
-		items = items[:50]
-	}
-	return items
-}
-
-// Replaces the token with the chosen candidate
-func (c *Composer) accept() {
-	if c.comp == nil {
-		return
-	}
-	item := c.comp.items[c.comp.idx]
-	lines := strings.Split(c.ta.Value(), "\n")
-	row := 0
-	if !c.comp.slash && !c.comp.arg {
-		row = min(c.ta.Line(), len(lines)-1)
-	}
-	runes := []rune(lines[row])
-	end := min(c.comp.end, len(runes))
-	tail := string(runes[end:])
-	replaced := string(runes[:min(c.comp.start, len(runes))]) + item
-	if c.comp.slash || (!strings.HasSuffix(item, "/") && tail == "") {
-		replaced += " "
-	}
-	lines[row] = replaced + tail
-	c.ta.SetValue(strings.Join(lines, "\n"))
-	c.ta.MoveToEnd()
-	more := !c.comp.slash && !c.comp.arg && strings.HasSuffix(item, "/")
-	c.comp = nil
-	if more {
-		c.complete()
-	}
 }
 
 // Send or steer button in capitals, dim while the input is empty and lit once there is something to send
@@ -905,23 +799,12 @@ func (c *Composer) popup(w int) []string {
 		if i < len(c.comp.descs) && c.comp.descs[i] != "" {
 			label = render.Fit(item, 14, t) + " " + render.Dim(c.comp.descs[i], t)
 		}
-		bound := ""
-		if i < len(c.comp.acts) && c.comp.acts[i] != "" {
-			bound = keys.Format(c.keys.First(c.comp.acts[i]))
-		}
 		st := lipgloss.NewStyle().Foreground(t.Text)
-		key := lipgloss.NewStyle().Foreground(t.Accent)
 		if i == c.comp.idx {
 			st = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
-			key = st
 			label = ansi.Strip(label)
 		}
-		kw := ansi.StringWidth(bound)
-		if bound == "" || kw+16 > w {
-			rows = append(rows, st.Render(render.Fit(" "+label, w, t)))
-			continue
-		}
-		rows = append(rows, st.Render(render.Fit(" "+label, w-kw-1, t))+key.Render(bound)+st.Render(" "))
+		rows = append(rows, st.Render(render.Fit(" "+label, w, t)))
 	}
 	return rows
 }

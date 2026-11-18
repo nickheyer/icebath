@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -32,7 +33,7 @@ func TestActualPluginProfileMatchesUpstreamRegistration(t *testing.T) {
 func TestActualProfileTranslatesExplicitReasoningControls(t *testing.T) {
 	p := bundledPluginProfile(t, "actual")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{})
-	assertExtras(t, "nil", eb, tl, map[string]any{}, map[string]any{})
+	assertExtras(t, "nil", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	if got, ok, err := p.SupportedReasoningEfforts(context.Background(), "zai-org/GLM-5.3"); err != nil || !ok || !reflect.DeepEqual(got, []string{"none", "low", "medium", "high", "max"}) {
 		t.Fatalf("efforts %v %v", got, ok)
 	}

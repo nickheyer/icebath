@@ -69,12 +69,12 @@ func (m *Manager) warnPythonDependencies(ctx context.Context, mf *Manifest) {
 	}
 	key := mf.ID()
 	if InstalledInSelectedEnvironment(ctx, missing) {
-		logWarn(fmt.Sprintf("Plugin %s's Python dependencies were installed after this process started: %s. "+
+		logPlugins.warn(fmt.Sprintf("Plugin %s's Python dependencies were installed after this process started: %s. "+
 			"A running process never switches dependency environments; restart Icebath "+
 			"(icebath gateway restart for the gateway) to load them.", key, strings.Join(missing, ", ")))
 		return
 	}
-	logWarn(fmt.Sprintf("Plugin %s declares Python dependencies that are not "+
+	logPlugins.warn(fmt.Sprintf("Plugin %s declares Python dependencies that are not "+
 		"installed: %s. For an enabled plugin, run icebath pm repair, "+
 		"then restart Icebath. Discovery does not install dependencies.", key, strings.Join(missing, ", ")))
 }

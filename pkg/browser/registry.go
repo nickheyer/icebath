@@ -10,11 +10,11 @@ import (
 )
 
 // Cloud browser providers plugins register, consumed by the cloud provider selection
-var BrowserProviderRegistry = provider.NewProviderRegistry[BrowserProvider](provider.ProviderRegistryOptions{Label: "Browser", Logger: slog.Default()})
+var BrowserProviderRegistry = provider.NewProviderRegistry[BrowserProvider](provider.ProviderRegistryOptions{Label: "Browser", Logger: slog.Default().With("logger", "agent.browser_registry")})
 
 // Browser page backends plugins register, consumed by browser_vault before the CDP session
 var BrowserPageBackendRegistry = provider.NewProviderRegistry[BrowserPageBackend](provider.ProviderRegistryOptions{
-	Label: "Browser page backend", Logger: slog.Default()})
+	Label: "Browser page backend", Logger: slog.Default().With("logger", "agent.browser_page_registry")})
 
 // Only these names are auto eligible, a shared web key never routes to a paid cloud browser on its own
 var legacyBrowserPreference = []string{"browser-use", "browserbase"}
@@ -29,10 +29,10 @@ func resolveBrowserProvider(ctx context.Context, env *tools.Env, configured stri
 		if p, ok := snapshot.Get(configured); ok {
 			return p
 		}
-		slog.Default().Debug(fmt.Sprintf("browser cloud_provider '%s' configured but not registered; falling back to auto-detect", configured))
+		slog.Default().With("logger", "agent.browser_registry").Debug(fmt.Sprintf("browser cloud_provider '%s' configured but not registered; falling back to auto-detect", configured))
 	}
 	for _, legacy := range legacyBrowserPreference {
-		if p, ok := snapshot.Get(legacy); ok && provider.IsAvailableSafe(boundAvailability{p, env}, slog.Default(),
+		if p, ok := snapshot.Get(legacy); ok && provider.IsAvailableSafe(boundAvailability{p, env}, slog.Default().With("logger", "agent.browser_registry"),
 			"Browser provider %s.is_available() raised %s — treating as unavailable", slog.LevelWarn, true) {
 			return p
 		}
@@ -53,7 +53,7 @@ func backendForTask(ctx context.Context, taskID string) BrowserPageBackend {
 func hasPageSafe(backend BrowserPageBackend, taskID string) (held bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Default().Debug(fmt.Sprintf("browser page backend %s.has_page raised %v", backend.Name(), r))
+			slog.Default().With("logger", "agent.browser_page_registry").Debug(fmt.Sprintf("browser page backend %s.has_page raised %v", backend.Name(), r))
 			held = false
 		}
 	}()

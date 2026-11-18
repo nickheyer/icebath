@@ -388,9 +388,7 @@ const sshHintLoopback = "  Remote session detected. After you authorize, the pro
 	"\n" +
 	"    2. Or forward the port first in a separate terminal:\n" +
 	"         ssh -N -L %[2]d:127.0.0.1:%[2]d <user>@<this-host>\n" +
-	"       then open the URL above and let it redirect normally.\n" +
-	"\n" +
-	"  See: https://hermes-agent.nousresearch.com/docs/guides/oauth-over-ssh\n"
+	"       then open the URL above and let it redirect normally.\n"
 
 // Prints the authorization URL with any remote session hint and opens a browser when one can open
 func announceAuthorizationURL(authorizationURL string, port int, redirectURI, redirectHost string) {

@@ -6,12 +6,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Theme is the palette prompts and setup output draw with, every tone a hex color
+// Theme is the palette prompts draw with, every tone a hex color
 type Theme struct {
 	Accent string
 	Frost  string
@@ -22,29 +21,8 @@ type Theme struct {
 	Err    string
 }
 
-// ThemeDark is the brand palette on a dark terminal, signal red over ice tones
-var ThemeDark = Theme{Accent: "#f50325", Frost: "#9bdcf7", Muted: "#8b9aa5", Faint: "#5b6872", OK: "#62d394", Warn: "#f2c14e", Err: "#ff5d6c"}
-
-// ThemeLight is the brand palette on a light terminal, the same hues at readable contrast
-var ThemeLight = Theme{Accent: "#d1001c", Frost: "#0b6e99", Muted: "#5d6b75", Faint: "#8a979f", OK: "#1f8a4c", Warn: "#9a5b00", Err: "#c62828"}
-
-var (
-	themeMu sync.RWMutex
-	theme   = ThemeDark
-)
-
-// SetTheme makes t the palette of every prompt drawn after the call
-func SetTheme(t Theme) {
-	themeMu.Lock()
-	theme = t
-	themeMu.Unlock()
-}
-
-func activeTheme() Theme {
-	themeMu.RLock()
-	defer themeMu.RUnlock()
-	return theme
-}
+// Brand palette every prompt draws with, signal red over ice tones
+var promptTheme = Theme{Accent: "#f50325", Frost: "#9bdcf7", Muted: "#8b9aa5", Faint: "#5b6872", OK: "#62d394", Warn: "#f2c14e", Err: "#ff5d6c"}
 
 // Color and attributes one run of prompt text is drawn with
 type textStyle struct {
@@ -141,16 +119,13 @@ func (c *Console) paint(text string, s textStyle) string {
 type glyphSet struct {
 	active, answered, cursor, checked, unchecked string
 	up, down, arrows, back, ellipsis, sep, mask  string
-	header, ok, warn, cross, rule, slash         string
 }
 
 var unicodeGlyphs = glyphSet{active: "●", answered: "›", cursor: "❯", checked: "[✓]", unchecked: "[ ]",
-	up: "↑", down: "↓", arrows: "↑↓", back: "←", ellipsis: "…", sep: "·", mask: "•",
-	header: "◆", ok: "✓", warn: "⚠", cross: "✗", rule: "━", slash: "╱"}
+	up: "↑", down: "↓", arrows: "↑↓", back: "←", ellipsis: "…", sep: "·", mask: "•"}
 
 var asciiGlyphs = glyphSet{active: "*", answered: ">", cursor: ">", checked: "[x]", unchecked: "[ ]",
-	up: "^", down: "v", arrows: "up/down", back: "left", ellipsis: "...", sep: "|", mask: "*",
-	header: "#", ok: "+", warn: "!", cross: "x", rule: "-", slash: "/"}
+	up: "^", down: "v", arrows: "up/down", back: "left", ellipsis: "...", sep: "|", mask: "*"}
 
 // Reports a UTF-8 locale on a terminal whose font carries the prompt marks
 func (c *Console) unicode() bool {
@@ -182,30 +157,4 @@ func (c *Console) clip(text string, width int) string {
 		return text
 	}
 	return ansi.Truncate(text, width, c.glyphs().ellipsis)
-}
-
-// Tint wraps text in a hex color, bold when set, the plain text on a terminal that renders neither
-func (c *Console) Tint(text, hex string, bold bool) string {
-	return c.paint(text, textStyle{color: hex, bold: bold})
-}
-
-// ActiveTheme is the palette prompts currently draw with
-func ActiveTheme() Theme { return activeTheme() }
-
-// Breaks text at spaces only so no row is wider than limit, a longer word keeping a row to itself
-func wrapWords(text string, limit int) []string {
-	var lines []string
-	cur := ""
-	for _, word := range strings.Split(text, " ") {
-		next := word
-		if cur != "" {
-			next = cur + " " + word
-		}
-		if cur != "" && ansi.StringWidth(next) > limit {
-			lines = append(lines, cur)
-			next = word
-		}
-		cur = next
-	}
-	return append(lines, cur)
 }

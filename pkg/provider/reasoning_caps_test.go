@@ -235,7 +235,7 @@ func TestUnreadableMirrorDegradesToUnknown(t *testing.T) {
 func TestPricingFetchSeedsTheMirror(t *testing.T) {
 	ctx := reasoningCapsColdProcess(t)
 	ResetPricingCache()
-	pricingGetJSON = func(string, map[string]string, time.Duration) map[string]any { return reasoningCapsTestCatalog }
+	pricingGetJSON = func(string, map[string]string, time.Duration, bool) map[string]any { return reasoningCapsTestCatalog }
 	t.Cleanup(func() { pricingGetJSON = pricingGetJSONHTTP })
 	FetchModelsWithPricing(ctx, PricingFetchOptions{BaseURL: defaultNousInferenceURL, ForceRefresh: true})
 	ResetReasoningCapsCatalogs()

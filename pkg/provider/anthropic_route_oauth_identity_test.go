@@ -49,9 +49,13 @@ func TestRouteIdentityRequiresNativeHostAndOauthShape(t *testing.T) {
 // Request headers the built SDK client sends on its first call
 func routeIdentityHeaders(t *testing.T, client *anthropicSDKClient) map[string]string {
 	t.Helper()
-	headers, _, err := client.inner.requestHeaders(context.Background(), client.betas, nil)
+	head, _, err := client.inner.requestHeaders(context.Background(), client.betas, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	headers := map[string]string{}
+	for _, l := range head.spec.custom.stripped() {
+		headers[l.Name] = l.Value
 	}
 	return headers
 }

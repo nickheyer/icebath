@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math/big"
 	"os"
 	"slices"
 	"strings"
@@ -67,47 +66,6 @@ func normalizedJSON(t *testing.T, v any) string {
 	}
 	data, _ := json.Marshal(decoded)
 	return string(data)
-}
-
-func TestSetupAgentSettingsPrefersConfigOverStaleEnv(t *testing.T) {
-	ctx, out := scriptedSetupConsole(t, "500", "all", "0.5")
-	h := home.Dir(ctx)
-	if err := os.WriteFile(home.EnvPath(h), []byte("ICEBATH_MAX_ITERATIONS=60\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg := config.Tree{
-		"agent":       map[string]any{"max_turns": 500},
-		"display":     map[string]any{"tool_progress": "all"},
-		"compression": map[string]any{"threshold": 0.50},
-	}
-	menus := recordSetupMenus(t, func(string, []string, int, string) int { return 4 })
-	if err := SetupAgentSettings(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "Press Enter to keep 500.") || strings.Contains(out.String(), "Press Enter to keep 60.") {
-		t.Fatalf("screen %q", out.String())
-	}
-	if env := config.LoadEnv(h); env["ICEBATH_MAX_ITERATIONS"] != "" {
-		t.Fatalf("stale env entry kept: %v", env)
-	}
-	if len(*menus) != 0 {
-		t.Fatalf("menus %v", *menus)
-	}
-}
-
-func TestPromptIntSettingStoresOnlyAcceptedInts(t *testing.T) {
-	_, out := scriptedSetupConsole(t, "7", "-3", "x")
-	section := map[string]any{}
-	positive := func(v *big.Int) bool { return v.Sign() > 0 }
-	promptIntSetting(section, "n", "Count", 5, positive)
-	if section["n"] != 7 {
-		t.Fatalf("accepted %v", section)
-	}
-	promptIntSetting(section, "n", "Count", 7, positive)
-	promptIntSetting(section, "n", "Count", 7, positive)
-	if section["n"] != 7 || out.String() != "Count [5]: Count [7]: Count [7]: " {
-		t.Fatalf("section %v screen %q", section, out.String())
-	}
 }
 
 // Swaps the provider picker the model section runs

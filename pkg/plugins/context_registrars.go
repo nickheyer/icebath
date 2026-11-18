@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"path/filepath"
 	"reflect"
@@ -64,7 +65,7 @@ func (c *Context) wrongType(ok bool, article, label, base string) bool {
 	if ok {
 		return false
 	}
-	logWarn(fmt.Sprintf("Plugin '%s' tried to register %s %s that does not inherit from %s. Ignoring.", c.manifest.Name, article, label, base))
+	logPlugins.warn(fmt.Sprintf("Plugin '%s' tried to register %s %s that does not inherit from %s. Ignoring.", c.manifest.Name, article, label, base))
 	return true
 }
 
@@ -156,7 +157,7 @@ func (c *Context) OnUnload(callback func() error) (*Registration, error) {
 	}
 	_, name := callbackNames(callback)
 	handle := c.track("on_unload", name, callback)
-	logDebug(fmt.Sprintf("Plugin %s registered on_unload callback", c.manifest.Name))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered on_unload callback", c.manifest.Name))
 	return handle, nil
 }
 
@@ -209,7 +210,7 @@ func (c *Context) SpawnTask(ctx context.Context, fn func(context.Context) error,
 		}()
 		task.err = fn(taskCtx)
 	}()
-	logDebug(fmt.Sprintf("Plugin %s spawned supervised task: %s", c.manifest.Name, name))
+	logPlugins.debug(fmt.Sprintf("Plugin %s spawned supervised task: %s", c.manifest.Name, name))
 	return task, nil
 }
 
@@ -257,7 +258,7 @@ func (c *Context) RegisterApprovalTransport(ctx context.Context, name string, pr
 		return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("approval transport %s is already registered by %s", config.PyRepr(clean), config.PyRepr(existing.PluginID))}
 	}
 	entry := &tools.RegisteredApprovalTransport{Name: clean, Present: present, PluginID: c.PluginID(), ProfileHome: resolvedHome(ctx)}
-	logInfo(fmt.Sprintf("Plugin %s registered approval transport: %s", c.PluginID(), clean))
+	logPlugins.info(fmt.Sprintf("Plugin %s registered approval transport: %s", c.PluginID(), clean))
 	var none *tools.RegisteredApprovalTransport
 	trackMappingEntry(c, "approval_transport", clean, m.approvalTransports, entry, &none)
 	return nil
@@ -278,7 +279,7 @@ func (c *Context) RegisterTool(ctx context.Context, spec ToolSpec) (*Registratio
 type ToolSpec struct {
 	Name        string
 	Toolset     string
-	Schema      map[string]any
+	Schema      *pyjson.Object
 	Handler     tools.Handler
 	Check       func(env *tools.Env) bool
 	RequiresEnv []string
@@ -298,7 +299,7 @@ func (c *Context) registerTool(ctx context.Context, spec ToolSpec) (*Registratio
 	scope := m.home
 	previous := tools.Default.SnapshotRegistration(scope, name)
 	if previous == nil && !spec.Override && tools.Default.Lookup(ctx, scope, name) != nil {
-		logWarn(fmt.Sprintf("Plugin %s tried to shadow global tool %s without override=True", c.manifest.Name, name))
+		logPlugins.warn(fmt.Sprintf("Plugin %s tried to shadow global tool %s without override=True", c.manifest.Name, name))
 		return nil, nil
 	}
 	err := tools.Default.RegisterScoped(scope, tools.Def{
@@ -310,7 +311,7 @@ func (c *Context) registerTool(ctx context.Context, spec ToolSpec) (*Registratio
 		return nil, &PluginToolOverrideError{Msg: err.Error()}
 	}
 	if err != nil {
-		logWarn(err.Error())
+		logPlugins.warn(err.Error())
 	}
 	registered := tools.Default.SnapshotRegistration(scope, name)
 	var handle *Registration
@@ -335,7 +336,7 @@ func (c *Context) registerTool(ctx context.Context, spec ToolSpec) (*Registratio
 	if spec.Override {
 		suffix = " (override)"
 	}
-	logDebug(fmt.Sprintf("Plugin %s registered tool: %s%s", c.manifest.Name, name, suffix))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered tool: %s%s", c.manifest.Name, name, suffix))
 	return handle, nil
 }
 
@@ -364,7 +365,7 @@ func (c *Context) CallMCP(ctx context.Context, server, tool string, arguments ma
 	if err != nil {
 		return nil, err
 	}
-	logDebug(fmt.Sprintf("Plugin %s called MCP %s/%s (timeout=%ss, %d chars returned)", c.manifest.Name, server, tool, config.PyStr(seconds), utf8.RuneCountInString(raw)))
+	logPlugins.debug(fmt.Sprintf("Plugin %s called MCP %s/%s (timeout=%ss, %d chars returned)", c.manifest.Name, server, tool, config.PyStr(seconds), utf8.RuneCountInString(raw)))
 	return mcpEnvelope(raw), nil
 }
 
@@ -469,7 +470,7 @@ func (c *Context) SideQuestion(ctx context.Context, token, prompt, timeout any) 
 	cfg, err := loadConfig(c.manager.home)
 	if err != nil || !CapabilityGranted(cfg, c.PluginID(), sideQuestionCapability) {
 		if !c.sideQuestionDenialLogged.Swap(true) {
-			logInfo(fmt.Sprintf("Plugin %s called ctx.side_question without the %s capability; returning None", c.PluginID(), sideQuestionCapability))
+			logPluginsCapabilityCtx.info(fmt.Sprintf("Plugin %s called ctx.side_question without the %s capability; returning None", c.PluginID(), sideQuestionCapability))
 		}
 		return nil, nil
 	}
@@ -514,21 +515,21 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 		return true
 	}
 	if sessionKey != "" && origin != nil {
-		logWarn("inject_message: pass session_key or origin, not both")
+		logPlugins.warn("inject_message: pass session_key or origin, not both")
 		return false
 	}
 	keyless := sessionKey == "" && origin == nil
 	if keyless && !m.HasGatewayMessageInjector() {
-		logWarn("inject_message: gateway mode requires an existing session_key or an origin")
+		logPlugins.warn("inject_message: gateway mode requires an existing session_key or an origin")
 		return false
 	}
 	originMap, isMap := origin.(map[string]any)
 	if origin != nil && !isMap {
-		logWarn("inject_message: origin must be a mapping in the SessionSource.to_dict() shape")
+		logPlugins.warn("inject_message: origin must be a mapping in the SessionSource.to_dict() shape")
 		return false
 	}
 	if !c.gatewayInjectionAllowed() {
-		logWarn(fmt.Sprintf("inject_message: gateway injection denied for plugin %s; set plugins.entries.%s.allow_gateway_injection: true to allow it", c.PluginID(), c.PluginID()))
+		logPlugins.warn(fmt.Sprintf("inject_message: gateway injection denied for plugin %s; set plugins.entries.%s.allow_gateway_injection: true to allow it", c.PluginID(), c.PluginID()))
 		return false
 	}
 	if sessionKey != "" && m.HasTUIMessageInjector() {
@@ -537,7 +538,7 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 			accepted = m.InjectTUIMessage(ctx, map[string]any{"session_key": sessionKey, "content": msg, "plugin_id": c.PluginID()})
 			return nil
 		}); err != nil {
-			logWarn(fmt.Sprintf("inject_message: TUI scheduling failed for plugin %s", c.PluginID()), "error", err)
+			logPlugins.warn(fmt.Sprintf("inject_message: TUI scheduling failed for plugin %s", c.PluginID()), "error", err)
 			return false
 		}
 		if accepted {
@@ -545,7 +546,7 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 		}
 	}
 	if !m.HasGatewayMessageInjector() {
-		logWarn("inject_message: no live gateway is available")
+		logPlugins.warn("inject_message: no live gateway is available")
 		return false
 	}
 	target := map[string]any{"plugin_home": m.home, "content": msg, "plugin_id": c.PluginID()}
@@ -570,7 +571,7 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 		accepted = m.InjectGatewayMessage(ctx, target)
 		return nil
 	}); err != nil {
-		logWarn(fmt.Sprintf("inject_message: gateway scheduling failed for plugin %s", c.PluginID()), "error", err)
+		logPlugins.warn(fmt.Sprintf("inject_message: gateway scheduling failed for plugin %s", c.PluginID()), "error", err)
 		return false
 	}
 	return accepted
@@ -656,13 +657,13 @@ func (c *Context) RegisterCommand(name string, handler PluginCommandHandler, des
 func (c *Context) registerCommand(name string, handler PluginCommandHandler, description, argsHint, argumentMode string) *Registration {
 	clean := strings.ReplaceAll(strings.TrimLeft(pyStrip(strings.ToLower(name)), "/"), " ", "-")
 	if clean == "" {
-		logWarn(fmt.Sprintf("Plugin '%s' tried to register a command with an empty name.", c.manifest.Name))
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' tried to register a command with an empty name.", c.manifest.Name))
 		return nil
 	}
 	if s := installedServices(); s != nil && s.ResolveBuiltinCommand != nil {
 		conflict := false
 		if callGuarded(func() error { conflict = s.ResolveBuiltinCommand(clean); return nil }) == nil && conflict {
-			logWarn(fmt.Sprintf("Plugin '%s' tried to register command '/%s' which conflicts with a built-in command. Skipping.", c.manifest.Name, clean))
+			logPlugins.warn(fmt.Sprintf("Plugin '%s' tried to register command '/%s' which conflicts with a built-in command. Skipping.", c.manifest.Name, clean))
 			return nil
 		}
 	}
@@ -744,7 +745,7 @@ func (c *Context) registerContextEngine(engine any) (*Registration, error) {
 	occupied := m.contextEngine != nil
 	m.mu.RUnlock()
 	if occupied {
-		logWarn(fmt.Sprintf("Plugin '%s' tried to register a context engine, but one is already registered. Only one context engine plugin is allowed.", c.manifest.Name))
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' tried to register a context engine, but one is already registered. Only one context engine plugin is allowed.", c.manifest.Name))
 		return nil, nil
 	}
 	name, ok, err := c.hostObject("context_engine", engine)
@@ -766,7 +767,7 @@ func (c *Context) registerContextEngine(engine any) (*Registration, error) {
 		m.mu.Unlock()
 		return nil
 	})
-	logInfo(fmt.Sprintf("Plugin '%s' registered context engine: %s", c.manifest.Name, name))
+	logPlugins.info(fmt.Sprintf("Plugin '%s' registered context engine: %s", c.manifest.Name, name))
 	return handle, nil
 }
 
@@ -787,10 +788,10 @@ func (c *Context) RegisterContextReference(provider any) error {
 		return err
 	}
 	if err := register(provider); err != nil {
-		logWarn(fmt.Sprintf("Plugin '%s' context reference registration failed: %v", c.manifest.Name, err))
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' context reference registration failed: %v", c.manifest.Name, err))
 		return nil
 	}
-	logInfo(fmt.Sprintf("Plugin '%s' registered context reference: @%s:", c.manifest.Name, prefix))
+	logPlugins.info(fmt.Sprintf("Plugin '%s' registered context reference: @%s:", c.manifest.Name, prefix))
 	return nil
 }
 
@@ -812,7 +813,7 @@ func (c *Context) RegisterMemoryProvider(provider any) error {
 	if name == "" {
 		name = "?"
 	}
-	logDebug(fmt.Sprintf("Plugin '%s' registered memory provider: %s", c.manifest.Name, name))
+	logPlugins.debug(fmt.Sprintf("Plugin '%s' registered memory provider: %s", c.manifest.Name, name))
 	return nil
 }
 
@@ -894,7 +895,7 @@ func (m *Manager) leasePlatform(manifest *Manifest, name string, registry Platfo
 		m.removePlatformNameIfUnowned(name)
 		return nil
 	})
-	logDebug(fmt.Sprintf("Plugin %s registered platform: %s", manifest.Name, name))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered platform: %s", manifest.Name, name))
 	return handle
 }
 
@@ -936,7 +937,7 @@ func (c *Context) registerSlackActionHandler(actionID, callback any, text string
 	if s, ok := actionID.(string); ok {
 		shown = s
 	}
-	logDebug(fmt.Sprintf("Plugin %s registered Slack action handler: %s", c.manifest.Name, shown))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered Slack action handler: %s", c.manifest.Name, shown))
 	return handle, nil
 }
 
@@ -963,7 +964,7 @@ func (c *Context) RegisterPlatformHandler(platform string, factory any) error {
 	m.platformHandlerFactories[key] = append(m.platformHandlerFactories[key], &PlatformHandlerFactory{Factory: factory, Plugin: c.manifest.Name})
 	m.mu.Unlock()
 	_, fname := callbackNames(factory)
-	logDebug(fmt.Sprintf("Plugin %s registered %s handler factory: %s", c.manifest.Name, key, fname))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered %s handler factory: %s", c.manifest.Name, key, fname))
 	return nil
 }
 
@@ -1044,7 +1045,7 @@ func buildAuxiliaryTaskEntry(me, ownerID string, rawKey any, opts AuxTaskOptions
 		base, isStr := inherit.(string)
 		_, known := registered[base]
 		if !isStr || base == key || (!builtin[base] && !known) {
-			logWarn(fmt.Sprintf("Plugin '%s' auxiliary task %s: ignoring inherit_from=%s — not a built-in auxiliary task or one already registered by a plugin", me, config.PyRepr(key), config.PyRepr(inherit)))
+			logPlugins.warn(fmt.Sprintf("Plugin '%s' auxiliary task %s: ignoring inherit_from=%s — not a built-in auxiliary task or one already registered by a plugin", me, config.PyRepr(key), config.PyRepr(inherit)))
 			inherit = nil
 		}
 	}
@@ -1128,10 +1129,10 @@ func (c *Context) RegisterRedactionPatterns(patterns any) int {
 		})
 	}
 	if err != nil {
-		logWarn(fmt.Sprintf("Plugin '%s' redaction pattern registration failed: %v", c.manifest.Name, err))
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' redaction pattern registration failed: %v", c.manifest.Name, err))
 		return 0
 	}
-	logDebug(fmt.Sprintf("Plugin %s registered %d redaction pattern(s)", c.manifest.Name, count))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered %d redaction pattern(s)", c.manifest.Name, count))
 	return count
 }
 
@@ -1166,7 +1167,7 @@ func (c *Context) RegisterLocale(lang string, source any, endonym string, rtl bo
 		i18n.UnregisterPack(entry)
 		return nil
 	})
-	logDebug(fmt.Sprintf("Plugin %s registered locale: %s/%s (%d keys)", c.manifest.Name, langID, surface, len(messages)))
+	logPlugins.debug(fmt.Sprintf("Plugin %s registered locale: %s/%s (%d keys)", c.manifest.Name, langID, surface, len(messages)))
 	return handle, nil
 }
 
@@ -1181,7 +1182,7 @@ func (c *Context) RegisterLocaleDir(path string, metadata map[string]map[string]
 		endonym, _ := meta["endonym"].(string)
 		handle, err := c.RegisterLocale(file.Lang, file.Path, endonym, truthy(meta["rtl"]), file.Surface)
 		if err != nil {
-			logWarn(fmt.Sprintf("Plugin '%s' locale file %s skipped: %v", c.manifest.Name, file.Path, err))
+			logPlugins.warn(fmt.Sprintf("Plugin '%s' locale file %s skipped: %v", c.manifest.Name, file.Path, err))
 			continue
 		}
 		if handle != nil {
@@ -1298,7 +1299,7 @@ func (c *Context) RegisterAutomationBlueprint(key any, spec BlueprintSpec) (*Reg
 	}
 	bpKey, blueprint, err := build(c.manifest.Name, key, spec)
 	if err != nil {
-		logWarn(fmt.Sprintf("Plugin '%s' automation blueprint %s rejected: %v", c.manifest.Name, config.PyRepr(key), err))
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' automation blueprint %s rejected: %v", c.manifest.Name, config.PyRepr(key), err))
 		return nil, nil
 	}
 	m := c.manager
@@ -1306,7 +1307,7 @@ func (c *Context) RegisterAutomationBlueprint(key any, spec BlueprintSpec) (*Reg
 	_, dup := m.automationBlueprints[bpKey]
 	m.mu.RUnlock()
 	if dup {
-		logWarn(fmt.Sprintf("Plugin '%s' automation blueprint %s is already registered", c.manifest.Name, config.PyRepr(bpKey)))
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' automation blueprint %s is already registered", c.manifest.Name, config.PyRepr(bpKey)))
 		return nil, nil
 	}
 	return registerEntry(c, "automation_blueprint", bpKey, m.automationBlueprints, &blueprintEntry{value: blueprint}, nil,

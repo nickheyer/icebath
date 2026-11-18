@@ -121,6 +121,15 @@ func defsAsAny(defs []map[string]any) []any {
 	return out
 }
 
+// Definitions as the ordered dicts the pin serializes, each envelope in build order
+func defsAsOrdered(defs []map[string]any) []any {
+	out := make([]any, len(defs))
+	for i, d := range defs {
+		out[i] = tools.ToolDefObject(d)
+	}
+	return out
+}
+
 // AgentToolNames lists the agent tool names in wire order skipping unnamed entries
 func AgentToolNames(agent AgentToolSnapshot) []string {
 	var out []string
@@ -345,7 +354,7 @@ func persistAgentToolNames(ctx context.Context, agent AgentToolSnapshot) {
 	}
 	pin := pyjson.NewObject()
 	pin.Set("version", toolPinVersion())
-	pin.Set("tools", defsAsAny(agentToolDefs(agent)))
+	pin.Set("tools", defsAsOrdered(agentToolDefs(agent)))
 	if backend := agent.DelegationBackend(); backend != "" {
 		pin.Set("delegation_backend", backend)
 	}
@@ -454,15 +463,50 @@ func hasFresh(fresh map[string]map[string]any, name string) bool {
 func pinValue(v any) any {
 	switch t := v.(type) {
 	case []map[string]any:
-		return pyjson.Plain(defsAsAny(t))
+		return pinDefsValue(defsAsAny(t))
 	case []string:
 		out := make([]any, len(t))
 		for i, s := range t {
 			out[i] = s
 		}
 		return out
+	case []any:
+		return pinDefsValue(t)
+	case *pyjson.Object, map[string]any:
+		obj, _ := pyjson.AsObject(t)
+		out := make(map[string]any, obj.Len())
+		for _, k := range obj.Keys {
+			if items, ok := obj.Vals[k].([]any); ok && k == "tools" {
+				out[k] = pinDefsValue(items)
+			} else {
+				out[k] = pyjson.Plain(obj.Vals[k])
+			}
+		}
+		return out
 	}
 	return pyjson.Plain(v)
+}
+
+// Pinned definitions as envelope maps whose function schemas keep their pinned key order
+func pinDefsValue(items []any) []any {
+	out := make([]any, len(items))
+	for i, item := range items {
+		def, ok := pyjson.AsObject(item)
+		if !ok {
+			out[i] = pyjson.Plain(item)
+			continue
+		}
+		envelope := make(map[string]any, def.Len())
+		for _, k := range def.Keys {
+			if fn, isDict := pyjson.AsObject(def.Vals[k]); isDict && k == "function" {
+				envelope[k] = pyjson.Clone(fn)
+			} else {
+				envelope[k] = pyjson.Plain(def.Vals[k])
+			}
+		}
+		out[i] = envelope
+	}
+	return out
 }
 
 // Keeps a carried tool only when its dynamic schema gate still admits it against the merged array
@@ -516,11 +560,8 @@ func pinnedToolDefsOf(ctx context.Context, env *tools.Env, saved any, fresh map[
 			def = fresh[name]
 		case hasName && name != "":
 			if entry := reg.Entry(ctx, env, name); entry != nil {
-				fn := make(map[string]any, len(entry.Schema)+1)
-				for k, v := range entry.Schema {
-					fn[k] = v
-				}
-				fn["name"] = entry.Name
+				fn := entry.Schema.Copy()
+				fn.Set("name", entry.Name)
 				def = map[string]any{"type": "function", "function": fn}
 			}
 		}

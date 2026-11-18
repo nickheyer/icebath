@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -33,10 +34,10 @@ var StewardUpdateMessages = map[string]string{
 		"\n" +
 		"The store path is immutable. Update through your flake:\n" +
 		"  nix flake update && rebuild your profile or system",
-	StewardAptTermux: "✗ This icebath runs from a Termux APT package.\n" +
+	StewardAptTermux: "✗ This icebath runs from a Termux package tree, and no icebath release is a Termux package.\n" +
 		"\n" +
-		"The package manager owns the code tree. Update with:\n" +
-		"  pkg upgrade icebath-agent",
+		"Install icebath in a Debian userland, where the Linux release updates itself:\n" +
+		"  " + config.TermuxInstallCommand,
 	StewardHomebrew: "✗ This icebath was installed by Homebrew.\n" +
 		"\n" +
 		"The package manager owns the binary. Update with:\n" +
@@ -78,10 +79,10 @@ var StewardUpdateMessages = map[string]string{
 const SourceOnTermuxUpdateMessage = "✗ This icebath is a source checkout running under Termux.\n" +
 	"\n" +
 	"Source installs are not supported on Termux — `icebath update` would\n" +
-	"build Python packages on the device. Switch to the APT package:\n" +
-	"  pkg install icebath-agent"
+	"build Python packages on the device. Install icebath in a Debian userland instead:\n" +
+	"  " + config.TermuxInstallCommand
 
-const SourceOnTermuxUpdateCommand = "pkg install icebath-agent"
+const SourceOnTermuxUpdateCommand = config.TermuxInstallCommand
 
 const stewardUpdateFallback = "✗ This icebath install is managed by {steward}.\n" +
 	"\n" +
@@ -101,10 +102,10 @@ var stewardUninstallMessages = map[string]string{
 		"\n" +
 		stewardDeleteDataPreamble +
 		stewardDeleteDataCLI,
-	StewardAptTermux: "✗ This icebath was installed by a Termux APT package.\n" +
+	StewardAptTermux: "✗ This icebath runs from a Termux package tree, and no icebath release is a Termux package.\n" +
 		"\n" +
-		"The package manager owns the code tree — uninstall it with:\n" +
-		"  pkg uninstall icebath-agent\n" +
+		"Delete the tree it runs from, then install icebath in a Debian userland:\n" +
+		"  " + config.TermuxInstallCommand + "\n" +
 		"\n" +
 		stewardDeleteDataPreamble +
 		stewardDeleteDataCLI,
@@ -190,12 +191,16 @@ func installBinary(projectRoot string) string {
 	return filepath.Join(projectRoot, name)
 }
 
-// Steward of a sealed tree, nil for a git checkout or an installer stamped release tree
+// Steward of a sealed tree, nil for a git checkout, an installer stamped release tree or a WinGet nested install
 func SealedSteward(projectRoot string) *string {
 	if _, err := os.Stat(filepath.Join(projectRoot, ".git")); err == nil {
 		return nil
 	}
-	if method, err := config.InstallMethodStamp(projectRoot); err == nil && config.IsReleaseBinaryInstallMethod(method) {
+	method, err := config.InstallMethodStamp(projectRoot)
+	if err == nil && config.IsReleaseBinaryInstallMethod(method) {
+		return nil
+	}
+	if err == nil && method == install.MethodWinGet && config.PackageManagerOfPath(installBinary(projectRoot)) == "" {
 		return nil
 	}
 	steward := "unknown"

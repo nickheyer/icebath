@@ -1386,7 +1386,13 @@ func preflightTool(tool any, idx int) (map[string]any, error) {
 	if !nonblank(name) {
 		return nil, fmt.Errorf("Codex Responses tools[%d] is missing a valid name.", idx)
 	}
-	if _, ok := params.(map[string]any); !ok {
+	switch p := params.(type) {
+	case map[string]any:
+	case *pyjson.Object:
+		if p == nil {
+			return nil, fmt.Errorf("Codex Responses tools[%d] is missing valid parameters.", idx)
+		}
+	default:
 		return nil, fmt.Errorf("Codex Responses tools[%d] is missing valid parameters.", idx)
 	}
 	desc := ""
@@ -1421,6 +1427,8 @@ func pyTruthy(v any) bool {
 		return len(t) > 0
 	case map[string]any:
 		return len(t) > 0
+	case *pyjson.Object:
+		return t != nil && t.Len() > 0
 	}
 	return true
 }

@@ -174,7 +174,7 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx) []string {
 		lines = wrapUnder(m.Text, c.width, "", toneStyle(c.t.Color.Accent))
 	case m.Role == "user":
 		lead := toneStyle(c.t.Color.Prompt).Bold(true).Render(c.ut.Glyphs.Prompt + " ")
-		lines = wrapUnder(userDisplay(m.Text), c.width, lead, toneStyle(c.t.Color.Text).Bold(true))
+		lines = userLines(m.Text, c, lead)
 	case m.Role == "assistant":
 		lines = v.markdownLines(m.Text, c)
 	case isUsageGaugeRow(m):
@@ -189,6 +189,20 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx) []string {
 	if stamp, ok := fmtMsgTimestamp(m.CreatedAt); ok && c.timestamps && len(lines) > 0 && m.Kind != "intro" {
 		lines[0] = render.Fit(lines[0], max(c.width-ansi.StringWidth(stamp)-1, 1), c.ut) + " " + toneStyle(c.t.Color.Muted).Render(stamp)
 	}
+	return lines
+}
+
+// User text under the prompt glyph, a long paste backed message folded to its first words and a muted long message mark
+func userLines(text string, c renderCtx, lead string) []string {
+	body := toneStyle(c.t.Color.Text).Bold(true)
+	if unitLen(text) <= longMsg || !isPasteBackedText(text) {
+		return wrapUnder(text, c.width, lead, body)
+	}
+	mark := tr("chatBits.messageLine.longMessage")
+	head, rest, _ := strings.Cut(userDisplay(text), mark)
+	lines := wrapUnder(head, c.width, lead, body)
+	last := len(lines) - 1
+	lines[last] += toneStyle(c.t.Color.Muted).Faint(true).Render(mark) + body.Render(rest)
 	return lines
 }
 
@@ -338,7 +352,11 @@ func toolRow(line string, c renderCtx) []string {
 	if strings.HasSuffix(strings.TrimSpace(rows[0]), "✗") {
 		tone = c.t.Color.Error
 	}
-	out := []string{pad + toneStyle(tone).Render(truncateEnd(rows[0], max(c.width-transcriptIndent, 8)))}
+	hint := ""
+	if strings.HasPrefix(rows[0], "Delegate Task") {
+		hint = delegateMonitorHint("delegate_task", c)
+	}
+	out := []string{pad + toneStyle(tone).Render(truncateEnd(rows[0], max(c.width-transcriptIndent-ansi.StringWidth(hint), 8))) + hint}
 	for _, extra := range rows[1:] {
 		out = append(out, pad+"  "+toneStyle(c.t.Color.Muted).Render(truncateEnd(extra, max(c.width-transcriptIndent-2, 8))))
 	}

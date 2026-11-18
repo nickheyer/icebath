@@ -544,6 +544,7 @@ func NewVercelSandboxEnvironment(ctx context.Context, env *Env, o VercelOptions)
 		workspaceRoot: VercelSandboxDefaultCwd, remoteHome: VercelSandboxDefaultCwd}
 	v.stdinMode = "payload"
 	initBaseEnv(&v.baseEnv, v, env, o.Cwd, o.Timeout, nil, true)
+	v.baseEnv.persistent = v.persistent
 	if o.Runtime != "" {
 		envLog(env).Warn(fmt.Sprintf("Vercel: terminal.vercel_runtime is deprecated by Vercel; set terminal.vercel_image (default %s) instead", defaultVercelImage))
 	}

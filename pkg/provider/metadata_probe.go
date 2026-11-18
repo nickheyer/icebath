@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -125,7 +126,8 @@ func firstEnv(names ...string) string {
 
 // Metadata probe client sharing chat TLS policy with credentials scoped to the first origin
 type probeClient struct {
-	ctx     context.Context
+	ctx context.Context
+	// Headers of the httpx client or its requests in their recorded order
 	headers map[string]string
 	connect time.Duration
 	read    time.Duration
@@ -133,6 +135,8 @@ type probeClient struct {
 	tlsErr  error
 	// Hands a redirect answer back unfollowed, the plain httpx client default
 	keepRedirects bool
+	// Pool a with-block httpx client keeps across its requests, built on the first one
+	pool http.RoundTripper
 }
 
 // Probe client that returns a redirect answer instead of following it
@@ -150,41 +154,60 @@ func newProbeClient(ctx context.Context, baseURL string, headers map[string]stri
 	return &probeClient{ctx: ctx, headers: headers, connect: connect, read: read, tls: tlsCfg, tlsErr: err}
 }
 
-func (c *probeClient) httpClient(target string) *http.Client {
-	var transport http.RoundTripper = &http.Transport{
-		Proxy:                 probeProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: c.connect}).DialContext,
-		TLSClientConfig:       c.tls,
-		ResponseHeaderTimeout: c.read,
-		TLSHandshakeTimeout:   c.connect,
+// httpx client over env proxy mounts, a with-block client keeping one pool and a follow client a fresh one per request
+func (c *probeClient) httpClient(target string) (*http.Client, error) {
+	base := metadataTransport
+	if base == nil && c.keepRedirects {
+		base = c.pool
 	}
-	if metadataTransport != nil {
-		transport = metadataTransport
+	if base == nil {
+		cfg := c.tls
+		if cfg == nil {
+			cfg = PlatformTLSConfig()
+		}
+		tr, err := httpxWireTransportTLS(httpxDefaultLimits, c.connect, nil, cfg)
+		if err != nil {
+			return nil, err
+		}
+		tr.ResponseHeaderTimeout = c.read
+		base = tr
+		if c.keepRedirects {
+			c.pool = tr
+		}
 	}
-	redirects := credentialRedirectPolicy(target)
+	client := &http.Client{Transport: pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}}
 	if c.keepRedirects {
-		redirects = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client.CheckRedirect = httpxNoRedirects
+		return client, nil
 	}
-	return &http.Client{Transport: transport, CheckRedirect: redirects}
+	origin := urlOrigin(target)
+	private := map[string]bool{"authorization": true, "cookie": true, "proxy-authorization": true}
+	for name := range c.headers {
+		if lower := strings.ToLower(name); lower != "accept" && lower != "user-agent" {
+			private[lower] = true
+		}
+	}
+	follow := pyhttpx.RedirectPolicy(true)
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := follow(req, via); err != nil {
+			return err
+		}
+		if urlOrigin(req.URL.String()) != origin {
+			for name := range private {
+				req.Header.Del(name)
+			}
+		}
+		return nil
+	}
+	return client, nil
 }
 
-// Sends one request under the total deadline, reading the body only for successes
-func (c *probeClient) do(method, rawURL string, params map[string]string, body []byte, extra map[string]string) (*probeResponse, error) {
+// Sends one request with the httpx client head under the total deadline, reading the body only for successes
+func (c *probeClient) do(method, rawURL string, params pyhttpx.Params, body []byte) (*probeResponse, error) {
 	if c.tlsErr != nil {
 		return nil, c.tlsErr
 	}
-	target := rawURL
-	if len(params) > 0 {
-		q := url.Values{}
-		for _, k := range sortedStringKeys(params) {
-			q.Set(k, params[k])
-		}
-		sep := "?"
-		if strings.Contains(target, "?") {
-			sep = "&"
-		}
-		target += sep + q.Encode()
-	}
+	target := pyhttpx.MergeParams(rawURL, params)
 	origin := urlOrigin(target)
 	ctx, cancel := context.WithTimeout(c.ctx, probeTotalDeadline)
 	defer cancel()
@@ -196,13 +219,26 @@ func (c *probeClient) do(method, rawURL string, params map[string]string, body [
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
+	lines := httpxClientHeaders()
+	var own []pyhttpx.HeaderLine
+	for _, k := range pyhttpx.HeaderOrder(c.headers) {
+		own = append(own, pyhttpx.HeaderLine{Name: k, Value: c.headers[k]})
 	}
-	for k, v := range extra {
-		req.Header.Set(k, v)
+	lines.Update(own)
+	if body != nil {
+		if _, ok := lines.Get("Content-Length"); !ok {
+			lines.Set("Content-Length", strconv.Itoa(len(body)))
+		}
+		if _, ok := lines.Get("Content-Type"); !ok {
+			lines.Set("Content-Type", "application/json")
+		}
 	}
-	resp, err := c.httpClient(target).Do(req)
+	wire := pyhttpx.NewHeaders(append([]pyhttpx.HeaderLine{{Name: "Host", Value: httpxHost(req.URL)}}, lines.Lines()...)...)
+	client, err := c.httpClient(target)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(pyhttpx.WithWire(req, wire))
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && !isConnectTimeout(err) && c.ctx.Err() == nil {
 			return nil, &DeadlineExpiredError{Label: "model metadata " + origin, After: probeTotalDeadline}
@@ -224,16 +260,17 @@ func (c *probeClient) do(method, rawURL string, params map[string]string, body [
 	return out, nil
 }
 
-func (c *probeClient) Get(rawURL string, params map[string]string) (*probeResponse, error) {
-	return c.do(http.MethodGet, rawURL, params, nil, nil)
+func (c *probeClient) Get(rawURL string, params pyhttpx.Params) (*probeResponse, error) {
+	return c.do(http.MethodGet, rawURL, params, nil)
 }
 
+// POST of the payload as the body httpx json= encodes
 func (c *probeClient) PostJSON(rawURL string, payload any) (*probeResponse, error) {
-	raw, err := json.Marshal(payload)
+	raw, err := pyhttpx.JSONBody(payload)
 	if err != nil {
 		return nil, err
 	}
-	return c.do(http.MethodPost, rawURL, nil, raw, map[string]string{"Content-Type": "application/json"})
+	return c.do(http.MethodPost, rawURL, nil, raw)
 }
 
 // Error of a non success status from a probe
@@ -436,7 +473,7 @@ func lmstudioNativeModels(ctx context.Context, normalized string, headers map[st
 // Overwrites context_length with the n_ctx llama.cpp allocated for loaded models
 func applyLlamacppProps(client *probeClient, cache map[string]map[string]any, requestCandidate string) {
 	base := strings.ReplaceAll(strings.TrimRight(requestCandidate, "/"), "/v1", "")
-	props := func(params map[string]string) (*probeResponse, error) {
+	props := func(params pyhttpx.Params) (*probeResponse, error) {
 		resp, err := client.Get(base+"/v1/props", params)
 		if err != nil {
 			return nil, err
@@ -484,7 +521,7 @@ func applyLlamacppProps(client *probeClient, cache map[string]map[string]any, re
 		if childID == "" || !known || (value != "loaded" && value != "ready") {
 			continue
 		}
-		pr, err := props(map[string]string{"model": childID, "autoload": "false"})
+		pr, err := props(pyhttpx.Params{{"model", childID}, {"autoload", "false"}})
 		if err != nil || pr.IsError() {
 			continue
 		}
@@ -964,7 +1001,7 @@ func queryAnthropicContextLength(ctx context.Context, model, baseURL, apiKey str
 		return 0
 	}
 	base := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
-	headers := map[string]string{"x-api-key": apiKey, "anthropic-version": "2023-06-01"}
+	headers := pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "x-api-key", Value: apiKey}, pyhttpx.HeaderLine{Name: "anthropic-version", Value: "2023-06-01"})
 	resp, err := newProbeClient(ctx, baseURL, headers, 5*time.Second, 10*time.Second).Get(base+"/v1/models?limit=1000", nil)
 	if err != nil {
 		metadataLog.Debug("Anthropic /v1/models query failed", "error", err)

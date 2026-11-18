@@ -62,29 +62,29 @@ var (
 	maintRepairWindowsHomeACL = home.RepairWindowsHomeACL
 )
 
-// Historical updater hook that never completes inside the pre swap process
-func prepareUpdatedCheckout(ctx context.Context, projectRoot string) error {
-	return pm.StopForRelaunchIncomplete(ctx)
-}
-
-// Shared wording of the partial completion banner for a vulnerable post update SQLite
-func sqlitePartialCompletionLines(sqliteVersion string) []string {
-	return []string{
-		fmt.Sprintf("⚠ Update partially complete — your Python's SQLite (%s) has a known "+
-			"corruption bug. Icebath works, but sessions could be damaged.", sqliteVersion),
-		fmt.Sprintf("  Fix: run the installer again (%s) "+
-			"which installs a safe Python, then run `icebath doctor` to confirm.", reinstallOneLiner[sysPlatform() == "win32"]),
+// Partial completion banner naming why the updated binary's SQLite is not proven safe, then the fix
+func sqlitePartialCompletionLines(info *state.SQLiteRuntimeInfo, probeErr error) []string {
+	fix := fmt.Sprintf("  Fix: run the installer again (%s) "+
+		"which installs the current release, then run `icebath doctor` to confirm.", reinstallOneLiner[sysPlatform() == "win32"])
+	if probeErr != nil {
+		return []string{"⚠ Update partially complete — your icebath could not report its SQLite (" +
+			probeErr.Error() + "), so its session store is unverified.", fix}
 	}
+	missing := strings.Join(info.MissingFeatures, ", ")
+	if !info.WALResetVulnerable() {
+		return []string{fmt.Sprintf("⚠ Update partially complete — your icebath's SQLite (%s) lacks %s, "+
+			"which the session store needs. Icebath works, but sessions cannot be stored or searched in full.", info.SQLiteVersionString, missing), fix}
+	}
+	lines := []string{fmt.Sprintf("⚠ Update partially complete — your icebath's SQLite (%s) has a known "+
+		"corruption bug. Icebath works, but sessions could be damaged.", info.SQLiteVersionString)}
+	if missing != "" {
+		lines = append(lines, "  It also lacks "+missing+", which the session store needs.")
+	}
+	return append(lines, fix)
 }
 
 // The updates section of config.yaml
 func loadUpdatesCfg(ctx context.Context) (map[string]any, error) { return updatesConfig(ctx) }
-
-// Historical updater hook, module graph surgery cannot complete an update
-func purgeStaleHermesModules(ctx context.Context) error { return pm.StopForRelaunchIncomplete(ctx) }
-
-// Historical updater hook, dependency activation belongs to the next process
-func reloadUpdatedRuntimeModules(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
 
 // Curator heads up printed only while enabled and never run
 func printCuratorFirstRunNotice(ctx context.Context, w io.Writer) {
@@ -106,7 +106,7 @@ func printCuratorFirstRunNotice(ctx context.Context, w io.Writer) {
 		"scope and nothing is ever auto-deleted (archive is recoverable).\n", days)
 	fmt.Fprintln(w, "  Preview now:  icebath curator run --dry-run")
 	fmt.Fprintln(w, "  Pause it:     icebath curator pause")
-	fmt.Fprintln(w, "  Docs:         https://hermes-agent.nousresearch.com/docs/user-guide/features/curator")
+	fmt.Fprintln(w, "  Help:         icebath curator --help")
 }
 
 // Whether a single row probe returns a row
@@ -275,9 +275,6 @@ func formatTimeAgo(isoTS any) string {
 	return fmt.Sprintf("%dd ago", secs/86400)
 }
 
-// Historical updater hook, scans run only in a fresh completion process
-func reloadProcessScanModules(ctx context.Context) error { return pm.StopForRelaunchIncomplete(ctx) }
-
 // Prints the outcome with branch and sha
 func printUpdateCompletion(ctx context.Context, w io.Writer, message string) {
 	fmt.Fprintf(w, "%s%s\n", message, branchHeadSuffix(ctx, nil, ""))
@@ -336,32 +333,38 @@ func updateCompleteMessage(ctx context.Context, preVersion *string) string {
 	return "✓ Update complete!"
 }
 
-// Whether the interpreter used after the update has a safe SQLite, with the probe result
-func postUpdateSqliteRuntimeStatus(ctx context.Context) (bool, *state.SQLiteRuntimeInfo) {
-	exe, _ := os.Executable()
-	info, _ := state.ProbeSQLiteRuntime(exe, 30.0)
-	return info != nil && !info.WALResetVulnerable(), info
+// Probes the updated binary's SQLite through its hidden verb, with the safety verdict, the report and the probe failure
+func postUpdateSqliteRuntimeStatus(ctx context.Context) (bool, *state.SQLiteRuntimeInfo, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return false, nil, err
+	}
+	info, err := state.ProbeSQLiteRuntime(exe, 30.0)
+	if err != nil {
+		return false, nil, err
+	}
+	return info.Safe(), info, nil
 }
 
-// Prints a success completion only after probing the next runtime, false when success is withheld
-func printVerifiedUpdateCompletion(ctx context.Context, w io.Writer, message string) bool {
+// Prints a success completion only after probing the updated binary, else the partial banner and the follow up reason
+func printVerifiedUpdateCompletion(ctx context.Context, w io.Writer, message string) (bool, string) {
 	if !strings.HasPrefix(message, "✓") {
 		printUpdateCompletion(ctx, w, message)
-		return false
+		return false, ""
 	}
-	ok, info := maintSqliteRuntimeStatus(ctx)
-	if info == nil {
-		updateLog.DebugContext(ctx, "Post-update SQLite runtime probe unavailable; not blocking")
-	}
-	if info == nil || ok {
+	ok, info, err := maintSqliteRuntimeStatus(ctx)
+	if err == nil && ok {
 		printUpdateCompletion(ctx, w, message)
-		return true
+		return true, ""
 	}
 	fmt.Fprintln(w)
-	for _, line := range sqlitePartialCompletionLines(info.SQLiteVersionString) {
+	for _, line := range sqlitePartialCompletionLines(info, err) {
 		fmt.Fprintln(w, line)
 	}
-	return false
+	if err != nil {
+		return false, "the updated icebath could not report its SQLite runtime: " + err.Error()
+	}
+	return false, "the updated icebath links an unsafe SQLite runtime"
 }
 
 // Integrity check and auto restore of one home's state.db from its newest valid snapshot, never failing
@@ -1009,7 +1012,7 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 	if message == "" {
 		message = updateCompleteMessage(ctx, o.PreUpdateVersion)
 	}
-	complete := printVerifiedUpdateCompletion(ctx, w, message)
+	complete, unsafeReason := printVerifiedUpdateCompletion(ctx, w, message)
 	for _, line := range append(consumeRewrittenNotice(), recordedStandaloneWarningLines(ctx)...) {
 		fmt.Fprintln(w, line)
 	}
@@ -1021,7 +1024,7 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 		given = *o.CompletionMessage
 	}
 	if !complete && strings.HasPrefix(given, "✓") {
-		updaterecord.RecordFollowup(ctx, "sqlite_runtime", "the selected Python links an unsafe SQLite runtime", "run the installer again")
+		updaterecord.RecordFollowup(ctx, "sqlite_runtime", unsafeReason, "run the installer again")
 	}
 	return complete, nil
 }

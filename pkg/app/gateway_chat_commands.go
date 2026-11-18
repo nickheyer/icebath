@@ -9,12 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Page listing where every classic command stands on the shared gateway
-const gatewayParityDoc = "https://hermes-agent.nousresearch.com/docs/developer-guide/gateway-command-parity"
-
-// Refusal naming the parity table for a command the shared gateway does not serve yet
+// Refusal of a command the shared gateway does not serve yet
 func gatewayRefusal(name string) string {
-	return fmt.Sprintf("/%s is not available on the shared gateway yet. Parity table: %s", name, gatewayParityDoc)
+	return fmt.Sprintf("/%s is not available on the shared gateway yet.", name)
 }
 
 // Whether a decoded JSON value is a Python int and not a bool

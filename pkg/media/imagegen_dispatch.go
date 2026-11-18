@@ -191,30 +191,30 @@ func checkImageGenerationRequirements(env *tools.Env) bool {
 }
 
 // Static image_generate schema the dynamic overrides rebuild at definition time
-func imageGenerateSchema() map[string]any {
-	return map[string]any{
-		"name":        "image_generate",
-		"description": "Generate or edit images with the configured model. Edit/reference capabilities are rendered at serving time.",
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"prompt": imagePromptParam(),
-				"aspect_ratio": map[string]any{
-					"type": "string", "enum": []any{"landscape", "square", "portrait"},
-					"description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
-					"default":     defaultImageAspectRatio,
-				},
-			},
-			"required": []any{"prompt"},
-		},
-	}
+func imageGenerateSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name", "image_generate",
+		"description", "Generate or edit images with the configured model. Edit/reference capabilities are rendered at serving time.",
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"prompt", imagePromptParam(),
+				"aspect_ratio", pyjson.ObjectOf(
+					"type", "string", "enum", []any{"landscape", "square", "portrait"},
+					"description", "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
+					"default", defaultImageAspectRatio,
+				),
+			),
+			"required", []any{"prompt"},
+		),
+	)
 }
 
-func imagePromptParam() map[string]any {
-	return map[string]any{
-		"type":        "string",
-		"description": "The text prompt describing the desired image (text-to-image) or the edit to apply (image-to-image). Be detailed and descriptive.",
-	}
+func imagePromptParam() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "string",
+		"description", "The text prompt describing the desired image (text-to-image) or the edit to apply (image-to-image). Be detailed and descriptive.",
+	)
 }
 
 // JSON error envelope shared by every provider dispatch failure path
@@ -754,64 +754,64 @@ func capInt(v any) int {
 	return 0
 }
 
-func imageURLParam() map[string]any {
-	return map[string]any{
-		"type": "string",
-		"description": "Source image to edit/transform (image-to-image). A public URL or " +
-			"an absolute local file path from the conversation. Omit for " +
+func imageURLParam() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "string",
+		"description", "Source image to edit/transform (image-to-image). A public URL or "+
+			"an absolute local file path from the conversation. Omit for "+
 			"text-to-image.",
-	}
+	)
 }
 
 var creativeControlOrder = []string{"creativity", "thinking", "resolution", "intensity", "complexity", "movement"}
 
 // Creative control vocabulary a provider opts into through creative_controls
-func creativeControlParams() map[string]map[string]any {
-	axis := func(desc string) map[string]any {
-		return map[string]any{"type": "integer", "minimum": -100, "maximum": 100, "description": desc}
+func creativeControlParams() map[string]*pyjson.Object {
+	axis := func(desc string) *pyjson.Object {
+		return pyjson.ObjectOf("type", "integer", "minimum", -100, "maximum", 100, "description", desc)
 	}
-	return map[string]map[string]any{
-		"creativity": {"type": "string", "enum": []any{"raw", "low", "medium", "high"},
-			"description": "Prompt expansion: raw (none), low, medium or high."},
-		"thinking": {"type": "string", "enum": []any{"fast", "high"},
-			"description": "How much the model plans before generating: fast (default) or high for complex multi-step edits."},
-		"resolution": {"type": "string", "enum": []any{"1K", "2K"},
-			"description": "Output size: 1K (default) or 2K when small text or fine detail matters."},
+	return map[string]*pyjson.Object{
+		"creativity": pyjson.ObjectOf("type", "string", "enum", []any{"raw", "low", "medium", "high"},
+			"description", "Prompt expansion: raw (none), low, medium or high."),
+		"thinking": pyjson.ObjectOf("type", "string", "enum", []any{"fast", "high"},
+			"description", "How much the model plans before generating: fast (default) or high for complex multi-step edits."),
+		"resolution": pyjson.ObjectOf("type", "string", "enum", []any{"1K", "2K"},
+			"description", "Output size: 1K (default) or 2K when small text or fine detail matters."),
 		"intensity":  axis("Style intensity, -100 muted to 100 highly stylized. 0 neutral."),
 		"complexity": axis("Composition density, -100 minimal to 100 dense. 0 neutral."),
 		"movement":   axis("Motion in the scene, -100 static to 100 dynamic. 0 neutral."),
 	}
 }
 
-func stylePromptParam() map[string]any {
-	return map[string]any{
-		"type": "string",
-		"description": "The subject and scene to generate. Be detailed and descriptive; " +
+func stylePromptParam() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "string",
+		"description", "The subject and scene to generate. Be detailed and descriptive; "+
 			"reference images supply only the look.",
-	}
+	)
 }
 
-func styleImageURLParam() map[string]any {
-	return map[string]any{
-		"type": "string",
-		"description": "Style reference: its look is copied, the image itself is not edited. " +
-			"A public URL or an absolute local file path. Describe the subject in " +
+func styleImageURLParam() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "string",
+		"description", "Style reference: its look is copied, the image itself is not edited. "+
+			"A public URL or an absolute local file path. Describe the subject in "+
 			"the prompt. Omit for text-to-image.",
-	}
+	)
 }
 
-func upscaleParam() map[string]any {
-	return map[string]any{
-		"type": "boolean",
-		"description": "Post-generation high-resolution pass (~2x, extra cost/latency), " +
-			"off by default. A creative enhancer that can alter fine detail " +
-			"(rendered text, faces) — use only when resolution matters more " +
+func upscaleParam() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "boolean",
+		"description", "Post-generation high-resolution pass (~2x, extra cost/latency), "+
+			"off by default. A creative enhancer that can alter fine detail "+
+			"(rendered text, faces) — use only when resolution matters more "+
 			"than fidelity.",
-	}
+	)
 }
 
 // Description and parameters rendered from the active model capabilities, unsupported args omitted
-func buildDynamicImageSchema(env *tools.Env) map[string]any {
+func buildDynamicImageSchema(env *tools.Env) *pyjson.Object {
 	info := activeImageCapabilities(env)
 	maxRefs := capInt(info["max_reference_images"])
 	modalities := stringList(info["modalities"])
@@ -819,8 +819,8 @@ func buildDynamicImageSchema(env *tools.Env) map[string]any {
 		modalities = []string{"text"}
 	}
 	canEdit := containsString(modalities, "image")
-	static := imageGenerateSchema()["parameters"].(map[string]any)["properties"].(map[string]any)
-	properties := map[string]any{"prompt": static["prompt"], "aspect_ratio": static["aspect_ratio"]}
+	static := imageGenerateSchema().Vals["parameters"].(*pyjson.Object).Vals["properties"].(*pyjson.Object)
+	properties := pyjson.ObjectOf("prompt", static.Vals["prompt"], "aspect_ratio", static.Vals["aspect_ratio"])
 	styleRefs := info["source_image_role"] == "style"
 	var lead, editClause string
 	if canEdit {
@@ -828,8 +828,8 @@ func buildDynamicImageSchema(env *tools.Env) map[string]any {
 		if styleRefs {
 			lead = "Generate images, optionally styled on reference images, via configured model."
 			editClause = "Pass style references in image_url. "
-			properties["prompt"] = stylePromptParam()
-			properties["image_url"] = styleImageURLParam()
+			properties.Set("prompt", stylePromptParam())
+			properties.Set("image_url", styleImageURLParam())
 			refsDesc = fmt.Sprintf("Up to %d more style references. URLs or absolute local paths.", maxRefs)
 		} else {
 			lead = "Generate or edit images using the configured image model."
@@ -837,36 +837,36 @@ func buildDynamicImageSchema(env *tools.Env) map[string]any {
 				lead = "Generate or edit images (with reference images) using the configured model."
 			}
 			editClause = "Pass image_url to edit / transform an existing image. "
-			properties["image_url"] = imageURLParam()
+			properties.Set("image_url", imageURLParam())
 			refsDesc = fmt.Sprintf("Up to %d additional reference images (style, "+
 				"character, or composition) guiding an edit. URLs or "+
 				"absolute local paths.", maxRefs)
 		}
 		if maxRefs > 1 {
-			properties["reference_image_urls"] = map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"}, "maxItems": maxRefs, "description": refsDesc,
-			}
+			properties.Set("reference_image_urls", pyjson.ObjectOf(
+				"type", "array", "items", pyjson.ObjectOf("type", "string"), "maxItems", maxRefs, "description", refsDesc,
+			))
 		}
 	} else {
 		lead = "Generate images from text with the configured model (it cannot edit images)."
 	}
 	if pyTruthy(info["supports_upscale"]) {
-		properties["upscale"] = upscaleParam()
+		properties.Set("upscale", upscaleParam())
 	}
 	params := creativeControlParams()
 	for _, name := range stringList(info["creative_controls"]) {
 		if p, ok := params[name]; ok {
-			properties[name] = p
+			properties.Set(name, p)
 		}
 	}
 	desc := lead + " " + editClause + "Use this rather than calling image APIs or scripts directly. " +
 		"Returns the result in the `image` field — a URL or an absolute " +
 		"file path; reference it in your response using the current " +
 		"platform's file-delivery convention."
-	return map[string]any{
-		"description": desc,
-		"parameters":  map[string]any{"type": "object", "properties": properties, "required": []any{"prompt"}},
-	}
+	return pyjson.ObjectOf(
+		"description", desc,
+		"parameters", pyjson.ObjectOf("type", "object", "properties", properties, "required", []any{"prompt"}),
+	)
 }
 
 // Registers image_generate in the image_gen toolset with its capability driven schema

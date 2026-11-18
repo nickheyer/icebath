@@ -813,6 +813,23 @@ func managedFailure(env *Env, action string, err error) string {
 		"If this persists, the user can manage connections in the Nous Portal.", err), nil)
 }
 
+// Note the display action returns in place of the connector card Icebath does not draw
+const connectorCardUnavailableNote = "The connector card is not available in Icebath. Tell the user to connect apps from the portal."
+
+// Status list of every connector plus the note naming where to connect
+func (m *managedRun) displayResult() (string, error) {
+	status, err := m.statusResult(nil)
+	if err != nil {
+		return "", err
+	}
+	obj, err := pyjson.LoadsDict(status)
+	if err != nil {
+		return "", err
+	}
+	obj.Set("note", connectorCardUnavailableNote)
+	return pyjson.Dumps(obj, pyjson.EnsureASCII(false))
+}
+
 func runManagedAction(ctx context.Context, env *Env, action string, targets []HostedTarget, args map[string]any, opts ManagedOptions) (string, error) {
 	if action == "rename" {
 		if len(targets) == 0 {
@@ -841,6 +858,8 @@ func runManagedAction(ctx context.Context, env *Env, action string, targets []Ho
 		names[i] = t.Name
 	}
 	switch action {
+	case "display":
+		return m.displayResult()
 	case "status":
 		return m.statusResult(names)
 	}

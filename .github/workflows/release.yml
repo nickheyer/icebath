@@ -35,10 +35,11 @@ jobs:
           # SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
         run: |
           missing=0
           for name in AUR_KEY HOMEBREW_TAP_KEY SCOOP_BUCKET_KEY NIXPKG_KEY REPO_GPG_KEY APK_RSA_KEY \
-            CLOUDFLARE_API_TOKEN CHOCOLATEY_API_KEY PYPI_API_TOKEN; do
+            CLOUDFLARE_API_TOKEN CHOCOLATEY_API_KEY PYPI_API_TOKEN WINGET_TOKEN; do
             [ -n "${!name}" ] || { echo "::error::repository secret $name is not set"; missing=1; }
           done
           exit $missing
@@ -48,6 +49,12 @@ jobs:
         run: |
           gh api repos/nickheyer/nixpkg/contents/default.nix -q .content | base64 -d | grep -F 'pkgs/icebath' \
             || { echo "::error::nickheyer/nixpkg default.nix does not call ./pkgs/icebath"; exit 1; }
+      - name: Require push access of WINGET_TOKEN to the winget-pkgs fork
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          [ "$(gh api repos/nickheyer/winget-pkgs -q '.fork and .parent.full_name == "microsoft/winget-pkgs" and .permissions.push')" = true ] \
+            || { echo "::error::WINGET_TOKEN cannot push to nickheyer/winget-pkgs, a fork of microsoft/winget-pkgs"; exit 1; }
       - run: go vet -tags goolm ./...
       - run: go test -tags goolm ./...
 
@@ -148,6 +155,30 @@ jobs:
           Write-Host "::warning title=Chocolatey publish skipped::$($nupkg.Name) was not pushed, $reason"
           @("### Chocolatey publish skipped", "", "$($nupkg.Name) was not pushed, $reason", "", '```text', $out, '```') | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
           exit 0
+
+  winget:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Render the manifests from the release checksums and publish date
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" -p checksums.txt -D "$RUNNER_TEMP" --clobber
+          published=$(gh release view "$GITHUB_REF_NAME" --json publishedAt -q .publishedAt)
+          packaging/winget/render.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/checksums.txt" "${published%%T*}" "$RUNNER_TEMP/winget"
+      - name: Validate the manifests against the WinGet schemas of the version they declare
+        run: |
+          pipx install check-jsonschema
+          packaging/winget/validate.sh "$RUNNER_TEMP/winget"
+      - run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/winget/nickheyer.icebath*.yaml --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Submit the manifests to microsoft/winget-pkgs
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: packaging/winget/submit.sh "$RUNNER_TEMP/winget"
 
   pypi:
     needs: goreleaser
@@ -311,13 +342,16 @@ jobs:
           if (-not ($got -like "$env:WANT*") -or -not ($got -like 'Matrix E2EE: goolm*')) { throw "scoop installed '$got'" }
       - name: install.ps1
         run: |
-          irm https://icebath.app/install.ps1 | iex
-          $got = & "$env:LOCALAPPDATA\Programs\icebath\icebath.exe" --version
+          & ([scriptblock]::Create((irm https://icebath.app/install.ps1))) -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+          $got = & "$env:LOCALAPPDATA\icebath\icebath-agent\icebath.exe" --version
           if (-not ($got -like "$env:WANT*") -or -not ($got -like 'Matrix E2EE: goolm*')) { throw "install.ps1 installed '$got'" }
+          $method = Get-Content "$env:LOCALAPPDATA\icebath\icebath-agent\.install_method"
+          if ($method -ne 'script') { throw "install.ps1 stamped '$method'" }
       - name: powershell user agent
         run: |
           $script = Invoke-RestMethod https://icebath.app
-          if ($script -notmatch 'Installs the icebath release binary') { throw 'icebath.app did not serve install.ps1 to PowerShell' }
+          if ($script -notmatch 'hands every option to icebath install-self') { throw 'icebath.app did not serve install.ps1 to PowerShell' }
       - name: pipx
         env:
           PIP_NO_CACHE_DIR: "1"

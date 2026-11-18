@@ -358,7 +358,7 @@ func maybeGrowLocalWindow(a *AIAgent, compressor ContextEngine, requestTokens in
 	if compressor == nil {
 		return 0, false
 	}
-	current := compressor.Base().ContextLength
+	current := engineContextLength(compressor)
 	if current <= 0 {
 		return 0, false
 	}
@@ -1276,7 +1276,8 @@ func applyContextEngineSelection(a *AIAgent, apiMessages, conversationMessages [
 				failed = true
 			}
 		}()
-		selected = engine.SelectContext(apiMessages, convo, incoming, engine.Base().ContextLength)
+		plain, restore := withoutWireKeyOrders(apiMessages)
+		selected = restore(engine.SelectContext(plain, convo, incoming, engineContextLength(engine)))
 		return false
 	}()
 	if failed || selected == nil {

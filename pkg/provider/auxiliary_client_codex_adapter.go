@@ -236,11 +236,11 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 	if headers, ok := auxDictKwarg(kwargs["extra_headers"]); ok && len(headers) > 0 {
 		resp["extra_headers"] = headers
 	}
-	if extraBody, ok := kwargs["extra_body"].(map[string]any); ok {
+	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
 		if tier, ok := extraBody["service_tier"].(string); ok && pyStripSpace(tier) != "" && !isXAI {
 			resp["service_tier"] = pyStripSpace(tier)
 		}
-		if reasoning, ok := extraBody["reasoning"].(map[string]any); ok {
+		if reasoning, ok := pyjson.Dict(extraBody["reasoning"]); ok {
 			supported := codexEffortsForRoute(model, host, route.isCodexBackend)
 			enabled, enabledSet := reasoning["enabled"].(bool)
 			if len(supported) > 0 && !(enabledSet && !enabled) {

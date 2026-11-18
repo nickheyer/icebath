@@ -392,7 +392,7 @@ func (r *resolver) fallbackAPIMode(provider, baseURL, model string) APIMode {
 		return detected
 	}
 	declared := determineModeCtx(r.ctx, provider, baseURL, model, r.nousAnthropicWire())
-	if declared == ModeAnthropicMessages && !onDeclaredAnthropicEndpoint(provider, baseURL) {
+	if declared == ModeAnthropicMessages && !onDeclaredAnthropicEndpoint(r.ctx, provider, baseURL) {
 		return ModeChatCompletions
 	}
 	return declared
@@ -412,9 +412,9 @@ func NousAPIMode(ctx context.Context, model string) string {
 }
 
 // Whether the base URL is the provider's own anthropic protocol endpoint
-func onDeclaredAnthropicEndpoint(provider, baseURL string) bool {
+func onDeclaredAnthropicEndpoint(ctx context.Context, provider, baseURL string) bool {
 	defaultURL := ""
-	if pdef, ok := lookupProviderDef(NormalizeProvider(provider)); ok {
+	if pdef := GetProviderDef(ctx, provider, false); pdef != nil {
 		defaultURL = strings.TrimSpace(pdef.BaseURL)
 	}
 	defaultPath := strings.TrimSuffix(URLPath(defaultURL), "/v1")

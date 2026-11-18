@@ -36,7 +36,7 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md]
+    files: [LICENSE, README.md, cli-config.yaml.example, .env.example]
   - id: binary
     ids: [icebath]
     formats: [binary]
@@ -55,8 +55,6 @@ release:
   github:
     owner: nickheyer
     name: icebath
-  extra_files:
-    - glob: dist/winget/manifests/**/*.yaml
 
 nfpms:
   - id: packages
@@ -85,6 +83,10 @@ nfpms:
       - src: packaging/install_method/apk
         dst: /usr/lib/icebath/.install_method
         packager: apk
+      - src: cli-config.yaml.example
+        dst: /usr/lib/icebath/cli-config.yaml.example
+      - src: .env.example
+        dst: /usr/lib/icebath/.env.example
       - src: LICENSE
         dst: /usr/share/licenses/icebath/LICENSE
     scripts:
@@ -146,7 +148,7 @@ homebrew_casks:
         install: |
           File.write("#{staged_path}/.install_method", "homebrew\n")
           on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/icebath"]
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/icebath"]
           end
           Dir.mktmpdir do |home|
             system_command "#{staged_path}/icebath", args: ["pm", "install", "--extra", "nemo-relay"],
@@ -183,28 +185,6 @@ scoops:
         url: git@github.com:nickheyer/scoop-bucket.git
         private_key: "{{ .Env.SCOOP_BUCKET_KEY }}"
 
-winget:
-  - name: icebath
-    ids: [archive]
-    package_identifier: nickheyer.icebath
-    package_name: icebath
-    publisher: Nicholas W. Heyer
-    publisher_url: https://github.com/nickheyer
-    publisher_support_url: https://github.com/nickheyer/icebath/issues
-    author: Nicholas W. Heyer
-    homepage: https://icebath.app
-    short_description: Tiling agentic harness and netrunner toolkit
-    description: A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
-    license: MIT
-    license_url: https://github.com/nickheyer/icebath/blob/main/LICENSE
-    copyright: Copyright (c) 2026 Nicholas W. Heyer
-    release_notes_url: https://github.com/nickheyer/icebath/releases/tag/{{ .Tag }}
-    tags: [cli, tui, agent, ai, llm]
-    skip_upload: true
-    repository:
-      owner: nickheyer
-      name: winget-pkgs
-
 aurs:
   - name: icebath-bin
     ids: [archive]
@@ -223,6 +203,8 @@ aurs:
     package: |-
       install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
       printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"
+      install -Dm644 ./cli-config.yaml.example "${pkgdir}/usr/lib/icebath/cli-config.yaml.example"
+      install -Dm644 ./.env.example "${pkgdir}/usr/lib/icebath/.env.example"
       install -dm755 "${pkgdir}/usr/bin"
       ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
@@ -255,6 +237,8 @@ aur_sources:
     package: |-
       install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
       printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"
+      install -Dm644 ./cli-config.yaml.example "${pkgdir}/usr/lib/icebath/cli-config.yaml.example"
+      install -Dm644 ./.env.example "${pkgdir}/usr/lib/icebath/.env.example"
       install -dm755 "${pkgdir}/usr/bin"
       ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
@@ -273,6 +257,8 @@ nix:
         os: linux
     extra_install: |-
       printf 'nix\n' > $out/bin/.install_method
+      install -Dm644 ./cli-config.yaml.example $out/bin/cli-config.yaml.example
+      install -Dm644 ./.env.example $out/bin/.env.example
       ${let wheels = { x86_64-linux = { url = "https://files.pythonhosted.org/packages/b1/bf/9978ec3f8e5ee0dd1d2c7c1abba5f7358e0ae340d41bf1722097f3f19e1d/nemo_relay-0.11.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"; sha256 = "146aecca2cb3d9c7490084fac83f838c09588ddce9360c942dcd1f2660d23f21"; }; aarch64-linux = { url = "https://files.pythonhosted.org/packages/93/5c/eed59ecb29abe4eb0661e6a807efaf24749b3fc9a381449bfc78f94bd34d/nemo_relay-0.11.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl"; sha256 = "b5c4d07ecfa35e09cf64c625c970778d8b0596143473ec29c25a8b33efa5c53c"; }; aarch64-darwin = { url = "https://files.pythonhosted.org/packages/49/41/49e6ac6733ef92e0a7a5e84bb5cac17e75e82218b2f55d6166dc4de0e0db/nemo_relay-0.11.0-cp311-abi3-macosx_11_0_arm64.whl"; sha256 = "26bf5b96d23ef39971b8c7721e8d74a78f59498b3b4922ce2b137da52043dcb4"; }; }; site = "$out/bin/venv/${python314.sitePackages}"; in lib.optionalString (wheels ? ${system}) "${python314.interpreter} -m venv --without-pip $out/bin/venv && ${unzip}/bin/unzip -q ${fetchurl wheels.${system}} -d ${site}${lib.optionalString stdenvNoCC.isLinux " && ${patchelf}/bin/patchelf --add-rpath ${python314.stdenv.cc.cc.lib}/lib ${site}/nemo_relay/_native.abi3.so"}"}
     path: pkgs/icebath/default.nix
     commit_author:

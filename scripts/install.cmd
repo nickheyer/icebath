@@ -3,7 +3,7 @@ echo.
 echo  Icebath Installer
 echo  Launching PowerShell installer...
 echo.
-powershell -ExecutionPolicy ByPass -NoProfile -Command "iex (irm https://icebath.app/install.ps1)"
+powershell -ExecutionPolicy ByPass -NoProfile -Command "iex (irm https://icebath.app/install.ps1); exit $LASTEXITCODE"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo  Installation failed. Please try running PowerShell directly:

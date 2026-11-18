@@ -457,7 +457,7 @@ func (q *DeliveryQueue) terminalizeWaitTimeout(ctx context.Context, executionID 
 			return err
 		}
 		if cur != nil && cur["status"] == "pending" {
-			q.s.log.Warn(fmt.Sprintf("Cron delivery %s: no live gateway within the wait budget; left queued for the next gateway", executionID))
+			q.s.logAs("cron.delivery_queue").Warn(fmt.Sprintf("Cron delivery %s: no live gateway within the wait budget; left queued for the next gateway", executionID))
 			deferred = true
 			return nil
 		}

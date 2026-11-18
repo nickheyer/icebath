@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
@@ -110,7 +111,7 @@ func bedrockCachedClient(ctx context.Context, service, region string, readTimeou
 		attempts = 1
 	}
 	c := newAWSServiceClient(awsClientConfig{service: service, signingName: "bedrock", region: region, session: opts,
-		bearer: resolveBedrockBearerTokenCtx(ctx), readTimeout: readTimeout, totalMaxAttempts: attempts})
+		bearer: resolveBedrockBearerTokenCtx(ctx), readTimeout: readTimeout, totalMaxAttempts: attempts, routed: key.home != ""})
 	bedrockClients[key] = c
 	return c, nil
 }
@@ -700,7 +701,7 @@ var (
 func bedrockIssuer(msg map[string]any) (string, bool) {
 	details, _ := msg["reasoning_details"].([]any)
 	for _, d := range details {
-		m, ok := d.(map[string]any)
+		m, ok := pyjson.Dict(d)
 		if !ok || m["type"] != BedrockConverseIssuerType {
 			continue
 		}
@@ -1028,7 +1029,7 @@ func probeBedrockContextLengthLive(ctx context.Context, model, region string) in
 		oversized := strings.Repeat("data ", int(float64(tier)/bedrockWordsPerToken))
 		body := map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"text": oversized}}}},
 			"inferenceConfig": map[string]any{"maxTokens": 8}}
-		err := client.doJSON(ctx, "Converse", http.MethodPost, bedrockModelPath(model, "converse"), nil, body, nil)
+		err := client.doJSON(ctx, "Converse", http.MethodPost, botocoreModelPath(model, "converse"), nil, body, nil)
 		if err == nil {
 			bedrockLog.Debug(fmt.Sprintf("Bedrock context probe for %s accepted ~%s-token prompt; window is at least that", model, commaInt(tier)))
 			return tier

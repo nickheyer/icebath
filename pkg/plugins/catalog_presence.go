@@ -95,13 +95,13 @@ func pinnedManifest(ctx context.Context, repo, sha, subdir string) *pyjson.Objec
 	if url := rawManifestURL(repo, sha, subdir); url != "" {
 		body, status, err := fetchPresenceManifest(ctx, url)
 		if err != nil {
-			logDebug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
+			logPluginCatalogPresence.debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
 			return nil
 		}
 		if status == http.StatusOK && len(body) <= presenceMaxBytes {
 			data, err := pyjson.LoadsBytes(body)
 			if err != nil {
-				logDebug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
+				logPluginCatalogPresence.debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
 				return nil
 			}
 			manifest, _ = data.(*pyjson.Object)
@@ -291,7 +291,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 		ordered = append(ordered, parsedDecl{pd, d.Liveness})
 	}
 	if err != nil {
-		logDebug(fmt.Sprintf("plugin catalog presence: %s declaration invalid: %s", entry.Name, err))
+		logPluginCatalogPresence.debug(fmt.Sprintf("plugin catalog presence: %s declaration invalid: %s", entry.Name, err))
 		return UnknownPresence, nil
 	}
 	title := entry.Title

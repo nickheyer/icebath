@@ -428,10 +428,10 @@ func applyGitUpdate(ctx context.Context, w io.Writer, args map[string]any, gatew
 	}
 	if fetchResult.ReturnCode != 0 {
 		if tools.IsPartialClonePackObjectsCrash(fetchResult.Stderr) {
-			fmt.Fprintln(w, "✗ git still crashed after marking this checkout's packs. See 'Fetch fails with"+
-				" should_include_obj' in https://hermes-agent.nousresearch.com/docs/getting-started/updating")
+			fmt.Fprintln(w, "✗ git still crashed after marking this checkout's packs. Move the checkout aside and set up a fresh one:\n    "+
+				freshCheckoutCommand(root, branch))
 		}
-		if err := printFetchFailure(ctx, w, fetchResult.Stderr, gitCmd, root); err != nil {
+		if err := printFetchFailure(ctx, w, fetchResult.Stderr, gitCmd, root, branch); err != nil {
 			return err
 		}
 		if err := resume(); err != nil {

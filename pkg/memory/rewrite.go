@@ -160,7 +160,7 @@ func RewriteMemoryQuery(ctx context.Context, env *tools.Env, userMessage string)
 	if bounded == "" {
 		return ""
 	}
-	log := envLog(env)
+	log := moduleLog(env, "plugins.memory.query_rewrite")
 	if env == nil || env.AuxClient() == nil {
 		log.Debug("Memory query rewrite failed: no auxiliary model is configured")
 		return ""

@@ -121,7 +121,7 @@ func (a *AIAgent) MergePreflightCompressionWarning(ctx context.Context, result *
 			providers = append(providers, m)
 		}
 	}
-	oldCtx := cc.Base().ContextLength
+	oldCtx := engineContextLength(cc)
 	baseURL, apiKey := result.BaseURL, result.APIKey
 	if baseURL == "" {
 		baseURL = a.baseURL

@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"maps"
 	"math"
@@ -90,7 +91,7 @@ func sessionStore(ctx context.Context, env *tools.Env) *Store {
 	if !ok {
 		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, memoryEnabled, userEnabled)
 	}
-	store.Log = envLog(env)
+	store.Log = moduleLog(env, memoryToolLogger)
 	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		store.log().Debug("Memory store load failed at session start", "error", err)
 	}
@@ -103,7 +104,7 @@ func storeFromSection(env *tools.Env, section map[string]any) (*Store, bool) {
 	memoryLimit, ok1 := pyInt(sectionValue(section, "memory_char_limit", DefaultMemoryCharLimit))
 	userLimit, ok2 := pyInt(sectionValue(section, "user_char_limit", DefaultUserCharLimit))
 	if !ok1 || !ok2 {
-		envLog(env).Warn("Memory char limits in config are not integers, using defaults",
+		moduleLog(env, memoryToolLogger).Warn("Memory char limits in config are not integers, using defaults",
 			"memory_char_limit", pyStr(section["memory_char_limit"]), "user_char_limit", pyStr(section["user_char_limit"]))
 		return nil, false
 	}
@@ -126,7 +127,7 @@ func LoadOnDiskStore(ctx context.Context, env *tools.Env) (*Store, error) {
 	if store == nil {
 		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
 	}
-	store.Log = envLog(env)
+	store.Log = moduleLog(env, memoryToolLogger)
 	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		return nil, err
 	}
@@ -153,7 +154,7 @@ func builtinMemoryStoreFlags(section map[string]any) (bool, bool) {
 func liveStoreFlags(env *tools.Env) (bool, bool) {
 	tree, err := config.LoadReadonly(context.Background(), envHome(env), configLookup(env))
 	if err != nil {
-		envLog(env).Debug("Could not read memory config for availability", "error", err)
+		moduleLog(env, memoryToolLogger).Debug("Could not read memory config for availability", "error", err)
 		return builtinMemoryStoreFlags(map[string]any{})
 	}
 	return builtinMemoryStoreFlags(builtinMemoryConfig(tree))
@@ -244,47 +245,47 @@ const targetsText = "TARGETS: 'user' = who the user is (name, role, preferences,
 	"notes (environment, conventions, tool quirks, lessons)."
 
 // Parameters advertised once inside operations, the handler still accepting the legacy single op shape
-func memoryParameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"target": map[string]any{
-				"type":        "string",
-				"enum":        []any{"memory", "user"},
-				"description": "Which memory store: 'memory' for personal notes, 'user' for user profile.",
-			},
-			"operations": map[string]any{
-				"type": "array",
-				"description": "Changes applied atomically in one call against the final char budget; " +
+func memoryParameters() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"type", "object",
+		"properties", pyjson.ObjectOf(
+			"target", pyjson.ObjectOf(
+				"type", "string",
+				"enum", []any{"memory", "user"},
+				"description", "Which memory store: 'memory' for personal notes, 'user' for user profile.",
+			),
+			"operations", pyjson.ObjectOf(
+				"type", "array",
+				"description", "Changes applied atomically in one call against the final char budget; "+
 					"a single change is a one-item list.",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"action": map[string]any{"type": "string", "enum": []any{"add", "patch", "remove"}},
-						"content": map[string]any{
-							"type": "string",
-							"description": "Required for 'add' and 'patch'. For 'add', the new entry. For 'patch', " +
+				"items", pyjson.ObjectOf(
+					"type", "object",
+					"properties", pyjson.ObjectOf(
+						"action", pyjson.ObjectOf("type", "string", "enum", []any{"add", "patch", "remove"}),
+						"content", pyjson.ObjectOf(
+							"type", "string",
+							"description", "Required for 'add' and 'patch'. For 'add', the new entry. For 'patch', "+
 								"the text that replaces old_text; the rest of the entry is kept.",
-						},
-						"old_text": map[string]any{
-							"type": "string",
-							"description": "REQUIRED for 'patch' and 'remove': text from one entry. 'patch' replaces " +
-								"exactly this span (it must occur once in the entry); 'remove' deletes the " +
+						),
+						"old_text", pyjson.ObjectOf(
+							"type", "string",
+							"description", "REQUIRED for 'patch' and 'remove': text from one entry. 'patch' replaces "+
+								"exactly this span (it must occur once in the entry); 'remove' deletes the "+
 								"whole entry. Omit for 'add'.",
-						},
-					},
-					"required":             []any{"action"},
-					"additionalProperties": false,
-				},
-			},
-		},
-		"required": []any{"target", "operations"},
-	}
+						),
+					),
+					"required", []any{"action"},
+					"additionalProperties", false,
+				),
+			),
+		),
+		"required", []any{"target", "operations"},
+	)
 }
 
 // Full OpenAI function schema of the memory tool
-func MemorySchema() map[string]any {
-	return map[string]any{"name": "memory", "description": memoryDescription, "parameters": memoryParameters()}
+func MemorySchema() *pyjson.Object {
+	return pyjson.ObjectOf("name", "memory", "description", memoryDescription, "parameters", memoryParameters())
 }
 
 // Target description and TARGETS replacement when exactly one built in store is enabled
@@ -297,7 +298,7 @@ var singleTargetText = map[string][2]string{
 }
 
 // Narrows the advertised targets to the enabled stores using the availability snapshot
-func memorySchemaOverrides(env *tools.Env) map[string]any {
+func memorySchemaOverrides(env *tools.Env) *pyjson.Object {
 	var flags [2]bool
 	snapshot := false
 	if env != nil && env.Values != nil {
@@ -317,15 +318,15 @@ func memorySchemaOverrides(env *tools.Env) map[string]any {
 		}
 	}
 	parameters := memoryParameters()
-	targetSchema := parameters["properties"].(map[string]any)["target"].(map[string]any)
-	targetSchema["enum"] = targets
+	targetSchema := parameters.Vals["properties"].(*pyjson.Object).Vals["target"].(*pyjson.Object)
+	targetSchema.Set("enum", targets)
 	description := memoryDescription
 	if len(names) == 1 {
 		narrowed := singleTargetText[names[0]]
-		targetSchema["description"] = narrowed[0]
+		targetSchema.Set("description", narrowed[0])
 		description = strings.ReplaceAll(description, targetsText, narrowed[1])
 	}
-	return map[string]any{"description": description, "parameters": parameters}
+	return pyjson.ObjectOf("description", description, "parameters", parameters)
 }
 
 // Error envelope with the bounded message and extra fields
@@ -386,26 +387,25 @@ func memoryTargetError(store *Store, target any, operations any) *Result {
 	if name == "user" {
 		label = "USER.md"
 	}
-	r := failure(fmt.Sprintf("Built-in %s writes are disabled in memory config.", label), "disabled", map[string]any{"target": name})
+	r := failure(fmt.Sprintf("Built-in %s writes are disabled in memory config.", label), "disabled", pyjson.ObjectOf("target", name))
 	return &r
 }
 
-// Memory tool entry point returning the JSON result, single op or an atomic operations batch
-func MemoryTool(ctx context.Context, env *tools.Env, store *Store, action, target, content, oldText, newText, operations any) string {
+// Memory tool entry point returning the JSON result, single op or an atomic operations batch, a crash returned as the error it raised
+func MemoryTool(ctx context.Context, env *tools.Env, store *Store, action, target, content, oldText, newText, operations any) (string, error) {
 	if store == nil {
-		return toolError("Memory is not available. It may be disabled in config or this environment.", map[string]any{"success": false})
+		return toolError("Memory is not available. It may be disabled in config or this environment.", map[string]any{"success": false}), nil
 	}
 	outcome, result, class, err := runMemoryTool(ctx, env, store, action, target, content, oldText, newText, operations)
 	if err != nil {
-		envLog(env).Error("memory tool raised", "error", err)
-		return "Error executing tool 'memory': " + osErrorText(err)
+		return "", err
 	}
 	failureClass := "none"
 	if outcome != "success" {
 		failureClass = class
 	}
 	recordBuiltinMemoryCall(env, action, operations, outcome, failureClass)
-	return result
+	return result, nil
 }
 
 // Outcome as success, failed or rejected, the result JSON and the failure class
@@ -706,7 +706,10 @@ func memoryHandler(ctx context.Context, call *tools.Call) string {
 		action = ""
 	}
 	manager := ManagerFor(tools.WithEnvHome(ctx, call.Env), call.Env)
-	result := MemoryTool(ctx, call.Env, manager.Store(), action, args["target"], args["content"], args["old_text"], args["new_text"], args["operations"])
+	result, err := MemoryTool(ctx, call.Env, manager.Store(), action, args["target"], args["content"], args["old_text"], args["new_text"], args["operations"])
+	if err != nil {
+		panic(err)
+	}
 	manager.NotifyMemoryToolWrite(result, args, call.TaskID, call.ToolCallID)
 	return result
 }
@@ -734,6 +737,12 @@ func envLog(env *tools.Env) *slog.Logger {
 	}
 	return slog.Default()
 }
+
+// Python logger name of the memory tool and its store
+const memoryToolLogger = "tools.memory_tool"
+
+// Session logger under the Python module logger name the reference logs with
+func moduleLog(env *tools.Env, name string) *slog.Logger { return envLog(env).With("logger", name) }
 
 // Memory tool_store registers nothing at import
 func registerMemoryStore() {}

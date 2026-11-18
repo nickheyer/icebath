@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -34,7 +35,8 @@ func must(t *testing.T) func(Result, error) map[string]any {
 		if err != nil {
 			t.Fatalf("store raised: %v", err)
 		}
-		return r.Data
+		data, _ := pyjson.Plain(r.Data).(map[string]any)
+		return data
 	}
 }
 
@@ -298,7 +300,8 @@ func TestMemoryStoreFailuresNameTheFix(t *testing.T) {
 		t.Fatal(miss)
 	}
 	var result map[string]any
-	json.Unmarshal([]byte(MemoryTool(t.Context(), testEnv(t), s, "patch", "memory", "", "Deploys go through GitHub Actions to Fly.io with manual approval.", "Deploys: Fly.io.", nil)), &result)
+	patched, _ := MemoryTool(t.Context(), testEnv(t), s, "patch", "memory", "", "Deploys go through GitHub Actions to Fly.io with manual approval.", "Deploys: Fly.io.", nil)
+	json.Unmarshal([]byte(patched), &result)
 	if !ok(result) || !containsString(s.Entries("memory"), "Deploys: Fly.io.") {
 		t.Fatal(result)
 	}
@@ -545,8 +548,9 @@ func TestDriftGuardEntriesStayRemovableAfterTheLimitIsLowered(t *testing.T) {
 		}
 	}
 	var pruned map[string]any
-	json.Unmarshal([]byte(MemoryTool(t.Context(), testEnv(t), s, nil, "user", nil, nil, nil, []any{
-		map[string]any{"action": "remove", "old_text": "Prefers metric"}, map[string]any{"action": "remove", "old_text": "Uses vim"}})), &pruned)
+	prunedRaw, _ := MemoryTool(t.Context(), testEnv(t), s, nil, "user", nil, nil, nil, []any{
+		map[string]any{"action": "remove", "old_text": "Prefers metric"}, map[string]any{"action": "remove", "old_text": "Uses vim"}})
+	json.Unmarshal([]byte(prunedRaw), &pruned)
 	if !ok(pruned) {
 		t.Fatal(pruned)
 	}
@@ -767,8 +771,8 @@ func TestMemoryStoreAddAfterProfileDeleteRaisesAndLeavesNothing(t *testing.T) {
 	if _, statErr := os.Stat(profile); !os.IsNotExist(statErr) {
 		t.Fatal("profile resurrected")
 	}
-	if got := MemoryTool(t.Context(), &tools.Env{Home: profile, Values: &sync.Map{}}, s, "add", "memory", "entry", nil, nil, nil); !strings.HasPrefix(got, "Error executing tool 'memory': ") {
-		t.Fatal(got)
+	if _, err := MemoryTool(t.Context(), &tools.Env{Home: profile, Values: &sync.Map{}}, s, "add", "memory", "entry", nil, nil, nil); !errors.As(err, &missing) {
+		t.Fatal(err)
 	}
 }
 

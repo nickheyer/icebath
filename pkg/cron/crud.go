@@ -537,7 +537,7 @@ func (s *Store) nextRunOrRejectPastOneshot(sched *Schedule, label string, fallba
 		if sched.RunAt != "" {
 			runAt = sched.RunAt
 		}
-		s.log.Warn(fmt.Sprintf("Rejecting one-shot cron job %s'%s': run_at %s is outside the %ds grace window",
+		s.logAs("cron.jobs").Warn(fmt.Sprintf("Rejecting one-shot cron job %s'%s': run_at %s is outside the %ds grace window",
 			what, label, pyrepr.Str(runAt), oneshotGraceSeconds))
 		return nil, oneshotPastGraceError(runAt)
 	}
@@ -1225,7 +1225,7 @@ func (s *Store) resumeJob(ctx context.Context, ref string) (*Job, error) {
 	}
 	if isRecurring(job) && parsed && instantAtOrBefore(storedAt, s.clk.now()) {
 		next = &stored
-		s.log.Info(fmt.Sprintf("Job '%s' resumed with occurrence %s that elapsed while paused kept due; the next "+
+		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' resumed with occurrence %s that elapsed while paused kept due; the next "+
 			"tick fires it (late/catch-up) or logs the skip.", job.Name, stored))
 	} else if next, err = s.computeNextRun(sched, nil, job.Timezone); err != nil {
 		return nil, err
@@ -1307,7 +1307,8 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 		}
 		job.Repeat.Completed = 0
 		job.Schedule, job.ScheduleDisplay = parsed, parsed.Display
-		job.RunClaim, job.FireClaim = nil, nil
+		job.setNull("run_claim")
+		job.setNull("fire_claim")
 		activateJobRecord(job)
 		job.NextRunAt = next
 		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
@@ -1361,7 +1362,7 @@ func (s *Store) removeJob(ctx context.Context, ref string) (bool, error) {
 			}
 		}
 		if err := clearNotepad(s, id); err != nil {
-			s.log.Debug(fmt.Sprintf("Failed to clear notepad for removed job %s: %v", id, err))
+			s.logAs("cron.jobs").Debug(fmt.Sprintf("Failed to clear notepad for removed job %s: %v", id, err))
 		}
 		fireFenceMu.Lock()
 		delete(fireFenceLocks, s.resolvedCronDir()+"::"+id)

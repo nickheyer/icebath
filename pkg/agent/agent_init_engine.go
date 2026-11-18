@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -175,7 +174,7 @@ func buildContextEngine(ctx context.Context, a *AIAgent, agentCfg map[string]any
 func enforceMinimumContext(a *AIAgent) error {
 	window := 0
 	if a.contextCompressor != nil {
-		window = a.contextCompressor.Base().ContextLength
+		window = engineContextLength(a.contextCompressor)
 	}
 	local := a.baseURL != "" && provider.IsLocalEndpoint(a.baseURL)
 	if a.ollamaNumCtx != 0 && local {
@@ -193,9 +192,16 @@ func enforceMinimumContext(a *AIAgent) error {
 	} else {
 		remedy = fmt.Sprintf("Choose a model with at least %dK context.  If your server reports a window smaller than the model's true window, set model.context_length in config.yaml to the real value (this must be at least %dK).", floorK, floorK)
 	}
-	return errors.New(fmt.Sprintf("Model %s has a context window of %s tokens, which is below the minimum %s required by Icebath Agent.  %s",
-		a.model, commaInt(window), commaInt(provider.MinimumContextLength), remedy))
+	return &contextBelowMinimumError{fmt.Sprintf("Model %s has a context window of %s tokens, which is below the minimum %s required by Icebath Agent.  %s",
+		a.model, commaInt(window), commaInt(provider.MinimumContextLength), remedy)}
 }
+
+// Context window under the floor, raised as a ValueError
+type contextBelowMinimumError struct{ msg string }
+
+func (e *contextBelowMinimumError) Error() string { return e.msg }
+
+func (e *contextBelowMinimumError) PyTypeName() string { return "ValueError" }
 
 // Warns gateway and cron surfaces once that a Nous Hermes 3 or 4 model is not agentic
 func warnNonagenticHermesModel(a *AIAgent) {
@@ -252,7 +258,7 @@ func injectContextEngineTools(ctx context.Context, a *AIAgent) {
 			}()
 			a.contextCompressor.OnSessionStart(a.sessionID, map[string]any{
 				"hermes_home": home.Dir(ctx), "platform": platform, "model": a.model,
-				"context_length": a.contextCompressor.Base().ContextLength, "conversation_id": conversationID,
+				"context_length": engineContextLength(a.contextCompressor), "conversation_id": conversationID,
 			})
 		}()
 	}

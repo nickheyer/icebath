@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestBetweenTurnsRefreshAddsLateToolWhenServersRegistered(t *testing.T) {
 		t.Fatal("the late tool was already in the build time snapshot")
 	}
 	tools.Default.Register(tools.Def{Name: "mcp_x_tool", Toolset: "mcp-x",
-		Schema:  map[string]any{"name": "mcp_x_tool", "description": "", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
+		Schema:  pyjson.ObjectOf("name", "mcp_x_tool", "description", "", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())),
 		Handler: func(context.Context, *tools.Call) string { return "{}" }})
 	mcp.TrackMCPToolServer("mcp_x_tool", "x")
 	t.Cleanup(func() {

@@ -68,7 +68,11 @@ func MemoryProviderPresent(ctx context.Context, name, h string) bool {
 
 // Live catalog entry name shipping the provider, false when the catalog has no such plugin
 func CatalogSource(name string) (string, bool) {
-	return provider.PluginHooks().CatalogEntry(name)
+	entry := plugins.GetLiveCatalogEntry(context.Background(), name)
+	if entry == nil {
+		return "", false
+	}
+	return entry.Name, true
 }
 
 // Install command for a catalog plugin of the category, empty when the in tree catalog lacks it or the lookup fails

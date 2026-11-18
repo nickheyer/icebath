@@ -1,6 +1,10 @@
 package install
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -71,6 +75,43 @@ func main() {
 	}
 	fixtureBinaries.Store(key, data)
 	return data
+}
+
+// Release archive of the fixture build of tag with the config templates beside the binary at its root
+func fixtureArchive(t *testing.T, tag string) []byte {
+	t.Helper()
+	goos, _ := hostKey()
+	files := map[string][]byte{archiveBinaryName(goos): fixtureBinary(t, tag), "cli-config.yaml.example": []byte("# template\n"), ".env.example": []byte("# env\n")}
+	var buf bytes.Buffer
+	if goos == "windows" {
+		zw := zip.NewWriter(&buf)
+		for name, data := range files {
+			w, err := zw.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Write(data)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, data := range files {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(data)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		tw.Write(data)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 type fixtureRelease struct {

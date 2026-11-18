@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"strings"
 	"time"
@@ -41,7 +42,7 @@ func metaAIPluginProfiles() []Profile {
 }
 
 // Top level effort always sent, off or none mapping to minimal and unset or bespoke levels to medium
-func metaAIBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (map[string]any, map[string]any) {
+func metaAIBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*pyjson.Object, map[string]any) {
 	r := Reasoning{}
 	if reasoning != nil {
 		r = *reasoning
@@ -53,5 +54,5 @@ func metaAIBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (map[str
 	} else if clamped := clampEffort(effort, metaAIEfforts, nil); containsStr(metaAIEfforts, clamped) {
 		mapped = clamped
 	}
-	return map[string]any{}, map[string]any{"reasoning_effort": mapped}
+	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": mapped}
 }

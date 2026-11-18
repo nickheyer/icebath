@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // ReasoningCapabilities is one model's advertised reasoning support from an OpenRouter schema catalog
@@ -56,7 +57,7 @@ func warmReasoningCapsAsync(refresh func()) { reasoningCapsSpawn(refresh) }
 
 // Fetches one OpenRouter shaped catalog into the mirror, false when unreachable or empty
 func fetchReasoningCapsCatalog(ctx context.Context, rawURL string, timeout time.Duration) bool {
-	payload, err := modelsGetJSON(ctx, rawURL, timeout, map[string]string{"Accept": "application/json", "User-Agent": userAgent("icebath-cli")}, nil)
+	payload, err := modelsGetJSON(ctx, rawURL, timeout, pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: userAgent("icebath-cli")}), nil)
 	if err != nil {
 		return false
 	}

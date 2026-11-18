@@ -936,7 +936,7 @@ func runDebugShareNous(ctx context.Context, ns map[string]any, w io.Writer, logL
 	fmt.Fprintln(w, "\nShare this private link with the Nous team — only Nous staff "+
 		"(via Google login) can open it.\n"+
 		"\nPick up the discussion in:\n"+
-		"  GitHub Issues        https://github.com/NousResearch/hermes-agent/issues\n"+
+		"  GitHub Issues        https://github.com/nickheyer/icebath/issues\n"+
 		"  Nous Portal Support  https://portal.nousresearch.com/help\n"+
 		"  Discord              https://discord.gg/NousResearch")
 	return 0, nil

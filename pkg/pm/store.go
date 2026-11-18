@@ -51,10 +51,13 @@ var MuslTargets = map[string]bool{"linux-x64-musl": true, "linux-arm64-musl": tr
 // Native host architecture even under Rosetta or WOW64 emulation
 var nativeMachine = func() string { return hostinfo.NativeArch() }
 
-// Reports an Android bionic userland, a Go build for Android or a shell whose loader is the Android linker
+// Reports a bionic userland, a Go build for Android or an Android linker shell unless /bin/sh loads glibc or musl
 var isBionicLibc = func() bool {
 	if runtime.GOOS == "android" {
 		return true
+	}
+	if _, known := elfLoaderIsMusl("/bin/sh"); known {
+		return false
 	}
 	for _, candidate := range []string{"/system/bin/sh", "/data/data/com.termux/files/usr/bin/sh"} {
 		if elfInterpreterContains(candidate, "/system/bin/linker") {

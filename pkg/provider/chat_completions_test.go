@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -351,7 +352,7 @@ func TestSeparateGluedReasoningBlocks(t *testing.T) {
 // ---- streamed reasoning details (tests/agent/test_streamed_reasoning_details.py) ----
 
 func TestStreamedReasoningDetailsMergeAndBackfill(t *testing.T) {
-	var acc []map[string]any
+	var acc []*pyjson.Object
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.text", "text": "The user "})
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.text", "text": "wants X.", "signature": "sig1"})
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.encrypted", "data": "AAAA"})
@@ -360,15 +361,15 @@ func TestStreamedReasoningDetailsMergeAndBackfill(t *testing.T) {
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.summary", "summary": "s2"})
 	var types []string
 	for _, d := range acc {
-		types = append(types, stringOf(d["type"]))
+		types = append(types, stringOf(d.Vals["type"]))
 	}
 	if fmt.Sprint(types) != "[reasoning.text reasoning.encrypted reasoning.encrypted reasoning.summary]" {
 		t.Fatalf("types %v", types)
 	}
-	if acc[0]["text"] != "The user wants X." || acc[0]["signature"] != "sig1" || len(acc[0]) != 3 {
+	if acc[0].Vals["text"] != "The user wants X." || acc[0].Vals["signature"] != "sig1" || acc[0].Len() != 3 {
 		t.Fatalf("first %v", acc[0])
 	}
-	if acc[3]["summary"] != "s1 s2" {
+	if acc[3].Vals["summary"] != "s1 s2" {
 		t.Fatalf("summary %v", acc[3])
 	}
 	if streamedReasoningDetailText(map[string]any{"type": "reasoning.encrypted", "data": "x", "text": "not readable"}) != "" {
@@ -649,7 +650,7 @@ func TestStreamReasoningPassthroughAndDetailDeglue(t *testing.T) {
 	if got := strings.Join(log.texts(EventReasoningDelta), ""); got != "I should answer." {
 		t.Fatalf("reasoning deltas %q", got)
 	}
-	if resp.Message.Text() != "Hello!" || resp.Message.Reasoning != "I should answer.\n\nanswer." || resp.Message.ReasoningContent != "I should answer." {
+	if resp.Message.Text() != "Hello!" || resp.Message.Reasoning != "" || resp.Message.ReasoningContent != "I should answer." {
 		t.Fatalf("message %+v", resp.Message)
 	}
 	var details []map[string]any
@@ -664,7 +665,7 @@ func TestStreamReasoningPassthroughAndDetailDeglue(t *testing.T) {
 	if got := strings.Join(log.texts(EventReasoningDelta), ""); got != "**One**\n\n**Two**" {
 		t.Fatalf("deglued reasoning %q", got)
 	}
-	if resp.Message.ReasoningContent != "**One****Two**" || resp.Message.Reasoning != "**One****Two**" {
+	if resp.Message.ReasoningContent != "" || resp.Message.Reasoning != "" {
 		t.Fatalf("details only reasoning %+v", resp.Message)
 	}
 }
@@ -689,7 +690,7 @@ func TestStreamThinkScrubForwardsHiddenReasoning(t *testing.T) {
 	if got := strings.Join(log.texts(EventReasoningDelta), ""); got != "secret plan" {
 		t.Fatalf("hidden %q", got)
 	}
-	if resp.Message.Reasoning != "secret plan" || !strings.Contains(resp.Message.Text(), "<think>") {
+	if resp.Message.ReasoningContent != "secret plan" || resp.Message.Reasoning != "" || !strings.Contains(resp.Message.Text(), "<think>") {
 		t.Fatalf("message %+v", resp.Message)
 	}
 }
@@ -1062,7 +1063,7 @@ func TestCompleteNormalizesRefusalUsageAndToolIDs(t *testing.T) {
 	if tc.ID != tools.DeterministicCallID("terminal", `{"command":"ls"}`, 0) || tc.Function.Arguments != `{"command":"ls"}` {
 		t.Fatalf("tool call %+v", tc)
 	}
-	if resp.Message.Reasoning != "thinking" || resp.Message.ReasoningContent != "thinking" {
+	if resp.Message.Reasoning != "" || resp.Message.ReasoningContent != "thinking" {
 		t.Fatalf("reasoning %+v", resp.Message)
 	}
 	var details []map[string]any

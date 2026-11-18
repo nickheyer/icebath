@@ -22,7 +22,6 @@ type termGuard struct {
 	file     *os.File
 	pristine *xterm.State
 	holds    int
-	quiet    int
 	modes    []screenMode
 	stopSig  func()
 }
@@ -53,7 +52,7 @@ func (c *Console) termGuard() *termGuard {
 func (g *termGuard) adopt(f *os.File) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.file != f && g.holds == 0 && g.quiet == 0 {
+	if g.file != f && g.holds == 0 {
 		g.file, g.pristine, g.modes = f, nil, nil
 	}
 }
@@ -78,29 +77,10 @@ func (c *Console) holdRaw() (func(), error) {
 		}
 	}
 	var once sync.Once
-	return func() { once.Do(func() { g.release(&g.holds) }) }, nil
+	return func() { once.Do(g.release) }, nil
 }
 
-// Stops the terminal echoing typed keys until the returned release, interrupts still reaching the process
-func (c *Console) holdQuiet() func() {
-	g := c.termGuard()
-	if g.file == nil {
-		return func() {}
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.save() != nil {
-		return func() {}
-	}
-	g.quiet++
-	if g.quiet == 1 && g.holds == 0 {
-		muteEcho(g.file)
-	}
-	var once sync.Once
-	return func() { once.Do(func() { g.release(&g.quiet) }) }
-}
-
-// Saves the terminal state before the first hold of either kind and starts the termination watch
+// Saves the terminal state before the first hold and starts the termination watch
 func (g *termGuard) save() error {
 	if g.file == nil || g.pristine != nil {
 		return nil
@@ -114,27 +94,20 @@ func (g *termGuard) save() error {
 	return nil
 }
 
-// Ends one hold of a kind and puts the terminal in the mode the remaining holds call for
-func (g *termGuard) release(count *int) {
+// Ends one hold, the saved state coming back once none remain
+func (g *termGuard) release() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if *count == 0 {
+	if g.holds == 0 {
 		return
 	}
-	*count--
+	g.holds--
 	g.settle()
 }
 
-// Applies the mode the current holds call for, the saved state once none remain
+// Restores the saved state once no hold remains
 func (g *termGuard) settle() {
-	switch {
-	case g.holds > 0:
-	case g.quiet > 0:
-		if g.file != nil && g.pristine != nil {
-			xterm.Restore(g.file.Fd(), g.pristine)
-			muteEcho(g.file)
-		}
-	default:
+	if g.holds == 0 {
 		g.restoreLocked()
 	}
 }
@@ -172,7 +145,7 @@ func (c *Console) enterMode(id, on, off string) {
 			return
 		}
 	}
-	out := rawWriter(c.Out)
+	out := c.Out
 	io.WriteString(out, on)
 	g.modes = append(g.modes, screenMode{id: id, on: on, off: off, out: out})
 }
@@ -201,8 +174,8 @@ func RestoreTerminal() {
 	guardsMu.Unlock()
 	for _, g := range all {
 		g.mu.Lock()
-		if g.holds > 0 || g.quiet > 0 {
-			g.holds, g.quiet = 0, 0
+		if g.holds > 0 {
+			g.holds = 0
 			g.restoreLocked()
 		}
 		g.mu.Unlock()

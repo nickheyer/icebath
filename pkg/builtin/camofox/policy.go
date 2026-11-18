@@ -41,7 +41,7 @@ func policyErr(message string, extra ...any) *pyjson.Object {
 func (s *scope) browserCfg(key string, def any) any {
 	raw, err := s.rawConfig()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read browser.%s: %v", key, err))
+		policyLog().Debug(fmt.Sprintf("Could not read browser.%s: %v", key, err))
 		return def
 	}
 	return cfgGet(raw, def, "browser", key)
@@ -334,7 +334,7 @@ func (s *scope) storeFullSnapshot(snapshotText string) string {
 		return tools.ToAgentVisibleCachePath(s.env, path), nil
 	}()
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Failed to store full browser snapshot: %v", err))
+		policyLog().Debug(fmt.Sprintf("Failed to store full browser snapshot: %v", err))
 		return ""
 	}
 	return path
@@ -376,4 +376,9 @@ func floorDiv(a, b int64) int64 {
 		q--
 	}
 	return q
+}
+
+// Logger of the reference camofox_policy module
+func policyLog() *slog.Logger {
+	return slog.Default().With("logger", "hermes_plugins.camofox.camofox_policy")
 }

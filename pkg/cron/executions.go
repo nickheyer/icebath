@@ -690,7 +690,7 @@ func (l *Ledger) SettleDeliveryOutcome(ctx context.Context, executionID, outcome
 // Closes the receipt of a run that never started, logging a ledger failure instead of raising it
 func (l *Ledger) SettleUnstarted(ctx context.Context, executionID, jobID, errText string) {
 	if _, err := l.Finish(ctx, executionID, false, &errText, nil, false); err != nil {
-		l.s.log.Error(fmt.Sprintf("Job '%s': failed to close execution receipt %s (%s): %v", jobID, executionID, errText, err))
+		l.s.logAs("cron.executions").Error(fmt.Sprintf("Job '%s': failed to close execution receipt %s (%s): %v", jobID, executionID, errText, err))
 	}
 }
 

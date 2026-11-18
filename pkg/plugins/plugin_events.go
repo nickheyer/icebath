@@ -72,7 +72,7 @@ func BroadcastPluginEvent(pluginID, event string, payload any) error {
 	}
 	s := installedServices()
 	if s == nil || s.BroadcastGlobalEvent == nil {
-		logWarn(fmt.Sprintf("plugin event %s dropped: no tui_gateway in this process", name),
+		logPluginEvents.warn(fmt.Sprintf("plugin event %s dropped: no tui_gateway in this process", name),
 			"error", &ServiceMissingError{Name: "BroadcastGlobalEvent"})
 		return nil
 	}

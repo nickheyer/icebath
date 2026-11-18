@@ -397,7 +397,7 @@ func (p *firecrawlProvider) Search(ctx context.Context, env *Env, query string, 
 		return searchFail("Interrupted"), nil
 	}
 	if firecrawlUseKeylessRing(env, "search") {
-		envLog(env).Info("Firecrawl keyless search", "query", query, "limit", limit)
+		envLog(env).With("logger", "plugins.web.firecrawl.provider").Info(fmt.Sprintf("Firecrawl keyless search: '%s' (limit=%d)", query, limit))
 		return keylessSearchWithFailover(ctx, env, "firecrawl", query, limit)
 	}
 	envLog(env).Info("Firecrawl search", "query", query, "limit", limit)

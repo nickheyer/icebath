@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -63,23 +64,18 @@ func (r *Registry) Definitions(ctx context.Context, env *Env, toolNames map[stri
 			}
 			continue
 		}
-		schema := map[string]any{}
-		for k, v := range entry.Schema {
-			schema[k] = v
-		}
-		schema["name"] = entry.Name
+		schema := entry.Schema.Copy()
+		schema.Set("name", entry.Name)
 		if entry.DynamicSchema != nil {
-			for k, v := range definitionDynamicOverrides(env, entry) {
-				schema[k] = v
-			}
+			schema.Update(definitionDynamicOverrides(env, entry))
 		}
-		result = append(result, map[string]any{"type": "function", "function": schema})
+		result = append(result, fnDef(schema))
 	}
 	return result
 }
 
 // Runtime dynamic overrides with a panic falling back to the static schema
-func definitionDynamicOverrides(env *Env, entry *Def) (overrides map[string]any) {
+func definitionDynamicOverrides(env *Env, entry *Def) (overrides *pyjson.Object) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			overrides = nil
@@ -123,16 +119,34 @@ func ComposeSchemaRewriters(fns ...SchemaRewriter) SchemaRewriter {
 	}
 }
 
-func fnDef(schema map[string]any) map[string]any {
+// OpenAI function tool envelope around a schema
+func fnDef(schema *pyjson.Object) map[string]any {
 	return map[string]any{"type": "function", "function": schema}
 }
 
-func fnWithDescription(fn map[string]any, desc string) map[string]any {
-	out := make(map[string]any, len(fn)+1)
-	for k, v := range fn {
-		out[k] = v
+// Key order every tool definition envelope is built in
+var toolDefKeyOrder = []string{"type", "function"}
+
+// Envelope as an ordered dict in build order, keys added after the build following in sorted order
+func ToolDefObject(td map[string]any) *pyjson.Object {
+	out := pyjson.NewObject()
+	for _, k := range toolDefKeyOrder {
+		if v, ok := td[k]; ok {
+			out.Set(k, v)
+		}
 	}
-	out["description"] = desc
+	for _, k := range sortedKeys(td) {
+		if _, placed := out.Vals[k]; !placed {
+			out.Set(k, td[k])
+		}
+	}
+	return out
+}
+
+// Copy of the function schema with its description replaced in place
+func fnWithDescription(fn *pyjson.Object, desc string) *pyjson.Object {
+	out := fn.Copy()
+	out.Set("description", desc)
 	return out
 }
 
@@ -141,7 +155,7 @@ func rewriteBrowserCDP(env *Env, td map[string]any, available map[string]bool) m
 	if !available["web_extract"] {
 		return td
 	}
-	fn := toolDefFn(td)
+	fn := toolDefFnObject(td)
 	hint := " The web_extract tool is available for fetching CDP documentation URLs."
 	return fnDef(fnWithDescription(fn, toolDefDescription(td)+hint))
 }
@@ -159,7 +173,7 @@ const ScreenshotsDetached = " Screenshots are not attached to this tool's result
 
 // Points the detached screenshot header at vision_analyze only when the session has it
 func rewriteBrowserExecVision(env *Env, td map[string]any, available map[string]bool) map[string]any {
-	fn := toolDefFn(td)
+	fn := toolDefFnObject(td)
 	desc := toolDefDescription(td)
 	if !available["vision_analyze"] || !strings.Contains(desc, ScreenshotsDetached) {
 		return td
@@ -179,7 +193,7 @@ func rewriteDelegateTask(env *Env, td map[string]any, available map[string]bool)
 	if len(blockedPresent) == 3 {
 		return td
 	}
-	fn := toolDefFn(td)
+	fn := toolDefFnObject(td)
 	desc := toolDefDescription(td)
 	full, selfNamed := "", false
 	for _, variant := range []struct {
@@ -227,7 +241,7 @@ func rewriteBrowserVault(env *Env, td map[string]any, available map[string]bool)
 	if !available["browser_exec"] {
 		return td
 	}
-	fn := toolDefFn(td)
+	fn := toolDefFnObject(td)
 	return fnDef(fnWithDescription(fn, strings.ReplaceAll(toolDefDescription(td), vaultInputToolHint, "`fill_input` inside browser_exec")))
 }
 
@@ -240,7 +254,7 @@ func rewriteInputToolForVault(env *Env, td map[string]any, available map[string]
 	if !available["browser_vault"] {
 		return td
 	}
-	fn := toolDefFn(td)
+	fn := toolDefFnObject(td)
 	return fnDef(fnWithDescription(fn, toolDefDescription(td)+vaultNoPasswordNote))
 }
 

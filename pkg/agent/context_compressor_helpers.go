@@ -1023,6 +1023,9 @@ func reasoningDetailsTextChars(value any) int {
 	}
 	total := 0
 	for _, part := range parts {
+		if obj, isObj := part.(*pyjson.Object); isObj && obj != nil {
+			part = obj.Vals
+		}
 		switch p := part.(type) {
 		case string:
 			total += pystr.Len(p)

@@ -1,6 +1,9 @@
 package provider
 
-import "context"
+import (
+	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+)
 
 // Profiles the bundled nous plugin registers
 func nousPluginProfiles() []Profile {
@@ -41,23 +44,23 @@ func hookStringSet(kw map[string]any, key string) map[string]bool {
 }
 
 // Portal product tags, the sticky routing key, and the data use routing fields an outgoing connector result requires
-func nousBuildExtraBody(sessionID string, kw map[string]any) map[string]any {
+func nousBuildExtraBody(sessionID string, kw map[string]any) *pyjson.Object {
 	ctx := hookCtx(kw)
 	tags := nousPortalTags(ctx, sessionID)
 	anyTags := make([]any, len(tags))
 	for i, tag := range tags {
 		anyTags[i] = tag
 	}
-	body := map[string]any{"tags": anyTags}
+	body := pyjson.ObjectOf("tags", anyTags)
 	if sticky := cacheScopeFromSessionID(firstNonEmpty(portalAffinityScope(ctx), portalConversationContext(ctx), sessionID)); sticky != "" {
-		body["session_id"] = sticky
+		body.Set("session_id", sticky)
 	}
 	if dataUse := hookStringSet(kw, "data_use"); len(dataUse) > 0 {
-		provider := map[string]any{"data_collection": "deny"}
+		provider := pyjson.ObjectOf("data_collection", "deny")
 		if dataUse["zero_retention"] {
-			provider["zdr"] = true
+			provider.Set("zdr", true)
 		}
-		body["provider"] = provider
+		body.Set("provider", provider)
 	}
 	return body
 }
@@ -73,16 +76,16 @@ func nousCannotDisableReasoning(ctx context.Context, model string) bool {
 }
 
 // Full reasoning config passed through, a disable the model cannot honor omitted, medium effort when unset
-func nousBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func nousBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	if !pyTruthy(kw["supports_reasoning"]) {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	if reasoning == nil {
-		return map[string]any{"reasoning": map[string]any{"enabled": true, "effort": "medium"}}, map[string]any{}
+		return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", "medium")), map[string]any{}
 	}
 	rc := reasoningConfigMap(reasoning)
 	if reasoning.Enabled != nil && !*reasoning.Enabled && nousCannotDisableReasoning(hookCtx(kw), hookString(kw, "model")) {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
-	return map[string]any{"reasoning": rc}, map[string]any{}
+	return pyjson.ObjectOf("reasoning", rc), map[string]any{}
 }

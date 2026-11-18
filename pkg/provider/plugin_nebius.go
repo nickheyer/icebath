@@ -1,6 +1,9 @@
 package provider
 
-import "strings"
+import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"strings"
+)
 
 // Model name fragments of the Nebius reasoning families
 var nebiusReasoningMarkers = []string{"deepseek-r1", "deepseek-v4", "deepseek-reasoner", "gpt-oss", "glm-5", "kimi-k2", "minimax-m2", "qwen3"}
@@ -21,12 +24,12 @@ func nebiusPluginProfiles() []Profile {
 }
 
 // Top level effort for reasoning families clamped onto low medium high, off words and a disabled config sending nothing
-func nebiusBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func nebiusBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	model := strings.TrimSpace(hookString(kw, "model"))
 	name := strings.ToLower(model[strings.LastIndex(model, "/")+1:])
 	supports, _ := kw["supports_reasoning"].(bool)
 	if !supports && !containsAnySub(name, nebiusReasoningMarkers...) {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	effort, enabled := "medium", true
 	if reasoning != nil {
@@ -38,11 +41,11 @@ func nebiusBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[st
 		}
 	}
 	if !enabled || effort == "none" || effort == "off" || effort == "disabled" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	clamped := clampEffort(effort, nebiusEfforts, nil)
 	if clamped == "" {
 		clamped = "medium"
 	}
-	return map[string]any{}, map[string]any{"reasoning_effort": clamped}
+	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": clamped}
 }

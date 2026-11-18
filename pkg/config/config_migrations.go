@@ -1312,6 +1312,7 @@ func migrationSteps() []migrationStep {
 			message: "  ✓ Changed wake_word.phrase from \"hey hermes\" to \"hey icebath\" — the open vocabulary sherpa engine detects it. " +
 				"Set wake_word.phrase back to \"hey hermes\" to keep the bundled openWakeWord model.",
 			extraGuard: wakeEngineLeftToAuto})},
+		{58, migrateTo58},
 	}
 }
 
@@ -1326,6 +1327,31 @@ func wakeEngineLeftToAuto(raw map[string]any) bool {
 	oww, _ := raw["openwakeword"].(map[string]any)
 	model, has := oww["model"]
 	return !has || model == nil || model == "" || model == "hey_hermes"
+}
+
+// Display settings only the classic prompt read
+var classicPromptKeys = []string{"cli_multiline_shortcuts", "persistent_output", "persistent_output_max_lines",
+	"cli_rebuild_scrollback_on_redraw", "cli_refresh_interval", "vim_mode"}
+
+// Drops the display settings only the classic prompt read and keeps the rest of the section
+func migrateTo58(r *migrationRun) error {
+	cfg := r.read()
+	display, ok := cfg["display"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	var removed []string
+	for _, key := range classicPromptKeys {
+		if _, has := display[key]; has {
+			delete(display, key)
+			removed = append(removed, "display."+key)
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	list := strings.Join(removed, ", ")
+	return r.commit(cfg, "removed "+list, "  ✓ Removed "+list+" — the terminal UI has its own composer and scrollback.")
 }
 
 // Section and key of each setting only the desktop app read

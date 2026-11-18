@@ -32,11 +32,11 @@ const (
 )
 
 // Parameter schema of the find_voices argument
-func findVoicesSchema() map[string]any {
-	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
-	return map[string]any{
-		"type": "object",
-		"description": "Search voices instead of speaking (text is then not needed). Returns a page of voices " +
+func findVoicesSchema() *pyjson.Object {
+	str := func(desc string) *pyjson.Object { return pyjson.ObjectOf("type", "string", "description", desc) }
+	return pyjson.ObjectOf(
+		"type", "object",
+		"description", "Search voices instead of speaking (text is then not needed). Returns a page of voices " +
 			"with voice_id, labels, description and preview_url; pass next_page back as page. " +
 			"source 'library' (default) = the public Voice Library, thousands of community voices, " +
 			"most-used first, usable directly by voice_id; 'account' = the user's own voices. The " +
@@ -45,20 +45,20 @@ func findVoicesSchema() map[string]any {
 			"'deep growl') with gender/age and use_case 'characters_animation'. You can't hear " +
 			"voices: choose from labels and description, and give the user preview_url links when " +
 			"the pick matters.",
-		"properties": map[string]any{
-			"query":    str("Free-text search, e.g. 'orc' or 'gravelly old'."),
-			"source":   map[string]any{"type": "string", "enum": []any{"library", "account"}},
-			"gender":   str("e.g. male, female, neutral."),
-			"age":      str("e.g. young, middle_aged, old."),
-			"accent":   str("e.g. british, american, scottish."),
-			"language": str("ISO 639-1 code, e.g. en."),
-			"use_case": str("Library only, e.g. characters_animation, narrative_story, conversational."),
-			"sort": map[string]any{"type": "string", "enum": []any{"usage_character_count_1y", "trending", "cloned_by_count", "created_date"},
-				"description": "Library only; default usage_character_count_1y (most used)."},
-			"page":      str("next_page from the previous result."),
-			"page_size": map[string]any{"type": "integer", "description": "1-100, default 20."},
-		},
-	}
+		"properties", pyjson.ObjectOf(
+			"query",    str("Free-text search, e.g. 'orc' or 'gravelly old'."),
+			"source",   pyjson.ObjectOf("type", "string", "enum", []any{"library", "account"}),
+			"gender",   str("e.g. male, female, neutral."),
+			"age",      str("e.g. young, middle_aged, old."),
+			"accent",   str("e.g. british, american, scottish."),
+			"language", str("ISO 639-1 code, e.g. en."),
+			"use_case", str("Library only, e.g. characters_animation, narrative_story, conversational."),
+			"sort", pyjson.ObjectOf("type", "string", "enum", []any{"usage_character_count_1y", "trending", "cloned_by_count", "created_date"},
+				"description", "Library only; default usage_character_count_1y (most used)."),
+			"page",      str("next_page from the previous result."),
+			"page_size", pyjson.ObjectOf("type", "integer", "description", "1-100, default 20."),
+		),
+	)
 }
 
 // Whitespace collapsed description clipped with an ellipsis

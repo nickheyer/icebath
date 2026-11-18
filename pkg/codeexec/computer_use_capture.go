@@ -713,6 +713,6 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 }
 
 // Schema of the computer_use tool as the registry advertises it
-func getComputerUseToolSchema() map[string]any {
+func getComputerUseToolSchema() *pyjson.Object {
 	return GetComputerUseSchema()
 }

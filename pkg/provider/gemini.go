@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -156,9 +157,16 @@ func probeGeminiTier(ctx context.Context, apiKey, baseURL, model string, timeout
 		catalogLog.Debug("probe_gemini_tier: network error: " + err.Error())
 		return "unknown"
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Goog-Api-Client", geminiAPIClient())
-	resp, err := (&http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: PlatformTLSConfig()}}).Do(req)
+	tr, err := httpxWireTransport(httpxDefaultLimits, timeout, nil)
+	if err != nil {
+		catalogLog.Debug("probe_gemini_tier: network error: " + err.Error())
+		return "unknown"
+	}
+	defer tr.CloseIdleConnections()
+	lines := httpxClientHeaders()
+	lines.Update([]pyhttpx.HeaderLine{{Name: "Content-Type", Value: "application/json"}, {Name: "X-Goog-Api-Client", Value: geminiAPIClient()}})
+	req.Host = httpxHost(req.URL)
+	resp, err := (&http.Client{Transport: pyhttpx.WireTransport{Base: tr, Decoders: httpxDecoders}, CheckRedirect: httpxNoRedirects}).Do(pyhttpx.WithWire(req, lines))
 	if err != nil {
 		catalogLog.Debug("probe_gemini_tier: network error: " + err.Error())
 		return "unknown"
@@ -328,12 +336,14 @@ type geminiNativeClient struct {
 	mu     sync.Mutex
 	base   string
 	token  func(context.Context) (string, error)
+	// httpx pools of the bare client per connect timeout, used when the route brings no transport
+	transports map[time.Duration]*http.Transport
 	// RPC method names a subclass speaking the same wire under another credential overrides
 	generateMethod, streamMethod string
 }
 
 func newGeminiNativeClient(route Route) (Client, error) {
-	c := &geminiNativeClient{route: route, token: route.TokenSource,
+	c := &geminiNativeClient{route: route, token: route.TokenSource, transports: map[time.Duration]*http.Transport{},
 		chat:   &chatCompletionsClient{route: route, cc: newCCRoute(route), transports: map[time.Duration]*http.Transport{}},
 		bearer: route.TokenSource != nil || route.Auth == AuthGCPOAuth, generateMethod: geminiGenerateMethod, streamMethod: geminiStreamMethod}
 	if !c.bearer && strings.TrimSpace(route.APIKey) == "" {
@@ -387,23 +397,44 @@ func (c *geminiNativeClient) credentials(ctx context.Context) (string, map[strin
 	return base, map[string]string{"Authorization": "Bearer " + tok}, nil
 }
 
-// Request headers in the adapter order with route default headers last
-func (c *geminiNativeClient) headers(auth map[string]string, accept string) http.Header {
-	h := http.Header{}
-	h.Set("Content-Type", "application/json")
-	h.Set("Accept", "application/json")
-	for k, v := range auth {
-		h.Set(k, v)
+// Request lines of one call, the adapter header dict with route default headers last merged over the httpx client defaults
+func (c *geminiNativeClient) headers(auth map[string]string, accept string) *pyhttpx.Headers {
+	d := &pyHeaderDict{}
+	d.set("Content-Type", "application/json")
+	d.set("Accept", "application/json")
+	for _, k := range sortedHeaderKeys(auth) {
+		d.set(k, auth[k])
 	}
-	h.Set("User-Agent", geminiAPIClient()+" (gemini-native)")
-	h.Set("X-Goog-Api-Client", geminiAPIClient())
-	for k, v := range c.route.Headers {
-		h.Set(k, v)
-	}
+	d.set("User-Agent", geminiAPIClient()+" (gemini-native)")
+	d.set("X-Goog-Api-Client", geminiAPIClient())
+	d.update(pyHeaderDictOf(orderedExtraHeaders(c.route.Headers)...))
 	if accept != "" {
-		h.Set("Accept", accept)
+		d.set("Accept", accept)
 	}
+	h := httpxClientHeaders()
+	h.Update(d.stripped())
 	return h
+}
+
+// HTTP client of the native client over the route transport or its bare httpx pool, redirects returned as httpx returns them
+func (c *geminiNativeClient) httpClient(connect time.Duration) (*http.Client, error) {
+	base := c.route.Transport
+	if base == nil {
+		c.mu.Lock()
+		tr, ok := c.transports[connect]
+		if !ok {
+			built, err := httpxWireTransport(httpxDefaultLimits, connect, nil)
+			if err != nil {
+				c.mu.Unlock()
+				return nil, err
+			}
+			tr = auxTrackPoolConns(built)
+			c.transports[connect] = tr
+		}
+		c.mu.Unlock()
+		base = tr
+	}
+	return &http.Client{Transport: pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}, CheckRedirect: httpxNoRedirects}, nil
 }
 
 // One generateContent call prepared from the chat completions arguments
@@ -556,8 +587,12 @@ func (c *geminiNativeClient) generate(ctx context.Context, p *geminiPrepared, re
 	if err != nil {
 		return nil, 0, nil, err
 	}
-	httpReq.Header = c.headers(p.auth, "")
-	resp, err := c.chat.httpClient(connect).Do(httpReq)
+	hc, err := c.httpClient(connect)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	httpReq.Host = httpxHost(httpReq.URL)
+	resp, err := hc.Do(pyhttpx.WithWire(httpReq, c.headers(p.auth, "")))
 	if err != nil {
 		return nil, 0, nil, &geminiTransportErr{err: err, phase: TimeoutPhaseConnect}
 	}
@@ -783,8 +818,12 @@ func (c *geminiNativeClient) streamRequest(ctx context.Context, p *geminiPrepare
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header = c.headers(p.auth, "text/event-stream")
-	resp, err := c.chat.httpClient(connect).Do(httpReq)
+	hc, err := c.httpClient(connect)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Host = httpxHost(httpReq.URL)
+	resp, err := hc.Do(pyhttpx.WithWire(httpReq, c.headers(p.auth, "text/event-stream")))
 	if err != nil {
 		return &geminiTransportErr{err: err, phase: TimeoutPhaseConnect}, nil
 	}

@@ -234,7 +234,7 @@ func requestExceedsModelWindow(a *AIAgent, requestTokens int) *bool {
 	if a == nil || isNilEngine(a.contextCompressor) {
 		return nil
 	}
-	window := a.contextCompressor.Base().ContextLength
+	window := engineContextLength(a.contextCompressor)
 	if window <= 0 {
 		return nil
 	}

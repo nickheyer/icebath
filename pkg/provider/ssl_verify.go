@@ -79,9 +79,9 @@ func InstallTrustStore() bool {
 	platformRoots = pool
 	trustInstalled = &loaded
 	if loaded {
-		slog.Default().Debug("TLS trust: platform store")
+		sslVerifyLog().Debug("TLS trust: platform store (truststore)")
 	} else {
-		slog.Default().Warn(fmt.Sprintf("truststore unavailable (%v); falling back to OpenSSL's default trust paths. Certificates trusted only by the OS store — a corporate root, for instance — will not verify.", err))
+		sslVerifyLog().Warn(fmt.Sprintf("truststore unavailable (%v); falling back to OpenSSL's default trust paths. Certificates trusted only by the OS store — a corporate root, for instance — will not verify.", err))
 	}
 	return loaded
 }
@@ -217,7 +217,7 @@ func reloadCABundleFromSearch() string {
 	path, ok := searchCABundle()
 	if !ok {
 		caBundleWhere = dropped
-		slog.Default().Debug("certifi could not be re-resolved: no CA bundle on the live search path")
+		sslVerifyLog().Debug("certifi could not be re-resolved: no CA bundle on the live search path")
 		return ""
 	}
 	caBundleWhere = &path
@@ -238,10 +238,10 @@ func recoverBundleOnce(stale string) string {
 	staleBundleKnown[stale] = recovered
 	staleBundleMu.Unlock()
 	if recovered != "" {
-		slog.Default().Warn(fmt.Sprintf("TLS trust: certifi's CA bundle %s no longer exists — the install environment it belongs to was replaced under this process; re-resolved to %s. TLS clients built before this point used the dead path.", stale, recovered))
+		sslVerifyLog().Warn(fmt.Sprintf("TLS trust: certifi's CA bundle %s no longer exists — the install environment it belongs to was replaced under this process; re-resolved to %s. TLS clients built before this point used the dead path.", stale, recovered))
 		return recovered
 	}
-	slog.Default().Warn(fmt.Sprintf("TLS trust: certifi's CA bundle %s no longer exists and certifi could not be re-resolved; using the platform trust store for the rest of this process.", stale))
+	sslVerifyLog().Warn(fmt.Sprintf("TLS trust: certifi's CA bundle %s no longer exists and certifi could not be re-resolved; using the platform trust store for the rest of this process.", stale))
 	return ""
 }
 
@@ -277,11 +277,11 @@ func PlatformStoreBundle(h string) string {
 	}
 	path := filepath.Join(home.CacheDir(h), "platform-ca-bundle.pem")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		slog.Default().Debug(fmt.Sprintf("platform CA bundle not written: %v", err))
+		sslVerifyLog().Debug(fmt.Sprintf("platform CA bundle not written: %v", err))
 		return ""
 	}
 	if err := config.AtomicWrite(path, []byte(buf.String()), 0o644); err != nil {
-		slog.Default().Debug(fmt.Sprintf("platform CA bundle not written: %v", err))
+		sslVerifyLog().Debug(fmt.Sprintf("platform CA bundle not written: %v", err))
 		return ""
 	}
 	platformBundle = path
@@ -388,3 +388,6 @@ func ResolveTLSVerify(log *slog.Logger, caBundle string, sslVerify any, baseURL 
 	}
 	return TLSVerify{Config: defaultVerify()}
 }
+
+// Logger of the reference module agent.ssl_verify
+func sslVerifyLog() *slog.Logger { return slog.Default().With("logger", "agent.ssl_verify") }

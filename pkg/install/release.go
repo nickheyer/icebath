@@ -27,8 +27,6 @@ import (
 // Repository the installer downloads releases from unless ICEBATH_REPO_URL names another
 const DefaultRepoURL = "https://github.com/nickheyer/icebath.git"
 
-const officialRepository = "nickheyer/icebath"
-
 var (
 	stableTagRE   = regexp.MustCompile(`^v(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	fullSHARE     = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -44,11 +42,10 @@ func ValidStableTag(tag string) bool { return stableTagRE.MatchString(tag) }
 func IsFullSHA(value string) bool { return fullSHARE.MatchString(value) }
 
 type Repo struct {
-	Web      string
-	API      string
-	Owner    string
-	Name     string
-	Official bool
+	Web   string
+	API   string
+	Owner string
+	Name  string
 }
 
 // Web, API and identity of a repository URL in https or ssh form
@@ -71,7 +68,6 @@ func ParseRepo(raw string) (Repo, error) {
 	r := Repo{Web: scheme + "://" + host + "/" + owner + "/" + name, Owner: owner, Name: name}
 	if strings.EqualFold(host, "github.com") {
 		r.API = "https://api.github.com/repos/" + owner + "/" + name
-		r.Official = strings.EqualFold(owner+"/"+name, officialRepository)
 	} else {
 		r.API = scheme + "://" + host + "/api/v3/repos/" + owner + "/" + name
 	}
@@ -123,15 +119,6 @@ func (t *ReleaseTarget) AssetDigest(name string) string {
 		}
 	}
 	return ""
-}
-
-// Release binary name for goos and goarch
-func BinaryAssetName(goos, goarch string) string {
-	name := "icebath-" + goos + "-" + goarch
-	if goos == "windows" {
-		name += ".exe"
-	}
-	return name
 }
 
 // Client honouring the proxy environment with header and whole request bounds

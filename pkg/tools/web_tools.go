@@ -422,7 +422,7 @@ func WebSearchTool(ctx context.Context, env *Env, query string, limitArg any) st
 	if provider == nil {
 		response = Dict("success", false, "error", noProviderError(env, "search", "No web search provider configured. Run `icebath tools` to set one up."))
 	} else {
-		envLog(env).Info("Web search", "provider", provider.Name(), "query", query, "limit", limit)
+		envLog(env).With("logger", "tools.web_tools").Info(fmt.Sprintf("Web search via %s: '%s' (limit: %d)", provider.Name(), query, limit))
 		resp, err := memoizedSearch(call, provider, query, limit)
 		if err != nil {
 			return finishWebDebug(env, "web_search_tool", debug, "Error searching web: "+err.Error())
@@ -835,31 +835,31 @@ func WebExtractTool(ctx context.Context, env *Env, items []any, format string, c
 	return cleaned
 }
 
-var webSearchSchema = map[string]any{
-	"name":        "web_search",
-	"description": "Search the web: returns titles, URLs and snippets (5 by default). Read pages with web_extract. The query is passed through to the configured backend, so operators such as site:domain, filetype:pdf, intitle:word, -term, and \"exact phrase\" may work when the backend supports them.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{"type": "string", "description": "The search query to look up on the web. You may include backend-supported operators such as site:example.com, filetype:pdf, intitle:word, -term, or \"exact phrase\"."},
-			"limit": map[string]any{"type": "integer", "description": "Maximum number of results to return. Defaults to 5.", "minimum": 1, "maximum": 100, "default": 5},
-		},
-		"required": []any{"query"},
-	},
-}
+var webSearchSchema = Dict(
+	"name", "web_search",
+	"description", "Search the web: returns titles, URLs and snippets (5 by default). Read pages with web_extract. The query is passed through to the configured backend, so operators such as site:domain, filetype:pdf, intitle:word, -term, and \"exact phrase\" may work when the backend supports them.",
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"query", Dict("type", "string", "description", "The search query to look up on the web. You may include backend-supported operators such as site:example.com, filetype:pdf, intitle:word, -term, or \"exact phrase\"."),
+			"limit", Dict("type", "integer", "description", "Maximum number of results to return. Defaults to 5.", "minimum", 1, "maximum", 100, "default", 5),
+		),
+		"required", []any{"query"},
+	),
+)
 
-var webExtractSchema = map[string]any{
-	"name":        "web_extract",
-	"description": "Extract content from web page URLs. Returns clean page content in markdown/text (no LLM summarization — fast). Also works with PDF URLs (arxiv papers, documents) — pass the PDF link directly. Pages within the char budget (default 15000) return whole; larger pages return a head+tail window with a footer telling you the full text's saved file path and the read_file call to page through the omitted middle. Inline images appear as [IMAGE: alt] placeholders; real image URLs are kept as links. If a URL fails, times out, or needs JS, login or clicks, use a browser tool instead.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"urls":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of URLs to extract content from (max 5 URLs per call)", "maxItems": 5},
-			"char_limit": map[string]any{"type": "integer", "description": "Optional per-page character budget sent back (default 15000). Pages larger than this are head+tail truncated with the full text stored to disk. Raise it when you need more of a long page inline.", "minimum": 2000},
-		},
-		"required": []any{"urls"},
-	},
-}
+var webExtractSchema = Dict(
+	"name", "web_extract",
+	"description", "Extract content from web page URLs. Returns clean page content in markdown/text (no LLM summarization — fast). Also works with PDF URLs (arxiv papers, documents) — pass the PDF link directly. Pages within the char budget (default 15000) return whole; larger pages return a head+tail window with a footer telling you the full text's saved file path and the read_file call to page through the omitted middle. Inline images appear as [IMAGE: alt] placeholders; real image URLs are kept as links. If a URL fails, times out, or needs JS, login or clicks, use a browser tool instead.",
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"urls", Dict("type", "array", "items", Dict("type", "string"), "description", "List of URLs to extract content from (max 5 URLs per call)", "maxItems", 5),
+			"char_limit", Dict("type", "integer", "description", "Optional per-page character budget sent back (default 15000). Pages larger than this are head+tail truncated with the full text stored to disk. Raise it when you need more of a long page inline.", "minimum", 2000),
+		),
+		"required", []any{"urls"},
+	),
+)
 
 // Registers web_search and web_extract in the web toolset
 func registerWebTools() {

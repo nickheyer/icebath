@@ -175,7 +175,7 @@ func useSnapshotRegistry(t *testing.T, toolsets map[string]string, schemas ...ma
 		if ts == "" {
 			ts = "snapshot_test"
 		}
-		reg.Register(tools.Def{Name: name, Toolset: ts, Schema: schema,
+		reg.Register(tools.Def{Name: name, Toolset: ts, Schema: pyjson.Ordered(schema).(*pyjson.Object),
 			Handler: func(context.Context, *tools.Call) string { return "" }})
 	}
 	prev := agentToolRegistry
@@ -522,7 +522,7 @@ func TestReprobeToolAvailabilityDropsCachedCheckVerdicts(t *testing.T) {
 	reg := tools.NewRegistry()
 	var verdictMu sync.Mutex
 	verdict := false
-	reg.Register(tools.Def{Name: "probe_tool", Toolset: "probe_toolset", Schema: map[string]any{"name": "probe_tool", "description": "", "parameters": map[string]any{}},
+	reg.Register(tools.Def{Name: "probe_tool", Toolset: "probe_toolset", Schema: pyjson.ObjectOf("name", "probe_tool", "description", "", "parameters", pyjson.ObjectOf()),
 		Handler: func(context.Context, *tools.Call) string { return "" },
 		Check: func(*tools.Env) bool {
 			verdictMu.Lock()

@@ -84,6 +84,8 @@ type TurnRunner struct {
 	localEditSnapshots map[string]*tools.LocalEditSnapshot
 	// Terminal scope of the session policy while the turn runs inside it
 	policyScope atomic.Pointer[tools.TerminalScope]
+	// Launch policy of the session while the turn runs inside its scope, the active_policy contextvar of hermes
+	activePolicy atomic.Pointer[gateway.ActiveLaunchPolicy]
 }
 
 // Turn runner bound to the turn context, owned by the session authority when one holds the session

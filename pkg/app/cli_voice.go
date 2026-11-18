@@ -126,8 +126,6 @@ func (c *CLI) voiceStartRecording() error {
 		c.voiceRecorder = voiceCreateAudioRecorder()
 	}
 	rec := c.voiceRecorder.(media.VoiceRecorder)
-	c.voiceLiveText = ""
-	rec.SetOnLivePartial(c.voiceOnLivePartial)
 	threshold, duration := 200.0, 3.0
 	rec.SetSilenceThreshold(*numericOr(voiceCfg["silence_threshold"], &threshold))
 	rec.SetSilenceDuration(*numericOr(voiceCfg["silence_duration"], &duration))
@@ -216,11 +214,6 @@ func (c *CLI) voiceRestartRecordingAsync() {
 	}()
 }
 
-// Shows a live STT partial in the input hint while recording
-func (c *CLI) voiceOnLivePartial(text string) {
-	c.voiceLiveText = text
-}
-
 // Stops recording, transcribes and queues the transcript as voice input, restarting continuous capture
 func (c *CLI) voiceStopAndTranscribe() {
 	c.voiceLock.Lock()
@@ -237,7 +230,6 @@ func (c *CLI) voiceStopAndTranscribe() {
 		c.voiceLock.Lock()
 		c.voiceProcessing = false
 		c.voiceLock.Unlock()
-		c.voiceLiveText = ""
 		if wavPath != "" {
 			if fi, err := os.Stat(wavPath); err == nil && fi.Mode().IsRegular() {
 				if failed {

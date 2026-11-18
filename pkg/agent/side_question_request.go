@@ -81,7 +81,7 @@ func agentProviderRefusal(ctx context.Context, a *AIAgent) string {
 
 // True when the final request asks the provider to execute a tool, web search or plugin itself
 func hasServerSideTools(apiKwargs map[string]any) bool {
-	extraBody, ok := apiKwargs["extra_body"].(map[string]any)
+	extraBody, ok := pyjson.Dict(apiKwargs["extra_body"])
 	if !ok {
 		extraBody = map[string]any{}
 	}

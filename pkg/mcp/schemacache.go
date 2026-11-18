@@ -1,12 +1,11 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"os"
 	"path/filepath"
@@ -194,32 +193,47 @@ func loadSchemaCache(ctx context.Context) map[string]any {
 		}
 		return map[string]any{}
 	}
-	var data any
-	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &data); err != nil {
+	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	if err != nil {
 		mcpLogger().Debug(fmt.Sprintf("Could not read MCP schema cache %s: %v", p, err))
 		return map[string]any{}
 	}
-	m, ok := data.(map[string]any)
+	m, ok := schemaCacheTree(data, false).(map[string]any)
 	if !ok {
 		return map[string]any{}
 	}
 	return m
 }
 
-// Writes every entry atomically with owner only permissions
+// Decoded cache value with every bookkeeping dict a plain map and every tool schema payload kept in its wire order
+func schemaCacheTree(v any, schemaPayload bool) any {
+	switch t := v.(type) {
+	case *pyjson.Object:
+		if schemaPayload {
+			return t
+		}
+		out := make(map[string]any, t.Len())
+		for _, k := range t.Keys {
+			out[k] = schemaCacheTree(t.Vals[k], k == "inputSchema" || k == "schema")
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = schemaCacheTree(item, false)
+		}
+		return out
+	}
+	return v
+}
+
+// Writes every entry atomically as two space indented JSON with owner only permissions
 func saveSchemaCache(ctx context.Context, data map[string]any) error {
 	p := schemaCachePath(ctx)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(data); err != nil {
-		return err
-	}
-	return config.AtomicWrite(p, bytes.TrimRight(buf.Bytes(), "\n"), 0o600)
+	return config.AtomicJSONWriteMode(ctx, p, data, 0o600, pyjson.Indent(2))
 }
 
 // Cached entry of a server when its fingerprint matches and its recorded TTL still holds
@@ -244,6 +258,8 @@ func jsonNumber(v any) (float64, bool) {
 	case float64:
 		return x, true
 	case int:
+		return float64(x), true
+	case int64:
 		return float64(x), true
 	case bool:
 		if x {
@@ -284,17 +300,17 @@ func WriteCacheEntry(ctx context.Context, serverName, fingerprint string, tools,
 	return saveSchemaCache(ctx, data)
 }
 
-// Value as it reads back after a JSON write, numbers as float64 and structs as maps
+// Value as it reads back after a JSON write, schema payloads keeping their order
 func jsonRoundTrip(v any) (any, error) {
-	raw, err := json.Marshal(v)
+	text, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
 	if err != nil {
 		return nil, err
 	}
-	var out any
-	if err := json.Unmarshal(raw, &out); err != nil {
+	out, err := pyjson.Loads(text)
+	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return schemaCacheTree(out, false), nil
 }
 
 // List field of an entry copied, empty when absent or not a list

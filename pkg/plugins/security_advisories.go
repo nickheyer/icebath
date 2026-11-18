@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -90,7 +89,7 @@ var advisoryInstalledVersion = func(ctx context.Context, pkgName string) (string
 			return version, found && version != ""
 		}
 	}
-	slog.Debug(fmt.Sprintf("managed environment version of %s unreadable", pkgName), "error", err)
+	logSecurityAdvisories.debug(fmt.Sprintf("managed environment version of %s unreadable", pkgName), "error", err)
 	return "", false
 }
 
@@ -113,12 +112,12 @@ func GetAckedAdvisoryIDs(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
 	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
 	if err != nil {
-		slog.Debug("Could not load config for advisory acks", "error", err)
+		logSecurityAdvisories.debug("Could not load config for advisory acks", "error", err)
 		return out
 	}
 	security, ok := cfg["security"].(map[string]any)
 	if cfg["security"] != nil && pyrepr.Truthy(cfg["security"]) && !ok {
-		slog.Debug("Could not load config for advisory acks", "error", "security is not a mapping")
+		logSecurityAdvisories.debug("Could not load config for advisory acks", "error", "security is not a mapping")
 		return out
 	}
 	raw, _ := security["acked_advisories"].([]any)
@@ -137,7 +136,7 @@ func AckAdvisory(ctx context.Context, advisoryID string) bool {
 		return false
 	}
 	fail := func(err error) bool {
-		slog.Error(fmt.Sprintf("Failed to persist advisory ack for %s", advisoryID), "error", err)
+		logSecurityAdvisories.error(fmt.Sprintf("Failed to persist advisory ack for %s", advisoryID), "error", err)
 		return false
 	}
 	h := home.Dir(ctx)
@@ -328,7 +327,7 @@ func advisoryWriteBannerCache(ctx context.Context, seen []advisoryBannerSeen) {
 		lines = append(lines, s.id+" "+pyrepr.Float(s.ts))
 	}
 	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o666); err != nil {
-		slog.Debug("Could not write advisory banner cache", "error", err)
+		logSecurityAdvisories.debug("Could not write advisory banner cache", "error", err)
 	}
 }
 

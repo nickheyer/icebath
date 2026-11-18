@@ -38,7 +38,7 @@ func hostedProviderCLI(ctx context.Context, env *tools.Env, r *ProviderRegistrat
 	name, dir, module, desc := r.Name, r.Dir, providerDirModuleName(r.Dir, r.Name), r.Description()
 	registerCLI, handler, err := describeProviderCLI(ctx, name, dir, module)
 	if err != nil {
-		envLog(env).Debug(fmt.Sprintf("Failed to scan CLI for memory plugin '%s': %s", name, err))
+		moduleLog(env, "plugins.memory").Debug(fmt.Sprintf("Failed to scan CLI for memory plugin '%s': %s", name, err))
 		return nil
 	}
 	if !registerCLI {

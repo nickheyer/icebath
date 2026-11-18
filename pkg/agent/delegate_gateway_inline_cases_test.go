@@ -26,7 +26,7 @@ func delegateFunctionOf(t *testing.T, list []any) map[string]any {
 	t.Helper()
 	for _, item := range list {
 		m, _ := item.(map[string]any)
-		fn, _ := m["function"].(map[string]any)
+		fn, _ := pyjson.Dict(m["function"])
 		if fn["name"] == "delegate_task" {
 			return fn
 		}
@@ -39,7 +39,7 @@ func toolNamesOf(list []any) map[string]bool {
 	names := map[string]bool{}
 	for _, item := range list {
 		m, _ := item.(map[string]any)
-		fn, _ := m["function"].(map[string]any)
+		fn, _ := pyjson.Dict(m["function"])
 		if n, _ := fn["name"].(string); n != "" {
 			names[n] = true
 		}
@@ -63,9 +63,9 @@ func TestTheBuildScopePicksTheSchemaAndTheAgentKeepsIt(t *testing.T) {
 	env := inlineTestEnv(t)
 	ctx := tools.WithToolEnv(context.Background(), env)
 	background := builtInlineAgent(t, env, false)
-	var registry map[string]any
+	var registry *pyjson.Object
 	for _, d := range tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: []string{"icebath-cli"}, Disabled: background.disabledToolsets, Quiet: true}) {
-		if fn, _ := d["function"].(map[string]any); fn["name"] == "delegate_task" {
+		if fn, _ := d["function"].(*pyjson.Object); fn != nil && fn.Vals["name"] == "delegate_task" {
 			registry = fn
 		}
 	}
@@ -78,7 +78,8 @@ func TestTheBuildScopePicksTheSchemaAndTheAgentKeepsIt(t *testing.T) {
 	if sortedJSON(t, inlineFn) != sortedJSON(t, joined) || strings.Contains(inlineFn["description"].(string), "END YOUR TURN") {
 		t.Fatalf("inline schema %v", inlineFn)
 	}
-	props := inlineFn["parameters"].(map[string]any)["properties"].(map[string]any)
+	params, _ := pyjson.Dict(inlineFn["parameters"])
+	props, _ := pyjson.Dict(params["properties"])
 	for _, p := range inlineLiveControl {
 		if _, has := props[p]; has {
 			t.Fatalf("inline schema carries live control %q", p)

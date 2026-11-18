@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"testing"
 )
@@ -47,12 +48,12 @@ func TestSelectToolNamesSubtractsDisabledLast(t *testing.T) {
 func TestScopedRegistrationOverlay(t *testing.T) {
 	r := NewRegistry()
 	ctx := context.Background()
-	r.Register(Def{Name: "alpha", Toolset: "web", Schema: map[string]any{"name": "alpha"}, Handler: func(context.Context, *Call) string { return "" }})
-	err := r.RegisterScoped("/tmp/profile-a", Def{Name: "alpha", Toolset: "mcp-x", Plugin: "icebath_plugins.p", Schema: map[string]any{}, Handler: func(context.Context, *Call) string { return "" }})
+	r.Register(Def{Name: "alpha", Toolset: "web", Schema: pyjson.ObjectOf("name", "alpha"), Handler: func(context.Context, *Call) string { return "" }})
+	err := r.RegisterScoped("/tmp/profile-a", Def{Name: "alpha", Toolset: "mcp-x", Plugin: "icebath_plugins.p", Schema: pyjson.ObjectOf(), Handler: func(context.Context, *Call) string { return "" }})
 	if err == nil {
 		t.Fatal("cross toolset shadow without override must be rejected")
 	}
-	if err := r.RegisterScoped("/tmp/profile-a", Def{Name: "beta", Toolset: "mcp-x", Schema: map[string]any{}, Handler: func(context.Context, *Call) string { return "" }}); err != nil {
+	if err := r.RegisterScoped("/tmp/profile-a", Def{Name: "beta", Toolset: "mcp-x", Schema: pyjson.ObjectOf(), Handler: func(context.Context, *Call) string { return "" }}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Lookup(ctx, ScopeKey("/tmp/profile-a"), "beta") == nil || r.Lookup(ctx, "", "beta") != nil {
@@ -86,7 +87,7 @@ func TestConfigurableKeysExportsEveryConfigurableToolsetKey(t *testing.T) {
 }
 
 func orderDef(name, toolset string) Def {
-	return Def{Name: name, Toolset: toolset, Schema: map[string]any{"name": name, "parameters": map[string]any{"type": "object"}},
+	return Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
 		Handler: func(context.Context, *Call) string { return "{}" }}
 }
 

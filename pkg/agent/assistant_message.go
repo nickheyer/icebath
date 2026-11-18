@@ -38,6 +38,11 @@ func messageAttr(m *state.Message, key string) any {
 		}
 	}
 	if len(raw) > 0 {
+		if key == "reasoning_details" {
+			if out, err := pyjson.LoadsOrdered(raw); err == nil {
+				return out
+			}
+		}
 		var out any
 		if json.Unmarshal(raw, &out) == nil {
 			return out
@@ -158,7 +163,7 @@ func (a *AIAgent) buildAssistantMessageRow(resp *provider.Response, finishReason
 		var preserved []any
 		for _, d := range anyRows(details) {
 			switch dv := d.(type) {
-			case map[string]any:
+			case map[string]any, *pyjson.Object:
 				preserved = append(preserved, dv)
 			case provider.ModelDumper:
 				preserved = append(preserved, provider.DumpIfModel(dv))

@@ -22,7 +22,7 @@ func (s *Store) cronInactivitySeconds(ctx context.Context) float64 {
 	}
 	v, err := pyint.Float(raw)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Invalid ICEBATH_CRON_TIMEOUT=%s; using default 600s", pyrepr.StrRepr(raw)))
+		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Invalid ICEBATH_CRON_TIMEOUT=%s; using default 600s", pyrepr.StrRepr(raw)))
 		return 600.0
 	}
 	return v

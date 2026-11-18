@@ -107,6 +107,23 @@ func updateOne(ctx context.Context, name, target string, console *Console, inter
 	if len(sidecar) > 0 {
 		return cmdUpdateCatalog(ctx, name, target, sidecar, console, interactive)
 	}
+	metadata, err := readInstallMetadata(h)
+	if err != nil {
+		return false, err
+	}
+	record, _ := metadata[filepath.Base(target)].(map[string]any)
+	if port, ok := builtinPortRecord(record); ok {
+		changed, err := updateBuiltinPort(ctx, port, target)
+		if err != nil {
+			return false, err
+		}
+		if !changed {
+			console.Print(fmt.Sprintf("[green]✓[/green] Plugin [bold]%s[/bold] is already up to date.", name))
+			return false, nil
+		}
+		console.Print(fmt.Sprintf("[green]✓[/green] Plugin [bold]%s[/bold] updated from the copy compiled into Icebath %s.", name, RunningVersion))
+		return true, nil
+	}
 	var decision func(scan any) bool
 	if interactive {
 		decision = InteractiveScanDecision(console, "Update")
@@ -451,6 +468,25 @@ func unattendedUpdateStep(ctx context.Context, h, name, target string, acceptCap
 		}
 		return mergeResult(map[string]any{"ok": true, "name": result.InstalledName, "sha": result.Sha, "unchanged": !result.Changed,
 			"python_dependencies": deps, "warnings": warnings}, activated), "", nil
+	}
+	metadata, err := readInstallMetadata(h)
+	if err != nil {
+		return nil, "", err
+	}
+	record, _ := metadata[filepath.Base(target)].(map[string]any)
+	if port, ok := builtinPortRecord(record); ok {
+		changed, err := updateBuiltinPort(ctx, port, target)
+		if err != nil {
+			return nil, "", err
+		}
+		activated := map[string]any{}
+		if changed {
+			if activated, err = activatePluginNow(ctx, port); err != nil {
+				return nil, "", err
+			}
+		}
+		return mergeResult(map[string]any{"ok": true, "name": port, "sha": RunningVersion, "unchanged": !changed,
+			"python_dependencies": []string{}, "warnings": []string{}}, activated), "", nil
 	}
 	msg, err := pullPluginUpdate(ctx, h, target,
 		func(rec map[string]any) string {

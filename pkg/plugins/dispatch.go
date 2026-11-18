@@ -115,7 +115,7 @@ func (m *Manager) reportHookFailure(hookName, callbackName string, kwargs map[st
 	m.hookFailuresReported[key] = true
 	m.hookTimeoutMu.Unlock()
 	if seen {
-		logDebug(fmt.Sprintf("%s '%s' callback %s raised again: %v", surface, hookName, callbackName, err))
+		logPlugins.debug(fmt.Sprintf("%s '%s' callback %s raised again: %v", surface, hookName, callbackName, err))
 		return
 	}
 	fields := make([]string, 0, len(kwargs))
@@ -127,7 +127,7 @@ func (m *Manager) reportHookFailure(hookName, callbackName string, kwargs map[st
 	if provided == "" {
 		provided = "no fields"
 	}
-	logWarn(fmt.Sprintf("%s '%s' callback %s raised: %v (%s provides: %s; identical failures are logged at DEBUG from now on)",
+	logPlugins.warn(fmt.Sprintf("%s '%s' callback %s raised: %v (%s provides: %s; identical failures are logged at DEBUG from now on)",
 		surface, hookName, callbackName, err, strings.ToLower(surface), provided))
 }
 
@@ -165,7 +165,7 @@ func (m *Manager) trackHostedHook(c *Context, hookName string, cb *HostedCallabl
 func (m *Manager) trackHookEntry(c *Context, hookName string, entry *hookEntry, holdStream bool) *Registration {
 	handle := trackCallback(c, "hook", hookName, entry, m.hooks, validHooks)
 	if holdStream && hookName != StreamHoldingHook {
-		logWarn(fmt.Sprintf("Plugin '%s' set hold_stream on '%s'; only %s rewrites the reply, ignored",
+		logPlugins.warn(fmt.Sprintf("Plugin '%s' set hold_stream on '%s'; only %s rewrites the reply, ignored",
 			c.manifest.Name, hookName, StreamHoldingHook))
 	} else {
 		m.mu.Lock()

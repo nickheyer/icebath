@@ -162,6 +162,7 @@ func NewModalEnvironment(ctx context.Context, env *Env, o ModalOptions) (*modalE
 	m.stdinMode = "payload"
 	m.snapshotTimeout = 60
 	initBaseEnv(&m.baseEnv, m, env, o.Cwd, o.Timeout, nil, true)
+	m.baseEnv.persistent = m.persistent
 	restored, legacy := "", false
 	if o.Persistent {
 		restored, legacy = modalSnapshotRestoreCandidate(env, o.TaskID)

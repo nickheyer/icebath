@@ -16,8 +16,11 @@ func StageNames() []string {
 	return []string{"prerequisites", "repository", "config", "products", "runtimes", "setup", "gateway", "complete"}
 }
 
-// Installer token a receipt names for this platform's script
+// Installer token a receipt names, the script that started the run first, else this platform's script
 func receiptInstaller() string {
+	if script := os.Getenv("ICEBATH_INSTALLER"); script == "install_sh" || script == "install_ps1" {
+		return script
+	}
 	if runtime.GOOS == "windows" {
 		return "install_ps1"
 	}

@@ -12,7 +12,7 @@ import (
 func (p *Pool) resetClearedAfter(entry PooledCredential) (float64, bool) {
 	rows, err := p.env.Store.ReadCredentialPool(p.provider)
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Pool entry %s: could not read reset marker: %v", entry.ID, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: could not read reset marker: %v", entry.ID, err))
 		return 0, false
 	}
 	for _, row := range rows {
@@ -73,7 +73,7 @@ func (p *Pool) availableEntries(clearExpired, refresh bool, model string) ([]Poo
 				if reason == "" {
 					reason = "unknown"
 				}
-				p.env.log().Warn(fmt.Sprintf("credential pool: pruning DEAD manual entry %s (reason=%s, age=%.1fh) — re-add via `icebath auth add %s`",
+				p.env.logAs("agent.credential_pool").Warn(fmt.Sprintf("credential pool: pruning DEAD manual entry %s (reason=%s, age=%.1fh) — re-add via `icebath auth add %s`",
 					entryLabel(entry), reason, (now-entry.LastStatusAt)/3600.0, p.provider))
 				prune = append(prune, entry.ID)
 				clearedAny = true
@@ -145,7 +145,7 @@ func (p *Pool) logNoAvailableEntries() {
 		return
 	}
 	p.lastNoEntriesLogAt = now
-	p.env.log().Info("credential pool: no available entries (all exhausted or empty)")
+	p.env.logAs("agent.credential_pool").Info("credential pool: no available entries (all exhausted or empty)")
 }
 
 // Selects the best available entry under the lock and returns the deferred refresh rows
@@ -284,7 +284,7 @@ func (p *Pool) identifyFailedEntry(credentialID, apiKeyHint string) (PooledCrede
 		if found && apiKeyHint != "" && entry.RuntimeAPIKey() != apiKeyHint {
 			hint, hintFound := p.findLocked(func(e PooledCredential) bool { return e.RuntimeAPIKey() == apiKeyHint })
 			if hintFound {
-				p.env.log().Info(fmt.Sprintf("credential pool: credential_id %s runtime key does not match api_key_hint; attributing failure to key-matched entry %s instead (#79156)", entryLabel(entry), entryLabel(hint)))
+				p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("credential pool: credential_id %s runtime key does not match api_key_hint; attributing failure to key-matched entry %s instead (#79156)", entryLabel(entry), entryLabel(hint)))
 			}
 			entry, found = hint, hintFound
 		}
@@ -304,12 +304,12 @@ func (p *Pool) rotateUnmatched() (PooledCredential, bool) {
 		cap = 1
 	}
 	if p.unmatchedRotationStreak > cap {
-		p.env.log().Warn(fmt.Sprintf("credential pool: failed credential identity matched no %s entry for %d consecutive rotations (pool size %d) — surfacing the error instead of rotating again", p.provider, p.unmatchedRotationStreak, len(available)))
+		p.env.logAs("agent.credential_pool").Warn(fmt.Sprintf("credential pool: failed credential identity matched no %s entry for %d consecutive rotations (pool size %d) — surfacing the error instead of rotating again", p.provider, p.unmatchedRotationStreak, len(available)))
 		p.unmatchedRotationStreak = 0
 		p.currentID = ""
 		return PooledCredential{}, false
 	}
-	p.env.log().Info(fmt.Sprintf("credential pool: failed credential identity matched no %s entry; rotating without marking any credential exhausted", p.provider))
+	p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("credential pool: failed credential identity matched no %s entry; rotating without marking any credential exhausted", p.provider))
 	p.currentID = ""
 	next, ok, _ := p.selectUnlocked(false, true, "")
 	if ok {
@@ -354,7 +354,7 @@ func (p *Pool) MarkExhaustedAndRotate(req RotationRequest) (PooledCredential, bo
 	label := entryLabel(entry)
 	if p.isModelScopedFailure(req.StatusCode, req.Model, req.FailureReason) {
 		p.coolDownModel(entry, req.Model, req.ErrorContext, req.FailureReason)
-		p.env.log().Info(fmt.Sprintf("credential pool: %s unavailable for model %s; other models stay available", label, req.Model))
+		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("credential pool: %s unavailable for model %s; other models stay available", label, req.Model))
 		p.currentID = ""
 		next, ok, _ := p.selectUnlocked(false, true, req.Model)
 		return next, ok
@@ -382,19 +382,19 @@ func (p *Pool) MarkExhaustedAndRotate(req RotationRequest) (PooledCredential, bo
 		if reason == "" {
 			reason = "unknown"
 		}
-		p.env.log().Warn(fmt.Sprintf("credential pool: marking %s DEAD (status=%d, reason=%s) — permanently failed, will NOT re-enter rotation until re-auth", label, req.StatusCode, reason))
+		p.env.logAs("agent.credential_pool").Warn(fmt.Sprintf("credential pool: marking %s DEAD (status=%d, reason=%s) — permanently failed, will NOT re-enter rotation until re-auth", label, req.StatusCode, reason))
 	} else {
-		p.env.log().Info(fmt.Sprintf("credential pool: marking %s exhausted (status=%d), rotating", label, req.StatusCode))
+		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("credential pool: marking %s exhausted (status=%d), rotating", label, req.StatusCode))
 	}
 	p.currentID = ""
 	next, ok, _ := p.selectUnlocked(false, true, "")
 	if ok && next.ID == entry.ID {
-		p.env.log().Warn(fmt.Sprintf("credential pool: rotation returned the just-marked entry %s — treating as no-recovery so the failure surfaces", label))
+		p.env.logAs("agent.credential_pool").Warn(fmt.Sprintf("credential pool: rotation returned the just-marked entry %s — treating as no-recovery so the failure surfaces", label))
 		p.currentID = ""
 		return PooledCredential{}, false
 	}
 	if ok {
-		p.env.log().Info(fmt.Sprintf("credential pool: rotated to %s", entryLabel(next)))
+		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("credential pool: rotated to %s", entryLabel(next)))
 	}
 	return next, ok
 }
@@ -669,7 +669,7 @@ func (p *Pool) Rotate(ctx context.Context, route Route, apiErr *APIError) (Route
 	}
 	provider := strings.ToLower(strings.TrimSpace(route.Provider))
 	if p.provider != "" && !CredentialPoolMatchesProviderIn(p.provider, provider, route.BaseURL, p.env.config()) {
-		p.env.log().Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", p.provider, provider))
+		p.env.logAs("agent.credential_pool").Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", p.provider, provider))
 		return route, false
 	}
 	cl := ClassifyError(ClassifyInput{Err: apiErr, Provider: route.Provider, Model: route.Model, BaseURL: route.BaseURL, APIKey: route.APIKey})
@@ -689,10 +689,10 @@ func (p *Pool) Rotate(ctx context.Context, route Route, apiErr *APIError) (Route
 		return route, false
 	}
 	if !CredentialPoolEntryServesEndpoint(next, route.BaseURL) {
-		p.env.log().Info(fmt.Sprintf("Credential %d (%s) — pool entry %s serves another endpoint; not swapping", status, cl.Reason, next.ID))
+		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("Credential %d (%s) — pool entry %s serves another endpoint; not swapping", status, cl.Reason, next.ID))
 		return route, false
 	}
-	p.env.log().Info(fmt.Sprintf("Credential %d (%s) — rotated to pool entry %s", status, cl.Reason, next.ID))
+	p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("Credential %d (%s) — rotated to pool entry %s", status, cl.Reason, next.ID))
 	swapped, ok := SwapCredentialRoute(route, next)
 	return swapped, ok
 }

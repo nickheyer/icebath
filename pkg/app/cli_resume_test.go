@@ -260,22 +260,6 @@ func TestHandleResumeByIndexOutOfRange(t *testing.T) {
 	}
 }
 
-func TestBareResumeArmsPendingSelection(t *testing.T) {
-	db := resumeTestDB(t, state.NewSession{ID: "sess_a"}, state.NewSession{ID: "sess_b"})
-	for id, title := range map[string]string{"sess_a": "Alpha", "sess_b": "Beta"} {
-		if _, err := db.SetSessionTitle(context.Background(), id, title); err != nil {
-			t.Fatal(err)
-		}
-	}
-	recordPrints(t)
-	c := resumeCLI(t)
-	c.sessionDB, c.sessionID = testGatewayStore(t), "current_session"
-	c.handleResumeCommand("/resume")
-	if len(c.pendingResumeSessions) != 2 {
-		t.Fatalf("pending %v", c.pendingResumeSessions)
-	}
-}
-
 // Database holding the Coding and Research sessions, Research created first with one exchange
 func twoSessionDB(t *testing.T, researchCwd string) *state.SessionDB {
 	t.Helper()

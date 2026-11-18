@@ -591,6 +591,11 @@ func (s *shellFileOps) search(pattern, path, target string, fileGlob string, lim
 
 // Routes to the filename search or the content search
 func (s *shellFileOps) dispatchSearch(pattern, path, target, fileGlob string, limit, offset int, outputMode string, context int, order string) *SearchResult {
+	if s.ctx != nil {
+		if msg, _ := s.ctx.Value(searchPatternErrorKey{}).(string); msg != "" {
+			panic(searchPatternRaise{msg: msg})
+		}
+	}
 	if target == "files" {
 		return s.searchFiles(pattern, []string{path}, false, limit, offset, order)
 	}

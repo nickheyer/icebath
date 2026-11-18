@@ -321,7 +321,7 @@ func carrierListOf(v any) []any {
 }
 
 func carrierIsRecord(d any) (map[string]any, bool) {
-	m, ok := d.(map[string]any)
+	m, ok := pyjson.Dict(d)
 	if !ok {
 		return nil, false
 	}

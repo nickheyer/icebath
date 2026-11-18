@@ -12,10 +12,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Botocore connect and read defaults
@@ -32,9 +36,39 @@ type awsServiceClient struct {
 	endpoint    string
 	creds       awsCredentialProvider
 	bearer      string
+	// Whether the bearer token came from AWS_BEARER_TOKEN_BEDROCK, the source botocore flags in its user agent
+	bearerFromEnv bool
+	// Session whose settings the user agent and endpoint read
+	session     *awsSession
 	http        *http.Client
 	readTimeout time.Duration
 	retry       *awsRetryPolicy
+	// Built on its own session rather than the process default session boto3.client shares
+	routed bool
+	// Whether this client resolved its session credentials, the one client botocore flags the provider feature for, decided on first use
+	credentialFeature *bool
+}
+
+// Default boto3 session state, set once a client resolved its credentials so later clients reuse them unflagged
+var botocoreDefaultSession struct {
+	sync.Mutex
+	resolved bool
+}
+
+// Whether the client is the one whose creation resolved its session credentials
+func (c *awsServiceClient) resolvedCredentials() bool {
+	if c.credentialFeature != nil {
+		return *c.credentialFeature
+	}
+	owns := c.routed
+	if !owns {
+		botocoreDefaultSession.Lock()
+		owns = !botocoreDefaultSession.resolved
+		botocoreDefaultSession.resolved = true
+		botocoreDefaultSession.Unlock()
+	}
+	c.credentialFeature = &owns
+	return owns
 }
 
 // Settings one service client is built from
@@ -46,6 +80,8 @@ type awsClientConfig struct {
 	bearer           string
 	readTimeout      time.Duration
 	totalMaxAttempts int
+	// Client of a routed profile session instead of the process default session
+	routed bool
 }
 
 // Endpoint prefix of each botocore client name
@@ -82,30 +118,23 @@ func newAWSServiceClient(cfg awsClientConfig) *awsServiceClient {
 	if read <= 0 {
 		read = awsDefaultReadTimeout
 	}
-	tr := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: awsDefaultConnectTimeout, KeepAlive: 30 * time.Second}).DialContext,
-		TLSClientConfig:       PlatformTLSConfig(),
-		TLSHandshakeTimeout:   awsDefaultConnectTimeout,
-		ResponseHeaderTimeout: read,
-		MaxIdleConnsPerHost:   10,
-		IdleConnTimeout:       90 * time.Second,
-		ForceAttemptHTTP2:     true,
-	}
+	tr := pyStackWireTransport(pyhttpx.RequestsProxy, awsDefaultConnectTimeout, 10)
+	tr.ResponseHeaderTimeout = read
 	signing := cfg.signingName
 	if signing == "" {
 		signing = cfg.service
 	}
 	return &awsServiceClient{
 		service: cfg.service, signingName: signing, region: cfg.region, endpoint: s.serviceEndpoint(cfg.service, cfg.region),
-		creds: &awsChainCredentials{session: s}, bearer: cfg.bearer, http: &http.Client{Transport: tr}, readTimeout: read,
-		retry: newAWSRetryPolicy(s, cfg.totalMaxAttempts),
+		creds: &awsChainCredentials{session: s}, bearer: cfg.bearer, bearerFromEnv: cfg.bearer != "" && cfg.bearer == os.Getenv("AWS_BEARER_TOKEN_BEDROCK"),
+		session: s, http: &http.Client{Transport: pyhttpx.WireTransport{Base: tr}}, readTimeout: read,
+		retry: newAWSRetryPolicy(s, cfg.totalMaxAttempts), routed: cfg.routed,
 	}
 }
 
 // Closes pooled idle connections of the client
 func (c *awsServiceClient) closeIdle() {
-	if tr, ok := c.http.Transport.(*http.Transport); ok {
+	if tr, ok := c.http.Transport.(pyhttpx.WireTransport); ok {
 		tr.CloseIdleConnections()
 	}
 }
@@ -171,27 +200,18 @@ func (b *awsIdleTimeoutBody) Close() error {
 	return err
 }
 
-// Authorizes the request with the bearer token when one is configured, else SigV4
-func (c *awsServiceClient) authorize(ctx context.Context, req *http.Request, body []byte) error {
-	if c.bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+c.bearer)
-		return nil
-	}
-	creds, err := c.creds.Retrieve(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = sigV4Sign(req, body, creds, c.signingName, c.region, awsNow())
-	return err
-}
-
 // Sends one operation with the retry policy, returning the 2xx response or a typed AWS error
 func (c *awsServiceClient) do(ctx context.Context, operation, method, path string, query url.Values, body []byte, headers http.Header) (*http.Response, error) {
 	target := c.endpoint + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
+	retries := botocoreRetries{invocation: uuid.NewString()}
+	if c.retry.mode != "legacy" {
+		retries.max = c.retry.maxAttempts
+	}
 	for attempt := 1; ; attempt++ {
+		retries.attempt = attempt
 		if err := c.retry.beforeSend(ctx); err != nil {
 			return nil, err
 		}
@@ -204,19 +224,19 @@ func (c *awsServiceClient) do(ctx context.Context, operation, method, path strin
 		if len(body) == 0 {
 			req.Body, req.ContentLength = http.NoBody, 0
 		}
-		for k, vs := range headers {
-			for _, v := range vs {
-				req.Header.Add(k, v)
-			}
-		}
-		if req.Header.Get("User-Agent") == "" {
-			req.Header.Set("User-Agent", UserAgent("IcebathAgent"))
-		}
-		if err := c.authorize(actx, req, body); err != nil {
+		lines, err := c.botocoreLines(actx, req, body, headers, retries)
+		if err != nil {
 			cancel()
 			return nil, err
 		}
-		resp, err := c.http.Do(req)
+		req.Host = httpxHost(req.URL)
+		resp, err := c.http.Do(pyhttpx.WithWire(req, lines))
+		if c.retry.mode == "legacy" {
+			retries.max = c.retry.maxAttempts
+		}
+		if err == nil {
+			retries.noteResponse(resp, c.readTimeout)
+		}
 		if err != nil {
 			cancel()
 			if ctx.Err() != nil {

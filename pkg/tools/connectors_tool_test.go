@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"slices"
 	"strings"
@@ -83,7 +84,7 @@ func TestManageConnectionsGatewayFailureIsAModelActionableError(t *testing.T) {
 }
 
 func TestManageConnectionsMCPActionsBelongToMCPTargetsOnly(t *testing.T) {
-	props := ManageConnectionsSchema["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := pyjson.Plain(ManageConnectionsSchema).(map[string]any)["parameters"].(map[string]any)["properties"].(map[string]any)
 	enum := props["action"].(map[string]any)["enum"].([]any)
 	for _, verb := range []string{"install", "enable", "authorize"} {
 		if !slices.Contains(enum, any(verb)) {

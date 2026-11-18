@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"log/slog"
 	"math"
@@ -225,16 +226,12 @@ func sanitizeConsumerCodexRequest(agent any, request map[string]any) map[string]
 		droppedFrom = append(droppedFrom, "top-level")
 	}
 	delete(sanitized, "prompt_cache_retention")
-	if extraBody, ok := sanitized["extra_body"].(map[string]any); ok {
-		if _, has := extraBody["prompt_cache_retention"]; has {
-			rest := make(map[string]any, len(extraBody))
-			for k, v := range extraBody {
-				if k != "prompt_cache_retention" {
-					rest[k] = v
-				}
-			}
+	if extraBody, ok := pyjson.AsObject(sanitized["extra_body"]); ok {
+		if _, has := extraBody.Get("prompt_cache_retention"); has {
+			rest := extraBody.Copy()
+			rest.Delete("prompt_cache_retention")
 			sanitized["extra_body"] = rest
-			if len(rest) == 0 {
+			if rest.Len() == 0 {
 				delete(sanitized, "extra_body")
 			}
 			droppedFrom = append(droppedFrom, "extra_body")

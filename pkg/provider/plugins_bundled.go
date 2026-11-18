@@ -2,11 +2,15 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 )
 
 // Key under which a hook context map carries the caller's context, the Go form of the Python ambient contextvars
 const hookCtxKey = "ctx"
+
+// Params key the agent request builder stores its turn context under for the profile hooks
+const HookCtxKey = hookCtxKey
 
 // Ported bundled model provider plugin directories, filled at init so registry variable initializers never reach them
 var bundledPluginPorts = map[string]func() []Profile{}
@@ -84,6 +88,21 @@ func reasoningConfigMap(r *Reasoning) map[string]any {
 		m["effort"] = r.Effort
 	}
 	return m
+}
+
+// Reasoning config as the ordered dict the agent passes on the wire, enabled before effort
+func reasoningConfigObject(r *Reasoning) *pyjson.Object {
+	out := pyjson.NewObject()
+	if r == nil {
+		return out
+	}
+	if r.Enabled != nil {
+		out.Set("enabled", *r.Enabled)
+	}
+	if r.Effort != "" {
+		out.Set("effort", r.Effort)
+	}
+	return out
 }
 
 // Copy of a dict with its top level keys duplicated

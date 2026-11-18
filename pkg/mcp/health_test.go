@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -42,6 +43,6 @@ func TestHealthRefreshToolsSkips(t *testing.T) {
 
 // Minimal registrable tool definition
 func testToolDef(name, toolset string) tools.Def {
-	return tools.Def{Name: name, Toolset: toolset, Schema: map[string]any{"name": name},
+	return tools.Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name),
 		Handler: func(context.Context, *tools.Call) string { return "{}" }}
 }

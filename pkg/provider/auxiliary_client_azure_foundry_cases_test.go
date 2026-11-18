@@ -147,8 +147,12 @@ func TestAuxAzureFoundryEntraEntraAnthropicMessagesUsesBearerHook(t *testing.T) 
 	if err != nil || !strings.HasPrefix(token, "jwt-for-") {
 		t.Fatalf("token %q err %v", token, err)
 	}
-	if _, isBearer := anthropic.realClient.inner.httpClient(10 * time.Second).Transport.(*EntraBearerTransport); !isBearer {
-		t.Fatalf("transport %T must inject the bearer per request", anthropic.realClient.inner.httpClient(10*time.Second).Transport)
+	hc, err := anthropic.realClient.inner.httpClient(10 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, isBearer := hc.Transport.(*EntraBearerTransport); !isBearer {
+		t.Fatalf("transport %T must inject the bearer per request", hc.Transport)
 	}
 }
 

@@ -29,18 +29,25 @@ var bundledSkipNames = map[string]bool{"memory": true, "context_engine": true, "
 // Per harness manifest directories other agent tools ship inside plugin repos
 var foreignHarnessDirs = map[string]bool{".claude-plugin": true, ".codex-plugin": true, ".cursor-plugin": true, ".devin-plugin": true, ".kimi-plugin": true}
 
-// Old bundled keys and the built in plugin each still selects
-var leftCoreAliases = map[string]string{"observability/langfuse": "langfuse"}
+// Bundled key a plugin that left core shipped under, the catalog plugin it now names and the feature label
+var leftCoreBundledKeys = []struct{ Key, Plugin, Label string }{{"observability/langfuse", "langfuse", "Langfuse"}}
 
-// Built in plugin an old bundled key selects, empty when none
-func legacyPluginAlias(name string) string { return leftCoreAliases[name] }
+// Catalog plugin an old bundled key selects, empty when none
+func legacyPluginAlias(name string) string {
+	for _, row := range leftCoreBundledKeys {
+		if row.Key == name {
+			return row.Plugin
+		}
+	}
+	return ""
+}
 
 // Old bundled keys that select the plugin
 func legacyPluginKeys(plugin string) []string {
 	var out []string
-	for key, p := range leftCoreAliases {
-		if p == plugin {
-			out = append(out, key)
+	for _, row := range leftCoreBundledKeys {
+		if row.Plugin == plugin {
+			out = append(out, row.Key)
 		}
 	}
 	return out
@@ -64,14 +71,14 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 	}
 	entries, err := pluginDirRead(path)
 	if err != nil {
-		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
+		logPlugins.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
 		return out
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
 		child := filepath.Join(path, e.Name())
 		if isSkippedPluginDir(e.Name()) {
-			logDebug(fmt.Sprintf("Skipping %s (dunder or foreign-harness manifest dir)", child))
+			logPlugins.debug(fmt.Sprintf("Skipping %s (dunder or foreign-harness manifest dir)", child))
 			continue
 		}
 		manifestFile, portableFile, hasPortable := "", filepath.Join(child, "plugin.json"), false
@@ -99,7 +106,7 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 			}
 		}
 		if err != nil {
-			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
+			logPlugins.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
 			continue
 		}
 		switch {
@@ -110,12 +117,12 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 		case hasPortable:
 			m, err := portablePluginManifest(child, source, prefix)
 			if err != nil {
-				logWarn(fmt.Sprintf("Failed to parse %s: %s", portableFile, err))
+				logPlugins.warn(fmt.Sprintf("Failed to parse %s: %s", portableFile, err))
 				continue
 			}
 			out = append(out, m)
 		case depth >= 1:
-			logDebug(fmt.Sprintf("Skipping %s (no plugin.yaml, depth cap reached)", child))
+			logPlugins.debug(fmt.Sprintf("Skipping %s (no plugin.yaml, depth cap reached)", child))
 		default:
 			sub := e.Name()
 			if prefix != "" {
@@ -151,11 +158,11 @@ func ResolveManifestWinners(manifests []*Manifest) map[string]*Manifest {
 		if shadowed, ok := winners[key]; ok && shadowed.Source == "bundled" && (m.Source == "user" || m.Source == "project") {
 			own, bundled := filepath.Base(m.Path), filepath.Base(shadowed.Path)
 			if m.Path != "" && shadowed.Path != "" && own != bundled {
-				logWarn(fmt.Sprintf("Ignoring %s plugin at %s: its manifest name '%s' is a bundled plugin's key but the directory is named '%s'; rename the directory to '%s' to override the bundled plugin",
+				logPlugins.warn(fmt.Sprintf("Ignoring %s plugin at %s: its manifest name '%s' is a bundled plugin's key but the directory is named '%s'; rename the directory to '%s' to override the bundled plugin",
 					m.Source, m.Path, key, own, bundled))
 				continue
 			}
-			logInfo(fmt.Sprintf("Plugin '%s' at %s (%s) shadows the bundled copy at %s", key, m.Path, m.Source, shadowed.Path))
+			logPlugins.info(fmt.Sprintf("Plugin '%s' at %s (%s) shadows the bundled copy at %s", key, m.Path, m.Source, shadowed.Path))
 		}
 		winners[key] = m
 	}
@@ -277,8 +284,8 @@ func logGate(g ManifestGate) {
 		return
 	}
 	if g.Level == "warn" {
-		logWarn(g.Log)
+		logPlugins.warn(g.Log)
 	} else {
-		logDebug(g.Log)
+		logPlugins.debug(g.Log)
 	}
 }

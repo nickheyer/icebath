@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/http"
 	"strings"
 	"time"
@@ -21,7 +22,7 @@ func opencodePluginProfiles() []Profile {
 		"opencode", "opencode_zen", "zen")
 	zen.LazyHeaders = attributionLazyHeaders("IcebathAgent")
 	zen.DefaultAuxModel = "gemini-3-flash"
-	zen.BuildAPIKwargsExtrasHook = func(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+	zen.BuildAPIKwargsExtrasHook = func(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 		return oxAlphaReasoningExtras(hookReasoningCfg(reasoning), hookString(kw, "model"))
 	}
 	goProfile := bundledRowProfile(profileRow{name: "opencode-go", keys: []string{"OPENCODE_GO_API_KEY"}, base: "https://opencode.ai/zen/go/v1",
@@ -43,18 +44,18 @@ func opencodePluginProfiles() []Profile {
 }
 
 // Ox Alpha reasoning effort for the free preview model, low high or max only
-func oxAlphaReasoningExtras(c reasoningCfg, model string) (map[string]any, map[string]any) {
+func oxAlphaReasoningExtras(c reasoningCfg, model string) (*pyjson.Object, map[string]any) {
 	if flatModelName(model) != "x-preview-f-free" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	effort := requestedEffort(c)
 	if effort == "none" {
 		effort = ""
 	}
 	if clamped := clampEffort(effort, oxAlphaEfforts, oxAlphaOverrides); effort != "" && containsStr(oxAlphaEfforts, clamped) {
-		return map[string]any{}, map[string]any{"reasoning_effort": clamped}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": clamped}
 	}
-	return map[string]any{}, map[string]any{}
+	return pyjson.ObjectOf(), map[string]any{}
 }
 
 func opencodeIsDeepseekThinkingModel(model string) bool {
@@ -63,29 +64,29 @@ func opencodeIsDeepseekThinkingModel(model string) bool {
 }
 
 // GLM 5.2 effort knob, Kimi K2 thinking toggle, and DeepSeek thinking toggle per model family
-func opencodeGoBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func opencodeGoBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	model := hookString(kw, "model")
 	c := hookReasoningCfg(reasoning)
 	switch {
 	case containsAnySub(flatModelName(model), "glm-5.2", "glm-5-2", "glm-5p2"):
 		effort := requestedEffort(c)
 		if effort == "" || effort == "none" {
-			return map[string]any{}, map[string]any{}
+			return pyjson.ObjectOf(), map[string]any{}
 		}
 		clamped := clampEffort(effort, glm52Efforts, glm52Overrides)
 		if !containsStr(glm52Efforts, clamped) {
 			clamped = "high"
 		}
-		return map[string]any{}, map[string]any{"reasoning_effort": clamped}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": clamped}
 	case strings.HasPrefix(flatModelName(model), "kimi-k2"):
 		if reasoning == nil {
-			return map[string]any{}, map[string]any{}
+			return pyjson.ObjectOf(), map[string]any{}
 		}
 		return thinkingToggleExtras(c, kimiK2Efforts, nil, false)
 	case opencodeIsDeepseekThinkingModel(model):
 		return thinkingToggleExtras(c, deepseekV4Efforts, deepseekV4Overrides, false)
 	}
-	return map[string]any{}, map[string]any{}
+	return pyjson.ObjectOf(), map[string]any{}
 }
 
 // Go subscription windows from the literal usage endpoint, nil when the runtime has no key

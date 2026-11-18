@@ -28,7 +28,7 @@ type anthEventSource interface {
 
 // SSE backed event source skipping pings and keepalive frames
 type anthSSEEvents struct {
-	r       *sseReader
+	r       sseFrameSource
 	headers http.Header
 }
 

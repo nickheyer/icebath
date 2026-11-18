@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // DefaultCodexModels is the curated offline Codex catalog, only slugs the ChatGPT OAuth backend accepts
@@ -198,11 +200,8 @@ func fetchCodexModelsFromAPI(ctx context.Context, accessToken, baseURL string) [
 	if !codexCatalogProbeAllowed(accessToken, catalogBase) {
 		return []string{}
 	}
-	headers := map[string]string{"Authorization": "Bearer " + accessToken}
-	for k, v := range codexAccountHeaders(accessToken) {
-		headers[k] = v
-	}
-	client := newProbeClient(ctx, catalogBase, headers, 10*time.Second, 10*time.Second)
+	headers := pyhttpx.MergeHeaderMaps(pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + accessToken}), codexAccountHeaders(accessToken))
+	client := newDirectProbeClient(ctx, catalogBase, headers, 10*time.Second, 10*time.Second)
 	entries, _, err := FetchCodexCatalogEntries(func(rawURL string) (*probeResponse, error) {
 		return client.Get(rawURL, nil)
 	}, catalogBase)

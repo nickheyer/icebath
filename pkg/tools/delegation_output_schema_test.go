@@ -71,7 +71,7 @@ func TestPromptPlumbing(t *testing.T) {
 
 // test_delegate_output_schema.py TestToolSchemaSurface test_output_schema_advertised_per_task_only
 func TestOutputSchemaAdvertisedPerTaskOnly(t *testing.T) {
-	props := DelegateTaskSchema["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := pyjson.Plain(DelegateTaskSchema).(map[string]any)["parameters"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := props["output_schema"]; ok {
 		t.Fatal("legacy top level output_schema advertised")
 	}

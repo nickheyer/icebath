@@ -340,8 +340,7 @@ func codexSSLInteropHint(err error) string {
 	return " This looks like a TLS handshake failure rather than a Codex outage: some networks reject" +
 		" the larger TLS 1.3 ClientHello that Go sends by default (post-quantum hybrid" +
 		" groups). Workaround: run with GODEBUG=tlsmlkem=0 to restrict key exchange to classic curves" +
-		" (x25519:secp256r1:secp384r1:x448), or test with TLS 1.2 — see the Codex note in" +
-		" https://hermes-agent.nousresearch.com/docs/integrations/providers"
+		" (x25519:secp256r1:secp384r1:x448), or test with TLS 1.2."
 }
 
 // True when the error is transport level and safe to retry, decode errors and bugs surfacing at once

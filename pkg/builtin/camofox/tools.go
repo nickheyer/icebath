@@ -92,7 +92,7 @@ func (s *scope) navigateTab(taskID, browserURL string) (*session, any, error) {
 		if !ok || (he.status != 404 && he.status != 410) {
 			return nil, nil, err
 		}
-		slog.Warn(fmt.Sprintf("Camofox tab %s returned %d — tab is gone. Creating a fresh tab.", pyrepr.Str(ss.tab()), he.status))
+		toolsLog().Warn(fmt.Sprintf("Camofox tab %s returned %d — tab is gone. Creating a fresh tab.", pyrepr.Str(ss.tab()), he.status))
 		ss.setTab(nil)
 	}
 	ss, err := s.ensureTab(taskID, browserURL)
@@ -121,7 +121,7 @@ func (s *scope) runOnTab(ss *session, body tabBody, readOnly bool) (string, erro
 	if pyjson.Equal(ss.tab(), tracked) {
 		return "", err
 	}
-	slog.Info(fmt.Sprintf("Camofox tab %s was gone; continuing in live tab %s", pyrepr.Str(tracked), pyrepr.Str(ss.tab())))
+	toolsLog().Info(fmt.Sprintf("Camofox tab %s was gone; continuing in live tab %s", pyrepr.Str(tracked), pyrepr.Str(ss.tab())))
 	if !readOnly {
 		url := s.tabURL(ss)
 		place := "another page"
@@ -229,7 +229,7 @@ func (s *scope) navigateTitle(ss *session, data any) (string, error) {
 		}
 		return nil
 	}); err != nil {
-		slog.Debug(fmt.Sprintf("Camofox title lookup failed for tab %s: %s", pyrepr.Str(ss.tab()), err.Error()))
+		toolsLog().Debug(fmt.Sprintf("Camofox title lookup failed for tab %s: %s", pyrepr.Str(ss.tab()), err.Error()))
 	}
 	return title, nil
 }
@@ -573,7 +573,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 				Temperature: &temperature, Timeout: &timeout})
 			return err
 		}); err != nil {
-			slog.Warn(fmt.Sprintf("browser_vision analysis failed: %v", err))
+			toolsLog().Warn(fmt.Sprintf("browser_vision analysis failed: %v", err))
 			return dumps(pyjson.ObjectOf("success", false, "error", "Error during vision analysis: "+err.Error(),
 				"screenshot_path", screenshotPath,
 				"note", "Screenshot was captured but vision analysis failed. You can still share it via MEDIA:<path>.")), nil
@@ -738,7 +738,7 @@ func (s *scope) browserImportCookies(cookiesPath string, domainSuffix *string, t
 	if isDict(data) {
 		count, _ = get(data, "count", len(cookies))
 	}
-	slog.Info(fmt.Sprintf("camofox cookies imported task=%s user=%s count=%s", logTask(taskID), ss.userID, pyrepr.Str(count)))
+	toolsLog().Info(fmt.Sprintf("camofox cookies imported task=%s user=%s count=%s", logTask(taskID), ss.userID, pyrepr.Str(count)))
 	return dumps(pyjson.ObjectOf("success", true, "imported", count, "user_id", ss.userID))
 }
 
@@ -762,7 +762,7 @@ func (s *scope) cleanupTask(taskID string) {
 		return
 	}
 	if warning := s.closeSession(taskID); warning != "" {
-		slog.Debug(fmt.Sprintf("Camofox close for task %s: %s", logTask(taskID), warning))
+		toolsLog().Debug(fmt.Sprintf("Camofox close for task %s: %s", logTask(taskID), warning))
 	}
 }
 
@@ -824,4 +824,9 @@ func visionHandler(llm func() *plugins.PluginLlm) tools.Handler {
 	return handler(func(s *scope, a map[string]any, task string) string {
 		return s.browserVision(argStr(a, "question", ""), task, llm())
 	})
+}
+
+// Logger of the reference camofox_tools module
+func toolsLog() *slog.Logger {
+	return slog.Default().With("logger", "hermes_plugins.camofox.camofox_tools")
 }

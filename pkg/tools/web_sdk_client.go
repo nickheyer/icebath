@@ -251,6 +251,8 @@ type pyTypeError struct{ msg string }
 
 func (e *pyTypeError) Error() string { return e.msg }
 
+func (e *pyTypeError) PyTypeName() string { return "TypeError" }
+
 // The value sliced to its first n items like v[:n], the TypeError of an unsliceable value
 func pySubscriptTo(v any, n int) (any, error) {
 	switch x := v.(type) {

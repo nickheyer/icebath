@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"net/url"
 	"sync"
@@ -82,7 +81,7 @@ func (m *streamWaitMonitor) tick(now time.Time, lastChunk *time.Time) (bool, err
 			moved = true
 			*lastChunk = minTime(lastChunk.Add(slept), now)
 			m.lastHeartbeat = minTime(m.lastHeartbeat.Add(slept), now)
-			slog.Info(fmt.Sprintf("Computer slept for %.0fs during a model request; the stall timer skips that time.", slept.Seconds()))
+			streamMonitorLog.Info(fmt.Sprintf("Computer slept for %.0fs during a model request; the stall timer skips that time.", slept.Seconds()))
 			if err := m.touch(fmt.Sprintf("resumed after the computer slept for %ds", int(slept.Seconds()))); err != nil {
 				return moved, err
 			}
@@ -251,10 +250,10 @@ func (c *streamCall) discard(attempt int, chunk any) {
 	chunks, bytes := c.discardedChunks, c.discardedBytes
 	c.mu.Unlock()
 	if chunks == 1 {
-		catalogLog.Warn(fmt.Sprintf("Discarding chunk from superseded stream attempt %d (discarded_chunks=%d discarded_bytes=%d)", attempt, chunks, bytes))
+		streamingCallLog.Warn(fmt.Sprintf("Discarding chunk from superseded stream attempt %d (discarded_chunks=%d discarded_bytes=%d)", attempt, chunks, bytes))
 		return
 	}
-	catalogLog.Debug(fmt.Sprintf("Discarded stale stream chunk from attempt %d (discarded_chunks=%d discarded_bytes=%d)", attempt, chunks, bytes))
+	streamingCallLog.Debug(fmt.Sprintf("Discarded stale stream chunk from attempt %d (discarded_chunks=%d discarded_bytes=%d)", attempt, chunks, bytes))
 }
 
 // StreamAbandonedError ends a streaming call whose attempt reader the watchdog kills could not unwind
@@ -305,14 +304,14 @@ func newStreamWatchdog(requestCtx context.Context, cancel context.CancelFunc, ki
 		staleText = "inf"
 	}
 	capText, _ := pyrepr.Format(t.lifetime.Seconds(), ".0f")
-	catalogLog.Debug(fmt.Sprintf("stream watchdog armed: stale=%ss cap=%ss model=%s", staleText, capText, w.model))
+	streamMonitorLog.Debug(fmt.Sprintf("stream watchdog armed: stale=%ss cap=%ss model=%s", staleText, capText, w.model))
 	return w
 }
 
 // Logs a monitor loop that dies by panic before letting the panic continue
 func (w *streamWatchdog) logAbnormalExit() {
 	if r := recover(); r != nil {
-		catalogLog.Error("stream watchdog monitor loop aborted abnormally", "panic", r)
+		streamMonitorLog.Error("stream watchdog monitor loop aborted abnormally", "panic", r)
 		panic(r)
 	}
 }
@@ -367,7 +366,7 @@ func (w *streamWatchdog) claimsLiveness() bool {
 // Kills a silent attempt and re-arms, true once the same attempt was killed too often and the call is abandoned
 func (w *streamWatchdog) onStale(now time.Time) bool {
 	elapsed := now.Sub(w.lastChunk).Seconds()
-	catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, w.stale.Seconds(), w.model, commaInt(w.estTokens)))
+	streamingCallLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, w.stale.Seconds(), w.model, commaInt(w.estTokens)))
 	_ = w.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), w.model, commaInt(w.estTokens))})
 	w.kill.fire("stale", elapsed)
 	w.cancel()
@@ -404,7 +403,7 @@ func (w *streamWatchdog) onLifetime(now time.Time) bool {
 	}
 	elapsed := now.Sub(w.lifeStart).Seconds()
 	capSeconds := w.lifetime.Seconds()
-	catalogLog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, capSeconds, w.model))
+	streamMonitorLog.Warn(fmt.Sprintf("Stream still running after %.0fs (stream_max_lifetime %.0fs) — killing connection. model=%s", elapsed, capSeconds, w.model))
 	_ = w.emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ Response still streaming after %ds (stream_max_lifetime %ds, model: %s). Aborting...", int(elapsed), int(capSeconds), w.model)})
 	w.kill.capKill(elapsed)
 	w.cancel()
@@ -434,7 +433,7 @@ func (w *streamWatchdog) noteAttemptKill(elapsed float64, kind string) bool {
 		return true
 	}
 	if w.withheldAt.IsZero() {
-		catalogLog.Error(fmt.Sprintf("Inline streaming call did not unwind after %d %s kills of attempt %d; no longer reporting it as active, so the inactivity watchdog can end it. model=%s", w.kills, kind, w.attempt, w.model))
+		streamMonitorLog.Error(fmt.Sprintf("Inline streaming call did not unwind after %d %s kills of attempt %d; no longer reporting it as active, so the inactivity watchdog can end it. model=%s", w.kills, kind, w.attempt, w.model))
 	}
 	w.withheldAt = w.lastChunk
 	return false
@@ -442,7 +441,7 @@ func (w *streamWatchdog) noteAttemptKill(elapsed float64, kind string) bool {
 
 // Leaves the wedged reader behind and ends the call with a retryable timeout naming the kill kind
 func (w *streamWatchdog) abandonWedgedWorker(elapsed float64, kind string) {
-	catalogLog.Error(fmt.Sprintf("Streaming worker did not unwind after %d %s kills of attempt %d (%.0fs); abandoning the request. model=%s", w.kills, kind, w.attempt, elapsed, w.model))
+	streamMonitorLog.Error(fmt.Sprintf("Streaming worker did not unwind after %d %s kills of attempt %d (%.0fs); abandoning the request. model=%s", w.kills, kind, w.attempt, elapsed, w.model))
 	var cause error
 	if kind == "stale" {
 		cause = fmt.Errorf("Provider stream stalled: no chunks and the request worker did not unwind after %d stale-stream kills; request abandoned.", w.kills)
@@ -460,7 +459,7 @@ func (w *streamWatchdog) interrupt(now time.Time, responseStarted bool) error {
 	if !w.counted && elapsed <= w.stale.Seconds() && recordInterruptedProviderWait(w.requestCtx, elapsed, responseStarted) {
 		w.counted = true
 	}
-	catalogLog.Debug("Force-closing streaming httpx client due to interrupt (not a network error).")
+	streamingCallLog.Debug("Force-closing streaming httpx client due to interrupt (not a network error).")
 	w.cancel()
 	if !w.call.inline {
 		joinWorkerForRelayTeardown(w.requestCtx, w.readerDone, "Streaming")
@@ -491,7 +490,7 @@ func armHeaderStaleKill(requestCtx context.Context, cancel context.CancelFunc, k
 		}
 		elapsed := time.Since(started).Seconds()
 		model := orUnknown2(model)
-		catalogLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, stale.Seconds(), model, commaInt(estTokens)))
+		streamingCallLog.Warn(fmt.Sprintf("Stream stale for %.0fs (threshold %.0fs) — no chunks received. model=%s context=~%s tokens. Killing connection.", elapsed, stale.Seconds(), model, commaInt(estTokens)))
 		_ = emit(StreamEvent{Kind: EventStatus, Text: fmt.Sprintf("⚠️ No response from provider for %ds (model: %s, context: ~%s tokens). Reconnecting...", int(elapsed), model, commaInt(estTokens))})
 		kill.fire("stale", elapsed)
 		bumpStaleStreak(requestCtx)

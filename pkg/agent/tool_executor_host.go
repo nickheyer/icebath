@@ -179,7 +179,7 @@ func (a *AIAgent) ContextLength() int {
 	if a.contextCompressor == nil {
 		return 0
 	}
-	return a.contextCompressor.Base().ContextLength
+	return engineContextLength(a.contextCompressor)
 }
 
 // Builtin print of the executor progress lines

@@ -25,23 +25,26 @@ import (
 
 var setupQuickLog = logging.GetLogger("hermes_cli.setup")
 
-// Seams over the Nous flow, the bundled skill calls and the macOS probe, the names the setup_quick tests patch
+// Seams over the bundled skill calls, the walkthrough and the macOS probe, the names the setup_quick tests patch
 var (
 	setupSetBundledSkillsOptOut = func(ctx context.Context, optOut bool) map[string]any {
 		return skills.NewScope(home.Dir(ctx), nil).SetBundledSkillsOptOut(optOut)
 	}
-	setupSyncSkills     = skills.SyncSkills
-	setupWalkthroughFn  = blankSlateWalkthrough
-	setupSysPlatform    = runtime.GOOS
-	setupUserHomeDir    = pypath.PathHome
-	setupReadDirNames   = func(path string) error { _, err := os.ReadDir(path); return err }
-	setupRunToolsPicker = func(ctx context.Context, cfg config.Tree) error {
-		if picker, hosted := ctx.Value(hostedToolsPickerKey{}).(func(ctx context.Context) error); hosted {
-			return picker(ctx)
-		}
-		return provider.SetupTools(ctx, cfg, false)
-	}
+	setupSyncSkills    = skills.SyncSkills
+	setupWalkthroughFn = blankSlateWalkthrough
+	setupSysPlatform   = runtime.GOOS
+	setupUserHomeDir   = pypath.PathHome
+	setupReadDirNames  = func(path string) error { _, err := os.ReadDir(path); return err }
 )
+
+// Opens the tool selector the hosted Blank Slate run put on the context
+func runHostedToolsPicker(ctx context.Context) error {
+	picker, hosted := ctx.Value(hostedToolsPickerKey{}).(func(ctx context.Context) error)
+	if !hosted {
+		return errors.New("the Blank Slate tool selector has no hosted setup flow to ask through")
+	}
+	return picker(ctx)
+}
 
 // Messaging env name fragments, their platform labels and emoji, the first match winning
 var setupMessagingPlatforms = [][3]string{{"TELEGRAM", "Telegram", "📱"}, {"DISCORD", "Discord", "💬"}, {"SLACK", "Slack", "💼"}}
@@ -293,7 +296,7 @@ func blankSlateWalkthrough(ctx context.Context, cfg config.Tree, icebathHome str
 	provider.SetupInfo("Pick exactly which additional toolsets to turn on.",
 		"(file and terminal are already on; leave the rest off if you want", " the most minimal agent.)")
 	if provider.PromptYesNo("Open the tool selector to enable more tools?", false, "") {
-		err := setupRunToolsPicker(ctx, cfg)
+		err := runHostedToolsPicker(ctx)
 		if err == nil {
 			err = provider.ReloadSetupConfig(ctx, cfg, false)
 		}

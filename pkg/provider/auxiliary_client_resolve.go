@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -626,14 +627,7 @@ func auxNamedCustomOpenAIWireClient(ctx context.Context, customBase string, cust
 	}
 	headers := auxApplyUserDefaultHeaders(ctx, nil)
 	if len(extraHeaders) > 0 {
-		merged := map[string]string{}
-		for k, v := range headers {
-			merged[k] = v
-		}
-		for k, v := range extraHeaders {
-			merged[k] = v
-		}
-		headers = merged
+		headers = pyhttpx.MergeHeaderMaps(headers, extraHeaders)
 	}
 	if len(headers) > 0 {
 		opts.DefaultHeaders = headers
@@ -695,8 +689,8 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 		if err != nil {
 			return auxResolveResult{}, true, err
 		}
-		if len(entryHeaders) > 0 {
-			realClient = realClient.withDefaultHeaders(entryHeaders)
+		if lines := orderedExtraHeaders(entry["extra_headers"]); len(lines) > 0 {
+			realClient = realClient.withDefaultHeaders(lines)
 		}
 		keyStr, _ := customKey.(string)
 		source, _ := anthSDKTokenSource(customKey)

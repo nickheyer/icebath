@@ -57,7 +57,5 @@ func paintResumeHistoryPanel(c *CLI, entries []resumeEntry, skipped int, colors 
 	}
 	panel := pyrich.Panel{Body: body.String(), Title: "[dim " + sessionLabel + "]" + pyrich.Escape(c.t("cli.resume.panel_title", nil)) + "[/]",
 		BorderStyle: "dim " + sessionBorder, Padding: &[2]int{0, 1}, Style: historyText}
-	recordOutputHistoryEntry(func() []string { return c.renderResumeHistoryPanelLines(panel) })
-	defer suspendOutputHistory()()
 	c.consolePrintPanel(panel)
 }

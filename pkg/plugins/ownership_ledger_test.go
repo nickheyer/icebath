@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -156,8 +157,8 @@ func installLedgerServices(t *testing.T) (*ledgerPlatforms, *ledgerProviders) {
 	return platforms, providers
 }
 
-func ledgerSchema(name string) map[string]any {
-	return map[string]any{"name": name, "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+func ledgerSchema(name string) *pyjson.Object {
+	return pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
 }
 
 func ledgerContext(name string, m *Manager) *Context {

@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -151,13 +152,11 @@ func (s *Scope) homeRelative(p string) string {
 }
 
 // Encodes a tool payload as the JSON string handed to the model
-func jsonResult(payload map[string]any) string { return tools.JSON(payload) }
+func jsonResult(payload *pyjson.Object) string { return tools.JSON(payload) }
 
 // Failure payload with an error message and extra fields
-func failResult(message string, extra map[string]any) string {
-	payload := map[string]any{"success": false, "error": message}
-	for k, v := range extra {
-		payload[k] = v
-	}
+func failResult(message string, extra *pyjson.Object) string {
+	payload := pyjson.ObjectOf("success", false, "error", message)
+	payload.Update(extra)
 	return jsonResult(payload)
 }

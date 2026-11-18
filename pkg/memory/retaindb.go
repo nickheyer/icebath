@@ -22,6 +22,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -88,7 +89,7 @@ func retaindbQuiet[T any](env *tools.Env, label string, fn func() (T, error)) (T
 		return err
 	})
 	if err != nil {
-		envLog(env).Debug(fmt.Sprintf("RetainDB %s failed: %s", label, err))
+		moduleLog(env, "plugins.memory.retaindb").Debug(fmt.Sprintf("RetainDB %s failed: %s", label, err))
 		var zero T
 		return zero, false
 	}
@@ -223,13 +224,8 @@ func quotePlus(s string) string {
 
 // Decoded JSON body, the text when the body is not JSON
 func decodeBody(data []byte) (any, bool) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return decodeReplace(data), false
-	}
-	if _, err := dec.Token(); err != io.EOF {
+	v, err := pyjson.LoadsOrdered(data)
+	if err != nil {
 		return decodeReplace(data), false
 	}
 	return v, true
@@ -253,7 +249,7 @@ func (c *retaindbClient) request(ctx context.Context, method, path string, param
 	payload, _ := decodeBody(data)
 	if resp.StatusCode >= 400 {
 		msg := ""
-		if m, ok := payload.(map[string]any); ok {
+		if m, ok := pyjson.Dict(payload); ok {
 			if pyTruthy(m["message"]) {
 				msg = pyStr(m["message"])
 			} else if pyTruthy(m["error"]) {
@@ -560,7 +556,7 @@ func (q *retaindbWriteQueue) enqueue(userID, sessionID string, messages []any) e
 // Ingests one row, deleting it on success and recording the error for the next startup replay on failure
 func (q *retaindbWriteQueue) flushRow(ctx context.Context, row retaindbRow) error {
 	if _, err := q.client.ingestSession(ctx, row.userID, row.sessionID, row.messages); err != nil {
-		envLog(q.env).Warn(fmt.Sprintf("RetainDB ingest failed (will retry): %s", err))
+		moduleLog(q.env, "plugins.memory.retaindb").Warn(fmt.Sprintf("RetainDB ingest failed (will retry): %s", err))
 		if _, uerr := q.db.Exec("UPDATE pending SET last_error = ? WHERE id = ?", err.Error(), row.id); uerr != nil {
 			return uerr
 		}
@@ -578,7 +574,7 @@ func (q *retaindbWriteQueue) loop(ctx context.Context) {
 			return
 		}
 		if err := callProvider(func() error { return q.flushRow(ctx, row) }); err != nil {
-			envLog(q.env).Error(fmt.Sprintf("RetainDB writer error: %s", err))
+			moduleLog(q.env, "plugins.memory.retaindb").Error(fmt.Sprintf("RetainDB writer error: %s", err))
 		}
 	}
 }
@@ -622,7 +618,7 @@ func mappingOrEmpty(v any) (map[string]any, error) {
 	if !pyTruthy(v) {
 		return map[string]any{}, nil
 	}
-	m, ok := v.(map[string]any)
+	m, ok := pyjson.Dict(v)
 	if !ok {
 		return nil, retaindbNoGet(v)
 	}
@@ -643,7 +639,7 @@ func buildRetainDBOverlay(profile, queryResult any, localEntries []string) (stri
 			switch x := items.(type) {
 			case []any:
 				list = x
-			case string, map[string]any:
+			case string, map[string]any, *pyjson.Object:
 				return nil, retaindbNoGet("")
 			default:
 				return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(items))
@@ -755,6 +751,8 @@ func pyIterStrings(v any) []string {
 			keys = append(keys, k)
 		}
 		return keys
+	case *pyjson.Object:
+		return append([]string(nil), x.Keys...)
 	}
 	return nil
 }
@@ -947,7 +945,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 	}
 	for _, t := range previous {
 		if t.Alive() {
-			envLog(p.env).Debug("RetainDB prefetch still running; skipping new batch")
+			moduleLog(p.env, "plugins.memory.retaindb").Debug("RetainDB prefetch still running; skipping new batch")
 			return nil
 		}
 	}
@@ -968,7 +966,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 			if err != nil {
 				return nil, false, err
 			}
-			m, ok := answer.(map[string]any)
+			m, ok := pyjson.Dict(answer)
 			if !ok {
 				return nil, false, retaindbNoGet(answer)
 			}
@@ -983,7 +981,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 			if err != nil {
 				return nil, false, err
 			}
-			model, ok := raw.(map[string]any)
+			model, ok := pyjson.Dict(raw)
 			if !ok {
 				return nil, false, retaindbNoGet(raw)
 			}
@@ -992,7 +990,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 				return nil, false, err
 			}
 			return model, count > 0, nil
-		}, func(v any) { p.agentModel = v.(map[string]any) }},
+		}, func(v any) { p.agentModel, _ = pyjson.Dict(v) }},
 	}
 	threads := make([]*ContextThread, 0, len(jobs))
 	for _, job := range jobs {
@@ -1275,13 +1273,13 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 		return nil, err
 	}
 	if pyTruthy(args["ingest"]) {
-		rm, ok := result.(map[string]any)
+		rm, ok := pyjson.Dict(result)
 		if !ok {
 			return nil, retaindbNoGet(result)
 		}
 		file := map[string]any{}
 		if raw, present := rm["file"]; present {
-			fm, ok := raw.(map[string]any)
+			fm, ok := pyjson.Dict(raw)
 			if !ok {
 				return nil, retaindbNoGet(raw)
 			}
@@ -1292,7 +1290,11 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 			if err != nil {
 				return nil, err
 			}
-			rm["ingest"] = ingested
+			if o, isObject := result.(*pyjson.Object); isObject {
+				o.Set("ingest", ingested)
+			} else {
+				rm["ingest"] = ingested
+			}
 		}
 	}
 	return result, nil
@@ -1304,7 +1306,7 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 	if err != nil {
 		return nil, err
 	}
-	im, ok := info.(map[string]any)
+	im, ok := pyjson.Dict(info)
 	if !ok {
 		return nil, retaindbNoGet(info)
 	}
@@ -1316,7 +1318,7 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]any{"file_id": fileID, "rdb_uri": fileInfo["rdb_uri"], "name": fileInfo["name"]}
+	out := pyjson.ObjectOf("file_id", fileID, "rdb_uri", fileInfo["rdb_uri"], "name", fileInfo["name"])
 	mimeType := ""
 	if pyTruthy(fileInfo["mime_type"]) {
 		mimeType = pyLower(pyStr(fileInfo["mime_type"]))
@@ -1338,14 +1340,14 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 			}
 		}
 		if !text {
-			out["content"] = nil
-			out["note"] = "Binary file — use retaindb_ingest_file to extract text into memory."
+			out.Set("content", nil)
+			out.Set("note", "Binary file — use retaindb_ingest_file to extract text into memory.")
 			return out, nil
 		}
 	}
 	text := decodeReplace(raw)
-	out["content"] = runePrefix(text, 32000)
-	out["truncated"] = runeLen(text) > 32000
+	out.Set("content", runePrefix(text, 32000))
+	out.Set("truncated", runeLen(text) > 32000)
 	return out, nil
 }
 

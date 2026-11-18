@@ -26,10 +26,9 @@ import (
 // Terminal config keys the built in singularity backend reads mapped to the env copy core also wrote
 var LeftCoreTerminalKeys = map[string]string{"terminal.singularity_image": "TERMINAL_SINGULARITY_IMAGE"}
 
-// LeftCoreFeature is one feature that moved out of core into a catalog plugin, or came back built in
+// LeftCoreFeature is one feature that moved out of core into a catalog plugin
 type LeftCoreFeature struct {
 	Plugin             string
-	BuiltIn            bool
 	Label              string
 	InUse              func(h string, processEnv bool) bool
 	Unchanged          string
@@ -42,6 +41,10 @@ type LeftCoreFeature struct {
 	EnableEnv          []string
 	ChannelEnvPrefixes []string
 	CLI                string
+	Command            string
+	OldCommand         string
+	OldCLI             []string
+	PluginKey          string
 	LeftAt             int
 	Providers          []string
 	ProfileEnv         []string
@@ -60,15 +63,43 @@ func noLeftCoreNotice(string, bool) string { return "" }
 func buildLeftCoreTable() []LeftCoreFeature {
 	rows := []LeftCoreFeature{
 		{
-			Plugin: "homeassistant", Label: "Home Assistant", InUse: homeassistantInUse, BuiltIn: true,
+			Plugin: "homeassistant", Label: "Home Assistant", InUse: homeassistantInUse,
+			Unchanged: "HASS_TOKEN/HASS_URL, platforms.homeassistant and the ha_* tool names are unchanged",
 			SecretEnv: []string{"HASS_TOKEN"}, PrivateEnv: []string{"HASS_URL"},
 			Toolsets: []string{"homeassistant"}, OffPlatforms: []string{"acp", "webhook"}, Platform: "homeassistant",
 			EnableEnv: []string{"HASS_TOKEN"}, ChannelEnvPrefixes: []string{"HASS_"},
 		},
 		{
-			Plugin: "camofox", Label: "Camofox browser backend", InUse: camofoxInUse, BuiltIn: true,
+			Plugin: "spotify", Label: "Spotify", InUse: spotifyInUse,
+			Unchanged: "your Spotify login, the spotify toolset and the spotify_* tools are unchanged; " +
+				"`icebath auth spotify` is now `icebath spotify login`",
+			CLI: "spotify",
+		},
+		{
+			Plugin: "langfuse", Label: "Langfuse", InUse: langfuseInUse,
+			Unchanged: "your Langfuse keys and ICEBATH_LANGFUSE_* settings are unchanged; the plugin is now " +
+				"`langfuse` (was observability/langfuse)",
+			SecretEnv:  []string{"ICEBATH_LANGFUSE_SECRET_KEY"},
+			PrivateEnv: []string{"ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_LANGFUSE_BASE_URL"},
+			PluginKey:  "observability/langfuse",
+		},
+		{
+			Plugin: "mcp-serve", Label: "Icebath as an MCP server", InUse: func(string, bool) bool { return false },
+			Unchanged: "the conversation tools keep their names; MCP clients change their args to [\"mcp-serve\"]",
+			Command:   "mcp-serve", OldCommand: "icebath mcp serve",
+		},
+		{
+			Plugin: "camofox", Label: "Camofox browser backend", InUse: camofoxInUse,
+			Unchanged: "CAMOFOX_URL, the browser.camofox settings and the browser_navigate/browser_click/... tool " +
+				"names are unchanged; they are the `camofox` toolset now, and core's `browser` toolset " +
+				"(browser_exec) is turned off in this profile",
 			SecretEnv: []string{"CAMOFOX_API_KEY"}, PrivateEnv: []string{"CAMOFOX_URL"},
 			Toolsets: []string{"camofox"}, OffPlatforms: []string{"webhook"}, ReplacesToolsets: []string{"browser"}, LeftAt: 52,
+		},
+		{
+			Plugin: "agent-importers", Label: "`icebath import-agent`", InUse: agentImportsInUse,
+			Unchanged: "`icebath import-agent`, its flags and your import-sync.json sync sources are unchanged",
+			Command:   "import-agent", OldCLI: []string{"claw"},
 		},
 	}
 	for i := range rows {
@@ -249,7 +280,7 @@ func leftCoreAuthStore(h string) map[string]any {
 	return anyMap(store)
 }
 
-// Whether the plugin name sits in plugins.enabled and plugins.disabled with the managed overlay applied
+// Whether the plugin key or name sits in plugins.enabled and plugins.disabled with the managed overlay applied
 func leftCorePluginLists(h, plugin string) (bool, bool) {
 	feature := leftCoreFeatureByPlugin(plugin)
 	cfg, err := leftCoreYAMLLayers(h)
@@ -264,13 +295,34 @@ func leftCorePluginLists(h, plugin string) (bool, bool) {
 			return false
 		}
 		for _, n := range names {
-			if pyStr(n) == feature.Plugin {
+			if name := pyStr(n); name == feature.Plugin || (feature.PluginKey != "" && name == feature.PluginKey) {
 				return true
 			}
 		}
 		return false
 	}
 	return listed("enabled"), listed("disabled")
+}
+
+// Spotify ran in core for a login stored in auth.json or the spotify toolset selected for a platform
+func spotifyInUse(h string, processEnv bool) bool {
+	state := anyMap(anyMap(leftCoreAuthStore(h)["providers"])["spotify"])
+	if isTruthyValue(state["access_token"]) || isTruthyValue(state["refresh_token"]) {
+		return true
+	}
+	return toolsetListed(leftCoreReadConfig(h), map[string]bool{"spotify": true}, "")
+}
+
+// Langfuse traced in core when the bundled observability/langfuse was enabled and not disabled
+func langfuseInUse(h string, processEnv bool) bool {
+	enabled, disabled := leftCorePluginLists(h, "langfuse")
+	return enabled && !disabled
+}
+
+// The home registered an import-agent source for --sync in its import-sync.json
+func agentImportsInUse(h string, processEnv bool) bool {
+	st, err := os.Stat(filepath.Join(h, "import-sync.json"))
+	return err == nil && st.Mode().IsRegular()
 }
 
 func isLaunchHome(h string) bool { return home.Key(h) == home.Key(home.Process()) }
@@ -443,7 +495,7 @@ func leftCoreInstallSentence(ctx context.Context, f *LeftCoreFeature) string {
 // PlatformInstallHint names the install command for an unknown platform that left core, else empty
 func PlatformInstallHint(ctx context.Context, platform string) string {
 	for i := range leftCoreTable {
-		if f := &leftCoreTable[i]; f.Platform != "" && !f.BuiltIn && f.Platform == platform {
+		if f := &leftCoreTable[i]; f.Platform != "" && f.Platform == platform {
 			return ". " + leftCoreInstallSentence(ctx, f)
 		}
 	}
@@ -571,17 +623,20 @@ func leftCoreLaunchEnvNames() map[string]bool {
 	return out
 }
 
-// Old spellings of built in commands mapped to the spelling that replaced them
-var renamedBuiltinCommands = map[string]string{"icebath mcp serve": "icebath mcp-serve"}
-
-// MovedCommandHint says where a renamed or left core command went and how to get it, else empty
+// MovedCommandHint says where a command a left core plugin took over went and how to get it, else empty
 func MovedCommandHint(ctx context.Context, prog, value, action string) string {
 	h := home.Dir(ctx)
-	if hint := spotifyMovedCommandHint(prog, value, action) + spotifyDisabledCommandHint(h, prog, value); hint != "" {
-		return hint
-	}
-	if renamed, ok := renamedBuiltinCommands[prog+" "+value]; ok {
-		return fmt.Sprintf("`%s %s` is now `%s`.", prog, value, renamed)
+	for i := range leftCoreTable {
+		moved := &leftCoreTable[i]
+		if moved.OldCommand == "" || moved.OldCommand != prog+" "+value {
+			continue
+		}
+		get := ""
+		if !leftCorePresent(moved, h) {
+			get = fmt.Sprintf(" Install it with: `%s`.", PluginInstallCommand(moved.Plugin, h))
+		}
+		return fmt.Sprintf("%s moved out of core into the '%s' plugin: `%s` is now `icebath %s`.%s",
+			moved.Label, moved.Plugin, moved.OldCommand, moved.Command, get)
 	}
 	var feature *LeftCoreFeature
 	for i := range leftCoreTable {
@@ -592,7 +647,7 @@ func MovedCommandHint(ctx context.Context, prog, value, action string) string {
 				feature = f
 			}
 		case "icebath":
-			if value != "" && value == f.CLI {
+			if value != "" && (value == f.CLI || value == f.Command || containsString(f.OldCLI, value)) {
 				feature = f
 			}
 		}
@@ -624,7 +679,11 @@ func MovedCommandHint(ctx context.Context, prog, value, action string) string {
 		return fmt.Sprintf("%s moved out of core into the '%s' plugin: `%s` is now `icebath %s %s`.%s",
 			feature.Label, feature.Plugin, strings.Join(parts, " "), value, verb, get)
 	}
-	return fmt.Sprintf("%s moved out of core into the '%s' plugin, which is not loaded.%s", feature.Label, feature.Plugin, get)
+	label := feature.Label
+	if containsString(feature.OldCLI, value) {
+		label = "`icebath " + value + "`"
+	}
+	return fmt.Sprintf("%s moved out of core into the '%s' plugin, which is not loaded.%s", label, feature.Plugin, get)
 }
 
 // DeferStartupNotice logs a message and keeps it for the active home's next watched turn
@@ -776,9 +835,9 @@ func claimLeftCoreNotices(h string) []string {
 // ClaimKeptNotices takes every notice kept for the active home, for a turn someone sees
 func ClaimKeptNotices(ctx context.Context) []string { return claimLeftCoreNotices(home.Dir(ctx)) }
 
-// Whether a row's feature is in the home, compiled in or its plugin installed
+// Whether a row's plugin is installed in the home, enabled or not
 func leftCorePresent(f *LeftCoreFeature, h string) bool {
-	return f.BuiltIn || PluginPresent(f.Plugin, h)
+	return PluginPresent(f.Plugin, h)
 }
 
 // PluginPresent reports the plugin installed in the home, enabled or not
@@ -900,7 +959,16 @@ func leftCoreMark(cfg map[string]any, key string, f *LeftCoreFeature) {
 			set[pyStr(item)] = true
 		}
 	}
-	cfg[key] = sortedAnyStrings(set)
+	leftCorePut(cfg, key, sortedAnyStrings(set))
+}
+
+// Sets a key the way a Python dict assignment does, a new key going after every existing one
+func leftCorePut(m map[string]any, key string, value any) {
+	_, had := m[key]
+	m[key] = value
+	if !had {
+		config.AppendMappingKey(m, key)
+	}
 }
 
 func sortedAnyStrings(set map[string]bool) []any {
@@ -990,8 +1058,8 @@ func leftCoreTurnOffReplaced(cfg map[string]any, f *LeftCoreFeature) {
 		out = append(out, ts)
 	}
 	out = append(out, sortedAnyStrings(turnedOff)...)
-	agent["disabled_toolsets"] = out
-	cfg["agent"] = agent
+	leftCorePut(agent, "disabled_toolsets", out)
+	leftCorePut(cfg, "agent", agent)
 }
 
 // Keeps the core era toolset scope once and marks the plugin installed once present, in one config write
@@ -1016,22 +1084,26 @@ func leftCoreRecordMigration(ctx context.Context, h string, f *LeftCoreFeature) 
 			ok   bool
 		}
 		selections := map[string]platformSelection{}
+		var order []string
 		if saved, ok := cfg["platform_toolsets"].(map[string]any); ok {
-			for platform, value := range saved {
-				list, ok := parsePlatformToolsetsValue(value)
+			for _, platform := range config.MappingKeys(saved) {
+				list, ok := parsePlatformToolsetsValue(saved[platform])
 				selections[platform] = platformSelection{list, ok}
+				order = append(order, platform)
 			}
 		}
 		for _, platform := range f.OffPlatforms {
 			if _, ok := selections[platform]; !ok {
 				selections[platform] = platformSelection{}
+				order = append(order, platform)
 			}
 		}
 		known, ok := cfg["known_plugin_toolsets"].(map[string]any)
 		if !ok {
 			known = map[string]any{}
 		}
-		for platform, selection := range selections {
+		for _, platform := range order {
+			selection := selections[platform]
 			if !selection.ok && !containsString(f.OffPlatforms, platform) {
 				continue
 			}
@@ -1051,11 +1123,11 @@ func leftCoreRecordMigration(ctx context.Context, h string, f *LeftCoreFeature) 
 				for _, name := range append(currentNames, missing...) {
 					set[name] = true
 				}
-				known[platform] = sortedAnyStrings(set)
+				leftCorePut(known, platform, sortedAnyStrings(set))
 			}
 		}
 		if len(known) > 0 {
-			cfg["known_plugin_toolsets"] = known
+			leftCorePut(cfg, "known_plugin_toolsets", known)
 		}
 		if len(f.ReplacesToolsets) > 0 {
 			leftCoreTurnOffReplaced(cfg, f)
@@ -1085,11 +1157,6 @@ func leftCorePending(ctx context.Context, h string, say func(string), processEnv
 		}
 		present := leftCorePresent(f, h)
 		if err := leftCoreRecordMigration(ctx, h, f); err != nil {
-			if f.BuiltIn {
-				say(fmt.Sprintf("  \u26a0 %s is built into icebath: its per-platform toolset selection could not be kept (%v). "+
-					"Check `icebath tools`.", f.Label, err))
-				continue
-			}
 			tail := "."
 			if !present {
 				tail = fmt.Sprintf(" and run `%s`.", PluginInstallCommand(f.Plugin, h))
@@ -1118,7 +1185,7 @@ func leftCorePending(ctx context.Context, h string, say func(string), processEnv
 
 // Stamps the config.yaml the conversion creates as current with its rows in use noted
 func leftCoreStampCreated(h string, cfg map[string]any) {
-	cfg["_config_version"] = config.Version
+	leftCorePut(cfg, "_config_version", config.Version)
 	noteFirstStamp(h, map[string]any{}, cfg)
 }
 

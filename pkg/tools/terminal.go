@@ -283,8 +283,8 @@ type TerminalRequest struct {
 func planExecution(env *Env, command any, taskID string, timeout *int, background, hostLocal bool) (*execPlan, error) {
 	cmd, ok := command.(string)
 	if !ok {
-		envLog(env).Warn("Rejected invalid terminal command value", "type", fmt.Sprintf("%T", command))
-		return nil, &terminalRejected{errorJSON(fmt.Sprintf("Invalid command: expected string, got %s", pyTypeName(command)), -1, "error", nil)}
+		envLog(env).With("logger", "tools.terminal_tool").Warn("Rejected invalid terminal command value: " + pyrepr.TypeName(command))
+		return nil, &terminalRejected{errorJSON(fmt.Sprintf("Invalid command: expected string, got %s", pyrepr.TypeName(command)), -1, "error", nil)}
 	}
 	cfg, err := getEnvConfig(env)
 	if err != nil {
@@ -407,7 +407,7 @@ func acquireEnv(ctx context.Context, env *Env, plan *execPlan, taskID string) (E
 	if e != nil {
 		return e, nil
 	}
-	envLog(env).Info("Creating new environment for task", "backend", envType, "task", shortTaskID(eff))
+	envLog(env).With("logger", "tools.terminal_tool").Info(fmt.Sprintf("Creating new %s environment for task %s...", envType, shortTaskID(eff)))
 	created, err := createConfiguredEnv(ctx, env, plan.config, envType, plan.image, plan.cwd, plan.effectiveTimeout, eff, plan.hostCwd)
 	if err != nil {
 		var missing *BackendMissingError
@@ -420,7 +420,7 @@ func acquireEnv(ctx context.Context, env *Env, plan *execPlan, taskID string) (E
 	termPool.active[eff] = created
 	termPool.lastActivity[eff] = time.Now()
 	termPool.Unlock()
-	envLog(env).Info("Environment ready for task", "backend", envType, "task", shortTaskID(eff))
+	envLog(env).With("logger", "tools.terminal_tool").Info(fmt.Sprintf("%s environment ready for task %s", envType, shortTaskID(eff)))
 	return created, nil
 }
 
@@ -682,39 +682,39 @@ func TerminalTool(ctx context.Context, env *Env, req TerminalRequest) (out strin
 }
 
 // Model visible schema of the terminal tool
-func terminalSchema() map[string]any {
+func terminalSchema() *pyjson.Object {
 	cap := foregroundMaxTimeout()
-	return map[string]any{
-		"name":        "terminal",
-		"description": terminalToolDescription,
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{"type": "string", "description": "The shell command to execute"},
-				"background": map[string]any{"type": "boolean",
-					"description": "Keep running after this call returns; returns a session_id.", "default": false},
-				"timeout": map[string]any{"type": "integer",
-					"description": fmt.Sprintf("Max seconds (default 180, foreground max %d). Finishing early returns at once, so set it generously. Above %ds the command runs as a tracked background process with notify_on_complete=true (the result says so; do not re-run it).", cap, cap),
-					"minimum":     1},
-				"workdir": map[string]any{"type": "string", "description": "Absolute working directory for this command only."},
-				"pty": map[string]any{"type": "boolean",
-					"description": "With background=true: pseudo-terminal for interactive CLIs (REPLs, coding agents); drive it with process_manage write/submit. Local backend only.",
-					"default":     false},
-				"notify": map[string]any{
-					"description": "With background=true. true: one notification on exit; use it for anything that ends (builds, tests, deploys), or the job runs silently. ['pattern', ...]: notify when a line matches, only for one-shot readiness on processes that never exit; rate-limited. Omit for servers/daemons.",
-					"anyOf": []any{
-						map[string]any{"type": "boolean"},
-						map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+	return Dict(
+		"name", "terminal",
+		"description", terminalToolDescription,
+		"parameters", Dict(
+			"type", "object",
+			"properties", Dict(
+				"command", Dict("type", "string", "description", "The shell command to execute"),
+				"background", Dict("type", "boolean",
+					"description", "Keep running after this call returns; returns a session_id.", "default", false),
+				"timeout", Dict("type", "integer",
+					"description", fmt.Sprintf("Max seconds (default 180, foreground max %d). Finishing early returns at once, so set it generously. Above %ds the command runs as a tracked background process with notify_on_complete=true (the result says so; do not re-run it).", cap, cap),
+					"minimum", 1),
+				"workdir", Dict("type", "string", "description", "Absolute working directory for this command only."),
+				"pty", Dict("type", "boolean",
+					"description", "With background=true: pseudo-terminal for interactive CLIs (REPLs, coding agents); drive it with process_manage write/submit. Local backend only.",
+					"default", false),
+				"notify", Dict(
+					"description", "With background=true. true: one notification on exit; use it for anything that ends (builds, tests, deploys), or the job runs silently. ['pattern', ...]: notify when a line matches, only for one-shot readiness on processes that never exit; rate-limited. Omit for servers/daemons.",
+					"anyOf", []any{
+						Dict("type", "boolean"),
+						Dict("type", "array", "items", Dict("type", "string")),
 					},
-				},
-				"heartbeat": map[string]any{"type": "integer", "minimum": 0, "default": 0,
-					"description": "With background=true: also notify every N seconds (min 60) with new output; quiet ticks are skipped. For bounded jobs you must react to mid-run, never servers. Implies notify=true; 0 = off."},
-				"persist_on_release": map[string]any{"type": "boolean", "default": false,
-					"description": "With background=true: survive session end, /new, compression and other cleanup (not host exit). Only for jobs the user explicitly wants to outlive the conversation."},
-			},
-			"required": []any{"command"},
-		},
-	}
+				),
+				"heartbeat", Dict("type", "integer", "minimum", 0, "default", 0,
+					"description", "With background=true: also notify every N seconds (min 60) with new output; quiet ticks are skipped. For bounded jobs you must react to mid-run, never servers. Implies notify=true; 0 = off."),
+				"persist_on_release", Dict("type", "boolean", "default", false,
+					"description", "With background=true: survive session end, /new, compression and other cleanup (not host exit). Only for jobs the user explicitly wants to outlive the conversation."),
+			),
+			"required", []any{"command"},
+		),
+	)
 }
 
 // Integer argument the way Python int typing sees JSON, false for bool, float with a fraction, or other kinds
@@ -813,7 +813,7 @@ func handleTerminal(ctx context.Context, call *Call) string {
 	}
 	workdir, _ := args["workdir"].(string)
 	return TerminalTool(ctx, call.Env, TerminalRequest{
-		Command: args["command"], Background: background, Timeout: timeout, TaskID: call.TaskID,
+		Command: pythonCallArgs(call)["command"], Background: background, Timeout: timeout, TaskID: call.TaskID,
 		SessionID: call.SessionID, Workdir: workdir, Pty: truthy(args["pty"]), NotifyOnComplete: notifyOnComplete,
 		WatchPatterns: watchPatterns, Heartbeat: heartbeat, PersistOnRelease: persistOnRelease,
 	})

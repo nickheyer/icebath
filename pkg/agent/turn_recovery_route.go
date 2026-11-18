@@ -31,7 +31,7 @@ const longContextTierCap = 200000
 // Caps the compressor's context window at the long context tier limit, returning the previous length
 func capLongContextTier(a *AIAgent) int {
 	compressor := a.contextCompressor
-	oldCtx := compressor.Base().ContextLength
+	oldCtx := engineContextLength(compressor)
 	if oldCtx > longContextTierCap {
 		compressor.UpdateModel(a.model, longContextTierCap, a.baseURL, a.apiKey, a.provider, a.apiMode)
 		if c, ok := compressor.(*ContextCompressor); ok && c != nil {

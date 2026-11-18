@@ -15,7 +15,10 @@ import (
 // Decoded result of one memory tool call
 func callTool(t *testing.T, env *tools.Env, s *Store, action, target, content, oldText, newText, operations any) map[string]any {
 	t.Helper()
-	raw := MemoryTool(t.Context(), env, s, action, target, content, oldText, newText, operations)
+	raw, err := MemoryTool(t.Context(), env, s, action, target, content, oldText, newText, operations)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out map[string]any
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		t.Fatalf("non JSON result %q", raw)
@@ -546,7 +549,7 @@ func registryCall(t *testing.T, s *Store, args map[string]any) map[string]any {
 }
 
 func TestMemorySchemaHasNoForbiddenTopLevelCombinators(t *testing.T) {
-	params := MemorySchema()["parameters"].(map[string]any)
+	params := MemorySchema().Vals["parameters"].(map[string]any)
 	for _, key := range []string{"allOf", "anyOf", "oneOf", "enum", "not"} {
 		if _, has := params[key]; has {
 			t.Fatalf("top level %s", key)
@@ -555,7 +558,7 @@ func TestMemorySchemaHasNoForbiddenTopLevelCombinators(t *testing.T) {
 }
 
 func TestMemorySchemaAdvertisesEachFieldOnceAndLegacyShapesStillWrite(t *testing.T) {
-	params := MemorySchema()["parameters"].(map[string]any)
+	params := MemorySchema().Vals["parameters"].(map[string]any)
 	props := params["properties"].(map[string]any)
 	if len(props) != 2 || props["target"] == nil || props["operations"] == nil {
 		t.Fatal(props)
@@ -739,13 +742,13 @@ func TestBuiltinMemorySchemaReusesAvailabilityFlagSnapshot(t *testing.T) {
 		t.Fatal("hidden")
 	}
 	writeMemoryConfig(t, env, true, false)
-	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env)["parameters"]}); len(enum) != 1 || enum[0] != "user" {
+	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env).Vals["parameters"]}); len(enum) != 1 || enum[0] != "user" {
 		t.Fatal(enum)
 	}
 	if _, left := env.Values.Load(surfaceFlagsValuesKey); left {
 		t.Fatal("snapshot not consumed")
 	}
-	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env)["parameters"]}); len(enum) != 1 || enum[0] != "memory" {
+	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env).Vals["parameters"]}); len(enum) != 1 || enum[0] != "memory" {
 		t.Fatal(enum)
 	}
 }

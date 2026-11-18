@@ -704,8 +704,8 @@ func TestEveryRegisteredToolSchemaDeclaresOpenaiStyleParameters(t *testing.T) {
 		if schema == nil && def.SchemaBuilder != nil {
 			schema = def.SchemaBuilder()
 		}
-		_, hasParameters := schema["parameters"]
-		_, hasInputSchema := schema["input_schema"]
+		_, hasParameters := schema.Vals["parameters"]
+		_, hasInputSchema := schema.Vals["input_schema"]
 		if !hasParameters || hasInputSchema {
 			missing = append(missing, name)
 		}

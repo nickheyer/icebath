@@ -292,7 +292,11 @@ func TestProviderRequestHeadersOverrideClientHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	headers, _, err := an.(*anthropicClient).requestHeaders(ctx, nil, nil)
+	head, _, err := an.(*anthropicClient).requestHeaders(ctx, nil, nil)
+	headers := map[string]string{}
+	for _, l := range head.extra.stripped() {
+		headers[l.Name] = l.Value
+	}
 	if err != nil || headers["X-Call"] != "v" || headers["Authorization"] != "Bearer call" {
 		t.Fatalf("anthropic request headers %v %v", headers, err)
 	}

@@ -61,7 +61,11 @@ func TestMemoryToolCountsEachOperationWithItsOutcomeAndOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	var added map[string]any
-	if err := json.Unmarshal([]byte(memory.MemoryTool(ctx, env, store, "add", "memory", "prefers tabs", nil, nil, nil)), &added); err != nil || added["success"] != true {
+	addResult, err := memory.MemoryTool(ctx, env, store, "add", "memory", "prefers tabs", nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(addResult), &added); err != nil || added["success"] != true {
 		t.Fatalf("add %v %v", added, err)
 	}
 	memory.MemoryTool(ctx, env, store, "remove", "memory", nil, nil, nil, nil)

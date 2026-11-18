@@ -683,11 +683,11 @@ type schemaOutcome struct {
 // Validates the final answer against the output schema with one bounded retry turn
 func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[string]any, taskIndex int, childTaskID string, relay func(string)) schemaOutcome {
 	schema := child.delegateOutputSchema
-	if _, ok := schema.(map[string]any); !ok {
+	if _, ok := pyjson.Dict(schema); !ok {
 		return schemaOutcome{schema: schema}
 	}
 	firstText, _ := result["final_response"].(string)
-	valid, errs, _ := tools.ValidateOutput(firstText, schema)
+	valid, errs := mustValidateOutput(firstText, schema)
 	if valid || pystr.Strip(firstText) == "" || pyTruthy(result["interrupted"]) {
 		return schemaOutcome{schema, boolPtr(valid), errs, 0}
 	}
@@ -726,9 +726,21 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 				result["messages"] = append(append([]map[string]any{}, m...), rm...)
 			}
 		}
-		valid, errs, _ = tools.ValidateOutput(retryText, schema)
+		valid, errs = mustValidateOutput(retryText, schema)
 	}
 	return schemaOutcome{schema, boolPtr(valid), errs, 1}
+}
+
+// Python frames under validate_output when attach_worktree or emit_complete revalidates a redacted summary in the reference
+const emitCompleteValidateDepth = 31
+
+// validate_output, a validator exception raised so the child run reports it as its failure
+func mustValidateOutput(text string, schema any) (bool, []string) {
+	valid, errs, err := tools.ValidateOutput(text, schema)
+	if err != nil {
+		panic(err)
+	}
+	return valid, errs
 }
 
 func resultMessages(v any) []map[string]any {
@@ -878,7 +890,7 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 	} else if interruptNote != "" {
 		e.Set("error", interruptNote)
 	}
-	if _, ok := schema.schema.(map[string]any); ok {
+	if _, ok := pyjson.Dict(schema.schema); ok {
 		valid := schema.valid != nil && *schema.valid
 		e.Set("schema_valid", valid)
 		if schema.retries != 0 {
@@ -1048,7 +1060,7 @@ func (r *childRun) attachWorktree(entry *pyjson.Object) *pyjson.Object {
 }
 
 func redactedEntry(child *AIAgent, entry *pyjson.Object) *pyjson.Object {
-	out, ok := tools.RedactChildResult(child.env, entry, child.delegateOutputSchema, false).(*pyjson.Object)
+	out, ok := tools.RedactChildResultAt(child.env, entry, child.delegateOutputSchema, false, emitCompleteValidateDepth).(*pyjson.Object)
 	if !ok {
 		return entry
 	}

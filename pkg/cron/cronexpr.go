@@ -1,527 +1,600 @@
 package cron
 
 import (
-	"errors"
 	"fmt"
-	"strconv"
-	"strings"
+	"sort"
 	"time"
 )
 
-// Cron expression aliases the parser expands before field parsing
-var cronAliases = map[string]string{
-	"@yearly":   "0 0 1 1 *",
-	"@annually": "0 0 1 1 *",
-	"@monthly":  "0 0 1 * *",
-	"@weekly":   "0 0 * * 0",
-	"@daily":    "0 0 * * *",
-	"@midnight": "0 0 * * *",
-	"@hourly":   "0 * * * *",
-}
+// Years croniter searches either side of the start before it gives up
+const croniterMaxYears = 50
 
-var monthNames = map[string]int{
-	"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-	"jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
-}
-
-var dowNames = map[string]int{
-	"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
-}
-
-const (
-	cronYearMin = 1970
-	cronYearMax = 2099
-)
-
-// Set of allowed values for one small numeric field
-type fieldSet struct {
-	bits uint64
-}
-
-func (s *fieldSet) add(v int) { s.bits |= 1 << uint(v) }
-
-func (s fieldSet) has(v int) bool { return s.bits&(1<<uint(v)) != 0 }
-
-// Weekday constraint that names an ordinal or the last occurrence inside a month
-type dowSpecial struct {
-	weekday int
-	nth     int
-	last    bool
-}
-
-// Parsed cron expression with croniter field order and matching rules
+// CronExpr is an expression expanded once by the croniter rules, iterated from a wall clock or an instant
 type CronExpr struct {
-	Source   string
-	Fields   int
-	seconds  fieldSet
-	minutes  fieldSet
-	hours    fieldSet
-	days     fieldSet
-	months   fieldSet
-	dows     fieldSet
-	years    [cronYearMax - cronYearMin + 1]bool
-	lastDay  bool
-	dowSpec  []dowSpecial
-	domAny   bool
-	dowAny   bool
-	hasYears bool
+	spec *croniterSpec
 }
 
-// Error of a cron expression that cannot be parsed
-type CronParseError struct {
-	Expr   string
-	Reason string
-}
-
-func (e *CronParseError) Error() string {
-	return fmt.Sprintf("invalid cron expression %q: %s", e.Expr, e.Reason)
-}
-
-func cronErr(expr, format string, args ...any) error {
-	return &CronParseError{Expr: expr, Reason: fmt.Sprintf(format, args...)}
-}
-
-// ParseCron parses a 5, 6 or 7 field expression, the sixth field being seconds and the seventh years
+// ParseCron expands an expression the way croniter constructs an iterator, failing with its message
 func ParseCron(expr string) (*CronExpr, error) {
-	raw := strings.TrimSpace(expr)
-	if alias, ok := cronAliases[strings.ToLower(raw)]; ok {
-		raw = alias
-	}
-	parts := strings.Fields(raw)
-	if len(parts) < 5 || len(parts) > 7 {
-		return nil, cronErr(expr, "expected 5 to 7 fields, got %d", len(parts))
-	}
-	e := &CronExpr{Source: expr, Fields: len(parts)}
-	var err error
-	if e.minutes, err = parseNumericField(expr, parts[0], 0, 59, nil); err != nil {
-		return nil, err
-	}
-	if e.hours, err = parseNumericField(expr, parts[1], 0, 23, nil); err != nil {
-		return nil, err
-	}
-	if err = e.parseDayOfMonth(expr, parts[2]); err != nil {
-		return nil, err
-	}
-	if e.months, err = parseNumericField(expr, parts[3], 1, 12, monthNames); err != nil {
-		return nil, err
-	}
-	if err = e.parseDayOfWeek(expr, parts[4]); err != nil {
-		return nil, err
-	}
-	if len(parts) >= 6 {
-		if e.seconds, err = parseNumericField(expr, parts[5], 0, 59, nil); err != nil {
-			return nil, err
-		}
-	} else {
-		e.seconds.add(0)
-	}
-	if len(parts) == 7 {
-		if err = e.parseYears(expr, parts[6]); err != nil {
-			return nil, err
-		}
-		e.hasYears = true
-	}
-	return e, nil
-}
-
-// Reports whether a field token means every value
-func isWildcard(tok string) bool { return tok == "*" || tok == "?" }
-
-// Resolves a single value token to its number using names when the table allows them
-func resolveValue(expr, tok string, lo, hi int, names map[string]int) (int, error) {
-	t := strings.ToLower(strings.TrimSpace(tok))
-	if t == "" {
-		return 0, cronErr(expr, "empty value")
-	}
-	if names != nil {
-		if v, ok := names[t]; ok {
-			return v, nil
-		}
-		if len(t) > 3 {
-			if v, ok := names[t[:3]]; ok && strings.HasPrefix(fullName(names, v), t) {
-				return v, nil
-			}
-		}
-	}
-	v, err := strconv.Atoi(t)
+	spec, err := croniterExpand(expr)
 	if err != nil {
-		return 0, cronErr(expr, "value %q is not a number or a known name", tok)
+		return nil, err
 	}
-	if v < lo || v > hi {
-		return 0, cronErr(expr, "value %d out of range %d-%d", v, lo, hi)
-	}
-	return v, nil
+	return &CronExpr{spec: spec}, nil
 }
 
-var fullMonthNames = []string{"", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"}
-var fullDowNames = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
-
-// Long name of a value for the month or weekday table
-func fullName(names map[string]int, v int) string {
-	if _, ok := names["jan"]; ok {
-		if v >= 1 && v <= 12 {
-			return fullMonthNames[v]
-		}
-		return ""
-	}
-	if v >= 0 && v <= 6 {
-		return fullDowNames[v]
-	}
-	return ""
+// Python datetime, wall clock fields held in UTC plus the fold of an aware value
+type pyDT struct {
+	wall time.Time
+	fold int
 }
 
-// Expands one comma separated field of plain values, ranges and steps into a set
-func parseNumericField(expr, field string, lo, hi int, names map[string]int) (fieldSet, error) {
-	var set fieldSet
-	for _, item := range strings.Split(field, ",") {
-		if err := expandItem(expr, item, lo, hi, names, &set); err != nil {
-			return set, err
-		}
-	}
-	return set, nil
-}
-
-// Adds the values of one item to the set, handling wildcards, ranges and steps
-func expandItem(expr, item string, lo, hi int, names map[string]int, set *fieldSet) error {
-	item = strings.TrimSpace(item)
-	if item == "" {
-		return cronErr(expr, "empty list element")
-	}
-	step := 1
-	body := item
-	if idx := strings.Index(item, "/"); idx >= 0 {
-		body = item[:idx]
-		s, err := strconv.Atoi(item[idx+1:])
-		if err != nil || s < 1 {
-			return cronErr(expr, "invalid step %q", item[idx+1:])
-		}
-		step = s
-	}
-	start, end := lo, hi
-	switch {
-	case isWildcard(body):
-	case strings.Contains(body, "-"):
-		halves := strings.SplitN(body, "-", 2)
-		a, err := resolveValue(expr, halves[0], lo, hi, names)
-		if err != nil {
-			return err
-		}
-		b, err := resolveValue(expr, halves[1], lo, hi, names)
-		if err != nil {
-			return err
-		}
-		if names != nil && isDowTable(names) {
-			a, b = a%7, b%7
-		}
-		if a > b {
-			return cronErr(expr, "range %q runs backwards", body)
-		}
-		start, end = a, b
-	default:
-		v, err := resolveValue(expr, body, lo, hi, names)
-		if err != nil {
-			return err
-		}
-		if names != nil && isDowTable(names) {
-			v %= 7
-		}
-		if !strings.Contains(item, "/") {
-			set.add(v)
-			return nil
-		}
-		start = v
-	}
-	for v := start; v <= end; v += step {
-		if names != nil && isDowTable(names) {
-			set.add(v % 7)
-			continue
-		}
-		set.add(v)
-	}
-	return nil
-}
-
-func isDowTable(names map[string]int) bool {
-	_, ok := names["sun"]
-	return ok
-}
-
-// Parses the day of month field including the L marker for the last day
-func (e *CronExpr) parseDayOfMonth(expr, field string) error {
-	if isWildcard(field) {
-		e.domAny = true
-		for d := 1; d <= 31; d++ {
-			e.days.add(d)
-		}
-		return nil
-	}
-	for _, item := range strings.Split(field, ",") {
-		t := strings.ToLower(strings.TrimSpace(item))
-		if t == "l" {
-			e.lastDay = true
-			continue
-		}
-		if err := expandItem(expr, item, 1, 31, nil, &e.days); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Parses the day of week field including 7 as Sunday, L suffixes and # ordinals
-func (e *CronExpr) parseDayOfWeek(expr, field string) error {
-	if isWildcard(field) {
-		e.dowAny = true
-		for d := 0; d <= 6; d++ {
-			e.dows.add(d)
-		}
-		return nil
-	}
-	for _, item := range strings.Split(field, ",") {
-		t := strings.ToLower(strings.TrimSpace(item))
-		if t == "" {
-			return cronErr(expr, "empty list element")
-		}
-		if idx := strings.Index(t, "#"); idx >= 0 {
-			wd, err := resolveValue(expr, t[:idx], 0, 7, dowNames)
-			if err != nil {
-				return err
-			}
-			nth, err := strconv.Atoi(t[idx+1:])
-			if err != nil || nth < 1 || nth > 5 {
-				return cronErr(expr, "invalid weekday ordinal %q", item)
-			}
-			e.dowSpec = append(e.dowSpec, dowSpecial{weekday: wd % 7, nth: nth})
-			continue
-		}
-		if strings.HasSuffix(t, "l") && len(t) > 1 {
-			wd, err := resolveValue(expr, t[:len(t)-1], 0, 7, dowNames)
-			if err != nil {
-				return err
-			}
-			e.dowSpec = append(e.dowSpec, dowSpecial{weekday: wd % 7, last: true})
-			continue
-		}
-		if err := expandItem(expr, item, 0, 7, dowNames, &e.dows); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Parses the optional year field
-func (e *CronExpr) parseYears(expr, field string) error {
-	if isWildcard(field) {
-		for i := range e.years {
-			e.years[i] = true
-		}
-		return nil
-	}
-	for _, item := range strings.Split(field, ",") {
-		item = strings.TrimSpace(item)
-		step := 1
-		body := item
-		if idx := strings.Index(item, "/"); idx >= 0 {
-			body = item[:idx]
-			s, err := strconv.Atoi(item[idx+1:])
-			if err != nil || s < 1 {
-				return cronErr(expr, "invalid step %q", item[idx+1:])
-			}
-			step = s
-		}
-		start, end := cronYearMin, cronYearMax
-		switch {
-		case isWildcard(body):
-		case strings.Contains(body, "-"):
-			halves := strings.SplitN(body, "-", 2)
-			a, err := resolveValue(expr, halves[0], cronYearMin, cronYearMax, nil)
-			if err != nil {
-				return err
-			}
-			b, err := resolveValue(expr, halves[1], cronYearMin, cronYearMax, nil)
-			if err != nil {
-				return err
-			}
-			if a > b {
-				return cronErr(expr, "range %q runs backwards", body)
-			}
-			start, end = a, b
-		default:
-			v, err := resolveValue(expr, body, cronYearMin, cronYearMax, nil)
-			if err != nil {
-				return err
-			}
-			if !strings.Contains(item, "/") {
-				e.years[v-cronYearMin] = true
-				continue
-			}
-			start = v
-		}
-		for y := start; y <= end; y += step {
-			e.years[y-cronYearMin] = true
-		}
-	}
-	return nil
-}
-
-// Reports whether the calendar day of t satisfies the day of month and weekday fields
-func (e *CronExpr) dayMatches(t time.Time) bool {
-	domHit := e.days.has(t.Day()) && !e.domAny
-	if e.lastDay && t.Day() == daysInMonth(t.Year(), t.Month()) {
-		domHit = true
-	}
-	dowHit := e.dowMatches(t)
-	switch {
-	case e.domAny && e.dowAny:
-		return true
-	case e.domAny:
-		return dowHit
-	case e.dowAny:
-		return domHit
-	}
-	return domHit || dowHit
-}
-
-// Reports whether the weekday field, including ordinals and last markers, accepts t
-func (e *CronExpr) dowMatches(t time.Time) bool {
-	wd := int(t.Weekday())
-	if !e.dowAny && e.dows.has(wd) {
-		return true
-	}
-	for _, s := range e.dowSpec {
-		if s.weekday != wd {
-			continue
-		}
-		if s.last && t.Day()+7 > daysInMonth(t.Year(), t.Month()) {
-			return true
-		}
-		if s.nth > 0 && (t.Day()-1)/7+1 == s.nth {
-			return true
-		}
-	}
-	return false
+// Search state of one calc run, the zone nil for a naive start
+type cronCalc struct {
+	spec    *croniterSpec
+	loc     *time.Location
+	fields  []cronField
+	nth     map[int][]cronNth
+	isPrev  bool
+	seconds bool
 }
 
 func daysInMonth(year int, month time.Month) int {
 	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
-// Unit the expression schedules at, one minute or one second
-func (e *CronExpr) unit() time.Duration {
-	if e.Fields >= 6 {
-		return time.Second
+func microTrunc(t time.Time) time.Time { return t.Truncate(time.Microsecond) }
+
+// Wall clock plus a timedelta, OverflowError text outside the datetime range
+func pyAddDelta(t time.Time, d time.Duration) (time.Time, error) {
+	out := t.Add(d)
+	if out.Year() < 1 || out.Year() > 9999 {
+		return time.Time{}, fmt.Errorf("date value out of range")
 	}
-	return time.Minute
+	return out, nil
 }
 
-func (e *CronExpr) yearOK(y int) bool {
-	if !e.hasYears {
-		return true
+// Absolute relativedelta fields, a negative value leaving the field as it is
+type rdAbs struct{ year, month, day, hour, minute, second int }
+
+var rdKeep = rdAbs{-1, -1, -1, -1, -1, -1}
+
+// relativedelta addition, absolute fields and year month shifts first with the day clipped, then the delta
+func rdApply(t time.Time, years, months int, abs rdAbs, delta time.Duration) (time.Time, error) {
+	if months > 11 || months < -11 {
+		s := 1
+		if months < 0 {
+			s = -1
+		}
+		div, mod := (months*s)/12, (months*s)%12
+		months, years = mod*s, years+div*s
 	}
-	if y < cronYearMin || y > cronYearMax {
-		return false
+	year := t.Year()
+	if abs.year >= 0 {
+		year = abs.year
 	}
-	return e.years[y-cronYearMin]
+	year += years
+	month := int(t.Month())
+	if abs.month > 0 {
+		month = abs.month
+	}
+	if months != 0 {
+		month += months
+		if month > 12 {
+			year++
+			month -= 12
+		} else if month < 1 {
+			year--
+			month += 12
+		}
+	}
+	if year < 1 || year > 9999 {
+		return time.Time{}, fmt.Errorf("year %d is out of range", year)
+	}
+	day := t.Day()
+	if abs.day > 0 {
+		day = abs.day
+	}
+	day = min(day, daysInMonth(year, time.Month(month)))
+	hour, minute, second := t.Hour(), t.Minute(), t.Second()
+	if abs.hour >= 0 {
+		hour = abs.hour
+	}
+	if abs.minute >= 0 {
+		minute = abs.minute
+	}
+	if abs.second >= 0 {
+		second = abs.second
+	}
+	out := time.Date(year, time.Month(month), day, hour, minute, second, t.Nanosecond(), time.UTC)
+	return pyAddDelta(out, delta)
 }
 
-// ErrNoOccurrence reports a schedule with no reachable occurrence inside the search bound
-var ErrNoOccurrence = errors.New("cron expression has no reachable occurrence")
+func hms(h, m, s int) rdAbs { return rdAbs{-1, -1, -1, h, m, s} }
 
-// Next returns the first wall clock occurrence strictly after t, treating t as a naive wall clock
+// Distance from x to the next allowed value, wrapping by the field span, false when the year field has none
+func nextNearestDiff(x int, check cronField, rangeVal int, wraps bool) (int, bool) {
+	for _, v := range check {
+		d := v.n
+		if wraps {
+			if v.kind == 'l' {
+				d = rangeVal
+			} else if d > rangeVal {
+				continue
+			}
+		}
+		if d >= x {
+			return d - x, true
+		}
+	}
+	if !wraps {
+		return 0, false
+	}
+	return check[0].n - x + rangeVal, true
+}
+
+// Distance from x back to the previous allowed value, wrapping by the field span, false when the year field has none
+func prevNearestDiff(x int, check cronField, rangeVal int, wraps bool) (int, bool) {
+	for i := len(check) - 1; i >= 0; i-- {
+		if v := check[i]; v.kind != 'l' && v.n <= x {
+			return v.n - x, true
+		}
+	}
+	if check.hasLast() {
+		return -x, true
+	}
+	if !wraps {
+		return 0, false
+	}
+	candidate := check[len(check)-1].n
+	for i := len(check) - 1; i >= 0; i-- {
+		if check[i].n <= rangeVal {
+			candidate = check[i].n
+			break
+		}
+	}
+	if candidate > rangeVal {
+		return -rangeVal, true
+	}
+	return candidate - x - rangeVal, true
+}
+
+func (c *cronCalc) nearestDiff(x int, check cronField, rangeVal int, wraps bool) (int, bool) {
+	if c.isPrev {
+		return prevNearestDiff(x, check, rangeVal, wraps)
+	}
+	return nextNearestDiff(x, check, rangeVal, wraps)
+}
+
+// Days of the month falling on a cron weekday, the last one being the final element
+func nthWeekdaysOfMonth(year int, month time.Month, dow int) []int {
+	var out []int
+	for d := 1; d <= daysInMonth(year, month); d++ {
+		if int(time.Date(year, month, d, 0, 0, 0, 0, time.UTC).Weekday()) == dow {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// Weekday closest to a day of the month without leaving the month
+func nearestWeekday(year int, month time.Month, day int) int {
+	last := daysInMonth(year, month)
+	day = min(day, last)
+	switch time.Date(year, month, day, 0, 0, 0, 0, time.UTC).Weekday() {
+	case time.Saturday:
+		if day > 1 {
+			return day - 1
+		}
+		return day + 2
+	case time.Sunday:
+		if day < last {
+			return day + 1
+		}
+		return day - 2
+	}
+	return day
+}
+
+// Step of the day of week nth or nearest weekday walk toward the chosen candidate day
+func (c *cronCalc) dayCandidates(d time.Time, year int, month time.Month, candidates []int) (bool, time.Time, error) {
+	var keep []int
+	for _, cand := range candidates {
+		if (c.isPrev && cand <= d.Day()) || (!c.isPrev && d.Day() <= cand) {
+			keep = append(keep, cand)
+		}
+	}
+	if len(keep) == 0 {
+		if c.isPrev {
+			out, err := rdApply(d, 0, 0, hms(23, 59, 59), -time.Duration(d.Day())*24*time.Hour)
+			return true, out, err
+		}
+		days := daysInMonth(year, month)
+		out, err := rdApply(d, 0, 0, hms(0, 0, 0), time.Duration(days-d.Day()+1)*24*time.Hour)
+		return true, out, err
+	}
+	sort.Ints(keep)
+	target := keep[0]
+	if c.isPrev {
+		target = keep[len(keep)-1]
+	}
+	diff := target - d.Day()
+	if diff == 0 {
+		return false, d, nil
+	}
+	if c.isPrev {
+		out, err := rdApply(d, 0, 0, hms(23, 59, 59), time.Duration(diff)*24*time.Hour)
+		return true, out, err
+	}
+	out, err := rdApply(d, 0, 0, hms(0, 0, 0), time.Duration(diff)*24*time.Hour)
+	return true, out, err
+}
+
+// One croniter proc, changed true restarting the walk and stop ending it without a match
+func (c *cronCalc) proc(i int, d time.Time, year int, month time.Month) (changed, stop bool, out time.Time, err error) {
+	f := c.fields
+	day := 24 * time.Hour
+	switch i {
+	case 0:
+		if len(f) != 7 || f[cronYearField].star() {
+			return false, false, d, nil
+		}
+		diff, ok := c.nearestDiff(d.Year(), f[cronYearField], 0, false)
+		if !ok {
+			return false, true, d, nil
+		}
+		if diff == 0 {
+			return false, false, d, nil
+		}
+		if c.isPrev {
+			out, err = rdApply(d, diff, 0, rdAbs{-1, 12, 31, 23, 59, 59}, 0)
+		} else {
+			out, err = rdApply(d, diff, 0, rdAbs{-1, 1, 1, 0, 0, 0}, 0)
+		}
+		return true, false, out, err
+	case 1:
+		if f[cronMonthField].star() {
+			return false, false, d, nil
+		}
+		diff, _ := c.nearestDiff(int(d.Month()), f[cronMonthField], 12, true)
+		if diff == 0 {
+			return false, false, d, nil
+		}
+		if c.isPrev {
+			if out, err = rdApply(d, 0, diff, rdKeep, 0); err != nil {
+				return true, false, out, err
+			}
+			out, err = rdApply(out, 0, 0, rdAbs{-1, -1, daysInMonth(out.Year(), out.Month()), 23, 59, 59}, 0)
+			return true, false, out, err
+		}
+		out, err = rdApply(d, 0, diff, rdAbs{-1, -1, 1, 0, 0, 0}, 0)
+		return true, false, out, err
+	case 2:
+		if len(c.spec.nearest) > 0 {
+			candidates := make([]int, 0, len(c.spec.nearest))
+			for _, w := range c.spec.nearest {
+				candidates = append(candidates, nearestWeekday(d.Year(), d.Month(), w))
+			}
+			changed, out, err = c.dayCandidates(d, year, month, candidates)
+			return changed, false, out, err
+		}
+		if f[cronDayField].star() {
+			return false, false, d, nil
+		}
+		days := daysInMonth(year, month)
+		if f[cronDayField].hasLast() && days == d.Day() {
+			return false, false, d, nil
+		}
+		span := days
+		if c.isPrev {
+			prevMonth := (int(month)-2+12)%12 + 1
+			prevYear := year
+			if month == time.January {
+				prevYear--
+			}
+			span = daysInMonth(prevYear, time.Month(prevMonth))
+		}
+		diff, _ := c.nearestDiff(d.Day(), f[cronDayField], span, true)
+		if diff == 0 {
+			return false, false, d, nil
+		}
+		if c.isPrev {
+			out, err = rdApply(d, 0, 0, hms(23, 59, 59), time.Duration(diff)*day)
+		} else {
+			out, err = rdApply(d, 0, 0, hms(0, 0, 0), time.Duration(diff)*day)
+		}
+		return true, false, out, err
+	case 3:
+		if len(c.nth) > 0 {
+			var candidates []int
+			for wday, nths := range c.nth {
+				days := nthWeekdaysOfMonth(d.Year(), d.Month(), wday)
+				for _, n := range nths {
+					switch {
+					case n.last():
+						candidates = append(candidates, days[len(days)-1])
+					case len(days) >= n.n:
+						candidates = append(candidates, days[n.n-1])
+					}
+				}
+			}
+			changed, out, err = c.dayCandidates(d, year, month, candidates)
+			return changed, false, out, err
+		}
+		if f[cronDowField].star() {
+			return false, false, d, nil
+		}
+		diff, _ := c.nearestDiff(int(d.Weekday()), f[cronDowField], 7, true)
+		if diff == 0 {
+			return false, false, d, nil
+		}
+		if c.isPrev {
+			out, err = rdApply(d, 0, 0, hms(23, 59, 59), time.Duration(diff)*day)
+		} else {
+			out, err = rdApply(d, 0, 0, hms(0, 0, 0), time.Duration(diff)*day)
+		}
+		return true, false, out, err
+	case 4:
+		if f[cronHourField].star() {
+			return false, false, d, nil
+		}
+		diff, _ := c.nearestDiff(d.Hour(), f[cronHourField], 24, true)
+		if diff == 0 {
+			return false, false, d, nil
+		}
+		if c.isPrev {
+			out, err = rdApply(d, 0, 0, hms(-1, 59, 59), time.Duration(diff)*time.Hour)
+		} else {
+			out, err = rdApply(d, 0, 0, hms(-1, 0, 0), time.Duration(diff)*time.Hour)
+		}
+		return true, false, out, err
+	case 5:
+		if f[cronMinuteField].star() {
+			return false, false, d, nil
+		}
+		diff, _ := c.nearestDiff(d.Minute(), f[cronMinuteField], 60, true)
+		if diff == 0 {
+			return false, false, d, nil
+		}
+		if c.isPrev {
+			out, err = rdApply(d, 0, 0, hms(-1, -1, 59), time.Duration(diff)*time.Minute)
+		} else {
+			out, err = rdApply(d, 0, 0, hms(-1, -1, 0), time.Duration(diff)*time.Minute)
+		}
+		return true, false, out, err
+	}
+	if !c.seconds {
+		out, err = rdApply(d, 0, 0, hms(-1, -1, 0), 0)
+		return false, false, out, err
+	}
+	if f[cronSecondField].star() {
+		return false, false, d, nil
+	}
+	diff, _ := c.nearestDiff(d.Second(), f[cronSecondField], 60, true)
+	if diff == 0 {
+		return false, false, d, nil
+	}
+	out, err = pyAddDelta(d, time.Duration(diff)*time.Second)
+	return true, false, out, err
+}
+
+func (c *cronCalc) badDate() error {
+	if c.isPrev {
+		return &CroniterError{Msg: "failed to find prev date"}
+	}
+	return &CroniterError{Msg: "failed to find next date"}
+}
+
+// Wall clock and fold of an instant in loc, the fold marking the second pass of a repeated hour
+func awareOf(inst time.Time, loc *time.Location) pyDT {
+	wall := wallOf(inst.In(loc))
+	f0, _ := wallInZone(wall, loc)
+	if f0.Equal(inst) {
+		return pyDT{wall: wall}
+	}
+	return pyDT{wall: wall, fold: 1}
+}
+
+// Instant of an aware wall clock and fold in loc
+func instantOf(d pyDT, loc *time.Location) time.Time {
+	f0, f1 := wallInZone(d.wall, loc)
+	if d.fold == 1 {
+		return f1
+	}
+	return f0
+}
+
+func utcOffset(d pyDT, loc *time.Location) time.Duration { return d.wall.Sub(instantOf(d, loc)) }
+
+// Whether the wall clock survives a round trip through UTC in loc
+func wallExists(d pyDT, loc *time.Location) bool {
+	return wallOf(instantOf(d, loc).In(loc)).Equal(d.wall)
+}
+
+func (c *cronCalc) successor(a, b pyDT) bool {
+	ai, bi := instantOf(a, c.loc), instantOf(b, c.loc)
+	if c.isPrev {
+		return ai.Before(bi)
+	}
+	return ai.After(bi)
+}
+
+// Attaches the zone to a found wall clock, the closer resolution of a repeated hour and the next existing minute of a gap
+func (c *cronCalc) addTZ(wall time.Time, prev pyDT) (pyDT, bool) {
+	fold := 0
+	if c.isPrev {
+		fold = 1
+	}
+	result := pyDT{wall: wall, fold: fold}
+	if !wallExists(result, c.loc) {
+		for !wallExists(result, c.loc) {
+			result = pyDT{wall: result.wall.Add(time.Minute)}
+		}
+		return result, false
+	}
+	farther := pyDT{wall: wall, fold: 1 - fold}
+	if utcOffset(result, c.loc) != utcOffset(farther, c.loc) && !c.successor(result, prev) {
+		result = farther
+	}
+	return result, true
+}
+
+// Walk of the croniter procs from now, the zone handling of an aware start applied to the match
+func (c *cronCalc) calc(now pyDT, aware bool) (pyDT, error) {
+	var offset time.Duration
+	switch {
+	case c.isPrev:
+		offset = -time.Microsecond
+	case c.seconds:
+		offset = time.Second
+	default:
+		offset = time.Minute
+	}
+	unaware, err := pyAddDelta(now.wall, offset)
+	if err != nil {
+		return pyDT{}, err
+	}
+	if c.seconds {
+		unaware = unaware.Truncate(time.Second)
+	} else {
+		unaware = unaware.Truncate(time.Minute)
+	}
+	year, month := unaware.Year(), unaware.Month()
+	currentYear := year
+	for absInt(year-currentYear) <= croniterMaxYears {
+		restart, stop := false, false
+		for i := 0; i < 7; i++ {
+			changed, halt, out, err := c.proc(i, unaware, year, month)
+			if err != nil {
+				return pyDT{}, err
+			}
+			unaware = out
+			if halt {
+				stop = true
+				break
+			}
+			if changed {
+				year, month = unaware.Year(), unaware.Month()
+				restart = true
+				break
+			}
+		}
+		if stop {
+			break
+		}
+		if restart {
+			continue
+		}
+		if !aware {
+			return pyDT{wall: unaware}, nil
+		}
+		return c.attachZone(now, unaware)
+	}
+	return pyDT{}, c.badDate()
+}
+
+// Zone resolution of a matched wall clock, skipping gaps and weighing the other offset of a transition
+func (c *cronCalc) attachZone(now pyDT, unaware time.Time) (pyDT, error) {
+	awareTime, exists := c.addTZ(unaware, now)
+	if !exists && (!c.successor(awareTime, now) || c.fields[cronHourField].star()) {
+		for !exists {
+			found, err := c.calc(pyDT{wall: unaware}, false)
+			if err != nil {
+				return pyDT{}, err
+			}
+			unaware = found.wall
+			awareTime, exists = c.addTZ(unaware, now)
+		}
+	}
+	delta := utcOffset(awareTime, c.loc) - utcOffset(now, c.loc)
+	if delta == 0 {
+		return awareTime, nil
+	}
+	altStart, err := pyAddDelta(now.wall, delta)
+	if err != nil {
+		return pyDT{}, err
+	}
+	alt, err := c.calc(pyDT{wall: altStart}, false)
+	if err != nil {
+		return pyDT{}, err
+	}
+	altAware, _ := c.addTZ(alt.wall, now)
+	if !c.successor(altAware, now) {
+		return awareTime, nil
+	}
+	if c.successor(awareTime, altAware) {
+		return altAware, nil
+	}
+	return awareTime, nil
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// Next or previous match from a start, the day of month and weekday union croniter applies when both are set
+func (e *CronExpr) calcNext(now pyDT, loc *time.Location, isPrev bool) (pyDT, error) {
+	fields := append([]cronField(nil), e.spec.fields...)
+	c := &cronCalc{spec: e.spec, loc: loc, fields: fields, nth: e.spec.nth, isPrev: isPrev, seconds: len(fields) > 5}
+	aware := loc != nil
+	if !fields[cronDayField].star() && !fields[cronDowField].star() {
+		bak := fields[cronDowField]
+		fields[cronDowField] = cronField{{kind: '*'}}
+		t1, err := c.calc(now, aware)
+		if err != nil {
+			return pyDT{}, err
+		}
+		fields[cronDowField] = bak
+		fields[cronDayField] = cronField{{kind: '*'}}
+		t2, err := c.calc(now, aware)
+		if err != nil {
+			return pyDT{}, err
+		}
+		if isPrev {
+			if t1.wall.After(t2.wall) {
+				return t1, nil
+			}
+			return t2, nil
+		}
+		if t1.wall.Before(t2.wall) {
+			return t1, nil
+		}
+		return t2, nil
+	}
+	return c.calc(now, aware)
+}
+
+// Next returns the first match after the wall clock of t, read as a naive datetime and returned in UTC
 func (e *CronExpr) Next(t time.Time) (time.Time, error) {
-	loc := t.Location()
-	unit := e.unit()
-	cur := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, loc)
-	if unit == time.Minute {
-		cur = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc)
-	}
-	cur = cur.Add(unit)
-	limit := t.Year() + 130
-	for cur.Year() <= limit {
-		if !e.yearOK(cur.Year()) {
-			cur = time.Date(cur.Year()+1, 1, 1, 0, 0, 0, 0, loc)
-			continue
-		}
-		if !e.months.has(int(cur.Month())) {
-			cur = time.Date(cur.Year(), cur.Month()+1, 1, 0, 0, 0, 0, loc)
-			continue
-		}
-		if !e.dayMatches(cur) {
-			cur = time.Date(cur.Year(), cur.Month(), cur.Day()+1, 0, 0, 0, 0, loc)
-			continue
-		}
-		if !e.hours.has(cur.Hour()) {
-			cur = time.Date(cur.Year(), cur.Month(), cur.Day(), cur.Hour()+1, 0, 0, 0, loc)
-			continue
-		}
-		if !e.minutes.has(cur.Minute()) {
-			cur = time.Date(cur.Year(), cur.Month(), cur.Day(), cur.Hour(), cur.Minute()+1, 0, 0, loc)
-			continue
-		}
-		if !e.seconds.has(cur.Second()) {
-			cur = cur.Add(time.Second)
-			continue
-		}
-		return cur, nil
-	}
-	return time.Time{}, ErrNoOccurrence
+	got, err := e.calcNext(pyDT{wall: microTrunc(wallOf(t))}, nil, false)
+	return got.wall, err
 }
 
-// Prev returns the last wall clock occurrence strictly before t, treating t as a naive wall clock
+// Prev returns the last match before the wall clock of t, read as a naive datetime and returned in UTC
 func (e *CronExpr) Prev(t time.Time) (time.Time, error) {
-	loc := t.Location()
-	unit := e.unit()
-	cur := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, loc)
-	if unit == time.Minute {
-		cur = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), 0, 0, loc)
-	}
-	if !cur.Before(t) {
-		cur = cur.Add(-unit)
-	}
-	limit := t.Year() - 130
-	for cur.Year() >= limit {
-		if !e.yearOK(cur.Year()) {
-			cur = time.Date(cur.Year()-1, 12, 31, 23, 59, 59, 0, loc)
-			continue
-		}
-		if !e.months.has(int(cur.Month())) {
-			cur = time.Date(cur.Year(), cur.Month(), 1, 0, 0, 0, 0, loc).Add(-time.Second)
-			continue
-		}
-		if !e.dayMatches(cur) {
-			cur = time.Date(cur.Year(), cur.Month(), cur.Day(), 0, 0, 0, 0, loc).Add(-time.Second)
-			continue
-		}
-		if !e.hours.has(cur.Hour()) {
-			cur = time.Date(cur.Year(), cur.Month(), cur.Day(), cur.Hour(), 0, 0, 0, loc).Add(-time.Second)
-			continue
-		}
-		if !e.minutes.has(cur.Minute()) {
-			cur = time.Date(cur.Year(), cur.Month(), cur.Day(), cur.Hour(), cur.Minute(), 0, 0, loc).Add(-time.Second)
-			continue
-		}
-		if !e.seconds.has(cur.Second()) {
-			cur = cur.Add(-time.Second)
-			continue
-		}
-		if unit == time.Minute {
-			return time.Date(cur.Year(), cur.Month(), cur.Day(), cur.Hour(), cur.Minute(), 0, 0, loc), nil
-		}
-		return cur, nil
-	}
-	return time.Time{}, ErrNoOccurrence
+	got, err := e.calcNext(pyDT{wall: microTrunc(wallOf(t))}, nil, true)
+	return got.wall, err
 }
 
-// Matches reports whether t, read as a naive wall clock, is an occurrence of the expression
-func (e *CronExpr) Matches(t time.Time) bool {
-	if !e.yearOK(t.Year()) || !e.months.has(int(t.Month())) || !e.dayMatches(t) {
-		return false
+// NextAt returns the first match after instant t with the zone of t attached the way an aware start works
+func (e *CronExpr) NextAt(t time.Time) (time.Time, error) {
+	loc := t.Location()
+	got, err := e.calcNext(awareOf(microTrunc(t), loc), loc, false)
+	if err != nil {
+		return time.Time{}, err
 	}
-	if !e.hours.has(t.Hour()) || !e.minutes.has(t.Minute()) {
-		return false
+	return instantOf(got, loc), nil
+}
+
+// PrevAt returns the last match before instant t with the zone of t attached the way an aware start works
+func (e *CronExpr) PrevAt(t time.Time) (time.Time, error) {
+	loc := t.Location()
+	got, err := e.calcNext(awareOf(microTrunc(t), loc), loc, true)
+	if err != nil {
+		return time.Time{}, err
 	}
-	if e.Fields >= 6 {
-		return e.seconds.has(t.Second())
-	}
-	return true
+	return instantOf(got, loc), nil
 }

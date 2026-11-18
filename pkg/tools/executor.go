@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"math"
 	"os"
@@ -50,7 +51,7 @@ var sequentialInterruptPollInterval = time.Second
 var toolActivityHeartbeatInterval = 30 * time.Second
 
 // PrunedToolArgumentsMessage explains why a call carrying a compression marker was refused
-var PrunedToolArgumentsMessage = "Tool was not executed because effect-capable arguments contain an icebath context-compression artifact. " +
+var PrunedToolArgumentsMessage = "Tool was not executed because effect-capable arguments contain an Icebath context-compression artifact. " +
 	"Recover the exact content from its durable source or re-read it, then issue a complete new call; " +
 	"do not retry these arguments. To remove a marker that already landed in a file, match it by its " +
 	strings.Trim(CompressionMarkerPrefix, "⟪:") + " prefix (e.g. a terminal sed on that line) instead of quoting the full marker."
@@ -82,7 +83,7 @@ func resolveTimeout(env *Env, key string, def float64, hasDefault bool, envVar s
 				return clampTimeoutSeconds(f, true)
 			}
 		}
-		toolsLogger(env).Warn("timeouts: invalid value in config.yaml; ignoring", "key", key, "value", raw)
+		toolsLogger(env).With("logger", "agent.deadline").Warn(fmt.Sprintf("timeouts.%s: invalid value %s in config.yaml; ignoring", key, pyrepr.Repr(raw)))
 	}
 	if envVar != "" {
 		for _, name := range []string{envVar, strings.Replace(envVar, "ICEBATH_", "HERMES_", 1)} {
@@ -93,7 +94,7 @@ func resolveTimeout(env *Env, key string, def float64, hasDefault bool, envVar s
 			if f, err := strconv.ParseFloat(rawEnv, 64); err == nil {
 				return clampTimeoutSeconds(f, true)
 			}
-			toolsLogger(env).Warn("invalid timeout env value; ignoring", "name", name, "value", rawEnv)
+			toolsLogger(env).With("logger", "agent.deadline").Warn(fmt.Sprintf("invalid %s=%s; ignoring", name, pyrepr.Repr(rawEnv)))
 		}
 	}
 	return clampTimeoutSeconds(def, hasDefault)
@@ -306,7 +307,7 @@ type Executor struct {
 	Host       ExecutorHost
 	Dispatcher *Dispatcher
 	workersMu  sync.Mutex
-	workers    map[WorkerID]context.CancelCauseFunc
+	workers    map[WorkerID]struct{}
 }
 
 // NewExecutor binds an executor to its host and dispatcher
@@ -314,7 +315,7 @@ func NewExecutor(host ExecutorHost, d *Dispatcher) *Executor {
 	if d == nil {
 		d = NewDispatcher(Default)
 	}
-	return &Executor{Host: host, Dispatcher: d, workers: map[WorkerID]context.CancelCauseFunc{}}
+	return &Executor{Host: host, Dispatcher: d, workers: map[WorkerID]struct{}{}}
 }
 
 // Tool result budget scaled to the agent's context window, once per turn
@@ -331,33 +332,19 @@ func (e *Executor) hookIDs(taskID, toolCallID string) ToolHookIDs {
 	return ToolHookIDs{TaskID: taskID, SessionID: e.Host.SessionID(), ToolCallID: toolCallID, TurnID: e.Host.TurnID(), APIRequestID: e.Host.APIRequestID()}
 }
 
-// Registers a worker for interrupt fan out and clears its bit on exit
+// Registers a worker for interrupt fan out, its bit cleared and its context released on exit
 func (e *Executor) registerWorker(ctx context.Context) (context.Context, WorkerID, func()) {
 	id := NewWorkerID()
 	wctx, cancel := context.WithCancelCause(ctx)
 	e.workersMu.Lock()
-	e.workers[id] = cancel
+	e.workers[id] = struct{}{}
 	e.workersMu.Unlock()
 	return WithWorker(wctx, id), id, func() {
 		e.workersMu.Lock()
 		delete(e.workers, id)
 		e.workersMu.Unlock()
 		SetInterrupt(id, false, "")
-	}
-}
-
-// Cancels the dispatch context of each listed worker still tracked so a handler blocked on it returns
-func (e *Executor) cancelWorkerContexts(ids []WorkerID, cause error) {
-	e.workersMu.Lock()
-	cancels := make([]context.CancelCauseFunc, 0, len(ids))
-	for _, id := range ids {
-		if cancel := e.workers[id]; cancel != nil {
-			cancels = append(cancels, cancel)
-		}
-	}
-	e.workersMu.Unlock()
-	for _, cancel := range cancels {
-		cancel(cause)
+		cancel(nil)
 	}
 }
 
@@ -484,7 +471,7 @@ func (e *Executor) toolSearchScopedNames(ctx context.Context) map[string]bool {
 }
 
 // Peels the tool_call bridge so downstream hooks see the underlying tool, enforcing session scope here
-func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args map[string]any, flattenProbe bool) (string, map[string]any, string) {
+func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args map[string]any, raw string, flattenProbe bool) (string, map[string]any, string) {
 	if name != ToolCallName {
 		return name, args, ""
 	}
@@ -496,7 +483,7 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 	if !e.toolSearchScopedNames(ctx)[underlying] {
 		return name, args, ScopeBlockReason(ctx, env, underlying)
 	}
-	scopeBlock := ValidateDeferredCallArgs(ctx, env, underlying, underlyingArgs)
+	scopeBlock := ValidateDeferredCallArgs(ctx, env, underlying, DeferredCallArguments(orderedArgsObject(raw, args).Vals))
 	if scopeBlock == "" {
 		return underlying, underlyingArgs, ""
 	}
@@ -575,7 +562,7 @@ func (e *Executor) ParseToolCall(ctx context.Context, tc state.ToolCall, flatten
 	args, parseError := ParseToolArguments(tc.Function.Arguments)
 	scopeBlock := ""
 	if parseError == "" {
-		name, args, scopeBlock = e.unwrapToolSearchCall(ctx, name, args, flattenProbe)
+		name, args, scopeBlock = e.unwrapToolSearchCall(ctx, name, args, tc.Function.Arguments, flattenProbe)
 	}
 	return &ParsedCall{ToolCall: tc, Name: name, Args: args, Trace: []map[string]any{}, ParseError: parseError, ScopeBlock: scopeBlock}
 }
@@ -663,8 +650,7 @@ func (g *AuthorizationGate) Run(callback func()) {
 		defer func() { <-g.sem }()
 		callback()
 	case <-expired:
-		toolsLogger(g.env).Warn("authorization gate lock not acquired (holder wedged in a pre_tool_call plugin or approval round-trip?); running prompt unserialized",
-			"seconds", g.lockTimeout.Seconds())
+		executorLog(g.env).Warn(fmt.Sprintf("authorization gate lock not acquired after %.1fs (holder wedged in a pre_tool_call plugin or approval round-trip?); running prompt unserialized", g.lockTimeout.Seconds()))
 		callback()
 	}
 }
@@ -724,15 +710,15 @@ func touchActivitySafely(host ExecutorHost, label string) (ok bool) {
 }
 
 // Synthesizes the result for a blocked call and emits its terminal post tool call
-func (e *Executor) blockedToolResult(ctx context.Context, ref *ToolCallRef, blockBody map[string]any, blockErrorType string, decision *ToolGuardrailDecision) string {
+func (e *Executor) blockedToolResult(ctx context.Context, ref *ToolCallRef, blockBody *pyjson.Object, blockErrorType string, decision *ToolGuardrailDecision) string {
 	var result, errorType, errorMessage string
 	if blockBody != nil {
 		result = dumpsUnicode(blockBody)
 		errorType = blockErrorType
-		if msg, ok := blockBody["message"].(string); ok && msg != "" {
+		if msg, ok := blockBody.Vals["message"].(string); ok && msg != "" {
 			errorMessage = msg
 		} else {
-			errorMessage, _ = blockBody["error"].(string)
+			errorMessage, _ = blockBody.Vals["error"].(string)
 		}
 	} else {
 		result = e.Host.GuardrailBlockResult(*decision)
@@ -785,9 +771,9 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 		}
 		st.Args = ref.Args
 	}
-	var blockBody map[string]any
+	var blockBody *pyjson.Object
 	if blockMessage != "" {
-		blockBody = map[string]any{"error": blockMessage}
+		blockBody = pyjson.ObjectOf("error", blockMessage)
 	}
 	if blockBody == nil {
 		if pruned := ContextPrunedArgumentPaths(ref.Name, ref.Args); len(pruned) > 0 {
@@ -795,7 +781,7 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 			for i, p := range pruned {
 				paths[i] = p
 			}
-			blockBody = map[string]any{"error": PrunedToolArgumentsError, "message": PrunedToolArgumentsMessage, "argument_paths": paths}
+			blockBody = pyjson.ObjectOf("error", PrunedToolArgumentsError, "message", PrunedToolArgumentsMessage, "argument_paths", paths)
 			blockErrorType = PrunedToolArgumentsError
 		}
 	}
@@ -947,7 +933,12 @@ func safeCallback(fn func(), label string) {
 }
 
 func envLogDebug(msg string, rec any) {
-	toolsLogger(nil).Debug(msg, "panic", rec)
+	toolsLogger(nil).With("logger", "root").Debug(fmt.Sprintf("%s: %v", msg, rec))
+}
+
+// Logger named like the reference tool executor module
+func executorLog(env *Env) *slog.Logger {
+	return toolsLogger(env).With("logger", "agent.tool_executor")
 }
 
 // First limit characters with an ellipsis when the text is longer
@@ -992,7 +983,7 @@ func (e *Executor) flushAfterToolProgress(messages *[]*state.Message, stage stri
 	defer func() {
 		if r := recover(); r != nil {
 			host.MarkIncrementalPersistenceFailed(state.ClassifyPersistenceError(r))
-			toolsLogger(host.Env()).Warn(fmt.Sprintf("Incremental tool-call persistence failed after %s: %v", stage, r))
+			executorLog(host.Env()).Warn(fmt.Sprintf("Incremental tool-call persistence failed after %s: %v", stage, r))
 			persisted = false
 		}
 	}()
@@ -1115,7 +1106,8 @@ type commitInput struct {
 // Observes, logs, persists, wraps, appends, flushes, and projects one tool result
 func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Message, ref *ToolCallRef, result string, in commitInput) *committed {
 	host := e.Host
-	log := toolsLogger(host.Env())
+	log := executorLog(host.Env())
+	rootLog := toolsLogger(host.Env()).With("logger", "root")
 	host.ObserveToolOutcome(ref.Name, in.isError)
 	if in.observed {
 		if !in.blocked {
@@ -1126,15 +1118,15 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			if in.errorPreview != nil {
 				preview = in.errorPreview(result)
 			}
-			log.Warn("Tool returned error", "tool", ref.Name, "seconds", fmt.Sprintf("%.2f", in.duration), "result", preview)
+			log.Warn(fmt.Sprintf("Tool %s returned error (%.2fs): %s", ref.Name, in.duration, preview))
 		} else if in.logSuccess {
-			log.Info("tool completed", "tool", ref.Name, "seconds", fmt.Sprintf("%.2f", in.duration), "chars", in.successLogChars)
+			log.Info(fmt.Sprintf("tool %s completed (%.2fs, %d chars)", ref.Name, in.duration, in.successLogChars))
 		}
 		if !in.blocked {
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						log.Debug("file-mutation verifier record failed", "panic", rec)
+						rootLog.Debug(fmt.Sprintf("file-mutation verifier record failed: %v", rec))
 					}
 				}()
 				host.RecordFileMutationResult(ref.Name, ref.Args, result, in.isError, ref.TaskID)
@@ -1145,8 +1137,8 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			if in.verboseText != nil {
 				text = in.verboseText(result)
 			}
-			log.Debug("Tool completed", "tool", ref.Name, "seconds", fmt.Sprintf("%.2f", in.duration))
-			log.Debug("Tool result", "chars", utf8.RuneCountInString(text), "text", text)
+			rootLog.Debug(fmt.Sprintf("Tool %s completed in %.2fs", ref.Name, in.duration))
+			rootLog.Debug(fmt.Sprintf("Tool result (%d chars): %s", utf8.RuneCountInString(text), text))
 		}
 	}
 	host.SetCurrentTool("")
@@ -1183,7 +1175,7 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 			func() {
 				defer func() {
 					if rec := recover(); rec != nil {
-						log.Debug("Tool result metadata callback error", "panic", rec)
+						rootLog.Debug(fmt.Sprintf("Tool result metadata callback error: %v", rec))
 					}
 				}()
 				displayArgs := host.RedactToolArgsForDisplay(ref.Name, ref.Args)
@@ -1335,11 +1327,6 @@ func startOrderGateTimeout(batchTimeout time.Duration) time.Duration {
 
 var errBatchAbandoned = fmt.Errorf("batch abandoned before dispatch")
 
-var (
-	errToolCallTimedOut  = errors.New("tool call timed out")
-	errToolCallAbandoned = errors.New("tool call abandoned after interrupt")
-)
-
 // StartOrderGate serializes worker dispatch by submit order so prompts appear in call order
 type StartOrderGate struct {
 	mu        sync.Mutex
@@ -1384,7 +1371,10 @@ func (g *StartOrderGate) beginInOrder(order int, callback func(), toolName strin
 		return false
 	}
 	if !inOrder {
-		toolsLogger(g.env).Warn("start-order gate timed out; proceeding out of order", "tool", toolName, "order", order, "next", g.nextOrder)
+		if toolName == "" {
+			toolName = "tool"
+		}
+		executorLog(g.env).Warn(fmt.Sprintf("start-order gate timed out for %s (order=%d next=%d); proceeding out of order", toolName, order, g.nextOrder))
 	}
 	defer func() {
 		if order+1 > g.nextOrder {
@@ -1464,19 +1454,19 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	in.scopeBlock, in.displayIndex, in.beginExecution, in.gate = scopeBlock, index+1, startGate.advance, b.authGate
 	managed, err := e.runToolExecutionMiddleware(ctx, in)
 	if errors.Is(err, errBatchAbandoned) {
-		toolsLogger(e.Host.Env()).Info("tool abandoned at start-order gate; skipping dispatch", "tool", ref.Name)
+		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s abandoned at start-order gate; skipping dispatch", ref.Name))
 		return nil
 	}
 	if IsKeyboardInterrupt(ctx, err) {
 		e.interruptForKeyboard()
 		result = e.emitCancelled(ctx, ref, start)
 		duration := time.Since(start).Seconds()
-		toolsLogger(e.Host.Env()).Info("tool cancelled", "tool", ref.Name, "seconds", fmt.Sprintf("%.2f", duration))
+		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s cancelled (%.2fs)", ref.Name, duration))
 		return &toolOutcome{ref: ref, result: result, duration: duration, isError: true}
 	}
 	if err != nil {
 		result = fmt.Sprintf("Error executing tool '%s': %s", ref.Name, err.Error())
-		toolsLogger(e.Host.Env()).Error("invoke tool raised", "tool", ref.Name, "error", err)
+		executorLog(e.Host.Env()).Error(fmt.Sprintf("_invoke_tool raised for %s: %s", ref.Name, err.Error()))
 	} else {
 		result, ref.Args, ref.Trace = managed.Result, managed.Args, managed.Trace
 		blocked, dispatched, dataUse = managed.Blocked, managed.Dispatched, managed.DataUse
@@ -1487,9 +1477,9 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	}
 	isError, _ := ClassifyToolFailure(ref.Name, &result)
 	if isError {
-		toolsLogger(e.Host.Env()).Info("tool failed", "tool", ref.Name, "seconds", fmt.Sprintf("%.2f", duration), "result", previewText(result, 200))
+		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s failed (%.2fs): %s", ref.Name, duration, runePrefix(result, 200)))
 	} else {
-		toolsLogger(e.Host.Env()).Info("tool completed", "tool", ref.Name, "seconds", fmt.Sprintf("%.2f", duration), "chars", utf8.RuneCountInString(result))
+		executorLog(e.Host.Env()).Info(fmt.Sprintf("tool %s completed (%.2fs, %d chars)", ref.Name, duration, utf8.RuneCountInString(result)))
 	}
 	return &toolOutcome{ref: ref, result: result, duration: duration, isError: isError, blocked: blocked, dataUse: dataUse}
 }
@@ -1578,7 +1568,7 @@ func (b *concurrentBatch) awaitCompletion(ctx context.Context, done []chan struc
 			if len(names) > 5 {
 				names = names[:5]
 			}
-			toolsLogger(host.Env()).Warn("concurrent tool batch timed out", "seconds", fmt.Sprintf("%.1f", b.timeout.Seconds()), "still_running", len(b.timedOut), "tools", strings.Join(names, ", "))
+			executorLog(host.Env()).Warn(fmt.Sprintf("concurrent tool batch timed out after %.1fs; %d tool(s) still running: %s", b.timeout.Seconds(), len(b.timedOut), strings.Join(names, ", ")))
 		} else if host.Interrupted() {
 			host.VPrint(fmt.Sprintf("%s⚡ Interrupt: cancelling %d pending concurrent tool(s)", host.LogPrefix(), pending), true)
 		} else {
@@ -1595,7 +1585,6 @@ func (b *concurrentBatch) awaitCompletion(ctx context.Context, done []chan struc
 		b.gate.Abandon()
 		if timedOut {
 			e.InterruptWorkers("")
-			e.cancelWorkerContexts(e.trackedWorkerIDs(), errToolCallTimedOut)
 		} else {
 			waitAll(nil, done, abandonedWorkerGrace)
 		}
@@ -1892,7 +1881,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		spinner := e.startQuietToolSpinner(name, args, true, delegateSpinnerLabel(args))
 		host.SetDelegateSpinner(spinner)
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
-			return host.DispatchDelegateTask(ctx, next)
+			return host.DispatchDelegateTask(ctx, orderedArgsObject(rawArgs, next).Vals)
 		},
 			spinner: spinner, isDelegate: true, finishSpinner: true, finishInFinally: true}
 	}
@@ -1902,7 +1891,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 			errorResult: func(err error) string {
 				return dumpsASCII(map[string]any{"error": fmt.Sprintf("Context engine tool '%s' failed: %s", name, err.Error())})
 			},
-			errorLog: "context engine handle_tool_call raised", finishSpinner: true, finishInFinally: true}
+			errorLog: "context_engine.handle_tool_call raised for %s: %s", finishSpinner: true, finishInFinally: true}
 	}
 	if mm := host.MemoryManager(); mm != nil && mm.HasTool(name) {
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
@@ -1912,7 +1901,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 			errorResult: func(err error) string {
 				return dumpsASCII(map[string]any{"error": fmt.Sprintf("Memory tool '%s' failed: %s", name, err.Error())})
 			},
-			errorLog: "memory manager handle_tool_call raised", finishSpinner: true, finishInFinally: true}
+			errorLog: "memory_manager.handle_tool_call raised for %s: %s", finishSpinner: true, finishInFinally: true}
 	}
 	execute := func(ctx context.Context, next map[string]any) (string, error) {
 		return e.dispatchRegistry(ctx, name, next, rawArgs, taskID, callID, trace, false, true), nil
@@ -1923,7 +1912,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 	}
 	return &sequentialDispatch{execute: execute, spinner: spinner, trace: trace,
 		errorResult: func(err error) string { return fmt.Sprintf("Error executing tool '%s': %s", name, err.Error()) },
-		errorLog:    "handle_function_call raised", handlesKeyboardInterrupt: true, finishSpinner: host.QuietMode(), finishInFinally: true, transformApplied: true}
+		errorLog:    "handle_function_call raised for %s: %s", handlesKeyboardInterrupt: true, finishSpinner: host.QuietMode(), finishInFinally: true, transformApplied: true}
 }
 
 // Registry tools through the dispatcher, its post event emitted only when the caller does not own it
@@ -2108,22 +2097,20 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 			return outcome.managed, outcome.err
 		case <-time.After(abandonedWorkerGrace):
 		}
-		e.cancelWorkerContexts(ids, errToolCallAbandoned)
 		reason := host.ToolInterruptReason()
 		if reason == "" {
 			reason = "interrupt requested"
 		}
 		message = fmt.Sprintf("[Tool execution cancelled — %s was abandoned: %s]", in.name, reason)
-		toolsLogger(env).Info("sequential tool abandoned", "tool", in.name, "reason", reason, "seconds", fmt.Sprintf("%.1f", time.Since(started).Seconds()))
+		executorLog(env).Info(fmt.Sprintf("sequential tool %s abandoned due to %s (%.1fs elapsed)", in.name, reason, time.Since(started).Seconds()))
 		managed = e.abandonedSequentialResult(ctx, ref, message, int(time.Since(started).Milliseconds()), "cancelled", "tool_interrupted", "Tool execution cancelled: "+reason, true)
 	} else {
 		message = fmt.Sprintf("Error executing tool '%s': timed out after %.1fs", in.name, timeout.Seconds())
-		toolsLogger(env).Warn("sequential tool timed out", "tool", in.name, "seconds", fmt.Sprintf("%.1f", timeout.Seconds()))
+		executorLog(env).Warn(fmt.Sprintf("sequential tool %s timed out after %.1fs", in.name, timeout.Seconds()))
 		managed = e.abandonedSequentialResult(ctx, ref, message, int(timeout.Milliseconds()), "timeout", "tool_timeout", message, false)
 	}
 	if st == "timeout" {
 		interruptWorkerIDs(ids, "")
-		e.cancelWorkerContexts(ids, errToolCallTimedOut)
 	}
 	return managed, nil
 }
@@ -2162,7 +2149,7 @@ func (e *Executor) runSequentialCall(ctx context.Context, dispatch *sequentialDi
 	case dispatch.errorResult == nil:
 		raised = err
 	default:
-		toolsLogger(host.Env()).Error(dispatch.errorLog, "tool", ref.Name, "error", err)
+		executorLog(host.Env()).Error(fmt.Sprintf(dispatch.errorLog, ref.Name, err.Error()))
 		managed = &ManagedToolResult{Result: dispatch.errorResult(err), Args: ref.Args, Trace: ref.Trace}
 	}
 	if dispatch.isDelegate {
@@ -2220,13 +2207,29 @@ func (e *Executor) publishSequentialResult(ctx context.Context, messages *[]*sta
 	return true
 }
 
-// ExecuteToolCallsSequential runs calls one at a time
+// ExecuteToolCallsSequential runs calls one at a time in runs of adjacent terminal and other calls
 func (e *Executor) ExecuteToolCallsSequential(ctx context.Context, toolCalls []state.ToolCall, messages *[]*state.Message, taskID string, finalize bool) error {
-	if err := e.executeToolCallsSequential(ctx, toolCalls, messages, taskID); err != nil {
-		return err
+	isTerminal := make([]bool, len(toolCalls))
+	probed := 0
+	key := func(j int) bool {
+		for ; probed <= j; probed++ {
+			pc := e.ParseToolCall(ctx, toolCalls[probed], true)
+			isTerminal[probed] = pc.Name == "terminal" && pc.ParseError == ""
+		}
+		return isTerminal[j]
 	}
-	if e.Host.IncrementalPersistenceFailed() {
-		return nil
+	for start := 0; start < len(toolCalls); {
+		end, run := start+1, key(start)
+		for end < len(toolCalls) && key(end) == run {
+			end++
+		}
+		if err := e.executeToolCallsSequential(ctx, toolCalls[start:end], messages, taskID); err != nil {
+			return err
+		}
+		if e.Host.IncrementalPersistenceFailed() {
+			return nil
+		}
+		start = end
 	}
 	if finalize {
 		e.finalizeToolBatch(ctx, messages, taskID, len(toolCalls), e.budget())

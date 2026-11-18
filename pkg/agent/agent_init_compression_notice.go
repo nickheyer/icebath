@@ -147,7 +147,7 @@ func emitCompressionSummary(ctx context.Context, a *AIAgent, cs CompressionSetti
 	notice := ""
 	cc := a.contextCompressor
 	if len(autoraise) > 0 && cs.Enabled && cs.AutoraiseNoticeEnabled && !codexGPT55AutoraiseNoticeSeen(ctx, autoraise) {
-		notice = buildCodexGPT5AutoraiseNotice(autoraise, cc.Base().ContextLength)
+		notice = buildCodexGPT5AutoraiseNotice(autoraise, engineContextLength(cc))
 	}
 	if !a.quietMode {
 		base := cc.Base()

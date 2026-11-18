@@ -3,12 +3,13 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"math"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Anthropic and the gateways fronting it reject property keys outside this pattern
@@ -46,8 +47,8 @@ var schemaStripOnRecoveryKeys = map[string]bool{"pattern": true, "format": true}
 
 var schemaMarkers = map[string]bool{"type": true, "anyOf": true, "oneOf": true, "allOf": true}
 
-func schemaEmptyObject() map[string]any {
-	return map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}
+func schemaEmptyObject() *pyjson.Object {
+	return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject(), "required", []any{})
 }
 
 // Returns map keys in sorted order so renames stay deterministic across runs
@@ -60,9 +61,25 @@ func sortedKeys(m map[string]any) []string {
 	return keys
 }
 
-// Deep copies nested maps and slices so callers may mutate the result freely
+// Keys of a dict value in its own order, a plain map read in sorted order
+func dictKeysInOrder(v any) []string {
+	switch t := v.(type) {
+	case *pyjson.Object:
+		if t == nil {
+			return nil
+		}
+		return append([]string(nil), t.Keys...)
+	case map[string]any:
+		return sortedKeys(t)
+	}
+	return nil
+}
+
+// Deep copies nested dicts and lists so callers may mutate the result freely, ordered dicts keeping their order
 func schemaDeepCopy(v any) any {
 	switch t := v.(type) {
+	case *pyjson.Object:
+		return pyjson.Clone(t)
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
@@ -92,8 +109,14 @@ func schemaDeepCopy(v any) any {
 	}
 }
 
-// Bottom up map over a schema tree where fn sees every map after its children
-func schemaRewrite(schema any, fn func(map[string]any) any) any {
+// Ordered dict of a dict value, a plain map entering in sorted key order, nil for anything else
+func schemaObject(v any) *pyjson.Object {
+	o, _ := pyjson.AsObject(v)
+	return o
+}
+
+// Bottom up map over a schema tree where fn sees every dict rebuilt in order after its children
+func schemaRewrite(schema any, fn func(*pyjson.Object) any) any {
 	switch t := schema.(type) {
 	case []any:
 		out := make([]any, len(t))
@@ -101,10 +124,14 @@ func schemaRewrite(schema any, fn func(map[string]any) any) any {
 			out[i] = schemaRewrite(item, fn)
 		}
 		return out
-	case map[string]any:
-		rebuilt := make(map[string]any, len(t))
-		for k, v := range t {
-			rebuilt[k] = schemaRewrite(v, fn)
+	case *pyjson.Object, map[string]any:
+		src := schemaObject(t)
+		if src == nil {
+			return schema
+		}
+		rebuilt := pyjson.NewObject()
+		for _, k := range src.Keys {
+			rebuilt.Set(k, schemaRewrite(src.Vals[k], fn))
 		}
 		return fn(rebuilt)
 	default:
@@ -124,16 +151,17 @@ func SanitizePropertyKey(key string) string {
 	return out
 }
 
-// Builds original to conforming key renames with numeric suffixes on collision
-func schemaRenamePropertyKeys(props map[string]any, path string) map[string]string {
+// Builds original to conforming key renames in key order with numeric suffixes on collision
+func schemaRenamePropertyKeys(props any, path string) map[string]string {
 	renames := map[string]string{}
 	taken := map[string]bool{}
-	for k := range props {
+	keys := dictKeysInOrder(props)
+	for _, k := range keys {
 		if schemaPropKeyRe.MatchString(k) {
 			taken[k] = true
 		}
 	}
-	for _, key := range sortedKeys(props) {
+	for _, key := range keys {
 		if schemaPropKeyRe.MatchString(key) {
 			continue
 		}
@@ -172,42 +200,47 @@ func schemaSanitizeSingleTool(tool map[string]any) map[string]any {
 	if out == nil {
 		return map[string]any{}
 	}
-	fn, ok := out["function"].(map[string]any)
+	fn, ok := out["function"].(*pyjson.Object)
 	if !ok {
-		return out
+		if m, isMap := out["function"].(map[string]any); isMap {
+			fn = schemaObject(m)
+			out["function"] = fn
+		} else {
+			return out
+		}
 	}
-	params, ok := fn["parameters"].(map[string]any)
-	if !ok {
-		fn["parameters"] = schemaEmptyObject()
+	params, ok := fn.Get("parameters")
+	if _, isDict := pyjson.Dict(params); !ok || !isDict {
+		fn.Set("parameters", schemaEmptyObject())
 		return out
 	}
 	name := "<tool>"
-	if n, ok := fn["name"].(string); ok {
-		name = n
+	if n, ok := fn.Get("name"); ok {
+		name = fmt.Sprint(n)
 	}
-	top, _ := schemaSanitizeNode(params, name).(map[string]any)
+	top, _ := schemaSanitizeNode(params, name).(*pyjson.Object)
 	if top == nil {
-		top = map[string]any{}
+		top = pyjson.NewObject()
 	}
-	top["type"] = "object"
-	if _, ok := top["properties"].(map[string]any); !ok {
-		top["properties"] = map[string]any{}
+	top.Set("type", "object")
+	if _, ok := pyjson.Dict(top.Vals["properties"]); !ok {
+		top.Set("properties", pyjson.NewObject())
 	}
-	if _, ok := top["required"].([]any); !ok {
-		top["required"] = []any{}
+	if _, ok := top.Vals["required"].([]any); !ok {
+		top.Set("required", []any{})
 	}
-	collapsed, _ := StripNullableUnions(top, true).(map[string]any)
+	collapsed, _ := StripNullableUnions(top, true).(*pyjson.Object)
 	collapsed = schemaStripTopLevelCombinators(collapsed, name)
-	fn["parameters"] = schemaStripRefSiblings(collapsed)
+	fn.Set("parameters", schemaStripRefSiblings(collapsed))
 	return out
 }
 
 // Drops default beside $ref everywhere since Fireworks rejects that pairing
 func schemaStripRefSiblings(node any) any {
-	return schemaRewrite(node, func(out map[string]any) any {
-		if _, ok := out["$ref"]; ok {
+	return schemaRewrite(node, func(out *pyjson.Object) any {
+		if _, ok := out.Get("$ref"); ok {
 			for _, key := range schemaRefForbiddenSiblings {
-				delete(out, key)
+				out.Delete(key)
 			}
 		}
 		return out
@@ -215,26 +248,23 @@ func schemaStripRefSiblings(node any) any {
 }
 
 // Drops combinators from the top level only because Codex rejects them there
-func schemaStripTopLevelCombinators(params map[string]any, path string) map[string]any {
+func schemaStripTopLevelCombinators(params *pyjson.Object, path string) *pyjson.Object {
 	if params == nil {
 		return params
 	}
-	out := make(map[string]any, len(params))
-	for k, v := range params {
-		out[k] = v
-	}
+	out := params.Copy()
 	for _, key := range schemaTopLevelForbiddenKeys {
-		if _, ok := out[key]; ok {
+		if _, ok := out.Get(key); ok {
 			slog.Debug("schema_sanitizer: stripped top-level combinator from tool parameters (strict-backend compat)",
 				"path", path, "key", key)
-			delete(out, key)
+			out.Delete(key)
 		}
 	}
 	return out
 }
 
 func schemaIsNullBranch(item any) bool {
-	m, ok := item.(map[string]any)
+	m, ok := pyjson.Dict(item)
 	if !ok {
 		return false
 	}
@@ -243,30 +273,30 @@ func schemaIsNullBranch(item any) bool {
 }
 
 // Copies outer union metadata onto the replacement where absent
-func schemaCarryUnionMeta(outer, replacement map[string]any, skipDefaultOnRef bool) {
+func schemaCarryUnionMeta(outer, replacement *pyjson.Object, skipDefaultOnRef bool) {
 	for _, metaKey := range schemaUnionMetaKeys {
-		val, present := outer[metaKey]
+		val, present := outer.Get(metaKey)
 		if !present {
 			continue
 		}
-		if _, has := replacement[metaKey]; has {
+		if _, has := replacement.Get(metaKey); has {
 			continue
 		}
 		if skipDefaultOnRef && metaKey == "default" {
-			if _, isRef := replacement["$ref"]; isRef {
+			if _, isRef := replacement.Get("$ref"); isRef {
 				continue
 			}
 		}
-		replacement[metaKey] = val
+		replacement.Set(metaKey, val)
 	}
 }
 
 // StripNullableUnions collapses anyOf or oneOf nullable unions to the single non null branch
 func StripNullableUnions(schema any, keepNullableHint bool) any {
-	var collapse func(map[string]any) any
-	collapse = func(stripped map[string]any) any {
+	var collapse func(*pyjson.Object) any
+	collapse = func(stripped *pyjson.Object) any {
 		for _, key := range schemaUnionKeys {
-			variants, ok := stripped[key].([]any)
+			variants, ok := stripped.Vals[key].([]any)
 			if !ok {
 				continue
 			}
@@ -277,15 +307,13 @@ func StripNullableUnions(schema any, keepNullableHint bool) any {
 				}
 			}
 			if len(nonNull) == 1 && len(nonNull) != len(variants) {
-				replacement := map[string]any{}
-				if m, ok := nonNull[0].(map[string]any); ok {
-					for k, v := range m {
-						replacement[k] = v
-					}
+				replacement := pyjson.NewObject()
+				if m := schemaObject(nonNull[0]); m != nil {
+					replacement = m.Copy()
 				}
 				if keepNullableHint {
-					if _, has := replacement["nullable"]; !has {
-						replacement["nullable"] = true
+					if _, has := replacement.Get("nullable"); !has {
+						replacement.Set("nullable", true)
 					}
 				}
 				schemaCarryUnionMeta(stripped, replacement, true)
@@ -299,7 +327,7 @@ func StripNullableUnions(schema any, keepNullableHint bool) any {
 
 // Primitive JSON Schema type of a pure const branch or empty when the branch is not one
 func schemaConstBranchType(branch any) string {
-	m, ok := branch.(map[string]any)
+	m, ok := pyjson.Dict(branch)
 	if !ok {
 		return ""
 	}
@@ -367,15 +395,15 @@ func schemaFloatType(v float64) string {
 
 // CollapseConstUnions turns unions of same typed consts into enum without mutating the input
 func CollapseConstUnions(schema any) any {
-	return schemaRewrite(schema, func(out map[string]any) any {
+	return schemaRewrite(schema, func(out *pyjson.Object) any {
 		for _, key := range schemaUnionKeys {
-			variants, ok := out[key].([]any)
+			variants, ok := out.Vals[key].([]any)
 			if !ok || len(variants) == 0 {
 				continue
 			}
 			var nullBranches, constBranches []any
 			for _, item := range variants {
-				m, _ := item.(map[string]any)
+				m, _ := pyjson.Dict(item)
 				if schemaIsNullBranch(item) && !schemaHasKey(m, "const") {
 					nullBranches = append(nullBranches, item)
 				} else {
@@ -400,11 +428,12 @@ func CollapseConstUnions(schema any) any {
 			}
 			enum := make([]any, 0, len(constBranches))
 			for _, item := range constBranches {
-				enum = append(enum, item.(map[string]any)["const"])
+				m, _ := pyjson.Dict(item)
+				enum = append(enum, m["const"])
 			}
-			replacement := map[string]any{"type": branchType, "enum": enum}
+			replacement := pyjson.ObjectOf("type", branchType, "enum", enum)
 			if len(nullBranches) > 0 {
-				replacement["nullable"] = true
+				replacement.Set("nullable", true)
 			}
 			schemaCarryUnionMeta(out, replacement, false)
 			return replacement
@@ -414,7 +443,7 @@ func CollapseConstUnions(schema any) any {
 }
 
 // Normalizes a type array into a single type, an anyOf of single types, or a null fallback
-func schemaNormalizeTypeArray(value []any, out map[string]any) {
+func schemaNormalizeTypeArray(value []any, out *pyjson.Object) {
 	hasNull := false
 	var nonNull []string
 	for _, t := range value {
@@ -430,24 +459,24 @@ func schemaNormalizeTypeArray(value []any, out map[string]any) {
 	}
 	if len(nonNull) == 0 {
 		if hasNull {
-			out["type"] = "null"
+			out.Set("type", "null")
 		} else {
-			out["type"] = "object"
+			out.Set("type", "object")
 		}
 		return
 	}
 	if len(nonNull) == 1 {
-		out["type"] = nonNull[0]
+		out.Set("type", nonNull[0])
 	} else {
 		branches := make([]any, 0, len(nonNull))
 		for _, t := range nonNull {
-			branches = append(branches, map[string]any{"type": t})
+			branches = append(branches, pyjson.ObjectOf("type", t))
 		}
-		out["anyOf"] = branches
+		out.Set("anyOf", branches)
 	}
 	if hasNull {
-		if _, has := out["nullable"]; !has {
-			out["nullable"] = true
+		if _, has := out.Get("nullable"); !has {
+			out.Set("nullable", true)
 		}
 	}
 }
@@ -461,7 +490,7 @@ func schemaSanitizeNode(node any, path string) any {
 			if t == "object" {
 				return schemaEmptyObject()
 			}
-			return map[string]any{"type": t}
+			return pyjson.ObjectOf("type", t)
 		}
 		slog.Debug("schema_sanitizer: replacing non-schema string with empty object schema", "path", path, "value", t)
 		return schemaEmptyObject()
@@ -471,54 +500,58 @@ func schemaSanitizeNode(node any, path string) any {
 			out[i] = schemaSanitizeNode(item, fmt.Sprintf("%s[%d]", path, i))
 		}
 		return out
-	case map[string]any:
-		return schemaSanitizeMap(t, path)
+	case *pyjson.Object, map[string]any:
+		return schemaSanitizeMap(schemaObject(t), path)
 	default:
 		return node
 	}
 }
 
-func schemaSanitizeMap(node map[string]any, path string) map[string]any {
-	propsIn, _ := node["properties"].(map[string]any)
+func schemaSanitizeMap(node *pyjson.Object, path string) *pyjson.Object {
+	propsIn := schemaObject(node.Vals["properties"])
 	propRenames := map[string]string{}
 	if propsIn != nil {
 		propRenames = schemaRenamePropertyKeys(propsIn, path+".properties")
 	}
-	out := map[string]any{}
-	for _, key := range sortedKeys(node) {
-		value := node[key]
+	out := pyjson.NewObject()
+	for _, key := range node.Keys {
+		value := node.Vals[key]
+		_, valueIsDict := pyjson.Dict(value)
 		switch {
 		case key == "type" && isAnyList(value):
 			schemaNormalizeTypeArray(toAnyList(value), out)
-		case schemaMapKeys[key] && isMap(value):
+		case schemaMapKeys[key] && valueIsDict:
 			renames := map[string]string{}
 			if key == "properties" {
 				renames = propRenames
 			}
-			sub := map[string]any{}
-			for k, v := range value.(map[string]any) {
+			sub := pyjson.NewObject()
+			src := schemaObject(value)
+			for _, k := range src.Keys {
 				nk := k
 				if r, ok := renames[k]; ok {
 					nk = r
 				}
-				sub[nk] = schemaSanitizeNode(v, fmt.Sprintf("%s.%s.%s", path, key, nk))
+				sub.Set(nk, schemaSanitizeNode(src.Vals[k], fmt.Sprintf("%s.%s.%s", path, key, nk)))
 			}
-			out[key] = sub
-		case key == "dependencies" && isMap(value):
-			sub := map[string]any{}
-			for k, v := range value.(map[string]any) {
-				if isMap(v) {
-					sub[k] = schemaSanitizeNode(v, fmt.Sprintf("%s.%s.%s", path, key, k))
+			out.Set(key, sub)
+		case key == "dependencies" && valueIsDict:
+			sub := pyjson.NewObject()
+			src := schemaObject(value)
+			for _, k := range src.Keys {
+				v := src.Vals[k]
+				if _, isDict := pyjson.Dict(v); isDict {
+					sub.Set(k, schemaSanitizeNode(v, fmt.Sprintf("%s.%s.%s", path, key, k)))
 				} else {
-					sub[k] = schemaDeepCopy(v)
+					sub.Set(k, schemaDeepCopy(v))
 				}
 			}
-			out[key] = sub
+			out.Set(key, sub)
 		case key == "items" || key == "additionalProperties":
 			if _, isBool := value.(bool); isBool {
-				out[key] = value
+				out.Set(key, value)
 			} else {
-				out[key] = schemaSanitizeNode(value, path+"."+key)
+				out.Set(key, schemaSanitizeNode(value, path+"."+key))
 			}
 		case schemaNonSchemaListKeys[key]:
 			if key == "required" {
@@ -537,21 +570,21 @@ func schemaSanitizeMap(node map[string]any, path string) map[string]any {
 						}
 						remapped[i] = r
 					}
-					out[key] = remapped
+					out.Set(key, remapped)
 					continue
 				}
 			}
-			out[key] = schemaDeepCopy(value)
+			out.Set(key, schemaDeepCopy(value))
 		case schemaChildKeys[key]:
-			out[key] = schemaSanitizeNode(value, path+"."+key)
+			out.Set(key, schemaSanitizeNode(value, path+"."+key))
 		default:
-			out[key] = schemaDeepCopy(value)
+			out.Set(key, schemaDeepCopy(value))
 		}
 	}
 	if propsIn != nil {
 		var lifted []string
-		for _, k := range sortedKeys(propsIn) {
-			v, ok := propsIn[k].(map[string]any)
+		for _, k := range propsIn.Keys {
+			v, ok := pyjson.Dict(propsIn.Vals[k])
 			if !ok {
 				continue
 			}
@@ -564,10 +597,8 @@ func schemaSanitizeMap(node map[string]any, path string) map[string]any {
 			}
 		}
 		if len(lifted) > 0 {
-			required, _ := out["required"].([]any)
-			if required == nil {
-				required = []any{}
-			}
+			required, _ := out.Vals["required"].([]any)
+			merged := append([]any{}, required...)
 			have := map[string]bool{}
 			for _, r := range required {
 				if s, ok := r.(string); ok {
@@ -576,34 +607,33 @@ func schemaSanitizeMap(node map[string]any, path string) map[string]any {
 			}
 			for _, key := range lifted {
 				if !have[key] {
-					required = append(required, key)
-					have[key] = true
+					merged = append(merged, key)
 				}
 			}
-			out["required"] = required
+			out.Set("required", merged)
 		}
 	}
-	if t, _ := out["type"].(string); t == "object" {
-		props, ok := out["properties"].(map[string]any)
+	if t, _ := out.Vals["type"].(string); t == "object" {
+		props, ok := pyjson.Dict(out.Vals["properties"])
 		if !ok {
 			props = map[string]any{}
-			out["properties"] = props
+			out.Set("properties", pyjson.NewObject())
 		}
 		filtered := []any{}
-		if required, ok := out["required"].([]any); ok {
+		if required, ok := out.Vals["required"].([]any); ok {
 			for _, r := range required {
 				if s, ok := r.(string); ok && schemaHasKey(props, s) {
 					filtered = append(filtered, s)
 				}
 			}
 		}
-		out["required"] = filtered
+		out.Set("required", filtered)
 	}
 	return out
 }
 
 func isMap(v any) bool {
-	_, ok := v.(map[string]any)
+	_, ok := pyjson.Dict(v)
 	return ok
 }
 
@@ -629,13 +659,25 @@ func toAnyList(v any) []any {
 	return nil
 }
 
-// Pre order walk yielding every map node before its values so the visitor may mutate it
-func schemaDictNodes(node any, visit func(map[string]any)) {
+// Pre order walk yielding every dict node before its values so the visitor may mutate it
+func schemaDictNodes(node any, visit func(any)) {
 	switch t := node.(type) {
+	case *pyjson.Object:
+		if t == nil {
+			return
+		}
+		visit(t)
+		for _, k := range append([]string(nil), t.Keys...) {
+			if v, ok := t.Vals[k]; ok {
+				schemaDictNodes(v, visit)
+			}
+		}
 	case map[string]any:
 		visit(t)
 		for _, k := range sortedKeys(t) {
-			schemaDictNodes(t[k], visit)
+			if v, ok := t[k]; ok {
+				schemaDictNodes(v, visit)
+			}
 		}
 	case []any:
 		for _, child := range t {
@@ -644,22 +686,32 @@ func schemaDictNodes(node any, visit func(map[string]any)) {
 	}
 }
 
-// Applies stripNode to every map node of each tool's parameters in place and counts removals
-func schemaReactiveStrip(tools []map[string]any, stripNode func(map[string]any) int, logMsg string) ([]map[string]any, int) {
+// Removes a key from an ordered or plain dict in place
+func dictDelete(node any, key string) {
+	switch t := node.(type) {
+	case *pyjson.Object:
+		t.Delete(key)
+	case map[string]any:
+		delete(t, key)
+	}
+}
+
+// Applies stripNode to every dict node of each tool's parameters in place and counts removals
+func schemaReactiveStrip(tools []map[string]any, stripNode func(any) int, logMsg string) ([]map[string]any, int) {
 	stripped := 0
 	for _, tool := range tools {
 		if tool == nil {
 			continue
 		}
-		var params map[string]any
+		var params any
 		if fn, ok := pyjson.Dict(tool["function"]); ok {
-			params, _ = fn["parameters"].(map[string]any)
+			params = fn["parameters"]
 		}
-		if params == nil {
-			params, _ = tool["parameters"].(map[string]any)
+		if _, ok := pyjson.Dict(params); !ok {
+			params = tool["parameters"]
 		}
-		if params != nil {
-			schemaDictNodes(params, func(node map[string]any) { stripped += stripNode(node) })
+		if _, ok := pyjson.Dict(params); ok {
+			schemaDictNodes(params, func(node any) { stripped += stripNode(node) })
 		}
 	}
 	if stripped > 0 {
@@ -670,9 +722,10 @@ func schemaReactiveStrip(tools []map[string]any, stripNode func(map[string]any) 
 
 // StripPatternAndFormat removes pattern and format keywords in place after a llama.cpp grammar rejection
 func StripPatternAndFormat(tools []map[string]any) ([]map[string]any, int) {
-	return schemaReactiveStrip(tools, func(node map[string]any) int {
+	return schemaReactiveStrip(tools, func(node any) int {
+		keys := dictKeysInOrder(node)
 		isSchema := false
-		for k := range node {
+		for _, k := range keys {
 			if schemaMarkers[k] {
 				isSchema = true
 				break
@@ -682,9 +735,9 @@ func StripPatternAndFormat(tools []map[string]any) ([]map[string]any, int) {
 			return 0
 		}
 		hits := 0
-		for k := range schemaStripOnRecoveryKeys {
-			if _, ok := node[k]; ok {
-				delete(node, k)
+		for _, k := range keys {
+			if schemaStripOnRecoveryKeys[k] {
+				dictDelete(node, k)
 				hits++
 			}
 		}
@@ -694,14 +747,15 @@ func StripPatternAndFormat(tools []map[string]any) ([]map[string]any, int) {
 
 // StripSlashEnum removes enum keywords whose string values contain a slash after an xAI grammar rejection
 func StripSlashEnum(tools []map[string]any) ([]map[string]any, int) {
-	return schemaReactiveStrip(tools, func(node map[string]any) int {
-		enum, ok := node["enum"].([]any)
+	return schemaReactiveStrip(tools, func(node any) int {
+		m, _ := pyjson.Dict(node)
+		enum, ok := m["enum"].([]any)
 		if !ok {
 			return 0
 		}
 		for _, v := range enum {
 			if s, ok := v.(string); ok && strings.Contains(s, "/") {
-				delete(node, "enum")
+				dictDelete(node, "enum")
 				return 1
 			}
 		}

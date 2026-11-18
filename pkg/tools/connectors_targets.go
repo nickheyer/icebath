@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	ConnectorActions = []string{"status", "connect", "reconnect", "rename"}
+	ConnectorActions = []string{"display", "status", "connect", "reconnect", "rename"}
 	MCPActions       = []string{"install", "enable", "authorize"}
 	AllActions       = append(append([]string{}, ConnectorActions...), MCPActions...)
 )

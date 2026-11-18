@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"context"
 	"net/http"
 	"testing"
@@ -26,7 +27,7 @@ func TestGeminiSchemaStringifiesNestedIntegerEnumInsideProperties(t *testing.T) 
 
 func TestGeminiSchemaNonDictInputReturnsEmpty(t *testing.T) {
 	for _, in := range []any{nil, "not a schema", gemList(`[1, 2, 3]`)} {
-		if out := sanitizeGeminiSchema(in); len(out) != 0 {
+		if out := sanitizeGeminiSchema(in); out.Len() != 0 {
 			t.Fatalf("%v -> %v", in, out)
 		}
 	}
@@ -34,21 +35,21 @@ func TestGeminiSchemaNonDictInputReturnsEmpty(t *testing.T) {
 
 func TestGeminiRequiredPruningInsideArrayItems(t *testing.T) {
 	cleaned := sanitizeGeminiSchema(gemMap(`{"type": "object", "properties": {"issue_fields": {"type": "array", "items": {"type": "object", "required": ["field_id", "value"]}}}, "required": ["issue_fields"]}`))
-	if _, ok := gemAt(cleaned, "properties", "issue_fields", "items").(map[string]any)["required"]; ok {
+	if _, ok := pyjson.Plain(gemAt(cleaned, "properties", "issue_fields", "items")).(map[string]any)["required"]; ok {
 		t.Fatal("dangling required kept")
 	}
-	gemEq(t, cleaned["required"], `["issue_fields"]`)
+	gemEq(t, cleaned.Vals["required"], `["issue_fields"]`)
 }
 
 func TestGeminiRequiredPruningValidRequiredUntouched(t *testing.T) {
 	cleaned := sanitizeGeminiSchema(gemMap(`{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}}, "required": ["a", "b"]}`))
-	gemEq(t, cleaned["required"], `["a", "b"]`)
+	gemEq(t, cleaned.Vals["required"], `["a", "b"]`)
 }
 
 func TestGeminiRequiredPruningInsideAnyOfBranches(t *testing.T) {
 	cleaned := sanitizeGeminiSchema(gemMap(`{"anyOf": [{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x", "ghost"]}, {"type": "object", "required": ["orphan"]}]}`))
 	gemEq(t, gemAt(cleaned, "anyOf", 0, "required"), `["x"]`)
-	if _, ok := gemAt(cleaned, "anyOf", 1).(map[string]any)["required"]; ok {
+	if _, ok := pyjson.Plain(gemAt(cleaned, "anyOf", 1)).(map[string]any)["required"]; ok {
 		t.Fatal("orphan required kept")
 	}
 }
@@ -72,7 +73,7 @@ func TestGeminiPrepareFullJSONSchemaSurvivesAndInputIsNotMutated(t *testing.T) {
 	params := gemMap(text)
 	out := prepareGeminiToolParameters(params)
 	gemEq(t, params, text)
-	if _, ok := out["$schema"]; ok {
+	if _, ok := out.Vals["$schema"]; ok {
 		t.Fatal("$schema kept")
 	}
 	gemEq(t, gemAt(out, "properties", "globs", "anyOf", 1), `{"type": "array", "items": {"type": "string"}}`)
@@ -84,7 +85,7 @@ func TestGeminiPrepareFullJSONSchemaSurvivesAndInputIsNotMutated(t *testing.T) {
 func TestGeminiPrepareLocalRefsInlinedWithSiblingOverrideAndDefsDropped(t *testing.T) {
 	out := prepareGeminiToolParameters(gemMap(`{"type": "object", "properties": {"user": {"$ref": "#/$defs/User", "description": "who"}},
 		"$defs": {"User": {"type": "object", "description": "generic", "properties": {"tags": {"type": "array", "items": {"$ref": "#/$defs/Tag"}}}}, "Tag": {"type": "string"}}}`))
-	if _, ok := out["$defs"]; ok {
+	if _, ok := out.Vals["$defs"]; ok {
 		t.Fatal("$defs kept")
 	}
 	gemEq(t, gemAt(out, "properties", "user", "description"), `"who"`)
@@ -95,7 +96,7 @@ func TestGeminiPrepareUnresolvableOrCircularRefPassesSchemaThroughUntouched(t *t
 	for _, defs := range []string{`{"Loop": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Loop"}}}}`, `{}`} {
 		out := prepareGeminiToolParameters(gemMap(`{"type": "object", "properties": {"p": {"$ref": "#/$defs/Loop"}}, "$defs": ` + defs + `}`))
 		gemEq(t, gemAt(out, "properties", "p"), `{"$ref": "#/$defs/Loop"}`)
-		gemEq(t, out["$defs"], defs)
+		gemEq(t, out.Vals["$defs"], defs)
 	}
 }
 

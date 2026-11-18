@@ -375,7 +375,7 @@ func pkceLogin(env PoolEnv, out io.Writer, provider string, cfg OAuthPKCEConfig,
 	authorizeURL := cfg.AuthorizeURL + sep + orderedQuery(pairs)
 	fmt.Fprintf(out, "\nOpen this URL to authorize Icebath with %s:\n  %s\n\n", label, authorizeURL)
 	fmt.Fprintf(out, "Waiting for callback on %s (timeout %ds, Ctrl+C to cancel)...\n", redirectURI, int(cfg.TimeoutSeconds))
-	printLoopbackSSHHint(out, redirectURI, "")
+	printLoopbackSSHHint(out, redirectURI)
 	if openBrowser && canOpenGraphicalBrowser() {
 		if openBrowserFn(authorizeURL) != nil {
 			fmt.Fprintln(out, "Could not open the browser automatically; use the URL above.")

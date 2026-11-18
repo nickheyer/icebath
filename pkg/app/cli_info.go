@@ -1071,9 +1071,7 @@ func (c *CLI) confirmAndReloadMCP(cmdOriginal string) {
 	if choice == "" {
 		return
 	}
-	if err := c.busyCommand(c.slowCommandStatus(cmdOriginal), true, c.reloadMCPEntry); err != nil {
-		panic(err)
-	}
+	c.busyCommand(c.slowCommandStatus(cmdOriginal), c.reloadMCPEntry)
 }
 
 // Sorted comma joined connection keys, the TypeError Python raises for scoped keys returned

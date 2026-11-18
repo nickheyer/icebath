@@ -1312,110 +1312,110 @@ func sessionSearchInlineExecutor(ctx context.Context, host ExecutorHost, args ma
 	return SessionSearch(ctx, a), nil
 }
 
-var sessionSearchSchema = map[string]any{
-	"name": "session_search",
-	"description": "Search or read past Icebath conversations (FTS5), or scroll inside one. Four shapes, picked by args: `query` = discovery " +
-		"(top-N matching sessions, top result fully hydrated); `session_id` + " +
-		"`around_message_id` = scroll (window of messages around an anchor); " +
-		"`session_id` alone = read a whole session — how you resolve an " +
-		"`@session:<profile>/<id>` link (split on '/' into profile + id); no " +
-		"args = browse recent sessions. Results are actual DB messages, no LLM. " +
-		"Searches conversation history ONLY — when the user gave a direct " +
-		"source (URL, file, contact, live system), inspect that first; never " +
-		"conclude 'not found' from history alone. Use for questions about past " +
-		"conversations: 'what did we do about X', 'where did we leave Y'. When " +
-		"referring the user to a session, write its `link` value verbatim " +
+var sessionSearchSchema = Dict(
+	"name", "session_search",
+	"description", "Search or read past Icebath conversations (FTS5), or scroll inside one. Four shapes, picked by args: `query` = discovery "+
+		"(top-N matching sessions, top result fully hydrated); `session_id` + "+
+		"`around_message_id` = scroll (window of messages around an anchor); "+
+		"`session_id` alone = read a whole session — how you resolve an "+
+		"`@session:<profile>/<id>` link (split on '/' into profile + id); no "+
+		"args = browse recent sessions. Results are actual DB messages, no LLM. "+
+		"Searches conversation history ONLY — when the user gave a direct "+
+		"source (URL, file, contact, live system), inspect that first; never "+
+		"conclude 'not found' from history alone. Use for questions about past "+
+		"conversations: 'what did we do about X', 'where did we leave Y'. When "+
+		"referring the user to a session, write its `link` value verbatim "+
 		"inline (it renders as a titled link).",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{
-				"type": "string",
-				"description": "Search query (discovery shape). Keywords, phrases, or boolean " +
-					"expressions to find in past sessions. Omit to browse recent " +
-					"sessions. Ignored when session_id + around_message_id are set " +
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"query", Dict(
+				"type", "string",
+				"description", "Search query (discovery shape). Keywords, phrases, or boolean "+
+					"expressions to find in past sessions. Omit to browse recent "+
+					"sessions. Ignored when session_id + around_message_id are set "+
 					"(scroll shape).",
-			},
-			"limit": map[string]any{
-				"type": "integer",
-				"description": "Max sessions to return. Discovery defaults to 3; browse/no-args " +
-					"defaults to 10. Max 10. Bump discovery to 5–10 when the topic " +
-					"likely spans several sessions and you want to pick the right one " +
+			),
+			"limit", Dict(
+				"type", "integer",
+				"description", "Max sessions to return. Discovery defaults to 3; browse/no-args "+
+					"defaults to 10. Max 10. Bump discovery to 5–10 when the topic "+
+					"likely spans several sessions and you want to pick the right one "+
 					"to scroll into.",
-			},
-			"sort": map[string]any{
-				"type": "string",
-				"enum": []any{"newest", "oldest"},
-				"description": "Discovery shape only. Temporal bias on top of FTS5 ranking: omit " +
-					"for relevance-only (exploratory recall), 'newest' for " +
+			),
+			"sort", Dict(
+				"type", "string",
+				"enum", []any{"newest", "oldest"},
+				"description", "Discovery shape only. Temporal bias on top of FTS5 ranking: omit "+
+					"for relevance-only (exploratory recall), 'newest' for "+
 					"\"where did we leave X\", 'oldest' for \"how did X start\".",
-			},
-			"detail": map[string]any{
-				"type": "string",
-				"enum": []any{"adaptive", "full"},
-				"description": "Discovery shape only. 'adaptive' (default) fully hydrates the " +
-					"top-ranked result and returns only the exact anchor message for " +
-					"lower-ranked results. 'full' returns bookends and the complete " +
+			),
+			"detail", Dict(
+				"type", "string",
+				"enum", []any{"adaptive", "full"},
+				"description", "Discovery shape only. 'adaptive' (default) fully hydrates the "+
+					"top-ranked result and returns only the exact anchor message for "+
+					"lower-ranked results. 'full' returns bookends and the complete "+
 					"anchored window for every result.",
-				"default": "adaptive",
-			},
-			"after": map[string]any{
-				"type": "string",
-				"description": "Discovery shape only. Inclusive lower bound on session start " +
-					"time. ISO date/datetime (e.g. 2026-06-01) or relative duration " +
-					"(7d, 24h, 2w = within the last N). Use only when the user names " +
+				"default", "adaptive",
+			),
+			"after", Dict(
+				"type", "string",
+				"description", "Discovery shape only. Inclusive lower bound on session start "+
+					"time. ISO date/datetime (e.g. 2026-06-01) or relative duration "+
+					"(7d, 24h, 2w = within the last N). Use only when the user names "+
 					"a time frame. sort is a ranking bias, not a bound.",
-			},
-			"before": map[string]any{
-				"type": "string",
-				"description": "Discovery shape only. Exclusive upper bound on session start " +
-					"time. ISO date/datetime (a date-only value is midnight UTC that " +
-					"day) or relative duration (7d = older than a week). Use only " +
+			),
+			"before", Dict(
+				"type", "string",
+				"description", "Discovery shape only. Exclusive upper bound on session start "+
+					"time. ISO date/datetime (a date-only value is midnight UTC that "+
+					"day) or relative duration (7d = older than a week). Use only "+
 					"when the user names a time frame.",
-			},
-			"exclude_session_ids": map[string]any{
-				"type":  "array",
-				"items": map[string]any{"type": "string"},
-				"description": "Discovery shape only. Session ids already inspected this task. " +
-					"Those sessions and their lineage are omitted so a later query " +
+			),
+			"exclude_session_ids", Dict(
+				"type", "array",
+				"items", Dict("type", "string"),
+				"description", "Discovery shape only. Session ids already inspected this task. "+
+					"Those sessions and their lineage are omitted so a later query "+
 					"explores instead of repeating the same hit. Cap 20.",
-			},
-			"session_id": map[string]any{
-				"type": "string",
-				"description": "Scroll shape. Session to read inside. Use the session_id returned " +
-					"from a prior discovery call. Must be paired with " +
+			),
+			"session_id", Dict(
+				"type", "string",
+				"description", "Scroll shape. Session to read inside. Use the session_id returned "+
+					"from a prior discovery call. Must be paired with "+
 					"around_message_id.",
-			},
-			"around_message_id": map[string]any{
-				"type": "integer",
-				"description": "Scroll shape. Message id to center the window on — use " +
-					"match_message_id from a discovery result, or any id from a " +
+			),
+			"around_message_id", Dict(
+				"type", "integer",
+				"description", "Scroll shape. Message id to center the window on — use "+
+					"match_message_id from a discovery result, or any id from a "+
 					"prior window.",
-			},
-			"window": map[string]any{
-				"type": "integer",
-				"description": "Scroll shape only. Messages to return on each side of the anchor " +
+			),
+			"window", Dict(
+				"type", "integer",
+				"description", "Scroll shape only. Messages to return on each side of the anchor "+
 					"(anchor itself always included). Clamped to [1, 20]. Default 5.",
-				"default": 5,
-			},
-			"role_filter": map[string]any{
-				"type": "string",
-				"description": "Optional. Comma-separated roles to include. Discovery defaults to " +
-					"'user,assistant' (tool output is usually noise). Pass " +
-					"'user,assistant,tool' to include tool output (debugging tool " +
+				"default", 5,
+			),
+			"role_filter", Dict(
+				"type", "string",
+				"description", "Optional. Comma-separated roles to include. Discovery defaults to "+
+					"'user,assistant' (tool output is usually noise). Pass "+
+					"'user,assistant,tool' to include tool output (debugging tool "+
 					"behaviour) or 'tool' to search tool output only.",
-			},
-			"profile": map[string]any{
-				"type": "string",
-				"description": "Optional. Read sessions from another icebath profile's database " +
-					"(read-only). Use when resolving an `@session:<profile>/<id>` link: " +
-					"pass the profile segment here with session_id as the id segment. " +
+			),
+			"profile", Dict(
+				"type", "string",
+				"description", "Optional. Read sessions from another icebath profile's database "+
+					"(read-only). Use when resolving an `@session:<profile>/<id>` link: "+
+					"pass the profile segment here with session_id as the id segment. "+
 					"Omit to use the current profile.",
-			},
-		},
-		"required": []any{},
-	},
-}
+			),
+		),
+		"required", []any{},
+	),
+)
 
 // Registers the session_search tool and its inline executor over the agent recall database
 func registerSessionSearchTool() {

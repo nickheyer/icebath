@@ -52,9 +52,26 @@ func unknownProxyScheme(proxyURL *url.URL) error {
 	return fmt.Errorf("Unknown scheme for proxy URL URL('%s')", proxyURL.String())
 }
 
+// CONNECT head a Python HTTP stack writes when it tunnels through a proxy
+type TunnelStyle int
+
+const (
+	// httpcore, Host then Accept then the proxy credentials
+	TunnelHTTPCore TunnelStyle = iota
+	// http.client set_tunnel as urllib, urllib3, requests and botocore drive it, the proxy credentials then Host
+	TunnelHTTPClient
+	// urllib HTTPSConnection, plain TCP to the proxy of any scheme, credentials only for a user and password both set
+	TunnelURLLib
+)
+
 // TLS connection to address under a wire layer, tunnelled through the proxy when one is given, HTTP/1.1 offered by ALPN
 func DialWireTLS(ctx context.Context, dial DialFunc, proxyURL *url.URL, network, address string, cfg *tls.Config) (net.Conn, error) {
-	raw, err := dialTarget(ctx, dial, proxyURL, network, address)
+	return DialWireTLSStyle(ctx, dial, proxyURL, network, address, cfg, TunnelHTTPCore)
+}
+
+// TLS connection to address under a wire layer, its proxy tunnel opened with the CONNECT head of the given stack
+func DialWireTLSStyle(ctx context.Context, dial DialFunc, proxyURL *url.URL, network, address string, cfg *tls.Config, style TunnelStyle) (net.Conn, error) {
+	raw, err := dialTarget(ctx, dial, proxyURL, network, address, style)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +102,7 @@ func DialWire(ctx context.Context, dial DialFunc, proxyURL *url.URL, network, ad
 	}
 	switch scheme {
 	case "socks5", "socks5h":
-		conn, err = dialTarget(ctx, dial, proxyURL, network, address)
+		conn, err = dialTarget(ctx, dial, proxyURL, network, address, TunnelHTTPCore)
 	case "https":
 		conn, err = dialProxyTLS(ctx, dial, proxyURL)
 	case "", "http":
@@ -114,9 +131,12 @@ func dialProxyTLS(ctx context.Context, dial DialFunc, proxyURL *url.URL) (net.Co
 }
 
 // Byte stream to the target, a CONNECT tunnel through an HTTP or HTTPS proxy or a SOCKS5 connect
-func dialTarget(ctx context.Context, dial DialFunc, proxyURL *url.URL, network, address string) (net.Conn, error) {
+func dialTarget(ctx context.Context, dial DialFunc, proxyURL *url.URL, network, address string, style TunnelStyle) (net.Conn, error) {
 	if proxyURL == nil {
 		return dial(ctx, network, address)
+	}
+	if style == TunnelURLLib {
+		return connectTunnel(ctx, dial, proxyURL, address, style)
 	}
 	switch strings.ToLower(proxyURL.Scheme) {
 	case "socks5", "socks5h":
@@ -131,7 +151,7 @@ func dialTarget(ctx context.Context, dial DialFunc, proxyURL *url.URL, network, 
 		}
 		return d.(proxy.ContextDialer).DialContext(ctx, network, address)
 	case "http", "https":
-		return connectTunnel(ctx, dial, proxyURL, address)
+		return connectTunnel(ctx, dial, proxyURL, address, style)
 	}
 	return nil, unknownProxyScheme(proxyURL)
 }
@@ -148,6 +168,14 @@ func proxyHostPort(u *url.URL) string {
 	return net.JoinHostPort(u.Hostname(), port)
 }
 
+// Proxy address an urllib HTTPSConnection dials, the port 443 of HTTPSConnection when the proxy names none
+func urllibProxyHostPort(u *url.URL) string {
+	if u.Port() != "" {
+		return u.Host
+	}
+	return net.JoinHostPort(u.Hostname(), "443")
+}
+
 // Dialer view of a dial function for the SOCKS client
 type contextDialer DialFunc
 
@@ -159,23 +187,37 @@ func (d contextDialer) DialContext(ctx context.Context, network, address string)
 	return d(ctx, network, address)
 }
 
-// CONNECT tunnel with the Host, Accept and Proxy-Authorization lines httpcore sends
-func connectTunnel(ctx context.Context, dial DialFunc, proxyURL *url.URL, address string) (net.Conn, error) {
+// CONNECT tunnel with the Host, Accept and Proxy-Authorization lines of httpcore or the credentials and Host of http.client
+func connectTunnel(ctx context.Context, dial DialFunc, proxyURL *url.URL, address string, style TunnelStyle) (net.Conn, error) {
 	var conn net.Conn
 	var err error
-	if strings.EqualFold(proxyURL.Scheme, "https") {
+	switch {
+	case style == TunnelURLLib:
+		conn, err = dial(ctx, "tcp", urllibProxyHostPort(proxyURL))
+	case strings.EqualFold(proxyURL.Scheme, "https"):
 		conn, err = dialProxyTLS(ctx, dial, proxyURL)
-	} else {
+	default:
 		conn, err = dial(ctx, "tcp", proxyHostPort(proxyURL))
 	}
 	if err != nil {
 		return nil, err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nAccept: */*\r\n", address, address)
+	credentials := ""
 	if proxyURL.User != nil {
-		pw, _ := proxyURL.User.Password()
-		fmt.Fprintf(&b, "Proxy-Authorization: Basic %s\r\n", base64.StdEncoding.EncodeToString([]byte(proxyURL.User.Username()+":"+pw)))
+		pw, hasPW := proxyURL.User.Password()
+		if style != TunnelURLLib || proxyURL.User.Username() != "" && hasPW && pw != "" {
+			credentials = "Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(proxyURL.User.Username()+":"+pw)) + "\r\n"
+		}
+	}
+	switch style {
+	case TunnelURLLib:
+		host, port, _ := net.SplitHostPort(address)
+		fmt.Fprintf(&b, "CONNECT %s HTTP/1.1\r\n%sHost: %s:%s\r\n", address, credentials, host, port)
+	case TunnelHTTPClient:
+		fmt.Fprintf(&b, "CONNECT %s HTTP/1.1\r\n%sHost: %s\r\n", address, credentials, address)
+	default:
+		fmt.Fprintf(&b, "CONNECT %s HTTP/1.1\r\nHost: %s\r\nAccept: */*\r\n%s", address, address, credentials)
 	}
 	b.WriteString("\r\n")
 	if deadline, ok := ctx.Deadline(); ok {

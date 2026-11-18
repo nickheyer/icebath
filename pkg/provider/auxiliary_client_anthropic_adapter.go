@@ -14,14 +14,14 @@ import (
 
 // Merges an OpenAI response format into the Anthropic output_config as a json_schema format
 func auxTranslateAnthropicResponseFormat(anthropicKwargs map[string]any, responseFormat any) {
-	rf, ok := responseFormat.(map[string]any)
+	rf, ok := pyjson.Dict(responseFormat)
 	if !ok {
 		return
 	}
 	var schema any
 	switch rf["type"] {
 	case "json_schema":
-		jsonSchema, ok := rf["json_schema"].(map[string]any)
+		jsonSchema, ok := pyjson.Dict(rf["json_schema"])
 		if !ok {
 			return
 		}
@@ -101,8 +101,8 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 	}
 	reasoningCfg := kwargs["_reasoning_config"]
 	if reasoningCfg == nil {
-		if eb, ok := kwargs["extra_body"].(map[string]any); ok {
-			if rc, ok := eb["reasoning"].(map[string]any); ok {
+		if eb, ok := pyjson.Dict(kwargs["extra_body"]); ok {
+			if rc, ok := pyjson.Dict(eb["reasoning"]); ok {
 				reasoningCfg = rc
 			}
 		}
@@ -139,25 +139,17 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 	if rf := kwargs["response_format"]; rf != nil {
 		auxTranslateAnthropicResponseFormat(anthropicKwargs, rf)
 	}
-	if callerExtra, ok := kwargs["extra_body"].(map[string]any); ok && len(callerExtra) > 0 {
-		auxTranslateAnthropicResponseFormat(anthropicKwargs, callerExtra["response_format"])
-		passthrough := map[string]any{}
-		for k, v := range callerExtra {
+	if callerExtra, ok := pyjson.AsObject(kwargs["extra_body"]); ok && callerExtra.Len() > 0 {
+		auxTranslateAnthropicResponseFormat(anthropicKwargs, callerExtra.Vals["response_format"])
+		passthrough := pyjson.NewObject()
+		for _, k := range callerExtra.Keys {
 			if k != "reasoning" && k != "response_format" && !strings.HasPrefix(k, "_") {
-				passthrough[k] = v
+				passthrough.Set(k, callerExtra.Vals[k])
 			}
 		}
-		if len(passthrough) > 0 {
-			existing, ok := anthropicKwargs["extra_body"].(map[string]any)
-			merged := map[string]any{}
-			if ok {
-				for k, v := range existing {
-					merged[k] = v
-				}
-			}
-			for k, v := range passthrough {
-				merged[k] = v
-			}
+		if passthrough.Len() > 0 {
+			merged := anthExtraBodyObject(anthropicKwargs)
+			merged.Update(passthrough)
 			anthropicKwargs["extra_body"] = merged
 		}
 	}

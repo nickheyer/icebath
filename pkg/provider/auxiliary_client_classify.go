@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 
@@ -279,15 +280,15 @@ func auxWithoutReasoningFields(kwargs map[string]any) map[string]any {
 			changed = changed || v != nil
 		}
 	}
-	if extra, ok := retry["extra_body"].(map[string]any); ok {
-		remaining := map[string]any{}
-		for k, v := range extra {
+	if extra, ok := pyjson.AsObject(retry["extra_body"]); ok {
+		remaining := pyjson.NewObject()
+		for _, k := range extra.Keys {
 			if !auxProfileReasoningKeys[pystr.Lower(pystr.Strip(k))] {
-				remaining[k] = v
+				remaining.Set(k, extra.Vals[k])
 			}
 		}
-		if len(remaining) != len(extra) {
-			if len(remaining) > 0 {
+		if remaining.Len() != extra.Len() {
+			if remaining.Len() > 0 {
 				retry["extra_body"] = remaining
 			} else {
 				delete(retry, "extra_body")

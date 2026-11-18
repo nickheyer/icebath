@@ -180,7 +180,7 @@ func TestSolsticeClientSpeaksPerUserQuotaMethodsWithBearer(t *testing.T) {
 	if err != nil || auth["Authorization"] != "Bearer ya29.tok" || auth["x-goog-api-key"] != "" {
 		t.Fatalf("credentials %v %v", auth, err)
 	}
-	if base != normalizeGeminiBaseURL(solsticeInferenceBaseURL) || gc.headers(auth, "").Get("X-Extra") != "1" {
+	if extra, _ := gc.headers(auth, "").Get("X-Extra"); base != normalizeGeminiBaseURL(solsticeInferenceBaseURL) || extra != "1" {
 		t.Fatalf("base %s", base)
 	}
 	if !gc.bearer {

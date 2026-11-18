@@ -100,7 +100,7 @@ func localesDir() BundledLocales {
 		if info, err := os.Stat(override); err == nil && info.IsDir() {
 			return BundledLocales{FS: os.DirFS(override), Label: override}
 		}
-		slog.Warn(fmt.Sprintf("ICEBATH_BUNDLED_LOCALES points to a non-directory path (%s); falling back to bundled/source locale resolution", override))
+		i18nLog().Warn(fmt.Sprintf("ICEBATH_BUNDLED_LOCALES points to a non-directory path (%s); falling back to bundled/source locale resolution", override))
 	}
 	sub, _ := fs.Sub(bundledFS, "locales")
 	return BundledLocales{FS: sub, Label: "locales"}
@@ -233,12 +233,12 @@ func loadBundled(name string) map[string]string {
 	path := filepath.Join(b.Label, file)
 	info, err := fs.Stat(b.FS, file)
 	if err != nil || !info.Mode().IsRegular() {
-		slog.Debug(fmt.Sprintf("i18n catalog missing for %s at %s", name, path))
+		i18nLog().Debug(fmt.Sprintf("i18n catalog missing for %s at %s", name, path))
 		return map[string]string{}
 	}
 	flat, err := parseLocaleFS(b.FS, file, path)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Failed to load i18n catalog %s: %v", path, err))
+		i18nLog().Warn(fmt.Sprintf("Failed to load i18n catalog %s: %v", path, err))
 		return map[string]string{}
 	}
 	return flat
@@ -313,7 +313,7 @@ func configLanguageCached(ctx context.Context, h string) (string, bool) {
 func configLanguage(ctx context.Context, h string) (string, bool) {
 	cfg, err := config.LoadReadonly(home.WithOverride(ctx, h), h, os.LookupEnv)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("Could not read display.language from config: %v", err))
+		i18nLog().Debug(fmt.Sprintf("Could not read display.language from config: %v", err))
 		return "", false
 	}
 	display, ok := cfg["display"]
@@ -322,7 +322,7 @@ func configLanguage(ctx context.Context, h string) (string, bool) {
 	}
 	dm, ok := display.(map[string]any)
 	if !ok {
-		slog.Debug(fmt.Sprintf("Could not read display.language from config: '%s' object has no attribute 'get'", pyrepr.TypeName(display)))
+		i18nLog().Debug(fmt.Sprintf("Could not read display.language from config: '%s' object has no attribute 'get'", pyrepr.TypeName(display)))
 		return "", false
 	}
 	lang, ok := dm["language"]
@@ -384,7 +384,7 @@ func T(ctx context.Context, key, lang string, kwargs map[string]any) string {
 		value, ok = loadCatalog(ctx, DefaultLanguage, h)[key]
 	}
 	if !ok {
-		slog.Debug(fmt.Sprintf("i18n miss: key=%s lang=%s", pyrepr.StrRepr(key), pyrepr.StrRepr(target)))
+		i18nLog().Debug(fmt.Sprintf("i18n miss: key=%s lang=%s", pyrepr.StrRepr(key), pyrepr.StrRepr(target)))
 		value = key
 	}
 	if len(kwargs) == 0 {
@@ -394,7 +394,7 @@ func T(ctx context.Context, key, lang string, kwargs map[string]any) string {
 	if err != nil {
 		var fe *FormatError
 		if errors.As(err, &fe) && (fe.Class == "KeyError" || fe.Class == "IndexError" || fe.Class == "ValueError") {
-			slog.Warn(fmt.Sprintf("i18n format failed for key=%s lang=%s kwargs=%s: %s", pyrepr.StrRepr(key), pyrepr.StrRepr(target), pyrepr.Repr(kwargs), fe.Msg))
+			i18nLog().Warn(fmt.Sprintf("i18n format failed for key=%s lang=%s kwargs=%s: %s", pyrepr.StrRepr(key), pyrepr.StrRepr(target), pyrepr.Repr(kwargs), fe.Msg))
 			return value
 		}
 		panic(err)
@@ -474,3 +474,6 @@ func LanguageOptions(ctx context.Context) []LanguageOption {
 	}
 	return out
 }
+
+// Logger of the reference module agent.i18n
+func i18nLog() *slog.Logger { return slog.Default().With("logger", "agent.i18n") }

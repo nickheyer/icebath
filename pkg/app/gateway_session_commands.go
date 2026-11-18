@@ -107,20 +107,13 @@ func mirrorGatewayBusy(c *CLI, arg string) {
 	}
 }
 
-// Polls the subagent roster right away after an off turn review spawned its reviewer
-func watchGatewayReviewer(c *CLI, arg string) {
-	if view := gatewayProcessView(); view != nil {
-		view.watchSubagents(gatewayToolsRetainSeconds)
-	}
-}
-
 // Reports the owner lays out itself, printed as is
 var gatewayVerbatimSettings = map[string]bool{"toolsets": true}
 
 // Per session setting commands the gateway applies, with what is mirrored locally after it accepted
 var gatewaySettings = map[string]func(c *CLI, arg string){
 	"personality": nil, "busy": mirrorGatewayBusy, "approvals": nil, "footer": nil, "fast": nil,
-	"refine": nil, "review": watchGatewayReviewer, "cron": nil, "toolsets": nil,
+	"refine": nil, "review": nil, "cron": nil, "toolsets": nil,
 }
 
 // Whether a form waits for its work, true for a cron write and false for cron reads or unclosed quotes

@@ -8,15 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-const pluginDescription = "Home Assistant for Icebath Agent: a gateway platform adapter plus four " +
-	"smart-home tools. The adapter subscribes to HA's WebSocket event bus and " +
-	"forwards state-change events (with per-entity cooldowns and domain/entity " +
-	"filtering) to the agent; replies are delivered as HA persistent " +
-	"notifications, and cron deliver=homeassistant goes through the " +
-	"target's notify service (notify.<target>). The homeassistant toolset (ha_list_entities, " +
-	"ha_get_state, ha_list_services, ha_call_service) queries and controls " +
-	"devices over the REST API.\n"
-
 // Explicit notify target of a reference, false for a blank one
 func parseTargetRef(ref string) (string, *string, bool) {
 	target := pystr.Strip(ref)
@@ -32,14 +23,11 @@ func envEnablement(ctx context.Context) map[string]any {
 	return seed
 }
 
-// Home Assistant platform plugin compiled into the binary under the bundled platforms/homeassistant key
+// Home Assistant catalog plugin port, active once icebath plugins install homeassistant lands it in a home
 type homeAssistantPlugin struct{}
 
 func (homeAssistantPlugin) Manifest() plugins.Manifest {
-	return plugins.Manifest{Name: "homeassistant", Version: "2.0.1", Kind: "platform", Source: "bundled", Key: "platforms/homeassistant",
-		Author: "NousResearch", Description: pluginDescription,
-		ProvidesTools: []string{"ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"},
-		RequiresEnv:   []plugins.EnvSpec{{Name: "HASS_TOKEN", Description: "Home Assistant Long-Lived Access Token", Secret: true}}}
+	return plugins.CatalogPortManifest("homeassistant")
 }
 
 // Adapter class the gateway reads the message length trait from
@@ -86,5 +74,5 @@ var _ plugins.ToolsRegistrar = homeAssistantPlugin{}
 
 func init() {
 	gateway.RegisterAdapterModule(adapterClass)
-	plugins.RegisterBundled(homeAssistantPlugin{})
+	plugins.RegisterPort(homeAssistantPlugin{})
 }

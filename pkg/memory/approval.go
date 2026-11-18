@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,7 +69,7 @@ func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any
 			return "", "", err
 		}
 		if res.Success() {
-			matched, _ := res.Data["matched_entries"].([]any)
+			matched, _ := res.Get("matched_entries").([]any)
 			pinned := make([]any, len(raw))
 			for i, op := range raw {
 				pinned[i] = op
@@ -97,7 +98,7 @@ func pinMatchedEntries(ctx context.Context, store *Store, payload map[string]any
 			return "", "", err
 		}
 		if res.Success() {
-			payload["matched_entry"] = res.Data["matched_entry"]
+			payload["matched_entry"] = res.Get("matched_entry")
 		}
 	}
 	if res.Success() {
@@ -176,7 +177,7 @@ func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, act
 	}
 	unmatched, class, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
 	if err != nil {
-		envLog(env).Warn("Failed to stage background-review consolidation; denying", "error", err)
+		moduleLog(env, memoryToolLogger).Warn("Failed to stage background-review consolidation; denying", "error", err)
 		return toolError("Background review may not delete memory entries ('patch'/'remove', including in a "+
 			"batch); 'add' is still available.", map[string]any{"success": false}), "gate_refused", nil
 	}
@@ -205,8 +206,8 @@ func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Stor
 	}
 	for _, op := range destructive {
 		if !pyTruthy(op["matched_entry"]) {
-			return Result{Data: map[string]any{"success": false, "error": "This destructive pending write predates entry pinning and cannot be " +
-				"verified; nothing was applied. Reject it and recreate the change."}, FailureClass: "other"}, nil
+			return Result{Data: pyjson.ObjectOf("success", false, "error", "This destructive pending write predates entry pinning and cannot be "+
+				"verified; nothing was applied. Reject it and recreate the change."), FailureClass: "other"}, nil
 		}
 	}
 	name := target.(string)
@@ -222,7 +223,7 @@ func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Stor
 	}
 	verb, _ := action.(string)
 	if verb != "add" && verb != "replace" && verb != "remove" && verb != "patch" {
-		return Result{Data: map[string]any{"success": false, "error": fmt.Sprintf("Unknown staged action '%s'.", pyStr(action))}, FailureClass: "other"}, nil
+		return Result{Data: pyjson.ObjectOf("success", false, "error", fmt.Sprintf("Unknown staged action '%s'.", pyStr(action))), FailureClass: "other"}, nil
 	}
 	content, oldText := payload["content"], payload["old_text"]
 	if !pyTruthy(content) {
@@ -475,7 +476,7 @@ func applyOnePending(ctx context.Context, subsystem string, rec map[string]any, 
 		if err != nil {
 			return false, osErrorText(err), map[string]any{}
 		}
-		result = res.Data
+		result, _ = pyjson.Dict(res.Data)
 	} else {
 		raw := opts.ApplySkill(payload)
 		var decoded any

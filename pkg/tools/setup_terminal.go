@@ -19,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// SetupConsole is the prompt and print surface of the setup wizard that the setup command provides
+// SetupConsole is the prompt and print surface the terminal backend setup flow runs on
 type SetupConsole interface {
 	Prompt(question, def string, password bool) string
 	PromptYesNo(question string, def bool) bool
@@ -36,13 +36,11 @@ type TerminalBackendPostSetup interface {
 	PostSetup(ctx context.Context, env *Env) error
 }
 
-// SetupTerminalConsole is the setup wizard console, installed by the setup command
+// SetupTerminalConsole is the terminal setup console, installed by pkg/provider
 var SetupTerminalConsole SetupConsole
 
 // NousSubscriptionAuthPresent reports Nous auth in the subscription features of a config, installed by pkg/provider
 var NousSubscriptionAuthPresent func(env *Env, cfg map[string]any) bool
-
-const setupDocsBase = "https://hermes-agent.nousresearch.com/docs"
 
 var (
 	errSetupConsoleUnwired = errors.New("setup wizard console is not installed")
@@ -240,9 +238,6 @@ func setupSyncFailureHandled(err error) bool {
 	var pyErr *pm.PyError
 	return errors.As(err, &pyErr) && slices.Contains(setupHandledPyClasses, pyErr.Class)
 }
-
-// Exported setupSyncFailureHandled for the text to speech engine installs in pkg/media
-func SetupSyncFailureHandled(err error) bool { return setupSyncFailureHandled(err) }
 
 var setupHandledPyClasses = []string{"OSError", "IOError", "EnvironmentError", "FileNotFoundError", "FileExistsError", "PermissionError",
 	"IsADirectoryError", "NotADirectoryError", "TimeoutError", "InterruptedError", "BlockingIOError", "ChildProcessError",
@@ -525,8 +520,7 @@ func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) err
 	s := &terminalSetup{ctx: ctx, env: env, ui: SetupTerminalConsole, h: envHome(env)}
 	s.ui.PrintHeader("Terminal Backend")
 	s.info("Choose where Icebath runs shell commands and code.",
-		"This affects tool execution, file access, and isolation.",
-		fmt.Sprintf("   Guide: %s/user-guide/configuration#terminal-backend-configuration", setupDocsBase), nil)
+		"This affects tool execution, file access, and isolation.", nil)
 	current, ok := config.CfgGet(cfg, "terminal", "backend")
 	if !ok {
 		current = "local"

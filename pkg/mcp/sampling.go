@@ -421,8 +421,8 @@ func (h *samplingHandler) buildLLMCall(params *CreateMessageParams, model string
 	maxTokens := min(params.MaxTokens, h.maxTokensCap)
 	var toolDefs []map[string]any
 	for _, t := range params.Tools {
-		toolDefs = append(toolDefs, map[string]any{"type": "function", "function": map[string]any{
-			"name": t.Name, "description": t.Description, "parameters": normalizeInputSchema(t.InputSchema)}})
+		toolDefs = append(toolDefs, map[string]any{"type": "function", "function": pyjson.ObjectOf(
+			"name", t.Name, "description", t.Description, "parameters", normalizeInputSchema(t.InputSchema))})
 	}
 	mcpLogger().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling request: model=%s, max_tokens=%d, messages=%d",
 		h.serverName, model, maxTokens, len(messages)))

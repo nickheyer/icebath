@@ -258,7 +258,7 @@ func FallbackList(ctx context.Context, w io.Writer, h string) error {
 	}
 	printChain(w, "Fallback chain", chain)
 	fmt.Fprintln(w, "  Tried in order when the primary fails (rate-limit, 5xx, connection errors).")
-	fmt.Fprint(w, "  Docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers\n\n")
+	fmt.Fprintln(w)
 	return nil
 }
 

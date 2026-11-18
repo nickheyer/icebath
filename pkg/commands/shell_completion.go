@@ -21,8 +21,47 @@ type completionNode struct {
 	Help        string
 }
 
-// Subcommands and option strings of a command tree, aliases and hidden commands left out
+// Subcommands and option strings of a command tree in parser declaration order, aliases and unlisted subparsers left out
 func walkCompletion(cmd *cobra.Command) *completionNode {
+	p, ok := argparseTree[apPath(cmd)]
+	if own, found := argparseOwn.Load(cmd); found {
+		p, ok = own.(*apParser), true
+	}
+	if _, real := cliRegistry.Load(cmd.Root()); !ok || !real {
+		return walkCobraCompletion(cmd)
+	}
+	node := &completionNode{Subcommands: map[string]*completionNode{}}
+	for _, a := range p.Acts {
+		if a.Kind != 's' {
+			for _, o := range a.Opts {
+				if strings.HasPrefix(o, "-") {
+					node.Flags = append(node.Flags, o)
+				}
+			}
+			continue
+		}
+		for _, s := range a.Sub {
+			if !s.Listed {
+				continue
+			}
+			if _, dup := node.Subcommands[s.Name]; dup {
+				continue
+			}
+			for _, sub := range cmd.Commands() {
+				if sub.Name() == s.Name {
+					child := walkCompletion(sub)
+					child.Help = cleanCompletionText(s.Help)
+					node.Subcommands[s.Name] = child
+					break
+				}
+			}
+		}
+	}
+	return node
+}
+
+// Completion level of a command no parser table carries, read from its cobra flags and subcommands
+func walkCobraCompletion(cmd *cobra.Command) *completionNode {
 	node := &completionNode{Flags: []string{"-h", "--help"}, Subcommands: map[string]*completionNode{}}
 	fs := cmd.Flags()
 	sorted := fs.SortFlags

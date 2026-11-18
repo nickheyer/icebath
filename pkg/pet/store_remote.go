@@ -1,7 +1,6 @@
 package pet
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"image"
@@ -19,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -164,8 +164,17 @@ func ExportPet(h, slug string) (string, []byte, error) {
 		names = append(names, entry.Name())
 	}
 	sort.Strings(names)
-	var buf bytes.Buffer
-	archive := zip.NewWriter(&buf)
+	scratch, err := os.CreateTemp("", "pet-export-*.zip")
+	if err != nil {
+		return "", nil, err
+	}
+	zipPath := scratch.Name()
+	scratch.Close()
+	defer os.Remove(zipPath)
+	archive, err := pyzip.Create(zipPath, pyzip.Deflated, nil)
+	if err != nil {
+		return "", nil, err
+	}
 	name := filepath.Base(directory)
 	for _, file := range names {
 		path := filepath.Join(directory, file)
@@ -173,27 +182,19 @@ func ExportPet(h, slug string) (string, []byte, error) {
 		if err != nil || !info.Mode().IsRegular() || strings.HasPrefix(file, ".") {
 			continue
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", nil, err
-		}
-		header, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return "", nil, err
-		}
-		header.Name, header.Method = name+"/"+file, zip.Deflate
-		w, err := archive.CreateHeader(header)
-		if err != nil {
-			return "", nil, err
-		}
-		if _, err := w.Write(data); err != nil {
+		if err := archive.Write(path, name+"/"+file); err != nil {
+			archive.Close()
 			return "", nil, err
 		}
 	}
 	if err := archive.Close(); err != nil {
 		return "", nil, err
 	}
-	return name + ".zip", buf.Bytes(), nil
+	data, err := os.ReadFile(zipPath)
+	if err != nil {
+		return "", nil, err
+	}
+	return name + ".zip", data, nil
 }
 
 // Nearest neighbour resize sampling each destination pixel centre the way Pillow NEAREST does

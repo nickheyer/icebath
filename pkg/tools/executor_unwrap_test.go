@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"testing"
 )
 
@@ -20,14 +21,14 @@ func TestSingleLocalUnwrapReachesTheUnderlyingTool(t *testing.T) {
 		if Default.Entry(context.Background(), env, name) != nil {
 			continue
 		}
-		Default.Register(Def{Name: name, Toolset: toolset, Schema: map[string]any{"name": name, "parameters": map[string]any{"type": "object"}},
+		Default.Register(Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
 			Check: func(*Env) bool { return true }, Handler: func(context.Context, *Call) string { return "{}" }})
 		t.Cleanup(func() { _ = Default.Deregister(name, "", "") })
 	}
 	for _, flatten := range []bool{false, true} {
 		e := unwrapExecutor(t, "todo", "session_search", "connections")
 		for _, entry := range entries {
-			name, args, block := e.unwrapToolSearchCall(context.Background(), ToolCallName, map[string]any{"calls": []any{entry}}, flatten)
+			name, args, block := e.unwrapToolSearchCall(context.Background(), ToolCallName, map[string]any{"calls": []any{entry}}, "", flatten)
 			if name != entry["name"] || block != "" || args == nil {
 				t.Fatalf("flatten=%v %v -> name %q block %q", flatten, entry["name"], name, block)
 			}

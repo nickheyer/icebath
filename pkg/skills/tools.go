@@ -3,39 +3,40 @@ package skills
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Schema of the skills_list tool
-func SkillsListSchema() map[string]any {
-	return map[string]any{
-		"name":        "skills_list",
-		"description": "List available skills (name + description). Use skill_view(name) to load full content.",
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"category": map[string]any{"type": "string", "description": "Optional category filter to narrow results"},
-			},
-			"required": []any{},
-		},
-	}
+func SkillsListSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name", "skills_list",
+		"description", "List available skills (name + description). Use skill_view(name) to load full content.",
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"category", pyjson.ObjectOf("type", "string", "description", "Optional category filter to narrow results"),
+			),
+			"required", []any{},
+		),
+	)
 }
 
 // Schema of the skill_view tool
-func SkillViewSchema() map[string]any {
-	return map[string]any{
-		"name":        "skill_view",
-		"description": "Load a skill's SKILL.md, or one of its linked references, templates or scripts. The first call returns SKILL.md plus a 'linked_files' dict; call again with file_path to read one.",
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name":      map[string]any{"type": "string", "description": "The skill name (use skills_list to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill'."},
-				"file_path": map[string]any{"type": "string", "description": "OPTIONAL: Path to a linked file within the skill (e.g., 'references/api.md', 'templates/config.yaml', 'scripts/validate.py'). Omit to get the main SKILL.md content."},
-			},
-			"required": []any{"name"},
-		},
-	}
+func SkillViewSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name", "skill_view",
+		"description", "Load a skill's SKILL.md, or one of its linked references, templates or scripts. The first call returns SKILL.md plus a 'linked_files' dict; call again with file_path to read one.",
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"name", pyjson.ObjectOf("type", "string", "description", "The skill name (use skills_list to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill'."),
+				"file_path", pyjson.ObjectOf("type", "string", "description", "OPTIONAL: Path to a linked file within the skill (e.g., 'references/api.md', 'templates/config.yaml', 'scripts/validate.py'). Omit to get the main SKILL.md content."),
+			),
+			"required", []any{"name"},
+		),
+	)
 }
 
 // Skills tools are always available because the directory is created on first use
@@ -56,7 +57,7 @@ func skillsListHandler(ctx context.Context, call *tools.Call) string {
 func skillViewHandler(ctx context.Context, call *tools.Call) string {
 	if v, ok := call.Args["name"]; ok {
 		if _, isStr := v.(string); !isStr {
-			return failResult("Skill name must be a string.", map[string]any{"hint": lookupHint})
+			return failResult("Skill name must be a string.", pyjson.ObjectOf("hint", lookupHint))
 		}
 	}
 	name := argString(call.Args, "name")

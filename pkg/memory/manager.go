@@ -364,7 +364,7 @@ func NewMemoryManagerWithTimeout(ctx context.Context, env *tools.Env, store *Sto
 // Built in store the memory tool writes through
 func (m *MemoryManager) Store() *Store { return m.store }
 
-func (m *MemoryManager) log() *slog.Logger { return envLog(m.env) }
+func (m *MemoryManager) log() *slog.Logger { return moduleLog(m.env, "agent.memory_manager") }
 
 func (m *MemoryManager) logf(level slog.Level, format string, args ...any) {
 	m.log().Log(context.Background(), level, fmt.Sprintf(format, args...))
@@ -1597,7 +1597,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 			for i, n := range names {
 				quoted[i] = n
 			}
-			envLog(env).Info(fmt.Sprintf("Memory provider(s) %s configured but the 'memory' toolset is gated off for this "+
+			moduleLog(env, "agent.memory_manager_tools").Info(fmt.Sprintf("Memory provider(s) %s configured but the 'memory' toolset is gated off for this "+
 				"session (platform_toolsets / agent.disabled_toolsets) — provider tools and system-prompt block are both "+
 				"withheld.", pyStr(quoted)))
 		}
@@ -1614,7 +1614,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 	for _, raw := range manager.GetAllToolSchemas(ctx) {
 		schema, ok := NormalizeToolSchema(raw)
 		if !ok {
-			envLog(env).Warn(fmt.Sprintf("Memory provider returned a tool schema with no resolvable name; skipping to avoid "+
+			moduleLog(env, "agent.memory_manager_tools").Warn(fmt.Sprintf("Memory provider returned a tool schema with no resolvable name; skipping to avoid "+
 				"poisoning the request (%s)", pyRepr(raw)))
 			continue
 		}

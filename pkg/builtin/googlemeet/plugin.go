@@ -3,6 +3,7 @@ package googlemeet
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 
@@ -22,7 +23,7 @@ type Plugin struct{}
 // Name, schema, handler and emoji of each tool in registration order
 var meetTools = []struct {
 	name    string
-	schema  map[string]any
+	schema  *pyjson.Object
 	handler tools.Handler
 	emoji   string
 }{

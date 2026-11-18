@@ -14,30 +14,30 @@ import (
 )
 
 // Static video_generate schema the dynamic overrides rebuild at definition time
-func videoGenerateSchema() map[string]any {
-	return map[string]any{
-		"name":        "video_generate",
-		"description": "(rebuilt at get_definitions() time — see _build_dynamic_video_schema)",
-		"parameters": map[string]any{
-			"type":       "object",
-			"properties": videoStaticProperties(),
-			"required":   []any{"prompt"},
-		},
-	}
+func videoGenerateSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name", "video_generate",
+		"description", "(rebuilt at get_definitions() time — see _build_dynamic_video_schema)",
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", videoStaticProperties(),
+			"required", []any{"prompt"},
+		),
+	)
 }
 
 // Prompt, duration, aspect ratio and resolution parameters every schema starts from
-func videoStaticProperties() map[string]any {
-	return map[string]any{
-		"prompt": map[string]any{"type": "string",
-			"description": "Text instruction describing the desired video, motion, subject, style, camera movement, etc."},
-		"duration": map[string]any{"type": "integer",
-			"description": "Desired video duration in seconds. Providers clamp to their supported range. Omit for the provider default."},
-		"aspect_ratio": map[string]any{"type": "string", "enum": stringsToAny(videoAspectRatios), "description": "Output aspect ratio.",
-			"default": defaultVideoAspectRatio},
-		"resolution": map[string]any{"type": "string", "enum": stringsToAny(videoResolutions), "description": "Output resolution.",
-			"default": defaultVideoResolution},
-	}
+func videoStaticProperties() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"prompt", pyjson.ObjectOf("type", "string",
+			"description", "Text instruction describing the desired video, motion, subject, style, camera movement, etc."),
+		"duration", pyjson.ObjectOf("type", "integer",
+			"description", "Desired video duration in seconds. Providers clamp to their supported range. Omit for the provider default."),
+		"aspect_ratio", pyjson.ObjectOf("type", "string", "enum", stringsToAny(videoAspectRatios), "description", "Output aspect ratio.",
+			"default", defaultVideoAspectRatio),
+		"resolution", pyjson.ObjectOf("type", "string", "enum", stringsToAny(videoResolutions), "description", "Output resolution.",
+			"default", defaultVideoResolution),
+	)
 }
 
 // Configured video_gen.provider of the environment profile, empty when unset
@@ -327,13 +327,13 @@ func videoGenerate(ctx context.Context, env *tools.Env, args map[string]any, tas
 
 var videoCapabilityParams = []struct {
 	flag, key string
-	param     map[string]any
+	param     *pyjson.Object
 }{
-	{"supports_negative_prompt", "negative_prompt", map[string]any{"type": "string", "description": "Content to avoid in the output."}},
-	{"supports_audio", "audio", map[string]any{"type": "boolean", "description": "Enable native audio generation (affects pricing tier)."}},
-	{"supports_seed", "seed", map[string]any{"type": "integer", "description": "Seed for reproducible outputs."}},
-	{"supports_upscale", "upscale", map[string]any{"type": "boolean",
-		"description": "High-resolution pass via the backend's video upscaler (~2x, extra cost/latency). Omit for native resolution."}},
+	{"supports_negative_prompt", "negative_prompt", pyjson.ObjectOf("type", "string", "description", "Content to avoid in the output.")},
+	{"supports_audio", "audio", pyjson.ObjectOf("type", "boolean", "description", "Enable native audio generation (affects pricing tier).")},
+	{"supports_seed", "seed", pyjson.ObjectOf("type", "integer", "description", "Seed for reproducible outputs.")},
+	{"supports_upscale", "upscale", pyjson.ObjectOf("type", "boolean",
+		"description", "High-resolution pass via the backend's video upscaler (~2x, extra cost/latency). Omit for native resolution.")},
 }
 
 const videoGenericDescription = "Generate video from text, a still image or reference images (configured model). " +
@@ -347,18 +347,9 @@ const videoGenericDescription = "Generate video from text, a still image or refe
 	"`video` field — either an HTTP URL or an absolute file path; reference " +
 	"it in your response using the current platform's file-delivery convention."
 
-func videoSchema(description string, properties map[string]any) map[string]any {
-	return map[string]any{"description": description,
-		"parameters": map[string]any{"type": "object", "properties": properties, "required": []any{"prompt"}}}
-}
-
-// Copy of a schema parameter map
-func copyParam(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
+func videoSchema(description string, properties *pyjson.Object) *pyjson.Object {
+	return pyjson.ObjectOf("description", description,
+		"parameters", pyjson.ObjectOf("type", "object", "properties", properties, "required", []any{"prompt"}))
 }
 
 // Strings of a list value, other items skipped
@@ -378,7 +369,7 @@ func stringItems(v any) []string {
 }
 
 // Description and params from the active provider capabilities and the configured model catalog entry
-func buildDynamicVideoSchema(env *tools.Env) map[string]any {
+func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 	ctx := envContext(context.Background(), env)
 	static := videoStaticProperties()
 	parts := []string{videoGenericDescription}
@@ -387,7 +378,7 @@ func buildDynamicVideoSchema(env *tools.Env) map[string]any {
 	if p == nil {
 		parts = append(parts, "\nNo video backend is available. Calls will return an error "+
 			"until the user picks one via `icebath tools` → Video Generation.")
-		return videoSchema(strings.Join(parts, "\n"), map[string]any{"prompt": static["prompt"]})
+		return videoSchema(strings.Join(parts, "\n"), pyjson.ObjectOf("prompt", static.Vals["prompt"]))
 	}
 	caps := providerCall(p.Capabilities, func(m map[string]any) bool { return len(m) == 0 }, map[string]any{})
 	models := providerCall(p.ListModels, func(m []map[string]any) bool { return len(m) == 0 }, nil)
@@ -436,10 +427,10 @@ func buildDynamicVideoSchema(env *tools.Env) map[string]any {
 			parts = append(parts, "- storage: "+notice)
 		}
 	}
-	properties := map[string]any{"prompt": static["prompt"]}
+	properties := pyjson.ObjectOf("prompt", static.Vals["prompt"])
 	if canI2V {
-		properties["image_url"] = map[string]any{"type": "string",
-			"description": "Public HTTPS URL of a still image to animate (image-to-video). Omit for text-to-video."}
+		properties.Set("image_url", pyjson.ObjectOf("type", "string",
+			"description", "Public HTTPS URL of a still image to animate (image-to-video). Omit for text-to-video."))
 		maxRefs := 0
 		if pyTruthy(caps["max_reference_images"]) {
 			if n, err := pyint.Of(caps["max_reference_images"]); err == nil {
@@ -447,8 +438,8 @@ func buildDynamicVideoSchema(env *tools.Env) map[string]any {
 			}
 		}
 		if maxRefs > 0 {
-			properties["reference_image_urls"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": maxRefs,
-				"description": fmt.Sprintf("Up to %d public HTTPS reference image URLs (style or character refs).", maxRefs)}
+			properties.Set("reference_image_urls", pyjson.ObjectOf("type", "array", "items", pyjson.ObjectOf("type", "string"), "maxItems", maxRefs,
+				"description", fmt.Sprintf("Up to %d public HTTPS reference image URLs (style or character refs).", maxRefs)))
 		}
 	}
 	metaOr := func(key string) any {
@@ -458,32 +449,32 @@ func buildDynamicVideoSchema(env *tools.Env) map[string]any {
 		return caps[key]
 	}
 	minDuration, maxDuration := metaOr("min_duration"), metaOr("max_duration")
-	durationParam := copyParam(static["duration"].(map[string]any))
+	durationParam := static.Vals["duration"].(*pyjson.Object).Copy()
 	if pyTruthy(minDuration) && pyTruthy(maxDuration) {
 		lo, err1 := pyint.Of(minDuration)
 		hi, err2 := pyint.Of(maxDuration)
 		if err1 == nil && err2 == nil {
-			durationParam["minimum"] = pyint.Native(lo)
-			durationParam["maximum"] = pyint.Native(hi)
-			durationParam["description"] = fmt.Sprintf("Video duration in seconds (%s-%s). Omit for the provider default.",
-				pyrepr.Str(minDuration), pyrepr.Str(maxDuration))
+			durationParam.Set("minimum", pyint.Native(lo))
+			durationParam.Set("maximum", pyint.Native(hi))
+			durationParam.Set("description", fmt.Sprintf("Video duration in seconds (%s-%s). Omit for the provider default.",
+				pyrepr.Str(minDuration), pyrepr.Str(maxDuration)))
 		}
 	}
-	properties["duration"] = durationParam
+	properties.Set("duration", durationParam)
 	for _, kv := range [][2]string{{"aspect_ratio", "aspect_ratios"}, {"resolution", "resolutions"}} {
-		param := copyParam(static[kv[0]].(map[string]any))
+		param := static.Vals[kv[0]].(*pyjson.Object).Copy()
 		if pyTruthy(caps[kv[1]]) {
 			if list, ok := caps[kv[1]].([]any); ok {
-				param["enum"] = append([]any(nil), list...)
+				param.Set("enum", append([]any(nil), list...))
 			} else if list, ok := caps[kv[1]].([]string); ok {
-				param["enum"] = stringsToAny(list)
+				param.Set("enum", stringsToAny(list))
 			}
 		}
-		properties[kv[0]] = param
+		properties.Set(kv[0], param)
 	}
 	for _, cp := range videoCapabilityParams {
 		if pyTruthy(caps[cp.flag]) {
-			properties[cp.key] = cp.param
+			properties.Set(cp.key, cp.param)
 		}
 	}
 	if pyTruthy(caps["audio_always_on"]) && !pyTruthy(caps["supports_audio"]) {
@@ -525,35 +516,33 @@ func xaiCoerceInt(value any) *int {
 	return &i
 }
 
-var xaiVideoURLParam = map[string]any{"type": "string",
-	"description": "Public HTTPS MP4 URL of the source video — the `video` or `public_url` from a prior xAI Imagine result."}
+var xaiVideoURLParam = pyjson.ObjectOf("type", "string",
+	"description", "Public HTTPS MP4 URL of the source video — the `video` or `public_url` from a prior xAI Imagine result.")
 
-func xaiVideoSchema(name, verb, noun, promptVerb string, extra map[string]any) map[string]any {
-	props := map[string]any{
-		"prompt":    map[string]any{"type": "string", "description": fmt.Sprintf("Instruction for how xAI should %s the source video.", promptVerb)},
-		"video_url": xaiVideoURLParam,
-	}
-	for k, v := range extra {
-		props[k] = v
-	}
-	return map[string]any{
-		"name": name,
-		"description": fmt.Sprintf("%s an existing video with xAI Imagine. This is separate from "+
+func xaiVideoSchema(name, verb, noun, promptVerb string, extra *pyjson.Object) *pyjson.Object {
+	props := pyjson.ObjectOf(
+		"prompt", pyjson.ObjectOf("type", "string", "description", fmt.Sprintf("Instruction for how xAI should %s the source video.", promptVerb)),
+		"video_url", xaiVideoURLParam,
+	)
+	props.Update(extra)
+	return pyjson.ObjectOf(
+		"name", name,
+		"description", fmt.Sprintf("%s an existing video with xAI Imagine. This is separate from "+
 			"`video_generate` because video %s is provider-specific. "+
 			"`video_url` must be the public HTTPS MP4 URL from a prior Imagine "+
 			"result (`video` or `public_url` on files-cdn).", verb, noun),
-		"parameters": map[string]any{"type": "object", "properties": props, "required": []any{"prompt", "video_url"}},
-	}
+		"parameters", pyjson.ObjectOf("type", "object", "properties", props, "required", []any{"prompt", "video_url"}),
+	)
 }
 
-func xaiVideoEditSchema() map[string]any {
+func xaiVideoEditSchema() *pyjson.Object {
 	return xaiVideoSchema("xai_video_edit", "Edit", "editing", "modify", nil)
 }
 
-func xaiVideoExtendSchema() map[string]any {
-	return xaiVideoSchema("xai_video_extend", "Extend", "extension", "continue", map[string]any{
-		"duration": map[string]any{"type": "integer", "description": "Desired extension duration in seconds. xAI clamps this to its supported range."},
-	})
+func xaiVideoExtendSchema() *pyjson.Object {
+	return xaiVideoSchema("xai_video_extend", "Extend", "extension", "continue", pyjson.ObjectOf(
+		"duration", pyjson.ObjectOf("type", "integer", "description", "Desired extension duration in seconds. xAI clamps this to its supported range."),
+	))
 }
 
 // Validates prompt, public video URL and the xai provider selection before running the operation
@@ -598,7 +587,7 @@ func registerVideoGenerateTools() {
 	})
 	for _, d := range []struct {
 		name    string
-		schema  map[string]any
+		schema  *pyjson.Object
 		handler tools.Handler
 	}{{"xai_video_edit", xaiVideoEditSchema(), handleXAIVideoEdit}, {"xai_video_extend", xaiVideoExtendSchema(), handleXAIVideoExtend}} {
 		tools.Register(tools.Def{Name: d.name, Toolset: "video_gen", Schema: d.schema, Handler: d.handler,

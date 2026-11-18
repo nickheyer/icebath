@@ -63,55 +63,6 @@ type updateLogMirror interface {
 	Log() io.Writer
 }
 
-// Retired entry of an old updater, hands the run to the takeover child without inventing a path
-func getDefaultIcebathRoot(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
-// Retired entry of an old updater, hands the run to the takeover child without bootstrapping uv
-func ensureUvForTermux(ctx context.Context, pipCmd []string) error { return pm.StopForRelaunch(ctx) }
-
-// Retired entry of an old updater, hands the run to the takeover child without bootstrapping pip
-func ensureVenvPip(ctx context.Context, pipCmd []string, pythonExe string) error {
-	return pm.StopForRelaunch(ctx)
-}
-
-// Retired entry of an old updater, hands the run to the takeover child without forming an install
-func pipInstallPrefix(ctx context.Context, uvBin string) error { return pm.StopForRelaunch(ctx) }
-
-// Retired entry of an old updater, hands the run to the takeover child and writes no markers
-func refuseUpdateForContendedShims(ctx context.Context, exc error) error {
-	return pm.StopForRelaunch(ctx)
-}
-
-// Failure class no real error ever is, what an old updater's quarantine clause is given to catch
-type neverRaised struct{}
-
-func (*neverRaised) Error() string { return "" }
-
-// Matcher of the retired quarantine clause, false for every real failure
-func shimQuarantineErrorType() func(error) bool {
-	return func(err error) bool {
-		var never *neverRaised
-		return errors.As(err, &never)
-	}
-}
-
-// Retired entry of an old updater, hands the run to the takeover child
-func writeUpdateIncompleteMarker(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
-// Retired entry of an old updater, hands the run to the takeover child
-func writeLazyRefreshIncompleteMarker(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
-// Retired entry of an old updater, hands the run to the takeover child
-func filterNonGatewayConcurrentInstances(ctx context.Context, matches []pidCommand) ([]pidCommand, error) {
-	return nil, pm.StopForRelaunch(ctx)
-}
-
-// Process id and command line of one concurrent instance match
-type pidCommand struct {
-	PID     int
-	Command string
-}
-
 // The updates section of the config, empty when absent or not a mapping
 func updatesConfig(ctx context.Context) (map[string]any, error) {
 	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)

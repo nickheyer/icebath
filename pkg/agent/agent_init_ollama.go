@@ -49,7 +49,7 @@ func clampCompressorToOllamaNumCtx(a *AIAgent) {
 	if a.contextCompressor == nil {
 		return
 	}
-	window := a.contextCompressor.Base().ContextLength
+	window := engineContextLength(a.contextCompressor)
 	if a.ollamaNumCtx > 0 && window != 0 && a.ollamaNumCtx < window {
 		runAgentLog().Info(fmt.Sprintf("Compressor window clamped to Ollama num_ctx: %d -> %d", window, a.ollamaNumCtx))
 		a.contextCompressor.UpdateModel(a.model, a.ollamaNumCtx, a.baseURL, a.apiKey, a.provider, a.apiMode)

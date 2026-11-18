@@ -328,7 +328,7 @@ func FirePreCommandHook(ctx context.Context, surface, command, aliasUsed, argsRa
 			if escaped, ok := interruptFromPanic(r); ok {
 				panic(escaped)
 			}
-			logDebug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %v", r))
+			logPlugins.debug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %v", r))
 		}
 	}()
 	m := GetPluginManager(ctx)
@@ -345,7 +345,7 @@ func FirePreCommandHook(ctx context.Context, surface, command, aliasUsed, argsRa
 		_, hasAction := d["action"]
 		_, hasDecision := d["decision"]
 		if hasAction || hasDecision {
-			logDebug(fmt.Sprintf("pre_command is observer-only in v1: ignoring directive %s for /%s (surface=%s). Block/rewrite will arrive with the command middleware variant (#64204/#64231).",
+			logPlugins.debug(fmt.Sprintf("pre_command is observer-only in v1: ignoring directive %s for /%s (surface=%s). Block/rewrite will arrive with the command middleware variant (#64204/#64231).",
 				config.PyRepr(d), command, surface))
 		}
 	}

@@ -85,7 +85,7 @@ func raiseIfRemoved(ctx context.Context, candidates ...string) error {
 
 // Live catalog entry of a bare name, or exit 1 with the kill list reason or pointing at search
 func resolveCatalogName(ctx context.Context, identifier string, console *Console) (*PluginCatalogEntry, error) {
-	entry := GetLiveCatalogEntry(ctx, identifier)
+	entry := portPinnedEntry(GetLiveCatalogEntry(ctx, identifier))
 	if entry == nil {
 		if err := raiseIfRemoved(ctx, identifier); err != nil {
 			return nil, fail(console, "[red]Error:[/red] "+err.Error())
@@ -113,7 +113,7 @@ func writeCatalogSidecarRecord(target string, catalog map[string]any, sha string
 		err = os.WriteFile(filepath.Join(target, CatalogSidecar), []byte(text+"\n"), 0o666)
 	}
 	if err != nil {
-		logWarn(fmt.Sprintf("Failed to write catalog sidecar in %s: %s", target, pyfs.OSErrorText(err)))
+		logPluginsCmdCatalog.warn(fmt.Sprintf("Failed to write catalog sidecar in %s: %s", target, pyfs.OSErrorText(err)))
 	}
 }
 
@@ -778,7 +778,7 @@ func (e *RepinConsentRequired) Error() string {
 func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]any, interactive bool, consent func(map[string][]string) bool) (*RepinResult, error) {
 	h := home.Dir(ctx)
 	catalogName := pyrepr.Str(sidecar["catalog_name"])
-	entry := GetLiveCatalogEntry(ctx, catalogName)
+	entry := portPinnedEntry(GetLiveCatalogEntry(ctx, catalogName))
 	if entry == nil {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' is no longer in the catalog — it may have been removed. "+
 			"See `icebath plugins info` and the removed blocklist.", catalogName)}
@@ -898,7 +898,7 @@ func previewRepin(ctx context.Context, h, dir string, entry *PluginCatalogEntry,
 	if err != nil {
 		return err
 	}
-	if _, err := clonePluginRepo(ctx, h, previewRoot, gitURL, entry.Sha, ""); err != nil {
+	if _, err := fetchPluginSource(ctx, h, previewRoot, gitURL, entry.Sha, subdir); err != nil {
 		return err
 	}
 	previewTarget := previewRoot

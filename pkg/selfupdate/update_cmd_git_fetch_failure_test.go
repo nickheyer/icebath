@@ -90,10 +90,10 @@ func TestClassifyFetchFailureOnlyACheckoutGitRejectsGetsTheInstallerRepair(t *te
 	}
 	ctx := context.Background()
 	var out bytes.Buffer
-	if err := printFetchFailure(ctx, &out, fetch(damaged, "origin"), []string{"git"}, damaged); err != nil {
+	if err := printFetchFailure(ctx, &out, fetch(damaged, "origin"), []string{"git"}, damaged, "main"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"damaged", "hermes-agent.nousresearch.com/install.", damaged} {
+	for _, want := range []string{"damaged", "git clone --branch main", "setup-icebath.", damaged} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q:\n%s", want, out.String())
 		}
@@ -105,7 +105,7 @@ func TestClassifyFetchFailureOnlyACheckoutGitRejectsGetsTheInstallerRepair(t *te
 	relayed := "remote: fatal: not a git repository (or any of the parent directories): .git"
 	for _, stderr := range []string{fetch(healthy, remote), relayed} {
 		out.Reset()
-		if err := printFetchFailure(ctx, &out, stderr, []string{"git"}, healthy); err != nil {
+		if err := printFetchFailure(ctx, &out, stderr, []string{"git"}, healthy, "main"); err != nil {
 			t.Fatal(err)
 		}
 		if strings.Contains(out.String(), "damaged") {
@@ -130,7 +130,7 @@ func TestClassifyFetchFailureUnknownFallsBackToGeneric(t *testing.T) {
 func ugPrintedFetchFailure(t *testing.T, stderr string) string {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printFetchFailure(context.Background(), &out, stderr, nil, ""); err != nil {
+	if err := printFetchFailure(context.Background(), &out, stderr, nil, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	return out.String()

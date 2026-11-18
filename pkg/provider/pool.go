@@ -62,6 +62,9 @@ type PoolEnv struct {
 	Ctx    context.Context
 }
 
+// Logger of the pool environment bound to a reference module name
+func (env PoolEnv) logAs(module string) *slog.Logger { return env.log().With("logger", module) }
+
 func (env PoolEnv) log() *slog.Logger {
 	if env.Log != nil {
 		return env.Log
@@ -419,7 +422,7 @@ func (p *Pool) syncAnthropicEntryFromCredentialsFile(entry PooledCredential, hel
 	}
 	fileRefresh, fileAccess := anyString(creds["refreshToken"]), anyString(creds["accessToken"])
 	if (fileAccess != "" || fileRefresh != "") && ((fileAccess != "" && fileAccess != entry.AccessToken) || (fileRefresh != "" && fileRefresh != entry.RefreshToken)) {
-		p.env.log().Debug(fmt.Sprintf("Pool entry %s: syncing tokens from credentials file (tokens changed)", entry.ID))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: syncing tokens from credentials file (tokens changed)", entry.ID))
 		u := entry.Clone().ClearStatus()
 		if fileAccess != "" {
 			u.AccessToken = fileAccess
@@ -450,7 +453,7 @@ func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledC
 	}
 	rows, err := p.env.Store.ReadCredentialPool(p.provider)
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to sync %s OAuth entry from credential pool: %v", display, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync %s OAuth entry from credential pool: %v", display, err))
 		return entry
 	}
 	var persisted map[string]any
@@ -470,7 +473,7 @@ func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledC
 		return entry
 	}
 	if stored.AccessToken != entry.AccessToken || stored.RefreshToken != entry.RefreshToken {
-		p.env.log().Debug(fmt.Sprintf("Pool entry %s: adopting %s OAuth tokens rotated by another pool instance", entry.ID, display))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: adopting %s OAuth tokens rotated by another pool instance", entry.ID, display))
 		p.replaceEntry(stored, true)
 		stored.scope = p.env.Scope
 		return stored
@@ -490,7 +493,7 @@ func (p *Pool) syncEntryFromAuthStore(entry PooledCredential, held bool) PooledC
 	}
 	state, err := p.lockedProviderState(p.provider)
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to sync %s entry from auth.json: %v", spec.display, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync %s entry from auth.json: %v", spec.display, err))
 		return entry
 	}
 	tokens, ok := state["tokens"].(map[string]any)
@@ -503,17 +506,17 @@ func (p *Pool) syncEntryFromAuthStore(entry PooledCredential, held bool) PooledC
 	storeAccess, storeRefresh := anyString(tokens["access_token"]), anyString(tokens["refresh_token"])
 	shouldAdopt := storeAccess != "" && (storeAccess != entry.AccessToken || (storeRefresh != "" && storeRefresh != entry.RefreshToken))
 	if !shouldAdopt && isCodex && storeRefresh != "" && storeRefresh != entry.RefreshToken && storeAccess == "" {
-		p.env.log().Info(fmt.Sprintf("Pool entry %s: auth.json has newer refresh_token but no access_token; adopting refresh_token to avoid replaying consumed token", entry.ID))
+		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("Pool entry %s: auth.json has newer refresh_token but no access_token; adopting refresh_token to avoid replaying consumed token", entry.ID))
 		shouldAdopt = true
 	}
 	if shouldAdopt && singletonPredatesEntry(state, entry) {
-		p.env.log().Info(fmt.Sprintf("Pool entry %s: auth.json singleton predates this entry's rotation (last_refresh %v < %s); keeping pool chain to avoid replaying the consumed refresh token", entry.ID, state["last_refresh"], entry.LastRefresh))
+		p.env.logAs("agent.credential_pool").Info(fmt.Sprintf("Pool entry %s: auth.json singleton predates this entry's rotation (last_refresh %v < %s); keeping pool chain to avoid replaying the consumed refresh token", entry.ID, state["last_refresh"], entry.LastRefresh))
 		shouldAdopt = false
 	}
 	if !shouldAdopt {
 		return entry
 	}
-	p.env.log().Debug(fmt.Sprintf("Pool entry %s: syncing %s tokens from auth.json (refreshed by another process)", entry.ID, spec.display))
+	p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: syncing %s tokens from auth.json (refreshed by another process)", entry.ID, spec.display))
 	u := entry.Clone().ClearStatus()
 	if storeAccess != "" {
 		u.AccessToken = storeAccess
@@ -585,7 +588,7 @@ func (p *Pool) syncNousEntryFromAuthStore(entry PooledCredential, held bool) Poo
 	}
 	state, err := p.lockedProviderState("nous")
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to sync Nous entry from auth.json: %v", err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync Nous entry from auth.json: %v", err))
 		return entry
 	}
 	if len(state) == 0 {
@@ -601,7 +604,7 @@ func (p *Pool) syncNousEntryFromAuthStore(entry PooledCredential, held bool) Poo
 	if !differs {
 		return entry
 	}
-	p.env.log().Debug(fmt.Sprintf("Pool entry %s: syncing Nous state from auth.json", entry.ID))
+	p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Pool entry %s: syncing Nous state from auth.json", entry.ID))
 	u := entry.Clone().ClearStatus()
 	for _, key := range nousComparableKeys {
 		if v := anyString(state[key]); v != "" {
@@ -651,7 +654,7 @@ func (p *Pool) syncDeviceCodeEntryToAuthStore(entry PooledCredential) {
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to sync %s pool entry back to auth store: %v", p.provider, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to sync %s pool entry back to auth store: %v", p.provider, err))
 	}
 }
 
@@ -710,7 +713,7 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 	}
 	unlock, err := p.env.Store.Lock(p.singleUseRefreshLockTimeout())
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
 		return p.recoverFailedRefresh(entry, err, held)
 	}
 	defer unlock()
@@ -725,7 +728,7 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 	if p.provider == "anthropic" && synced.Source == "claude_code" {
 		unlockFile, err := p.env.Store.fileLock(ClaudeCodeCredentialsPath(), p.singleUseRefreshLockTimeout())
 		if err != nil {
-			p.env.log().Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
+			p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
 			return p.recoverFailedRefresh(synced, err, held)
 		}
 		defer unlockFile()
@@ -747,7 +750,7 @@ func sameTokens(a, b PooledCredential) bool {
 
 // Quarantines an entry whose rotated pair never reached its store
 func (p *Pool) failClosedUnpersistedRotation(entry PooledCredential, cause error, store string, held bool) {
-	p.env.log().Error(fmt.Sprintf("Anthropic %s refresh rotated the single-use token but could not commit it to %s (%v) — failing closed and quarantining the credential; re-authenticate to recover", entry.Source, store, cause))
+	p.env.logAs("agent.credential_pool").Error(fmt.Sprintf("Anthropic %s refresh rotated the single-use token but could not commit it to %s (%v) — failing closed and quarantining the credential; re-authenticate to recover", entry.Source, store, cause))
 	MarkRotationConsumedUncommitted(SpentRotationSourcePath(p.env, entry.Source), entry.AccessToken, entry.RefreshToken)
 	p.markExhausted(entry, 0, map[string]any{"reason": CredentialPersistFailedReason,
 		"message": fmt.Sprintf("rotated credential was not durably written to %s: %v", store, cause)}, true, "", held)
@@ -882,7 +885,7 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 		if !sameNousState(synced, entry) {
 			entry = synced
 			if force && entry.RuntimeAPIKey() != "" && entry.RuntimeAPIKey() != staleKey {
-				p.env.log().Debug(fmt.Sprintf("Nous entry %s: adopting peer-rotated token, skipping refresh", entry.ID))
+				p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Nous entry %s: adopting peer-rotated token, skipping refresh", entry.ID))
 				return entry, true
 			}
 		}
@@ -898,7 +901,7 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 		if errors.As(err, &done) {
 			return done.result, done.ok
 		}
-		p.env.log().Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Credential refresh failed for %s/%s: %v", p.provider, entry.ID, err))
 		return p.recoverFailedRefresh(entry, err, held)
 	}
 	updated = updated.MarkOK()
@@ -1079,7 +1082,7 @@ func (p *Pool) clearTerminalTokensState(entry PooledCredential, cause error) {
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to clear terminal %s OAuth state: %v", spec.short, err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to clear terminal %s OAuth state: %v", spec.short, err))
 	}
 }
 
@@ -1112,7 +1115,7 @@ func (p *Pool) clearTerminalNousState(entry PooledCredential, cause error) {
 		return p.env.Store.Save(data)
 	}()
 	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to clear terminal Nous OAuth state: %v", err))
+		p.env.logAs("agent.credential_pool").Debug(fmt.Sprintf("Failed to clear terminal Nous OAuth state: %v", err))
 	}
 }
 

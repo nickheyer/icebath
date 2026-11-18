@@ -1,31 +1,26 @@
-// Package spotify is the built in Spotify plugin, its seven Web API tools and the icebath spotify login command
+// Package spotify is the Spotify catalog plugin port, its seven Web API tools and the icebath spotify login command
 package spotify
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-func init() { plugins.RegisterBundled(Plugin{}) }
+func init() { plugins.RegisterPort(Plugin{}) }
 
-// Compiled-in Spotify plugin
+// Spotify catalog plugin port, active once icebath plugins install spotify lands it in a home
 type Plugin struct{}
 
 // Toolset every Spotify tool registers under
 const Toolset = "spotify"
 
-const pluginDescription = "Spotify for Icebath: seven tools (playback, devices, queue, search, playlists, albums, library) " +
-	"over the Spotify Web API, plus `icebath spotify login|status|logout` (loopback PKCE with your own Spotify " +
-	"developer app). Playback control needs Spotify Premium and an active Spotify Connect device."
-
-const pluginHomepage = "https://github.com/NousResearch/hermes-official-plugins/tree/main/spotify"
-
 // Name, schema builder, handler and emoji of each tool in registration order
 var spotifyTools = []struct {
 	name    string
-	schema  func() map[string]any
+	schema  func() *pyjson.Object
 	handler tools.Handler
 	emoji   string
 }{
@@ -38,36 +33,8 @@ var spotifyTools = []struct {
 	{"spotify_library", librarySchema, handleSpotifyLibrary, "❤️"},
 }
 
-func toolNames() []string {
-	out := make([]string, len(spotifyTools))
-	for i, t := range spotifyTools {
-		out[i] = t.name
-	}
-	return out
-}
-
-// Manifest of the built in spotify plugin, loaded by default like a bundled backend
-func (Plugin) Manifest() plugins.Manifest {
-	names := toolNames()
-	provided := make([]any, len(names))
-	for i, n := range names {
-		provided[i] = n
-	}
-	return plugins.Manifest{
-		Name: "spotify", Version: "2.1.0", Description: pluginDescription, Author: "NousResearch", Kind: "backend",
-		Homepage: pluginHomepage, ProvidesTools: names, ProvidesHooks: []string{},
-		Raw: map[string]any{"name": "spotify", "label": "Spotify", "kind": "backend", "version": "2.1.0",
-			"author": "NousResearch", "homepage": pluginHomepage, "description": pluginDescription,
-			"provides_tools": provided, "provides_hooks": []any{},
-			"optional_env": []any{
-				map[string]any{"name": "ICEBATH_SPOTIFY_CLIENT_ID", "prompt": "Spotify Client ID", "password": false,
-					"description": "Client ID of your Spotify developer app (`icebath spotify login` asks for it and saves it)"},
-				map[string]any{"name": "ICEBATH_SPOTIFY_REDIRECT_URI", "prompt": "Spotify redirect URI", "password": false,
-					"description": "Redirect URI allow-listed in your Spotify app (default: http://127.0.0.1:43827/spotify/callback; " +
-						"set an https:// URI if your dashboard refuses the http form)"},
-			}},
-	}
-}
+// Manifest of the spotify catalog plugin at its compiled-in pin
+func (Plugin) Manifest() plugins.Manifest { return plugins.CatalogPortManifest("spotify") }
 
 // Registers the seven login gated tools in the spotify toolset and the icebath spotify command
 func (Plugin) Register(ctx *plugins.Context) error {

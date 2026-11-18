@@ -675,7 +675,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		return
 	}
 	originalCount := len(c.conversationHistory)
-	_ = c.busyCommand(c.t("cli.session.compress_busy", nil), false, func() {
+	c.busyCommand(c.t("cli.session.compress_busy", nil), func() {
 		defer func() {
 			if r := recover(); r != nil {
 				printLines("  " + c.t("cli.session.compress_failed", map[string]any{"error": refusalText(c.ctx, r)}))

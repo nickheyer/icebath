@@ -1278,9 +1278,10 @@ func Drift(ctx context.Context, includeVenv bool) (*DriftReport, error) {
 	if err != nil {
 		return nil, err
 	}
+	toolsRecorded := isRegularFile(factsPath) || !binaryCoreTree(RepoRoot())
 	for _, name := range lockfile.Names() {
 		p, err := GetPackage(name)
-		if err != nil {
+		if err != nil || !toolsRecorded {
 			continue
 		}
 		if p.Base().Optional || p.Base().Internal || p.MissingReason(target) != "" {

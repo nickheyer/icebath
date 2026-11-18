@@ -36,7 +36,7 @@ func declaredStickyKey(t *testing.T, ctx context.Context, sessionID string) stri
 	if p == nil {
 		t.Fatal("openrouter profile missing")
 	}
-	return stringOf(p.BuildExtraBody(sessionID, map[string]any{hookCtxKey: ctx})["session_id"])
+	return stringOf(p.BuildExtraBody(sessionID, map[string]any{hookCtxKey: ctx}).Vals["session_id"])
 }
 
 // Grok conversation header the OpenRouter profile pins for the session under the context
@@ -360,7 +360,7 @@ func TestProviderStickyKeysNousStickyKeyFollowsTheDeclaredScope(t *testing.T) {
 	}
 	body := p.BuildExtraBody(declaredRun1, map[string]any{hookCtxKey: ctx})
 	next := p.BuildExtraBody(declaredRun2, map[string]any{hookCtxKey: ctx})
-	if stringOf(body["session_id"]) != scope || stringOf(next["session_id"]) != scope {
+	if stringOf(body.Vals["session_id"]) != scope || stringOf(next.Vals["session_id"]) != scope {
 		t.Fatalf("%v %v", body, next)
 	}
 }

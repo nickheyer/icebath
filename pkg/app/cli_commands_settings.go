@@ -671,7 +671,6 @@ func (c *CLI) handleUpdateCommand() bool {
 		return false
 	}
 	sayBlock("  " + c.commandsT("update.launching", nil))
-	c.pendingRelaunch = []string{"update"}
 	return true
 }
 
@@ -680,5 +679,5 @@ func (c *CLI) cmdUpdate(string) bool { return !c.handleUpdateCommand() }
 
 // Handles /skills from the dispatch table under the slow command status
 func (c *CLI) cmdSkills(cmdOriginal string) {
-	_ = c.busyCommand(c.slowCommandStatus(cmdOriginal), true, func() { c.handleSkillsCommand(cmdOriginal) })
+	c.busyCommand(c.slowCommandStatus(cmdOriginal), func() { c.handleSkillsCommand(cmdOriginal) })
 }

@@ -206,7 +206,7 @@ func idleCompaction(ctx context.Context, a *AIAgent, out *CompactionOutcome, sys
 	if !ok {
 		return engineAttributeError(compressor, "summary_target_ratio")
 	}
-	idleFloor := int(float64(compressor.Base().ThresholdTokens) * ratioer.SummaryTargetRatio())
+	idleFloor := int(float64(engineThresholdTokens(compressor)) * ratioer.SummaryTargetRatio())
 	cooldown := activeCompressionFailureCooldown(compressor)
 	lastCompaction := 0
 	if c, ok := compressor.(interface{ LastCompressionRoughTokens() int }); ok {
@@ -435,7 +435,7 @@ func enginePreflightMaintenance(ctx context.Context, a *AIAgent, out *Compaction
 		return nil
 	}
 	turnContextLog().Info(fmt.Sprintf("Engine-driven preflight maintenance: %s requested compress() at ~%s tokens (below %s threshold)",
-		compressor.Name(), groupThousands(tokens), groupThousands(compressor.Base().ThresholdTokens)))
+		compressor.Name(), groupThousands(tokens), groupThousands(engineThresholdTokens(compressor))))
 	lc, err := compactLive(ctx, a, out.Messages, systemMessage, tokens, taskID, "engine_preflight")
 	if err != nil {
 		return err
@@ -454,7 +454,7 @@ func rearmUncompressedOverflowWarn(ctx context.Context, a *AIAgent, messages []*
 	if a.contextCompressor == nil {
 		return
 	}
-	ctxLen := a.contextCompressor.Base().ContextLength
+	ctxLen := engineContextLength(a.contextCompressor)
 	if ctxLen <= 0 {
 		return
 	}

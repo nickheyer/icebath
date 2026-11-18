@@ -1155,36 +1155,34 @@ func skillManageDescription() string {
 }
 
 // One self contained per action op shape with additional properties refused
-func opSchema(action string, props map[string]any, required ...string) map[string]any {
-	properties := map[string]any{"name": map[string]any{"type": "string"}, "action": map[string]any{"type": "string", "enum": []any{action}}}
-	for k, v := range props {
-		properties[k] = v
-	}
+func opSchema(action string, props *pyjson.Object, required ...string) *pyjson.Object {
+	properties := pyjson.ObjectOf("name", pyjson.ObjectOf("type", "string"), "action", pyjson.ObjectOf("type", "string", "enum", []any{action}))
+	properties.Update(props)
 	req := []any{"name", "action"}
 	for _, r := range required {
 		req = append(req, r)
 	}
-	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "required": req}
+	return pyjson.ObjectOf("type", "object", "additionalProperties", false, "properties", properties, "required", req)
 }
 
 // Schema of the skill_manage tool advertising only the operations array
-func SkillManageSchema() map[string]any {
-	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
-	items := map[string]any{"anyOf": []any{
-		opSchema("create", map[string]any{"content": str("Full SKILL.md text (YAML frontmatter + markdown body)."), "category": str("Optional category subdir (e.g. 'devops').")}, "content"),
-		opSchema("patch", map[string]any{"old_string": str("Text to find (same matching semantics as the patch tool)."), "new_string": str("Replacement; empty string deletes the match."), "replace_all": map[string]any{"type": "boolean", "description": "Replace all occurrences (default false)."}, "file_path": str("Optional supporting file (write_file's shape); default SKILL.md.")}, "old_string", "new_string"),
-		opSchema("patch", map[string]any{"content": str("Full SKILL.md rewrite (REPLACES the whole file; last resort).")}, "content"),
-		opSchema("write_file", map[string]any{"file_path": str("Path RELATIVE to the skill's own directory, e.g. 'references/api.md' — no leading slash, never absolute; first segment references/, templates/, scripts/, or assets/."), "file_content": str("Full text of the supporting file.")}, "file_path", "file_content"),
-		opSchema("remove_file", map[string]any{"file_path": str("Supporting file (write_file's shape).")}, "file_path"),
-		opSchema("delete", map[string]any{"absorbed_into": str("Curator consolidation only: umbrella skill that absorbed this one (must exist).")}),
-	}}
-	return map[string]any{
-		"name":        "skill_manage",
-		"description": skillManageDescription(),
-		"parameters": map[string]any{"type": "object", "properties": map[string]any{"operations": map[string]any{
-			"type": "array", "description": "Ordered ops; each names its target skill (lowercase, hyphens/underscores, max 64 chars). Each action is its own shape; another action's text slot is invalid.", "items": items}},
-			"required": []any{"operations"}},
-	}
+func SkillManageSchema() *pyjson.Object {
+	str := func(desc string) *pyjson.Object { return pyjson.ObjectOf("type", "string", "description", desc) }
+	items := pyjson.ObjectOf("anyOf", []any{
+		opSchema("create", pyjson.ObjectOf("content", str("Full SKILL.md text (YAML frontmatter + markdown body)."), "category", str("Optional category subdir (e.g. 'devops').")), "content"),
+		opSchema("patch", pyjson.ObjectOf("old_string", str("Text to find (same matching semantics as the patch tool)."), "new_string", str("Replacement; empty string deletes the match."), "replace_all", pyjson.ObjectOf("type", "boolean", "description", "Replace all occurrences (default false)."), "file_path", str("Optional supporting file (write_file's shape); default SKILL.md.")), "old_string", "new_string"),
+		opSchema("patch", pyjson.ObjectOf("content", str("Full SKILL.md rewrite (REPLACES the whole file; last resort).")), "content"),
+		opSchema("write_file", pyjson.ObjectOf("file_path", str("Path RELATIVE to the skill's own directory, e.g. 'references/api.md' — no leading slash, never absolute; first segment references/, templates/, scripts/, or assets/."), "file_content", str("Full text of the supporting file.")), "file_path", "file_content"),
+		opSchema("remove_file", pyjson.ObjectOf("file_path", str("Supporting file (write_file's shape).")), "file_path"),
+		opSchema("delete", pyjson.ObjectOf("absorbed_into", str("Curator consolidation only: umbrella skill that absorbed this one (must exist)."))),
+	})
+	return pyjson.ObjectOf(
+		"name",        "skill_manage",
+		"description", skillManageDescription(),
+		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("operations", pyjson.ObjectOf(
+			"type", "array", "description", "Ordered ops; each names its target skill (lowercase, hyphens/underscores, max 64 chars). Each action is its own shape; another action's text slot is invalid.", "items", items)),
+			"required", []any{"operations"}),
+	)
 }
 
 // Runs skill_manage for the model with the call task and session ids

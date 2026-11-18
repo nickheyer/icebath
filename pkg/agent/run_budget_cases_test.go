@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"os"
 	"reflect"
@@ -213,7 +214,7 @@ func TestRunBudget(t *testing.T) {
 		a, db := newPersistTestAgent(t, "budget-proof")
 		a.runBudgetSeconds, a.runBudgetStartedAt = 900, nowSeconds()-800
 		reg := tools.NewRegistry()
-		reg.Register(tools.Def{Name: "probe", Toolset: "web", Schema: map[string]any{"name": "probe", "parameters": map[string]any{"type": "object"}},
+		reg.Register(tools.Def{Name: "probe", Toolset: "web", Schema: pyjson.ObjectOf("name", "probe", "parameters", pyjson.ObjectOf("type", "object")),
 			Handler: func(context.Context, *tools.Call) string { return "result two" }})
 		a.validToolNames = map[string]bool{"probe": true}
 		a.toolGuardrails = tools.NewToolCallGuardrailController(nil)

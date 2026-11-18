@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 	"sync"
@@ -36,13 +37,13 @@ func auxRouteKey(provider, baseURL string) (string, error) {
 // Response format type carried in extra_body or top level kwargs, nil when absent
 func auxResponseFormatType(kwargs map[string]any) any {
 	var responseFormat any
-	if extraBody, ok := kwargs["extra_body"].(map[string]any); ok {
+	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
 		responseFormat = extraBody["response_format"]
 	}
 	if responseFormat == nil {
 		responseFormat = kwargs["response_format"]
 	}
-	if m, ok := responseFormat.(map[string]any); ok {
+	if m, ok := pyjson.Dict(responseFormat); ok {
 		return m["type"]
 	}
 	return nil
@@ -145,9 +146,9 @@ func auxResponseFormatKnownUnsupported(ctx context.Context, provider, baseURL, m
 }
 
 // WithoutUnsupportedResponseFormat drops a response_format the route and model are known to reject
-func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody map[string]any, provider, baseURL, model, task string) (map[string]any, error) {
+func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody *pyjson.Object, provider, baseURL, model, task string) (*pyjson.Object, error) {
 	var formatType any
-	if m, ok := extraBody["response_format"].(map[string]any); ok {
+	if m, ok := pyjson.Dict(extraBody.Vals["response_format"]); ok {
 		formatType = m["type"]
 	}
 	known, route, err := auxResponseFormatKnownUnsupported(ctx, provider, baseURL, model, formatType)
@@ -169,12 +170,8 @@ func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody map[string]
 	}
 	slog.Info(fmt.Sprintf("Auxiliary %s: %s (%s) does not accept response_format %s; sending without it "+
 		"(schema enforcement degrades to prompt compliance)", label, routeLabel, modelLabel, pyrepr.Str(formatType)))
-	out := make(map[string]any, len(extraBody))
-	for k, v := range extraBody {
-		if k != "response_format" {
-			out[k] = v
-		}
-	}
+	out := extraBody.Copy()
+	out.Delete("response_format")
 	return out, nil
 }
 
@@ -187,15 +184,11 @@ func auxWithoutStructuredOutputFormat(kwargs map[string]any) map[string]any {
 	popped, had := retry["response_format"]
 	delete(retry, "response_format")
 	changed := had && popped != nil
-	if extraBody, ok := retry["extra_body"].(map[string]any); ok {
-		if _, has := extraBody["response_format"]; has {
-			remaining := make(map[string]any, len(extraBody))
-			for k, v := range extraBody {
-				if k != "response_format" {
-					remaining[k] = v
-				}
-			}
-			if len(remaining) > 0 {
+	if extraBody, ok := pyjson.AsObject(retry["extra_body"]); ok {
+		if _, has := extraBody.Get("response_format"); has {
+			remaining := extraBody.Copy()
+			remaining.Delete("response_format")
+			if remaining.Len() > 0 {
 				retry["extra_body"] = remaining
 			} else {
 				delete(retry, "extra_body")

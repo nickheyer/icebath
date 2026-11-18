@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"math/big"
 	"regexp"
@@ -316,24 +317,28 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			return hostedDictList(hc.must(bg, attr, []any{messages}, nil))
 		}
 	case "build_extra_body":
-		p.BuildExtraBodyHook = func(sessionID string, context map[string]any) map[string]any {
+		p.BuildExtraBodyHook = func(sessionID string, context map[string]any) *pyjson.Object {
 			kwargs := hostedKwargs(context)
 			kwargs["session_id"] = hostedOptStr(sessionID)
-			return hostedMap(hc.must(bg, attr, nil, kwargs))
+			return hostedObject(hc.must(plugins.WithOrderedResult(bg), attr, nil, kwargs))
 		}
 	case "default_reasoning_config":
 		p.DefaultReasoningConfigHook = func(model string) *Reasoning {
 			return reasoningPtrOfDict(hostedMapOrNil(hc.must(bg, attr, []any{hostedOptStr(model)}, nil)))
 		}
 	case "build_api_kwargs_extras":
-		p.BuildAPIKwargsExtrasHook = func(reasoning *Reasoning, context map[string]any) (map[string]any, map[string]any) {
+		p.BuildAPIKwargsExtrasHook = func(reasoning *Reasoning, context map[string]any) (*pyjson.Object, map[string]any) {
 			kwargs := hostedKwargs(context)
 			kwargs["reasoning_config"] = hostedReasoningArg(reasoning)
-			pair := hostedList(hc.must(bg, attr, nil, kwargs))
+			pair := hostedList(hc.must(plugins.WithOrderedResult(bg), attr, nil, kwargs))
 			if len(pair) != 2 {
 				panic(fmt.Errorf("%s.build_api_kwargs_extras returned %d values, expected 2", hc.h.Name, len(pair)))
 			}
-			return hostedMap(pair[0]), hostedMap(pair[1])
+			top, _ := pyjson.Dict(pair[1])
+			if top == nil {
+				top = map[string]any{}
+			}
+			return hostedObject(pair[0]), top
 		}
 	case "build_client_kwargs_extras":
 		p.BuildClientKwargsExtrasHook = func(context map[string]any) map[string]any {
@@ -713,6 +718,14 @@ func hostedMapOrNil(v any) map[string]any {
 		return map[string]any(m)
 	}
 	return nil
+}
+
+// Dict result of a hosted call in its wire key order, empty when the result is not a dict
+func hostedObject(v any) *pyjson.Object {
+	if obj, ok := pyjson.AsObject(v); ok {
+		return obj
+	}
+	return pyjson.NewObject()
 }
 
 func hostedMap(v any) map[string]any {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -34,8 +35,8 @@ func validateRegistrationSchema(d Def) error {
 	if d.Schema == nil {
 		return fmt.Errorf("Tool %s: schema must be a dict, got NoneType", pyrepr.StrRepr(d.Name))
 	}
-	if p, ok := d.Schema["parameters"]; ok && p != nil {
-		if _, isMap := p.(map[string]any); !isMap {
+	if p, ok := d.Schema.Get("parameters"); ok && p != nil {
+		if _, isMap := pyjson.Dict(p); !isMap {
 			return fmt.Errorf("Tool %s: schema['parameters'] must be an object (JSON Schema dict), got %s", pyrepr.StrRepr(d.Name), pyrepr.TypeName(p))
 		}
 	}

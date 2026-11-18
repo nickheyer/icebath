@@ -510,9 +510,7 @@ func (wz *cloudWizard) runWhatsAppCloudSetup() (int, error) {
 		"        Same page → click your phone number → 'Edit profile'.", "",
 		"    • Verified badge (the green check):",
 		"        Requires Meta's business verification process —",
-		"        Business Manager → Security Center → Start Verification.", "",
-		"  Docs: https://hermes-agent.nousresearch.com/docs/user-guide/",
-		"        messaging/whatsapp-cloud", "")
+		"        Business Manager → Security Center → Start Verification.", "")
 	return 0, nil
 }
 

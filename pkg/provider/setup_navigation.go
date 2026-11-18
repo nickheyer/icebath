@@ -272,11 +272,6 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 	return nil, nil
 }
 
-// HandleSetupMenuNavigation is the menu event handler a setup scope installs, cancel and back raised as setup control flow
-func HandleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*cliui.MenuNavigationStart, error) {
-	return handleSetupMenuNavigation(event, value...)
-}
-
 // Installs the setup navigation state and menu handler around fn and restores both after
 func setupNavigationScope(fn func()) { guardedNavigationScope(false, fn) }
 
@@ -339,9 +334,6 @@ func runSetupSteps(steps []SetupStep) error {
 			replay := replayBySection[sectionIndex]
 			delete(replayBySection, sectionIndex)
 			state.reset(sectionIndex, replay)
-		}
-		if ui := setupUI(); ui.IsFlow() && len(steps) > 1 {
-			ui.Step(sectionIndex+1, len(steps), step.Label)
 		}
 		nav, err := runSetupSection(step.Action)
 		if err != nil {
@@ -406,15 +398,6 @@ func runSetupStepsWithNavigation(steps []SetupStep, cancelledMessage string) err
 
 // RunSetupSteps runs labelled sections with left arrow navigation between and inside them
 func RunSetupSteps(steps []SetupStep) error { return runSetupSteps(steps) }
-
-// SetupNavigationSectionIndex is the section index of the running setup navigation, false outside a setup scope
-func SetupNavigationSectionIndex() (int, bool) {
-	state := currentSetupNavigation()
-	if state == nil {
-		return 0, false
-	}
-	return state.sectionIndex, true
-}
 
 // RunSetupActionWithNavigation runs a setup style menu flow with Escape and nested Left navigation outside the wizard
 func RunSetupActionWithNavigation(ctx context.Context, label string, action func(ctx context.Context) error, cancelledMessage string) error {
@@ -552,9 +535,6 @@ func SetupModuleInstalled(ctx context.Context, name string) (found bool) {
 	}()
 	return pm.AnchorImportable(ctx, name)
 }
-
-// SetupNavigationScope runs fn with the setup navigation state and menu handler installed
-func SetupNavigationScope(fn func()) { setupNavigationScope(fn) }
 
 // SwapSetupRadiolist replaces the setup menu, the returned func restoring the previous one
 func SwapSetupRadiolist(fn func(question string, choices []string, def int, description string) int) func() {

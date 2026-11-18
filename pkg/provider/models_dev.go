@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // ModelsDevURL is the live registry endpoint
@@ -328,12 +328,53 @@ func modelsDevID(h, provider string, cfg map[string]any) string {
 	return mdevID
 }
 
+// Registry cache at the home root, where the reference keeps it
 func modelsDevCachePath(h string) string {
-	return filepath.Join(home.CacheDir(h), "models_dev_cache.json")
+	carryModelsDevCache(h)
+	return filepath.Join(h, "models_dev_cache.json")
 }
 
+// ETag sidecar of the registry cache at the home root
 func modelsDevETagPath(h string) string {
-	return filepath.Join(home.CacheDir(h), "models_dev_cache.etag")
+	carryModelsDevCache(h)
+	return filepath.Join(h, "models_dev_cache.etag")
+}
+
+// Homes whose cache directory copy was already carried over by this process
+var modelsDevCarried sync.Map
+
+// Moves the cache and ETag an earlier install kept under cache to the home root, a root copy winning
+func carryModelsDevCache(h string) {
+	if _, done := modelsDevCarried.LoadOrStore(h, true); done {
+		return
+	}
+	oldCache, oldETag := filepath.Join(home.CacheDir(h), "models_dev_cache.json"), filepath.Join(home.CacheDir(h), "models_dev_cache.etag")
+	newCache, newETag := filepath.Join(h, "models_dev_cache.json"), filepath.Join(h, "models_dev_cache.etag")
+	drop := func(path string) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			modelsDevLog.Debug("Failed to remove the models.dev cache left under cache", "path", path, "error", err)
+		}
+	}
+	if _, err := os.Lstat(oldCache); err != nil {
+		drop(oldETag)
+		return
+	}
+	if _, err := os.Lstat(newCache); err == nil {
+		drop(oldCache)
+		drop(oldETag)
+		return
+	}
+	if err := os.Rename(oldCache, newCache); err != nil {
+		modelsDevLog.Debug("Failed to carry the models.dev cache to the home root", "error", err)
+		return
+	}
+	drop(newETag)
+	if _, err := os.Lstat(oldETag); err != nil {
+		return
+	}
+	if err := os.Rename(oldETag, newETag); err != nil {
+		modelsDevLog.Debug("Failed to carry the models.dev ETag to the home root", "error", err)
+	}
 }
 
 // Last known ETag from disk, empty when missing
@@ -444,24 +485,28 @@ func (e *ModelsDevFetchDeadlineError) Error() string {
 	return fmt.Sprintf("models.dev fetch exceeded %s", e.Timeout)
 }
 
-var modelsDevHTTPClient = &http.Client{Transport: &http.Transport{
-	Proxy:                 http.ProxyFromEnvironment,
-	DialContext:           (&net.Dialer{Timeout: modelsDevConnectLimit}).DialContext,
-	TLSHandshakeTimeout:   modelsDevConnectLimit,
-	ResponseHeaderTimeout: modelsDevReadLimit,
-}}
+// Pool of one requests.get call, environment proxies and the connect and read limits of the fetch
+func modelsDevTransport() *http.Transport {
+	tr := pyStackWireTransport(pyhttpx.RequestsProxy, modelsDevConnectLimit, 10)
+	tr.ResponseHeaderTimeout = modelsDevReadLimit
+	return tr
+}
 
-// One registry GET with optional If-None-Match returning status, decoded payload and ETag
+// One registry GET with optional If-None-Match as requests.get sends it, returning status, decoded payload and ETag
 func downloadModelsDevHTTP(ctx context.Context, url string, headers map[string]string) (int, any, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return 0, nil, "", err
 	}
-	req.Header.Set("User-Agent", UserAgent("icebath-agent"))
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	var call []pyhttpx.HeaderLine
+	for _, k := range pyhttpx.HeaderOrder(headers) {
+		call = append(call, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
 	}
-	resp, err := modelsDevHTTPClient.Do(req)
+	tr := modelsDevTransport()
+	defer tr.CloseIdleConnections()
+	req.Host = httpxHost(req.URL)
+	client := &http.Client{Transport: pyhttpx.WireTransport{Base: tr, Decoders: requestsDecoders}}
+	resp, err := client.Do(pyhttpx.WithWire(req, requestsLines(call...)))
 	if err != nil {
 		return 0, nil, "", err
 	}

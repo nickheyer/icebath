@@ -249,7 +249,7 @@ func (m *Manager) waitForEventDispatch(timeout time.Duration) bool {
 func (m *Manager) dispatchEvent(ctx context.Context, event string, payload map[string]any) int {
 	depth := emitDepth(ctx)
 	if depth >= eventEmitDepthCap {
-		logWarn(fmt.Sprintf("Event bus recursion cap (%d) exceeded while dispatching '%s' — dropping this emit to prevent an infinite loop",
+		logPlugins.warn(fmt.Sprintf("Event bus recursion cap (%d) exceeded while dispatching '%s' — dropping this emit to prevent an infinite loop",
 			eventEmitDepthCap, event))
 		return 0
 	}
@@ -263,7 +263,7 @@ func (m *Manager) dispatchEvent(ctx context.Context, event string, payload map[s
 	pending := m.eventPending[generation]
 	budget := fmt.Sprintf("Event bus pending budget (%d) exhausted while dispatching '%s' — dropping this emit", m.eventPendingCap, event)
 	if pending >= m.eventPendingCap {
-		logWarn(budget)
+		logPlugins.warn(budget)
 		return 0
 	}
 	item := &queuedPluginEvent{event: event, payload: copyKwargs(payload), subscriptions: subscriptions,
@@ -271,7 +271,7 @@ func (m *Manager) dispatchEvent(ctx context.Context, event string, payload map[s
 	select {
 	case m.eventQueue <- item:
 	default:
-		logWarn(budget)
+		logPlugins.warn(budget)
 		return 0
 	}
 	m.eventPending[generation] = pending + 1
@@ -299,7 +299,7 @@ func (m *Manager) RenderSystemPromptSections(sessionInfo map[string]any) []Rende
 	total := utf8.RuneCountInString(PluginSectionsStart) + utf8.RuneCountInString(PluginSectionsEnd) + 2
 	for _, section := range sections {
 		if len(rendered) >= MaxSystemPromptSections {
-			logWarn(fmt.Sprintf("Plugin system prompt section %s exceeded the section-count budget (%d) and was skipped",
+			logPlugins.warn(fmt.Sprintf("Plugin system prompt section %s exceeded the section-count budget (%d) and was skipped",
 				section.ID, MaxSystemPromptSections))
 			continue
 		}
@@ -312,13 +312,13 @@ func (m *Manager) RenderSystemPromptSections(sessionInfo map[string]any) []Rende
 			chars += 2
 		}
 		if total+chars > MaxSystemPromptSectionsTotalChars {
-			logWarn(fmt.Sprintf("Plugin system prompt section %s (%s) exceeded the aggregate session budget (%d chars) and was skipped",
+			logPlugins.warn(fmt.Sprintf("Plugin system prompt section %s (%s) exceeded the aggregate session budget (%d chars) and was skipped",
 				section.ID, section.Plugin, MaxSystemPromptSectionsTotalChars))
 			continue
 		}
 		rendered = append(rendered, RenderedSystemPromptSection{ID: section.ID, Content: text, Position: section.Position, Plugin: section.Plugin})
 		total += chars
-		logInfo(fmt.Sprintf("Session plugin prompt section: id=%s plugin=%s position=%s chars=%d",
+		logPlugins.info(fmt.Sprintf("Session plugin prompt section: id=%s plugin=%s position=%s chars=%d",
 			section.ID, section.Plugin, section.Position, utf8.RuneCountInString(text)))
 	}
 	return rendered
@@ -327,7 +327,7 @@ func (m *Manager) RenderSystemPromptSections(sessionInfo map[string]any) []Rende
 // Evaluates one section on a private copy of the session info and returns its stripped text when usable
 func renderPromptSectionText(section *SystemPromptSection, sessionInfo map[string]any) (string, bool) {
 	skip := func(detail string) {
-		logWarn(fmt.Sprintf("Plugin system prompt section %s (%s) %s", section.ID, section.Plugin, detail))
+		logPlugins.warn(fmt.Sprintf("Plugin system prompt section %s (%s) %s", section.ID, section.Plugin, detail))
 	}
 	value := section.Content
 	if section.ContentFunc != nil {

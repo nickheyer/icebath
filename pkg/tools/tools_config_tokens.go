@@ -38,7 +38,7 @@ func estimateToolTokens(ctx context.Context) (map[string]int, error) {
 	counts := map[string]int{}
 	for _, name := range Default.AllToolNames(ctx, "") {
 		schema := Default.Schema(ctx, "", name)
-		if len(schema) == 0 {
+		if schema == nil || schema.Len() == 0 {
 			continue
 		}
 		wire := pyjson.NewObject()

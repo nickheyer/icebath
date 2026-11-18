@@ -3,6 +3,8 @@
 set -eu
 
 REPO_URL=${ICEBATH_REPO_URL:-https://github.com/nickheyer/icebath}
+REPO_URL=${REPO_URL%/}
+REPO_URL=${REPO_URL%.git}
 VERSION=${ICEBATH_VERSION:-}
 CHANNEL=${ICEBATH_INSTALL_CHANNEL:-}
 INSTALL_DIR=${ICEBATH_INSTALL_DIR:-}
@@ -71,18 +73,36 @@ else
     C_RED="" C_CYAN="" C_NC=""
 fi
 log() { printf '%s→%s %s\n' "$C_CYAN" "$C_NC" "$1" >&2; }
-fail() { printf '%s✗%s %s\n' "$C_RED" "$C_NC" "$1" >&2; exit 1; }
+STAGE=prerequisites
+STARTED=$(date +%s)
 
+# Parks one local receipt for a run the bootstrap ended, closed tokens and two timestamps only
+receipt() {
+    {
+        dir="$ICEBATH_HOME/telemetry/shared_metrics/pending_installs"
+        id=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+        [ "${#id}" -eq 32 ] || id=$(printf '%08x%08x%08x%08x' "$$" "$STARTED" "$(date +%s)" "$PPID")
+        mkdir -p "$dir" &&
+            printf '{"id":"%s","installer":"install_sh","outcome":"failed","failed_stage":"%s","failure_class":"%s","started_at":%s,"finished_at":%s}\n' \
+                "$id" "$STAGE" "$1" "$STARTED" "$(date +%s)" > "$dir/.$id.tmp" &&
+            mv -f "$dir/.$id.tmp" "$dir/$id.json" || rm -f "$dir/.$id.tmp"
+    } >/dev/null 2>&1 || :
+}
+fail() { printf '%s✗%s %s\n' "$C_RED" "$C_NC" "$1" >&2; receipt "${2:-other}"; exit 1; }
+
+if [ -n "${TERMUX_VERSION:-}" ] || case "${PREFIX:-}" in *com.termux/files/usr*) true ;; *) false ;; esac; then
+    fail "Termux has no icebath build; install icebath in a Debian userland instead: pkg install proot-distro && proot-distro install debian && proot-distro login debian -- sh -c 'apt-get update && apt-get install -y curl ca-certificates && curl -fsSL https://icebath.app | sh'" unsupported_platform
+fi
 case "$(uname -s)" in
     Linux) os=linux ;;
     Darwin) os=darwin ;;
-    MINGW*|MSYS*|CYGWIN*) fail "on Windows run this in PowerShell instead: irm icebath.app | iex" ;;
-    *) fail "unsupported OS $(uname -s); on Windows run install.ps1" ;;
+    MINGW*|MSYS*|CYGWIN*) fail "on Windows run this in PowerShell instead: irm icebath.app | iex" unsupported_platform ;;
+    *) fail "unsupported OS $(uname -s); on Windows run install.ps1" unsupported_platform ;;
 esac
 case "$(uname -m)" in
     x86_64|amd64) arch=amd64 ;;
     arm64|aarch64) arch=arm64 ;;
-    *) fail "unsupported architecture $(uname -m)" ;;
+    *) fail "unsupported architecture $(uname -m)" unsupported_platform ;;
 esac
 if [ "$os" = darwin ] && [ "$arch" = amd64 ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
     arch=arm64
@@ -94,7 +114,7 @@ fetch() {
     elif command -v wget >/dev/null 2>&1; then
         wget -q -O "$2" "$1"
     else
-        fail "curl or wget is required"
+        fail "curl or wget is required. Install one with your system package manager." curl_missing
     fi
 }
 
@@ -106,36 +126,40 @@ sha256_of() {
     elif command -v openssl >/dev/null 2>&1; then
         openssl dgst -sha256 "$1" | sed 's/.* //'
     else
-        fail "sha256sum, shasum or openssl is required to verify the download"
+        fail "sha256sum, shasum or openssl is required to verify the download" other
     fi
 }
 
+STAGE=repository
 if [ -z "$VERSION" ]; then
     case "$REPO_URL" in
         https://github.com/*) api="https://api.github.com/repos/${REPO_URL#https://github.com/}/releases/latest" ;;
-        *) api="$REPO_URL/releases/latest" ;;
+        *://*/*/*) rest=${REPO_URL#*://}; api="${REPO_URL%%://*}://${rest%%/*}/api/v3/repos/${rest#*/}/releases/latest" ;;
+        *) fail "repository URL $REPO_URL does not name owner/repo" git_fetch_failed ;;
     esac
-    tmp_json=$(mktemp) || fail "could not create a temp file"
-    fetch "$api" "$tmp_json" || { rm -f "$tmp_json"; fail "could not resolve the latest release from $api"; }
+    tmp_json=$(mktemp) || fail "could not create a temp file" filesystem_error
+    fetch "$api" "$tmp_json" || { rm -f "$tmp_json"; fail "could not resolve the latest release from $api" download_failed; }
     VERSION=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp_json" | head -n1)
     rm -f "$tmp_json"
-    [ -n "$VERSION" ] || fail "the latest release has no tag"
+    [ -n "$VERSION" ] || fail "the latest release has no tag" download_failed
 fi
 VERSION=${VERSION#v}
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/icebath-install-XXXXXX") || fail "could not create a temp dir"
+work=$(mktemp -d "${TMPDIR:-/tmp}/icebath-install-XXXXXX") || fail "could not create a temp dir" filesystem_error
 trap 'rm -rf "$work"' EXIT
 archive="icebath_${VERSION}_${os}_${arch}.tar.gz"
 base="$REPO_URL/releases/download/v$VERSION"
 log "Downloading icebath $VERSION for $os/$arch"
-fetch "$base/$archive" "$work/$archive" || fail "download failed: $base/$archive"
-fetch "$base/checksums.txt" "$work/checksums.txt" || fail "download failed: $base/checksums.txt"
+fetch "$base/$archive" "$work/$archive" || fail "download failed: $base/$archive" download_failed
+fetch "$base/checksums.txt" "$work/checksums.txt" || fail "download failed: $base/checksums.txt" download_failed
 want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$work/checksums.txt")
-[ -n "$want" ] || fail "checksums.txt has no entry for $archive"
+[ -n "$want" ] || fail "checksums.txt has no entry for $archive" download_failed
 got=$(sha256_of "$work/$archive")
-[ "$got" = "$want" ] || fail "checksum mismatch for $archive: expected $want, got $got"
-tar -xzf "$work/$archive" -C "$work" icebath || fail "could not unpack $archive"
-chmod 0755 "$work/icebath"
+[ "$got" = "$want" ] || fail "checksum mismatch for $archive: expected $want, got $got" download_digest_mismatch
+mkdir "$work/unpacked" || fail "could not create $work/unpacked" filesystem_error
+tar -xzf "$work/$archive" -C "$work/unpacked" || fail "could not unpack $archive" download_failed
+[ -f "$work/unpacked/icebath" ] || fail "$archive has no icebath binary" download_failed
+chmod 0755 "$work/unpacked/icebath"
 
 eval "set -- $FORWARD"
-"$work/icebath" install-self --dir "$INSTALL_DIR" --icebath-home "$ICEBATH_HOME" --version "$VERSION" "$@"
+ICEBATH_INSTALLER=install_sh "$work/unpacked/icebath" install-self --dir "$INSTALL_DIR" --icebath-home "$ICEBATH_HOME" --version "$VERSION" "$@"

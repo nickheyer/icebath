@@ -95,6 +95,7 @@ type app struct {
 	recoveryAttempts []float64
 	gaveUp           bool
 	seenSid          string
+	seenAttach       string
 	seenCwd          string
 	seenBusy         bool
 	seenTheme        theme
@@ -110,8 +111,12 @@ type app struct {
 	dialogs          dialogState
 	widgets          *widgetHost
 	pet              *petView
-	stash            *promptStash
-	spawnSections    map[string]bool
+	stash              *promptStash
+	spawnSections      map[string]bool
+	agentDockCollapsed bool
+	dockClockArmed     bool
+	observeUnsupported bool
+	completion         composerCompletion
 }
 
 var (
@@ -133,6 +138,7 @@ func tuiKeymap() *keys.Map {
 		{ID: "tui.agents", Context: tuiContext, Label: "agents", Doc: "open the spawn tree of the agents of the session", Default: []string{"ctrl+t"}},
 		{ID: "tui.editor", Context: tuiContext, Label: "editor", Doc: "edit the prompt in the external editor", Default: []string{"ctrl+g", "alt+g"}},
 		{ID: "tui.redraw", Context: tuiContext, Label: "redraw", Doc: "repaint the screen", Default: []string{"ctrl+l"}},
+		{ID: "tui.suspend", Context: tuiContext, Label: "suspend", Doc: "suspend to the shell, fg brings it back", Default: []string{"ctrl+z"}},
 		{ID: "tui.exit", Context: tuiContext, Label: "exit", Doc: "quit on an empty prompt", Default: []string{"ctrl+d"}},
 		{ID: "tui.queue.drop", Context: tuiContext, Label: "drop queued", Doc: "drop the newest queued input", Default: []string{"ctrl+k"}},
 		{ID: "tui.paste.image", Context: tuiContext, Label: "paste image", Doc: "attach the clipboard image", Default: []string{"alt+v"}},
@@ -143,11 +149,9 @@ func tuiKeymap() *keys.Map {
 	} {
 		km.Register(a)
 	}
-	if tty.JobControl() {
-		km.Register(keys.Action{ID: "tui.suspend", Context: tuiContext, Label: "suspend", Doc: "suspend to the shell, fg brings it back", Default: []string{"ctrl+z"}})
-	}
 	registerListKeys(km)
 	registerSpawnTreeKeys(km)
+	registerJourneyKeys(km)
 	registerStashKeys(km)
 	registerBillingKeys(km)
 	arena.RegisterKeys(km)
@@ -210,9 +214,6 @@ func Run(ctx context.Context) int {
 	if err != nil && !errors.Is(err, tea.ErrProgramKilled) && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "icebath: "+err.Error())
 		return 1
-	}
-	if goodbye := trimJS(a.store.ui.Theme.Brand.Goodbye); goodbye != "" && a.exitCode == 0 {
-		fmt.Fprintln(os.Stdout, goodbye)
 	}
 	return a.exitCode
 }
@@ -344,6 +345,7 @@ func feedsArena(m tea.Msg) bool {
 func (a *app) afterUpdate() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, a.turn.takeCmds()...)
+	cmds = append(cmds, a.syncCompletion())
 	ui := &a.store.ui
 	if ui.Sid != a.seenSid {
 		a.seenSid = ui.Sid
@@ -355,6 +357,13 @@ func (a *app) afterUpdate() tea.Cmd {
 		if err := a.queue.reconcileReceipts(); err != nil {
 			a.sys("error: " + err.Error())
 		}
+	}
+	if attach := a.attachKey(); attach != a.seenAttach {
+		a.seenAttach = attach
+		if ui.Sid == "" {
+			ui.SessionTitle = ""
+		}
+		cmds = append(cmds, a.readControl())
 	}
 	if cwd := a.store.sessionCwd(); cwd != a.seenCwd {
 		a.seenCwd = cwd
@@ -377,7 +386,7 @@ func (a *app) afterUpdate() tea.Cmd {
 		}
 		a.card.view.invalidate()
 	}
-	cmds = append(cmds, a.battery.sync(a.store, a.gw), a.syncDialogs(), a.drainQueue())
+	cmds = append(cmds, a.battery.sync(a.store, a.gw), a.syncDialogs(), a.drainQueue(), a.armDockClock(), a.pet.follow())
 	a.wm.Repaint()
 	return tea.Batch(cmds...)
 }
@@ -441,8 +450,47 @@ func (a *app) refreshRosters() tea.Cmd {
 			processes, _ := r["processes"].([]any)
 			a.store.applyProcessSnapshot(sid, processes)
 		}),
-		quiet("session.control.read", func(r map[string]any) { a.store.applyControlSnapshot(sid, r) }),
+		requestLiveSessions(a.gw, sid, func(v any, err error) tea.Cmd {
+			sessions, isList := asRPCResult(v)["sessions"].([]any)
+			if err != nil || !isList {
+				return nil
+			}
+			title := ""
+			for _, raw := range sessions {
+				if s, _ := raw.(map[string]any); s != nil && (truthyJS(s["current"]) || s["id"] == a.store.ui.Sid) {
+					title, _ = s["title"].(string)
+					title = trimJS(title)
+					break
+				}
+			}
+			a.store.ui.SessionTitle = title
+			return nil
+		}),
 	)
+}
+
+// Session in view and whether its gateway is up, the goal and loop controls read once per change of either
+func (a *app) attachKey() string {
+	ui := a.store.ui
+	if ui.Sid == "" || (ui.GatewayConnected != nil && !*ui.GatewayConnected) {
+		return ""
+	}
+	return ui.Sid
+}
+
+// Reads the goal and loop controls of the session in view once, their updates arriving as events afterwards
+func (a *app) readControl() tea.Cmd {
+	sid := a.attachKey()
+	if sid == "" {
+		return nil
+	}
+	return gatewayCall(a.gw, "session.control.read", map[string]any{"session_id": sid}, func(v any, err error) tea.Cmd {
+		if r := asRPCResult(v); err == nil && r != nil && a.store.ui.Sid == sid {
+			control, _ := r["control"].(map[string]any)
+			a.store.applyControlSnapshot(sid, control)
+		}
+		return nil
+	})
 }
 
 // Tells a legacy gateway the terminal size, the canonical wire needs none
@@ -497,13 +545,17 @@ func (a *app) sys(text string) { a.appendMessage(msg{Role: "system", Text: text}
 
 func (a *app) appendMessage(m msg) {
 	a.history = capTranscriptHistory(appendTranscriptMessage(a.history, m, a.store.nowMillis))
+	a.store.transcriptGen++
 }
 
 func (a *app) panel(title string, sections []panelSection) {
 	a.appendMessage(msg{Kind: "panel", Role: "system", PanelData: &panelData{Title: title, Sections: sections}})
 }
 
-func (a *app) setHistoryItems(update func([]msg) []msg) { a.history = update(a.history) }
+func (a *app) setHistoryItems(update func([]msg) []msg) {
+	a.history = update(a.history)
+	a.store.transcriptGen++
+}
 
 func (a *app) setInput(update func(string) string) {
 	a.card.composer.SetValue(update(a.card.composer.Value()))
@@ -540,7 +592,6 @@ func (a *app) resumeByID(id string, then func(err error) tea.Cmd) tea.Cmd {
 
 func (a *app) setCatalog(c *slashCatalog) {
 	a.catalog = c
-	a.card.composer.SetCommands(a.composerCommands())
 }
 
 func (a *app) setVoiceEnabled(on bool)            { a.voiceEnabled = on }
@@ -1060,15 +1111,3 @@ func (a *app) frameStatus() string {
 	return strings.Join(parts, " · ")
 }
 
-// Rows of the background process dock, each process with its state and newest output
-func (a *app) dockRows(width int, rc renderCtx) []string {
-	var rows []string
-	for _, row := range a.store.currentProcessRows(a.store.nowMillis()) {
-		glyph, tone := processGlyph(row.Status, rc.t)
-		elapsed := render.Elapsed(time.Duration(row.ElapsedSeconds * float64(time.Second)).Truncate(time.Second))
-		head := "  " + toneStyle(tone).Render(glyph) + " " + toneStyle(rc.t.Color.Text).Render(truncateEnd(row.Command, max(width/2, 12)))
-		tail := toneStyle(rc.t.Color.Muted).Render(" · " + elapsed + " · " + truncateEnd(row.Detail, max(width/3, 8)))
-		rows = append(rows, render.Fit(head+tail, width, rc.ut))
-	}
-	return rows
-}

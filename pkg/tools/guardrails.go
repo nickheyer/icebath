@@ -1113,7 +1113,7 @@ func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []st
 		if fnName == "" {
 			fnName = "?"
 		}
-		slog.Warn(fmt.Sprintf("Model reused tool call id %s; renamed the duplicate to %s (tool=%s) to keep call/result pairing lossless.", cid, newID, fnName))
+		slog.Default().With("logger", "agent.message_sanitization").Warn(fmt.Sprintf("Model reused tool call id %s; renamed the duplicate to %s (tool=%s) to keep call/result pairing lossless.", cid, newID, fnName))
 	}
 	return toolCalls
 }
@@ -1801,7 +1801,7 @@ func MakeToolResultMessage(name string, content any, toolCallID string, effectDi
 	toolCallID = NormalizeToolCallID(toolCallID)
 	wrapped := MaybeWrapUntrusted(name, MaybeAppendElisionNotice(name, content))
 	msg := &state.Message{Role: "tool", ToolName: name, Content: wrapped, ToolCallID: toolCallID,
-		Timestamp: float64(time.Now().UnixNano()) / 1e9}
+		Timestamp: float64(time.Now().UnixNano()) / 1e9, Extra: map[string]any{"name": name}}
 	if risk := ToolOutputRiskMetadata(name, content); risk != nil {
 		msg.DisplayMetadata = map[string]any{ToolOutputRiskKey: risk}
 	}
@@ -2129,7 +2129,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			toolCalls[i].Function.Arguments = "{}"
 			continue
 		}
-		if _, err := pyjson.DecodeWTF8([]byte(args)); err != nil {
+		if _, err := pyjson.Loads(args); err != nil {
 			if !(mixed && !validNames[toolCalls[i].Function.Name]) {
 				invalidJSON = append(invalidJSON, badArgs{toolCalls[i].Function.Name, err.Error()})
 			}

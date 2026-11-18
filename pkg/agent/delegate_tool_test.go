@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"runtime"
 	"testing"
@@ -162,14 +163,14 @@ func TestBindSubagentParentDoesNotPinAgent(t *testing.T) {
 
 func TestSessionJoinsDelegationFollowsTheCarriedSchema(t *testing.T) {
 	built := tools.DelegateTaskSchema
-	joined := tools.OneshotDelegateFunction(map[string]any{"name": "delegate_task",
-		"description": "x " + tools.OneshotDescriptionDelivery, "parameters": built["parameters"]})
+	joined := tools.OneshotDelegateFunction(pyjson.ObjectOf("name", "delegate_task",
+		"description", "x "+tools.OneshotDescriptionDelivery, "parameters", built.Vals["parameters"]))
 	inline := &AIAgent{tools: []any{map[string]any{"type": "function", "function": joined}}}
 	if !sessionJoinsDelegation(inline) {
 		t.Fatal("joined schema does not join")
 	}
 	background := &AIAgent{tools: []any{map[string]any{"type": "function", "function": map[string]any{
-		"name": "delegate_task", "description": "END YOUR TURN", "parameters": built["parameters"]}}}}
+		"name": "delegate_task", "description": "END YOUR TURN", "parameters": built.Vals["parameters"]}}}}
 	if sessionJoinsDelegation(background) || sessionJoinsDelegation(&AIAgent{}) {
 		t.Fatal("background or absent delegate_task joins")
 	}

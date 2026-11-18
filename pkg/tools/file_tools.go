@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Read size guard in characters, a model agnostic proxy for tokens, configurable as file_read_max_chars
@@ -216,12 +218,12 @@ func createTerminalEnvForFileOps(env *Env, rawTaskID, taskID string, cfg map[str
 			fallback = "/workspace"
 		}
 		if cwd != fallback {
-			envLog(env).Info(fmt.Sprintf("Ignoring host/relative cwd override %s for %s backend (won't exist in sandbox). Using %s instead.",
+			envLog(env).With("logger", "tools.file_tools").Info(fmt.Sprintf("Ignoring host/relative cwd override %s for %s backend (won't exist in sandbox). Using %s instead.",
 				pyReprStr(cwd), envType, pyReprStr(fallback)))
 		}
 		cwd = fallback
 	}
-	envLog(env).Info(fmt.Sprintf("Creating new %s environment for task %s...", envType, runePrefix(taskID, 8)))
+	envLog(env).With("logger", "tools.file_tools").Info(fmt.Sprintf("Creating new %s environment for task %s...", envType, runePrefix(taskID, 8)))
 	timeout, _ := config.AsInt(cfg["timeout"])
 	ctx, cancel := context.WithTimeout(context.Background(), fileOpsEnvStartTimeout)
 	defer cancel()
@@ -299,7 +301,7 @@ func buildFileOpsHandle(env *Env, raw, key string) (*fileOpsHandle, error) {
 	termPool.lastActivity[key] = time.Now()
 	termPool.Unlock()
 	startCleanupThreadFn(env)
-	envLog(env).Info(fmt.Sprintf("%s environment ready for task %s", createdType, runePrefix(key, 8)))
+	envLog(env).With("logger", "tools.file_tools").Info(fmt.Sprintf("%s environment ready for task %s", createdType, runePrefix(key, 8)))
 	return newFileOpsHandle(env, created, ""), nil
 }
 
@@ -1414,6 +1416,108 @@ type searchArgs struct {
 	outputMode            string
 	context               int
 	order                 string
+	// Model sent value of a non str pattern and the Python errors a non str pattern or path raises
+	patternValue        any
+	patternErr, pathErr string
+}
+
+// Context key carrying the error a non str pattern raises once the search reaches the pattern
+type searchPatternErrorKey struct{}
+
+// Panic value unwinding a search to the error a non str pattern raises
+type searchPatternRaise struct{ msg string }
+
+// Python TypeError text pathlib raises for a non str path
+func pathlibTypeError(v any) string {
+	return "argument should be a str or an os.PathLike object where __fspath__ returns a str, not '" + pyrepr.TypeName(v) + "'"
+}
+
+// Scalar JSON value, the Python types an in test rejects as not a container
+func pyScalarArg(v any) bool {
+	switch v.(type) {
+	case []any, map[string]any, *pyjson.Object, string:
+		return false
+	}
+	return true
+}
+
+// Membership the way Python in tests a list element or a dict key
+func pyContainsStr(v any, s string) bool {
+	switch t := v.(type) {
+	case []any:
+		for _, item := range t {
+			if str, ok := item.(string); ok && str == s {
+				return true
+			}
+		}
+	case map[string]any:
+		_, ok := t[s]
+		return ok
+	case *pyjson.Object:
+		_, ok := t.Get(s)
+		return ok
+	}
+	return false
+}
+
+// Python error text of a non str path through tilde expansion then pathlib, empty for a str
+func tildePathTypeError(v any) string {
+	if _, ok := v.(string); ok {
+		return ""
+	}
+	if pyContainsStr(v, "~") {
+		return "expected str, bytes or os.PathLike object, not " + pyrepr.TypeName(v)
+	}
+	if pyScalarArg(v) && pyrepr.Truthy(v) {
+		return "argument of type '" + pyrepr.TypeName(v) + "' is not a container or iterable"
+	}
+	return pathlibTypeError(v)
+}
+
+// Python error text a non str search pattern raises for the target, empty for a str
+func searchPatternTypeError(v any, target string) string {
+	if _, ok := v.(string); ok {
+		return ""
+	}
+	name := pyrepr.TypeName(v)
+	switch {
+	case target == "files":
+		return "'" + name + "' object has no attribute 'startswith'"
+	case pyScalarArg(v):
+		return "argument of type '" + name + "' is not a container or iterable"
+	case pyContainsStr(v, "\n"):
+		return "'" + name + "' object has no attribute 'replace'"
+	}
+	return "expected string or bytes-like object, got '" + name + "'"
+}
+
+// Repeated search key part of a pattern, a non str value kept apart from every str
+func searchPatternKey(a searchArgs) any {
+	if a.patternErr == "" {
+		return a.pattern
+	}
+	if f, ok := pyNumericValue(a.patternValue); ok {
+		return "\x01" + strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	return "\x01" + pyrepr.Repr(a.patternValue)
+}
+
+// Numeric value of a JSON bool or number, the way Python equality compares them
+func pyNumericValue(v any) (float64, bool) {
+	switch t := v.(type) {
+	case bool:
+		if t {
+			return 1, true
+		}
+		return 0, true
+	case int64:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case float64:
+		return t, true
+	}
+	return 0, false
 }
 
 // Searches file contents or names behind the repeated search, namespace, and denylist guards
@@ -1425,17 +1529,36 @@ func searchTool(ctx context.Context, env *Env, a searchArgs, taskID string) stri
 	return out
 }
 
-func searchToolErr(ctx context.Context, env *Env, a searchArgs, taskID string) (string, error) {
+func searchToolErr(ctx context.Context, env *Env, a searchArgs, taskID string) (out string, err error) {
 	offset, limit := normalizeSearchPagination(a.offset, a.limit)
 	readTrackerLock.Lock()
 	td := taskData(taskID)
-	count := bumpConsecutive(td, consecutiveKey("search", a.pattern, a.target, a.path, a.fileGlob, limit, offset, a.order))
+	count := bumpConsecutive(td, consecutiveKey("search", searchPatternKey(a), a.target, a.path, a.fileGlob, limit, offset, a.order))
 	readTrackerLock.Unlock()
 	if count >= 4 {
+		var pattern any = a.pattern
+		if a.patternErr != "" {
+			pattern = a.patternValue
+		}
 		return fileToolError(fmt.Sprintf("BLOCKED: You have run this exact search %d times in a row. "+
 			"The results have NOT changed. You already have this information. "+
 			"STOP re-searching and proceed with your task.", count),
-			"pattern", a.pattern, "already_searched", count, GuardrailRefusalKey, true), nil
+			"pattern", pattern, "already_searched", count, GuardrailRefusalKey, true), nil
+	}
+	if a.pathErr != "" {
+		return fileToolError(a.pathErr), nil
+	}
+	if a.patternErr != "" {
+		ctx = context.WithValue(ctx, searchPatternErrorKey{}, a.patternErr)
+		defer func() {
+			if rec := recover(); rec != nil {
+				raised, ok := rec.(searchPatternRaise)
+				if !ok {
+					panic(rec)
+				}
+				out, err = fileToolError(raised.msg), nil
+			}
+		}()
 	}
 	if ntErr := ntNamespaceError(a.path, "Search"); ntErr != "" {
 		return fileToolError(ntErr), nil
@@ -1488,68 +1611,68 @@ func checkFileRequirements(env *Env) bool { return CheckTerminalRequirements(env
 
 const readFileDescription = "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Documents auto-extract to readable text: .ipynb, Office (.docx/.xlsx/.pptx and legacy .doc/.ppt/.xls), PDF (text layer), OpenDocument, RTF, EPUB, SQLite (.db/.sqlite: schema, row counts, first rows). Cannot read images/binary — use vision_analyze for images."
 
-var readFileSchema = map[string]any{
-	"name":        "read_file",
-	"description": readFileDescription,
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"path":   map[string]any{"type": "string", "description": "Path to the file to read (absolute, relative, or ~/path)"},
-			"offset": map[string]any{"type": "integer", "description": "Line number to start reading from (1-indexed, default: 1)", "default": 1, "minimum": 1},
-			"limit":  map[string]any{"type": "integer", "description": "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.", "default": DefaultReadLimit, "maximum": 2000},
-		},
-		"required": []any{"path"},
-	},
-}
+var readFileSchema = Dict(
+	"name", "read_file",
+	"description", readFileDescription,
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"path", Dict("type", "string", "description", "Path to the file to read (absolute, relative, or ~/path)"),
+			"offset", Dict("type", "integer", "description", "Line number to start reading from (1-indexed, default: 1)", "default", 1, "minimum", 1),
+			"limit", Dict("type", "integer", "description", "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.", "default", DefaultReadLimit, "maximum", 2000),
+		),
+		"required", []any{"path"},
+	),
+)
 
-var writeFileSchema = map[string]any{
-	"name":        "write_file",
-	"description": "Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. For an EXISTING file, call read_file first: write_file refuses (file untouched) when this task has no current full read/write of the file or the file changed on disk since; on refusal, read_file, merge, then retry. Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out). The result's verified:true means the on-disk content hash was confirmed — do NOT re-read the file to check the write landed.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"path":    map[string]any{"type": "string", "description": "Path to the file to write (will be created if it doesn't exist, overwritten if it does)"},
-			"content": map[string]any{"type": "string", "description": "Complete content to write to the file"},
-		},
-		"required": []any{"path", "content"},
-	},
-}
+var writeFileSchema = Dict(
+	"name", "write_file",
+	"description", "Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. For an EXISTING file, call read_file first: write_file refuses (file untouched) when this task has no current full read/write of the file or the file changed on disk since; on refusal, read_file, merge, then retry. Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out). The result's verified:true means the on-disk content hash was confirmed — do NOT re-read the file to check the write landed.",
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"path", Dict("type", "string", "description", "Path to the file to write (will be created if it doesn't exist, overwritten if it does)"),
+			"content", Dict("type", "string", "description", "Complete content to write to the file"),
+		),
+		"required", []any{"path", "content"},
+	),
+)
 
 // Replace only properties shared by the base schema and the V4A layer
-func patchBaseProperties() map[string]any {
-	return map[string]any{
-		"path": map[string]any{
-			"type":        "string",
-			"description": "File path to edit.",
-		},
-		"old_string": map[string]any{
-			"type":        "string",
-			"description": "Exact text to find and replace. Must be unique in the file unless replace_all=true. Include surrounding context lines to ensure uniqueness.",
-		},
-		"new_string": map[string]any{
-			"type":        "string",
-			"description": "Changed replacement text; it must differ from old_string. Pass empty string '' to delete the matched text.",
-		},
-		"replace_all": map[string]any{
-			"type":        "boolean",
-			"description": "Replace all occurrences instead of requiring a unique match (default: false)",
-			"default":     false,
-		},
-	}
+func patchBaseProperties() *pyjson.Object {
+	return Dict(
+		"path", Dict(
+			"type", "string",
+			"description", "File path to edit.",
+		),
+		"old_string", Dict(
+			"type", "string",
+			"description", "Exact text to find and replace. Must be unique in the file unless replace_all=true. Include surrounding context lines to ensure uniqueness.",
+		),
+		"new_string", Dict(
+			"type", "string",
+			"description", "Changed replacement text; it must differ from old_string. Pass empty string '' to delete the matched text.",
+		),
+		"replace_all", Dict(
+			"type", "boolean",
+			"description", "Replace all occurrences instead of requiring a unique match (default: false)",
+			"default", false,
+		),
+	)
 }
 
-var patchSchema = map[string]any{
-	"name": "patch",
-	"description": "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. " +
-		"Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. " +
-		"Returns a unified diff. Auto-runs syntax checks after editing. " +
+var patchSchema = Dict(
+	"name", "patch",
+	"description", "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. "+
+		"Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. "+
+		"Returns a unified diff. Auto-runs syntax checks after editing. "+
 		"Finds a unique string and replaces it.",
-	"parameters": map[string]any{
-		"type":       "object",
-		"properties": patchBaseProperties(),
-		"required":   []any{"path", "old_string", "new_string"},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", patchBaseProperties(),
+		"required", []any{"path", "old_string", "new_string"},
+	),
+)
 
 const patchV4ADescription = "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. " +
 	"Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. " +
@@ -1560,16 +1683,16 @@ const patchV4ADescription = "Targeted find-and-replace edits in files. Use this 
 	"REQUIRED PARAMETERS: mode, patch."
 
 // V4A mode and patch parameters layered on for OpenAI family mains
-func patchV4AParams() (map[string]any, map[string]any) {
-	return map[string]any{
-		"type":        "string",
-		"enum":        []any{"replace", "patch"},
-		"description": "Edit mode. 'replace' (default): requires path + old_string + new_string. 'patch': requires patch content only.",
-		"default":     "replace",
-	}, map[string]any{
-		"type":        "string",
-		"description": "REQUIRED when mode='patch'. V4A format patch content. Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ context hint @@\n context line\n-removed line\n+added line\n*** End Patch",
-	}
+func patchV4AParams() (*pyjson.Object, *pyjson.Object) {
+	return Dict(
+			"type", "string",
+			"enum", []any{"replace", "patch"},
+			"description", "Edit mode. 'replace' (default): requires path + old_string + new_string. 'patch': requires patch content only.",
+			"default", "replace",
+		), Dict(
+			"type", "string",
+			"description", "REQUIRED when mode='patch'. V4A format patch content. Format:\n*** Begin Patch\n*** Update File: path/to/file\n@@ context hint @@\n context line\n-removed line\n+added line\n*** End Patch",
+		)
 }
 
 var openAIFamilyProviders = setOf("openai", "openai-chat", "openai-codex", "azure-openai", "codex")
@@ -1604,25 +1727,25 @@ func macOSSearchNote() string {
 		"Documents, Downloads, Library, Movies, Music, Pictures); target one directly when access is intentional."
 }
 
-var searchFilesSchema = map[string]any{
-	"name":        "search_files",
-	"description": "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents." + macOSSearchNote() + "\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls. Discovery order is the fast bounded default; exact global newest-first order is an explicit opt-in and may scan the full tree.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"pattern":     map[string]any{"type": "string", "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"},
-			"target":      map[string]any{"type": "string", "enum": []any{"content", "files"}, "description": "'content' searches inside file contents, 'files' searches for files by name", "default": "content"},
-			"path":        map[string]any{"type": "string", "description": "Directory or file to search in (default: current working directory)", "default": "."},
-			"file_glob":   map[string]any{"type": "string", "description": "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)"},
-			"limit":       map[string]any{"type": "integer", "description": "Maximum number of results to return (default: 50)", "default": 50},
-			"offset":      map[string]any{"type": "integer", "description": "Skip first N results for pagination (default: 0)", "default": 0},
-			"order":       map[string]any{"type": "string", "enum": []any{"discovery", "modified"}, "description": "File-search order: 'discovery' is fast bounded traversal order; 'modified' is exact global newest-first and may scan the full tree; ignored for content", "default": "discovery"},
-			"output_mode": map[string]any{"type": "string", "enum": []any{"content", "files_only", "count"}, "description": "Output format for grep mode: 'content' shows matching lines with line numbers, 'files_only' lists file paths, 'count' shows match counts per file", "default": "content"},
-			"context":     map[string]any{"type": "integer", "description": "Number of context lines before and after each match (grep mode only)", "default": 0},
-		},
-		"required": []any{"pattern"},
-	},
-}
+var searchFilesSchema = Dict(
+	"name", "search_files",
+	"description", "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents."+macOSSearchNote()+"\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls. Discovery order is the fast bounded default; exact global newest-first order is an explicit opt-in and may scan the full tree.",
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"pattern", Dict("type", "string", "description", "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search"),
+			"target", Dict("type", "string", "enum", []any{"content", "files"}, "description", "'content' searches inside file contents, 'files' searches for files by name", "default", "content"),
+			"path", Dict("type", "string", "description", "Directory or file to search in (default: current working directory)", "default", "."),
+			"file_glob", Dict("type", "string", "description", "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)"),
+			"limit", Dict("type", "integer", "description", "Maximum number of results to return (default: 50)", "default", 50),
+			"offset", Dict("type", "integer", "description", "Skip first N results for pagination (default: 0)", "default", 0),
+			"order", Dict("type", "string", "enum", []any{"discovery", "modified"}, "description", "File-search order: 'discovery' is fast bounded traversal order; 'modified' is exact global newest-first and may scan the full tree; ignored for content", "default", "discovery"),
+			"output_mode", Dict("type", "string", "enum", []any{"content", "files_only", "count"}, "description", "Output format for grep mode: 'content' shows matching lines with line numbers, 'files_only' lists file paths, 'count' shows match counts per file", "default", "content"),
+			"context", Dict("type", "integer", "description", "Number of context lines before and after each match (grep mode only)", "default", 0),
+		),
+		"required", []any{"pattern"},
+	),
+)
 
 // Task id of a call, default when the host bound none
 func callTaskID(call *Call) string {
@@ -1634,8 +1757,12 @@ func callTaskID(call *Call) string {
 
 func handleReadFile(ctx context.Context, call *Call) string {
 	path := ""
-	if v, ok := call.Args["path"]; ok && v != nil {
-		path = pyStr(v)
+	if v, ok := pythonCallArgs(call)["path"]; ok {
+		s, isString := v.(string)
+		if !isString {
+			return fileToolError(pathlibTypeError(v))
+		}
+		path = s
 	}
 	offset, ok := call.Args["offset"]
 	if !ok {
@@ -1716,11 +1843,16 @@ func handlePatch(ctx context.Context, call *Call) string {
 	}
 	a := patchArgs{mode: mode, oldString: optionalStringArg(call.Args, "old_string"), newString: optionalStringArg(call.Args, "new_string"),
 		replaceAll: truthy(call.Args["replace_all"]), crossProfile: truthy(call.Args["cross_profile"]), sessionID: call.SessionID}
-	if p, ok := call.Args["path"].(string); ok {
-		a.path = p
-	}
-	if p, ok := call.Args["patch"].(string); ok {
+	pyArgs := pythonCallArgs(call)
+	if p, ok := pyArgs["patch"].(string); ok {
 		a.patch = p
+	} else if mode == "patch" && pyrepr.Truthy(pyArgs["patch"]) {
+		panic(&pyTypeError{msg: "expected string or bytes-like object, got '" + pyrepr.TypeName(pyArgs["patch"]) + "'"})
+	}
+	if p, ok := pyArgs["path"].(string); ok {
+		a.path = p
+	} else if pyrepr.Truthy(pyArgs["path"]) {
+		panic(&pyTypeError{msg: tildePathTypeError(pyArgs["path"])})
 	}
 	return recordFileEdit(call.Env, "patch", mode, func(probe *editProbe) string {
 		return owned(ctx, call, func(ctx context.Context) string {
@@ -1745,10 +1877,11 @@ func handleSearchFiles(ctx context.Context, call *Call) string {
 	if alias, ok := searchTargetAliases[target]; ok {
 		target = alias
 	}
-	path := "."
-	if v, ok := call.Args["path"]; ok && v != nil {
+	pyArgs := pythonCallArgs(call)
+	path, pathErr := ".", ""
+	if v, ok := pyArgs["path"]; ok && v != nil {
 		if s, isString := v.(string); !isString || pyStrip(s) != "" {
-			path = pyStr(v)
+			path, pathErr = pyStr(v), tildePathTypeError(v)
 		}
 	}
 	fileGlob := ""
@@ -1763,35 +1896,38 @@ func handleSearchFiles(ctx context.Context, call *Call) string {
 	if !ok {
 		offset = 0
 	}
+	var patternValue any = ""
+	if v, ok := pyArgs["pattern"]; ok {
+		patternValue = v
+	}
 	a := searchArgs{pattern: stringArgDefault(call.Args, "pattern", ""), target: target, path: path, fileGlob: fileGlob,
 		limit: limit, offset: offset, outputMode: stringArgDefault(call.Args, "output_mode", "content"),
-		context: argI(call.Args, "context", 0), order: stringArgDefault(call.Args, "order", "discovery")}
+		context: argI(call.Args, "context", 0), order: stringArgDefault(call.Args, "order", "discovery"),
+		patternValue: patternValue, patternErr: searchPatternTypeError(patternValue, target), pathErr: pathErr}
 	return searchTool(ctx, call.Env, a, callTaskID(call))
 }
 
 // One word capability upgrade of the read_file description when hosted OCR has a trusted route
-func readFileSchemaOverrides(env *Env) map[string]any {
+func readFileSchemaOverrides(env *Env) *pyjson.Object {
 	if HostedOCRAvailable(env) {
-		return map[string]any{"description": strings.Replace(readFileDescription, "PDF (text layer)", "PDF (scanned or text)", 1)}
+		return Dict("description", strings.Replace(readFileDescription, "PDF (text layer)", "PDF (scanned or text)", 1))
 	}
 	return nil
 }
 
 // Layers the V4A patch mode onto the replace only schema for OpenAI family mains
-func patchSchemaOverrides(env *Env) map[string]any {
+func patchSchemaOverrides(env *Env) *pyjson.Object {
 	if !isOpenAIFamilyMain(env) {
 		return nil
 	}
 	mode, patch := patchV4AParams()
-	props := map[string]any{"mode": mode}
-	for k, v := range patchBaseProperties() {
-		props[k] = v
-	}
-	props["patch"] = patch
-	return map[string]any{
-		"description": patchV4ADescription,
-		"parameters":  map[string]any{"type": "object", "properties": props, "required": []any{"mode"}},
-	}
+	props := Dict("mode", mode)
+	props.Update(patchBaseProperties())
+	props.Set("patch", patch)
+	return Dict(
+		"description", patchV4ADescription,
+		"parameters", Dict("type", "object", "properties", props, "required", []any{"mode"}),
+	)
 }
 
 func registerFileTools() {

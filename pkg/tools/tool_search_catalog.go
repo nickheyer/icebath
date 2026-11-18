@@ -60,6 +60,14 @@ func toolDefFn(td map[string]any) map[string]any {
 	return map[string]any{}
 }
 
+// Ordered function schema of a tool definition, an empty object when absent
+func toolDefFnObject(td map[string]any) *pyjson.Object {
+	if fn, ok := pyjson.AsObject(td["function"]); ok {
+		return fn
+	}
+	return pyjson.NewObject()
+}
+
 func toolDefName(td map[string]any) string {
 	name, _ := toolDefFn(td)["name"].(string)
 	return name
@@ -124,10 +132,8 @@ func catalogEntrySearchText(td map[string]any, sourceLabel string) string {
 		}
 	}
 	var paramNames []string
-	if params, ok := fn["parameters"].(map[string]any); ok {
-		if props, ok := params["properties"].(map[string]any); ok {
-			paramNames = sortedKeys(props)
-		}
+	if params, ok := pyjson.Dict(fn["parameters"]); ok {
+		paramNames = dictKeysInOrder(params["properties"])
 	}
 	desc, _ := fn["description"].(string)
 	return fmt.Sprintf("%s %s %s %s", nameWords, extra, desc, strings.Join(paramNames, " "))

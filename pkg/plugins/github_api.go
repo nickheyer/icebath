@@ -57,11 +57,11 @@ func probeGhCLIToken() (string, bool) {
 	out, err := cmd.Output()
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {
-		logDebug(fmt.Sprintf("gh CLI token lookup unavailable: %s", err))
+		logGithubAPI.debug(fmt.Sprintf("gh CLI token lookup unavailable: %s", err))
 		return "", false
 	}
 	if ctx.Err() != nil {
-		logDebug(fmt.Sprintf("gh CLI token lookup unavailable: Command '['gh', 'auth', 'token']' timed out after %d seconds", int(ghCLITimeout/time.Second)))
+		logGithubAPI.debug(fmt.Sprintf("gh CLI token lookup unavailable: Command '['gh', 'auth', 'token']' timed out after %d seconds", int(ghCLITimeout/time.Second)))
 		return "", false
 	}
 	token := ""

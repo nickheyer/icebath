@@ -41,7 +41,6 @@ func bindHostCommands(cli *commands.CLI) {
 		"backup":                  backupGroup,
 		"browser":                 browserGroup,
 		"checkpoints":             checkpointsGroup,
-		"claw":                    clawGroup,
 		"codex-runtime":           codexRuntimeGroup,
 		"completion":              completionGroup,
 		"connectors":              connectorsGroup,
@@ -54,12 +53,10 @@ func bindHostCommands(cli *commands.CLI) {
 		"fallback":                fallbackGroup,
 		"gateway":                 gatewayGroup,
 		"import":                  importGroup,
-		"import-agent":            importAgentGroup,
 		"install-self":            installSelfGroup,
 		"journey":                 journeyGroup,
 		"kanban":                  kanbanGroup,
 		"logs":                    logsGroup,
-		"mcp-serve":               mcpServeGroup,
 		"migrate":                 migrateGroup,
 		"model":                   modelGroup,
 		"monitoring":              monitoringGroup,
@@ -75,7 +72,6 @@ func bindHostCommands(cli *commands.CLI) {
 		"security":                securityGroup,
 		"send":                    sendGroup,
 		"sessions":                sessionsGroup,
-		"setup":                   setupGroup,
 		"slack":                   slackGroup,
 		"status":                  statusGroup,
 		"tools":                   toolsGroup,
@@ -392,18 +388,6 @@ func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 		parser = parser.Parent()
 	}
 	return app.CmdSessions(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), parser.Help)
-}
-
-func setupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return cmdSetupNamespace(ctx, namespace(cli, cmd, path, args))
-}
-
-// Seam over the wizard entry, the hermes_cli.setup.run_setup_wizard the argparse test patches
-var runSetupWizard = app.RunSetupWizard
-
-// Runs the interactive setup wizard, hermes_cli/setup.py run_setup_wizard
-func cmdSetupNamespace(ctx context.Context, ns map[string]any) (int, error) {
-	return runSetupWizard(ctx, ns)
 }
 
 // Lifts the emergency stop, hermes_cli/subcommands/pause.py cmd_resume

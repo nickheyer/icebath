@@ -118,42 +118,6 @@ func TestUnknownSkinFallsBackToDefault(t *testing.T) {
 	}
 }
 
-func TestPromptToolkitStyleOverridesCoverTUIClasses(t *testing.T) {
-	ctx, _ := skinHome(t)
-	SetActiveSkin(ctx, "ares")
-	overrides := GetPromptToolkitStyleOverrides(ctx)
-	for _, cls := range []string{"input-area", "placeholder", "prompt", "prompt-working", "hint", "status-bar", "status-bar-strong",
-		"status-bar-dim", "status-bar-good", "status-bar-warn", "status-bar-bad", "status-bar-critical", "input-rule", "image-badge",
-		"completion-menu", "completion-menu.completion", "completion-menu.completion.current", "completion-menu.meta.completion",
-		"completion-menu.meta.completion.current", "voice-status", "voice-status-recording", "clarify-border", "clarify-title",
-		"clarify-question", "clarify-choice", "clarify-selected", "clarify-active-other", "clarify-countdown", "sudo-prompt",
-		"sudo-border", "sudo-title", "sudo-text", "approval-border", "approval-title", "approval-desc", "approval-cmd",
-		"approval-choice", "approval-selected"} {
-		if _, ok := overrides[cls]; !ok {
-			t.Fatal(cls)
-		}
-	}
-}
-
-func TestPromptToolkitStyleOverridesUseSkinColors(t *testing.T) {
-	ctx, _ := skinHome(t)
-	SetActiveSkin(ctx, "ares")
-	skin := GetActiveSkin(ctx)
-	c := func(k string) string { return skin.GetColor(k, "") }
-	o := GetPromptToolkitStyleOverrides(ctx)
-	for cls, want := range map[string]string{
-		"prompt": c("prompt"), "input-rule": c("input_rule"),
-		"status-bar":               "bg:" + c("status_bar_bg") + " " + c("status_bar_text"),
-		"status-bar-strong":        "bg:" + c("status_bar_bg") + " " + c("status_bar_strong") + " bold",
-		"status-bar-session-title": "bg:" + c("status_bar_strong") + " " + c("status_bar_bg") + " bold",
-		"status-bar-critical":      "bg:" + c("status_bar_bg") + " " + c("status_bar_critical") + " bold",
-	} {
-		if o[cls] != want {
-			t.Fatalf("%s %q want %q", cls, o[cls], want)
-		}
-	}
-}
-
 func TestBrandingHelpersAndConfigInit(t *testing.T) {
 	ctx, _ := skinHome(t)
 	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": "  mono  "}})
@@ -161,8 +125,8 @@ func TestBrandingHelpersAndConfigInit(t *testing.T) {
 		t.Fatal(GetActiveSkinName(ctx), GetActiveHelpHeader(ctx, "x"))
 	}
 	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": 3}})
-	if GetActiveSkinName(ctx) != "default" || GetActivePromptSymbol(ctx, "❯") != "❯ " || GetActiveGoodbye(ctx, "") != "Goodbye! ☤" {
-		t.Fatal(GetActiveSkinName(ctx), GetActivePromptSymbol(ctx, "❯"))
+	if GetActiveSkinName(ctx) != "default" || GetActiveGoodbye(ctx, "") != "Goodbye! ☤" {
+		t.Fatal(GetActiveSkinName(ctx), GetActiveGoodbye(ctx, ""))
 	}
 }
 

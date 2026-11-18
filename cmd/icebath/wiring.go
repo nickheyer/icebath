@@ -564,6 +564,7 @@ func runAtExit() {
 		defer func() { recover() }()
 		fn()
 	}
+	run(observability.JoinRecorders)
 	run(state.RunTokenExitHooks)
 	run(func() { tools.CleanupAllEnvironments(processToolsEnv(context.Background())) })
 	run(tools.SweepSingularityScratchAtExit)
@@ -581,6 +582,7 @@ func runAtExit() {
 	run(func() { provider.ShutdownLocalRuntime() })
 	run(func() { plugins.FlushOutboundWebhooks(5 * time.Second) })
 	run(func() { observability.ShutdownRuntimes(context.Background()) })
+	run(observability.EndProcess)
 	run(langfuse.AtExit)
 	run(gatewayrun.BootstrapAtExit)
 	run(gateway.HostRendezvousAtExit)

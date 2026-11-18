@@ -29,6 +29,11 @@ var (
 	auxCurrentTurnIdentityFn = relayCurrentTurnIdentity
 )
 
+// Routes auxiliary hook presence and dispatch through the lifecycle the built in observers and plugins share
+func SetAuxLifecycleHooks(has func(ctx context.Context, name string) bool, invoke func(ctx context.Context, name string, kwargs map[string]any) []any) {
+	auxHasHookFn, auxInvokeHookFn = has, invoke
+}
+
 // Session, task, turn and platform of the main turn this call runs under, empty for turn less callers
 func auxParentTurnIdentity(ctx context.Context) map[string]any {
 	ident := map[string]any{"session_id": "", "task_id": "", "turn_id": "", "platform": ""}

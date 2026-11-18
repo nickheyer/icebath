@@ -104,7 +104,7 @@ func (s *Store) normalizeDueScanRecords(raw []*Job) bool {
 
 // Forces enabled false on a record that is enabled while carrying pause markers
 func (sc *dueScan) selfDisableHalfPaused(job *Job) {
-	sc.s.log.Error(fmt.Sprintf("Job '%s' (%s) has pause markers while enabled=true; self-disabling so it cannot "+
+	sc.s.logAs("cron.jobs").Error(fmt.Sprintf("Job '%s' (%s) has pause markers while enabled=true; self-disabling so it cannot "+
 		"fire (pause must be authoritative).", job.Name, job.ID))
 	rj := sc.find(job.ID)
 	if rj == nil {
@@ -138,7 +138,7 @@ func (sc *dueScan) recoverMissingNextRun(job *Job) (string, error) {
 	if deref(recovered) == "" {
 		return "", nil
 	}
-	s.log.Info(fmt.Sprintf("Job '%s' had no next_run_at; recovering %s run at %s", job.Label(), recoveryKind, *recovered))
+	s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' had no next_run_at; recovering %s run at %s", job.Label(), recoveryKind, *recovered))
 	recoverable := isRecoverableErrorJob(job)
 	apply := func(rj *Job) {
 		rj.NextRunAt = strPtr(*recovered)
@@ -164,7 +164,7 @@ func (d *dueJob) repairTimezoneShiftedCron() (bool, error) {
 	}
 	_, oldOff := d.rawNext.Time.Zone()
 	_, newOff := now.Zone()
-	d.scan.s.log.Info(fmt.Sprintf("Job '%s' next_run_at offset changed (%s -> %s). Recomputing cron run to "+
+	d.scan.s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' next_run_at offset changed (%s -> %s). Recomputing cron run to "+
 		"preserve local wall-clock intent: %s", d.label(), offsetRepr(oldOff), offsetRepr(newOff), *next))
 	d.scan.persist(d.job.ID, func(rj *Job) { rj.NextRunAt = strPtr(*next) })
 	return true, nil
@@ -206,7 +206,7 @@ func (d *dueJob) rearmStaleErrorRecurring() (time.Time, error) {
 	if !(deref(recovered) != "" && ok && instantBefore(recoveredDT, d.nextDT)) {
 		return d.nextDT, nil
 	}
-	s.log.Warn(fmt.Sprintf("cron.persisted_error.recovered job='%s' id=%s — recurring job wedged in stale "+
+	s.logAs("cron.jobs").Warn(fmt.Sprintf("cron.persisted_error.recovered job='%s' id=%s — recurring job wedged in stale "+
 		"last_status=error without re-firing for a full cadence; re-arming next_run_at to %s so it re-dispatches "+
 		"without force-run/resume", d.job.Name, d.job.ID, *recovered))
 	s.recordPersistedErrorRecovery(d.job, d.nextRun)
@@ -221,7 +221,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 	switch classifyStaleCronNextRun(d.schedule(), d.rawNext.Time, d.nextDT) {
 	case StaleCronExprEdit:
 		if quotaHoldIsRecoveryFire(s, d.job, d.nextRun) || unreachableRetryIsRetryFire(s, d.job, d.nextRun) {
-			s.log.Info(fmt.Sprintf("cron.off_lattice_fire job='%s' id=%s expr=%s at=%s",
+			s.logAs("cron.jobs").Info(fmt.Sprintf("cron.off_lattice_fire job='%s' id=%s expr=%s at=%s",
 				d.label(), d.job.ID, pyrepr.Repr(d.schedule().Expr), d.nextRun))
 			return false, nil
 		}
@@ -229,7 +229,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		s.log.Info(fmt.Sprintf("Job '%s' next_run_at %s does not match its current cron expression %s (direct "+
+		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s' next_run_at %s does not match its current cron expression %s (direct "+
 			"jobs.json edit?); re-anchoring to %s without firing.", d.label(), d.nextRun,
 			pyrepr.Repr(d.schedule().Expr), pyrepr.Str(skillAny(next))))
 		if deref(next) != "" {
@@ -239,7 +239,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 	case StaleCronTimezoneMigration:
 		_, rawOff := d.rawNext.Time.Zone()
 		_, nowOff := d.scan.now.Zone()
-		s.log.Warn(fmt.Sprintf("cron.timezone_migration.catch_up job='%s' id=%s expr=%s stored=%s normalized=%s — "+
+		s.logAs("cron.jobs").Warn(fmt.Sprintf("cron.timezone_migration.catch_up job='%s' id=%s expr=%s stored=%s normalized=%s — "+
 			"stored next_run_at carries a pre-migration UTC offset (%s, now %s) and is a legal occurrence at its "+
 			"own wall clock; firing the due run instead of re-anchoring past it.", d.label(), d.job.ID,
 			pyrepr.Repr(d.schedule().Expr), d.nextRun, FormatISO(d.nextDT), offsetRepr(rawOff), offsetRepr(nowOff)))
@@ -256,17 +256,17 @@ func (sc *dueScan) oneshotDispatchLimitReached(ctx context.Context, job *Job) bo
 	}
 	times, completed, name := *job.Repeat.Times, job.Repeat.Completed, job.Label()
 	if s.jobRunningInThisProcess(job.ID) {
-		s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) but its run is still in flight in this "+
+		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) but its run is still in flight in this "+
 			"process — keeping entry", name, completed, times))
 		return true
 	}
 	if job.LastRunAt != nil {
-		s.log.Warn(fmt.Sprintf("Job '%s': one-shot dispatch limit reached (%d/%d) on a record that already "+
+		s.logAs("cron.jobs").Warn(fmt.Sprintf("Job '%s': one-shot dispatch limit reached (%d/%d) on a record that already "+
 			"completed a run (last_run_at=%s) — removing it WITHOUT firing. This record was re-armed without a "+
 			"budget reset (pre-#93615 store or hand edit); re-run it with 'icebath cron resume <job> --run-now' "+
 			"(#93524).", name, completed, times, *job.LastRunAt))
 	} else {
-		s.log.Info(fmt.Sprintf("Job '%s': one-shot dispatch limit reached (%d/%d) — removing stale due entry",
+		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s': one-shot dispatch limit reached (%d/%d) — removing stale due entry",
 			name, completed, times))
 	}
 	sc.retire(job.ID)
@@ -280,7 +280,7 @@ func (sc *dueScan) restoreUnclaimedSlot(job *Job) string {
 	if slot == nil {
 		return ""
 	}
-	sc.s.log.Warn(fmt.Sprintf("Job '%s' (%s): occurrence %s was taken off the schedule but never claimed "+
+	sc.s.logAs("cron.jobs").Warn(fmt.Sprintf("Job '%s' (%s): occurrence %s was taken off the schedule but never claimed "+
 		"(scheduler stopped before dispatch); restoring it as the due instant (was %s).",
 		nameOrID(job), job.ID, *slot, pyrepr.Str(skillAny(job.NextRunAt))))
 	job.NextRunAt = strPtr(*slot)
@@ -431,7 +431,7 @@ func (s *Store) sweepCompletedOneshots(raw []*Job, now time.Time, removed *[]str
 		if removed != nil && rj.ID != "" {
 			*removed = append(*removed, rj.ID)
 		}
-		s.log.Info(fmt.Sprintf("Job '%s': pruning completed one-shot record (finished %s, retention %.1f days)",
+		s.logAs("cron.jobs").Info(fmt.Sprintf("Job '%s': pruning completed one-shot record (finished %s, retention %.1f days)",
 			rj.Label(), *rj.LastRunAt, days))
 	}
 	return kept, pruned, nil
@@ -492,7 +492,7 @@ func (s *Store) getDueJobsLocked(ctx context.Context, tx *jobsTx) ([]*Job, error
 			if label == "" {
 				label = "?"
 			}
-			s.log.Error(fmt.Sprintf("Skipping malformed cron job %s during due scan", pyrepr.Repr(label)), "error", err)
+			s.logAs("cron.jobs").Error(fmt.Sprintf("Skipping malformed cron job %s during due scan", pyrepr.Repr(label)), "error", err)
 			continue
 		}
 		if fires {

@@ -85,18 +85,18 @@ func resolveNode(ctx context.Context, node any) (*nodeClient, any, error) {
 
 const nodeClientTimeout = 10 * time.Second
 
-func strProp(description string) map[string]any {
-	return map[string]any{"type": "string", "description": description}
+func strProp(description string) *pyjson.Object {
+	return pyjson.ObjectOf("type", "string", "description", description)
 }
 
 // Tool schema with an object parameter block closed to extra properties
-func meetSchema(name, description string, properties map[string]any, required ...any) map[string]any {
-	params := map[string]any{"type": "object", "properties": properties}
+func meetSchema(name, description string, properties *pyjson.Object, required ...any) *pyjson.Object {
+	params := pyjson.ObjectOf("type", "object", "properties", properties)
 	if len(required) > 0 {
-		params["required"] = required
+		params.Set("required", required)
 	}
-	params["additionalProperties"] = false
-	return map[string]any{"name": name, "description": description, "parameters": params}
+	params.Set("additionalProperties", false)
+	return pyjson.ObjectOf("name", name, "description", description, "parameters", params)
 }
 
 func nodeProp() map[string]any { return map[string]any{"type": "string"} }
@@ -107,43 +107,43 @@ var meetJoinSchema = meetSchema("meet_join",
 		"Chromium subprocess that runs in parallel with the agent loop — returns immediately. Poll "+
 		"with meet_status and read captions with meet_transcript. Reminder to the agent: you "+
 		"should announce yourself in the meeting (there is no automatic consent announcement).",
-	map[string]any{
-		"url": strProp("Full https://meet.google.com/... URL. Required."),
-		"mode": map[string]any{"type": "string", "enum": []any{"transcribe", "realtime"},
-			"description": "transcribe (default): listen-only, scrape captions. " +
+	pyjson.ObjectOf(
+		"url", strProp("Full https://meet.google.com/... URL. Required."),
+		"mode", pyjson.ObjectOf("type", "string", "enum", []any{"transcribe", "realtime"},
+			"description", "transcribe (default): listen-only, scrape captions. " +
 				"realtime: also enable agent speech via meet_say " +
-				"(requires OpenAI Realtime key + platform audio bridge)."},
-		"guest_name": strProp("Display name to use when joining as guest. Defaults to 'Icebath Agent'."),
-		"duration": strProp("Optional max duration before auto-leave (e.g. '30m', " +
+				"(requires OpenAI Realtime key + platform audio bridge)."),
+		"guest_name", strProp("Display name to use when joining as guest. Defaults to 'Icebath Agent'."),
+		"duration", strProp("Optional max duration before auto-leave (e.g. '30m', " +
 			"'2h', '90s'). Omit to stay until meet_leave is called."),
-		"headed": map[string]any{"type": "boolean",
-			"description": "Run Chromium headed instead of headless (debug only). Default false."},
-		"node": strProp("Name of a registered remote node to run the bot on (useful when the gateway " +
+		"headed", pyjson.ObjectOf("type", "boolean",
+			"description", "Run Chromium headed instead of headless (debug only). Default false."),
+		"node", strProp("Name of a registered remote node to run the bot on (useful when the gateway " +
 			"runs on a headless Linux box but the user's Chrome with a signed-in Google " +
 			"profile lives on their Mac). Pass 'auto' to use the single registered node. " +
 			"Default: run locally. Nodes are approved via `icebath meet node approve`."),
-	}, "url")
+	), "url")
 
 var meetStatusSchema = meetSchema("meet_status",
 	"Report the current Meet session state — whether the bot is alive, has joined, is sitting "+
 		"in the lobby, number of transcript lines captured, and last-caption timestamp.",
-	map[string]any{"node": nodeProp()})
+	pyjson.ObjectOf("node", nodeProp()))
 
 var meetTranscriptSchema = meetSchema("meet_transcript",
 	"Read the scraped transcript for the active Meet session. Returns "+
 		"full transcript unless 'last' is set, in which case returns the last N lines only.",
-	map[string]any{
-		"last": map[string]any{"type": "integer",
-			"description": "Optional: return only the last N caption lines. Useful " +
+	pyjson.ObjectOf(
+		"last", pyjson.ObjectOf("type", "integer",
+			"description", "Optional: return only the last N caption lines. Useful " +
 				"for polling during a meeting without re-reading the whole transcript.",
-			"minimum": 1},
-		"node": nodeProp(),
-	})
+			"minimum", 1),
+		"node", nodeProp(),
+	))
 
 var meetLeaveSchema = meetSchema("meet_leave",
 	"Leave the active Meet call cleanly, stop caption scraping, and finalize the transcript "+
 		"file. Safe to call when no meeting is active — returns ok=false with a reason.",
-	map[string]any{"node": nodeProp()})
+	pyjson.ObjectOf("node", nodeProp()))
 
 var meetSaySchema = meetSchema("meet_say",
 	"Speak text into the active Meet call. Requires the active meeting to have been joined "+
@@ -151,7 +151,7 @@ var meetSaySchema = meetSchema("meet_say",
 		"generated audio is streamed into Chrome's fake microphone via a virtual audio device "+
 		"(PulseAudio null-sink on Linux, BlackHole on macOS). Returns immediately — the actual "+
 		"speech lags by a couple of seconds.",
-	map[string]any{"text": strProp("Text to speak."), "node": nodeProp()}, "text")
+	pyjson.ObjectOf("text", strProp("Text to speak."), "node", nodeProp()), "text")
 
 // JSON text of a tool result with non ASCII kept
 func toolJSON(obj any) string {

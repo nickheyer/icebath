@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -62,30 +60,28 @@ func activeDelegationProvider(ctx context.Context, config map[string]any) (Deleg
 	return GetActiveDelegationProvider(ctx, config)
 }
 
-// Provider task parameters minus malformed or reserved names, a panicking provider costing only its parameters
-func declaredDelegationParameters(p DelegationProvider, config map[string]any) (accepted map[string]map[string]any) {
+// Provider task parameters in their declared order minus malformed or reserved names, each a detached copy
+func declaredDelegationParameters(p DelegationProvider, config map[string]any) (accepted *pyjson.Object) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			delegateToolLog.Warn(fmt.Sprintf("delegation provider %s.task_parameters() raised; no extra parameters", p.Name()),
 				"exc_info", fmt.Sprint(rec))
-			accepted = map[string]map[string]any{}
+			accepted = pyjson.NewObject()
 		}
 	}()
+	accepted = pyjson.NewObject()
 	raw := p.TaskParameters(config)
-	names := make([]string, 0, len(raw))
-	for name := range raw {
-		names = append(names, name)
+	if raw == nil {
+		return accepted
 	}
-	sort.Strings(names)
-	accepted = map[string]map[string]any{}
-	for _, name := range names {
+	for _, name := range raw.Keys {
 		if !delegationParamNameRE.MatchString(name) || ReservedTaskParameters[name] {
 			delegateToolLog.Warn(fmt.Sprintf("delegation provider %s: task parameter %s refused (reserved or invalid name)",
 				p.Name(), pyrepr.Repr(name)))
 			continue
 		}
-		if schema := raw[name]; schema != nil {
-			accepted[name] = pycopy.Of(schema)
+		if schema, ok := pyjson.AsObject(raw.Vals[name]); ok {
+			accepted.Set(name, pyjson.Clone(schema))
 		}
 	}
 	return accepted
@@ -93,14 +89,19 @@ func declaredDelegationParameters(p DelegationProvider, config map[string]any) (
 
 // DeclaredDelegationParameters lists a provider's task parameters minus malformed or reserved names
 func DeclaredDelegationParameters(p DelegationProvider, config map[string]any) map[string]map[string]any {
-	return declaredDelegationParameters(p, config)
+	out := map[string]map[string]any{}
+	declared := declaredDelegationParameters(p, config)
+	for _, name := range declared.Keys {
+		out[name], _ = pyjson.Plain(declared.Vals[name]).(map[string]any)
+	}
+	return out
 }
 
 // Extra task properties and description addendum of the active provider, none when it cannot be resolved
-func SchemaExtension(ctx context.Context, config map[string]any) (map[string]map[string]any, string) {
+func SchemaExtension(ctx context.Context, config map[string]any) (*pyjson.Object, string) {
 	p, err := activeDelegationProvider(ctx, config)
 	if err != nil {
-		return map[string]map[string]any{}, ""
+		return pyjson.NewObject(), ""
 	}
 	addendum := func() (text string) {
 		defer func() {

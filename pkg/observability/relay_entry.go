@@ -2,8 +2,11 @@ package observability
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -136,8 +139,8 @@ func resolvedSendConfig(ctx context.Context) (SendConfig, error) {
 
 // Reconciles the store's consent windows with the send setting in one write transaction
 func reconcileStoreConsent(ctx context.Context, store *SharedMetricsStore, sendEnabled bool) error {
-	return store.connection(ctx, busyTimeoutMS, func(conn state.SQLiteConn) error {
-		return state.WriteTxn(ctx, conn, func() error { return ReconcileSendConsent(ctx, conn, sendEnabled, utcNow()) })
+	return store.write(ctx, backgroundBusyTimeoutMS, func(conn state.SQLiteConn) error {
+		return ReconcileSendConsent(ctx, conn, sendEnabled, utcNow())
 	})
 }
 
@@ -325,9 +328,75 @@ func FinishTaskRun(ctx context.Context, sessionID, taskID, platform string, resu
 	runTaskHook(ctx, false, event, func(rt *Runtime, event map[string]any) error { return rt.finishTask(ctx, event) })
 }
 
+// markStore persists process marks of one profile as the Relay subscriber receives them, for a process no Relay host serves
+type markStore struct {
+	subscriber *SharedMetricsSubscriber
+	metadata   map[string]any
+}
+
+var (
+	markStoresMu sync.Mutex
+	markStores   = map[string]*markStore{}
+)
+
+// Store path of the active profile's process marks while no Relay host runs and nothing but shared metrics consumes Relay, nil otherwise
+func directMarkStore(ctx context.Context) *markStore {
+	if liveRuntime(ctx) != nil || tools.GetRelayRuntime(ctx, false, "") != nil || tools.RelayDemandedBeyond(ctx, SubscriberName) {
+		return nil
+	}
+	h := home.Dir(ctx)
+	markStoresMu.Lock()
+	defer markStoresMu.Unlock()
+	if m, ok := markStores[h]; ok {
+		return m
+	}
+	m, err := newMarkStore(ctx)
+	if err != nil {
+		slog.Warn("Icebath shared metrics initialization failed", "error", err)
+	}
+	markStores[h] = m
+	return m
+}
+
+// Opens the profile store and a subscriber taking every runtime instance
+func newMarkStore(ctx context.Context) (*markStore, error) {
+	info, err := installVersionInfo()
+	if err != nil {
+		return nil, err
+	}
+	store, err := NewSharedMetricsStore(ctx, "", "")
+	if err != nil {
+		return nil, err
+	}
+	subscriber, err := NewSharedMetricsSubscriber(ctx, store, info.BaseVersion, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &markStore{subscriber: subscriber, metadata: map[string]any{SchemaKey: SchemaVersion, tools.RelayRuntimeInstanceKey: newUUID()}}, nil
+}
+
+// Persists marks under one commit ticket and returns how many settled without a store error
+func (m *markStore) record(ctx context.Context, marks []Mark) (int, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return 0, err
+	}
+	ticket := hex.EncodeToString(raw)
+	metadata := maps.Clone(m.metadata)
+	metadata[CommitTicketKey] = ticket
+	for _, mark := range marks {
+		m.subscriber.Call(ctx, &RelayEvent{Kind: "mark", Name: mark.Name, Metadata: metadata, Data: relayData(mark.Data)})
+	}
+	return m.subscriber.TakeSaved(ticket), nil
+}
+
 // RecordProcessMark emits one process level decision mark when shared metrics are on
 func RecordProcessMark(ctx context.Context, mark string, data map[string]string) {
 	if !relayEnabled(ctx) || !processMarksAdmitted(ctx) {
+		return
+	}
+	if m := directMarkStore(ctx); m != nil {
+		relaySafe(func() error { _, err := m.record(ctx, []Mark{{Name: mark, Data: data}}); return err })
 		return
 	}
 	if rt := getRuntime(ctx, true, nil); rt != nil {
@@ -339,6 +408,10 @@ func RecordProcessMark(ctx context.Context, mark string, data map[string]string)
 func RecordProcessMarksSaved(ctx context.Context, marks []Mark) int {
 	if !relayEnabled(ctx) || !processMarksAdmitted(ctx) {
 		return len(marks)
+	}
+	if m := directMarkStore(ctx); m != nil {
+		n, _ := relayGuardedValue("Icebath shared metrics operation failed", func() (int, error) { return m.record(ctx, marks) })
+		return n
 	}
 	rt := getRuntime(ctx, true, nil)
 	if rt == nil {

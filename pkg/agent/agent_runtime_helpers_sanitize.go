@@ -510,7 +510,7 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 			} else if n := getToolCallNameStatic(tc); n != "" {
 				name = n
 			}
-			coerced := provider.CoerceToolName(name, "")
+			coerced := provider.CoerceToolName(name, "invalid_tool_call")
 			if s, ok := name.(string); ok && s == coerced {
 				continue
 			}

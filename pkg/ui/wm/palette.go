@@ -54,6 +54,8 @@ type Palette struct {
 	OnText func(text string) tea.Cmd
 	// Called once when the palette loses its place as the overlay
 	OnClose func() tea.Cmd
+	// Keeps the items it accepts for the typed text in their own order, the fuzzy match when nil
+	Filter func(query string, it Item) bool
 }
 
 // Builds a palette over the items
@@ -175,6 +177,12 @@ func fuzzy(query, text string) (int, []int) {
 func (p *Palette) filter() {
 	p.matches = p.matches[:0]
 	for _, it := range p.items {
+		if p.Filter != nil {
+			if p.Filter(p.query, it) {
+				p.matches = append(p.matches, scored{item: it})
+			}
+			continue
+		}
 		s, hits := fuzzy(p.query, it.Title)
 		if s < 0 {
 			ds, _ := fuzzy(p.query, it.Detail)

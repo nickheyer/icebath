@@ -76,7 +76,7 @@ func adoptInput(in *os.File) (func() error, error) {
 // Windows has no job control, so no shell can stop and continue the program
 func JobControl() bool { return false }
 
-// Windows has no job control, so a suspend request leaves the program running
+// Windows has no job control, so a stop request leaves the program running
 func (p *Program) suspend(string) {}
 
 // Resize arrives through the console input reader on Windows, so there is nothing to watch

@@ -2,13 +2,14 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-func availabilitySchema(name string) map[string]any {
-	return map[string]any{"name": name, "description": name, "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+func availabilitySchema(name string) *pyjson.Object {
+	return pyjson.ObjectOf("name", name, "description", name, "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
 }
 
 func availabilityRegistry(t *testing.T, defs ...Def) (*Registry, *Env) {

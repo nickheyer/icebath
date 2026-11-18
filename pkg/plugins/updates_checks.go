@@ -66,7 +66,7 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 			result.Reason = "removed from catalog: " + removed.Reason
 			return result
 		}
-		entry := GetLiveCatalogEntry(ctx, name)
+		entry := portPinnedEntry(GetLiveCatalogEntry(ctx, name))
 		if entry == nil {
 			result.Reason = "catalog entry is unavailable; installed pin retained"
 			return result

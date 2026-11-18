@@ -11,51 +11,51 @@ import (
 // The process_manage tool, poll, wait, log, kill, stdin and handoff of terminal background processes
 
 // ProcessSchema is the exact process_manage function schema
-var ProcessSchema = map[string]any{
-	"name": "process_manage",
-	"description": "Poll, wait on, send input to, or kill terminal(background=true) processes. " +
-		"Completed results remain retrievable by session_id when resuming their owning conversation " +
-		"(up to 7 days, newest 64 results per profile; rolling output tail). " +
-		"poll: status + new output. log: full output, paged. wait: block " +
-		"until exit or timeout (partial output on timeout). write vs " +
-		"submit: submit appends Enter — use it to answer prompts; write " +
-		"sends raw bytes, no newline. close: EOF stdin. kill: terminate. " +
-		"handoff (subagents only): transfer a running process you started to your parent agent, which then " +
-		"receives its completion; `data` = one sentence on its purpose. Subagent-owned processes are otherwise " +
+var ProcessSchema = Dict(
+	"name", "process_manage",
+	"description", "Poll, wait on, send input to, or kill terminal(background=true) processes. "+
+		"Completed results remain retrievable by session_id when resuming their owning conversation "+
+		"(up to 7 days, newest 64 results per profile; rolling output tail). "+
+		"poll: status + new output. log: full output, paged. wait: block "+
+		"until exit or timeout (partial output on timeout). write vs "+
+		"submit: submit appends Enter — use it to answer prompts; write "+
+		"sends raw bytes, no newline. close: EOF stdin. kill: terminate. "+
+		"handoff (subagents only): transfer a running process you started to your parent agent, which then "+
+		"receives its completion; `data` = one sentence on its purpose. Subagent-owned processes are otherwise "+
 		"killed when the subagent finishes and their notifications never reach the parent.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"action": map[string]any{
-				"type": "string",
-				"enum": []any{"list", "poll", "log", "wait", "kill", "write", "submit", "close", "handoff"},
-			},
-			"session_id": map[string]any{
-				"type":        "string",
-				"description": "From terminal background output; any unique prefix works ('4dae' for proc_4dae56ca81f6). Required except for 'list'.",
-			},
-			"data": map[string]any{
-				"type":        "string",
-				"description": "Stdin text for write/submit; purpose sentence for handoff.",
-			},
-			"timeout": map[string]any{
-				"type":        "integer",
-				"description": "Max seconds for 'wait'.",
-				"minimum":     1,
-			},
-			"offset": map[string]any{
-				"type":        "integer",
-				"description": "Log line offset (default: last 200).",
-			},
-			"limit": map[string]any{
-				"type":        "integer",
-				"description": "Max log lines.",
-				"minimum":     1,
-			},
-		},
-		"required": []any{"action"},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"action", Dict(
+				"type", "string",
+				"enum", []any{"list", "poll", "log", "wait", "kill", "write", "submit", "close", "handoff"},
+			),
+			"session_id", Dict(
+				"type", "string",
+				"description", "From terminal background output; any unique prefix works ('4dae' for proc_4dae56ca81f6). Required except for 'list'.",
+			),
+			"data", Dict(
+				"type", "string",
+				"description", "Stdin text for write/submit; purpose sentence for handoff.",
+			),
+			"timeout", Dict(
+				"type", "integer",
+				"description", "Max seconds for 'wait'.",
+				"minimum", 1,
+			),
+			"offset", Dict(
+				"type", "integer",
+				"description", "Log line offset (default: last 200).",
+			),
+			"limit", Dict(
+				"type", "integer",
+				"description", "Max log lines.",
+				"minimum", 1,
+			),
+		),
+		"required", []any{"action"},
+	),
+)
 
 // Runs the plugin transform_terminal_output seam over background process output, nil returncode while running
 func transformProcessOutput(env *Env, output, command string, returncode *int, taskID string) string {

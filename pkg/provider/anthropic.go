@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"maps"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +24,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -673,11 +674,8 @@ func anthBuildKwargs(in anthBuildInput) (map[string]any, error) {
 		}
 	}
 	if in.fastMode && !isThirdPartyAnthropicEndpoint(in.baseURL) && anthSupportsFastMode(model) {
-		extra, _ := asMap(kwargs["extra_body"])
-		if extra == nil {
-			extra = map[string]any{}
-		}
-		extra["speed"] = "fast"
+		extra := anthExtraBodyObject(kwargs)
+		extra.Set("speed", "fast")
 		kwargs["extra_body"] = extra
 		betas := anthCommonBetasForBaseURL(in.baseURL, in.dropContext1M)
 		if in.isOAuth {
@@ -752,7 +750,7 @@ func anthTranslateResponseFormat(kwargs map[string]any, responseFormat map[strin
 	var schema any
 	switch asStr(responseFormat["type"]) {
 	case "json_schema":
-		js, ok := asMap(responseFormat["json_schema"])
+		js, ok := pyjson.Dict(responseFormat["json_schema"])
 		if !ok {
 			return
 		}
@@ -796,7 +794,7 @@ const (
 
 // Backend shape of one Anthropic Messages wire, direct API, Bedrock or Vertex
 type anthTransport interface {
-	Request(ctx context.Context, op anthOperation, body map[string]any, headers map[string]string) (*http.Request, error)
+	Request(ctx context.Context, op anthOperation, body map[string]any, head anthHead, call anthSDKCall) (*http.Request, error)
 	Events(resp *http.Response) anthEventSource
 	StreamUnavailable(err error) bool
 	GuardrailIntervened(message map[string]any) bool
@@ -853,6 +851,9 @@ func newAnthDirectTransport(route Route) *anthDirectTransport {
 func newAnthropicClientWithBearerHook(route Route) (*anthropicClient, error) {
 	config.NormalizeProxyEnvVars()
 	c := &anthropicClient{route: route, variant: "direct", transports: map[time.Duration]*http.Transport{}, transport: newAnthDirectTransport(route)}
+	if len(route.Headers) > 0 {
+		c.defaultHeaders = pyHeaderDictOf(orderedExtraHeaders(route.Headers)...)
+	}
 	var sendsAsAPIKey func(string) bool
 	if isNativeAnthropicHost(route.BaseURL) {
 		sendsAsAPIKey = func(token string) bool { return !isOAuthToken(token) }
@@ -871,8 +872,8 @@ func newAnthropicClientWithBearerHook(route Route) (*anthropicClient, error) {
 	return c, nil
 }
 
-// Request posts the body at /v1/messages or /v1/messages/count_tokens under the normalized base
-func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, body map[string]any, headers map[string]string) (*http.Request, error) {
+// Request posts the body at /v1/messages or /v1/messages/count_tokens under the normalized base with the SDK head
+func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, body map[string]any, head anthHead, call anthSDKCall) (*http.Request, error) {
 	target, err := url.Parse(t.baseURL)
 	if err != nil {
 		return nil, err
@@ -894,7 +895,11 @@ func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, bod
 		}
 		target.RawQuery = q.Encode()
 	}
-	data, err := json.Marshal(body)
+	params, extra, err := anthWireParams(body, op)
+	if err != nil {
+		return nil, err
+	}
+	data, err := pyhttpx.JSONBody(anthMergedWireBody(params, extra))
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode anthropic messages body: %w", err)
 	}
@@ -902,15 +907,13 @@ func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, bod
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if stream, _ := body["stream"].(bool); stream {
-		req.Header.Set("Accept", "text/event-stream")
+	stream, _ := body["stream"].(bool)
+	lines, err := head.lines(stream && op == anthOpMessages, call)
+	if err != nil {
+		return nil, err
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	return req, nil
+	req.Host = httpxHost(target)
+	return pyhttpx.WithWire(req, httpxPreparedLines(req, lines, len(data))), nil
 }
 
 func (t *anthDirectTransport) Events(resp *http.Response) anthEventSource {
@@ -974,10 +977,17 @@ type anthropicClient struct {
 	mintedOAuth      *bool
 	bearerHook       *EntraBearerTransport
 	hookStyle        func(context.Context) string
+	// Timeout the SDK client was built with, zero for the route timeout
+	sdkTimeout time.Duration
+	// default_headers the SDK client keeps beyond its builder's own, in declaration order
+	defaultHeaders *pyHeaderDict
 }
 
 func newAnthropicClient(route Route) (Client, error) {
 	c := &anthropicClient{route: route, variant: "direct", transports: map[time.Duration]*http.Transport{}}
+	if len(route.Headers) > 0 {
+		c.defaultHeaders = pyHeaderDictOf(orderedExtraHeaders(route.Headers)...)
+	}
 	switch {
 	case anthRouteIsBedrock(route):
 		t, err := bedrockTransport(route)
@@ -1001,34 +1011,39 @@ func newAnthropicClient(route Route) (Client, error) {
 
 func (c *anthropicClient) Route() Route { return c.route }
 
-// HTTP client for the route, dial and handshake bounded by the connect timeout
-func (c *anthropicClient) httpClient(connect time.Duration) *http.Client {
+// HTTP client of the route writing the SDK head over its httpx pool, the bearer hook running before the head is bound
+func (c *anthropicClient) httpClient(connect time.Duration) (*http.Client, error) {
 	base := c.route.Transport
 	if base == nil {
 		c.transportsMu.Lock()
 		tr, ok := c.transports[connect]
 		if !ok {
-			tr = &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
-				TLSClientConfig:       PlatformTLSConfig(),
-				TLSHandshakeTimeout:   connect,
-				ForceAttemptHTTP2:     true,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       90 * time.Second,
-				ExpectContinueTimeout: time.Second,
+			built, err := httpxWireTransport(c.httpxLimits(), connect, nil)
+			if err != nil {
+				c.transportsMu.Unlock()
+				return nil, err
 			}
-			c.transports[connect] = auxTrackPoolConns(tr)
+			tr = auxTrackPoolConns(built)
+			c.transports[connect] = tr
 		}
 		c.transportsMu.Unlock()
 		base = tr
 	}
-	if c.bearerHook != nil {
-		hooked := *c.bearerHook
-		hooked.Base = base
-		base = &hooked
+	var rt http.RoundTripper = pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}
+	if c.bearerHook == nil {
+		return &http.Client{Transport: rt}, nil
 	}
-	return &http.Client{Transport: base}
+	hooked := *c.bearerHook
+	hooked.Base = rt
+	return &http.Client{Transport: &hooked, CheckRedirect: httpxNoRedirects}, nil
+}
+
+// Pool limits of the SDK httpx client, the bare httpx defaults on the bearer hook client the route builds itself
+func (c *anthropicClient) httpxLimits() httpxLimits {
+	if c.bearerHook != nil {
+		return httpxDefaultLimits
+	}
+	return stainlessLimits
 }
 
 // OAuth shape of the first token the route minter yields, a failed mint counting as non OAuth
@@ -1121,95 +1136,143 @@ func (c *anthropicClient) preserveDots() bool {
 // Prepared wire call of one request
 type anthPrepared struct {
 	body      map[string]any
-	headers   map[string]string
+	headers   anthHead
 	betas     []string
 	oauth     bool
 	settings  wireSettings
 	estTokens int
 }
 
-// Credential headers of one request, minting from the token source per call, with the auth style
-func (c *anthropicClient) authHeaders(ctx context.Context, normalized string) (map[string]string, string, error) {
-	headers := map[string]string{}
-	if c.variant != "direct" {
-		return headers, "platform", nil
-	}
-	if c.hookStyle != nil {
-		return headers, c.hookStyle(ctx), nil
-	}
-	key := strings.TrimSpace(c.route.APIKey)
-	style := anthAuthStyle(key, c.route.BaseURL, normalized)
-	if key == "" {
-		return headers, style, nil
-	}
-	if style == "bearer" || style == "oauth" {
-		headers["Authorization"] = "Bearer " + key
-	} else {
-		headers["x-api-key"] = key
-	}
-	return headers, style, nil
+// Client spec and per call extra headers of one Messages request, the head the reference SDK client writes for it
+type anthHead struct {
+	spec  anthSDKClientSpec
+	extra *pyHeaderDict
 }
 
-// Request headers in hermes order, identity and attribution first, route headers last
-func (c *anthropicClient) requestHeaders(ctx context.Context, betas []string, extraHeaders map[string]any) (map[string]string, bool, error) {
-	normalized := anthNormalizedBaseURL(c.route.BaseURL)
-	auth, style, err := c.authHeaders(ctx, normalized)
-	if err != nil {
-		return nil, false, Classify(c.route.Provider, c.route.Model, 401, "", err)
+// Wire lines of a messages.stream call when stream is set, else of a messages.create call, with the call timeout
+func (h anthHead) lines(stream bool, call anthSDKCall) (*pyhttpx.Headers, error) {
+	call.headers = h.extra
+	if stream {
+		call.headers = anthStreamCallHeaders(h.extra)
 	}
-	oauth := style == "oauth"
-	headers := map[string]string{"anthropic-version": anthAPIVersionHeader, "User-Agent": UserAgent("IcebathAgent")}
-	if oauth {
-		betas = append(cloneStrings(betas), anthropicOAuthOnlyBetas...)
+	return h.spec.requestLines(call, 0)
+}
+
+// anthropic-beta dict of the betas, empty without any
+func anthBetaHeaderDict(betas []string) *pyHeaderDict {
+	d := &pyHeaderDict{}
+	if len(betas) > 0 {
+		d.set("anthropic-beta", strings.Join(betas, ","))
 	}
-	for k, v := range anthBetaHeader(betas) {
-		headers[k] = v
+	return d
+}
+
+// Client attribution headers sent to Kimi and OpenCode, in the order of the reference dict
+func anthAttributionHeaderDict() *pyHeaderDict {
+	attribution := attributionHeaders("IcebathAgent")
+	d := &pyHeaderDict{}
+	for _, name := range []string{"HTTP-Referer", "X-Title", "User-Agent"} {
+		d.set(name, attribution[name])
 	}
-	if style == "kimi" {
-		for k, v := range anthAttributionHeaders() {
-			headers[k] = v
+	return d
+}
+
+// User-agent the Claude Code identity carries
+func anthClaudeCodeUserAgent() string {
+	return "claude-code/" + anthClaudeCodeVersion() + " (external, cli)"
+}
+
+// Read phase of the SDK client timeout, the build timeout or the route timeout else 900 seconds
+func (c *anthropicClient) sdkReadTimeout() time.Duration {
+	timeout := c.sdkTimeout
+	if timeout <= 0 {
+		timeout = c.route.Timeout
+	}
+	read, _ := anthClientTimeout(timeout)
+	return read
+}
+
+// SDK client of the route as the reference builders construct it, with the auth style the request takes
+func (c *anthropicClient) sdkClientSpec(ctx context.Context, betas []string) (anthSDKClientSpec, string) {
+	spec := anthSDKClientSpec{class: "Anthropic", readTimeout: pyFloatRepr(c.sdkReadTimeout().Seconds())}
+	if c.variant != "direct" {
+		spec.class = "AnthropicBedrock"
+		if c.variant == "vertex" {
+			spec.class = "AnthropicVertex"
 		}
-	} else if oauth {
-		headers["User-Agent"] = "claude-code/" + anthClaudeCodeVersion() + " (external, cli)"
-		headers["x-app"] = "cli"
+		headers := anthBetaHeaderDict(betas)
+		if c.variant == "bedrock" {
+			headers.update(bedrockGuardrailHeaderDict(bedrockProcessConfig(ctx)))
+		}
+		spec.custom = stainlessMergeHeaders(headers, c.defaultHeaders)
+		return spec, "platform"
 	}
-	if isOpenCodeEndpoint(c.route.BaseURL) {
-		for k, v := range anthAttributionHeaders() {
-			if _, has := headers[k]; !has {
-				headers[k] = v
+	headers := &pyHeaderDict{}
+	var style string
+	if c.hookStyle != nil {
+		style = c.hookStyle(ctx)
+		token := "entra-id-bearer-via-http-hook"
+		spec.authToken = &token
+		if style == "oauth" {
+			headers = anthBetaHeaderDict(append(cloneStrings(betas), anthropicOAuthOnlyBetas...))
+			headers.set("user-agent", anthClaudeCodeUserAgent())
+			headers.set("x-app", "cli")
+		} else {
+			headers = anthBetaHeaderDict(betas)
+		}
+		headers.omit("X-Api-Key")
+	} else {
+		key := strings.TrimSpace(c.route.APIKey)
+		style = anthAuthStyle(key, c.route.BaseURL, anthNormalizedBaseURL(c.route.BaseURL))
+		if style == "oauth" {
+			headers = anthBetaHeaderDict(append(cloneStrings(betas), anthropicOAuthOnlyBetas...))
+		} else {
+			headers = anthBetaHeaderDict(betas)
+		}
+		switch style {
+		case "kimi":
+			attributed := anthAttributionHeaderDict()
+			attributed.update(headers)
+			headers = attributed
+		case "oauth":
+			headers.set("user-agent", anthClaudeCodeUserAgent())
+			headers.set("x-app", "cli")
+		}
+		if isOpenCodeEndpoint(c.route.BaseURL) {
+			for _, e := range anthAttributionHeaderDict().entries {
+				if _, present := headers.get(e.name); !present && !headers.omitted(e.name) {
+					headers.put(e)
+				}
 			}
 		}
-	}
-	for k, v := range extraHeaders {
-		headers[k] = stringOf(v)
-	}
-	for k, v := range auth {
-		anthSetHeader(headers, k, v)
-	}
-	for k, v := range anthCustomProviderExtraHeaders(ctx, c.route.BaseURL) {
-		anthSetHeader(headers, k, v)
-	}
-	for k, v := range c.route.Headers {
-		anthSetHeader(headers, k, v)
-	}
-	for k, v := range providerRequestHeaders(ctx) {
-		anthSetHeader(headers, k, v)
-	}
-	return headers, oauth, nil
-}
-
-// Replaces every case variant of the header name so the later layer always wins on the wire
-func anthSetHeader(headers map[string]string, name, value string) {
-	for k := range headers {
-		if strings.EqualFold(k, name) {
-			delete(headers, k)
+		if style == "bearer" || style == "oauth" {
+			spec.authToken = &key
+			headers.omit("X-Api-Key")
+		} else {
+			spec.apiKey = &key
+			headers.omit("Authorization")
 		}
 	}
-	headers[name] = value
+	headers.update(pyHeaderDictOf(anthCustomProviderExtraHeaders(ctx, c.route.BaseURL)...))
+	spec.custom = stainlessMergeHeaders(headers, c.defaultHeaders)
+	return spec, style
 }
 
-// Extra headers of the custom provider entry routed at the base URL, empty when no entry matches
-func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) map[string]string {
+// Head of one request, the client spec of the route and the call extra headers over the context's per request headers
+func (c *anthropicClient) requestHeaders(ctx context.Context, betas []string, extraHeaders any) (anthHead, bool, error) {
+	spec, style := c.sdkClientSpec(ctx, betas)
+	extra := &pyHeaderDict{}
+	for _, l := range orderedExtraHeaders(extraHeaders) {
+		extra.set(l.Name, l.Value)
+	}
+	for _, l := range orderedExtraHeaders(providerRequestHeaders(ctx)) {
+		extra.set(l.Name, l.Value)
+	}
+	return anthHead{spec: spec, extra: extra}, style == "oauth", nil
+}
+
+// Extra headers of the custom provider entry routed at the base URL in declaration order, none when no entry matches
+func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) []pyhttpx.HeaderLine {
 	if strings.TrimSpace(baseURL) == "" {
 		return nil
 	}
@@ -1219,7 +1282,7 @@ func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) map[str
 		catalogLog.Debug("custom-provider extra_headers skipped for Anthropic client", "error", err)
 		return nil
 	}
-	return CustomProviderExtraHeaders(baseURL, nil, map[string]any(tree))
+	return customProviderExtraHeaderLines(baseURL, nil, map[string]any(tree))
 }
 
 // Builds the wire body and headers of one request
@@ -1285,24 +1348,21 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 		kwargs["metadata"] = map[string]any{"user_id": user}
 	}
 	if c.isNous() {
-		extra, _ := asMap(kwargs["extra_body"])
-		if extra == nil {
-			extra = map[string]any{}
-		}
+		extra := anthExtraBodyObject(kwargs)
 		tags := []any{"product=icebath-agent", "client=icebath-client-v" + baseVersion()}
 		if conv := firstNonEmpty(req.CacheScope, req.SessionID); conv != "" {
 			tags = append(tags, "conversation="+conv)
 		}
-		extra["tags"] = tags
+		extra.Set("tags", tags)
 		if sticky := cacheScopeFromSessionID(firstNonEmpty(req.CacheScope, req.SessionID)); sticky != "" {
-			extra["session_id"] = sticky
+			extra.Set("session_id", sticky)
 		}
 		if du := dataUseRequirement(req.Messages); len(du) > 0 {
-			prov := map[string]any{"data_collection": "deny"}
+			prov := pyjson.ObjectOf("data_collection", "deny")
 			if du["zero_retention"] {
-				prov["zdr"] = true
+				prov.Set("zdr", true)
 			}
-			extra["provider"] = prov
+			extra.Set("provider", prov)
 		}
 		kwargs["extra_body"] = extra
 	}
@@ -1311,16 +1371,24 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	extraHeaders, _ := asMap(kwargs["extra_headers"])
 	delete(kwargs, "extra_headers")
 	anthTranslateResponseFormat(kwargs, req.ResponseFormat)
-	if extra, ok := asMap(kwargs["extra_body"]); ok {
-		delete(kwargs, "extra_body")
-		for k, v := range extra {
-			kwargs[k] = v
-		}
-	}
-	if rf, ok := asMap(kwargs["response_format"]); ok {
+	if rf, ok := pyjson.Dict(kwargs["response_format"]); ok {
 		anthTranslateResponseFormat(kwargs, rf)
 	}
 	delete(kwargs, "response_format")
+	if extra, ok := pyjson.AsObject(kwargs["extra_body"]); ok {
+		if rf, ok := pyjson.Dict(extra.Vals["response_format"]); ok {
+			anthTranslateResponseFormat(kwargs, rf)
+		}
+		if _, has := extra.Vals["response_format"]; has {
+			extra = extra.Copy()
+			extra.Delete("response_format")
+		}
+		if extra.Len() == 0 {
+			delete(kwargs, "extra_body")
+		} else {
+			kwargs["extra_body"] = extra
+		}
+	}
 	anthSanitizeKwargs(kwargs, "")
 	if buffer {
 		anthBufferToolInput(kwargs, c.route.BaseURL)
@@ -1343,18 +1411,35 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 		estTokens: EstimateRequestContextTokens(ctx, kwargs)}, nil
 }
 
-// Merges an extra body mapping into the kwargs, nested extra_body entries folded into the same map
-func anthMergeExtraBody(kwargs map[string]any, overrides map[string]any) {
-	for k, v := range overrides {
+// Ordered extra_body of the kwargs, created empty when absent and copied before any change
+func anthExtraBodyObject(kwargs map[string]any) *pyjson.Object {
+	if cur, ok := pyjson.AsObject(kwargs["extra_body"]); ok {
+		return cur.Copy()
+	}
+	return pyjson.NewObject()
+}
+
+// Messages params the SDK methods take as keyword arguments, response_format translated before the call
+var anthKwargParams = func() map[string]bool {
+	out := map[string]bool{"response_format": true}
+	for _, k := range anthCreateBodyKeys {
+		out[k] = true
+	}
+	return out
+}()
+
+// Merges an extra body mapping into the kwargs, Messages params set in place and every other key kept in the ordered extra_body
+func anthMergeExtraBody(kwargs map[string]any, overridesValue any) {
+	overrides, _ := pyjson.AsObject(overridesValue)
+	if overrides == nil {
+		return
+	}
+	for _, k := range overrides.Keys {
+		v := overrides.Vals[k]
 		if k == "extra_body" {
-			if m, ok := asMap(v); ok {
-				extra, _ := asMap(kwargs["extra_body"])
-				if extra == nil {
-					extra = map[string]any{}
-				}
-				for kk, vv := range m {
-					extra[kk] = vv
-				}
+			if m, ok := pyjson.AsObject(v); ok {
+				extra := anthExtraBodyObject(kwargs)
+				extra.Update(m)
 				kwargs["extra_body"] = extra
 			}
 			continue
@@ -1372,7 +1457,13 @@ func anthMergeExtraBody(kwargs map[string]any, overrides map[string]any) {
 			}
 			continue
 		}
-		kwargs[k] = v
+		if anthKwargParams[k] {
+			kwargs[k] = v
+			continue
+		}
+		extra := anthExtraBodyObject(kwargs)
+		extra.Set(k, v)
+		kwargs["extra_body"] = extra
 	}
 }
 
@@ -1478,12 +1569,16 @@ func (c *anthropicClient) completeOnce(ctx context.Context, req *Request, p *ant
 	start := time.Now()
 	rctx, cancel := context.WithTimeout(ctx, base)
 	defer cancel()
-	httpReq, err := c.transport.Request(rctx, anthOpMessages, p.body, p.headers)
+	httpReq, err := c.transport.Request(rctx, anthOpMessages, p.body, p.headers, anthSDKCall{})
 	if err != nil {
 		return nil, err
 	}
 	_, connect := anthClientTimeout(0)
-	resp, err := c.httpClient(connect).Do(httpReq)
+	hc, err := c.httpClient(connect)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := hc.Do(httpReq)
 	if err != nil {
 		if ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded) {
 			err = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.", base.Seconds())}
@@ -1572,7 +1667,11 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	kill := &ccKill{}
-	httpReq, err := c.transport.Request(attemptCtx, anthOpMessages, p.body, p.headers)
+	httpReq, err := c.transport.Request(attemptCtx, anthOpMessages, p.body, p.headers, anthSDKCall{})
+	if err != nil {
+		return nil, false, err
+	}
+	hc, err := c.httpClient(t.connect)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1582,7 +1681,7 @@ func (c *anthropicClient) streamOnce(ctx context.Context, req *Request, p *anthP
 		kill.fire("read", t.read.Seconds())
 		cancel()
 	})
-	resp, err := c.httpClient(t.connect).Do(httpReq)
+	resp, err := hc.Do(httpReq)
 	hdrTimer.Stop()
 	stopHdrStale()
 	if err != nil {
@@ -1673,12 +1772,16 @@ func (c *anthropicClient) CountTokens(ctx context.Context, req *Request) (int, e
 	base, _ := c.requestTimeout(req, p.settings)
 	rctx, cancel := context.WithTimeout(ctx, base)
 	defer cancel()
-	httpReq, err := c.transport.Request(rctx, anthOpCountTokens, body, p.headers)
+	httpReq, err := c.transport.Request(rctx, anthOpCountTokens, body, p.headers, anthSDKCall{})
 	if err != nil {
 		return 0, err
 	}
 	_, connect := anthClientTimeout(0)
-	resp, err := c.httpClient(connect).Do(httpReq)
+	hc, err := c.httpClient(connect)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := hc.Do(httpReq)
 	if err != nil {
 		return 0, c.transportError(ctx, err, TimeoutPhaseConnect)
 	}
@@ -1792,7 +1895,7 @@ func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, r
 				reasoningParts = append(reasoningParts, asStr(block["thinking"]))
 			}
 			if clean != nil {
-				reasoningDetails = append(reasoningDetails, clean)
+				reasoningDetails = append(reasoningDetails, anthWireBlock(clean))
 			} else {
 				reasoningDetails = append(reasoningDetails, block)
 			}
@@ -1835,7 +1938,8 @@ func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, r
 		}
 	}
 	if len(reasoningDetails) > 0 {
-		msg.ReasoningDetails, _ = json.Marshal(reasoningDetails)
+		text, _ := pyjson.Dumps(reasoningDetails)
+		msg.ReasoningDetails = json.RawMessage(text)
 	}
 	if signed && hasToolUse {
 		setAnthropicLiveBlocks(msg, ordered)

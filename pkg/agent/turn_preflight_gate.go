@@ -25,7 +25,7 @@ func runPreflightGate(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 	compressor := a.contextCompressor
 	threshold := 0
 	if compressor != nil {
-		threshold = compressor.Base().ThresholdTokens
+		threshold = engineThresholdTokens(compressor)
 	}
 	overflowPreflight := s.ProviderOverflowRecoveryPending && (threshold <= 0 || s.RequestPressureTokens >= threshold)
 	if s.ProviderOverflowRecoveryPending && !overflowPreflight {

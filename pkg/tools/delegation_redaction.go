@@ -26,6 +26,9 @@ type ParentCopy struct {
 
 func (p *ParentCopy) PyStr() string { return p.Text }
 
+// JSON string of the parent text, the way json.dumps writes a str subclass
+func (p *ParentCopy) MarshalJSON() ([]byte, error) { return pyjson.AppendStringWTF8(nil, p.Text), nil }
+
 // Text for the parent remembering the forced projection, the plain string when both match
 func NewParentCopy(text, forced string) any {
 	if text == forced {
@@ -214,8 +217,16 @@ func summaryComparable(v any) any {
 	return v
 }
 
+// Python frames under validate_output when _finalize_child_results revalidates a redacted summary in the reference
+const finalizeRedactionValidateDepth = 29
+
 // Projection of a result or batch keeping accounting and host owned identity, revalidating a summary redaction changed
 func RedactChildResult(env *Env, result any, outputSchema any, force bool) any {
+	return RedactChildResultAt(env, result, outputSchema, force, finalizeRedactionValidateDepth)
+}
+
+// RedactChildResult whose revalidation runs validateDepth Python frames deep, the depth of the reference call site it mirrors
+func RedactChildResultAt(env *Env, result any, outputSchema any, force bool, validateDepth int) any {
 	keys, get, ok := delegationObject(result)
 	if !ok {
 		return RedactChildValue(env, result, force)
@@ -255,7 +266,7 @@ func RedactChildResult(env *Env, result any, outputSchema any, force bool) any {
 		valid, errs := false, []string{"The redacted summary has not been validated against the original output_schema."}
 		if isJSONObject(outputSchema) {
 			summary, _ := summaryComparable(cleaned.Vals["summary"]).(string)
-			v, e, err := ValidateOutput(summary, outputSchema)
+			v, e, err := ValidateOutputAt(summary, outputSchema, validateDepth)
 			if err != nil {
 				errs = []string{"Output validation was unavailable after secret redaction."}
 			} else {

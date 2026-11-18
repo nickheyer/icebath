@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -252,7 +253,7 @@ func downloadMedia(ctx context.Context, env *Env, rawURL, destination string, ma
 	if err := os.MkdirAll(filepath.Dir(destination), 0o777); err != nil {
 		return err
 	}
-	log := envLog(env)
+	log := visionLog(env)
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		err := downloadMediaOnce(ctx, env, rawURL, destination, o)
@@ -351,7 +352,7 @@ func downloadMediaOnce(ctx context.Context, env *Env, rawURL, destination string
 	fail := func(err error) error {
 		f.Close()
 		if rmErr := os.Remove(tmp); rmErr != nil && !os.IsNotExist(rmErr) {
-			envLog(env).Debug("Could not delete partial download", "path", tmp, "error", rmErr)
+			visionLog(env).Debug("Could not delete partial download", "path", tmp, "error", rmErr)
 		}
 		return err
 	}
@@ -594,7 +595,7 @@ func resizeImageForVision(env *Env, path, mime string, o ResizeOptions) (string,
 	if err != nil {
 		return "", err
 	}
-	log := envLog(env)
+	log := visionLog(env)
 	fileSize := st.Size()
 	estimated := (fileSize*4)/3 + 100
 	dataURL := ""
@@ -881,7 +882,7 @@ func visionAnalyzeNative(ctx context.Context, env *Env, sessionID string, imageU
 		}
 	}()
 	failed := func(err error) string {
-		envLog(env).Warn("Native vision fast path failed", "error", err)
+		visionLog(env).Warn("Native vision fast path failed", "error", err)
 		return visionToolError("Native vision failed: " + err.Error())
 	}
 	if IsInterrupted(ctx) {
@@ -951,7 +952,7 @@ func auxCallOptions(env *Env, model string, defaultTimeout float64, minTimeout *
 		}
 	}()
 	t := temperature
-	return AuxOptions{Task: "vision", Model: model, Temperature: &t, Timeout: time.Duration(timeout * float64(time.Second))}
+	return AuxOptions{Task: "vision", Model: model, Temperature: &t, Timeout: time.Duration(timeout * float64(time.Second)), Async: true}
 }
 
 // Single user message holding the prompt and one media data URL part
@@ -1020,6 +1021,9 @@ func debugCallData(kind, source, userPrompt, model string) map[string]any {
 	}
 }
 
+// Logger named like the reference vision tools module
+func visionLog(env *Env) *slog.Logger { return envLog(env).With("logger", "tools.vision_tools") }
+
 // Aux vision completion retrying once when the first answer came back empty
 func callVisionLLM(ctx context.Context, env *Env, msgs []*state.Message, opts AuxOptions, emptyLog string, first *string) (string, error) {
 	if env == nil || env.AuxClient() == nil {
@@ -1035,7 +1039,7 @@ func callVisionLLM(ctx context.Context, env *Env, msgs []*state.Message, opts Au
 		}
 	}
 	if analysis == "" {
-		envLog(env).Warn(emptyLog)
+		visionLog(env).Warn(emptyLog)
 		return env.AuxClient().Complete(ctx, msgs, opts)
 	}
 	return analysis, nil
@@ -1063,7 +1067,7 @@ func runAnalysis(ctx context.Context, env *Env, kind, source, userPrompt, model 
 	spec := analysisKinds[kind]
 	debug := debugCallData(kind, source, userPrompt, model)
 	var tempPaths []string
-	log := envLog(env)
+	log := visionLog(env)
 	defer func() {
 		for _, p := range tempPaths {
 			if p == "" {
@@ -1136,7 +1140,7 @@ func VisionAnalyzeTool(ctx context.Context, env *Env, imageURL, userPrompt strin
 func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, model, taskID string, region any) string {
 	source := pyStrOrEmpty(imageURL)
 	return runAnalysis(ctx, env, "image", source, userPrompt, model, func(prompt string, debug map[string]any, tempPaths *[]string) (string, string, error) {
-		log := envLog(env)
+		log := visionLog(env)
 		p, err := prepareImage(ctx, env, imageURL, taskID, region, false)
 		if err != nil {
 			return "", "", err
@@ -1231,32 +1235,32 @@ func checkVisionRequirements(env *Env) bool {
 	return ShouldUseNativeVisionFastPath(context.Background(), env) || checkVideoRequirements(env)
 }
 
-var visionAnalyzeSchema = map[string]any{
-	"name":        "vision_analyze",
-	"description": "Load an image into the conversation so you can see it. Call it any time the user references an image — then answer from what you see.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"image_url": map[string]any{
-				"type":        "string",
-				"description": "Image URL (http/https), local file path, or data: URL to load.",
-			},
-			"question": map[string]any{
-				"type":        "string",
-				"description": "Your question or request about the image.",
-			},
-			"region": map[string]any{
-				"type":     "array",
-				"items":    map[string]any{"type": "integer"},
-				"minItems": 4,
-				"maxItems": 4,
-				"description": "Optional [x1, y1, x2, y2] crop in ORIGINAL-image pixel coordinates, applied before any downscaling — the crop " +
+var visionAnalyzeSchema = Dict(
+	"name", "vision_analyze",
+	"description", "Load an image into the conversation so you can see it. Call it any time the user references an image — then answer from what you see.",
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"image_url", Dict(
+				"type", "string",
+				"description", "Image URL (http/https), local file path, or data: URL to load.",
+			),
+			"question", Dict(
+				"type", "string",
+				"description", "Your question or request about the image.",
+			),
+			"region", Dict(
+				"type", "array",
+				"items", Dict("type", "integer"),
+				"minItems", 4,
+				"maxItems", 4,
+				"description", "Optional [x1, y1, x2, y2] crop in ORIGINAL-image pixel coordinates, applied before any downscaling — the crop "+
 					"keeps full resolution. Load the full image first, then re-call with a region to zoom into small text or fine detail.",
-			},
-		},
-		"required": []any{"image_url", "question"},
-	},
-}
+			),
+		),
+		"required", []any{"image_url", "question"},
+	),
+)
 
 // First non empty auxiliary.<section>.model, else the first non empty legacy env var
 func configuredAuxModel(env *Env, sections, envVars []string) string {
@@ -1299,7 +1303,7 @@ func handleVisionAnalyze(ctx context.Context, call *Call) string {
 	}
 	region := call.Args["region"]
 	if ShouldUseNativeVisionFastPath(ctx, env) {
-		envLog(env).Info("vision_analyze: native fast path")
+		visionLog(env).Info("vision_analyze: native fast path")
 		return visionAnalyzeNative(ctx, env, call.SessionID, imageURL, question, call.TaskID, region)
 	}
 	fullPrompt := "Fully describe and explain everything about this image, then answer the following question:\n\n" + argPyStr(call.Args, "question")
@@ -1325,7 +1329,7 @@ func unsupportedVideoFormat(suffix string) string {
 
 // Local video path for a sandbox path, host file, or http URL, only files made here join tempPaths
 func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, tempPaths *[]string) (string, error) {
-	log := envLog(env)
+	log := visionLog(env)
 	source := strings.TrimPrefix(videoURL, "file://")
 	localPath := pyExpandUser(source)
 	lowered := strings.ToLower(strings.TrimSpace(videoURL))
@@ -1390,7 +1394,7 @@ func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, te
 func videoAnalyzeTool(ctx context.Context, env *Env, videoURL any, userPrompt, model, taskID string) string {
 	source := pyStrOrEmpty(videoURL)
 	return runAnalysis(ctx, env, "video", source, userPrompt, model, func(prompt string, debug map[string]any, tempPaths *[]string) (string, string, error) {
-		log := envLog(env)
+		log := visionLog(env)
 		src, isStr := videoURL.(string)
 		if !isStr {
 			return "", "", errors.New("Invalid video source. Provide an HTTP/HTTPS URL or a valid local file path.")
@@ -1433,28 +1437,28 @@ func videoAnalyzeTool(ctx context.Context, env *Env, videoURL any, userPrompt, m
 	})
 }
 
-var videoAnalyzeSchema = map[string]any{
-	"name": "video_analyze",
-	"description": "Analyze a video from a URL or local file path using a multimodal AI model. " +
-		"Sends the video to a video-capable model (e.g. Gemini) for understanding. " +
-		"Use this for video files — for images, use vision_analyze instead. " +
-		"Supports mp4, webm, mov, avi, mkv, mpeg formats. " +
+var videoAnalyzeSchema = Dict(
+	"name", "video_analyze",
+	"description", "Analyze a video from a URL or local file path using a multimodal AI model. "+
+		"Sends the video to a video-capable model (e.g. Gemini) for understanding. "+
+		"Use this for video files — for images, use vision_analyze instead. "+
+		"Supports mp4, webm, mov, avi, mkv, mpeg formats. "+
 		"Note: large videos (>20 MB) may be slow; max ~50 MB.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"video_url": map[string]any{
-				"type":        "string",
-				"description": "Video URL (http/https) or local file path to analyze.",
-			},
-			"question": map[string]any{
-				"type":        "string",
-				"description": "Your specific question about the video. The AI will describe what happens in the video and answer your question.",
-			},
-		},
-		"required": []any{"video_url", "question"},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"video_url", Dict(
+				"type", "string",
+				"description", "Video URL (http/https) or local file path to analyze.",
+			),
+			"question", Dict(
+				"type", "string",
+				"description", "Your specific question about the video. The AI will describe what happens in the video and answer your question.",
+			),
+		),
+		"required", []any{"video_url", "question"},
+	),
+)
 
 // video_analyze handler building the full description prompt
 func handleVideoAnalyze(ctx context.Context, call *Call) string {

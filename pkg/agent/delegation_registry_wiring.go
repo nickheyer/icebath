@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -86,12 +87,17 @@ func (h hostedDelegationProvider) IsAvailable() bool {
 	return pyrepr.Truthy(h.mustCall("is_available"))
 }
 
-func (h hostedDelegationProvider) TaskParameters(config map[string]any) map[string]map[string]any {
-	raw, _ := h.mustCall("task_parameters", config).(map[string]any)
-	out := map[string]map[string]any{}
-	for name, spec := range raw {
-		if m, ok := spec.(map[string]any); ok {
-			out[name] = m
+func (h hostedDelegationProvider) TaskParameters(config map[string]any) *pyjson.Object {
+	raw, err := h.obj.Call(plugins.WithOrderedResult(context.Background()), "task_parameters", []any{config}, nil)
+	if err != nil {
+		panic(err)
+	}
+	out := pyjson.NewObject()
+	if params, ok := pyjson.AsObject(raw); ok {
+		for _, name := range params.Keys {
+			if spec, ok := pyjson.AsObject(params.Vals[name]); ok {
+				out.Set(name, spec)
+			}
 		}
 	}
 	return out

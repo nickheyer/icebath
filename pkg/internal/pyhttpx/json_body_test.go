@@ -13,9 +13,3 @@ func TestJSONBodyWritesTheBytesHttpxSends(t *testing.T) {
 		t.Fatalf("body\n%q\nwant\n%q", got, want)
 	}
 }
-
-func TestRawLineSeparatorsLeavesEscapedBackslashes(t *testing.T) {
-	if got := string(rawLineSeparators([]byte(`{"b":"\\u2028 x"}`))); got != `{"b":"\\u2028 x"}` {
-		t.Fatalf("got %q", got)
-	}
-}

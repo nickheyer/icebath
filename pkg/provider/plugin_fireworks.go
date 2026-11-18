@@ -1,5 +1,7 @@
 package provider
 
+import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 // Profiles the bundled fireworks plugin registers
 func fireworksPluginProfiles() []Profile {
 	p := bundledRowProfile(profileRow{name: "fireworks", display: "Fireworks AI", desc: "Fireworks AI — OpenAI-compatible direct model API",
@@ -14,15 +16,15 @@ func fireworksPluginProfiles() []Profile {
 }
 
 // Top level effort as sent, none when thinking is disabled and nothing without a reasoning config
-func fireworksBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (map[string]any, map[string]any) {
+func fireworksBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*pyjson.Object, map[string]any) {
 	if reasoning == nil {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	if reasoning.Enabled != nil && !*reasoning.Enabled {
-		return map[string]any{}, map[string]any{"reasoning_effort": "none"}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "none"}
 	}
 	if reasoning.Effort == "" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
-	return map[string]any{}, map[string]any{"reasoning_effort": reasoning.Effort}
+	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": reasoning.Effort}
 }

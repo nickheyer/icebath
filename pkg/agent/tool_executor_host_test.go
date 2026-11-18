@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +29,7 @@ func executorTestAgent(t *testing.T, handlers map[string]tools.Handler) (*AIAgen
 	a.validToolNames = map[string]bool{}
 	for name, h := range handlers {
 		h := h
-		reg.Register(tools.Def{Name: name, Toolset: "web", Schema: map[string]any{"name": name, "parameters": map[string]any{"type": "object"}},
+		reg.Register(tools.Def{Name: name, Toolset: "web", Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
 			Handler: func(ctx context.Context, c *tools.Call) string {
 				mu.Lock()
 				calls = append(calls, executorCall{name: c.Name, taskID: c.TaskID, args: c.Args})

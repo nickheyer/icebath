@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 57
+const Version = 58
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -475,7 +475,6 @@ func defaultsLiteral() Tree {
 			"resume_skip_tool_only":            true,
 			"busy_input_mode":                  "interrupt",
 			"busy_steer_ack_enabled":           true,
-			"cli_multiline_shortcuts":          true,
 			"cli_layout":                       "modern",
 			"tui_native":                       false,
 			"tui_auto_resume_recent":           false,
@@ -490,9 +489,6 @@ func defaultsLiteral() Tree {
 			"timestamps":                       false,
 			"timestamp_format":                 "%H:%M",
 			"final_response_markdown":          "strip",
-			"persistent_output":                true,
-			"persistent_output_max_lines":      200,
-			"cli_rebuild_scrollback_on_redraw": false,
 			"persist_prompts":                  true,
 			"inline_diffs":                     true,
 			"file_mutation_verifier":           true,
@@ -505,8 +501,6 @@ func defaultsLiteral() Tree {
 			"skin":                             "default",
 			"language":                         "en",
 			"tui_status_indicator":             "kaomoji",
-			"cli_refresh_interval":             1.0,
-			"vim_mode":                         false,
 			"user_message_preview": map[string]any{
 				"first_lines": 2,
 				"last_lines":  2,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"reflect"
 	"sync"
@@ -79,8 +80,8 @@ func (s *memoMailState) probeCount() int {
 	return s.probes
 }
 
-func memoSchema(name, description string) map[string]any {
-	return map[string]any{"name": name, "description": description, "parameters": map[string]any{"type": "object", "properties": map[string]any{}}}
+func memoSchema(name, description string) *pyjson.Object {
+	return pyjson.ObjectOf("name", name, "description", description, "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
 }
 
 // A recovering mail tool next to an always healthy anchor whose dynamic schema counts definition builds
@@ -106,7 +107,7 @@ func memoRegistry(t *testing.T) (*Registry, *memoMailState, *Env) {
 		}})
 	r.Register(Def{Name: memoAnchor, Toolset: "mcp-probe-anchor", Schema: memoSchema(memoAnchor, "Ping the anchor server"), Handler: constHandler("ANCHOR_OK"),
 		Check: func(*Env) bool { return true },
-		DynamicSchema: func(*Env) map[string]any {
+		DynamicSchema: func(*Env) *pyjson.Object {
 			st.mu.Lock()
 			st.computes++
 			st.mu.Unlock()

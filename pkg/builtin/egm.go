@@ -33,9 +33,9 @@ type Persona struct {
 type egmPlugin struct{}
 
 func init() {
-	plugins.RegisterBundled(egmPlugin{})
-	plugins.RegisterBundled(hallmarkPlugin{})
-	plugins.RegisterBundled(impeccablePlugin{})
+	plugins.RegisterPort(egmPlugin{})
+	plugins.RegisterPort(hallmarkPlugin{})
+	plugins.RegisterPort(impeccablePlugin{})
 }
 
 // Manifest parsed from an embedded plugin.json with the author object flattened to its name
@@ -50,7 +50,7 @@ func manifestFromJSON(rel string) (plugins.Manifest, error) {
 	}
 	str := func(k string) string { s, _ := raw[k].(string); return s }
 	m := plugins.Manifest{Name: str("name"), Version: str("version"), Description: str("description"),
-		License: str("license"), Homepage: str("homepage"), Kind: "standalone", Source: "bundled", Raw: raw}
+		License: str("license"), Homepage: str("homepage"), Kind: "standalone", Raw: raw}
 	if author, ok := raw["author"].(map[string]any); ok {
 		m.Author, _ = author["name"].(string)
 	}

@@ -95,7 +95,7 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 	if details, ok := msg["reasoning_details"].([]any); ok && !strip["reasoning_details"] {
 		kept := []any{}
 		for _, d := range details {
-			if dm, ok := d.(map[string]any); ok {
+			if dm, ok := pyjson.Dict(d); ok {
 				if typ, ok := dm["type"].(string); ok && strings.HasSuffix(typ, ".native_assistant") && typ != nativeType {
 					continue
 				}
@@ -283,6 +283,27 @@ func reasoningConfigDict(v any) map[string]any {
 	return nil
 }
 
+// Ordered config with its effort clamped onto the supported wire vocabulary, the same dict when unchanged
+func clampReasoningConfigObject(rc *pyjson.Object, supported []string) *pyjson.Object {
+	if rc == nil {
+		return nil
+	}
+	effort := ""
+	if pyTruthy(rc.Vals["effort"]) {
+		effort = strings.ToLower(strings.TrimSpace(pyStr(rc.Vals["effort"])))
+	}
+	clamped := effort
+	if effort != "" {
+		clamped = clampEffort(effort, supported, nil)
+	}
+	if clamped == effort {
+		return rc
+	}
+	out := rc.Copy()
+	out.Set("effort", clamped)
+	return out
+}
+
 // Config with its effort clamped onto the supported wire vocabulary, the same dict when unchanged
 func clampReasoningConfigDict(rc map[string]any, supported []string) map[string]any {
 	if rc == nil {
@@ -456,12 +477,18 @@ func staticPromptInstructionsDicts(messages []map[string]any) string {
 // Bounds a caller prompt_cache_key in place or adds the content addressed key for a capable endpoint
 func addPromptCacheKey(api map[string]any, messages []map[string]any, supports bool, sessionID, cacheScopeID string) {
 	found := false
-	for _, c := range []any{api, api["extra_body"]} {
-		if m, ok := c.(map[string]any); ok {
-			if _, has := m["prompt_cache_key"]; has {
-				boundPromptCacheKeyField(m)
-				found = true
+	if _, has := api["prompt_cache_key"]; has {
+		boundPromptCacheKeyField(api)
+		found = true
+	}
+	if extra, ok := api["extra_body"].(*pyjson.Object); ok {
+		if v, has := extra.Get("prompt_cache_key"); has {
+			if bounded := boundedPromptCacheKey(v); bounded != "" {
+				extra.Set("prompt_cache_key", bounded)
+			} else {
+				extra.Delete("prompt_cache_key")
 			}
+			found = true
 		}
 	}
 	if found || !supports {
@@ -564,15 +591,15 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 	if kwargBool(params, "is_tokenhub", false) && !thinkingOff {
 		api["reasoning_effort"] = tokenhubEffort(requested)
 	}
-	extraBody := map[string]any{}
+	extraBody := pyjson.NewObject()
 	isOpenRouter := kwargBool(params, "is_openrouter", false)
 	baseURL := kwargString(params, "base_url")
 	if isOpenRouter && pyTruthy(params["provider_preferences"]) {
-		extraBody["provider"] = params["provider_preferences"]
+		extraBody.Set("provider", params["provider_preferences"])
 	}
 	if isOpenRouter && model == "openrouter/pareto-code" {
 		if score, ok := paretoScore(params["openrouter_min_coding_score"]); ok {
-			extraBody["plugins"] = []any{map[string]any{"id": "pareto-router", "min_coding_score": score}}
+			extraBody.Set("plugins", []any{pyjson.ObjectOf("id", "pareto-router", "min_coding_score", score)})
 		}
 	}
 	if isKimi {
@@ -580,12 +607,12 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 		if thinkingOff {
 			toggle = "disabled"
 		}
-		extraBody["thinking"] = map[string]any{"type": toggle}
+		extraBody.Set("thinking", pyjson.ObjectOf("type", toggle))
 	}
 	if kwargBool(params, "supports_reasoning", false) {
 		if kwargBool(params, "profile_endpoint", false) {
 			if params["endpoint_reasoning"] != nil {
-				extraBody["reasoning"] = params["endpoint_reasoning"]
+				extraBody.Set("reasoning", params["endpoint_reasoning"])
 			}
 		} else {
 			var effort any = "medium"
@@ -596,9 +623,9 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 			}
 			off := thinkingOff || effort == any("none")
 			if off {
-				extraBody["reasoning"] = map[string]any{"enabled": false, "effort": "none"}
+				extraBody.Set("reasoning", pyjson.ObjectOf("enabled", false, "effort", "none"))
 			} else {
-				extraBody["reasoning"] = map[string]any{"enabled": true, "effort": effort}
+				extraBody.Set("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
 			}
 		}
 	}
@@ -606,24 +633,26 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 		raw := buildGeminiThinkingConfig(model, reasoningFromRequest(reasoningFromConfig(rc)))
 		if geminiOpenAICompatBaseURL(baseURL) {
 			if tc := snakeCaseGeminiThinkingConfig(raw); len(tc) > 0 {
-				compat, _ := extraBody["extra_body"].(map[string]any)
+				compat, _ := pyjson.AsObject(extraBody.Vals["extra_body"])
 				if compat == nil {
-					compat = map[string]any{}
+					compat = pyjson.NewObject()
 				}
-				google, _ := compat["google"].(map[string]any)
-				google = copyDict(google)
-				google["thinking_config"] = tc
-				compat["google"] = google
-				extraBody["extra_body"] = compat
+				google := pyjson.NewObject()
+				if prev, ok := pyjson.AsObject(compat.Vals["google"]); ok {
+					google = prev.Copy()
+				}
+				google.Set("thinking_config", pyjson.Ordered(tc))
+				compat.Set("google", google)
+				extraBody.Set("extra_body", compat)
 			}
 		} else if len(raw) > 0 {
-			extraBody["thinking_config"] = raw
+			extraBody.Set("thinking_config", pyjson.Ordered(raw))
 		}
 	}
-	if additions, ok := params["extra_body_additions"].(map[string]any); ok && len(additions) > 0 {
-		mergeInto(extraBody, additions)
+	if additions, ok := pyjson.AsObject(params["extra_body_additions"]); ok && additions.Len() > 0 {
+		extraBody.Update(additions)
 	}
-	if len(extraBody) > 0 {
+	if extraBody.Len() > 0 {
 		api["extra_body"] = extraBody
 	}
 	if overrides, ok := params["request_overrides"].(map[string]any); ok && len(overrides) > 0 {
@@ -660,32 +689,33 @@ func buildKwargsFromProfile(profile *Profile, model string, sanitized []map[stri
 	}
 	extraFromProfile, top := profile.BuildAPIKwargsExtras(reasoning, extrasCtx)
 	mergeInto(api, top)
-	extraBody := map[string]any{}
+	extraBody := pyjson.NewObject()
 	profileBody := profile.BuildExtraBody(kwargString(params, "session_id"), bodyCtx)
-	additions, _ := params["extra_body_additions"].(map[string]any)
-	for _, part := range []map[string]any{profileBody, extraFromProfile, additions} {
-		mergeInto(extraBody, part)
+	additions, _ := pyjson.AsObject(params["extra_body_additions"])
+	for _, part := range []*pyjson.Object{profileBody, extraFromProfile, additions} {
+		extraBody.Update(part)
 	}
-	if overrides, ok := params["request_overrides"].(map[string]any); ok {
-		for k, v := range overrides {
-			if sub, isDict := v.(map[string]any); k == "extra_body" && isDict {
-				mergeInto(extraBody, sub)
+	if overrides, ok := pyjson.AsObject(params["request_overrides"]); ok {
+		for _, k := range overrides.Keys {
+			v := overrides.Vals[k]
+			if sub, isDict := pyjson.AsObject(v); k == "extra_body" && isDict {
+				extraBody.Update(sub)
 			} else {
 				api[k] = v
 			}
 		}
 	}
-	if len(extraBody) > 0 {
+	if extraBody.Len() > 0 {
 		if isNativeGeminiBaseURL(kwargString(params, "base_url")) {
-			kept := map[string]any{}
-			for _, k := range []string{"thinking_config", "thinkingConfig", "max_output_tokens"} {
-				if v, ok := extraBody[k]; ok {
-					kept[k] = v
+			kept := pyjson.NewObject()
+			for _, k := range extraBody.Keys {
+				if k == "thinking_config" || k == "thinkingConfig" || k == "max_output_tokens" {
+					kept.Set(k, extraBody.Vals[k])
 				}
 			}
 			extraBody = kept
 		}
-		if len(extraBody) > 0 {
+		if extraBody.Len() > 0 {
 			api["extra_body"] = extraBody
 		}
 	}

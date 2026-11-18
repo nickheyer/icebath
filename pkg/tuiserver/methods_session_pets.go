@@ -39,6 +39,7 @@ func init() {
 	petMethod("pet.export", nil, true, true, petExport)
 	petMethod("pet.rename", nil, true, true, petRename)
 	petMethod("pet.disable", nil, false, true, petDisable)
+	petMethod("pet.enable", nil, false, true, petEnable)
 	petMethod("pet.scale", nil, false, true, petScale)
 	petMethodsRegistry.method("pet.cancel", petCancel)
 	petMethod("pet.generate.status", func(map[string]any) map[string]any {
@@ -370,6 +371,14 @@ func petRename(ctx context.Context, rid any, params map[string]any, slug string)
 // Turns the pet display off
 func petDisable(ctx context.Context, rid any, _ map[string]any, _ string) (map[string]any, error) {
 	if _, err := updatePetConfig(ctx, nil, map[string]any{"enabled": false}); err != nil {
+		return nil, err
+	}
+	return ok(rid, map[string]any{"ok": true}), nil
+}
+
+// Turns the pet display on and leaves the configured slug alone, the toggle_pet_display write
+func petEnable(ctx context.Context, rid any, _ map[string]any, _ string) (map[string]any, error) {
+	if _, err := updatePetConfig(ctx, nil, map[string]any{"enabled": true}); err != nil {
 		return nil, err
 	}
 	return ok(rid, map[string]any{"ok": true}), nil

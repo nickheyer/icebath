@@ -11,21 +11,21 @@ import (
 
 const feishuRawContentURI = "/open-apis/docx/v1/documents/:document_id/raw_content"
 
-var feishuDocReadSchema = map[string]any{
-	"name": "feishu_doc_read",
-	"description": "Read the full content of a Feishu/Lark document as plain text. " +
+var feishuDocReadSchema = Dict(
+	"name", "feishu_doc_read",
+	"description", "Read the full content of a Feishu/Lark document as plain text. "+
 		"Useful when you need more context beyond the quoted text in a comment.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"doc_token": map[string]any{
-				"type":        "string",
-				"description": "The document token (from the document URL or comment context).",
-			},
-		},
-		"required": []any{"doc_token"},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"doc_token", Dict(
+				"type", "string",
+				"description", "The document token (from the document URL or comment context).",
+			),
+		),
+		"required", []any{"doc_token"},
+	),
+)
 
 // Stripped string argument, empty when absent, the AttributeError a non string value raises on strip
 func feishuArgStrip(args map[string]any, key string) string {

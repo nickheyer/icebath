@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"slices"
 	"testing"
@@ -47,7 +48,7 @@ func toolsOnlyServer(env *tools.Env, name string) *serverTask {
 // Registers a tool straight into the global registry under a server's toolset
 func seedRegistryTool(t *testing.T, name, toolset string) {
 	t.Helper()
-	tools.Default.Register(tools.Def{Name: name, Toolset: toolset, Schema: map[string]any{},
+	tools.Default.Register(tools.Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf(),
 		Handler: func(context.Context, *tools.Call) string { return "" }, Check: func(*tools.Env) bool { return true }})
 }
 

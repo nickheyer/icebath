@@ -48,7 +48,7 @@ func TestUnionWithNousOnSaleCases(t *testing.T) {
 func serveOnSaleCatalog(t *testing.T, data []any) {
 	t.Helper()
 	newPricingFixture(t)
-	pricingGetJSON = func(string, map[string]string, time.Duration) map[string]any { return map[string]any{"data": data} }
+	pricingGetJSON = func(string, map[string]string, time.Duration, bool) map[string]any { return map[string]any{"data": data} }
 }
 
 func fetchOnSalePricing(apiKey string, includeSaleOriginal bool) PricingTable {

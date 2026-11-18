@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -60,6 +61,33 @@ type AgentImportOptions struct {
 	MigrateSecrets   bool
 	FromSetup        bool
 	Bot              []string
+}
+
+// Catalog plugin that carries the import-agent command, installed or enabled before any import runs
+const agentImportersPlugin = "agent-importers"
+
+// AgentImportersInstaller installs the plugin enabled in the home, or only enables it when present, installed by the binary wiring
+var AgentImportersInstaller func(ctx context.Context, icebathHome string, present bool, out io.Writer) error
+
+// Installs or enables the agent-importers plugin, false with the retry command when it is still missing
+func ensureAgentImportersPlugin(ctx context.Context, icebathHome string) (bool, error) {
+	if AgentImportersInstaller == nil {
+		return false, errors.New("the agent-importers installer is not wired into this binary: AgentImportersInstaller is unset")
+	}
+	present := PluginPresent(agentImportersPlugin, icebathHome)
+	if !present {
+		SetupInfo("Importing is done by the '" + agentImportersPlugin + "' plugin from the Icebath plugin catalog. Installing it now...")
+	}
+	if err := AgentImportersInstaller(ctx, icebathHome, present, SetupOutput()); err == nil && PluginPresent(agentImportersPlugin, icebathHome) {
+		return true, nil
+	}
+	verb, command := "installed", "install"
+	if present {
+		verb, command = "enabled", "enable"
+	}
+	SetupPrintWarning(fmt.Sprintf("The '%s' plugin could not be %s, so nothing was imported. Try again later with: icebath plugins %s %s",
+		agentImportersPlugin, verb, command, agentImportersPlugin))
+	return false, nil
 }
 
 // AgentImportRunner runs icebath import-agent in process against the home on the console, installed by the binary wiring
@@ -163,12 +191,15 @@ func OfferAgentImport(ctx context.Context, icebathHome string, fromSetup bool) (
 		}
 	}
 	if !agentImportAsk(fmt.Sprintf("Import your setup from %s?", names), true, strings.Join(wrapped, "\n")) {
-		SetupInfo("Skipped. Import later with: icebath import-agent")
+		SetupInfo("Skipped. Import later with: icebath plugins install " + agentImportersPlugin + ", then icebath import-agent")
 		return "", nil
 	}
 	picked := pickImportSources(found)
 	if len(picked) == 0 {
 		return "", nil
+	}
+	if ok, err := ensureAgentImportersPlugin(ctx, icebathHome); err != nil || !ok {
+		return "", err
 	}
 	var changed []string
 	for _, s := range picked {
@@ -300,6 +331,9 @@ func MigrateFromAgents(ctx context.Context, icebathHome, sourceName string, opts
 	}
 	if source == nil {
 		return 0, fmt.Errorf("unknown import source: %s", sourceName)
+	}
+	if ok, err := ensureAgentImportersPlugin(ctx, icebathHome); err != nil || !ok {
+		return 1, err
 	}
 	code, err := agentImportRun(ctx, *source, icebathHome, opts)
 	if err != nil {

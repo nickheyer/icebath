@@ -11,13 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
-	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/provider"
-)
-
-const (
-	petFrameInterval     = 160 * time.Millisecond
-	petConfigIntervalSec = 2.5
 )
 
 var (
@@ -343,102 +337,6 @@ func (c *CLI) turnSummaryRecord(functionName string, result any, isError bool) {
 	}
 	defer func() { _ = recover() }()
 	collector.RecordTool(functionName, result, isError)
-}
-
-// Forces a transient pet reaction for the given seconds before it rests again
-func (c *CLI) petFlash(state string, secs float64) {
-	c.uiMu.Lock()
-	c.petEvent = state
-	c.petEventUntil = monotonic() + secs
-	c.uiMu.Unlock()
-}
-
-// Plays the pet jump when the agent detected user affection
-func (c *CLI) onReaction(kind string) {
-	if kind == "vibe" {
-		c.petFlash("jump", 1.6)
-	}
-}
-
-// Animation state of the pet, a live transient beat winning over the shared activity order
-func (c *CLI) derivePetState() string {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	if c.petEvent != "" && monotonic() < c.petEventUntil {
-		return c.petEvent
-	}
-	c.petEvent = ""
-	awaitingInput := c.approvalState != nil || c.clarifyState != nil || c.sudoState != nil || c.secretState != nil || c.slashConfirmState != nil
-	return string(pet.DeriveState(pet.Signals{AwaitingInput: awaitingInput, Busy: c.agentRunning, Reasoning: c.petReasoning}))
-}
-
-// Kitty payload of a state with its image id, cached, nil when the pet is not drawn through kitty
-func (c *CLI) petKittyPayloadFor(state string) *petKittyEntry {
-	c.petLock.Lock()
-	if cached := c.petKittyCache[state]; cached != nil {
-		c.petLock.Unlock()
-		return cached
-	}
-	renderer, imageID := c.petRenderer, c.petKittyImageID
-	c.petLock.Unlock()
-	if renderer == nil || renderer.Mode != "kitty" {
-		return nil
-	}
-	var payload *pet.KittyPayload
-	func() {
-		defer func() {
-			if recover() != nil {
-				payload = nil
-			}
-		}()
-		payload = renderer.KittyPayload(state, imageID)
-	}()
-	if payload == nil {
-		return nil
-	}
-	entry := &petKittyEntry{payload: payload, imageID: imageID}
-	c.petLock.Lock()
-	if c.petRenderer == renderer && c.petKittyImageID == imageID {
-		c.petKittyCache[state] = entry
-	}
-	c.petLock.Unlock()
-	return entry
-}
-
-// Queues one virtual kitty frame of the current state for the next render
-func (c *CLI) petQueueKittyFrame() {
-	c.petLock.Lock()
-	enabled := c.petEnabled
-	c.petLock.Unlock()
-	if !enabled {
-		return
-	}
-	entry := c.petKittyPayloadFor(c.derivePetState())
-	if entry == nil || len(entry.payload.Frames) == 0 {
-		return
-	}
-	c.petLock.Lock()
-	if c.petRenderer != nil && c.petRenderer.Mode == "kitty" {
-		c.petKittyPending = entry.payload.Frames[c.petFrameIdx%len(entry.payload.Frames)]
-	}
-	c.petLock.Unlock()
-}
-
-// Stops the pet animation goroutine, waiting for it briefly
-func (c *CLI) petStopAnim() {
-	c.petLock.Lock()
-	stop, done := c.petAnimStop, c.petAnimDone
-	c.petAnimRunning, c.petAnimStop, c.petAnimDone = false, nil, nil
-	c.petLock.Unlock()
-	if stop != nil {
-		close(stop)
-	}
-	if done != nil {
-		select {
-		case <-done:
-		case <-time.After(300 * time.Millisecond):
-		}
-	}
 }
 
 // Push to talk key label every voice hint advertises, the cached one or Ctrl+B

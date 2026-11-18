@@ -621,12 +621,16 @@ func anthropicManagedRelayStream(ctx context.Context, c *anthropicClient, req *R
 	factory := func(_ context.Context, request map[string]any) (any, error) {
 		body := relayCopyMap(request)
 		anthSanitizeKwargs(body, "")
-		httpReq, err := c.transport.Request(attemptCtx, anthOpMessages, body, p.headers)
+		httpReq, err := c.transport.Request(attemptCtx, anthOpMessages, body, p.headers, anthSDKCall{})
 		if err != nil {
 			return nil, err
 		}
 		s.wire = failedStreamRequestOf(httpReq)
-		resp, err := c.httpClient(t.connect).Do(httpReq)
+		hc, err := c.httpClient(t.connect)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := hc.Do(httpReq)
 		if err != nil {
 			return nil, &ccFinalError{err: c.attemptError(attemptCtx, kill, err, s)}
 		}

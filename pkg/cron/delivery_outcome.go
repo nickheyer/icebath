@@ -114,11 +114,11 @@ func (s *Store) settleQuietly(ctx context.Context, jobID, executionID string) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				s.log.Warn(fmt.Sprintf("Cron delivery %s: outcome write-back failed: %v", executionID, r))
+				s.logAs("cron.delivery_outcome").Warn(fmt.Sprintf("Cron delivery %s: outcome write-back failed: %v", executionID, r))
 			}
 		}()
 		if _, err := s.settleQueuedDelivery(ctx, jobID, executionID); err != nil {
-			s.log.Warn(fmt.Sprintf("Cron delivery %s: outcome write-back failed: %v", executionID, err))
+			s.logAs("cron.delivery_outcome").Warn(fmt.Sprintf("Cron delivery %s: outcome write-back failed: %v", executionID, err))
 		}
 	}()
 }

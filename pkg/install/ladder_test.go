@@ -55,7 +55,7 @@ func TestInstallLadderInstallsAReleaseEndToEnd(t *testing.T) {
 	tag, commit := "v1.4.2", strings.Repeat("ab", 20)
 	goos, goarch := hostKey()
 	f := newReleaseFixture(t, []fixtureRelease{{Tag: tag, Target: commit, Published: "2026-11-01T00:00:00Z",
-		Assets: map[string][]byte{BinaryAssetName(goos, goarch): fixtureBinary(t, tag)}}}, nil)
+		Assets: map[string][]byte{ReleaseArchiveName(tag, goos, goarch): fixtureArchive(t, tag)}}}, nil)
 	r, out, homeDir, userHome := isolatedLadder(t, f.repo, commit)
 	if code := r.runLadder(context.Background()); code != 0 {
 		t.Fatalf("ladder exit %d\n%s", code, out)
@@ -101,9 +101,9 @@ func TestInstallLadderRefusesABinaryWhoseChecksumDisagrees(t *testing.T) {
 	goos, goarch := hostKey()
 	commit := strings.Repeat("cd", 20)
 	f := newReleaseFixture(t, []fixtureRelease{{Tag: "v1.0.0", Target: commit, Published: "2026-11-01T00:00:00Z",
-		Assets: map[string][]byte{BinaryAssetName(goos, goarch): []byte("release bytes")}}}, nil)
+		Assets: map[string][]byte{ReleaseArchiveName("v1.0.0", goos, goarch): []byte("release bytes")}}}, nil)
 	f.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasSuffix(req.URL.Path, "/"+BinaryAssetName(goos, goarch)) {
+		if strings.HasSuffix(req.URL.Path, "/"+ReleaseArchiveName("v1.0.0", goos, goarch)) {
 			w.Write([]byte("tampered bytes"))
 			return
 		}

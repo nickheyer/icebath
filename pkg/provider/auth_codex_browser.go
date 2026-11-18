@@ -119,7 +119,7 @@ func codexBrowserLogin(env PoolEnv, out io.Writer, openBrowser bool, timeout tim
 	fmt.Fprintln(out, "(Icebath creates its own session — won't affect Codex CLI or VS Code)")
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "Open this URL to authorize Icebath:\n  %s\n\n", authURL)
-	printLoopbackSSHHint(out, redirectURI, "")
+	printLoopbackSSHHint(out, redirectURI)
 	if openBrowser && canOpenGraphicalBrowser() {
 		if openBrowserFn(authURL) == nil {
 			fmt.Fprintln(out, "Browser opened for OpenAI authorization.")

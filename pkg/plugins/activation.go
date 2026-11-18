@@ -332,7 +332,7 @@ func reloadRunningGateway(ctx context.Context) map[string]any {
 		return nil, nil
 	})
 	if err != nil {
-		logDebug("gateway reload-plugins nudge failed", "error", err)
+		logPluginsActivation.debug("gateway reload-plugins nudge failed", "error", err)
 		return nil
 	}
 	answer, _ := v.(map[string]any)
@@ -392,7 +392,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		return nil, nil
 	})
 	if err != nil {
-		logDebug(fmt.Sprintf("in-process plugin reload after change to %s failed", pyrepr.Repr(name)), "error", err)
+		logPluginsActivation.debug(fmt.Sprintf("in-process plugin reload after change to %s failed", pyrepr.Repr(name)), "error", err)
 		return nil, nil
 	}
 	if activation == nil {
@@ -419,7 +419,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 	if s := installedServices(); s != nil && s.RefreshPluginSessions != nil && (len(servers) > 0 || note != "") {
 		key := pyrepr.Str(activation["key"])
 		if err := callGuarded(func() error { return s.RefreshPluginSessions(ctx, home.Dir(ctx), key, note) }); err != nil {
-			logWarn(fmt.Sprintf("open chats were not refreshed after activating %s", pyrepr.Repr(name)), "error", err)
+			logPluginsActivation.warn(fmt.Sprintf("open chats were not refreshed after activating %s", pyrepr.Repr(name)), "error", err)
 		}
 	}
 	return activation, nil

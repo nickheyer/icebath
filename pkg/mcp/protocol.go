@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 )
 
@@ -97,8 +98,8 @@ type Tool struct {
 	Name         string           `json:"name"`
 	Title        string           `json:"title,omitempty"`
 	Description  string           `json:"description,omitempty"`
-	InputSchema  map[string]any   `json:"inputSchema"`
-	OutputSchema map[string]any   `json:"outputSchema,omitempty"`
+	InputSchema  *pyjson.Object   `json:"inputSchema"`
+	OutputSchema *pyjson.Object   `json:"outputSchema,omitempty"`
 	Annotations  *ToolAnnotations `json:"annotations,omitempty"`
 	Meta         map[string]any   `json:"_meta,omitempty"`
 }
@@ -147,6 +148,28 @@ type CallToolResult struct {
 	StructuredContent any             `json:"structuredContent,omitempty"`
 	IsError           bool            `json:"isError,omitempty"`
 	Meta              map[string]any  `json:"_meta,omitempty"`
+}
+
+// Decodes structured content like json.loads, integers kept integers and keys in wire order
+func (r *CallToolResult) UnmarshalJSON(data []byte) error {
+	type wire CallToolResult
+	var w struct {
+		wire
+		StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
+	}
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	*r = CallToolResult(w.wire)
+	r.StructuredContent = nil
+	if len(w.StructuredContent) > 0 && string(w.StructuredContent) != "null" {
+		v, err := pyjson.LoadsBytes(w.StructuredContent)
+		if err != nil {
+			return err
+		}
+		r.StructuredContent = v
+	}
+	return nil
 }
 
 // Resource is one entry of resources/list
@@ -229,7 +252,7 @@ type SamplingMessage struct {
 type SamplingTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema"`
+	InputSchema *pyjson.Object `json:"inputSchema"`
 }
 
 // CreateMessageParams is sampling/createMessage

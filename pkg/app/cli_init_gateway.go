@@ -263,7 +263,7 @@ func (c *CLI) newSessionID(now time.Time, branchOf, title string) (string, error
 // Closes the modal answering a server request the gateway withdrew, as if cancelled locally
 func (c *CLI) withdrawGatewayModal(method string) {
 	c.uiMu.Lock()
-	clarify, sudo, secret := c.clarifyState, c.sudoState, c.secretState
+	clarify, sudo := c.clarifyState, c.sudoState
 	c.uiMu.Unlock()
 	switch {
 	case method == "clarify" && clarify != nil:
@@ -277,8 +277,6 @@ func (c *CLI) withdrawGatewayModal(method string) {
 		case sudo.response <- "":
 		default:
 		}
-	case method == "secret" && secret != nil:
-		c.cancelSecretCapture()
 	}
 }
 

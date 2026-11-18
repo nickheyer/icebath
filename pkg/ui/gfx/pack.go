@@ -71,6 +71,14 @@ func (s *Surface) Pack(rgb []byte, w, h, cols, rows int) *Packet {
 	return p
 }
 
+// Packet of a sixel or iTerm2 sequence encoded elsewhere, drawn from the top left cell of a box of cells
+func (s *Surface) Encoded(seq []byte, cols, rows int) *Packet {
+	if (s.proto != Sixel && s.proto != ITerm) || len(seq) == 0 || cols <= 0 || rows <= 0 {
+		return nil
+	}
+	return &Packet{s: s, seq: s.seq.Add(1), cols: cols, rows: rows, tiles: []tile{{data: s.t.wrapBytes(seq)}}}
+}
+
 // Writes the pixels into a fresh shared memory object the packet names, false when the machine refuses one
 func (s *Surface) packShared(p *Packet, raw []byte) bool {
 	name := fmt.Sprintf("icebath-%d-0-%d", os.Getpid(), shmSerial.Add(1))

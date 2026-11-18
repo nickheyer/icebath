@@ -165,6 +165,8 @@ func pyDict(v any) (map[string]any, bool) {
 		return m, true
 	case config.Tree:
 		return map[string]any(m), true
+	case *pyjson.Object:
+		return pyjson.Dict(m)
 	}
 	return nil, false
 }
@@ -962,7 +964,7 @@ func joinTier(parts []string) string {
 func BuildSystemPromptParts(ctx context.Context, a *AIAgent, systemMessage *string) (SystemPromptParts, error) {
 	var ctxLen *int
 	if a.contextCompressor != nil {
-		if n := a.contextCompressor.Base().ContextLength; n > 0 {
+		if n := engineContextLength(a.contextCompressor); n > 0 {
 			ctxLen = &n
 		}
 	}

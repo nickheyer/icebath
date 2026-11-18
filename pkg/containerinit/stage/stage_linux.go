@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -287,7 +288,7 @@ func rebootstrapMain(authPath string) int {
 	return 0
 }
 
-// Links the pm installed media and search tools onto PATH and pins Chromium for the browser runtime
+// Links the pm installed interpreters, package managers, media and search tools onto PATH and pins Chromium
 func linkImageTools(ctx context.Context) error {
 	binary := func(name string) (string, error) {
 		installed, err := pm.Installed(ctx, name, false)
@@ -299,19 +300,25 @@ func linkImageTools(ctx context.Context) error {
 		}
 		return installed.Binary, nil
 	}
-	ffmpeg, err := binary("ffmpeg")
-	if err != nil {
-		return err
+	var links [][2]string
+	for _, l := range [][2]string{{"python3", "python"}, {"node", "node"}, {"npm", "npm"}, {"ffmpeg", "ffmpeg"}, {"rg", "ripgrep"}} {
+		target, err := binary(l[1])
+		if err != nil {
+			return err
+		}
+		links = append(links, [2]string{l[0], target})
 	}
-	rg, err := binary("ripgrep")
-	if err != nil {
-		return err
+	links = append(links, [2]string{"ffprobe", filepath.Join(filepath.Dir(links[3][1]), "ffprobe")})
+	npmPath := pm.EnvFor([]string{"npm"}, map[string]string{})["PATH"]
+	npx, ok := pyshutil.Which("npx", &npmPath)
+	if !ok {
+		return fmt.Errorf("npx is not on the pm npm PATH %s", npmPath)
 	}
+	links = append(links, [2]string{"npx", npx})
 	chromium, err := binary("chromium")
 	if err != nil {
 		return err
 	}
-	links := [][2]string{{"ffmpeg", ffmpeg}, {"ffprobe", filepath.Join(filepath.Dir(ffmpeg), "ffprobe")}, {"rg", rg}}
 	for _, l := range links {
 		dest := filepath.Join(systemBinDir, l[0])
 		os.Remove(dest)

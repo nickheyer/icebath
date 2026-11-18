@@ -44,8 +44,8 @@ func TestOpenRouterStickySessionIDNormalizesCronTimestamp(t *testing.T) {
 	p := bundledPluginProfile(t, "openrouter")
 	first := p.BuildExtraBody("cron_job42_20260801_090000", map[string]any{})
 	second := p.BuildExtraBody("cron_job42_20260802_090000", map[string]any{})
-	if first["session_id"] != "cron_job42" || first["session_id"] != second["session_id"] {
-		t.Fatalf("sticky keys %v %v", first["session_id"], second["session_id"])
+	if first.Vals["session_id"] != "cron_job42" || first.Vals["session_id"] != second.Vals["session_id"] {
+		t.Fatalf("sticky keys %v %v", first.Vals["session_id"], second.Vals["session_id"])
 	}
 }
 
@@ -53,18 +53,18 @@ func TestOpenRouterParetoMinCodingScoreEmittedForParetoModel(t *testing.T) {
 	p := bundledPluginProfile(t, "openrouter")
 	body := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": 0.65})
 	want := []any{map[string]any{"id": "pareto-router", "min_coding_score": 0.65}}
-	if !reflect.DeepEqual(body["plugins"], want) {
-		t.Fatalf("plugins = %#v", body["plugins"])
+	if !reflect.DeepEqual(body.Vals["plugins"], want) {
+		t.Fatalf("plugins = %#v", body.Vals["plugins"])
 	}
 	for _, bad := range []any{"x", 1.5, -0.1, ""} {
-		if _, ok := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": bad})["plugins"]; ok {
+		if _, ok := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": bad}).Vals["plugins"]; ok {
 			t.Fatalf("plugins emitted for score %#v", bad)
 		}
 	}
-	if body := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": "0.5"}); !reflect.DeepEqual(body["plugins"], []any{map[string]any{"id": "pareto-router", "min_coding_score": 0.5}}) {
-		t.Fatalf("string score plugins = %#v", body["plugins"])
+	if body := p.BuildExtraBody("", map[string]any{"model": "openrouter/pareto-code", "openrouter_min_coding_score": "0.5"}); !reflect.DeepEqual(body.Vals["plugins"], []any{map[string]any{"id": "pareto-router", "min_coding_score": 0.5}}) {
+		t.Fatalf("string score plugins = %#v", body.Vals["plugins"])
 	}
-	if _, ok := p.BuildExtraBody("", map[string]any{"model": "x/y", "openrouter_min_coding_score": 0.65})["plugins"]; ok {
+	if _, ok := p.BuildExtraBody("", map[string]any{"model": "x/y", "openrouter_min_coding_score": 0.65}).Vals["plugins"]; ok {
 		t.Fatal("plugins emitted for a non pareto model")
 	}
 }
@@ -103,12 +103,12 @@ func TestOpenRouterMandatoryAnthropicVerbosityCoexistsWithGrokHeader(t *testing.
 	p := bundledPluginProfile(t, "openrouter")
 	eb, tl := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true), Effort: "high"},
 		map[string]any{"supports_reasoning": true, "model": "anthropic/claude-fable-5"})
-	if !reflect.DeepEqual(tl, map[string]any{"verbosity": "high"}) || len(eb) != 0 {
+	if !reflect.DeepEqual(tl, map[string]any{"verbosity": "high"}) || eb.Len() != 0 {
 		t.Fatalf("extra body %#v top level %#v", eb, tl)
 	}
 	for _, r := range []*Reasoning{nil, {Enabled: bptr(false)}, {Enabled: bptr(true), Effort: "none"}} {
 		eb, tl := p.BuildAPIKwargsExtras(r, map[string]any{"supports_reasoning": true, "model": "anthropic/claude-fable-5"})
-		if len(eb) != 0 || len(tl) != 0 {
+		if eb.Len() != 0 || len(tl) != 0 {
 			t.Fatalf("%#v: extra body %#v top level %#v", r, eb, tl)
 		}
 	}
@@ -126,8 +126,8 @@ func TestOpenRouterSpeedTierSlugsPinEndpointsAndRewriteWireModel(t *testing.T) {
 		if wire != pin.base {
 			t.Fatalf("%s wire model %s", slug, wire)
 		}
-		if !reflect.DeepEqual(body["provider"], map[string]any{"ignore": []any{"deepinfra"}, "only": pin.tags}) {
-			t.Fatalf("%s provider %#v", slug, body["provider"])
+		if !reflect.DeepEqual(body.Vals["provider"], map[string]any{"ignore": []any{"deepinfra"}, "only": pin.tags}) {
+			t.Fatalf("%s provider %#v", slug, body.Vals["provider"])
 		}
 		var tiered []string
 		for _, tag := range pin.tags {
@@ -140,14 +140,14 @@ func TestOpenRouterSpeedTierSlugsPinEndpointsAndRewriteWireModel(t *testing.T) {
 		}
 	}
 	base := "openai/gpt-6-astra"
-	if body := p.BuildExtraBody("", map[string]any{"model": base, "provider_preferences": map[string]any{"only": []any{"azure"}}}); !reflect.DeepEqual(body["provider"], map[string]any{"only": []any{"azure"}}) {
-		t.Fatalf("explicit only on the base slug %#v", body["provider"])
+	if body := p.BuildExtraBody("", map[string]any{"model": base, "provider_preferences": map[string]any{"only": []any{"azure"}}}); !reflect.DeepEqual(body.Vals["provider"], map[string]any{"only": []any{"azure"}}) {
+		t.Fatalf("explicit only on the base slug %#v", body.Vals["provider"])
 	}
 	if _, tl := p.BuildAPIKwargsExtras(nil, map[string]any{"model": "openai/gpt-5.6-sol"}); tl["model"] != nil {
 		t.Fatalf("unpinned model rewritten %#v", tl)
 	}
-	if body := p.BuildExtraBody("", map[string]any{"model": "openai/gpt-5.6-sol", "provider_preferences": map[string]any{"ignore": []any{"x"}}}); !reflect.DeepEqual(body["provider"], map[string]any{"ignore": []any{"x"}}) {
-		t.Fatalf("prefs %#v", body["provider"])
+	if body := p.BuildExtraBody("", map[string]any{"model": "openai/gpt-5.6-sol", "provider_preferences": map[string]any{"ignore": []any{"x"}}}); !reflect.DeepEqual(body.Vals["provider"], map[string]any{"ignore": []any{"x"}}) {
+		t.Fatalf("prefs %#v", body.Vals["provider"])
 	}
 }
 
@@ -156,7 +156,7 @@ func TestOpenRouterClampAppliedInBuildAPIKwargsExtras(t *testing.T) {
 	seedOpenRouterReasoningCaps(t, openrouterCapsItem("qwen/qwen3-plus", []any{"low", "medium", "high"}, false))
 	eb, _ := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true), Effort: "ultra"},
 		map[string]any{"supports_reasoning": true, "model": "qwen/qwen3-plus", hookCtxKey: context.Background()})
-	if eb["reasoning"].(map[string]any)["effort"] != "high" {
+	if eb.Vals["reasoning"].(map[string]any)["effort"] != "high" {
 		t.Fatalf("extra body %#v", eb)
 	}
 }
@@ -166,7 +166,7 @@ func TestOpenRouterNoClampWhenCatalogUnknown(t *testing.T) {
 	seedOpenRouterReasoningCaps(t, openrouterCapsItem("a/b", []any{"low"}, false))
 	eb, _ := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true), Effort: "ultra"},
 		map[string]any{"supports_reasoning": true, "model": "unlisted/model"})
-	if eb["reasoning"].(map[string]any)["effort"] != "ultra" {
+	if eb.Vals["reasoning"].(map[string]any)["effort"] != "ultra" {
 		t.Fatalf("extra body %#v", eb)
 	}
 }
@@ -177,16 +177,16 @@ func TestOpenRouterDisableOmittedForMandatoryRouteKeptOtherwise(t *testing.T) {
 		openrouterCapsItem("z-ai/glm-5.1", nil, false))
 	for _, disable := range []*Reasoning{{Enabled: bptr(false)}, {Enabled: bptr(true), Effort: "none"}} {
 		eb, _ := p.BuildAPIKwargsExtras(disable, map[string]any{"supports_reasoning": true, "model": "z-ai/glm-5.3-flash"})
-		if _, ok := eb["reasoning"]; ok {
+		if _, ok := eb.Vals["reasoning"]; ok {
 			t.Fatalf("%#v: reasoning sent %#v", disable, eb)
 		}
 	}
 	eb, _ := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{"supports_reasoning": true, "model": "z-ai/glm-5.1"})
-	if !reflect.DeepEqual(eb["reasoning"], map[string]any{"enabled": false}) {
+	if !reflect.DeepEqual(eb.Vals["reasoning"], map[string]any{"enabled": false}) {
 		t.Fatalf("extra body %#v", eb)
 	}
 	eb, _ = p.BuildAPIKwargsExtras(nil, map[string]any{"supports_reasoning": true, "model": "z-ai/glm-5.1"})
-	if !reflect.DeepEqual(eb["reasoning"], map[string]any{"enabled": true, "effort": "medium"}) {
+	if !reflect.DeepEqual(eb.Vals["reasoning"], map[string]any{"enabled": true, "effort": "medium"}) {
 		t.Fatalf("default reasoning %#v", eb)
 	}
 }

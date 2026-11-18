@@ -258,6 +258,14 @@ func journeyGateway(t *testing.T, a *app) *scriptedGateway {
 	text := func(p map[string]any, key string) string { s, _ := p[key].(string); return s }
 	return attachScripted(t, a, map[string]func(map[string]any) map[string]any{
 		"learning.graph": func(map[string]any) map[string]any { return answer(memory.BuildLearningGraph(t.Context(), env)) },
+		"learning.frames": func(p map[string]any) map[string]any {
+			graph, err := memory.BuildLearningGraph(t.Context(), env)
+			if err != nil {
+				return answer(nil, err)
+			}
+			size := func(key string) int { n, _ := p[key].(float64); return int(n) }
+			return answer(memory.RenderFrames(graph, max(20, size("cols")), max(10, size("rows")), size("frames")))
+		},
 		"learning.detail": func(p map[string]any) map[string]any {
 			return answer(memory.NodeDetail(t.Context(), env, text(p, "id")))
 		},
@@ -317,6 +325,8 @@ func TestJourneyWindowWalksDeletesAndReloadsTheTimeline(t *testing.T) {
 	if !isJourney {
 		t.Fatalf("overlay %T", a.wm.Overlay())
 	}
+	card.View(100, 40)
+	drain(a, card.refetch())
 	view := ansi.Strip(card.View(100, 40))
 	for _, want := range []string{"✦ Journey learned skills & memories over time", "skills (1)", "memories (2)", "tidy-notes",
 		"User prefers concise responses", "3/3 revealed · 100%", "↑↓/jk move"} {
@@ -358,16 +368,18 @@ func TestJourneyPlayAnimatesTheRevealToTheEnd(t *testing.T) {
 	journeyGateway(t, a)
 	drain(a, a.dispatchSubmission("/journey --play --fps 60 --no-color"))
 	card := a.wm.Overlay().(*journeyCard)
-	if card.reveal >= 1 || card.opts.color {
-		t.Fatalf("reveal %v color %v while the animation runs", card.reveal, card.opts.color)
+	card.View(100, 40)
+	drain(a, card.refetch())
+	if len(card.frames) != journeyPlayFrames || card.frame >= len(card.frames)-1 || card.opts.color {
+		t.Fatalf("frame %d of %d color %v while the animation runs", card.frame, len(card.frames), card.opts.color)
 	}
 	if strings.Contains(card.View(100, 40), "\x1b[") {
 		t.Fatal("no-color journey painted escapes")
 	}
 	tick := card.tick(card.gen, journeyPlayFrames-1)
 	drain(a, tick)
-	if card.reveal != 1 {
-		t.Fatalf("reveal %v after the last frame", card.reveal)
+	if card.frame != len(card.frames)-1 {
+		t.Fatalf("frame %d after the last frame of %d", card.frame, len(card.frames))
 	}
 }
 

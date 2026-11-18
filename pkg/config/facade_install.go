@@ -197,9 +197,13 @@ func IsNixInstallMethod(method string) bool {
 	return method == "nix" || nixManagedSystems[method]
 }
 
+// Installs icebath on Termux inside a Debian userland, the Linux release having no Termux build
+const TermuxInstallCommand = "pkg install proot-distro && proot-distro install debian && proot-distro login debian -- " +
+	"sh -c 'apt-get update && apt-get install -y curl ca-certificates && curl -fsSL https://icebath.app | sh'"
+
 var updateCommandByMethod = map[string]string{
 	"docker":     "docker pull ghcr.io/nickheyer/icebath:latest",
-	"apt":        "pkg upgrade icebath-agent",
+	"apt":        TermuxInstallCommand,
 	"chocolatey": "choco upgrade icebath",
 	"pip":        "pipx upgrade icebath-cli",
 	"homebrew":   "brew upgrade --cask icebath",

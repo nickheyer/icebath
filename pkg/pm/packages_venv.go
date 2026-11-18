@@ -71,7 +71,7 @@ func (v *Venv) Stamp(ctx context.Context, extras []string, pluginDirs []MemberDi
 	if err != nil {
 		return "", err
 	}
-	coreDigest, err := uvLockDigest(filepath.Join(v.ProjectRoot(), "uv.lock"))
+	coreDigest, err := coreLockDigest(v.ProjectRoot())
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +123,15 @@ func (v *Venv) Prepare(ctx context.Context, extras []string, opts VenvApplyOptio
 	if err != nil {
 		return nil, err
 	}
-	environment, err := ManagedEnvironment(ctx, candidate, ManagedEnvironmentOptions{
+	source, err := coreSource(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	toolchainCtx, err := coreToolchainContext(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	environment, err := ManagedEnvironment(toolchainCtx, candidate, ManagedEnvironmentOptions{
 		Env: buildEnv, Explicit: opts.Explicit || opts.Repair, Output: os.Stderr,
 	})
 	if err != nil {
@@ -182,13 +190,13 @@ func (v *Venv) Prepare(ctx context.Context, extras []string, opts VenvApplyOptio
 		}
 		replay = filepath.Dir(recorded)
 	}
-	seed := filepath.Join(project, "uv.lock")
+	seed := filepath.Join(source, "uv.lock")
 	if lockText := prior["resolved_lock"]; len(members) > 0 && pyrepr.Truthy(lockText) {
 		seed = pyrepr.Str(lockText)
 	}
 	workspace := filepath.Join(generation, "workspace")
 	if err := LockAndSync(ctx, members, extras, LockAndSyncOptions{
-		Root: workspace, Source: project, SeedLock: seed, Environment: environment,
+		Root: workspace, Source: source, SeedLock: seed, Environment: environment,
 		Frozen: opts.Repair || len(members) == 0, Replay: replay,
 	}); err != nil {
 		return nil, err

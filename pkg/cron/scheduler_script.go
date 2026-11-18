@@ -36,19 +36,19 @@ func timeoutSetting[T any](s *Store, ctx context.Context, envVar, configKey, lab
 	if envValue := pystr.Strip(s.cronEnvSetting(ctx, envVar, "")); envValue != "" {
 		v, ok, err := parse(envValue)
 		if err != nil {
-			s.log.Warn(fmt.Sprintf("Invalid %s=%s; using config/default", envVar, pyrepr.StrRepr(envValue)))
+			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Invalid %s=%s; using config/default", envVar, pyrepr.StrRepr(envValue)))
 		} else if ok {
 			return v, true
 		}
 	}
 	cfg, err := s.loadConfig()
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %v", label, err))
+		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Failed to load %s from config: %v", label, err))
 		return zero, false
 	}
 	cron, isMap := cfg["cron"].(map[string]any)
 	if raw, present := cfg["cron"]; present && !isMap {
-		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %T object has no attribute get", label, raw))
+		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Failed to load %s from config: %T object has no attribute get", label, raw))
 		return zero, false
 	}
 	configured, present := cron[configKey]
@@ -57,7 +57,7 @@ func timeoutSetting[T any](s *Store, ctx context.Context, envVar, configKey, lab
 	}
 	v, ok, err := parse(configured)
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %v", label, err))
+		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Failed to load %s from config: %v", label, err))
 		return zero, false
 	}
 	return v, ok
@@ -67,7 +67,7 @@ func timeoutSetting[T any](s *Store, ctx context.Context, envVar, configKey, lab
 func (s *Store) getScriptTimeout(ctx context.Context) int {
 	if scriptTimeoutOverride != defaultScriptTimeout {
 		if v, ok, err := positiveInt(scriptTimeoutOverride); err != nil {
-			s.log.Warn(fmt.Sprintf("Invalid patched _SCRIPT_TIMEOUT=%v; using env/config/default", scriptTimeoutOverride))
+			s.logAs("cron.scheduler").Warn(fmt.Sprintf("Invalid patched _SCRIPT_TIMEOUT=%v; using env/config/default", scriptTimeoutOverride))
 		} else if ok {
 			return v
 		}

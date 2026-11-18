@@ -33,14 +33,9 @@ func approvalOutcomeLabel(ctx context.Context, result string) string {
 
 // Sudo panel state, shared by the vault unlock, save login and verification code prompts
 type sudoModalState struct {
-	VaultBackend string
-	VaultSave    *vaultSavePrompt
-	VaultCode    *vaultCodePrompt
-	response     chan string
+	VaultCode *vaultCodePrompt
+	response  chan string
 }
-
-// Site, origin and step of a two step save login prompt
-type vaultSavePrompt struct{ Site, Origin, Step string }
 
 // Site and hint of a one time code prompt
 type vaultCodePrompt struct{ Site, Hint string }
@@ -50,29 +45,19 @@ type approvalModalState struct {
 	Command, Description string
 	Choices              []string
 	Selected             int
-	ShowFull             bool
 	response             chan string
-}
-
-// Secret capture panel state
-type secretModalState struct {
-	VarName, Prompt string
-	Metadata        map[string]any
-	response        chan string
 }
 
 // Clarify panel state, the batch of questions with locked answers and the flat view of the active one
 type clarifyModalState struct {
-	Questions       []clarifyQuestion
-	Answers         map[string]*string
-	AnswerMeta      map[string]clarifyAnswerMeta
-	Active          int
-	Question        string
-	Choices         []string
-	Selected        int
-	MultiSelect     bool
-	SelectedIndices map[int]bool
-	response        chan map[string]any
+	Questions   []clarifyQuestion
+	Answers     map[string]*string
+	Active      int
+	Question    string
+	Choices     []string
+	Selected    int
+	MultiSelect bool
+	response    chan map[string]any
 }
 
 // Delivers a modal answer without blocking, a missing or full channel dropping it like a dead queue
@@ -211,7 +196,7 @@ func (c *CLI) approvalChoices(command string, allowPermanent, allowSession, smar
 // Masked master password prompt for an external password manager on the sudo panel, empty when it stays locked
 func (c *CLI) vaultUnlockCallback(backendName, displayName string) string {
 	response := make(chan string, 1)
-	c.setSudoModal(&sudoModalState{VaultBackend: displayName, response: response}, monotonic()+120)
+	c.setSudoModal(&sudoModalState{response: response}, monotonic()+120)
 	c.ringBell(true, i18n.T(c.ctx, "cli.secret.bell_unlock", "", map[string]any{"name": displayName}), "")
 	result, timedOut := pollModalQueue(c.ctx, response, c.sudoDeadlineAt, "")
 	c.setSudoModal(nil, 0)
@@ -228,7 +213,7 @@ func (c *CLI) vaultSaveLoginCallback(origin, site string) map[string]string {
 	answer := map[string]string{}
 	for _, step := range []string{"identifier", "password"} {
 		response := make(chan string, 1)
-		c.setSudoModal(&sudoModalState{VaultSave: &vaultSavePrompt{Site: site, Origin: origin, Step: step}, response: response}, monotonic()+180)
+		c.setSudoModal(&sudoModalState{response: response}, monotonic()+180)
 		if step == "identifier" {
 			c.ringBell(true, i18n.T(c.ctx, "cli.secret.bell_save_login", "", map[string]any{"site": site}), "")
 		}
@@ -307,39 +292,18 @@ func (c *CLI) clearActiveOverlaysForInterrupt() {
 		offer[map[string]any](st.response, nil)
 		c.clarifyState = nil
 		c.clarifyFreetext = false
-		c.clarifyMultiBase = nil
 	}
 	if st := c.sudoState; st != nil {
 		offer(st.response, "")
 		c.sudoState = nil
 		c.sudoDeadline = 0
 	}
-	secret := c.secretState != nil
-	c.uiMu.Unlock()
-	if secret {
-		c.cancelSecretCapture()
-	}
-}
-
-// Answers the secret panel and tears it down with a direct paint
-func (c *CLI) submitSecretResponse(value string) {
-	c.uiMu.Lock()
-	state := c.secretState
-	if state == nil {
-		c.uiMu.Unlock()
-		return
-	}
-	offer(state.response, value)
-	c.secretState, c.secretDeadline = nil, 0
 	c.uiMu.Unlock()
 }
-
-// Cancels an open secret capture, reporting it skipped
-func (c *CLI) cancelSecretCapture() { c.submitSecretResponse("") }
 
 // Clears the clarify panel state and repaints
 func (c *CLI) clarifyTeardown() {
 	c.uiMu.Lock()
-	c.clarifyState, c.clarifyFreetext, c.clarifyDeadline, c.clarifyMultiBase = nil, false, nil, nil
+	c.clarifyState, c.clarifyFreetext, c.clarifyDeadline = nil, false, nil
 	c.uiMu.Unlock()
 }

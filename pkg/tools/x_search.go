@@ -605,38 +605,38 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 	return JSON(result)
 }
 
-var xSearchSchema = map[string]any{
-	"name": "x_search",
-	"description": "Search X (Twitter) posts, profiles and threads via xAI's built-in X Search. Read-only discovery only: use this for current " +
-		"discussion, reactions, or claims on public X rather than general web " +
-		"pages. Do not use it to post, reply, like, DM, upload media, delete, " +
-		"or inspect the user's authenticated X account — those require a " +
-		"separate authenticated X API surface outside this tool. Available " +
+var xSearchSchema = Dict(
+	"name", "x_search",
+	"description", "Search X (Twitter) posts, profiles and threads via xAI's built-in X Search. Read-only discovery only: use this for current "+
+		"discussion, reactions, or claims on public X rather than general web "+
+		"pages. Do not use it to post, reply, like, DM, upload media, delete, "+
+		"or inspect the user's authenticated X account — those require a "+
+		"separate authenticated X API surface outside this tool. Available "+
 		"when xAI credentials are configured (SuperGrok OAuth or XAI_API_KEY).",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{"type": "string", "description": "What to look up on X."},
-			"allowed_x_handles": map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"},
-				"description": "Optional list of X handles to include exclusively (max 10).",
-			},
-			"excluded_x_handles": map[string]any{
-				"type": "array", "items": map[string]any{"type": "string"},
-				"description": "Optional list of X handles to exclude (max 10).",
-			},
-			"from_date": map[string]any{"type": "string", "description": "Optional start date in YYYY-MM-DD format."},
-			"to_date":   map[string]any{"type": "string", "description": "Optional end date in YYYY-MM-DD format."},
-			"enable_image_understanding": map[string]any{
-				"type": "boolean", "description": "Whether xAI should analyze images attached to matching X posts.", "default": false,
-			},
-			"enable_video_understanding": map[string]any{
-				"type": "boolean", "description": "Whether xAI should analyze videos attached to matching X posts.", "default": false,
-			},
-		},
-		"required": []any{"query"},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"query", Dict("type", "string", "description", "What to look up on X."),
+			"allowed_x_handles", Dict(
+				"type", "array", "items", Dict("type", "string"),
+				"description", "Optional list of X handles to include exclusively (max 10).",
+			),
+			"excluded_x_handles", Dict(
+				"type", "array", "items", Dict("type", "string"),
+				"description", "Optional list of X handles to exclude (max 10).",
+			),
+			"from_date", Dict("type", "string", "description", "Optional start date in YYYY-MM-DD format."),
+			"to_date", Dict("type", "string", "description", "Optional end date in YYYY-MM-DD format."),
+			"enable_image_understanding", Dict(
+				"type", "boolean", "description", "Whether xAI should analyze images attached to matching X posts.", "default", false,
+			),
+			"enable_video_understanding", Dict(
+				"type", "boolean", "description", "Whether xAI should analyze videos attached to matching X posts.", "default", false,
+			),
+		),
+		"required", []any{"query"},
+	),
+)
 
 // x_search handler mapping arguments onto the tool
 func handleXSearch(ctx context.Context, call *Call) string {

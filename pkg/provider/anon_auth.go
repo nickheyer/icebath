@@ -117,12 +117,12 @@ func anonFailureCopy(code string, retryAfter time.Duration, hasRetryAfter bool) 
 	return strings.ReplaceAll(template, "{wait}", friendlyWaitSeconds(wait))
 }
 
-// Read only config for the free tier readers, an error when config.yaml exists but cannot be read
+// Read only config for the free tier readers, an error when config.yaml exists but cannot be read, defaults when it does not parse
 func anonConfigReadonly(env PoolEnv) (map[string]any, error) {
 	if FrozenRuntimeConfig(env.ctx()) == nil {
 		path := home.ConfigPath(envHome(env))
 		if _, err := os.Stat(path); err == nil {
-			if _, err := config.ReadUser(envHome(env)); err != nil {
+			if _, err := config.ReadUser(envHome(env)); err != nil && !config.IsYAMLError(err) {
 				return nil, err
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {

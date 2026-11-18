@@ -309,12 +309,16 @@ func PartialUpdateHint(err error) []string {
 	if !ok || ie == nil || ie.ModuleNotFound || !IsFirstPartyModule(ie.Name) {
 		return nil
 	}
+	reinstall := "If that also fails, reinstall: curl -fsSL icebath.app | sh"
+	if runtime.GOOS == "windows" {
+		reinstall = "If that also fails, reinstall: irm icebath.app | iex"
+	}
 	return []string{
 		"",
 		"This looks like a partially-updated install: one module was refreshed and a related one was not.",
 		"Re-run the update to bring the whole tree to the same version:",
 		"    icebath update",
-		"If that also fails, reinstall: https://hermes-agent.nousresearch.com",
+		reinstall,
 	}
 }
 

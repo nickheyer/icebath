@@ -3,6 +3,8 @@ package pyjson
 import (
 	"fmt"
 	"sort"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Ordered object built from alternating string keys and values in dict literal order
@@ -114,4 +116,18 @@ func Dict(v any) (map[string]any, bool) {
 		return t.Vals, true
 	}
 	return nil, false
+}
+
+// Decodes a JSON object the way json.loads does, keys kept in document order
+func (o *Object) UnmarshalJSON(data []byte) error {
+	v, err := LoadsBytes(data)
+	if err != nil {
+		return err
+	}
+	obj, ok := v.(*Object)
+	if !ok {
+		return fmt.Errorf("pyjson: cannot decode %s into an object", pyrepr.TypeName(v))
+	}
+	*o = *obj
+	return nil
 }

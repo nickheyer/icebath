@@ -61,7 +61,6 @@ type cliAgent interface {
 	NotificationPolicySnapshot(cfg map[string]any) func()
 	NotificationTurn(ctx context.Context, muted bool, sessionID string) (context.Context, func())
 	RestoreReasoning(config map[string]any)
-	SetVoiceTurnPending(pending bool)
 	SummarizeAPIError(err error) string
 	TodoStore() *tools.TodoStore
 	gateway() *GatewayAgent

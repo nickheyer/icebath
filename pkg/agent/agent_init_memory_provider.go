@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -39,7 +38,7 @@ func warnOnce(ctx context.Context, name, message string, say func(string), kind 
 	if seen {
 		return
 	}
-	slog.Warn(message)
+	runAgentLog().Warn(message)
 	if say != nil {
 		say(message)
 	}
@@ -94,7 +93,7 @@ func resolveMemoryProvider(ctx context.Context, env *tools.Env, name string, say
 func providerUnavailableReason(ctx context.Context, p memory.Provider, name string) (reason string) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Debug(fmt.Sprintf("unavailable_reason() failed for %s", name), "panic", r)
+			runAgentLog().Debug(fmt.Sprintf("unavailable_reason() failed for %s", name), "panic", r)
 			reason = ""
 		}
 	}()

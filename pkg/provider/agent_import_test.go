@@ -116,7 +116,7 @@ func TestSetupMenuShowsWhatWasFoundWithTheQuestion(t *testing.T) {
 	defer restore()
 	var got string
 	var err error
-	SetupNavigationScope(func() { got, err = OfferAgentImport(context.Background(), h.icebathHome, true) })
+	setupNavigationScope(func() { got, err = OfferAgentImport(context.Background(), h.icebathHome, true) })
 	if err != nil || got != "" {
 		t.Fatalf("got %q err %v", got, err)
 	}

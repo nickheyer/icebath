@@ -69,7 +69,7 @@ func IterPluginDirs(root string) ([]string, error) {
 			hasInit, err = pathlibProbe(filepath.Join(child, "__init__.py"), false)
 		}
 		if err != nil {
-			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pypath.OSErrorText(err)))
+			logPluginLoader.warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pypath.OSErrorText(err)))
 			continue
 		}
 		if hasInit {
@@ -154,15 +154,23 @@ func (o *HostedObject) MethodParams(name string) (names []string, varKeyword boo
 	return names, varKeyword
 }
 
-// Shared body of a named category load, a warning and nil when it fails or yields no instance
+// Logger of the category module each named load kind belongs to, the module passing its own logger in hermes
+var loadNamedLoggers = map[string]moduleLog{"Context engine": logContextEngine, "Memory provider": logMemory,
+	"Computer-use provider": logComputerUse, "Cron provider": logCronProviders}
+
+// Shared body of a named category load, a warning on the category logger and nil when it fails or yields no instance
 func LoadNamed(name, pluginDir string, loadFromDir func(dir string) (any, error), kind, noun string) any {
+	log, ok := loadNamedLoggers[kind]
+	if !ok {
+		log = logPluginLoader
+	}
 	instance, err := loadFromDir(pluginDir)
 	if err != nil {
-		logWarn(fmt.Sprintf("Failed to load %s '%s': %s", strings.ToLower(kind), name, err))
+		log.warn(fmt.Sprintf("Failed to load %s '%s': %s", strings.ToLower(kind), name, err))
 		return nil
 	}
 	if instance == nil || !config.PyTruthy(instance) {
-		logWarn(fmt.Sprintf("%s '%s' loaded but no %s instance found", kind, name, noun))
+		log.warn(fmt.Sprintf("%s '%s' loaded but no %s instance found", kind, name, noun))
 		return nil
 	}
 	return instance

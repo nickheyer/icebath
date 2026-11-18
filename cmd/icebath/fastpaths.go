@@ -32,7 +32,7 @@ type chatArgs struct {
 	Quiet, Worktree, Checkpoints        bool
 	PassSessionID, IgnoreUserConfig     bool
 	IgnoreRules, SafeMode, Yolo         bool
-	AcceptHooks, TUINative              bool
+	AcceptHooks, TUINative, TUIDev      bool
 	NoRestoreCWD, CreateIfMissing       bool
 	noninteractiveConfigValidated       bool
 }
@@ -112,6 +112,7 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 		boolean("yolo", &a.Yolo)
 		boolean("accept-hooks", &a.AcceptHooks)
 		boolean("native", &a.TUINative)
+		boolean("dev", &a.TUIDev)
 		boolean("no-restore-cwd", &a.NoRestoreCWD)
 		boolean("create-if-missing", &a.CreateIfMissing)
 	}

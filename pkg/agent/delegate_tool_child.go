@@ -201,6 +201,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	child.progressIdentityRef = sessionRef
 	child.delegateDepth, child.delegateRole = childDepth, effectiveRole
 	child.subagentID, child.parentSubagentID = subagentID, parentSubagentID
+	child.spawnSeq = childSpawnSeq.Add(1)
 	if err := applyChildCompressionCap(child, delegationCfg); err != nil {
 		return nil, err
 	}

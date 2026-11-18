@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"time"
 )
@@ -10,14 +11,12 @@ type promptReadingHookKey struct{}
 
 // Copy of chat completions kwargs asking llama server for prompt progress chunks through extra_body
 func WithPromptProgressKwargs(kwargs map[string]any) map[string]any {
-	merged := map[string]any{}
-	if extra, ok := kwargs["extra_body"].(map[string]any); ok {
-		for k, v := range extra {
-			merged[k] = v
-		}
+	merged := pyjson.NewObject()
+	if extra, ok := pyjson.AsObject(kwargs["extra_body"]); ok {
+		merged = extra.Copy()
 	}
-	if _, ok := merged["return_progress"]; !ok {
-		merged["return_progress"] = true
+	if _, ok := merged.Get("return_progress"); !ok {
+		merged.Set("return_progress", true)
 	}
 	out := make(map[string]any, len(kwargs)+1)
 	for k, v := range kwargs {

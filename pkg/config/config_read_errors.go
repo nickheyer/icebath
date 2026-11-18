@@ -9,12 +9,13 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 )
 
 var parseFailureFallbackMsg = map[string]string{
@@ -44,35 +45,46 @@ var (
 	configParseFailure = map[string]parseFailure{}
 )
 
-var yamlLineRe = regexp.MustCompile(`(?s)^yaml: line (\d+): (.*)$`)
-
-// Underlying YAML error text and its one based line when the error carries one
-func yamlProblem(err error) (line string, problem string) {
+// Python exception behind a config read failure, the parse error an invalid config wraps
+func pyReadFailure(err error) error {
 	var inv *InvalidUserConfigError
 	if errors.As(err, &inv) && inv.Err != nil {
 		err = inv.Err
 	}
-	text := err.Error()
-	if m := yamlLineRe.FindStringSubmatch(text); m != nil {
-		return "line " + m[1], m[2]
+	var ye *YAMLError
+	if errors.As(err, &ye) {
+		return ye.Err
 	}
-	return "", ""
+	return err
 }
 
-// Line location of a YAML error such as line 12, empty without one
+// Line of the problem mark, else the context mark, of a YAML error such as line 12, empty without one
 func YAMLErrorLocation(err error) string {
-	line, _ := yamlProblem(err)
-	return line
+	var me *ry.MarkedError
+	if !errors.As(pyReadFailure(err), &me) {
+		return ""
+	}
+	mark := me.ProblemMark
+	if mark == nil {
+		mark = me.ContextMark
+	}
+	if mark == nil {
+		return ""
+	}
+	return fmt.Sprintf("line %d", mark.Line+1)
 }
 
-// Single line details text of the YAML problem or the error text
+// Single line details text, the YAML problem or the exception text with whitespace runs collapsed
 func YAMLErrorDetails(err error) string {
-	_, problem := yamlProblem(err)
-	text := problem
-	if text == "" {
-		text = strings.TrimSpace(err.Error())
+	inner := pyReadFailure(err)
+	text := ""
+	var me *ry.MarkedError
+	if errors.As(inner, &me) && me.Problem != nil && *me.Problem != "" {
+		text = *me.Problem
+	} else {
+		text = inner.Error()
 	}
-	return strings.Join(strings.Fields(text), " ")
+	return strings.Join(pystr.SplitWhitespace(text, -1), " ")
 }
 
 // Reports whether an error is an operating system error rather than a parse failure

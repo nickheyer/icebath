@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,7 +171,7 @@ func mutateMemory(ctx context.Context, env *tools.Env, nodeID string, replacemen
 			}
 		}
 		if idx < 0 {
-			r := Result{Data: map[string]any{"success": false, "error": staleMemoryNode}}
+			r := Result{Data: pyjson.ObjectOf("success", false, "error", staleMemoryNode)}
 			return Mutation{Result: &r}
 		}
 		next := append([]string{}, entries[:idx]...)
@@ -194,7 +195,7 @@ func mutateMemory(ctx context.Context, env *tools.Env, nodeID string, replacemen
 		return nil, applyErr
 	}
 	if !result.Success() {
-		msg, ok := result.Data["error"]
+		msg, ok := result.Data.Get("error")
 		if !ok {
 			msg = name + " write failed"
 		}

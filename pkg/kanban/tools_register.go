@@ -1,6 +1,9 @@
 package kanban
 
-import "github.com/nickheyer/icebath/pkg/tools"
+import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/tools"
+)
 
 // Board routing tools, hidden from dispatcher spawned task workers
 var orchestratorTools = map[string]bool{"kanban_list": true, "kanban_unblock": true}
@@ -8,7 +11,7 @@ var orchestratorTools = map[string]bool{"kanban_list": true, "kanban_unblock": t
 // One kanban tool in the order the schema lists it
 type kanbanTool struct {
 	name    string
-	schema  map[string]any
+	schema  *pyjson.Object
 	handler func(k *kanbanCall) (string, error)
 	emoji   string
 }

@@ -177,7 +177,7 @@ func StageWrite(ctx context.Context, env *Env, subsystem string, payload map[str
 	created := float64(time.Now().UnixNano()) / 1e9
 	rec := pendingRecordJSON{ID: pid, Subsystem: subsystem, Action: action, Summary: pyStrip(summary), Origin: origin, CreatedAt: created, Payload: payload}
 	if err := writeApprovalJSONAtomic(WithEnvHome(ctx, env), pendingWritePath(env, subsystem, pid), rec); err != nil {
-		envLog(env).Error(fmt.Sprintf("Failed to stage pending %s write: %v", subsystem, err))
+		envLog(env).With("logger", "tools.write_approval").Error(fmt.Sprintf("Failed to stage pending %s write: %v", subsystem, err))
 	}
 	return map[string]any{"id": pid, "subsystem": subsystem, "action": action, "summary": rec.Summary, "origin": origin, "created_at": created, "payload": payload}
 }
@@ -228,7 +228,7 @@ func ListPending(env *Env, subsystem string) []map[string]any {
 	for _, p := range pendingWriteFiles(env, subsystem) {
 		record, err := readPendingRecord(p)
 		if err != nil {
-			envLog(env).Warn("Skipping unreadable pending record: " + p)
+			envLog(env).With("logger", "tools.write_approval").Warn("Skipping unreadable pending record: " + p)
 			continue
 		}
 		records = append(records, record)
@@ -266,7 +266,7 @@ func DiscardPending(env *Env, subsystem, pendingID string) bool {
 		return false
 	}
 	if err := os.Remove(p); err != nil {
-		envLog(env).Error(fmt.Sprintf("Failed to discard pending %s/%s: %v", subsystem, pendingID, err))
+		envLog(env).With("logger", "tools.write_approval").Error(fmt.Sprintf("Failed to discard pending %s/%s: %v", subsystem, pendingID, err))
 		return false
 	}
 	return true
@@ -360,7 +360,7 @@ func promptInlineMemoryApproval(ctx context.Context, env *Env, summary, detail s
 	defer cancel()
 	result, err := env.Ask.Ask(askCtx, []Question{{Header: "Save to memory?", Text: text, Choices: []string{"once", "session", "deny"}}})
 	if err != nil {
-		envLog(env).Error(fmt.Sprintf("Inline memory approval prompt failed: %v", err))
+		envLog(env).With("logger", "tools.write_approval").Error(fmt.Sprintf("Inline memory approval prompt failed: %v", err))
 		return false, false
 	}
 	if result.Outcome == "cancelled" || len(result.Answers) == 0 {

@@ -472,7 +472,7 @@ func publicPreTransform(a *AIAgent, pre any) any {
 }
 
 // Syncs external memory then spawns the background review unless a pre_llm_call hook vetoed the prompt
-func mirrorTurnToMemory(a *AIAgent, originalUserMessage, final any, interrupted bool, messages []*state.Message, reviewMemory, reviewSkills, vetoed bool) {
+func mirrorTurnToMemory(ctx context.Context, a *AIAgent, originalUserMessage, final any, interrupted bool, messages []*state.Message, reviewMemory, reviewSkills, vetoed bool) {
 	if vetoed {
 		return
 	}
@@ -486,7 +486,7 @@ func mirrorTurnToMemory(a *AIAgent, originalUserMessage, final any, interrupted 
 				panic(r)
 			}
 		}()
-		a.spawnBackgroundReview(context.Background(), messagesToRows(messages), reviewMemory, reviewSkills, nil, false)
+		a.spawnBackgroundReview(context.WithoutCancel(ctx), messagesToRows(messages), reviewMemory, reviewSkills, nil, false)
 	}()
 }
 
@@ -665,7 +665,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 	if reviewSkills {
 		a.itersSinceSkill = 0
 	}
-	mirrorTurnToMemory(a, s.OriginalUserMessage, final, interrupted, s.Messages, s.ShouldReviewMemory, reviewSkills, vetoed)
+	mirrorTurnToMemory(ctx, a, s.OriginalUserMessage, final, interrupted, s.Messages, s.ShouldReviewMemory, reviewSkills, vetoed)
 	if !vetoed {
 		MaybePrepareCompaction(ctx, a, messagesToRows(s.Messages), "turn-end")
 	}

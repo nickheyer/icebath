@@ -60,7 +60,7 @@ func firePreAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, apiKwa
 	if !lifecycleHasHook(ctx, "pre_api_request") {
 		return
 	}
-	requestMessages := anyRows(apiKwargs["messages"])
+	requestMessages := anyRows(provider.OrderRecordedMessages(apiKwargs["messages"]))
 	if requestMessages == nil {
 		requestMessages = anyRows(apiKwargs["input"])
 	}
@@ -98,7 +98,15 @@ func applyLLMRequestMiddleware(ctx context.Context, a *AIAgent, s *LoopState, ap
 			payload, trace = apiKwargs, []any{}
 		}
 	}()
-	res := plugins.ApplyLLMRequestMiddleware(ctx, apiKwargs, map[string]any{
+	request := apiKwargs
+	if msgs, has := apiKwargs["messages"]; has && plugins.HasMiddleware(ctx, plugins.LLMRequestMiddleware) {
+		request = make(map[string]any, len(apiKwargs))
+		for k, v := range apiKwargs {
+			request[k] = v
+		}
+		request["messages"] = provider.OrderRecordedMessages(msgs)
+	}
+	res := plugins.ApplyLLMRequestMiddleware(ctx, request, map[string]any{
 		"task_id": s.EffectiveTaskID, "turn_id": s.TurnID, "api_request_id": s.APIRequestID, "session_id": a.sessionID,
 		"platform": a.platform, "model": a.model, "provider": a.provider, "base_url": a.baseURL, "api_mode": a.apiMode,
 		"api_call_count": s.APICallCount,
@@ -113,8 +121,8 @@ func applyLLMRequestMiddleware(ctx context.Context, a *AIAgent, s *LoopState, ap
 }
 
 // Request kwargs builder of the attempt, swapped by tests like the hermes instance patch
-var loopBuildAPIKwargs = func(a *AIAgent, apiMessages, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
-	return a.buildAPIKwargs(apiMessages, toolsForAPI, toolsOverride)
+var loopBuildAPIKwargs = func(ctx context.Context, a *AIAgent, apiMessages, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
+	return a.buildAPIKwargsIn(ctx, apiMessages, toolsForAPI, toolsOverride)
 }
 
 // Builds the provider payload for the current route through the request middleware, firing no turn hook
@@ -129,7 +137,7 @@ func buildRequestPayload(ctx context.Context, a *AIAgent, s *LoopState) error {
 	apiMessages = mapRows(rows)
 	s.APIMessages = rows
 	observability.ObserveRequestTools(ctx, a, s.ToolsForAPI)
-	apiKwargs, err := loopBuildAPIKwargs(a, apiMessages, s.ToolsForAPI, !sameToolSurface(s.ToolsForAPI, a.tools))
+	apiKwargs, err := loopBuildAPIKwargs(ctx, a, apiMessages, s.ToolsForAPI, !sameToolSurface(s.ToolsForAPI, a.tools))
 	if err != nil {
 		return err
 	}

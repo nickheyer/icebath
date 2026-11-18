@@ -579,6 +579,9 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 		var err error
 		if runtimeOnlyProject(RepoRoot()) && onlyRelayAlias(extras) {
 			_, err = EnsureRuntimeEnvironment(ctx, RuntimeEnvironmentOptions{Explicit: true, Output: out})
+			if err == nil && binaryCoreTree(RepoRoot()) {
+				err = installSyncVenv(ctx, SyncVenvOptions{Extras: []string{}, Explicit: true})
+			}
 		} else {
 			var selection, carried []string
 			if selection, carried, err = firstSelection(ctx, extras); err == nil {

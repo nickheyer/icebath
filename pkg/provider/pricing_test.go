@@ -38,7 +38,7 @@ func newPricingFixture(t *testing.T) *pricingFixture {
 		return map[string]map[string]any{}
 	}
 	fetchModelMetadataFn = func(context.Context, bool) map[string]map[string]any { return map[string]map[string]any{} }
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		t.Errorf("unexpected catalog fetch of %s", url)
 		return nil
 	}
@@ -500,7 +500,7 @@ const pricingBase = "https://inference-api.example.com"
 
 func servePricing(f *pricingFixture, fn func(auth string) []string) *[]string {
 	requests := &[]string{}
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		auth := headers["Authorization"]
 		*requests = append(*requests, auth)
 		var data []any
@@ -682,7 +682,7 @@ func TestSaleDiscount(t *testing.T) {
 
 func TestFetchModelsWithPricingCopiesNousOnlyFields(t *testing.T) {
 	newPricingFixture(t)
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		return jsonMap(`{"data": [
 		 {"id": "anthropic/claude-sonnet-5", "name": "  Sonnet 5 ", "billing_mode": "subscription", "top_tier": true, "usage_level": "top_tier",
 		  "supported_parameters": ["temperature"],
@@ -739,7 +739,7 @@ func TestResolveNousPricingCredentialsNormalizesEitherSuffix(t *testing.T) {
 func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 	newPricingFixture(t)
 	calls := 0
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any { calls++; return nil }
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any { calls++; return nil }
 	now := time.Now()
 	pricingClock = func() time.Time { return now }
 	if got := FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"}); len(got) != 0 {
@@ -760,7 +760,7 @@ func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 	ResetPricingCache()
 	calls = 0
 	pricingClock = func() time.Time { return now }
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		calls++
 		return jsonMap(`{"data": [{"id": "a/b", "pricing": {"prompt": "1", "completion": "2"}}]}`)
 	}
@@ -780,7 +780,7 @@ func TestProviderPricingFetchersAndScopes(t *testing.T) {
 	if kiloPricingScope() != "https://kilo.example/api/gateway" || novitaPricingScope() != "https://api.novita.ai/openai/v1" || aiGatewayPricingScope() != "https://ai-gateway.vercel.sh/v1" {
 		t.Fatalf("scopes %s %s", kiloPricingScope(), novitaPricingScope())
 	}
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		switch {
 		case strings.HasPrefix(url, "https://kilo.example"):
 			return jsonMap(`{"data": [
@@ -920,7 +920,7 @@ func TestIsFreeTierModelAndCachedPricing(t *testing.T) {
 		t.Fatal("local rules")
 	}
 	servePricing(f, func(string) []string { return []string{"vendor/paid"} })
-	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration) map[string]any {
+	pricingGetJSON = func(url string, headers map[string]string, timeout time.Duration, _ bool) map[string]any {
 		return jsonMap(`{"data": [{"id": "vendor/paid", "pricing": {"prompt": "1", "completion": "2"}}, {"id": "vendor/zero", "pricing": {"prompt": "0", "completion": "0"}}]}`)
 	}
 	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase})

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"reflect"
@@ -57,7 +58,7 @@ func TestAuxiliaryTaskExtraBodyExplicitDeepseekThinkingDisableBeatsProfileDefaul
 
 func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningSuppressesTaskReasoningForProfileWire(t *testing.T) {
 	ctx := auxMainTestHome(t, "auxiliary:\n  title_generation:\n    reasoning_effort: low\n    extra_body:\n      metadata:\n        task: title\n")
-	auxFixedProjection(t, auxProfileProjection{Body: map[string]any{}, ReasoningExtra: map[string]any{}, TopLevel: map[string]any{"reasoning_effort": "none"}, HandlesReasoning: true})
+	auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf(), TopLevel: map[string]any{"reasoning_effort": "none"}, HandlesReasoning: true})
 	taskBody, err := auxGetTaskExtraBody(ctx, "title_generation")
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +77,7 @@ func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningSuppressesTaskReasoningFor
 
 func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningKeepsProfileOwnedDisableShape(t *testing.T) {
 	ctx := auxMainTestHome(t, "auxiliary:\n  title_generation:\n    reasoning_effort: low\n")
-	auxFixedProjection(t, auxProfileProjection{Body: map[string]any{}, ReasoningExtra: map[string]any{"reasoning": map[string]any{"enabled": false}}, TopLevel: map[string]any{}, HandlesReasoning: true})
+	auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", false)), TopLevel: map[string]any{}, HandlesReasoning: true})
 	taskBody, err := auxGetTaskExtraBody(ctx, "title_generation")
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +94,7 @@ func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningKeepsProfileOwnedDisableSh
 func TestAuxiliaryTaskExtraBodyGenericReasoningFallbackClampsUltraForAuxiliaryAndMoaCalls(t *testing.T) {
 	for _, task := range []string{"session_search", "moa_reference", "moa_aggregator"} {
 		ctx := auxMainTestHome(t, "")
-		auxFixedProjection(t, auxProfileProjection{Body: map[string]any{}, ReasoningExtra: map[string]any{}, TopLevel: map[string]any{}})
+		auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf(), TopLevel: map[string]any{}})
 		_, body := auxExtraBodyKwargs(t, ctx, "custom", "test-model", auxCallKwargsOptions{ReasoningConfig: map[string]any{"enabled": true, "effort": "ultra"}, Task: task})
 		if !reflect.DeepEqual(body["reasoning"], map[string]any{"enabled": true, "effort": "max"}) {
 			t.Fatalf("%s: ultra reached the wire %v", task, body)
@@ -103,7 +104,7 @@ func TestAuxiliaryTaskExtraBodyGenericReasoningFallbackClampsUltraForAuxiliaryAn
 
 func TestAuxiliaryTaskExtraBodyTaskExtraBodyReasoningEffortUltraIsClamped(t *testing.T) {
 	ctx := auxMainTestHome(t, "auxiliary:\n  session_search:\n    reasoning_effort: ultra\n")
-	auxFixedProjection(t, auxProfileProjection{Body: map[string]any{}, ReasoningExtra: map[string]any{}, TopLevel: map[string]any{}})
+	auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf(), TopLevel: map[string]any{}})
 	taskBody, err := auxGetTaskExtraBody(ctx, "session_search")
 	if err != nil {
 		t.Fatal(err)

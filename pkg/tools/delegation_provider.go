@@ -1,5 +1,7 @@
 package tools
 
+import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 // Task fields core owns that a delegation provider may never declare as its own task parameter
 var ReservedTaskParameters = map[string]bool{
 	"goal": true, "context": true, "index": true, "output_schema": true, "images": true, "group": true, "role": true,
@@ -26,7 +28,7 @@ type DelegationProvider interface {
 	Settings(config map[string]any) map[string]any
 	Summary() string
 	IsAvailable() bool
-	TaskParameters(config map[string]any) map[string]map[string]any
+	TaskParameters(config map[string]any) *pyjson.Object
 	Description(config map[string]any) string
 	RouteTask(task, config map[string]any) (map[string]any, error)
 }
@@ -50,8 +52,8 @@ func (DelegationProviderDefaults) Summary() string { return "" }
 func (DelegationProviderDefaults) IsAvailable() bool { return true }
 
 // No extra task parameters
-func (DelegationProviderDefaults) TaskParameters(map[string]any) map[string]map[string]any {
-	return map[string]map[string]any{}
+func (DelegationProviderDefaults) TaskParameters(map[string]any) *pyjson.Object {
+	return pyjson.NewObject()
 }
 
 // No description addendum

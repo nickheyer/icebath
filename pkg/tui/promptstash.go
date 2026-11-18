@@ -236,15 +236,11 @@ func (a *app) stashIndicator() string {
 	return a.stash.Indicator()
 }
 
-// Placeholder of the empty composer, the stash hint while idle with parked drafts, else the launch hint
+// Placeholder of the empty composer, the English REPL stash hint while idle with parked drafts, else the launch hint
 func (a *app) composerPlaceholder() string {
 	if a.stash != nil && !a.store.ui.Busy && !a.voiceEnabled {
-		switch n := a.stash.Len(); {
-		case n == 1:
-			first, _ := a.stash.Peek(0)
-			return tr("promptStash.hintRestore", first.Preview)
-		case n > 1:
-			return tr("promptStash.hintBrowse", n)
+		if hint := a.stash.ComposerHint(); hint != "" {
+			return hint
 		}
 	}
 	return composerHint()

@@ -35,7 +35,14 @@ var (
 	startupRecorded  = map[startupKey]bool{}
 	processStartedAt = ProcessStartedAt
 	startupPid       = os.Getpid
-	startupGo        = func(run func()) { go run() }
+	startupWG        sync.WaitGroup
+	startupGo        = func(run func()) {
+		startupWG.Add(1)
+		go func() {
+			defer startupWG.Done()
+			run()
+		}()
+	}
 )
 
 // Buckets a non negative duration in milliseconds, false for anything else
@@ -126,10 +133,10 @@ func CliPromptReadyHandler(ctx context.Context) func(app any) {
 	return func(any) { RecordProcessReady(ctx, "cli", true) }
 }
 
-// Records a one shot query run as ready, kanban worker dispatches staying out of CLI startup
+// Records a one shot query run as ready off the query's path, the exit joining it, kanban worker dispatches staying out of CLI startup
 func RecordCliOneShotReady(ctx context.Context) {
 	if os.Getenv("ICEBATH_KANBAN_TASK") == "" {
-		RecordProcessReady(ctx, "cli", false)
+		RecordProcessReady(ctx, "cli", true)
 	}
 }
 

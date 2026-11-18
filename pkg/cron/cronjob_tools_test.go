@@ -209,7 +209,7 @@ func TestCronjobCreateAndUpdateNormalizeListFormDeliver(t *testing.T) {
 }
 
 func TestCronjobSchemaHasNoInferencePinParams(t *testing.T) {
-	props := cronjobSchema["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := cronjobSchema.Vals["parameters"].(map[string]any)["properties"].(map[string]any)
 	for _, k := range []string{"model", "provider", "base_url"} {
 		if _, ok := props[k]; ok {
 			t.Fatalf("schema exposes %s", k)

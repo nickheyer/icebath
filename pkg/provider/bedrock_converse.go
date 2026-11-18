@@ -13,6 +13,7 @@ import (
 	"time"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -117,24 +118,17 @@ func bedrockConverseSend(ctx context.Context, region string, kwargs map[string]a
 	if err != nil {
 		return nil, err
 	}
-	body := make(map[string]any, len(kwargs))
-	for k, v := range kwargs {
-		if k != "modelId" {
-			body[k] = v
-		}
-	}
-	data, err := json.Marshal(body)
+	data, err := converseRequestBody(kwargs)
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode bedrock converse body: %w", err)
 	}
-	operation, path, accept := "Converse", "converse", "application/json"
+	operation, path := "Converse", "converse"
 	if stream {
-		operation, path, accept = "ConverseStream", "converse-stream", "application/vnd.amazon.eventstream"
+		operation, path = "ConverseStream", "converse-stream"
 	}
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/json")
-	headers.Set("Accept", accept)
-	return client.do(ctx, operation, http.MethodPost, bedrockModelPath(model, path), nil, data, headers)
+	return client.do(ctx, operation, http.MethodPost, botocoreModelPath(model, path), nil, data, headers)
 }
 
 // Decoded Converse response body with numbers kept exact
@@ -272,13 +266,16 @@ func bedrockConverseResponse(r *bedrockConverseResult, model, provider string) *
 	}
 	var details []any
 	if len(r.ReasoningDetails) > 0 {
-		details = append(details, r.ReasoningDetails...)
+		for _, d := range r.ReasoningDetails {
+			details = append(details, anthWireBlock(d))
+		}
 		if model != "" {
-			details = append(details, map[string]any{"type": BedrockConverseIssuerType, "model": model})
+			details = append(details, pyjson.ObjectOf("type", BedrockConverseIssuerType, "model", model))
 		}
 	}
 	if len(details) > 0 {
-		msg.ReasoningDetails, _ = json.Marshal(details)
+		text, _ := pyjson.Dumps(details)
+		msg.ReasoningDetails = json.RawMessage(text)
 	}
 	if len(r.ContentBlocks) > 0 {
 		setBedrockLiveBlocks(msg, r.ContentBlocks)

@@ -270,11 +270,11 @@ func TestReadNearestVercelProjectBranches(t *testing.T) {
 func TestSetupSyncFailureHandledMatchesTheWizardClasses(t *testing.T) {
 	handled := []error{pm.NewInstallError("venv", "resolution refused", ""), &pm.PyError{Class: "ValueError", Message: "bad"}, &pm.PyError{Class: "PermissionError", Message: "denied"}}
 	for _, err := range handled {
-		if !SetupSyncFailureHandled(err) {
+		if !setupSyncFailureHandled(err) {
 			t.Fatalf("%v not handled", err)
 		}
 	}
-	if SetupSyncFailureHandled(&pm.PyError{Class: "RuntimeError", Message: "boom"}) || SetupSyncFailureHandled(fmt.Errorf("boom")) {
+	if setupSyncFailureHandled(&pm.PyError{Class: "RuntimeError", Message: "boom"}) || setupSyncFailureHandled(fmt.Errorf("boom")) {
 		t.Fatal("an unhandled class was reported handled")
 	}
 }

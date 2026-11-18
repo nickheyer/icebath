@@ -70,7 +70,7 @@ func nousKeepaliveIntervalSeconds(env PoolEnv, value *int) int {
 			return int(f)
 		}
 	}
-	env.log().Warn(fmt.Sprintf("Ignoring invalid nous.%s=%v; using %ds", NousAuthKeepaliveIntervalConfigKey, raw, NousAuthKeepaliveInterval))
+	env.logAs("hermes_cli.nous_auth_keepalive").Warn(fmt.Sprintf("Ignoring invalid nous.%s=%v; using %ds", NousAuthKeepaliveIntervalConfigKey, raw, NousAuthKeepaliveInterval))
 	return NousAuthKeepaliveInterval
 }
 
@@ -156,7 +156,7 @@ func nousRefreshSelectedPoolEntry(env PoolEnv, minKeyTTL time.Duration, minAcces
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				env.log().Debug(fmt.Sprintf("Nous auth keepalive: credential pool unavailable: %v", r))
+				env.logAs("hermes_cli.nous_auth_keepalive").Debug(fmt.Sprintf("Nous auth keepalive: credential pool unavailable: %v", r))
 				pool = nil
 			}
 		}()
@@ -178,7 +178,7 @@ func nousRefreshSelectedPoolEntry(env PoolEnv, minKeyTTL time.Duration, minAcces
 		if _, refreshed := pool.TryRefreshCurrent(); !refreshed {
 			return false, true
 		}
-		env.log().Debug("Nous auth keepalive: refreshed credential pool entry")
+		env.logAs("hermes_cli.nous_auth_keepalive").Debug("Nous auth keepalive: refreshed credential pool entry")
 	}
 	return true, true
 }
@@ -300,7 +300,7 @@ func StartNousAuthKeepalive(env PoolEnv, opts NousKeepaliveStartOptions) bool {
 		return false
 	}
 	if state, err := env.Store.GetProviderAuthState("nous"); err == nil && isGuestState(state) {
-		env.log().Debug("Nous auth keepalive skipped: free tier has no refresh token")
+		env.logAs("hermes_cli.nous_auth_keepalive").Debug("Nous auth keepalive skipped: free tier has no refresh token")
 		return false
 	}
 	initialDelay := NousAuthKeepaliveInitialDelay
@@ -331,7 +331,7 @@ func StartNousAuthKeepalive(env PoolEnv, opts NousKeepaliveStartOptions) bool {
 	k.done = make(chan struct{})
 	stop, done := k.stop, k.done
 	spawnNamedFn("nous-auth-keepalive", func() { nousKeepaliveLoop(env, stop, done, interval, initialDelay, minKeyTTL, opts.Timeout) })
-	env.log().Debug("Nous auth keepalive started")
+	env.logAs("hermes_cli.nous_auth_keepalive").Debug("Nous auth keepalive started")
 	return true
 }
 

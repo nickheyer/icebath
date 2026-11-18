@@ -213,7 +213,7 @@ func storeHealthNoteWritable(s *Store, cronDir string) {
 	if snap == nil {
 		return
 	}
-	s.log.Warn(fmt.Sprintf("Cron store %s is writable again; %d skipped run(s), catching up once per job", snap.Store, snap.SkippedRuns()))
+	s.logAs("cron.jobs").Warn(fmt.Sprintf("Cron store %s is writable again; %d skipped run(s), catching up once per job", snap.Store, snap.SkippedRuns()))
 	notifyStoreTransition(s.log, "recovered", snap)
 }
 

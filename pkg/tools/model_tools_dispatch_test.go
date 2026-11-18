@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"sync"
@@ -35,7 +36,7 @@ func TestExecuteCodePathForwardsSessionId(t *testing.T) {
 func transformDispatcher(t *testing.T, tool, result string, post PostToolCallHook, transforms ...TransformToolResultHook) (*Dispatcher, *Env) {
 	t.Helper()
 	r := NewRegistry()
-	r.Register(Def{Name: tool, Toolset: "test", Schema: map[string]any{"name": tool, "description": tool, "parameters": map[string]any{"type": "object"}}, Handler: constHandler(result)})
+	r.Register(Def{Name: tool, Toolset: "test", Schema: pyjson.ObjectOf("name", tool, "description", tool, "parameters", pyjson.ObjectOf("type", "object")), Handler: constHandler(result)})
 	d := NewDispatcher(r)
 	if post != nil {
 		d.PostToolCall = append(d.PostToolCall, post)
@@ -136,7 +137,7 @@ func TestBridgeOutsideTUIScopeNamesTheTUI(t *testing.T) {
 
 func TestUnwrapOutsideTUIScopeNamesTheTUI(t *testing.T) {
 	e := NewExecutor(&fakeExecutorHost{env: &Env{Home: t.TempDir()}, enabled: outsideTUIScope}, DefaultDispatcher)
-	_, _, block := e.unwrapToolSearchCall(context.Background(), ToolCallName, map[string]any{"name": "desktop_project", "arguments": map[string]any{"action": "list"}}, false)
+	_, _, block := e.unwrapToolSearchCall(context.Background(), ToolCallName, map[string]any{"name": "desktop_project", "arguments": map[string]any{"action": "list"}}, "", false)
 	if !strings.Contains(strings.ToLower(block), "tui session") || strings.Contains(strings.ToLower(block), "use tool_search to find") {
 		t.Fatalf("unwrap outside tui scope: %q", block)
 	}

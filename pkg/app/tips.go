@@ -44,13 +44,6 @@ func catalogKeys(ctx context.Context, prefix string, width int) []string {
 	return keys
 }
 
-// Forgets the probed key lists so a swapped locales dir is probed again
-func ResetTipsCache() {
-	tipKeysMu.Lock()
-	tipKeysCache = map[string][]string{}
-	tipKeysMu.Unlock()
-}
-
 // Catalog keys of every startup tip in catalog order
 func tipKeys(ctx context.Context) []string { return catalogKeys(ctx, TipKeyPrefix, tipKeyWidth) }
 

@@ -39,26 +39,43 @@ func adoptInput(*os.File) (func() error, error) {
 	return func() error { return nil }, nil
 }
 
-// Whether a shell's job control can stop and continue this process group, false when the group holds the session leader
+// Whether a shell's job control can stop and continue this process group, false for a group the kernel holds orphaned
 func JobControl() bool {
+	pgrp := unix.Getpgrp()
 	sid, err := unix.Getsid(0)
 	if err != nil {
 		return false
 	}
-	pgrp, err := unix.Getpgid(0)
-	return err == nil && sid != pgrp
+	pid := os.Getpid()
+	for range 64 {
+		ppid, err := parentOf(pid)
+		if err != nil || ppid <= 1 {
+			return false
+		}
+		ppg, err := unix.Getpgid(ppid)
+		if err != nil {
+			return false
+		}
+		if ppg != pgrp {
+			psid, err := unix.Getsid(ppid)
+			return err == nil && psid == sid
+		}
+		pid = ppid
+	}
+	return false
 }
 
-// Stops the whole process group with SIGSTOP, the stop the runtime's own SIGTSTP handler cannot swallow, returning once continued
+// Stops the whole process group with SIGTSTP at its default action, returning once continued
 func stopGroup() error {
 	cont := make(chan os.Signal, 1)
 	signal.Notify(cont, syscall.SIGCONT)
 	defer signal.Stop(cont)
-	if err := syscall.Kill(0, syscall.SIGSTOP); err != nil {
+	restore, err := stopDefault()
+	if err != nil {
 		return err
 	}
 	<-cont
-	return nil
+	return restore()
 }
 
 // Window size, job control stops and continues, handled until the returned stop is called
@@ -113,31 +130,30 @@ func (p *Program) signals() func() {
 	}
 }
 
-// Restores the cooked terminal, prints the notice and stops the process group until the shell continues it
-func (p *Program) suspend(notice string) {
-	if !JobControl() {
-		return
-	}
+// Gives the terminal back, writes the line and stops the process group until the shell continues it, the terminal taken again after
+func (p *Program) suspend(line string) {
 	p.release()
-	if notice != "" {
-		if _, err := p.out.WriteString("\n" + notice); err != nil {
+	if line != "" {
+		if _, err := p.out.WriteString(line); err != nil {
 			p.mu.Lock()
-			p.failLocked(fmt.Errorf("tty: writing the suspend notice: %w", err))
+			p.failLocked(fmt.Errorf("tty: writing the suspend line: %w", err))
 			p.mu.Unlock()
 			return
 		}
 	}
-	p.mu.Lock()
-	p.conts++
-	p.mu.Unlock()
-	if err := stopGroup(); err != nil {
+	if JobControl() {
 		p.mu.Lock()
-		p.conts--
-		p.failLocked(fmt.Errorf("tty: stopping the process group: %w", err))
+		p.conts++
 		p.mu.Unlock()
-		return
+		if err := stopGroup(); err != nil {
+			p.mu.Lock()
+			p.conts--
+			p.failLocked(fmt.Errorf("tty: stopping the process group: %w", err))
+			p.mu.Unlock()
+			return
+		}
 	}
-	go p.tea.Send(tea.ResumeMsg{})
+	p.reclaim()
 }
 
 // Takes a stop signal, stopping the group in place while a command owns the terminal, else suspending on the event loop

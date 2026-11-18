@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"slices"
@@ -63,7 +64,7 @@ func twoProfiles(t *testing.T) (func(which string) context.Context, *tools.Env, 
 
 // Live server task with one tool whose identity digest resolves in ctx
 func multiplexServer(ctx context.Context, env *tools.Env, name string, cfg map[string]any) *serverTask {
-	s := regServer(env, name, capsOf(false, false), &Tool{Name: "t", Description: "d", InputSchema: map[string]any{"type": "object", "properties": map[string]any{}}})
+	s := regServer(env, name, capsOf(false, false), &Tool{Name: "t", Description: "d", InputSchema: pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())})
 	s.config = cfg
 	s.toolTimeout = 30
 	if digest, ok := adopterIdentityDigest(ctx, env, name, &Rendered{Config: cfg}); ok {

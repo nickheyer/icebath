@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"sync"
 	"testing"
@@ -17,8 +18,8 @@ func batchRegistry(mu *sync.Mutex, invoked *[]string) *Registry {
 	r := NewRegistry()
 	for _, d := range [][2]string{{"session_search", "session_search"}, {"todo_list", "todo"}, {"connectors__gmail__SEND_EMAIL", "connections"}} {
 		name := d[0]
-		r.Register(Def{Name: name, Toolset: d[1], Schema: map[string]any{"name": name, "description": "Batch probe " + name,
-			"parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
+		r.Register(Def{Name: name, Toolset: d[1], Schema: pyjson.ObjectOf("name", name, "description", "Batch probe "+name,
+			"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())),
 			Handler: func(context.Context, *Call) string {
 				mu.Lock()
 				*invoked = append(*invoked, name)

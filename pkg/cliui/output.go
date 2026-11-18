@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
@@ -147,19 +145,8 @@ func (c *Console) Prompt(question, def string, password bool) string {
 	return def
 }
 
-// PromptYesNo asks a localized yes or no question, a Yes and No list inside a setup presentation
+// Asks a localized yes or no question, a bare answer keeping the default
 func (c *Console) PromptYesNo(ctx context.Context, question string, def bool) bool {
-	if c.IsFlow() {
-		selected, cancel := 1, -1
-		if def {
-			selected = 0
-		}
-		idx, err := c.CursesRadiolist(ctx, question, []RadioItem{PlainItem("Yes"), PlainItem("No")}, selected, RadiolistOptions{CancelReturns: &cancel})
-		if err != nil || idx < 0 {
-			return def
-		}
-		return idx == 0
-	}
 	hint := i18n.T(ctx, "cli.shared.yes_no_default_no", "", nil)
 	if def {
 		hint = i18n.T(ctx, "cli.shared.yes_no_default_yes", "", nil)
@@ -175,29 +162,5 @@ func (c *Console) PromptYesNo(ctx context.Context, question string, def bool) bo
 
 var errEditorUnavailable = errors.New("line editor unavailable")
 
-var yesNoPromptRe = regexp.MustCompile(`^(.*?)\s*[\[(]\s*([Yy])\s*/\s*([Nn])\s*[\])]\s*:?\s*$`)
-
-// Input reads one line like Python input, inside a setup presentation as a yes or no list or a field
-func (c *Console) Input(prompt string) (string, error) {
-	if !c.IsFlow() {
-		return c.input(prompt)
-	}
-	m := yesNoPromptRe.FindStringSubmatch(ansi.Strip(prompt))
-	if m == nil {
-		return c.ask(inputSpec{title: cleanTitle(prompt)}, func() (string, error) { return c.input(prompt) })
-	}
-	selected := 0
-	if m[3] == "N" {
-		selected = 1
-	}
-	cancel := -1
-	idx, err := c.CursesRadiolist(context.Background(), m[1], []RadioItem{PlainItem("Yes"), PlainItem("No")}, selected,
-		RadiolistOptions{CancelReturns: &cancel})
-	switch {
-	case err != nil:
-		return "", err
-	case idx < 0:
-		return "", ErrInterrupt
-	}
-	return []string{"y", "n"}[idx], nil
-}
+// Reads one line like Python input
+func (c *Console) Input(prompt string) (string, error) { return c.input(prompt) }

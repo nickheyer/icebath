@@ -245,10 +245,10 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 		}
 		routeHeaders := stringHeaders(provider.RouteAnswer(ctx, "client_headers", a.provider, a, map[string]any{"base_url": baseURL, "api_key": apiKey}))
 		if len(routeHeaders) > 0 {
-			a.clientKwargs["default_headers"] = maps.Clone(routeHeaders)
+			a.clientKwargs["default_headers"] = routeHeaders
 		} else if profile, ok := provider.GetProviderProfile(ctx, a.provider); ok {
 			if h := profile.DefaultHeaders(); len(h) > 0 {
-				a.clientKwargs["default_headers"] = maps.Clone(h)
+				a.clientKwargs["default_headers"] = stringHeaders(h)
 			}
 		}
 	}

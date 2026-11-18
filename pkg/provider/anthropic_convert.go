@@ -18,7 +18,9 @@ import (
 	"time"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const emptyTextPlaceholder = "(empty)"
@@ -31,8 +33,7 @@ var bedrockRegionPrefixes = []string{"global.", "us.", "eu.", "apac.", "ap.", "a
 const converseIssuerType = "bedrock.native_assistant"
 
 func asMap(v any) (map[string]any, bool) {
-	m, ok := v.(map[string]any)
-	return m, ok
+	return pyjson.Dict(v)
 }
 
 func asList(v any) ([]any, bool) {
@@ -218,9 +219,9 @@ func parseToolArgs(raw any) any {
 	}
 	out, err := pyjson.Loads(s)
 	if err != nil {
-		return map[string]any{}
+		return pyjson.NewObject()
 	}
-	return pyjson.Plain(out)
+	return out
 }
 
 func stripThinking(blocks []any) []any {
@@ -312,121 +313,39 @@ func toolUseBlock(id, name string, input any) map[string]any {
 	return map[string]any{"type": "tool_use", "id": sanitizeToolID(id), "name": name, "input": input}
 }
 
-var unionKeys = []string{"anyOf", "oneOf"}
-var unionMetaKeys = []string{"title", "description", "default", "examples"}
-
-// Bottom up map over a schema tree applying fn to every object node
-func rewriteSchema(schema any, fn func(map[string]any) any) any {
-	switch t := schema.(type) {
-	case []any:
-		out := make([]any, len(t))
-		for i, item := range t {
-			out[i] = rewriteSchema(item, fn)
-		}
-		return out
-	case map[string]any:
-		node := make(map[string]any, len(t))
-		for k, v := range t {
-			node[k] = rewriteSchema(v, fn)
-		}
-		return fn(node)
-	}
-	return schema
-}
-
-func isNullBranch(item any) bool {
-	m, ok := asMap(item)
-	return ok && asStr(m["type"]) == "null"
-}
-
-func carryUnionMeta(outer, replacement map[string]any, skipDefaultOnRef bool) {
-	for _, key := range unionMetaKeys {
-		v, has := outer[key]
-		if !has {
-			continue
-		}
-		if _, present := replacement[key]; present {
-			continue
-		}
-		if _, isRef := replacement["$ref"]; skipDefaultOnRef && key == "default" && isRef {
-			continue
-		}
-		replacement[key] = v
-	}
-}
-
-// Collapses nullable anyOf and oneOf unions to the single non null branch
-func stripNullableUnions(schema any, keepNullableHint bool) any {
-	var collapse func(map[string]any) any
-	collapse = func(stripped map[string]any) any {
-		for _, key := range unionKeys {
-			variants, ok := asList(stripped[key])
-			if !ok {
-				continue
-			}
-			var nonNull []any
-			for _, item := range variants {
-				if !isNullBranch(item) {
-					nonNull = append(nonNull, item)
-				}
-			}
-			if len(nonNull) == 1 && len(nonNull) != len(variants) {
-				replacement := map[string]any{}
-				if m, ok := asMap(nonNull[0]); ok {
-					for k, v := range m {
-						replacement[k] = v
-					}
-				}
-				if keepNullableHint {
-					if _, has := replacement["nullable"]; !has {
-						replacement["nullable"] = true
-					}
-				}
-				carryUnionMeta(stripped, replacement, true)
-				return rewriteSchema(replacement, collapse)
-			}
-		}
-		return stripped
-	}
-	return rewriteSchema(schema, collapse)
-}
-
-// Tool schema acceptable to Anthropic with nullable unions collapsed and top level combinators dropped
-func normalizeToolInputSchema(schema any) map[string]any {
+// Tool schema acceptable to Anthropic with nullable unions collapsed and top level combinators dropped, dict order kept
+func normalizeToolInputSchema(schema any) *pyjson.Object {
 	var normalized any
-	if schema != nil {
-		normalized = stripNullableUnions(schema, false)
+	if pyrepr.Truthy(schema) {
+		normalized = tools.StripNullableUnions(schema, false)
 	}
-	m, ok := asMap(normalized)
-	if !ok {
-		return map[string]any{"type": "object", "properties": map[string]any{}}
+	m, ok := pyjson.AsObject(normalized)
+	if !ok || m == nil {
+		return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
 	}
-	banned := false
-	for _, k := range []string{"oneOf", "allOf", "anyOf"} {
-		if _, has := m[k]; has {
-			banned = true
+	banned := map[string]bool{"oneOf": true, "allOf": true, "anyOf": true}
+	hasBanned := false
+	for _, k := range m.Keys {
+		if banned[k] {
+			hasBanned = true
 		}
 	}
-	if banned {
-		clean := map[string]any{}
-		for k, v := range m {
-			if k != "oneOf" && k != "allOf" && k != "anyOf" {
-				clean[k] = v
+	if hasBanned {
+		clean := pyjson.NewObject()
+		for _, k := range m.Keys {
+			if !banned[k] {
+				clean.Set(k, m.Vals[k])
 			}
 		}
-		if _, has := clean["type"]; !has {
-			clean["type"] = "object"
+		if _, has := clean.Get("type"); !has {
+			clean.Set("type", "object")
 		}
 		m = clean
 	}
-	if asStr(m["type"]) == "object" {
-		if _, ok := asMap(m["properties"]); !ok {
-			copyM := map[string]any{}
-			for k, v := range m {
-				copyM[k] = v
-			}
-			copyM["properties"] = map[string]any{}
-			m = copyM
+	if t, _ := m.Vals["type"].(string); t == "object" {
+		if _, isDict := pyjson.Dict(m.Vals["properties"]); !isDict {
+			m = m.Copy()
+			m.Set("properties", pyjson.NewObject())
 		}
 	}
 	return m
@@ -564,7 +483,7 @@ func imageBlockFromOpenAIURL(u string) map[string]any {
 }
 
 // One OpenAI content part converted to an Anthropic block, nil when dropped
-func convertContentPartToAnthropic(part any) map[string]any {
+func convertContentPartToAnthropic(part any) any {
 	if part == nil {
 		return nil
 	}
@@ -573,8 +492,17 @@ func convertContentPartToAnthropic(part any) map[string]any {
 		if s, ok := asString(part); ok {
 			return textBlock(s)
 		}
-		b, _ := json.Marshal(part)
-		return textBlock(string(b))
+		return textBlock(pyrepr.Str(part))
+	}
+	if ptype := asStr(pm["type"]); ptype != "input_text" && ptype != "text" && ptype != "image_url" && ptype != "input_image" {
+		copied, _ := pyjson.AsObject(part)
+		copied = copied.Copy()
+		if cc := cacheControlOf(pm); cc != nil {
+			if _, has := copied.Get("cache_control"); !has {
+				copied.Set("cache_control", deepCopyAny(cc))
+			}
+		}
+		return copied
 	}
 	var block map[string]any
 	switch ptype := asStr(pm["type"]); ptype {
@@ -596,11 +524,6 @@ func convertContentPartToAnthropic(part any) map[string]any {
 			u = s
 		}
 		block = imageBlockFromOpenAIURL(u)
-	default:
-		block = map[string]any{}
-		for k, v := range pm {
-			block[k] = v
-		}
 	}
 	if cc := cacheControlOf(pm); cc != nil {
 		if _, has := block["cache_control"]; !has {
@@ -629,7 +552,7 @@ func contentPartsToAnthropicBlocks(parts any) []any {
 	list, _ := asList(parts)
 	var out []any
 	for _, p := range list {
-		block := convertContentPartToAnthropic(p)
+		block, _ := pyjson.Dict(convertContentPartToAnthropic(p))
 		if block == nil {
 			continue
 		}
@@ -658,12 +581,16 @@ func extractPreservedThinkingBlocks(message map[string]any, opts convertOptions)
 	}
 	var out []any
 	for _, d := range raw {
-		dm, ok := asMap(d)
+		dm, ok := pyjson.Dict(d)
 		if !ok {
 			continue
 		}
 		if thinkingBlockTypes[strings.ToLower(strings.TrimSpace(asStr(dm["type"])))] {
-			out = append(out, deepCopyAny(dm))
+			if obj, ordered := d.(*pyjson.Object); ordered {
+				out = append(out, pyjson.Clone(obj))
+			} else {
+				out = append(out, deepCopyAny(dm))
+			}
 		}
 	}
 	return out
@@ -675,8 +602,7 @@ func safeText(v any) string {
 		if str, ok := v.(string); ok {
 			s = str
 		} else {
-			b, _ := json.Marshal(v)
-			s = string(b)
+			s = pyrepr.Str(v)
 		}
 	}
 	if strings.TrimSpace(s) == "" {
@@ -881,8 +807,7 @@ func safeTextRaw(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	b, _ := json.Marshal(v)
-	return string(b)
+	return pyrepr.Str(v)
 }
 
 // Tool message content resolved into tool_result content blocks or a string
@@ -926,8 +851,7 @@ func toolResultContent(m map[string]any) any {
 		} else if cm, ok := asMap(c); ok && len(cm) == 0 {
 			text = ""
 		} else {
-			b, _ := json.Marshal(c)
-			text = string(b)
+			text, _ = pyjson.Dumps(c)
 		}
 	}
 	if text == "" {

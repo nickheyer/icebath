@@ -168,8 +168,12 @@ func TestBearerHookClientSendsMintedTokensAndClaudeCodeIdentity(t *testing.T) {
 		!nativeHook.bearerHook.SendsAsAPIKey("sk-ant-api03-console") {
 		t.Fatal("the native host hook did not tell an OAuth token from a Console key")
 	}
-	headers, oauth, err := nativeHook.requestHeaders(context.Background(), anthCommonBetasForBaseURL("", false), nil)
-	if err != nil || !oauth || headers["x-app"] != "cli" || !strings.HasPrefix(headers["User-Agent"], "claude-code/") ||
+	head, oauth, err := nativeHook.requestHeaders(context.Background(), anthCommonBetasForBaseURL("", false), nil)
+	headers := map[string]string{}
+	for _, l := range head.spec.custom.stripped() {
+		headers[l.Name] = l.Value
+	}
+	if err != nil || !oauth || headers["x-app"] != "cli" || !strings.HasPrefix(headers["user-agent"], "claude-code/") ||
 		!strings.Contains(headers["anthropic-beta"], anthropicOAuthOnlyBetas[0]) {
 		t.Fatalf("native OAuth headers %v %v %v", headers, oauth, err)
 	}
@@ -188,7 +192,7 @@ func TestBaseClientKwargsStripV1AndAddTheAzureQuery(t *testing.T) {
 		t.Fatalf("default host kwargs %q %+v", empty, kwargs)
 	}
 	transport := newAnthDirectTransport(Route{BaseURL: "https://res.services.ai.azure.com/anthropic/v1"})
-	req, err := transport.Request(context.Background(), anthOpMessages, map[string]any{"model": "m"}, nil)
+	req, err := transport.Request(context.Background(), anthOpMessages, map[string]any{"model": "m"}, anthHead{}, anthSDKCall{})
 	if err != nil || req.URL.String() != "https://res.services.ai.azure.com/anthropic/v1/messages?api-version=2025-04-15" {
 		t.Fatalf("azure request %v %v", req, err)
 	}

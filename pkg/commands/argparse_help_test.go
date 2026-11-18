@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
@@ -65,6 +66,11 @@ func TestArgparseHelpSubparsersAndWrappedUsage(t *testing.T) {
 func TestArgparseTableMatchesCobraTree(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := NewCLI()
+	for name := range pluginParsers {
+		cmd := &cobra.Command{Use: name}
+		UsePluginParser(cmd, name)
+		c.AddPluginCommand(cmd)
+	}
 	for path, p := range argparseTree {
 		cmd := c.Root
 		if path != "" {

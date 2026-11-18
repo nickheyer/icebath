@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func TestDeepSeekRegisteredProfileThinkingWireShape(t *testing.T) {
 	p := registeredProfile(t, "deepseek")
 	pro := map[string]any{"model": "deepseek-v4-pro"}
 	eb, tl := p.BuildAPIKwargsExtras(nil, pro)
-	assertExtras(t, "v4 pro default", eb, tl, thinkingBody("enabled"), map[string]any{})
+	assertExtras(t, "v4 pro default", pyjson.Plain(eb).(map[string]any), tl, thinkingBody("enabled"), map[string]any{})
 	for _, effort := range []string{"low", "medium", "high"} {
 		_, tl = p.BuildAPIKwargsExtras(effortCfg(effort), pro)
 		assertExtras(t, effort, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": effort})
@@ -35,11 +36,11 @@ func TestDeepSeekRegisteredProfileThinkingWireShape(t *testing.T) {
 		assertExtras(t, effort, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
 	}
 	eb, tl = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, pro)
-	assertExtras(t, "disabled", eb, tl, thinkingBody("disabled"), map[string]any{})
+	assertExtras(t, "disabled", pyjson.Plain(eb).(map[string]any), tl, thinkingBody("disabled"), map[string]any{})
 	flash := map[string]any{"model": "deepseek-v4.1-flash-expires-on-0910"}
 	for _, cfg := range []*Reasoning{{Effort: "none"}, {Effort: "false"}, {Effort: "disabled"}, {Effort: "NONE"}, {Enabled: bptr(true), Effort: "none"}} {
 		eb, tl = p.BuildAPIKwargsExtras(cfg, flash)
-		assertExtras(t, "effort "+cfg.Effort, eb, tl, thinkingBody("disabled"), map[string]any{})
+		assertExtras(t, "effort "+cfg.Effort, pyjson.Plain(eb).(map[string]any), tl, thinkingBody("disabled"), map[string]any{})
 	}
 	_, tl = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false), Effort: "high"}, pro)
 	assertExtras(t, "disabled with effort", map[string]any{}, tl, map[string]any{}, map[string]any{})
@@ -53,11 +54,11 @@ func TestDeepSeekRegisteredProfileModelGating(t *testing.T) {
 	p := registeredProfile(t, "deepseek")
 	for _, model := range []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-future-variant", "DEEPSEEK-V4-PRO", "deepseek-flash", "DEEPSEEK-FLASH"} {
 		eb, _ := p.BuildAPIKwargsExtras(nil, map[string]any{"model": model})
-		assertExtras(t, model, eb, map[string]any{}, thinkingBody("enabled"), map[string]any{})
+		assertExtras(t, model, pyjson.Plain(eb).(map[string]any), map[string]any{}, thinkingBody("enabled"), map[string]any{})
 	}
 	for _, model := range []any{"deepseek-v3-0324", "deepseek-v3.1", "", nil, "deepseek-unknown"} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": model})
-		assertExtras(t, "non thinking", eb, tl, map[string]any{}, map[string]any{})
+		assertExtras(t, "non thinking", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 }
 
@@ -159,11 +160,11 @@ func TestMinimaxAuxModelM3ConsumerAPIMatchesEveryProfile(t *testing.T) {
 func TestMinimaxM3OpenAIReasoningWireShape(t *testing.T) {
 	p := registeredProfile(t, "minimax")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{"model": "MiniMax-M3", "base_url": "https://api.minimax.io/v1"})
-	assertExtras(t, "m3 global", eb, tl, map[string]any{"reasoning_split": true}, map[string]any{})
+	assertExtras(t, "m3 global", pyjson.Plain(eb).(map[string]any), tl, map[string]any{"reasoning_split": true}, map[string]any{})
 	for _, tc := range [][2]string{{"MiniMax-M2.7", "https://api.minimax.io/v1"}, {"MiniMax-M3", "https://api.minimax.io/anthropic"},
 		{"MiniMax-M3", "https://api.minimaxi.com/v1"}} {
 		eb, tl = p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": tc[0], "base_url": tc[1]})
-		assertExtras(t, tc[0]+" "+tc[1], eb, tl, map[string]any{}, map[string]any{})
+		assertExtras(t, tc[0]+" "+tc[1], pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 	kw := ccTransportKwargs(t, "MiniMax-M3", nil, map[string]any{"provider_profile": p,
 		"reasoning_config": map[string]any{"enabled": true, "effort": "medium"}, "base_url": "https://api.minimax.io/v1"})

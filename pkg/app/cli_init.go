@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -11,9 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -68,11 +65,6 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.bellOnPrompt = cliTruthy(display["bell_on_prompt"])
 	c.showReasoning = displayFlag(display, "show_reasoning", true)
 	c.reasoningFull = cliTruthy(display["reasoning_full"])
-	maxLines, ok := display["persistent_output_max_lines"]
-	if !ok {
-		maxLines = 200
-	}
-	configureOutputHistory(displayFlag(display, "persistent_output", true), maxLines)
 	c.modernLayout = layoutFromConfig(display)
 	setLayoutActive(c.modernLayout)
 	bim := busyInputModeFromConfig(display)
@@ -92,15 +84,7 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 		c.finalResponseMarkdown = "strip"
 	}
 	c.inlineDiffsEnabled = displayFlag(display, "inline_diffs", true)
-	c.turnSummaryEnabled = displayFlag(display, "turn_summary", true)
-	c.spinnerTokenFlowEnabled = displayFlag(display, "spinner_token_flow", true)
 	c.turnSummaryCollector = nil
-	c.turnSummaryStart = 0
-	c.turnTokenBaseline = 0
-	c.interactiveTurn = false
-	ump, _ := display["user_message_preview"].(map[string]any)
-	c.userMessagePreviewFirstLines = max(1, intOr(mapValueOr(ump, "first_lines", 2), 2))
-	c.userMessagePreviewLastLines = max(0, intOr(mapValueOr(ump, "last_lines", 2), 2))
 	c.streamBuf, c.reasoningPreviewBuf = "", ""
 	c.streamStarted, c.streamBoxOpened, c.streamBoxLive = false, false, false
 	c.streamedTextThisTurn = ""
@@ -108,8 +92,6 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.streamTableBuf = []string{}
 	c.inStreamTable = false
 	c.pendingEditSnapshots = map[string]*tools.LocalEditSnapshot{}
-	c.lastInputModeRecovery, c.lastTermiosDriftCheck = nil, nil
-	c.inputModeRecoveryNoticeShown, c.termiosDriftNoticeShown = false, false
 }
 
 // Returns a display flag's truthiness, the default when the key is absent
@@ -284,20 +266,9 @@ func (c *CLI) initToolsets(toolsets []string) {
 	c.disabledToolsets = tools.ParseConfigStringList(cliMap(c.config, "agent")["disabled_toolsets"])
 }
 
-// Reads checkpoint settings, the pass session id flag and the ignore rules opt in
+// Records the checkpoints and pass session id flags and the ignore rules opt in
 func (c *CLI) initCheckpointsAndRules(checkpoints, passSessionID, ignoreRules bool) {
-	cpCfg := map[string]any{}
-	switch t := c.config["checkpoints"].(type) {
-	case bool:
-		cpCfg = map[string]any{"enabled": t}
-	case map[string]any:
-		cpCfg = t
-	}
-	c.checkpointsEnabled = checkpoints || cliTruthy(cpCfg["enabled"])
 	c.explicitCheckpoints = checkpoints
-	c.checkpointMaxSnapshots = intOr(mapValueOr(cpCfg, "max_snapshots", 20), 20)
-	c.checkpointMaxTotalSizeMB = intOr(mapValueOr(cpCfg, "max_total_size_mb", 500), 500)
-	c.checkpointMaxFileSizeMB = intOr(mapValueOr(cpCfg, "max_file_size_mb", 10), 10)
 	c.passSessionID = passSessionID
 	c.ignoreRules = ignoreRules || provider.IsTruthyValue(os.Getenv("ICEBATH_IGNORE_RULES"))
 	c.explicitIgnoreRules = ignoreRules
@@ -361,8 +332,6 @@ func (c *CLI) initRuntimeState(resume string) {
 		c.sessionID = newSessionID(c.sessionStart)
 	}
 	c.writeTerminalBreadcrumb()
-	c.historyFile = filepath.Join(home.Dir(c.ctx), ".icebath_history")
-	c.lastInvalidate = nil
 	c.initUIState()
 }
 
@@ -379,45 +348,23 @@ func (c *CLI) initUIState() {
 	c.pendingInput = &inputQueue{}
 	c.interruptQueue = &inputQueue{}
 	c.agentRunning, c.shouldExit = false, false
-	c.detachOnExit = false
 	c.lastTurnInterrupted = false
-	c.deleteSessionOnExit = false
-	c.pendingRelaunch = nil
-	c.lastCtrlCTime = 0
-	c.clarifyState, c.clarifyMultiBase = nil, nil
+	c.clarifyState = nil
 	c.clarifyFreetext = false
-	c.clarifyPrefill = ""
 	c.sudoState, c.approvalState = nil, nil
 	c.slashConfirmState, c.modelPickerState = nil, nil
 	c.clarifyDeadline = new(float64)
-	c.sudoDeadline, c.approvalDeadline, c.slashConfirmDeadline = 0, 0, 0
+	c.sudoDeadline, c.approvalDeadline = 0, 0
 	c.composerPlaceholder = getRandomComposerHint(c.ctx)
-	c.commandPaletteState, c.secretState = nil, nil
-	c.pendingResumeSessions = nil
 	c.pendingAgentSeed = nil
-	c.secretDeadline = 0
-	c.toolStartTime = 0
 	c.pendingToolInfo = map[string][]map[string]any{}
-	c.spinnerText, c.commandStatus = "", ""
+	c.spinnerText = ""
 	c.lastScrollbackTool = ""
-	c.commandRunning, c.commandBlocksInput = false, false
-	c.petRenderer = nil
-	c.petAnimStop = nil
-	c.petSlug, c.petKittyPending = "", ""
-	c.petEnabled, c.petAnimRunning = false, false
-	c.petCols = 18
-	c.petScale = 0.7
-	c.petFramesCache = map[string][][][]pet.Cell{}
-	c.petKittyCache = map[string]*petKittyEntry{}
-	c.petKittyImageID, c.petFrameIdx = 0, 0
-	c.petCfgChecked, c.petEventUntil = 0, 0
-	c.petEvent = ""
-	c.petReasoning, c.petTurnError = false, false
+	c.commandRunning = false
 	c.attachedImages = []string{}
 	c.imageCounter = 0
 	c.promptStash = config.NewPromptStash()
 	c.preloadedSkills = []string{}
-	c.startupSkillsLineShown = false
 	c.autoLoadSkillsResult = nil
 	c.preloadSkillsDone = nil
 	c.preloadSkillsResult = nil
@@ -428,7 +375,6 @@ func (c *CLI) initUIState() {
 	c.voiceMode, c.voiceTTS, c.voiceRecording = false, false, false
 	c.voiceProcessing, c.voiceContinuous = false, false
 	c.voiceRecorder, c.voiceTTSStop = nil, nil
-	c.voiceLiveText = ""
 	c.voiceTTSDone = newSyncEvent()
 	c.voiceTTSDone.Set()
 	c.voiceBargeCapture = newSyncEvent()
@@ -437,11 +383,7 @@ func (c *CLI) initUIState() {
 	c.statusBarVisible = statusBarVisibleFromDisplayConfig(c.config["display"])
 	display := cliMap(c.config, "display")
 	c.batteryVisible = cliTruthy(display["battery"])
-	c.vimMode = cliTruthy(display["vim_mode"])
 	c.statusBarSuppressedAfterResize.Store(false)
-	c.resizeRecoveryPending = false
-	c.resizeRecoveryTimer, c.statusBarUnsuppressTimer = nil, nil
-	c.lastResizeWidth = nil
 	c.backgroundTasks = map[string]chan struct{}{}
 	c.backgroundTaskCounter = 0
 	c.cacheHitBaselinePrompt, c.cacheHitBaselineRead, c.cacheHitBaselineCompressions = 0, 0, 0

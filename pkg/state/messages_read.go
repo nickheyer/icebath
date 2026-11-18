@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 
@@ -601,6 +602,9 @@ func dedupeReplayedUser(messages *[]map[string]any, msg map[string]any, clones m
 func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, includeAncestors, repairAlternation, includeRowIDs, includeSummaryMarkers bool) ([]map[string]any, error) {
 	stampSnapshot := repairAlternation && !includeRowIDs
 	var messages []map[string]any
+	restoredOrders := map[uintptr][]string{}
+	var built []map[string]any
+	restoredOrderByID := map[string][]string{}
 	clones := map[string]map[string]any{}
 	toolUIDIndex := map[string]string{}
 	var owners []map[string]any
@@ -609,30 +613,39 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 		role := row["role"]
 		roleText, _ := role.(string)
 		msg := map[string]any{"role": role, "content": loadedViewContent(roleText, plainDictTree(decodeMessageContent(row["content"]))), DBPersistedMarker: true}
+		order := []string{"role", "content", DBPersistedMarker}
+		put := func(k string, v any) {
+			if _, had := msg[k]; !had {
+				order = append(order, k)
+			}
+			msg[k] = v
+		}
 		if stampSnapshot {
-			msg[DBRowSnapshot] = TranscriptRowSnapshot(row)
+			put(DBRowSnapshot, TranscriptRowSnapshot(row))
 		}
 		if includeRowIDs && row["id"] != nil {
-			msg["_row_id"] = row["id"]
+			put("_row_id", row["id"])
 		}
 		restoreIdentityColumns(row, msg)
+		order = appendNewKeys(order, msg)
 		for _, col := range []string{"api_content", "display_kind"} {
 			if pyTruthy(row[col]) {
-				msg[col] = row[col]
+				put(col, row[col])
 			}
 		}
 		if pyTruthy(row["display_metadata"]) {
 			if decoded := decodeDisplayMetadata(row["display_metadata"]); decoded != nil {
-				msg["display_metadata"] = decoded
+				put("display_metadata", decoded)
 				LiftDataUse(msg)
+				order = appendNewKeys(order, msg)
 			}
 		}
 		if includeSummaryMarkers && pyTruthy(row["_compressed_summary"]) {
-			msg["_compressed_summary"] = true
+			put("_compressed_summary", true)
 		}
 		for _, col := range []string{"timestamp", "tool_call_id", "tool_name", "effect_disposition"} {
 			if pyTruthy(row[col]) {
-				msg[col] = row[col]
+				put(col, row[col])
 			}
 		}
 		if pyTruthy(row["tool_calls"]) {
@@ -640,23 +653,23 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 			if err != nil {
 				return nil, err
 			}
-			msg["tool_calls"] = orderedDictTree(calls)
+			put("tool_calls", orderedDictTree(calls))
 		}
 		if pyTruthy(row["platform_message_id"]) {
-			msg["message_id"] = row["platform_message_id"]
+			put("message_id", row["platform_message_id"])
 		}
 		if pyTruthy(row["observed"]) {
-			msg["observed"] = true
+			put("observed", true)
 		}
 		switch role {
 		case "assistant":
 			for _, col := range []string{"finish_reason", "reasoning"} {
 				if pyTruthy(row[col]) {
-					msg[col] = row[col]
+					put(col, row[col])
 				}
 			}
 			if row["reasoning_content"] != nil {
-				msg["reasoning_content"] = row["reasoning_content"]
+				put("reasoning_content", row["reasoning_content"])
 			}
 			for _, col := range []string{"reasoning_details", "codex_reasoning_items", "codex_message_items"} {
 				if pyTruthy(row[col]) {
@@ -664,7 +677,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 					if err != nil {
 						return nil, err
 					}
-					msg[col] = plainDictTree(v)
+					put(col, orderedDictTree(v))
 				}
 			}
 			if seqTruthy(msg["tool_calls"]) {
@@ -680,9 +693,14 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 				}
 				owners = owners[:0]
 				if uid, ok := ResolveToolCallUID(toolUIDIndex, row["tool_call_id"]); ok && uid != "" {
-					msg[ToolCallUID] = uid
+					put(ToolCallUID, uid)
 				}
 			}
+		}
+		restoredOrders[reflect.ValueOf(msg).Pointer()] = order
+		built = append(built, msg)
+		if id := restoredKeyOrderID(msg); id != "" {
+			restoredOrderByID[id] = order
 		}
 		if includeAncestors {
 			skip, key, keyed := dedupeReplayedUser(&messages, msg, clones)
@@ -721,6 +739,15 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 			slog.Info(fmt.Sprintf("Repaired %d message-alternation violation(s) while restoring session %s — durable transcript kept them, see repair_message_sequence", repaired, sessionID))
 		}
 	}
+	if !includeAncestors || repairAlternation {
+		recordRestoredLoad(messages, func(m map[string]any) []string {
+			if keys, ok := restoredOrders[reflect.ValueOf(m).Pointer()]; ok {
+				return keys
+			}
+			return restoredOrderByID[restoredKeyOrderID(m)]
+		})
+	}
+	runtime.KeepAlive(built)
 	return messages, nil
 }
 

@@ -55,19 +55,19 @@ func ParseDeclaredCapabilities(raw any, pluginName string) []string {
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		logWarn(fmt.Sprintf("Plugin %s: manifest 'capabilities' must be a list, got %s — ignoring", pluginName, pyrepr.TypeName(raw)))
+		logPluginCapabilities.warn(fmt.Sprintf("Plugin %s: manifest 'capabilities' must be a list, got %s — ignoring", pluginName, pyrepr.TypeName(raw)))
 		return nil
 	}
 	var out []string
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			logWarn(fmt.Sprintf("Plugin %s: ignoring non-string capability entry %s", pluginName, pyrepr.Repr(item)))
+			logPluginCapabilities.warn(fmt.Sprintf("Plugin %s: ignoring non-string capability entry %s", pluginName, pyrepr.Repr(item)))
 			continue
 		}
 		cap := pystr.Strip(s)
 		if _, known := CapabilityRegistry[cap]; !known {
-			logWarn(fmt.Sprintf("Plugin %s: unknown capability %s (known: %s) — ignoring", pluginName, pyrepr.Repr(cap), strings.Join(ValidCapabilityIDs(), ", ")))
+			logPluginCapabilities.warn(fmt.Sprintf("Plugin %s: unknown capability %s (known: %s) — ignoring", pluginName, pyrepr.Repr(cap), strings.Join(ValidCapabilityIDs(), ", ")))
 			continue
 		}
 		out = appendUnique(out, cap)
@@ -149,7 +149,7 @@ func legacyGateSet(entry map[string]any, spec CapabilitySpec) bool {
 func CapabilityGranted(cfg map[string]any, pluginID, capability string) bool {
 	spec, ok := CapabilityRegistry[capability]
 	if !ok {
-		logDebug(fmt.Sprintf("capability check for unknown id %s (plugin %s) — denied", pyrepr.Repr(capability), pluginID))
+		logPluginCapabilities.debug(fmt.Sprintf("capability check for unknown id %s (plugin %s) — denied", pyrepr.Repr(capability), pluginID))
 		return false
 	}
 	entry := pluginEntry(cfg, pluginID)
@@ -163,7 +163,7 @@ func CapabilityGranted(cfg map[string]any, pluginID, capability string) bool {
 	if allowed {
 		decision = "allow"
 	}
-	logInfo(fmt.Sprintf("capability_check plugin=%s capability=%s decision=%s checked_by=plugin_capability_granted evidence=%s",
+	logPluginCapabilities.info(fmt.Sprintf("capability_check plugin=%s capability=%s decision=%s checked_by=plugin_capability_granted evidence=%s",
 		pluginID, capability, decision, evidence))
 	return allowed
 }
@@ -216,7 +216,7 @@ func RecordConsent(ctx context.Context, h, pluginID string, granted, declared []
 	if shown == "" {
 		shown = "(none)"
 	}
-	logInfo(fmt.Sprintf("capability_consent plugin=%s granted=%s declared_hash=%s", pluginID, shown, CapabilitySetHash(knownCapabilities(declared))[:12]))
+	logPluginCapabilities.info(fmt.Sprintf("capability_consent plugin=%s granted=%s declared_hash=%s", pluginID, shown, CapabilitySetHash(knownCapabilities(declared))[:12]))
 	return nil
 }
 

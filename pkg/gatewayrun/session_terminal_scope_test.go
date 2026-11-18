@@ -23,7 +23,7 @@ func TestSessionTerminalScopeGivesTheTurnTheClientCwd(t *testing.T) {
 		t.Fatalf("unscoped turn cwd %q %v, want the launch dir %q", got, err, launch)
 	}
 	scope := &tools.TerminalScope{Policy: tools.TerminalPolicy{"TERMINAL_ENV": "local", "TERMINAL_CWD": project}}
-	restore := tr.bindPolicyScope(scope)
+	restore := tr.bindPolicyScope(scope, nil)
 	if got, err := tools.ResolveAgentCwd(tr.toolsEnv()); err != nil || got != project {
 		t.Fatalf("scoped turn cwd %q %v, want the policy cwd %q", got, err, project)
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -26,6 +27,9 @@ var (
 		tools.RelayCoordinator.FinalizeConversation(ctx, profileKey, sessionID)
 	}
 )
+
+// Auxiliary call hooks reach the built in observers and plugins alike
+func init() { provider.SetAuxLifecycleHooks(LifecycleHasHook, LifecycleInvokeHook) }
 
 // Carries the agent env for lifecycle observers, and as the session env when the surface bound none
 func withLifecycleEnv(ctx context.Context, env *tools.Env) context.Context {

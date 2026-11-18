@@ -23,7 +23,6 @@ const (
 	runtimeSchemaMarker = "CREATE TABLE IF NOT EXISTS session_admissions"
 	StateModules        = "pkg/state/*.go"
 	ledgerProbe         = "SELECT EXISTS(SELECT 1 FROM session_admissions) OR EXISTS(SELECT 1 FROM worker_executions)"
-	downgradeDocs       = "https://hermes-agent.nousresearch.com/docs/getting-started/updating#rolling-back-to-an-older-release"
 )
 
 // Git runner answering one command's exit code under the updater's custody, -1 when git cannot run
@@ -211,7 +210,7 @@ func downgradeRefusalFor(ctx context.Context, targetRef, h string, predates func
 				"it with `"+icebath+" import <backup.zip>`.")
 		}
 	}
-	lines = append(lines, "  Sessions created since the upgrade are not in that copy.", "  Guide: "+downgradeDocs)
+	lines = append(lines, "  Sessions created since the upgrade are not in that copy.")
 	text := strings.Join(lines, "\n")
 	return &text
 }

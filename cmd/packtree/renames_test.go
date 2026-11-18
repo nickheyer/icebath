@@ -11,7 +11,7 @@ import (
 
 func TestRenameTextFollowsProductAndKeepsUpstreamNames(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"Run `hermes skills install` then `hermes setup`.", "Run `icebath skills install` then `icebath setup`."},
+		{"Run `hermes skills install` then `hermes setup`.", "Run `icebath skills install` then start `icebath` and type `/setup`."},
 		{`val = os.environ.get("HERMES_HOME", "")`, `val = os.environ.get("ICEBATH_HOME", "")`},
 		{"tokens live under ~/.hermes/google_token.json", "tokens live under ~/.icebath/google_token.json"},
 		{"from hermes_constants import get_hermes_home", "from icebath_constants import get_icebath_home"},

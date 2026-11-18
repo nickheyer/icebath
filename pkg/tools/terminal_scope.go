@@ -173,12 +173,12 @@ func BuildTerminalScope(h string, secrets *config.Secrets) (TerminalPolicy, erro
 	if secrets != nil {
 		envPath = secrets.Path()
 	}
-	return buildTerminalLayers(context.Background(), h, envPath, processTerminalEnv())
+	return buildTerminalLayers(context.Background(), h, envPath, processTerminalEnv(), true)
 }
 
 // Builds the complete TERMINAL_* policy of a profile home over a trusted launch overlay, never the process env
 func BuildProfileTerminalScope(ctx context.Context, h string, envOverlay map[string]string) (TerminalPolicy, error) {
-	policy, err := buildTerminalLayers(ctx, h, home.EnvPath(h), envOverlay)
+	policy, err := buildTerminalLayers(ctx, h, home.EnvPath(h), envOverlay, false)
 	if err != nil {
 		return nil, err
 	}
@@ -197,8 +197,8 @@ func processTerminalEnv() map[string]string {
 	return out
 }
 
-// Layers defaults, profile dotenv, overlay, profile config and managed config into one total policy
-func buildTerminalLayers(ctx context.Context, h, envPath string, envOverlay map[string]string) (TerminalPolicy, error) {
+// Layers defaults, profile dotenv, overlay, profile config and managed config, an unscoped build skipping a config that does not parse
+func buildTerminalLayers(ctx context.Context, h, envPath string, envOverlay map[string]string, unscoped bool) (TerminalPolicy, error) {
 	policy := defaultTerminalScope()
 	defaultImage, hasDefaultImage := policy["TERMINAL_DOCKER_IMAGE"]
 	imagePinned := false
@@ -234,7 +234,7 @@ func buildTerminalLayers(ctx context.Context, h, envPath string, envOverlay map[
 	var rawTerminal map[string]any
 	if hasConfig {
 		raw, err := config.ReadConfigDocReadonly(ctx, configPath)
-		if err != nil {
+		if err != nil && !(unscoped && config.IsYAMLError(err)) {
 			return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot parse %s: %v", configPath, err)}
 		}
 		if doc, ok := raw.(map[string]any); ok {

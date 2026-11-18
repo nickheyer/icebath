@@ -48,7 +48,7 @@ func (s *Store) writeUsageAudit(record *pyjson.Object) {
 		return werr
 	}()
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("usage_audit write failed: %v", err))
+		s.logAs("cron.scheduler").Warn(fmt.Sprintf("usage_audit write failed: %v", err))
 	}
 }
 

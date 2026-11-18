@@ -30,7 +30,7 @@ func (t *TurnRunner) runSync(ctx context.Context) (map[string]any, error) {
 	entered := false
 	scopeErr := gateway.PolicyScope(ctx, policy, authority, func(scoped context.Context) error {
 		entered = true
-		defer t.bindPolicyScope(tools.GetTerminalScope(scoped))()
+		defer t.bindPolicyScope(tools.GetTerminalScope(scoped), gateway.ActivePolicy(scoped))()
 		apiCtx, err := gateway.APIPolicyScope(scoped)
 		if err != nil {
 			return err
@@ -72,9 +72,21 @@ func (t *TurnRunner) runSync(ctx context.Context) (map[string]any, error) {
 }
 
 // Records the policy terminal scope the turn callbacks resolve through until restore, the turn contextvar of hermes
-func (t *TurnRunner) bindPolicyScope(scope *tools.TerminalScope) (restore func()) {
+func (t *TurnRunner) bindPolicyScope(scope *tools.TerminalScope, policy gateway.ActiveLaunchPolicy) (restore func()) {
 	prev := t.policyScope.Swap(scope)
-	return func() { t.policyScope.Store(prev) }
+	prevPolicy := t.activePolicy.Swap(&policy)
+	return func() {
+		t.policyScope.Store(prev)
+		t.activePolicy.Store(prevPolicy)
+	}
+}
+
+// Turn context the agent callbacks run in, carrying the launch policy while the turn runs inside its scope
+func (t *TurnRunner) callbackCtx() context.Context {
+	if policy := t.activePolicy.Load(); policy != nil && *policy != nil {
+		return gateway.WithActivePolicy(t.turnCtx, *policy)
+	}
+	return t.turnCtx
 }
 
 // Platform hint key of the turn, the policy platform else cli for the local platform

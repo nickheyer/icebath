@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net/url"
 	"strings"
 
@@ -188,7 +187,7 @@ func explicitClientKwargs(ctx context.Context, a *AIAgent, apiKey any, baseURL s
 		kwargs["default_headers"] = routeHeaders
 	} else if profile, ok := provider.GetProviderProfile(ctx, a.provider); ok {
 		if h := profile.DefaultHeaders(); len(h) > 0 {
-			kwargs["default_headers"] = maps.Clone(h)
+			kwargs["default_headers"] = stringHeaders(h)
 		}
 	}
 	return kwargs, nil
@@ -201,16 +200,12 @@ func stringHeaders(v any) map[string]string {
 		if len(h) == 0 {
 			return nil
 		}
-		return maps.Clone(h)
+		return provider.MergeHeaderMaps(h)
 	case map[string]any:
 		if len(h) == 0 {
 			return nil
 		}
-		out := make(map[string]string, len(h))
-		for k, val := range h {
-			out[k] = fmt.Sprint(val)
-		}
-		return out
+		return provider.AnyHeaderMap(h)
 	}
 	return nil
 }

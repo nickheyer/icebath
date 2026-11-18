@@ -52,7 +52,7 @@ func openAIClientFromKwargs(kwargs map[string]any) (any, error) {
 			apiKey = value
 		case "base_url", "websocket_base_url", "webhook_secret", "_strict_response_validation":
 		case "default_headers":
-			maps.Copy(headers, stringHeaders(value))
+			headers = provider.MergeHeaderMaps(headers, stringHeaders(value))
 		case "default_query":
 			opts.DefaultQuery = stringHeaders(value)
 		case "timeout":
@@ -166,12 +166,15 @@ func ensureRouteClientHeaders(ctx context.Context, clientKwargs map[string]any, 
 	for k := range existing {
 		lower[strings.ToLower(k)] = true
 	}
-	for k, v := range required {
+	missing := map[string]string{}
+	var order []string
+	for _, k := range provider.HeaderKeys(required) {
 		if !lower[strings.ToLower(k)] {
-			existing[k] = v
+			missing[k] = required[k]
+			order = append(order, k)
 		}
 	}
-	clientKwargs["default_headers"] = existing
+	clientKwargs["default_headers"] = provider.MergeHeaderMaps(existing, provider.OrderedHeaders(missing, order))
 }
 
 // Native Gemini client when the base url is the Gemini API, nil otherwise

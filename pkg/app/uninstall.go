@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
@@ -910,6 +911,16 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 		{true, "Removing icebath command...", func() []string { return uninstallWrapperStep(w) }, "Removed {}", "No wrapper script found"},
 		{windows, "Removing Windows icebath launchers...", func() []string { return removeWindowsBinLaunchers(w, uninstallIsWindows()) },
 			"Removed {}", "No Windows icebath launchers found"},
+		{windows, "Removing the Apps and Features entry...", func() []string {
+			removed, err := install.RemoveUninstallEntry()
+			if err != nil {
+				uninstallWarn(w, "Could not remove "+install.UninstallEntryKey+": "+uninstallErrText(err))
+			}
+			if !removed {
+				return nil
+			}
+			return []string{install.UninstallEntryKey}
+		}, "Removed {}", "No Apps and Features entry to remove"},
 		{true, "Removing Icebath-managed node/npm/npx symlinks...", func() []string { return uninstallNodeSymlinksStep(w, h) },
 			"Removed {}", "No Icebath-managed node/npm/npx symlinks found"},
 	}

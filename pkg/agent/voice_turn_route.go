@@ -89,7 +89,7 @@ func voiceRouteTarget(ctx context.Context, a *AIAgent, cfg map[string]any) map[s
 func voiceRouteFits(ctx context.Context, a *AIAgent, messages []*state.Message, systemPrompt string) bool {
 	limit := 0
 	if a.contextCompressor != nil {
-		limit = a.contextCompressor.Base().ThresholdTokens
+		limit = engineThresholdTokens(a.contextCompressor)
 	}
 	if limit == 0 {
 		return true

@@ -29,7 +29,7 @@ func runMaintenanceWithRelayRuntime(t *testing.T, result error) (calls int, foll
 	maintSyncProfiles = func(context.Context, io.Writer) error { return nil }
 	maintConfigMigration = func(context.Context, io.Writer, bool, bool, *string) error { return nil }
 	maintNoticesAndSelfHeals = func(context.Context, io.Writer) error { return nil }
-	maintSqliteRuntimeStatus = func(context.Context) (bool, *state.SQLiteRuntimeInfo) { return true, nil }
+	maintSqliteRuntimeStatus = func(context.Context) (bool, *state.SQLiteRuntimeInfo, error) { return true, nil, nil }
 	maintProvisionRelayRuntime = func(_ context.Context, w io.Writer) error {
 		calls++
 		io.WriteString(w, "relay runtime step\n")

@@ -15,11 +15,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-var streamingCallLog = slog.Default()
+var streamingCallLog = slog.Default().With("logger", "agent.chat_completion_helpers")
+
+// Logger of the reference stream monitor module
+var streamMonitorLog = slog.Default().With("logger", "agent.chat_completion_stream_monitor")
 
 // Streaming request on the agent wire firing the delta callbacks, the non streaming response shape on return
 func InterruptibleStreamingAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any, onFirstDelta func()) (any, error) {
@@ -497,7 +501,7 @@ func (r *sdkChunkSource) Close() error { return r.s.Close() }
 func (c *streamingCall) callChatCompletions(id int) (any, error) {
 	base, read, connCap := c.streamTimeouts()
 	var contentParts, reasoningParts, detailDisplayParts, refusalParts, pendingText []string
-	var reasoningDetails []map[string]any
+	var reasoningDetails []*pyjson.Object
 	tools := newCCToolCallAccumulator()
 	carriers := newStreamCarriers(c.ctx)
 	var finishReason string
@@ -811,7 +815,7 @@ func partialStreamCutResponse(content, reasoning any, model string, usage any, d
 }
 
 // Assembles the non streaming shaped response, a drop without a finish reason becoming a cut response
-func (c *streamingCall) finishChatStream(resp *http.Response, contentParts, reasoningParts []string, tools *ccToolCallAccumulator, finishReason string, ident *chunkIdentity, usage map[string]any, flushPending func(), reasoningDetails []map[string]any, refusalParts []string) (map[string]any, error) {
+func (c *streamingCall) finishChatStream(resp *http.Response, contentParts, reasoningParts []string, tools *ccToolCallAccumulator, finishReason string, ident *chunkIdentity, usage map[string]any, flushPending func(), reasoningDetails []*pyjson.Object, refusalParts []string) (map[string]any, error) {
 	fullContent := strings.Join(contentParts, "")
 	fullReasoning := strings.Join(reasoningParts, "")
 	if fullReasoning == "" && fullContent != "" {

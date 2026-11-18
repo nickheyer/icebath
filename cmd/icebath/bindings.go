@@ -284,7 +284,7 @@ func registerPluginCLICommands(cli *commands.CLI, argv []string) {
 			continue
 		}
 		if failure := attachManagerCLICommand(cli, info); failure != nil {
-			slog.Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
+			slog.Default().With("logger", "hermes_cli.main").Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
 			return
 		}
 	}

@@ -155,7 +155,7 @@ func (l *listLayout) tallest(shown []int, count int) int {
 
 // Styled runs of the explanation cell, led by the state mark when marks have no column of their own
 func (p *listPrompt) noteSpans(row listRow) []span {
-	t := activeTheme()
+	t := promptTheme
 	note := span{row.secondary, textStyle{color: t.Muted}}
 	if !row.markLeads {
 		return []span{note}
@@ -169,7 +169,7 @@ func (p *listPrompt) noteSpans(row listRow) []span {
 
 // Rows of a labeled choice, its name, state mark and explanation wrapped in columns or stacked under the name
 func (p *listPrompt) cellRows(row listRow, atCursor bool, lay *listLayout) []string {
-	t := activeTheme()
+	t := promptTheme
 	nameStyle := textStyle{}
 	if atCursor {
 		nameStyle = textStyle{color: t.Frost, bold: true}
@@ -217,7 +217,7 @@ func (p *listPrompt) cellRows(row listRow, atCursor bool, lay *listLayout) []str
 
 // Painted lines of one row at the widths of a layout, later lines hung under the row text
 func (p *listPrompt) rowLines(row listRow, atCursor bool, lay *listLayout) []string {
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	if row.index < 0 {
 		heading := []span{{row.heading, textStyle{color: t.Muted, bold: true}}}
 		return hung(p.c.spanRows(row.cells[0], heading, lay.body), "    ", "    ")

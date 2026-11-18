@@ -1324,7 +1324,7 @@ func TestAnOlderReleaseDeleteOfALedgeredSessionIsRefusedWithTheWayBack(t *testin
 		t.Fatalf("want an integrity refusal, got %v", err)
 	}
 	message := err.Error()
-	for _, fragment := range []string{"newer Hermes", "Downgrading is unsupported", "hermes update", "pre-update snapshot"} {
+	for _, fragment := range []string{"newer Icebath", "Downgrading is unsupported", "icebath update", "pre-update snapshot"} {
 		if !strings.Contains(message, fragment) {
 			t.Fatalf("message lacks %q: %s", fragment, message)
 		}
@@ -1359,7 +1359,7 @@ func TestAnUpgradedStoreGainsTheGuardOnItsNextOpen(t *testing.T) {
 	rawExec(t, path, "DROP TRIGGER sessions_runtime_ledger_delete_guard")
 	mustSessionDB(t, path, false).Close()
 	err := olderReleaseDelete(path, "s")
-	if !isIntegrityError(err) || !strings.Contains(err.Error(), "newer Hermes") {
+	if !isIntegrityError(err) || !strings.Contains(err.Error(), "newer Icebath") {
 		t.Fatalf("guard missing after reopen: %v", err)
 	}
 }

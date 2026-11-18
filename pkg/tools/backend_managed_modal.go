@@ -79,6 +79,7 @@ func NewManagedModalEnvironment(ctx context.Context, env *Env, o ModalOptions) (
 		cancelReadTO: managedModalTimeoutEnv("TERMINAL_MANAGED_MODAL_CANCEL_READ_TIMEOUT_SECONDS", 5.0)}
 	m.stdinMode = "payload"
 	initBaseEnv(&m.baseEnv, m, env, o.Cwd, o.Timeout, nil, true)
+	m.baseEnv.persistent = m.persistent
 	id, err := m.createSandbox()
 	if err != nil {
 		return nil, err

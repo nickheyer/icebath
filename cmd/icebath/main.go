@@ -24,6 +24,9 @@ func main() {
 	if code, ok := runNixModuleVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
 		os.Exit(code)
 	}
+	if code, ok := runSQLiteRuntimeVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
+		os.Exit(code)
+	}
 	containerinit.DropRootInImage(os.Args)
 	startProcess(context.Background())
 	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)

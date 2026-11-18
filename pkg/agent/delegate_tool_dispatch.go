@@ -143,7 +143,7 @@ func objectMap(o *pyjson.Object) map[string]any {
 // Durably records a finished child on a detached unit's row before the unit joins
 func recordFinishedChild(batch *delegateBatch, entry *pyjson.Object, honorParentInterrupt bool) {
 	if !honorParentInterrupt && batch.UnitID != "" && entry != nil {
-		if err := tools.RecordUnitChild(batch.Parent.env, batch.UnitID, objectMap(entry)); err != nil {
+		if err := tools.RecordUnitChild(batch.Parent.env, batch.UnitID, entry); err != nil {
 			delegateLog().Debug("record_unit_child failed", "error", err)
 		}
 	}

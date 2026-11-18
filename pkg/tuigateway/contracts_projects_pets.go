@@ -225,6 +225,8 @@ var _ = Method("pet.export", PetSlugParams, PetExportResult, "Export an installe
 
 var _ = Method("pet.disable", ProfileParams, OkResult, "Turn the pet display off (/pet off, the /pet toggle off side).")
 
+var _ = Method("pet.enable", ProfileParams, OkResult, "Turn the pet display on, the configured slug left as it is (the /pet toggle on side).")
+
 var PetScaleParams = pydantic.Extend(ProfileParams, "PetScaleParams", ParamsConfig,
 	pydantic.Def("scale", pydantic.Any, nil),
 ).Described("``scale``: a number or numeric string; a non-number answers 4004.")

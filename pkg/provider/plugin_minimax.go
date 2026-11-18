@@ -1,6 +1,9 @@
 package provider
 
-import "strings"
+import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"strings"
+)
 
 // Profiles the bundled minimax plugin registers
 func minimaxPluginProfiles() []Profile {
@@ -33,16 +36,16 @@ func minimaxGlobalOpenAIBaseURL(baseURL string) bool {
 }
 
 // M3 on the OpenAI compatible route splits reasoning out, efforts only choosing adaptive or disabled thinking
-func minimaxBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func minimaxBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	model := strings.ToLower(strings.TrimSpace(hookString(kw, "model")))
 	if !minimaxGlobalOpenAIBaseURL(hookString(kw, "base_url")) || (model != "minimax-m3" && model != "minimax/minimax-m3") {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
-	extra := map[string]any{"reasoning_split": true}
+	extra := pyjson.ObjectOf("reasoning_split", true)
 	if reasoning != nil && reasoning.Enabled != nil && !*reasoning.Enabled {
-		extra["thinking"] = map[string]any{"type": "disabled"}
+		extra.Set("thinking", pyjson.ObjectOf("type", "disabled"))
 	} else if reasoning != nil {
-		extra["thinking"] = map[string]any{"type": "adaptive"}
+		extra.Set("thinking", pyjson.ObjectOf("type", "adaptive"))
 	}
 	return extra, map[string]any{}
 }

@@ -20,7 +20,7 @@ var localeKeyExports = map[string]string{"tui": "_keys.tui.json"}
 func ReferenceKeys(surface string) map[string]bool {
 	keys, err := referenceKeys(surface)
 	if err != nil {
-		logDebug(fmt.Sprintf("i18n reference keys for %s unavailable: %v", surface, err))
+		logPluginValidateLocales.debug(fmt.Sprintf("i18n reference keys for %s unavailable: %v", surface, err))
 		return nil
 	}
 	return keys

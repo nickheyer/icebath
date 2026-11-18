@@ -293,7 +293,7 @@ func TestResetIsReachableFromAModelCallDespiteStaleKernelMode(t *testing.T) {
 	env := kernelEnv(t, map[string]any{"kernel_mode": "per-call"})
 	ctx := context.Background()
 	schema := buildExecuteCodeSchema(env, nil, "strict")
-	reset := schema["parameters"].(map[string]any)["properties"].(map[string]any)["reset"].(map[string]any)
+	reset := schema.Vals["parameters"].(map[string]any)["properties"].(map[string]any)["reset"].(map[string]any)
 	if reset["type"] != "boolean" {
 		t.Fatalf("reset missing from schema: %v", reset)
 	}

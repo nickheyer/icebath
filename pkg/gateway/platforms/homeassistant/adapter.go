@@ -94,8 +94,7 @@ func connectErrorDetail(err error) string {
 	text := err.Error()
 	if runtime.GOOS == "darwin" && gateway.IsSupervisedGatewayLaunch(nil) && errors.Is(err, syscall.EHOSTUNREACH) {
 		return text + " — macOS Local Network Privacy is blocking this launchd gateway from the LAN. " +
-			"Run `icebath gateway install` to regenerate the launchd job, then `icebath gateway restart`. " +
-			"https://github.com/NousResearch/hermes-agent/issues/71206"
+			"Run `icebath gateway install` to regenerate the launchd job, then `icebath gateway restart`."
 	}
 	return text
 }
@@ -196,11 +195,11 @@ func (a *HomeAssistantAdapter) nextID() int64 {
 // Validates the token and URL, opens the event subscription and starts the listener with its REST session
 func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if !pyrepr.Truthy(a.hassToken) {
-		slog.Warn(fmt.Sprintf("[%s] No HASS_TOKEN configured", a.Name()))
+		adapterLog().Warn(fmt.Sprintf("[%s] No HASS_TOKEN configured", a.Name()))
 		return false, nil
 	}
 	if problem := urlSchemeProblem(a.hassURL); problem != "" {
-		slog.Error(fmt.Sprintf("[%s] %s", a.Name(), problem))
+		adapterLog().Error(fmt.Sprintf("[%s] %s", a.Name(), problem))
 		a.SetFatalError(ctx, "homeassistant_url_scheme", problem, false)
 		return false, nil
 	}
@@ -209,7 +208,7 @@ func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (b
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		slog.Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), connectErrorDetail(err)))
+		adapterLog().Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), connectErrorDetail(err)))
 		return false, nil
 	}
 	if !ok {
@@ -220,7 +219,7 @@ func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (b
 	a.restSession = session
 	a.mu.Unlock()
 	if !(a.watchDomains.truthy() || a.watchEntities.truthy() || a.watchAll) {
-		slog.Warn(fmt.Sprintf("[%s] No watch_domains, watch_entities, or watch_all configured. "+
+		adapterLog().Warn(fmt.Sprintf("[%s] No watch_domains, watch_entities, or watch_all configured. "+
 			"All state_changed events will be dropped. Configure filters in "+
 			"your HA platform config to receive events.", a.Name()))
 	}
@@ -229,7 +228,7 @@ func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (b
 	a.mu.Lock()
 	a.listenTask = task
 	a.mu.Unlock()
-	slog.Info(fmt.Sprintf("[%s] Connected to %s", a.Name(), a.hassURL))
+	adapterLog().Info(fmt.Sprintf("[%s] Connected to %s", a.Name(), a.hassURL))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -297,7 +296,7 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 
 // Logs the handshake failure, closes the WebSocket and reports the connect as failed
 func (a *HomeAssistantAdapter) handshakeFailed(ctx context.Context, message string) (bool, error) {
-	slog.Error(message)
+	adapterLog().Error(message)
 	a.cleanupWS(ctx)
 	return false, nil
 }
@@ -336,7 +335,7 @@ func (a *HomeAssistantAdapter) Disconnect(ctx context.Context) error {
 	if session != nil {
 		session.CloseIdleConnections()
 	}
-	slog.Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
+	adapterLog().Info(fmt.Sprintf("[%s] Disconnected", a.Name()))
 	return nil
 }
 
@@ -348,13 +347,13 @@ func (a *HomeAssistantAdapter) listenLoop(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			slog.Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.Name(), connectErrorDetail(err)))
+			adapterLog().Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.Name(), connectErrorDetail(err)))
 		}
 		if ctx.Err() != nil || !a.IsConnected() {
 			return nil
 		}
 		delay := backoffSteps[min(backoffIdx, len(backoffSteps)-1)]
-		slog.Info(fmt.Sprintf("[%s] Reconnecting in %ds...", a.Name(), delay))
+		adapterLog().Info(fmt.Sprintf("[%s] Reconnecting in %ds...", a.Name(), delay))
 		timer := time.NewTimer(time.Duration(delay) * time.Second)
 		select {
 		case <-timer.C:
@@ -369,12 +368,12 @@ func (a *HomeAssistantAdapter) listenLoop(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			slog.Warn(fmt.Sprintf("[%s] Reconnection failed: %s", a.Name(), connectErrorDetail(err)))
+			adapterLog().Warn(fmt.Sprintf("[%s] Reconnection failed: %s", a.Name(), connectErrorDetail(err)))
 			continue
 		}
 		if ok {
 			backoffIdx = 0
-			slog.Info(fmt.Sprintf("[%s] Reconnected", a.Name()))
+			adapterLog().Info(fmt.Sprintf("[%s] Reconnected", a.Name()))
 		}
 	}
 	return nil
@@ -403,7 +402,7 @@ func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 		text, _ := msg.Data.(string)
 		data, err := pyjson.Loads(text)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("Invalid JSON from HA WS: %s", pystr.Slice(text, 0, 200)))
+			adapterLog().Debug(fmt.Sprintf("Invalid JSON from HA WS: %s", pystr.Slice(text, 0, 200)))
 			continue
 		}
 		kind, err := pyGet(data, "type", nil)
@@ -596,4 +595,9 @@ func (a *HomeAssistantAdapter) Send(ctx context.Context, chatID, content, replyT
 // Chat info of the event channel with the instance URL
 func (a *HomeAssistantAdapter) GetChatInfo(ctx context.Context, chatID string) (map[string]any, error) {
 	return map[string]any{"name": "Home Assistant Events", "type": "channel", "url": a.hassURL}, nil
+}
+
+// Logger of the reference homeassistant adapter module
+func adapterLog() *slog.Logger {
+	return slog.Default().With("logger", "hermes_plugins.homeassistant.adapter")
 }

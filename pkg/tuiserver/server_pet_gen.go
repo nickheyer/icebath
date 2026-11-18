@@ -122,10 +122,7 @@ func petPNGDataURI(path string, maxPx int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	img := pypil.ToNRGBA(decoded)
-	if w, h, resize := pypil.ThumbnailSize(img.Rect.Dx(), img.Rect.Dy(), maxPx); resize {
-		img = pypil.ResizeLanczos(img, w, h)
-	}
+	img := pypil.ThumbnailLanczos(pypil.ToNRGBA(decoded), maxPx)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return "", err

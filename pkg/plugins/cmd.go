@@ -45,9 +45,9 @@ func NewConsole(w io.Writer) *Console {
 	return &Console{Out: w, Color: ok && xterm.IsTerminal(f.Fd())}
 }
 
-// Prints one markup message followed by a newline
+// Prints one markup message wrapped at the console width with repr highlighting, as rich console.print does
 func (c *Console) Print(markup string) {
-	fmt.Fprintln(c.Out, pyrich.Render(markup, c.Color))
+	(&pyrich.Console{Out: c.Out, Color: c.Color, Width: c.width(), NoColor: os.Getenv("NO_COLOR") != ""}).Print(markup)
 }
 
 // Process exit a plugin command asks for after printing its message
@@ -133,11 +133,11 @@ func cloneTimeoutSeconds(h string) int {
 	value := configValue(h, defaultCloneTimeoutSeconds, "plugins", "clone_timeout_seconds")
 	n, ok := pyIntValue(value)
 	if !ok || n < 1 {
-		logWarn(fmt.Sprintf("plugins.clone_timeout_seconds must be a positive integer; using %ds", defaultCloneTimeoutSeconds))
+		logPluginsCmd.warn(fmt.Sprintf("plugins.clone_timeout_seconds must be a positive integer; using %ds", defaultCloneTimeoutSeconds))
 		return defaultCloneTimeoutSeconds
 	}
 	if n > maxCloneTimeoutSeconds {
-		logWarn(fmt.Sprintf("plugins.clone_timeout_seconds exceeds %ds; clamping", maxCloneTimeoutSeconds))
+		logPluginsCmd.warn(fmt.Sprintf("plugins.clone_timeout_seconds exceeds %ds; clamping", maxCloneTimeoutSeconds))
 		return maxCloneTimeoutSeconds
 	}
 	return int(n)

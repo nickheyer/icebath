@@ -93,6 +93,7 @@ func strippedText(v any) string {
 
 // Dispatches one gateway event to the store, the turn controller and the app
 func (h *eventHandler) handle(ev gatewayEventMsg) {
+	h.renewOnRedraw()
 	sid := h.store.ui.Sid
 	if ev.SessionID != "" && sid != "" && ev.SessionID != sid && !strings.HasPrefix(ev.Type, "gateway.") {
 		return

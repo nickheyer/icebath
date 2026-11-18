@@ -448,44 +448,44 @@ func todoTool(store *TodoStore, todos any, merge bool) string {
 	return JSON(Dict("todos", rows, "revision", store.Revision(), "summary", summary))
 }
 
-var todoSchema = map[string]any{
-	"name": TodoToolName,
-	"description": "Track a task list for multi-step work (3+ steps). Use for complex tasks " +
-		"with 3+ steps or when the user provides multiple tasks. " +
-		"For 'all N items' tasks, enumerate every instance as its own checklist " +
-		"item so none are silently dropped. " +
-		"Call with no parameters to read the current list.\n" +
-		"List order is priority. Only ONE item in_progress at a time. " +
-		"Break large phases into subtasks via parent. " +
-		"Mark an item completed only after the work is verified done, never " +
-		"based on intent. If something fails, cancel it and add a revised " +
+var todoSchema = Dict(
+	"name", TodoToolName,
+	"description", "Track a task list for multi-step work (3+ steps). Use for complex tasks "+
+		"with 3+ steps or when the user provides multiple tasks. "+
+		"For 'all N items' tasks, enumerate every instance as its own checklist "+
+		"item so none are silently dropped. "+
+		"Call with no parameters to read the current list.\n"+
+		"List order is priority. Only ONE item in_progress at a time. "+
+		"Break large phases into subtasks via parent. "+
+		"Mark an item completed only after the work is verified done, never "+
+		"based on intent. If something fails, cancel it and add a revised "+
 		"item. Always returns the full current list.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"todos": map[string]any{
-				"type":        "array",
-				"description": "Task items to write.",
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"id":      map[string]any{"type": "string"},
-						"content": map[string]any{"type": "string", "description": "Task description"},
-						"status":  map[string]any{"type": "string", "enum": []any{"pending", "in_progress", "completed", "cancelled"}},
-						"parent":  map[string]any{"type": "string", "description": "Optional id of another item, making this a nested subtask. Omit for top-level."},
-					},
-					"required": []any{"id", "content", "status"},
-				},
-			},
-			"merge": map[string]any{
-				"type":        "boolean",
-				"description": "true: update existing items by id, add new ones. false (default): replace the entire list with a fresh plan.",
-				"default":     false,
-			},
-		},
-		"required": []any{},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"todos", Dict(
+				"type", "array",
+				"description", "Task items to write.",
+				"items", Dict(
+					"type", "object",
+					"properties", Dict(
+						"id", Dict("type", "string"),
+						"content", Dict("type", "string", "description", "Task description"),
+						"status", Dict("type", "string", "enum", []any{"pending", "in_progress", "completed", "cancelled"}),
+						"parent", Dict("type", "string", "description", "Optional id of another item, making this a nested subtask. Omit for top-level."),
+					),
+					"required", []any{"id", "content", "status"},
+				),
+			),
+			"merge", Dict(
+				"type", "boolean",
+				"description", "true: update existing items by id, add new ones. false (default): replace the entire list with a fresh plan.",
+				"default", false,
+			),
+		),
+		"required", []any{},
+	),
+)
 
 // IsTodoToolName is true for the todo tool's current name or a legacy alias
 func IsTodoToolName(name string) bool {

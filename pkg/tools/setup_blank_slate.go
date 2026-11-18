@@ -104,7 +104,7 @@ func blankSlateSection(cfg config.Tree, key string) (map[string]any, error) {
 	return section, nil
 }
 
-// BlankSlateMinimizeConfig turns every optional config feature off, each one opting back in through icebath setup agent
+// BlankSlateMinimizeConfig turns every optional config feature off, each one opting back in through /setup agent
 func BlankSlateMinimizeConfig(cfg config.Tree) error {
 	agent, err := blankSlateSection(cfg, "agent")
 	if err != nil {

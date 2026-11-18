@@ -190,7 +190,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 
 func (c *CLI) addKanban(root *cobra.Command) {
 	kb := c.newCmd(root, "kanban", "Multi-profile collaboration board (tasks, links, comments)",
-		"Durable SQLite-backed task board shared across Icebath profiles. Tasks are claimed atomically, can depend on other tasks, and are executed by a named profile in an isolated workspace. See https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban.")
+		"Durable SQLite-backed task board shared across Icebath profiles. Tasks are claimed atomically, can depend on other tasks, and are executed by a named profile in an isolated workspace.")
 	subDest(kb, "kanban_action")
 	parserDefault(kb, "_kanban_parser")
 	kb.PersistentFlags().String("board", "", "Board slug to operate on. Defaults to the current board (set via `icebath kanban boards switch <slug>` or the ICEBATH_KANBAN_BOARD env var). Use `icebath kanban boards list` to see all boards.")

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"reflect"
 	"strings"
@@ -25,6 +26,14 @@ func sdkIsPlainJSONData(value any) bool {
 		return true
 	case reflect.Interface, reflect.Pointer:
 		if rv.IsNil() {
+			return true
+		}
+		if obj, ok := value.(*pyjson.Object); ok {
+			for _, k := range obj.Keys {
+				if !sdkIsPlainJSONData(obj.Vals[k]) {
+					return false
+				}
+			}
 			return true
 		}
 		return rv.Kind() == reflect.Interface && sdkIsPlainJSONData(rv.Elem().Interface())
@@ -56,6 +65,9 @@ func sdkIsPlainJSONData(value any) bool {
 func sdkIsContainer(value any) bool {
 	if value == nil {
 		return false
+	}
+	if _, ok := value.(*pyjson.Object); ok {
+		return true
 	}
 	switch reflect.TypeOf(value).Kind() {
 	case reflect.Map:
@@ -98,15 +110,13 @@ func BypassSDKRequestTransform(requestKwargs map[string]any, fields []string, ke
 		}
 		bypassed[key] = value
 	}
-	merged := map[string]any{}
-	if extra, ok := bypassed["extra_body"].(map[string]any); ok {
-		for k, v := range extra {
-			merged[k] = v
-		}
+	merged := pyjson.NewObject()
+	if extra, ok := pyjson.AsObject(bypassed["extra_body"]); ok {
+		merged = extra.Copy()
 	}
 	for _, f := range order {
-		if _, exists := merged[f]; !exists {
-			merged[f] = moved[f]
+		if _, exists := merged.Get(f); !exists {
+			merged.Set(f, moved[f])
 		}
 	}
 	bypassed["extra_body"] = merged

@@ -55,7 +55,6 @@ const (
 	OpenRouterAuthURL            = "https://openrouter.ai/auth"
 	OpenRouterAuthKeysURL        = "https://openrouter.ai/api/v1/auth/keys"
 	OpenRouterOAuthDocsURL       = "https://openrouter.ai/docs/guides/overview/auth/oauth"
-	OAuthOverSSHDocsURL          = "https://hermes-agent.nousresearch.com/docs/guides/oauth-over-ssh"
 	LMStudioNoAuthPlaceholder    = "dummy-lm-api-key"
 	ActualLocalNoAuthPlaceholder = "dummy-actual-local-api-key"
 	CodexRateLimitedCode         = "codex_rate_limited"

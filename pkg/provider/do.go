@@ -197,9 +197,16 @@ func ExtractAPIErrorContext(err error) map[string]any {
 	}
 	now := time.Now()
 	var apiErr *APIError
+	var sdkErr *AuxSDKError
+	var streamErr *ProviderStreamError
 	var body map[string]any
-	if errors.As(err, &apiErr) {
+	switch {
+	case errors.As(err, &apiErr):
 		body = decodeJSONObject(apiErr.Body)
+	case errors.As(err, &sdkErr):
+		body, _ = sdkErr.Body.(map[string]any)
+	case errors.As(err, &streamErr):
+		body = streamErr.Body
 	}
 	payload := body
 	if nested, ok := body["error"].(map[string]any); ok {

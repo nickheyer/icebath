@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -210,7 +211,7 @@ func (s *Scope) SkillsList(ctx context.Context, category string) string {
 		}
 	}
 	if len(all) == 0 {
-		return jsonResult(map[string]any{"success": true, "skills": []any{}, "categories": []any{}, "message": "No skills found in skills/ directory."})
+		return jsonResult(pyjson.ObjectOf("success", true, "skills", []any{}, "categories", []any{}, "message", "No skills found in skills/ directory."))
 	}
 	if category != "" {
 		var kept []map[string]any
@@ -236,8 +237,39 @@ func (s *Scope) SkillsList(ctx context.Context, category string) string {
 	if all == nil {
 		all = []map[string]any{}
 	}
-	return jsonResult(map[string]any{"success": true, "skills": all, "categories": cats, "count": len(all),
-		"hint": "Use skill_view(name) to see full content, tags, and linked files"})
+	entries := make([]any, len(all))
+	for i, sk := range all {
+		entries[i] = orderedByKeys(sk, skillEntryKeyOrder)
+	}
+	return jsonResult(pyjson.ObjectOf("success", true, "skills", entries, "categories", cats, "count", len(all),
+		"hint", "Use skill_view(name) to see full content, tags, and linked files"))
+}
+
+// Key order a skills_list entry is built in
+var skillEntryKeyOrder = []string{"name", "description", "category"}
+
+// Key order a required environment variable entry is built in
+var requiredEnvKeyOrder = []string{"name", "prompt", "help", "required_for", "optional"}
+
+// Ordered dict of a plain entry, its build order first and any other key after in sorted order
+func orderedByKeys(m map[string]any, order []string) *pyjson.Object {
+	out := pyjson.NewObject()
+	for _, k := range order {
+		if v, ok := m[k]; ok {
+			out.Set(k, v)
+		}
+	}
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if _, placed := out.Get(k); !placed {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		out.Set(k, m[k])
+	}
+	return out
 }
 
 // Plugin namespace dispatch, answered with a result or falling through with the on disk category form
@@ -286,8 +318,8 @@ func (s *Scope) resolvePluginSkill(ctx context.Context, name, filePath, taskID s
 		for i, a := range available {
 			qualified[i] = namespace + ":" + a
 		}
-		return failResult(fmt.Sprintf("Skill '%s' not found in plugin '%s'.", bare, namespace), map[string]any{
-			"available_skills": qualified, "hint": fmt.Sprintf("The '%s' plugin provides %d skill(s).", namespace, len(available))}), "", nil
+		return failResult(fmt.Sprintf("Skill '%s' not found in plugin '%s'.", bare, namespace), pyjson.ObjectOf(
+			"available_skills", qualified, "hint", fmt.Sprintf("The '%s' plugin provides %d skill(s).", namespace, len(available)))), "", nil
 	}
 	if bare != "" {
 		return "", namespace + "/" + bare, nil
@@ -423,8 +455,8 @@ func safeFrontmatterPath(p string) map[string]any {
 }
 
 // References, templates, assets and scripts of a directory skill with empty groups dropped
-func skillLinkedFiles(skillDir string) map[string]any {
-	files := map[string]any{}
+func skillLinkedFiles(skillDir string) *pyjson.Object {
+	files := pyjson.NewObject()
 	if skillDir == "" {
 		return files
 	}
@@ -462,7 +494,7 @@ func skillLinkedFiles(skillDir string) map[string]any {
 			}
 		}
 		if len(found) > 0 {
-			files[sp.sub] = found
+			files.Set(sp.sub, found)
 		}
 	}
 	return files
@@ -559,8 +591,8 @@ func (s *Scope) locateSkill(name, localCategory string, roots []skillRoot) (stri
 			useOne = "use one of " + strings.Join(loadNames, ", ") + ". "
 		}
 		return failResult(fmt.Sprintf("%s'%s': %s%d different skills share this name in the same skills directory tier; refusing to guess.", AmbiguousSkillPrefix, name, useOne, len(cands)),
-			map[string]any{"matches": paths, "load_names": loadNames,
-				"hint": "Pass the exact relative path instead of the bare name, or rename one of the colliding skills so each name is unique."}), skillLocation{}
+			pyjson.ObjectOf("matches", paths, "load_names", loadNames,
+				"hint", "Pass the exact relative path instead of the bare name, or rename one of the colliding skills so each name is unique.")), skillLocation{}
 	}
 	var loc skillLocation
 	if len(cands) == 1 {
@@ -569,7 +601,7 @@ func (s *Scope) locateSkill(name, localCategory string, roots []skillRoot) (stri
 	if loc.md != "" {
 		if t, ok := tierOf[owningSearchDir(loc.md, allDirs)]; ok && t == TierProject && s.isQuarantinedProjectSkill(loc.md) {
 			return failResult(fmt.Sprintf("Project skill '%s' is quarantined: the security scan flagged its content as dangerous. It will not load until the repo's skill content changes and passes a re-scan.", name),
-				map[string]any{"hint": "Inspect the skill in the repo checkout, or untrust the repo with `icebath skills untrust`."}), skillLocation{}
+				pyjson.ObjectOf("hint", "Inspect the skill in the repo checkout, or untrust the repo with `icebath skills untrust`.")), skillLocation{}
 		}
 	}
 	if loc.md == "" || !lexistsFollow(loc.md) {
@@ -580,7 +612,7 @@ func (s *Scope) locateSkill(name, localCategory string, roots []skillRoot) (stri
 			}
 			available = append(available, fmString(sk["name"]))
 		}
-		return failResult(fmt.Sprintf("Skill '%s' not found.", name), map[string]any{"available_skills": available, "hint": "Use skills_list to see all available skills"}), skillLocation{}
+		return failResult(fmt.Sprintf("Skill '%s' not found.", name), pyjson.ObjectOf("available_skills", available, "hint", "Use skills_list to see all available skills")), skillLocation{}
 	}
 	return "", loc
 }
@@ -617,7 +649,7 @@ func containsInjection(content string) bool {
 // Skill markdown or one of its linked files as the skill_view JSON result
 func (s *Scope) SkillView(ctx context.Context, name, filePath, taskID string, preprocess bool) string {
 	if e := skillLookupPathError(name); e != "" {
-		return failResult(e, map[string]any{"hint": lookupHint})
+		return failResult(e, pyjson.ObjectOf("hint", lookupHint))
 	}
 	localCategory := ""
 	if strings.Contains(name, ":") {
@@ -632,7 +664,7 @@ func (s *Scope) SkillView(ctx context.Context, name, filePath, taskID string, pr
 	}
 	if localCategory != "" {
 		if e := skillLookupPathError(localCategory); e != "" {
-			return failResult(e, map[string]any{"hint": lookupHint})
+			return failResult(e, pyjson.ObjectOf("hint", lookupHint))
 		}
 	}
 	roots, active := s.skillSearchDirs()
@@ -651,7 +683,7 @@ func (s *Scope) SkillView(ctx context.Context, name, filePath, taskID string, pr
 	s.logSecurityWarnings(name, loc.md, content, allDirs, active)
 	fm := safeFrontmatter(content)
 	if !skillMatchesPlatform(fm) {
-		return failResult(fmt.Sprintf("Skill '%s' is not supported on this platform.", name), map[string]any{"readiness_status": ReadinessUnsupported})
+		return failResult(fmt.Sprintf("Skill '%s' is not supported on this platform.", name), pyjson.ObjectOf("readiness_status", ReadinessUnsupported))
 	}
 	resolvedName := any(filepath.Base(filepath.Dir(loc.md)))
 	if v, ok := fm["name"]; ok {
@@ -696,30 +728,28 @@ func (s *Scope) SkillView(ctx context.Context, name, filePath, taskID string, pr
 	if preprocess {
 		rendered = s.PreprocessSkillContent(ctx, content, loc.dir, taskID, nil)
 	}
-	result := map[string]any{
-		"success": true, "name": skillName, "description": fmGet(fm, "description", ""),
-		"tags": tags, "related_skills": related, "content": rendered, "path": relPath,
-		"skill_dir": nil, "linked_files": nil, "usage_hint": nil,
-	}
+	result := pyjson.ObjectOf(
+		"success", true, "name", skillName, "description", fmGet(fm, "description", ""),
+		"tags", tags, "related_skills", related, "content", rendered, "path", relPath,
+		"skill_dir", nil, "linked_files", nil, "usage_hint", nil,
+	)
 	if loc.dir != "" {
-		result["skill_dir"] = loc.dir
+		result.Set("skill_dir", loc.dir)
 	}
-	if len(linked) > 0 {
-		result["linked_files"] = linked
-		result["usage_hint"] = "To view linked files, call skill_view(name, file_path) where file_path is e.g. 'references/api.md' or 'assets/config.yaml'"
+	if linked.Len() > 0 {
+		result.Set("linked_files", linked)
+		result.Set("usage_hint", "To view linked files, call skill_view(name, file_path) where file_path is e.g. 'references/api.md' or 'assets/config.yaml'")
 	}
-	for k, v := range readiness {
-		result[k] = v
-	}
+	result.Update(readiness)
 	if note := s.ensureDeclaredDeps(ctx, fm); note != "" {
-		result["deps_note"] = note
+		result.Set("deps_note", note)
 	}
 	markBackgroundReviewSkillRead(s.Env, loc.md)
 	if fmTruthy(fm["compatibility"]) {
-		result["compatibility"] = fm["compatibility"]
+		result.Set("compatibility", fm["compatibility"])
 	}
 	if metaIsMap {
-		result["metadata"] = metadata
+		result.Set("metadata", metadata)
 	}
 	return jsonResult(result)
 }
@@ -1058,7 +1088,7 @@ func (s *Scope) registrationEnv() *tools.Env {
 }
 
 // Required env vars and credential files resolved with secret capture and sandbox registration
-func (s *Scope) skillReadiness(ctx context.Context, fm map[string]any, skillName string) map[string]any {
+func (s *Scope) skillReadiness(ctx context.Context, fm map[string]any, skillName string) *pyjson.Object {
 	required := getRequiredEnvironmentVariables(fm)
 	backend := "local"
 	if policy, err := tools.BuildTerminalScope(s.Home, s.Secrets); err == nil {
@@ -1113,14 +1143,14 @@ func (s *Scope) skillReadiness(ctx context.Context, fm map[string]any, skillName
 	}
 	reqOut := make([]any, len(required))
 	for i, e := range required {
-		reqOut[i] = e
+		reqOut[i] = orderedByKeys(e, requiredEnvKeyOrder)
 	}
-	out := map[string]any{
-		"required_environment_variables": reqOut, "required_commands": []any{},
-		"missing_required_environment_variables": remaining, "missing_credential_files": missingCred,
-		"missing_required_commands": []any{}, "setup_needed": setupNeeded, "setup_skipped": skipped,
-		"readiness_status": status,
-	}
+	out := pyjson.ObjectOf(
+		"required_environment_variables", reqOut, "required_commands", []any{},
+		"missing_required_environment_variables", remaining, "missing_credential_files", missingCred,
+		"missing_required_commands", []any{}, "setup_needed", setupNeeded, "setup_skipped", skipped,
+		"readiness_status", status,
+	)
 	setupHelp := ""
 	for _, e := range required {
 		if h, ok := e["help"].(string); ok && h != "" {
@@ -1129,10 +1159,10 @@ func (s *Scope) skillReadiness(ctx context.Context, fm map[string]any, skillName
 		}
 	}
 	if setupHelp != "" {
-		out["setup_help"] = setupHelp
+		out.Set("setup_help", setupHelp)
 	}
 	if fmTruthy(gatewayHint) {
-		out["gateway_setup_hint"] = gatewayHint
+		out.Set("gateway_setup_hint", gatewayHint)
 	}
 	var items []string
 	for _, n := range remaining {
@@ -1146,14 +1176,14 @@ func (s *Scope) skillReadiness(ctx context.Context, fm map[string]any, skillName
 			if isRemoteEnvBackend(backend) {
 				note += " " + strings.ToUpper(backend) + "-backed skills need these requirements available inside the remote environment as well."
 			}
-			out["setup_note"] = note
+			out.Set("setup_note", note)
 		}
 	}
 	return out
 }
 
 // Non SKILL.md files grouped by support dir plus other for known source extensions
-func availableSkillFiles(skillDir string) map[string]any {
+func availableSkillFiles(skillDir string) *pyjson.Object {
 	groups := map[string][]string{}
 	filepath.WalkDir(skillDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || p == skillDir || !isFile(p) || d.Name() == "SKILL.md" {
@@ -1178,10 +1208,10 @@ func availableSkillFiles(skillDir string) map[string]any {
 		}
 		return nil
 	})
-	out := map[string]any{}
+	out := pyjson.NewObject()
 	for _, k := range append(append([]string(nil), supportDirOrder...), "other") {
 		if g, ok := groups[k]; ok {
-			out[k] = g
+			out.Set(k, g)
 		}
 	}
 	return out
@@ -1198,9 +1228,9 @@ func pathSuffix(p string) string {
 
 // One linked file of a skill directory as a skill_view result
 func (s *Scope) serveSkillFile(skillRoot, filePath, label, hint string, listAvailable, readErrorPrefix, markRead bool) string {
-	extra := map[string]any{}
+	extra := pyjson.NewObject()
 	if hint != "" {
-		extra["hint"] = hint
+		extra.Set("hint", hint)
 	}
 	if tools.HasTraversalComponent(filePath) {
 		return failResult("Path traversal ('..') is not allowed.", extra)
@@ -1210,9 +1240,9 @@ func (s *Scope) serveSkillFile(skillRoot, filePath, label, hint string, listAvai
 		return failResult(e, extra)
 	}
 	if !isFile(target) {
-		listing := map[string]any{}
+		listing := pyjson.NewObject()
 		if listAvailable {
-			listing = map[string]any{"available_files": availableSkillFiles(skillRoot), "hint": "Use one of the available file paths listed above"}
+			listing = pyjson.ObjectOf("available_files", availableSkillFiles(skillRoot), "hint", "Use one of the available file paths listed above")
 		}
 		return failResult(fmt.Sprintf("File '%s' not found in skill '%s'.", filePath, label), listing)
 	}
@@ -1226,7 +1256,7 @@ func (s *Scope) serveSkillFile(skillRoot, filePath, label, hint string, listAvai
 	if markRead {
 		markBackgroundReviewSkillRead(s.Env, target)
 	}
-	return jsonResult(map[string]any{"success": true, "name": label, "file": filePath, "content": content, "file_type": pathSuffix(target)})
+	return jsonResult(pyjson.ObjectOf("success", true, "name", label, "file", filePath, "content", content, "file_type", pathSuffix(target)))
 }
 
 // Plugin provided skill with disabled, platform and injection guards plus its bundle banner
@@ -1252,7 +1282,7 @@ func (s *Scope) servePluginSkill(ctx context.Context, host PluginSkillHost, skil
 		return failResult(fmt.Sprintf("Skill '%s' is disabled.", qualified), nil)
 	}
 	if !skillMatchesPlatform(fm) {
-		return failResult(fmt.Sprintf("Skill '%s' is not supported on this platform.", qualified), map[string]any{"readiness_status": ReadinessUnsupported})
+		return failResult(fmt.Sprintf("Skill '%s' is not supported on this platform.", qualified), pyjson.ObjectOf("readiness_status", ReadinessUnsupported))
 	}
 	if filePath != "" {
 		return s.serveSkillFile(filepath.Dir(skillMD), filePath, qualified, "", false, true, false)
@@ -1276,19 +1306,19 @@ func (s *Scope) servePluginSkill(ctx context.Context, host PluginSkillHost, skil
 		rendered = s.PreprocessSkillContent(ctx, content, filepath.Dir(skillMD), sessionID, nil)
 	}
 	var linked any
-	if l := pluginSkillLinkedFiles(filepath.Dir(skillMD)); len(l) > 0 {
+	if l := pluginSkillLinkedFiles(filepath.Dir(skillMD)); l.Len() > 0 {
 		linked = l
 	}
-	return jsonResult(map[string]any{
-		"success": true, "name": qualified, "content": banner + rendered,
-		"description":  truncateDescription(pyStrValue(fmGet(fm, "description", ""))),
-		"linked_files": linked, "readiness_status": ReadinessAvailable, "skill_dir": filepath.Dir(skillMD),
-	})
+	return jsonResult(pyjson.ObjectOf(
+		"success", true, "name", qualified, "content", banner+rendered,
+		"description", truncateDescription(pyStrValue(fmGet(fm, "description", ""))),
+		"linked_files", linked, "readiness_status", ReadinessAvailable, "skill_dir", filepath.Dir(skillMD),
+	))
 }
 
 // Sorted support files of a plugin skill contained in its root, empty groups dropped
-func pluginSkillLinkedFiles(root string) map[string]any {
-	linked := map[string]any{}
+func pluginSkillLinkedFiles(root string) *pyjson.Object {
+	linked := pyjson.NewObject()
 	for _, cat := range supportDirOrder {
 		var files []string
 		for _, p := range rglob(filepath.Join(root, cat), "*") {
@@ -1300,7 +1330,7 @@ func pluginSkillLinkedFiles(root string) map[string]any {
 		}
 		sort.Strings(files)
 		if len(files) > 0 {
-			linked[cat] = files
+			linked.Set(cat, files)
 		}
 	}
 	return linked
@@ -1346,8 +1376,8 @@ func dedupSkillView(taskID, name, filePath string, payload map[string]any, resul
 		if file == "" {
 			file = "SKILL.md"
 		}
-		return jsonResult(map[string]any{"success": true, "status": "unchanged", "name": resolved, "file": file,
-			"dedup": true, "content_returned": false, "message": skillViewDedupMessage})
+		return jsonResult(pyjson.ObjectOf("success", true, "status", "unchanged", "name", resolved, "file", file,
+			"dedup", true, "content_returned", false, "message", skillViewDedupMessage))
 	}
 	if _, ok := cache.digests[key]; ok {
 		for i, k := range cache.order {

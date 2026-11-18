@@ -127,9 +127,15 @@ func StampExit(exitKind, crash string) {
 	}
 }
 
-// Joins pending feature disabled recorders then stamps a clean exit, the hook every entrypoint defers
-func EndProcess() {
+// Waits for the startup and feature disabled recorders still writing their marks
+func JoinRecorders() {
+	startupWG.Wait()
 	featureDisabledWG.Wait()
+}
+
+// Joins pending recorders, writes deferred rows and stamps a clean exit, the hook every entrypoint runs at exit
+func EndProcess() {
+	JoinRecorders()
 	drainDeferringStoresAtExit(context.Background())
 	StampExit("clean", "none")
 }

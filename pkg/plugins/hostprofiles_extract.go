@@ -59,6 +59,9 @@ func guestManifestOfDir(dir string) *Manifest {
 	return mf
 }
 
+// Manifest of a plugin directory that declares a wasm or program runtime, nil otherwise
+func GuestManifestOfDir(dir string) *Manifest { return guestManifestOfDir(dir) }
+
 // Host running the code of a plugin directory, its own guest when it declares a runtime, else the profile host
 func (m *Manager) hostForDir(dir string) (*PluginHost, error) {
 	if mf := guestManifestOfDir(dir); mf != nil {

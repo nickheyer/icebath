@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/pet"
-	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 const (
@@ -55,13 +54,9 @@ func (a *app) hatchCommands() []slashCommand {
 			case strings.EqualFold(concept, "cancel"):
 				return tea.Batch(r.ran(), a.pet.cancelHatch())
 			case concept == "":
-				return tea.Batch(r.ran(), a.wm.ShowOverlay(wm.NewPrompt(a.toolkit, tr("slashCmd.session.hatch.describe"), "", func(text string) tea.Cmd {
-					if trimJS(text) == "" {
-						a.sys(tr("slashCmd.session.hatch.usage"))
-						return nil
-					}
-					return a.pet.startHatch(trimJS(text))
-				})))
+				ran := r.ran()
+				r.sys(tr("slashCmd.session.hatch.usage"))
+				return ran
 			}
 			return tea.Batch(r.ran(), a.pet.startHatch(concept))
 		}}}
@@ -130,17 +125,38 @@ func (p *petView) startHatch(concept string) tea.Cmd {
 					return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
 				})
 			}
-			for _, warning := range rpcStrings(res["warnings"]) {
-				p.a.sys("  " + tr("slashCmd.session.hatch.warning", warning))
-			}
 			display := stringOr(res["displayName"], name)
-			return gatewayCall(p.a.gw, "pet.select", map[string]any{"slug": slug}, func(_ any, err error) tea.Cmd {
-				if err != nil {
-					return p.endHatch(job, tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
-				}
-				return tea.Batch(p.endHatch(job, tr("slashCmd.session.hatch.hatched", display)), p.refresh())
+			return p.claimSlug(job, slug, name, func(final string) tea.Cmd {
+				return gatewayCall(p.a.gw, "pet.select", map[string]any{"slug": final}, func(_ any, err error) tea.Cmd {
+					if err != nil {
+						return p.endHatch(job, tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+					}
+					return p.endHatch(job, tr("slashCmd.session.hatch.hatched", display))
+				})
 			})
 		}))
+	})
+}
+
+// Puts the hatched pet under the slug of its name as /hatch in the CLI does, a pet already there replaced
+func (p *petView) claimSlug(job *hatchJob, slug, name string, then func(string) tea.Cmd) tea.Cmd {
+	want := pet.Slugify(name)
+	if slug == want {
+		return then(slug)
+	}
+	fail := func(err error) tea.Cmd {
+		return p.endHatch(job, tr("slashCmd.session.hatch.failed", rpcErrorMessage(err)))
+	}
+	return gatewayCall(p.a.gw, "pet.remove", map[string]any{"slug": want}, func(_ any, err error) tea.Cmd {
+		if err != nil {
+			return fail(err)
+		}
+		return gatewayCall(p.a.gw, "pet.rename", map[string]any{"slug": slug, "name": name}, func(v any, err error) tea.Cmd {
+			if err != nil {
+				return fail(err)
+			}
+			return then(stringOr(asRPCResult(v)["slug"], slug))
+		})
 	})
 }
 

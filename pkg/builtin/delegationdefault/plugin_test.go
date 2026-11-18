@@ -71,7 +71,7 @@ func TestProviderIdentityAndInheritedDefaults(t *testing.T) {
 	if p.Summary() != "Every subagent uses delegation.model / delegation.provider, else the parent's model." {
 		t.Fatal(p.Summary())
 	}
-	if !p.IsAvailable() || len(p.TaskParameters(map[string]any{"model": "m"})) != 0 || p.Description(nil) != "" {
+	if !p.IsAvailable() || p.TaskParameters(map[string]any{"model": "m"}).Len() != 0 || p.Description(nil) != "" {
 		t.Fatal("inherited defaults changed")
 	}
 	want := map[string]any{"name": "Default", "badge": "", "tag": "", "env_vars": []any{}}

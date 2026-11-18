@@ -2,9 +2,9 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net"
 	"net/url"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -118,9 +118,9 @@ type Profile struct {
 	ResolveAuxModelHook                 func(ctx context.Context, vision bool) string
 	GetHostnameHook                     func() string
 	PrepareMessagesHook                 func(messages []map[string]any) []map[string]any
-	BuildExtraBodyHook                  func(sessionID string, context map[string]any) map[string]any
+	BuildExtraBodyHook                  func(sessionID string, context map[string]any) *pyjson.Object
 	DefaultReasoningConfigHook          func(model string) *Reasoning
-	BuildAPIKwargsExtrasHook            func(reasoning *Reasoning, context map[string]any) (map[string]any, map[string]any)
+	BuildAPIKwargsExtrasHook            func(reasoning *Reasoning, context map[string]any) (*pyjson.Object, map[string]any)
 	BuildClientKwargsExtrasHook         func(context map[string]any) map[string]any
 	DefaultVisionModelHook              func(ctx context.Context) string
 	GetModelContextLengthHook           ProfileContextLengthHook
@@ -523,12 +523,12 @@ func ParseMode(raw string) APIMode {
 	return ""
 }
 
-// UserAgent builds the attribution header value sent to aggregators
+// UserAgent builds the attribution header value sent to aggregators, the product and its base version
 func UserAgent(product string) string {
-	return product + "/" + Version + " (" + runtime.GOOS + "; " + runtime.GOARCH + "; go)"
+	return userAgent(product)
 }
 
-// Version is the agent version stamped into attribution headers
+// Version is the agent version the Codex tools MCP server reports
 var Version = "dev"
 
 // Attribution headers aggregators use to credit the agent

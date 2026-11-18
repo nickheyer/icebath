@@ -49,7 +49,7 @@ func homeRepr(h string) string {
 }
 
 func refuse(label, reason, callerHome, boundHome string, multiplexed bool) {
-	slog.Default().Warn(fmt.Sprintf("Memory %s refused (%s): %s; caller profile home %s, provider bound to %s, multiplexed=%s",
+	slog.Default().With("logger", "agent.memory_caller_scope").Warn(fmt.Sprintf("Memory %s refused (%s): %s; caller profile home %s, provider bound to %s, multiplexed=%s",
 		label, CallerProfileRefusal, reason, homeRepr(callerHome), homeRepr(boundHome), pyStr(multiplexed)))
 }
 
@@ -160,14 +160,14 @@ func ClaimInstance(ctx context.Context, p any, h string) bool {
 		}
 	}
 	if owned && owner != key && multiplexed {
-		slog.Default().Warn(fmt.Sprintf("Memory provider '%s' refused for profile home %s (%s): this same provider instance "+
+		slog.Default().With("logger", "agent.memory_caller_scope").Warn(fmt.Sprintf("Memory provider '%s' refused for profile home %s (%s): this same provider instance "+
 			"is already bound to %s; a provider must give every agent its own instance",
 			providerName(p), pyRepr(h), SharedInstanceRefusal, pyRepr(owner)))
 		return false
 	}
 	if !trackable {
 		if multiplexed {
-			slog.Default().Warn(fmt.Sprintf("Memory provider '%s' refused for profile home %s (%s): the instance can't be "+
+			slog.Default().With("logger", "agent.memory_caller_scope").Warn(fmt.Sprintf("Memory provider '%s' refused for profile home %s (%s): the instance can't be "+
 				"tracked (no weak reference support), so sharing it can't be ruled out",
 				providerName(p), pyRepr(h), SharedInstanceRefusal))
 			return false

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -102,7 +103,7 @@ func init() {
 	for _, n := range strings.Fields(`acp approvals auth backup bundles checkpoints codex-runtime completion computer-use connectors
 		config console cron curator debug doctor dump egress fallback gateway hooks import insights
 		kanban login logout logs lsp mcp memory migrate moa journey memory-graph learning
-		model monitoring pairing pause peer pets plugins portal profile project proxy prompt-size resume send sessions setup
+		model monitoring pairing pause peer pets plugins portal profile project proxy prompt-size resume send sessions
 		skin skills slack status tools uninstall update usage vault webhook whatsapp whatsapp-cloud worktree chat secrets security
 		browser verify help`) {
 		BuiltinSubcommands[n] = true
@@ -193,7 +194,6 @@ func NewCLI() *CLI {
 	c.addTreeB(root)
 	c.addTreeC(root)
 	c.addPM(root)
-	c.addMCPServe(root)
 	c.bindMCP()
 	c.bindWebhook()
 	c.bindMoA()
@@ -247,6 +247,8 @@ func (c *CLI) addRootFlags(root *cobra.Command) {
 	c.inherited(root, "safe-mode")
 	f.Bool("native", false, "Use native terminal scrollback and disable mouse tracking in the TUI")
 	c.inherited(root, "native")
+	f.Bool("dev", false, devFlagHelp)
+	c.inherited(root, "dev")
 	pf := root.PersistentFlags()
 	pf.StringP("profile", "p", "", "Run against a named profile's home (consumed before parsing, also carried over on relaunch)")
 	root.RegisterFlagCompletionFunc("profile", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -314,6 +316,8 @@ func (c *CLI) addChat(root *cobra.Command) {
 	f.String("source", "", "Session source tag for filtering (default: cli). Use 'tool' for third-party integrations that should not appear in user session lists.")
 	f.Bool("native", false, "Use native terminal scrollback and disable mouse tracking in the TUI")
 	c.inherited(chat, "native")
+	f.Bool("dev", false, devFlagHelp)
+	c.inherited(chat, "dev")
 	c.chatArgparseShape(chat)
 }
 
@@ -536,28 +540,33 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 		if !unbounded && len(args) > max {
 			return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(args[max:], " ")}
 		}
-		for i, a := range args {
-			if i >= len(specs) {
-				break
-			}
-			s := specs[i]
-			if s.Variadic || s.Remain {
-				break
-			}
-			value, repr := a, pyrepr.StrRepr
-			if s.Int {
-				n, err := strconv.Atoi(a)
-				if err != nil {
-					return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: %s", s.display(), pyrepr.StrRepr(a))}
-				}
-				value, repr = strconv.Itoa(n), func(v string) string { return v }
-			}
-			if len(s.Choices) > 0 && !contains(s.Choices, value) {
-				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid choice: %s (choose from %s)", s.display(), repr(value), reprList(s.Choices, repr))}
-			}
-		}
-		return nil
+		return positionalValueError(cmd, specs, args)
 	}
+}
+
+// Type or choice error of the first positional word its spec refuses, as argparse raises while consuming it
+func positionalValueError(cmd *cobra.Command, specs []posSpec, args []string) error {
+	for i, a := range args {
+		if i >= len(specs) {
+			break
+		}
+		s := specs[i]
+		if s.Variadic || s.Remain {
+			break
+		}
+		value, repr := a, pyrepr.StrRepr
+		if s.Int {
+			n, err := strconv.Atoi(a)
+			if err != nil {
+				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: %s", s.display(), pyrepr.StrRepr(a))}
+			}
+			value, repr = strconv.Itoa(n), func(v string) string { return v }
+		}
+		if len(s.Choices) > 0 && !contains(s.Choices, value) {
+			return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid choice: %s (choose from %s)", s.display(), repr(value), reprList(s.Choices, repr))}
+		}
+	}
+	return nil
 }
 
 // Choices joined the way argparse lists them, each in Python repr
@@ -698,6 +707,7 @@ func (c *CLI) dispatch(path string, cmd *cobra.Command, args []string) error {
 // AddPluginCommand registers a plugin provided top level command
 func (c *CLI) AddPluginCommand(cmd *cobra.Command) {
 	c.Root.AddCommand(cmd)
+	c.buildPluginParser(cmd)
 	c.finishAll(cmd)
 }
 
@@ -835,7 +845,7 @@ func (c *CLI) ScanProfileFlag(argv []string) (string, int, int, error) {
 var sessionNameSubcommands = map[string]bool{}
 
 func init() {
-	for _, n := range strings.Fields(`chat model gateway setup whatsapp whatsapp-cloud login logout auth status cron doctor config pairing skills
+	for _, n := range strings.Fields(`chat model gateway whatsapp whatsapp-cloud login logout auth status cron doctor config pairing skills
 		tools mcp sessions insights update uninstall profile honcho claw plugins security acp webhook peer
 		memory dump debug backup import completion logs usage`) {
 		sessionNameSubcommands[n] = true
@@ -989,8 +999,83 @@ func (c *CLI) Execute(argv []string) error {
 	argv, c.mcpAddArgs = rewriteMCPAddArgs(argv)
 	argv = c.expandNargsPlus(argv)
 	c.argv = argv
+	if err := c.unknownBeforeHelp(argv); err != nil {
+		return err
+	}
 	c.Root.SetArgs(argv)
 	return argparseFlagError(c.Root, c.Root.Execute())
+}
+
+// Error argparse raises for a word before -h or --help, an unknown subcommand or a refused positional value
+func (c *CLI) unknownBeforeHelp(argv []string) error {
+	helpAt := -1
+	for i, tok := range argv {
+		if tok == "--" {
+			break
+		}
+		if tok == "-h" || tok == "--help" {
+			helpAt = i
+			break
+		}
+	}
+	if helpAt < 0 {
+		return nil
+	}
+	cmd, rest, err := c.Root.Find(argv[:helpAt])
+	if err != nil || (cmd == c.Root && c.chatIntentIn(argv[:helpAt])) {
+		return nil
+	}
+	words := positionalWordsOf(cmd, rest)
+	if !cmd.HasSubCommands() {
+		return positionalValueError(cmd, c.positionals[cmd], words)
+	}
+	if len(words) == 0 || slices.Contains(subcommandChoices(cmd), words[0]) {
+		return nil
+	}
+	return c.unknownCommand(cmd, words[0])
+}
+
+// Whether the words carry a resume or continue flag, the root parse that takes a positional prompt
+func (c *CLI) chatIntentIn(argv []string) bool {
+	for _, tok := range argv {
+		name, _, _ := strings.Cut(tok, "=")
+		if name == "-r" || name == "--resume" || name == "-c" || name == "--continue" {
+			return true
+		}
+	}
+	return false
+}
+
+// Positional words of a command's arguments, flag values skipped by the flag's own arity
+func positionalWordsOf(cmd *cobra.Command, args []string) []string {
+	var words []string
+	for i := 0; i < len(args); i++ {
+		tok := args[i]
+		if tok == "--" {
+			return append(words, args[i+1:]...)
+		}
+		if tok == "-" || !strings.HasPrefix(tok, "-") {
+			words = append(words, tok)
+			continue
+		}
+		if strings.Contains(tok, "=") {
+			continue
+		}
+		var fl *pflag.Flag
+		if name, long := strings.CutPrefix(tok, "--"); long {
+			if fl = cmd.Flags().Lookup(name); fl == nil {
+				fl = cmd.InheritedFlags().Lookup(name)
+			}
+		} else if short := tok[1:]; len(short) == 1 {
+			if fl = cmd.Flags().ShorthandLookup(short); fl == nil {
+				fl = cmd.InheritedFlags().ShorthandLookup(short)
+			}
+		}
+		if fl != nil && fl.NoOptDefVal == "" && fl.Value.Type() != "bool" && fl.Value.Type() != "count" {
+			i++
+		}
+	}
+	return words
 }
 
 // Turns the mcp add passthrough marker into the plain argument separator, reporting whether it did

@@ -2,8 +2,10 @@ package tui
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"time"
+	"unsafe"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -39,7 +41,6 @@ type slashCatalog struct {
 	Categories []slashCategory
 	Pairs      [][2]string
 	SkillCount int
-	Sub        map[string][]string
 }
 
 // Named group of catalog pairs
@@ -74,10 +75,11 @@ type eventHandler struct {
 	persistedAbandonedClarify map[string]bool
 	openedChallenges          map[string]bool
 	lastDelegationFetchAt     float64
-	config                    fullConfigFlight
+	config                    *fullConfigFlight
 	agentsNudgeEnabled        bool
 	agentsNudgeConfigFetched  bool
 	agentsNudgedThisTurn      bool
+	view                      mainView
 
 	cmds       []tea.Cmd
 	microtasks []func() tea.Cmd
@@ -89,7 +91,7 @@ func newEventHandler(store *tuiStore, turn *turnController, gw turnGateway, app 
 	h := &eventHandler{
 		store: store, turn: turn, gw: gw, app: app,
 		startupResumeID:           env("ICEBATH_TUI_RESUME"),
-		persistedAbandonedClarify: map[string]bool{}, openedChallenges: map[string]bool{}, agentsNudgeEnabled: true,
+		persistedAbandonedClarify: map[string]bool{}, openedChallenges: map[string]bool{}, agentsNudgeEnabled: true, config: &fullConfigFlight{},
 	}
 	return h, store.syncThemeToTerminalBackground()
 }
@@ -168,20 +170,21 @@ func (h *eventHandler) quietRequest(method string, params map[string]any) tea.Cm
 
 // Calls fn with the full config, fetched once and nil when the fetch failed
 func (h *eventHandler) withFullConfig(fn func(map[string]any) tea.Cmd) {
-	if h.config.done {
-		cfg := h.config.value
+	f := h.config
+	if f.done {
+		cfg := f.value
 		h.later(func() tea.Cmd { return fn(cfg) })
 		return
 	}
-	h.config.waiters = append(h.config.waiters, fn)
-	if h.config.started {
+	f.waiters = append(f.waiters, fn)
+	if f.started {
 		return
 	}
-	h.config.started = true
+	f.started = true
 	h.queue(h.rpc("config.get", map[string]any{"key": "full"}, func(cfg map[string]any) tea.Cmd {
-		h.config.done, h.config.value = true, cfg
-		waiters := h.config.waiters
-		h.config.waiters = nil
+		f.done, f.value = true, cfg
+		waiters := f.waiters
+		f.waiters = nil
 		cmds := make([]tea.Cmd, 0, len(waiters))
 		for _, w := range waiters {
 			cmds = append(cmds, w(cfg))
@@ -314,6 +317,37 @@ func (h *eventHandler) persistSpawnTree(subagents []subagentProgress, sessionID 
 	return h.rpc("spawn_tree.save", map[string]any{"finished_at": h.store.nowMillis() / 1000, "label": jsSlice(label, 0, 120), "session_id": sessionID, "started_at": started, "subagents": wire}, nil)
 }
 
+// State the main view of the reference redraws on, its event handler built anew at each redraw
+type mainView struct {
+	status        string
+	info, usage   unsafe.Pointer
+	busy, agents  bool
+	activity      int
+	transcript    int
+}
+
+// Main view state as it stands
+func (h *eventHandler) mainView() mainView {
+	v := mainView{status: h.store.ui.Status, info: reflect.ValueOf(h.store.ui.Info).UnsafePointer(), usage: reflect.ValueOf(h.store.ui.Usage).UnsafePointer(),
+		busy: h.store.ui.Busy, agents: h.store.overlay.Agents, transcript: h.store.transcriptGen}
+	if n := len(h.store.turn.Activity); n > 0 {
+		v.activity = h.store.turn.Activity[n-1].ID
+	}
+	return v
+}
+
+// Starts the per handler state over when the main view changed since the last event, the delegation fetch clock, the full config read and the agents nudge
+func (h *eventHandler) renewOnRedraw() {
+	v := h.mainView()
+	if v == h.view {
+		return
+	}
+	h.view = v
+	h.lastDelegationFetchAt = 0
+	h.config = &fullConfigFlight{}
+	h.agentsNudgeEnabled, h.agentsNudgeConfigFetched, h.agentsNudgedThisTurn = true, false, false
+}
+
 // Reads display.tui_agents_nudge once, a false turning the agents nudge off
 func (h *eventHandler) ensureAgentsNudgeConfig() {
 	if h.agentsNudgeConfigFetched {
@@ -362,7 +396,7 @@ func (h *eventHandler) loadSlashCatalog(sid string) tea.Cmd {
 		if r == nil || !truthyJS(r["pairs"]) || h.store.ui.Sid != sid {
 			return nil
 		}
-		catalog := &slashCatalog{Canon: stringMap(r["canon"]), Pairs: catalogPairs(pairs, isList), Sub: map[string][]string{}}
+		catalog := &slashCatalog{Canon: stringMap(r["canon"]), Pairs: catalogPairs(pairs, isList)}
 		if n, isNum := r["skill_count"].(float64); isNum {
 			catalog.SkillCount = int(n)
 		}
@@ -372,10 +406,6 @@ func (h *eventHandler) loadSlashCatalog(sid string) tea.Cmd {
 			c, _ := raw.(map[string]any)
 			list, listed := c["pairs"].([]any)
 			catalog.Categories = append(catalog.Categories, slashCategory{Name: jsValueString(c["name"]), Pairs: catalogPairs(list, listed)})
-		}
-		sub, _ := r["sub"].(map[string]any)
-		for k, v := range sub {
-			catalog.Sub[k] = paramStrList(v)
 		}
 		h.app.setCatalog(catalog)
 		if truthyJS(r["warning"]) {

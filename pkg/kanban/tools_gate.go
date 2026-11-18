@@ -262,7 +262,7 @@ func registeredProperties(toolName string) (map[string]any, error) {
 	if def == nil || def.Schema == nil {
 		return nil, &RuntimeError{"'NoneType' object is not subscriptable"}
 	}
-	parameters, ok := def.Schema["parameters"]
+	parameters, ok := def.Schema.Get("parameters")
 	if !ok {
 		return nil, &RuntimeError{"'parameters'"}
 	}

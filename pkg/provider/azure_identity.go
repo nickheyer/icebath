@@ -41,6 +41,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 const (
@@ -240,26 +241,29 @@ func entraTokenRequest(ctx context.Context, tenant string, form url.Values) (Ent
 
 // ---- service principal credentials ----
 
-// Client secret service principal through the client credentials grant
+// Client secret service principal through the MSAL client credentials grant
 type entraClientSecretCredential struct {
 	tenant, clientID, secret string
-	cache                    entraTokenCache
+	app                      *msalConfidentialApp
 }
 
 func newEntraClientSecretCredential(tenant, clientID, secret string) (*entraClientSecretCredential, error) {
 	if err := entraValidateTenant(tenant); err != nil {
 		return nil, err
 	}
-	return &entraClientSecretCredential{tenant: tenant, clientID: clientID, secret: secret}, nil
+	app, err := newMSALConfidentialApp(tenant, clientID, func(context.Context, string) ([][2]string, error) {
+		return [][2]string{{"client_info", "1"}, {"client_secret", secret}}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &entraClientSecretCredential{tenant: tenant, clientID: clientID, secret: secret, app: app}, nil
 }
 
 func (c *entraClientSecretCredential) Name() string { return "ClientSecretCredential" }
 
 func (c *entraClientSecretCredential) GetToken(ctx context.Context, scopes ...string) (EntraAccessToken, error) {
-	return c.cache.get(ctx, scopes, func(ctx context.Context) (EntraAccessToken, error) {
-		return entraTokenRequest(ctx, c.tenant, url.Values{"client_id": {c.clientID}, "client_secret": {c.secret},
-			"grant_type": {"client_credentials"}, "scope": {strings.Join(scopes, " ")}})
-	})
+	return c.app.acquireTokenForClient(ctx, scopes)
 }
 
 // Service principal authenticating with a signed client assertion from a callback
@@ -267,11 +271,16 @@ type entraClientAssertionCredential struct {
 	name, tenant, clientID string
 	assertion              func(ctx context.Context, tokenURL string) (string, error)
 	cache                  entraTokenCache
+	// MSAL app of a certificate credential, nil for the azure-identity AadClient of an assertion credential
+	app *msalConfidentialApp
 }
 
 func (c *entraClientAssertionCredential) Name() string { return c.name }
 
 func (c *entraClientAssertionCredential) GetToken(ctx context.Context, scopes ...string) (EntraAccessToken, error) {
+	if c.app != nil {
+		return c.app.acquireTokenForClient(ctx, scopes)
+	}
 	return c.cache.get(ctx, scopes, func(ctx context.Context) (EntraAccessToken, error) {
 		assertion, err := c.assertion(ctx, entraAuthority()+"/"+c.tenant+"/oauth2/v2.0/token")
 		if err != nil {
@@ -300,16 +309,26 @@ func newEntraCertificateCredential(tenant, clientID, certPath, password string, 
 	for _, c := range certs {
 		chain = append(chain, base64.StdEncoding.EncodeToString(c.Raw))
 	}
-	return &entraClientAssertionCredential{name: "CertificateCredential", tenant: tenant, clientID: clientID,
-		assertion: func(_ context.Context, tokenURL string) (string, error) {
-			now := entraNow().Unix()
-			header := map[string]any{"alg": "RS256", "typ": "JWT", "x5t": base64.RawURLEncoding.EncodeToString(thumb[:])}
-			if sendChain {
-				header["x5c"] = chain
-			}
-			return entraSignJWT(key, header, map[string]any{"aud": tokenURL, "iss": clientID, "sub": clientID,
-				"jti": uuid.NewString(), "nbf": now, "iat": now, "exp": now + 600})
-		}}, nil
+	assertion := func(_ context.Context, tokenURL string) (string, error) {
+		now := entraNow().Unix()
+		header := map[string]any{"alg": "RS256", "typ": "JWT", "x5t": base64.RawURLEncoding.EncodeToString(thumb[:])}
+		if sendChain {
+			header["x5c"] = chain
+		}
+		return entraSignJWT(key, header, map[string]any{"aud": tokenURL, "iss": clientID, "sub": clientID,
+			"jti": uuid.NewString(), "nbf": now, "iat": now, "exp": now + 600})
+	}
+	app, err := newMSALConfidentialApp(tenant, clientID, func(ctx context.Context, tokenURL string) ([][2]string, error) {
+		signed, err := assertion(ctx, tokenURL)
+		if err != nil {
+			return nil, err
+		}
+		return [][2]string{{"client_assertion", signed}, {"client_info", "1"}, {"client_assertion_type", entraClientAssertionType}}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &entraClientAssertionCredential{name: "CertificateCredential", tenant: tenant, clientID: clientID, assertion: assertion, app: app}, nil
 }
 
 // RS256 compact JWS with an explicit header
@@ -1573,17 +1592,34 @@ func (t *EntraBearerTransport) RoundTrip(req *http.Request) (*http.Response, err
 		}
 		return nil, err
 	}
+	wire := pyhttpx.WireOf(out)
+	if wire != nil {
+		wire = pyhttpx.NewHeaders(wire.Lines()...)
+	}
 	for _, h := range []string{"Authorization", "Api-Key", "X-Api-Key"} {
 		out.Header.Del(h)
+		if wire != nil {
+			wire.Del(h)
+		}
 	}
+	name, value := "", ""
 	switch {
 	case err != nil:
 		slog.Default().Warn(fmt.Sprintf("Bearer hook: Entra ID token provider returned empty (%v) — stripping Authorization headers. "+
 			"Azure will respond 401. Run `icebath doctor` or `az login` to recover.", err))
 	case t.SendsAsAPIKey != nil && t.SendsAsAPIKey(token):
-		out.Header.Set("x-api-key", token)
+		name, value = "x-api-key", token
 	default:
-		out.Header.Set("Authorization", "Bearer "+token)
+		name, value = "Authorization", "Bearer "+token
+	}
+	if name != "" {
+		out.Header.Set(name, value)
+		if wire != nil {
+			wire.Set(name, value)
+		}
+	}
+	if wire != nil {
+		out = pyhttpx.WithWire(out, wire)
 	}
 	return t.Base.RoundTrip(out)
 }

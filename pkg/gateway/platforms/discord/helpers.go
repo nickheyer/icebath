@@ -408,7 +408,6 @@ func formatPrivilegedIntentsGuidance(needsMembers bool) string {
 	}
 	lines = append(lines,
 		"Fix: https://discord.com/developers/applications → your application → Bot → Privileged Gateway Intents → enable the intent(s) listed above → Save Changes, then restart the gateway.",
-		"Docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/discord",
 	)
 	return strings.Join(lines, "\n")
 }

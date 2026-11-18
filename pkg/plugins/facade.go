@@ -101,7 +101,7 @@ var scanPluginTree = func(h, pluginDir, identifier string, opts scanOptions) (*s
 			"Review the findings above. Install only plugins from sources you trust. (Scanning can be configured via "+
 			"plugins.scan_on_install in config.yaml.)", reason, FormatPluginScanReport(result)), &result)
 	}
-	logInfo(fmt.Sprintf("plugin scan passed for %s: %s", filepath.Base(pluginDir), reason))
+	logPluginsCmd.info(fmt.Sprintf("plugin scan passed for %s: %s", filepath.Base(pluginDir), reason))
 	return &result, nil
 }
 
@@ -236,14 +236,14 @@ func readManifest(pluginDir string) (map[string]any, error) {
 		}
 		manifest, _, err := ReadAgentPluginManifest(pluginDir)
 		if err != nil {
-			logWarn(fmt.Sprintf("Failed to read plugin.json in %s: %v", pluginDir, err))
+			logPluginsCmd.warn(fmt.Sprintf("Failed to read plugin.json in %s: %v", pluginDir, err))
 			return map[string]any{}, nil
 		}
 		return manifest, nil
 	}
 	manifest, err := pm.ReadNativeManifest(native)
 	if err != nil {
-		logWarn(fmt.Sprintf("Failed to read plugin.yaml in %s: %v", pluginDir, err))
+		logPluginsCmd.warn(fmt.Sprintf("Failed to read plugin.yaml in %s: %v", pluginDir, err))
 		return map[string]any{}, nil
 	}
 	if manifest == nil {

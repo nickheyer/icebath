@@ -16,6 +16,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -65,6 +66,12 @@ type Runner struct {
 func NewRunner(opts Options, sink func(Event)) (*Runner, error) {
 	if opts.Branch == "" {
 		opts.Branch = "main"
+	}
+	switch {
+	case opts.InstallMethod == MethodWinGet && runtime.GOOS != "windows":
+		return nil, fmt.Errorf("--install-method winget installs only on Windows")
+	case opts.InstallMethod != "" && opts.InstallMethod != MethodScript && opts.InstallMethod != MethodWinGet:
+		return nil, fmt.Errorf("--install-method must be script or winget, not %s", opts.InstallMethod)
 	}
 	switch opts.Channel {
 	case "", "stable", "main":
@@ -176,10 +183,13 @@ func failureClass(err error) string {
 	return "other"
 }
 
+// Refusal of a Termux host with the Debian userland install that runs the Linux release
+const termuxRefusal = "Termux has no icebath build; install icebath in a Debian userland instead: " + config.TermuxInstallCommand
+
 // Refuses hosts the release has no build for, Termux included
 func checkPlatform() error {
 	if os.Getenv("TERMUX_VERSION") != "" || strings.Contains(os.Getenv("PREFIX"), "com.termux/files/usr") {
-		return fail("Termux is installed from its APT repository, not install.sh: pkg install icebath-agent (setup: https://hermes-agent.nousresearch.com/docs/getting-started/termux)", "unsupported_platform")
+		return fail(termuxRefusal, "unsupported_platform")
 	}
 	switch runtime.GOOS {
 	case "linux", "darwin", "windows":
@@ -222,7 +232,7 @@ func (r *Runner) printBanner() {
 		"┌─────────────────────────────────────────────────────────┐",
 		"│             ☤ Icebath Agent Installer                   │",
 		"├─────────────────────────────────────────────────────────┤",
-		"│  An open source AI agent by Nous Research.              │",
+		"│  An open source AI agent by Nicholas W. Heyer.          │",
 		"└─────────────────────────────────────────────────────────┘",
 		close)
 }

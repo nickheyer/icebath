@@ -284,7 +284,7 @@ func prefix(s string, n int) string { return s[:min(n, len(s))] }
 // Clones and returns the checked out sha, refusing a source that moved since the reviewed commit
 func cloneAtReviewedCommit(ctx context.Context, h, tmpClone, gitURL, requestedRevision, inspectedSha, subdir string, catalogPin bool) (string, error) {
 	if inspectedSha == "" {
-		return clonePluginRepo(ctx, h, tmpClone, gitURL, requestedRevision, subdir)
+		return fetchPluginSource(ctx, h, tmpClone, gitURL, requestedRevision, subdir)
 	}
 	sha, err := normalizeExactRevision(inspectedSha)
 	if err != nil {
@@ -294,7 +294,7 @@ func cloneAtReviewedCommit(ctx context.Context, h, tmpClone, gitURL, requestedRe
 		return "", &PluginOperationError{Msg: fmt.Sprintf("This plugin is pinned to commit %s, not the commit %s you reviewed. "+
 			"Reinstall it with that pin, or re-open the install dialog.", prefix(requestedRevision, 12), prefix(sha, 12)), FailureClass: "already_installed"}
 	}
-	head, err := clonePluginRepo(ctx, h, tmpClone, gitURL, requestedRevision, subdir)
+	head, err := fetchPluginSource(ctx, h, tmpClone, gitURL, requestedRevision, subdir)
 	if err != nil {
 		return "", err
 	}
@@ -377,7 +377,7 @@ func installPluginCore(ctx context.Context, identifier string, opts installCoreO
 	if looks, err := looksLikePluginDir(target); err != nil {
 		return "", nil, "", err
 	} else if !looks {
-		logWarn(fmt.Sprintf("%s has no plugin.yaml / __init__.py; may not be a valid plugin", filepath.Base(target)))
+		logPluginsCmdInstall.warn(fmt.Sprintf("%s has no plugin.yaml / __init__.py; may not be a valid plugin", filepath.Base(target)))
 	}
 	copyExampleFiles(target, NewConsole(os.Stdout))
 	installed, err := readManifest(target)
@@ -576,6 +576,8 @@ func recordedInstall(ctx context.Context, h string, install func() (string, map[
 	var name any
 	if catalogName != "" {
 		source, name = "catalog", catalogName
+	} else if port, ok := strings.CutPrefix(identifier, builtinPortSource); ok {
+		source, name = "bundled", port
 	} else if strings.HasPrefix(identifier, "file://") {
 		source = "local"
 	}
@@ -627,6 +629,9 @@ type InstallCommandOptions struct {
 func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) error {
 	h := home.Dir(ctx)
 	console := NewConsole(out)
+	if port, ok := builtinPortFor(opts.Identifier); ok {
+		return installBuiltinPortCommand(ctx, h, console, opts, port)
+	}
 	entry, identifier, err := announceSource(ctx, opts.Identifier, console, opts.Brief)
 	if err != nil {
 		return err
@@ -654,7 +659,12 @@ func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) 
 		if subdir != "" {
 			shownSubdir = " (subdir: " + subdir + ")"
 		}
-		console.Print(fmt.Sprintf("[dim]Cloning %s%s...[/dim]", gitURL, shownSubdir))
+		if catalogEntryCompiled(entry, opts.Ref) {
+			console.Print(fmt.Sprintf("[dim]Unpacking %s%s @ %s from the copy compiled into Icebath...[/dim]", gitURL, shownSubdir,
+				prefix(catalogInstallRevision(entry, opts.Ref), 8)))
+		} else {
+			console.Print(fmt.Sprintf("[dim]Cloning %s%s...[/dim]", gitURL, shownSubdir))
+		}
 	}
 	decide := InteractiveScanDecision(console, "Install")
 	catalogName := ""
@@ -797,7 +807,7 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 		return nil
 	}
 	if err := svc.PrepareMemoryProviderDependencies(ctx, name); err != nil {
-		logDebug(fmt.Sprintf("memory provider %s dependency preparation failed: %v", name, err))
+		logPluginsCmdCatalog.debug(fmt.Sprintf("memory provider %s dependency preparation failed: %v", name, err))
 		console.Print(fmt.Sprintf("[red]✗[/red] Could not prepare %s's dependencies: %v", name, err))
 		console.Print("[dim]memory.provider is unchanged; run `icebath memory setup` after resolving it.[/dim]")
 		return nil
@@ -885,7 +895,7 @@ func resolveSource(ctx context.Context, identifier, catalogName string) (*Plugin
 	warnings := []string{}
 	var entry *PluginCatalogEntry
 	if catalogName != "" {
-		if entry = GetLiveCatalogEntry(ctx, catalogName); entry == nil {
+		if entry = portPinnedEntry(GetLiveCatalogEntry(ctx, catalogName)); entry == nil {
 			if err := raiseIfRemoved(ctx, catalogName); err != nil {
 				return nil, identifier, warnings, map[string]any{"ok": false, "error": err.Error()}
 			}
@@ -992,26 +1002,50 @@ func UnattendedInstallPlugin(ctx context.Context, opts UnattendedInstallOptions)
 	if opts.InspectedSha != "" {
 		forgetInspection(ctx, opts.Identifier, opts.CatalogName)
 	}
-	entry, identifier, warnings, refusal := resolveSource(ctx, opts.Identifier, opts.CatalogName)
-	if refusal != nil {
-		return refusal, nil
-	}
 	assumeDepsConsent := opts.Enable && !opts.Force
 	if opts.AssumeDepsConsent != nil {
 		assumeDepsConsent = *opts.AssumeDepsConsent
 	}
-	target, manifest, installedName, result, err := placeTreeConsented(ctx, h, entry, identifier, opts.Force, opts.Ref, step, opts.InspectedSha, assumeDepsConsent)
-	if err != nil || result != nil {
-		return result, err
+	var entry *PluginCatalogEntry
+	var warnings []string
+	var target, installedName string
+	var manifest map[string]any
+	var err error
+	if port, ok := builtinOnlyPort(opts.CatalogName); ok && opts.Identifier == "" {
+		step(InstallPhaseDownloading)
+		name := port.Manifest().Name
+		target, manifest, installedName, err = recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
+			return installBuiltinPort(ctx, name, opts.Force, assumeDepsConsent)
+		}, "", builtinPortSource+name)
+		var opErr *PluginOperationError
+		if errors.As(err, &opErr) {
+			return map[string]any{"ok": false, "error": err.Error()}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		warnings = []string{}
+	} else {
+		var identifier string
+		var refusal map[string]any
+		entry, identifier, warnings, refusal = resolveSource(ctx, opts.Identifier, opts.CatalogName)
+		if refusal != nil {
+			return refusal, nil
+		}
+		var result map[string]any
+		target, manifest, installedName, result, err = placeTreeConsented(ctx, h, entry, identifier, opts.Force, opts.Ref, step, opts.InspectedSha, assumeDepsConsent)
+		if err != nil || result != nil {
+			return result, err
+		}
 	}
 	deps := pythonDependencySummary(target, &warnings)
 	if opts.Enable {
 		if len(deps) > 0 {
 			step(InstallPhasePythonPackages)
 		}
-		refused, err := enablePlaced(ctx, h, installedName)
-		if err != nil || refused != nil {
-			return refused, err
+		refused, enableErr := enablePlaced(ctx, h, installedName)
+		if enableErr != nil || refused != nil {
+			return refused, enableErr
 		}
 	}
 	activated := map[string]any{"gateway_reloaded": false, "activation": nil, "restart_required": false}

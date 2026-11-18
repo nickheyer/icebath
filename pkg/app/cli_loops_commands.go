@@ -87,9 +87,7 @@ var queueVerbs = map[string]struct {
 // Handles /exit and /quit, false to leave the REPL, --delete marking the session for removal
 func (c *CLI) cmdExit(cmdOriginal string) bool {
 	args := pystr.Lower(slashArgs(cmdOriginal))
-	if args == "--delete" || args == "-d" {
-		c.deleteSessionOnExit = true
-	} else if args != "" {
+	if args != "" && args != "--delete" && args != "-d" {
 		cprint("  " + dimANSI + c.t("cli.exit.unknown_argument", map[string]any{"argument": pyrich.Escape(args)}) + resetANSI)
 		return true
 	}
@@ -106,7 +104,6 @@ func (c *CLI) cmdClear(cmdOriginal string) {
 		return
 	}
 	c.newSession(true, "")
-	clearOutputHistory()
 	c.clearConsole()
 	c.showBanner()
 	printLines(c.freshStart())
@@ -277,7 +274,7 @@ func (c *CLI) cmdReload(string) {
 
 // Handles /reload-skills under the slow command status
 func (c *CLI) cmdReloadSkills(cmdOriginal string) {
-	_ = c.busyCommand(c.slowCommandStatus(cmdOriginal), true, c.reloadSkills)
+	c.busyCommand(c.slowCommandStatus(cmdOriginal), c.reloadSkills)
 }
 
 // Handles /plugins, a glance at user plugins with load details and the bundled count on one line

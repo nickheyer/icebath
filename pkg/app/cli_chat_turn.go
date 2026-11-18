@@ -25,9 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const voiceInputPrefix = "[Voice input — respond concisely and conversationally, " +
-	"2-3 sentences max. No code blocks or markdown.] "
-
 var (
 	settlePaintDelay         = 150 * time.Millisecond
 	interruptPollInterval    = 100 * time.Millisecond
@@ -125,14 +122,12 @@ type fallbackChainApplier interface {
 var _ fallbackChainApplier = (*agent.AIAgent)(nil)
 
 // Runs one user turn and returns the agent's response, false when the turn produced none
-func (c *CLI) chat(message any, images []string, voiceInput bool) (response string, ok bool) {
+func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 	skills.SetSecretCaptureCallback(c.secretCaptureCallback)
 	c.uiMu.Lock()
-	c.lastTurnInterrupted, c.lastTurnFailed = false, false
+	c.lastTurnInterrupted = false
 	c.uiMu.Unlock()
 	switch m := message.(type) {
-	case *seededQueryMessage:
-		message = m.Text
 	case *voiceInputMessage:
 		message = m.Text
 	}
@@ -196,7 +191,7 @@ func (c *CLI) chat(message any, images []string, voiceInput bool) (response stri
 	c.reasoningShownThisTurn = false
 	c.streamedTextThisTurn = ""
 	c.streamMu.Unlock()
-	c.chatSetupTurnAudio(turn, message, voiceInput)
+	c.chatSetupTurnAudio(turn)
 	started := wallClock()
 	c.uiMu.Lock()
 	c.promptStartTime = &started
@@ -291,7 +286,7 @@ func (c *CLI) chatStageUserMessage(a cliAgent, message any) map[string]any {
 }
 
 // Arms the full duplex listener and the streaming TTS pipeline of this turn in voice mode
-func (c *CLI) chatSetupTurnAudio(turn *chatTurn, message any, voiceInput bool) {
+func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 	if turn.muteNotificationReply {
 		return
 	}
@@ -353,9 +348,6 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn, message any, voiceInput bool) {
 			c.voiceLock.Unlock()
 		}
 	}
-	if _, isText := message.(string); voiceInput && isText {
-		turn.voicePrefix = voiceInputPrefix
-	}
 }
 
 // Agent goroutine body binding the turn callbacks and approval key, prepending one shot notes and running the turn
@@ -372,10 +364,6 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 	tools.SetCurrentSessionKey(c.env, sessionKey)
 	a := c.agentRef()
 	agentMessage, changed := message, false
-	if turn.voicePrefix != "" {
-		agentMessage, changed = turn.voicePrefix+message.(string), true
-	}
-	a.SetVoiceTurnPending(turn.voicePrefix != "")
 	c.uiMu.Lock()
 	takenModelNote, takenSkillsNote := c.pendingModelSwitchNote, c.pendingSkillsReloadNote
 	c.pendingModelSwitchNote, c.pendingSkillsReloadNote = "", ""
@@ -757,10 +745,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 	c.chatPrintReasoningBox(turn)
 	c.chatPrintResponsePanel(turn, response)
 	if showInterruptMarker {
-		func() {
-			defer suspendOutputHistory()()
-			cprint("\n" + dimANSI + c.t("cli.chat.interrupted_marker", nil) + resetANSI)
-		}()
+		cprint("\n" + dimANSI + c.t("cli.chat.interrupted_marker", nil) + resetANSI)
 	}
 	func() {
 		defer func() { _ = recover() }()
@@ -847,7 +832,6 @@ func (c *CLI) chatResolveInterrupt(turn *chatTurn, done <-chan struct{}, interru
 	interruptedThisTurn := len(result) > 0 && cliTruthy(result["interrupted"])
 	c.uiMu.Lock()
 	c.lastTurnInterrupted = interruptedThisTurn
-	c.lastTurnFailed = len(result) > 0 && cliTruthy(result["failed"])
 	c.uiMu.Unlock()
 	if interruptedThisTurn {
 		var pendingMessage any = interruptMsg

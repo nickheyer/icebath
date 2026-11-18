@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"testing"
 )
@@ -11,42 +12,42 @@ var kimiThinkingEnabled = map[string]any{"thinking": map[string]any{"type": "ena
 func TestKimiReasoningWireShapeNoConfigEnablesThinkingWithoutEffort(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{})
-	assertExtras(t, "nil", eb, tl, kimiThinkingEnabled, map[string]any{})
+	assertExtras(t, "nil", pyjson.Plain(eb).(map[string]any), tl, kimiThinkingEnabled, map[string]any{})
 }
 
 func TestKimiReasoningWireShapeEffortMappedToK3Vocabulary(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	for effort, want := range map[string]string{"low": "low", "minimal": "low", "medium": "high", "high": "high", "xhigh": "max", "max": "max", "ultra": "max"} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg(effort), map[string]any{})
-		assertExtras(t, effort, eb, tl, map[string]any{}, map[string]any{"reasoning_effort": want})
+		assertExtras(t, effort, pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{"reasoning_effort": want})
 	}
 }
 
 func TestKimiReasoningWireShapeEnabledWithoutEffortFallsBackToThinking(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	eb, tl := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true)}, map[string]any{})
-	assertExtras(t, "enabled", eb, tl, kimiThinkingEnabled, map[string]any{})
+	assertExtras(t, "enabled", pyjson.Plain(eb).(map[string]any), tl, kimiThinkingEnabled, map[string]any{})
 }
 
 func TestKimiReasoningWireShapeUnrecognizedEffortFallsBackToThinking(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	for _, effort := range []string{"", "garbage"} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg(effort), map[string]any{})
-		assertExtras(t, effort, eb, tl, kimiThinkingEnabled, map[string]any{})
+		assertExtras(t, effort, pyjson.Plain(eb).(map[string]any), tl, kimiThinkingEnabled, map[string]any{})
 	}
 }
 
 func TestKimiReasoningWireShapeDisabledSendsThinkingDisabledOnly(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	eb, tl := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{})
-	assertExtras(t, "disabled", eb, tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
+	assertExtras(t, "disabled", pyjson.Plain(eb).(map[string]any), tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
 }
 
 func TestKimiReasoningWireShapeNeverEmitsBoth(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	for _, r := range []*Reasoning{nil, {Enabled: bptr(true)}, effortCfg("high"), effortCfg("garbage"), {Enabled: bptr(false)}, {Enabled: bptr(false), Effort: "low"}} {
 		eb, tl := p.BuildAPIKwargsExtras(r, map[string]any{})
-		if _, both := eb["thinking"]; both && tl["reasoning_effort"] != nil {
+		if _, both := eb.Vals["thinking"]; both && tl["reasoning_effort"] != nil {
 			t.Fatalf("both emitted for %#v", r)
 		}
 	}
@@ -56,9 +57,9 @@ func TestKimiReasoningWireShapeNeverEmitsBoth(t *testing.T) {
 func TestKimiK2ModelsKeepThinkingState(t *testing.T) {
 	p := bundledPluginProfile(t, "kimi-coding")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{"model": "kimi-K2.6"})
-	assertExtras(t, "k2 keep", eb, tl, map[string]any{"thinking": map[string]any{"type": "enabled", "keep": "all"}}, map[string]any{})
+	assertExtras(t, "k2 keep", pyjson.Plain(eb).(map[string]any), tl, map[string]any{"thinking": map[string]any{"type": "enabled", "keep": "all"}}, map[string]any{})
 	eb, _ = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{"model": "kimi-k2.6"})
-	assertExtras(t, "k2 disabled", eb, map[string]any{}, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
+	assertExtras(t, "k2 disabled", pyjson.Plain(eb).(map[string]any), map[string]any{}, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
 }
 
 func TestMoonshotProfilesExcludeBrotli(t *testing.T) {
@@ -88,7 +89,7 @@ func TestMinimaxAuxModelM3ConsumerApiReturnsNonEmptyForEachProvider(t *testing.T
 func TestMinimaxM3OpenAIReasoningWireShapeM3OpenaiRouteRequestsReasoningSplitByDefault(t *testing.T) {
 	p := bundledPluginProfile(t, "minimax")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{"model": "MiniMax-M3", "base_url": "https://api.minimax.io/v1"})
-	assertExtras(t, "m3 global", eb, tl, map[string]any{"reasoning_split": true}, map[string]any{})
+	assertExtras(t, "m3 global", pyjson.Plain(eb).(map[string]any), tl, map[string]any{"reasoning_split": true}, map[string]any{})
 }
 
 func TestMinimaxM3OpenAIReasoningWireShapeNonM3OrNonGlobalOpenaiRoutesEmitNoOpenaiReasoningKnobs(t *testing.T) {
@@ -99,7 +100,7 @@ func TestMinimaxM3OpenAIReasoningWireShapeNonM3OrNonGlobalOpenaiRoutesEmitNoOpen
 		{"MiniMax-M3", "https://api.minimaxi.com/v1"},
 	} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": c[0], "base_url": c[1]})
-		assertExtras(t, c[0]+" "+c[1], eb, tl, map[string]any{}, map[string]any{})
+		assertExtras(t, c[0]+" "+c[1], pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 }
 
@@ -143,7 +144,7 @@ func TestUpstageReasoningProExplicitEffortPassesThrough(t *testing.T) {
 	p := bundledPluginProfile(t, "upstage")
 	for _, effort := range []string{"low", "medium", "high"} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg(effort), map[string]any{"model": "solar-pro3"})
-		assertExtras(t, effort, eb, tl, map[string]any{}, map[string]any{"reasoning_effort": effort})
+		assertExtras(t, effort, pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{"reasoning_effort": effort})
 	}
 }
 
@@ -171,7 +172,7 @@ func TestUpstageReasoningDenyListedModelsNeverSendReasoning(t *testing.T) {
 	p := bundledPluginProfile(t, "upstage")
 	for _, model := range []string{"solar-mini", "solar-mini-250422", "solar-mini-202610", "solar-mini@q4", "syn-pro"} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": model})
-		assertExtras(t, model, eb, tl, map[string]any{}, map[string]any{})
+		assertExtras(t, model, pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 }
 

@@ -3,7 +3,6 @@ package selfupdate
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -22,10 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/discord"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -34,21 +32,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// doctorPython is what the managed runtime interpreter reports about itself, the counterpart of the sys module
-type doctorPython struct {
-	Version    [3]int
-	Prefix     string
-	BasePrefix string
-	Path       []string
-}
-
 // doctorPackage is one library, program or runtime package an optional capability loads, probed the way that capability loads it
 type doctorPackage struct {
 	Name    string
 	Present func(ctx context.Context) bool
 }
-
-const doctorPythonProbe = "import json, sys\nprint(json.dumps({'version': list(sys.version_info[:3]), 'prefix': sys.prefix, 'base_prefix': sys.base_prefix, 'path': sys.path}))\n"
 
 var (
 	doctorDetectInstallMethod  = config.DetectInstallMethod
@@ -82,33 +70,6 @@ var doctorDefaultTLSContext = func() error {
 		return cfg.VerifyConnection(tls.ConnectionState{})
 	}
 	return nil
-}
-
-// Version, prefixes and import path the interpreter Icebath launches reports
-var doctorRuntimePython = func(ctx context.Context) (*doctorPython, error) {
-	root := pm.RepoRoot()
-	venv, err := pm.SelectedVenv(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	command, err := pm.VenvCommand(ctx, root, venv, nil)
-	if err != nil {
-		return nil, err
-	}
-	done, err := doctorSubprocessRun(ctx, append(command, "-c", doctorPythonProbe), pysubprocess.Options{Timeout: 60 * time.Second, Check: true})
-	if err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Version    [3]int   `json:"version"`
-		Prefix     string   `json:"prefix"`
-		BasePrefix string   `json:"base_prefix"`
-		Path       []string `json:"path"`
-	}
-	if err := json.Unmarshal(done.Stdout, &payload); err != nil {
-		return nil, err
-	}
-	return &doctorPython{Version: payload.Version, Prefix: payload.Prefix, BasePrefix: payload.BasePrefix, Path: payload.Path}, nil
 }
 
 // Repair instruction for a broken runtime that respects who owns the installation
@@ -594,27 +555,10 @@ var doctorStagedVenvDir = func(ctx context.Context) (staged string) {
 	return venvDir
 }
 
-// Compares a version triple with a major and minor pair
-func doctorVersionLess(v [3]int, major, minor int) bool {
-	return v[0] < major || (v[0] == major && v[1] < minor)
-}
-
-// Reports the interpreter, the linked SQLite, the runtime venv, the macOS TCC anchor and Full Disk Access
+// Reports the Go runtime, the linked SQLite, the staged runtime venv, the macOS TCC anchor and Full Disk Access
 func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
-		py, err := doctorRuntimePython(ctx)
-		if err != nil {
-			hint, hintErr := doctorPythonRepairHint(ctx, d)
-			if hintErr != nil {
-				return hintErr
-			}
-			doctorFailAndIssue(d.W, "Python", "(missing)", "Repair Python: "+hint, &f.Issues)
-			py = &doctorPython{}
-		} else if v, label := py.Version, fmt.Sprintf("Python %d.%d.%d", py.Version[0], py.Version[1], py.Version[2]); doctorVersionLess(v, 3, 8) {
-			doctorFailAndIssue(d.W, label, "(3.10+ required)", "Upgrade Python to 3.10+", &f.Issues)
-		} else if doctorCheckBool(d.W, !doctorVersionLess(v, 3, 10), doctorRow{Text: label}, doctorRow{label, "(3.10+ recommended)"}, false) && doctorVersionLess(v, 3, 11) {
-			doctorCheckWarn(d.W, "Python 3.11+ recommended for RL Training tools (tinker requires >= 3.11)", "")
-		}
+		doctorCheckOK(d.W, "Go "+hostinfo.GoVersion(), "")
 		if err := doctorWarnOnError(d.W, "SQLite version probe failed: {e}", "", nil, func() error {
 			src := state.SQLiteSourceID()
 			version := state.LinkedSQLiteVersion()
@@ -635,35 +579,7 @@ func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Fi
 			return err
 		}
 		if staged := doctorStagedVenvDir(ctx); staged != "" {
-			site, err := pm.SitePackages(staged)
-			if err != nil {
-				return err
-			}
-			selectedSite, err := pypath.Resolve(site)
-			if err != nil {
-				return err
-			}
-			runningHere := false
-			if info, statErr := os.Stat(selectedSite); statErr == nil && info.IsDir() {
-				for _, entry := range py.Path {
-					resolved, err := pypath.Resolve(entry)
-					if err != nil {
-						return err
-					}
-					if resolved == selectedSite {
-						runningHere = true
-						break
-					}
-				}
-			}
-			detail := "(this process runs outside it)"
-			if runningHere {
-				detail = "(active in this process)"
-			}
-			doctorCheckOK(d.W, "Runtime venv staged ("+staged+")", detail)
-		} else {
-			doctorCheckBool(d.W, py.Prefix != py.BasePrefix, doctorRow{Text: "Virtual environment active"},
-				doctorRow{"Not in virtual environment", "(recommended)"}, false)
+			doctorCheckOK(d.W, "Runtime venv staged ("+staged+")", "(this process runs outside it)")
 		}
 		if err := doctorCheckMacosTCCAnchor(ctx, d, shouldFix); err != nil {
 			return err

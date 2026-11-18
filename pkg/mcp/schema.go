@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strings"
 	"sync"
@@ -52,8 +53,13 @@ func scanDescription(serverName, toolName, description string) []string {
 }
 
 // Fresh empty object schema
-func emptyObjectSchema() map[string]any {
-	return map[string]any{"type": "object", "properties": map[string]any{}}
+func emptyObjectSchema() *pyjson.Object {
+	return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+}
+
+// Ordered view of a dict value, a plain map entering in sorted key order
+func asOrdered(v any) (*pyjson.Object, bool) {
+	return pyjson.AsObject(v)
 }
 
 // Legacy definitions promoted to $defs where it is a keyword, never a property name
@@ -65,25 +71,27 @@ func rewriteLocalRefs(node any) any {
 			out[i] = rewriteLocalRefs(item)
 		}
 		return out
-	case map[string]any:
-		normalized := make(map[string]any, len(n))
-		for key, value := range n {
-			if m, ok := value.(map[string]any); ok && (key == "properties" || key == "patternProperties") {
-				props := make(map[string]any, len(m))
-				for name, schema := range m {
-					props[name] = rewriteLocalRefs(schema)
+	case *pyjson.Object, map[string]any:
+		src, _ := asOrdered(n)
+		normalized := pyjson.NewObject()
+		for _, key := range src.Keys {
+			value := src.Vals[key]
+			if m, ok := asOrdered(value); ok && (key == "properties" || key == "patternProperties") {
+				props := pyjson.NewObject()
+				for _, name := range m.Keys {
+					props.Set(name, rewriteLocalRefs(m.Vals[name]))
 				}
-				normalized[key] = props
+				normalized.Set(key, props)
 				continue
 			}
 			k := key
 			if key == "definitions" {
 				k = "$defs"
 			}
-			normalized[k] = rewriteLocalRefs(value)
+			normalized.Set(k, rewriteLocalRefs(value))
 		}
-		if ref, ok := normalized["$ref"].(string); ok && strings.HasPrefix(ref, "#/definitions/") {
-			normalized["$ref"] = "#/$defs/" + ref[len("#/definitions/"):]
+		if ref, ok := normalized.Vals["$ref"].(string); ok && strings.HasPrefix(ref, "#/definitions/") {
+			normalized.Set("$ref", "#/$defs/"+ref[len("#/definitions/"):])
 		}
 		return normalized
 	}
@@ -102,33 +110,35 @@ func repairObjectShape(node any, objectRoot bool) any {
 			out[i] = repairObjectShape(item, false)
 		}
 		return out
-	case map[string]any:
-		repaired := make(map[string]any, len(n)+2)
-		for key, value := range n {
-			if m, ok := value.(map[string]any); ok && schemaMapKeys[key] {
-				entries := make(map[string]any, len(m))
-				for name, schema := range m {
-					entries[name] = repairObjectShape(schema, false)
+	case *pyjson.Object, map[string]any:
+		src, _ := asOrdered(n)
+		repaired := pyjson.NewObject()
+		for _, key := range src.Keys {
+			value := src.Vals[key]
+			if m, ok := asOrdered(value); ok && schemaMapKeys[key] {
+				entries := pyjson.NewObject()
+				for _, name := range m.Keys {
+					entries.Set(name, repairObjectShape(m.Vals[name], false))
 				}
-				repaired[key] = entries
+				repaired.Set(key, entries)
 				continue
 			}
-			repaired[key] = repairObjectShape(value, false)
+			repaired.Set(key, repairObjectShape(value, false))
 		}
-		_, hasProps := repaired["properties"]
-		_, hasType := n["type"]
+		_, hasProps := repaired.Get("properties")
+		_, hasType := src.Get("type")
 		if objectRoot || hasProps || hasType {
-			_, hasRequired := repaired["required"]
-			if !pyTruthy(repaired["type"]) && (hasProps || hasRequired) {
-				repaired["type"] = "object"
+			_, hasRequired := repaired.Get("required")
+			if !pyTruthy(repaired.Vals["type"]) && (hasProps || hasRequired) {
+				repaired.Set("type", "object")
 			}
-			if repaired["type"] == "object" {
-				if _, ok := repaired["properties"].(map[string]any); !ok {
-					repaired["properties"] = map[string]any{}
+			if repaired.Vals["type"] == "object" {
+				if _, ok := pyjson.Dict(repaired.Vals["properties"]); !ok {
+					repaired.Set("properties", pyjson.NewObject())
 				}
-				props, _ := repaired["properties"].(map[string]any)
+				props, _ := pyjson.Dict(repaired.Vals["properties"])
 				kept := []any{}
-				if required, ok := repaired["required"].([]any); ok {
+				if required, ok := repaired.Vals["required"].([]any); ok {
 					for _, r := range required {
 						if s, isStr := r.(string); isStr {
 							if _, in := props[s]; in {
@@ -137,7 +147,7 @@ func repairObjectShape(node any, objectRoot bool) any {
 						}
 					}
 				}
-				repaired["required"] = kept
+				repaired.Set("required", kept)
 			}
 		}
 		return repaired
@@ -146,21 +156,22 @@ func repairObjectShape(node any, objectRoot bool) any {
 }
 
 // Input schema normalized so one form is valid on every provider
-func normalizeInputSchema(schema map[string]any) map[string]any {
-	if len(schema) == 0 {
+func normalizeInputSchema(schema *pyjson.Object) *pyjson.Object {
+	if schema == nil || schema.Len() == 0 {
 		return emptyObjectSchema()
 	}
 	var normalized any = rewriteLocalRefs(schema)
 	normalized = tools.StripNullableUnions(normalized, true)
 	normalized = tools.CollapseConstUnions(normalized)
 	normalized = repairObjectShape(normalized, true)
-	m, ok := normalized.(map[string]any)
+	m, ok := normalized.(*pyjson.Object)
 	if !ok {
 		return emptyObjectSchema()
 	}
-	if m["type"] == "object" {
-		if _, has := m["properties"]; !has {
-			m["properties"] = map[string]any{}
+	if m.Vals["type"] == "object" {
+		if _, has := m.Get("properties"); !has {
+			m = m.Copy()
+			m.Set("properties", pyjson.NewObject())
 		}
 	}
 	return m
@@ -206,71 +217,71 @@ func PrefixedToolName(serverName, toolName string) string {
 }
 
 // Registry schema of one MCP tool with its prefixed name, tag stripped description and normalized parameters
-func convertToolSchema(serverName string, t *Tool) map[string]any {
+func convertToolSchema(serverName string, t *Tool) *pyjson.Object {
 	desc := t.Description
 	if desc == "" {
 		desc = fmt.Sprintf("MCP tool %s from %s", t.Name, serverName)
 	}
-	return map[string]any{
-		"name":        PrefixedToolName(serverName, t.Name),
-		"description": tools.StripUnicodeTags(desc),
-		"parameters":  normalizeInputSchema(t.InputSchema),
-	}
+	return pyjson.ObjectOf(
+		"name", PrefixedToolName(serverName, t.Name),
+		"description", tools.StripUnicodeTags(desc),
+		"parameters", normalizeInputSchema(t.InputSchema),
+	)
 }
 
 // One generated utility tool, its handler key, description template, properties and required names
 type utilitySpec struct {
 	key         string
 	description string
-	properties  func() map[string]any
+	properties  func() *pyjson.Object
 	required    []string
 }
 
 // Free form object argument with a description
-func freeObject(description string) map[string]any {
-	return map[string]any{"type": "object", "description": description, "properties": map[string]any{}, "additionalProperties": true}
+func freeObject(description string) *pyjson.Object {
+	return pyjson.ObjectOf("type", "object", "description", description, "properties", pyjson.NewObject(), "additionalProperties", true)
 }
 
 // String argument with a description
-func stringArg(description string) map[string]any {
-	return map[string]any{"type": "string", "description": description}
+func stringArg(description string) *pyjson.Object {
+	return pyjson.ObjectOf("type", "string", "description", description)
 }
 
 var utilityToolSpecs = []utilitySpec{
-	{"list_resources", "List available resources from MCP server '%s'", func() map[string]any { return map[string]any{} }, nil},
-	{"read_resource", "Read a resource by URI from MCP server '%s'", func() map[string]any {
-		return map[string]any{"uri": stringArg("URI of the resource to read")}
+	{"list_resources", "List available resources from MCP server '%s'", pyjson.NewObject, nil},
+	{"read_resource", "Read a resource by URI from MCP server '%s'", func() *pyjson.Object {
+		return pyjson.ObjectOf("uri", stringArg("URI of the resource to read"))
 	}, []string{"uri"}},
-	{"list_prompts", "List available prompts from MCP server '%s'", func() map[string]any { return map[string]any{} }, nil},
-	{"get_prompt", "Get a prompt by name from MCP server '%s'", func() map[string]any {
-		return map[string]any{
-			"name":      stringArg("Name of the prompt to retrieve"),
-			"arguments": freeObject("Optional arguments to pass to the prompt"),
-		}
+	{"list_prompts", "List available prompts from MCP server '%s'", pyjson.NewObject, nil},
+	{"get_prompt", "Get a prompt by name from MCP server '%s'", func() *pyjson.Object {
+		return pyjson.ObjectOf(
+			"name", stringArg("Name of the prompt to retrieve"),
+			"arguments", freeObject("Optional arguments to pass to the prompt"),
+		)
 	}, []string{"name"}},
 	{"list_event_types", "List the event types MCP server '%s' can notify about, and your active subscriptions to them",
-		func() map[string]any { return map[string]any{} }, nil},
+		pyjson.NewObject, nil},
 	{"subscribe_event", "Subscribe to an event from MCP server '%s': each occurrence starts a new agent run with your instructions and delivers its result to the chosen target",
-		func() map[string]any {
-			return map[string]any{
-				"name":            stringArg("Event type name from list_event_types"),
-				"arguments":       freeObject("Subscription arguments matching the event's inputSchema"),
-				"instructions":    stringArg("What to do each time the event arrives (up to 2000 characters)"),
-				"deliver":         stringArg("Where each run's result goes: log, telegram, discord, slack, ..."),
-				"deliver_chat_id": stringArg("Optional chat id on the deliver platform"),
-			}
+		func() *pyjson.Object {
+			return pyjson.ObjectOf(
+				"name", stringArg("Event type name from list_event_types"),
+				"arguments", freeObject("Subscription arguments matching the event's inputSchema"),
+				"instructions", stringArg("What to do each time the event arrives (up to 2000 characters)"),
+				"deliver", stringArg("Where each run's result goes: log, telegram, discord, slack, ..."),
+				"deliver_chat_id", stringArg("Optional chat id on the deliver platform"),
+			)
 		}, []string{"name"}},
-	{"unsubscribe_event", "Cancel a subscription to an event from MCP server '%s'", func() map[string]any {
-		return map[string]any{
-			"name":      stringArg("Event type name"),
-			"arguments": freeObject("The same arguments the subscription was made with"),
-		}
+	{"unsubscribe_event", "Cancel a subscription to an event from MCP server '%s'", func() *pyjson.Object {
+		return pyjson.ObjectOf(
+			"name", stringArg("Event type name"),
+			"arguments", freeObject("The same arguments the subscription was made with"),
+		)
 	}, []string{"name"}},
 }
 
 // UtilitySchema is one generated resource, prompt or event tool and the handler it dispatches to
 type UtilitySchema struct {
-	Schema     map[string]any
+	Schema     *pyjson.Object
 	HandlerKey string
 }
 
@@ -278,20 +289,20 @@ type UtilitySchema struct {
 func buildUtilitySchemas(serverName string) []UtilitySchema {
 	out := make([]UtilitySchema, 0, len(utilityToolSpecs))
 	for _, spec := range utilityToolSpecs {
-		params := map[string]any{"type": "object", "properties": spec.properties()}
+		params := pyjson.ObjectOf("type", "object", "properties", spec.properties())
 		if spec.required != nil {
 			req := make([]any, len(spec.required))
 			for i, r := range spec.required {
 				req[i] = r
 			}
-			params["required"] = req
+			params.Set("required", req)
 		}
 		out = append(out, UtilitySchema{
-			Schema: map[string]any{
-				"name":        PrefixedToolName(serverName, spec.key),
-				"description": fmt.Sprintf(spec.description, serverName),
-				"parameters":  params,
-			},
+			Schema: pyjson.ObjectOf(
+				"name", PrefixedToolName(serverName, spec.key),
+				"description", fmt.Sprintf(spec.description, serverName),
+				"parameters", params,
+			),
 			HandlerKey: spec.key,
 		})
 	}

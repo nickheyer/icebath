@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
-	"maps"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"strings"
 )
@@ -60,72 +60,71 @@ var DelegateTask func(ctx context.Context, env *Env, req DelegateTaskRequest) st
 // Delegation has no external requirements
 func checkDelegateRequirements(*Env) bool { return true }
 
-func delegateParam(typ, description string, extra map[string]any) map[string]any {
-	out := map[string]any{"type": typ}
-	for k, v := range extra {
-		out[k] = v
-	}
-	out["description"] = description
+// Parameter schema with type first, extra keywords next and the description last
+func delegateParam(typ, description string, extra *pyjson.Object) *pyjson.Object {
+	out := Dict("type", typ)
+	out.Update(extra)
+	out.Set("description", description)
 	return out
 }
 
 // Static delegate_task schema whose descriptions every definition build rewrites to the user limits
-var DelegateTaskSchema = map[string]any{
-	"name": "delegate_task",
-	"description": "Spawn one or more subagents in isolated contexts. " +
+var DelegateTaskSchema = Dict(
+	"name", "delegate_task",
+	"description", "Spawn one or more subagents in isolated contexts. "+
 		"Description is rebuilt at every get_definitions() call to reflect the user's current delegation limits.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"tasks": map[string]any{
-				"type":     "array",
-				"minItems": 1,
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"goal": delegateParam("string",
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"tasks", Dict(
+				"type", "array",
+				"minItems", 1,
+				"items", Dict(
+					"type", "object",
+					"properties", Dict(
+						"goal", delegateParam("string",
 							"What this subagent should accomplish. Be specific and self-contained — it knows "+
 								"nothing about your conversation history.", nil),
-						"context": delegateParam("string",
+						"context", delegateParam("string",
 							"Background THIS child needs: file paths, error messages, constraints. Each child "+
 								"sees only its own context — repeat shared background in every task that needs it.", nil),
-						"output_schema": delegateParam("object",
+						"output_schema", delegateParam("object",
 							"Optional JSON Schema this child's final answer must validate against (told to the "+
 								"child up front; parent validates with one bounded correction retry; result gains "+
 								"schema_valid, plus schema_errors on failure — the child's raw text is still returned "+
 								"as summary, never discarded). Keep it forgiving — require only fields you will read.", nil),
-						"images": delegateParam("array",
+						"images", delegateParam("array",
 							"Optional images this child must SEE (max 8): local file paths or http(s) URLs — e.g. a "+
 								"screenshot the user sent, a design mock, a chart. Vision-capable children receive the "+
 								"pixels on their first turn; non-vision children get path hints for vision_analyze. Text "+
 								"files do NOT belong here — put paths in 'context' instead.",
-							map[string]any{"items": map[string]any{"type": "string"}}),
-						"group": delegateParam("string",
+							Dict("items", Dict("type", "string"))),
+						"group", delegateParam("string",
 							"Optional result-delivery bucket within this call (only when delegation.independent_completions "+
 								"is enabled; otherwise the whole call returns as one message). Tasks sharing a group return "+
 								"together in ONE message; ungrouped tasks return individually as each finishes. This does not "+
 								"order execution; if B needs A's output, dispatch B after A returns.", nil),
-					},
-					"required": []any{"goal"},
-				},
-				"description": "(rebuilt at get_definitions() time)",
-			},
-			"action": delegateParam("string",
+					),
+					"required", []any{"goal"},
+				),
+				"description", "(rebuilt at get_definitions() time)",
+			),
+			"action", delegateParam("string",
 				"Default 'spawn'. Live control of running children: "+
 					"'list' = ids/goals/status/transcripts; 'steer' = queue "+
 					"course-correction text into one child (subagent_id + "+
 					"message) without stopping it; 'stop' = end one child "+
 					"early (subagent_id; partial result still returns). "+
 					"Control actions return immediately; goal/tasks are ignored unless spawning.",
-				map[string]any{"enum": []any{"spawn", "list", "steer", "stop"}}),
-			"subagent_id": delegateParam("string", "Target for action='steer'/'stop' (ids from the spawn response or action='list').", nil),
-			"message": delegateParam("string",
+				Dict("enum", []any{"spawn", "list", "steer", "stop"})),
+			"subagent_id", delegateParam("string", "Target for action='steer'/'stop' (ids from the spawn response or action='list').", nil),
+			"message", delegateParam("string",
 				"For action='steer': the course correction, appended to "+
 					"the child's next tool result mid-run. Be directive and specific.", nil),
-		},
-		"required": []any{},
-	},
-}
+		),
+		"required", []any{},
+	),
+)
 
 // Description holding only guidance stated nowhere else in the schema
 func buildDelegateTopLevelDescription(ctx context.Context, independentCompletions *bool) string {
@@ -157,78 +156,72 @@ func buildDelegateTasksParamDescription(ctx context.Context) string {
 }
 
 // Per build description and parameters reflecting the user limits and the active provider parameters
-func buildDelegateDynamicSchemaOverrides(env *Env) map[string]any {
+func buildDelegateDynamicSchemaOverrides(env *Env) *pyjson.Object {
 	ctx := delegationEnvContext(env)
 	independent := IndependentCompletions(ctx)
-	static := DelegateTaskSchema["parameters"].(map[string]any)
-	params := make(map[string]any, len(static))
-	for k, v := range static {
-		params[k] = v
+	static := DelegateTaskSchema.Vals["parameters"].(*pyjson.Object)
+	params := static.Copy()
+	props := pyjson.NewObject()
+	staticProps := static.Vals["properties"].(*pyjson.Object)
+	for _, k := range staticProps.Keys {
+		props.Set(k, staticProps.Vals[k].(*pyjson.Object).Copy())
 	}
-	props := map[string]any{}
-	for k, v := range static["properties"].(map[string]any) {
-		cp := map[string]any{}
-		for kk, vv := range v.(map[string]any) {
-			cp[kk] = vv
-		}
-		props[k] = cp
-	}
-	params["properties"] = props
-	tasks := props["tasks"].(map[string]any)
-	tasks["description"] = buildDelegateTasksParamDescription(ctx)
+	params.Set("properties", props)
+	tasks := props.Vals["tasks"].(*pyjson.Object)
+	tasks.Set("description", buildDelegateTasksParamDescription(ctx))
 	if !independent {
-		items := maps.Clone(tasks["items"].(map[string]any))
-		itemProps := map[string]any{}
-		for k, v := range items["properties"].(map[string]any) {
+		items := tasks.Vals["items"].(*pyjson.Object).Copy()
+		itemProps := pyjson.NewObject()
+		src := items.Vals["properties"].(*pyjson.Object)
+		for _, k := range src.Keys {
 			if k != "group" {
-				itemProps[k] = v
+				itemProps.Set(k, src.Vals[k])
 			}
 		}
-		items["properties"] = itemProps
-		tasks["items"] = items
+		items.Set("properties", itemProps)
+		tasks.Set("items", items)
 	}
 	extra, addendum := SchemaExtension(ctx, LoadDelegationConfig(ctx))
-	if len(extra) > 0 {
-		items := maps.Clone(tasks["items"].(map[string]any))
-		itemProps := maps.Clone(items["properties"].(map[string]any))
-		for k, v := range extra {
-			itemProps[k] = v
-		}
-		items["properties"] = itemProps
-		tasks["items"] = items
+	if extra.Len() > 0 {
+		items := tasks.Vals["items"].(*pyjson.Object).Copy()
+		itemProps := items.Vals["properties"].(*pyjson.Object).Copy()
+		itemProps.Update(extra)
+		items.Set("properties", itemProps)
+		tasks.Set("items", items)
 	}
 	description := buildDelegateTopLevelDescription(ctx, &independent)
 	if addendum != "" {
 		description += "\n" + addendum
 	}
-	return map[string]any{"description": description, "parameters": params}
+	return Dict("description", description, "parameters", params)
 }
 
 // Exported buildDelegateDynamicSchemaOverrides
-func BuildDelegateDynamicSchemaOverrides(env *Env) map[string]any {
+func BuildDelegateDynamicSchemaOverrides(env *Env) *pyjson.Object {
 	return buildDelegateDynamicSchemaOverrides(env)
 }
 
 var liveControlParams = map[string]bool{"action": true, "subagent_id": true, "message": true}
 
 // Built delegate_task definition without live control for a one shot session whose children join in the call
-func OneshotDelegateFunction(function map[string]any) map[string]any {
-	description, _ := function["description"].(string)
+func OneshotDelegateFunction(function *pyjson.Object) *pyjson.Object {
+	description, _ := function.Vals["description"].(string)
 	for _, delivery := range []string{delegationDeliveryIndependent, delegationDeliveryJoined} {
 		description = strings.ReplaceAll(description, fmt.Sprintf(delegateDescriptionDelivery, delivery), oneshotDescriptionDelivery)
 	}
-	params := function["parameters"].(map[string]any)
-	props := map[string]any{}
-	for k, v := range params["properties"].(map[string]any) {
+	params := schemaObject(function.Vals["parameters"])
+	props := pyjson.NewObject()
+	src := schemaObject(params.Vals["properties"])
+	for _, k := range src.Keys {
 		if !liveControlParams[k] {
-			props[k] = v
+			props.Set(k, src.Vals[k])
 		}
 	}
-	out := maps.Clone(function)
-	out["description"] = description
-	newParams := maps.Clone(params)
-	newParams["properties"] = props
-	out["parameters"] = newParams
+	out := function.Copy()
+	out.Set("description", description)
+	newParams := params.Copy()
+	newParams.Set("properties", props)
+	out.Set("parameters", newParams)
 	return out
 }
 
@@ -252,14 +245,30 @@ func stripModelHiddenTaskFields(tasks any) any {
 		return tasks
 	}
 	hidden := slices.ContainsFunc(list, func(t any) bool {
-		m, ok := t.(map[string]any)
-		return ok && slices.ContainsFunc(modelHiddenTaskFields, func(k string) bool { _, has := m[k]; return has })
+		var m map[string]any
+		switch v := t.(type) {
+		case map[string]any:
+			m = v
+		case *pyjson.Object:
+			m = v.Vals
+		}
+		return m != nil && slices.ContainsFunc(modelHiddenTaskFields, func(k string) bool { _, has := m[k]; return has })
 	})
 	if !hidden {
 		return tasks
 	}
 	out := make([]any, len(list))
 	for i, t := range list {
+		if o, isObject := t.(*pyjson.Object); isObject {
+			cp := pyjson.NewObject()
+			for _, k := range o.Keys {
+				if !slices.Contains(modelHiddenTaskFields, k) {
+					cp.Set(k, o.Vals[k])
+				}
+			}
+			out[i] = cp
+			continue
+		}
 		m, ok := t.(map[string]any)
 		if !ok {
 			out[i] = t
@@ -286,11 +295,12 @@ func init() {
 		Schema:  DelegateTaskSchema,
 		Handler: func(ctx context.Context, call *Call) string {
 			args := call.Args
+			pyArgs := coercePythonToolArgs(ctx, Default, call.Env, call.Name, pythonCallArgs(call))
 			background := modelBackgroundValue(nil)
 			return DelegateTask(ctx, call.Env, DelegateTaskRequest{
-				Goal: args["goal"], Context: args["context"], Tasks: stripModelHiddenTaskFields(args["tasks"]),
+				Goal: args["goal"], Context: args["context"], Tasks: stripModelHiddenTaskFields(WithPythonTaskSchemas(args["tasks"], pyArgs["tasks"])),
 				MaxIterations: args["max_iterations"], Role: args["role"], Background: &background,
-				OutputSchema: args["output_schema"], Images: args["images"], Action: args["action"],
+				OutputSchema: pyArgs["output_schema"], Images: args["images"], Action: args["action"],
 				SubagentID: args["subagent_id"], Message: args["message"], ParentAgent: ParentAgentFrom(ctx),
 			})
 		},

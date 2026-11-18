@@ -68,7 +68,7 @@ func isMemoryProviderDir(log *slog.Logger, path string) bool {
 	initFile := filepath.Join(path, "__init__.py")
 	if _, err := os.Stat(initFile); err != nil {
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-			return false
+			return isGuestMemoryProviderDir(path)
 		}
 		log.Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, err))
 		return false
@@ -82,6 +82,12 @@ func isMemoryProviderDir(log *slog.Logger, path string) bool {
 		source = string(runes[:8192])
 	}
 	return strings.Contains(source, "register_memory_provider") || strings.Contains(source, "MemoryProvider") || definesMemoryProvider(path)
+}
+
+// Whether the directory is a wasm or program plugin of the exclusive kind, the form an icebath memory provider plugin takes
+func isGuestMemoryProviderDir(path string) bool {
+	mf := plugins.GuestManifestOfDir(path)
+	return mf != nil && mf.Kind == "exclusive"
 }
 
 // Parses the top level modules for a register_memory_provider call or a MemoryProvider subclass, aliases included
@@ -234,7 +240,7 @@ func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
 			return loadProviderFromDir(ctx, dir, opts)
 		}
 		if refusal := plugins.InProcessImportRefusal(ctx, fmt.Sprintf("pip-installed memory provider %s", pyRepr(name)), SourceEntryPoint, nil); refusal != "" {
-			envLog(env).Warn(refusal)
+			moduleLog(env, "plugins.memory").Warn(refusal)
 			return nil, nil
 		}
 		return loadProviderFromEntryPoint(ctx, name, opts)
@@ -244,7 +250,7 @@ func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
 
 // Providers the directory and entry point scan finds that no explicit registration already stands for
 func scannedRegistrations(ctx context.Context, env *tools.Env, explicit []*ProviderRegistration) []*ProviderRegistration {
-	log := envLog(env)
+	log := moduleLog(env, "plugins.memory")
 	h := registryHome(ctx, env)
 	seen := map[string]bool{}
 	taken := map[string]bool{}

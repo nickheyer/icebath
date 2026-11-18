@@ -285,6 +285,8 @@ func (c *chatCompletionsClient) completeOnce(ctx context.Context, req *Request, 
 		apiErr.Err = &ccHeadersError{err: err, headers: resp.Header.Clone()}
 		return nil, apiErr
 	}
+	spliceOrderedReasoningDetails(data, payload)
+	spliceNonStringToolArguments(data, payload)
 	return c.normalizeResponse(payload, resp.StatusCode, resp.Header.Clone(), time.Since(start))
 }
 
@@ -406,8 +408,12 @@ func (c *chatCompletionsClient) replay(resp *Response, fn StreamFunc) error {
 	if fn == nil || resp == nil || resp.Message == nil {
 		return nil
 	}
-	if resp.Message.Reasoning != "" {
-		if err := fn(StreamEvent{Kind: EventReasoningDelta, Text: resp.Message.Reasoning}); err != nil {
+	var details []any
+	if len(resp.Message.ReasoningDetails) > 0 {
+		_ = json.Unmarshal(resp.Message.ReasoningDetails, &details)
+	}
+	if display := ccExtractReasoning(resp.Message.Reasoning, resp.Message.ReasoningContent, details, resp.Message.Content); display != "" {
+		if err := fn(StreamEvent{Kind: EventReasoningDelta, Text: display}); err != nil {
 			return err
 		}
 	}
@@ -477,6 +483,40 @@ var inlineReasoningRes = func() []*regexp.Regexp {
 	return out
 }()
 
+// Replaces each choice's delta or message reasoning_details in payload with the wire ordered entries of data
+func spliceOrderedReasoningDetails(data []byte, payload map[string]any) {
+	if payload == nil || !bytes.Contains(data, []byte(`"reasoning_details"`)) {
+		return
+	}
+	decoded, err := pyjson.LoadsOrdered(data)
+	if err != nil {
+		return
+	}
+	root, _ := decoded.(*pyjson.Object)
+	if root == nil {
+		return
+	}
+	wireChoices, _ := root.Vals["choices"].([]any)
+	choices, _ := payload["choices"].([]any)
+	for i, wc := range wireChoices {
+		wireChoice, _ := wc.(*pyjson.Object)
+		if wireChoice == nil || i >= len(choices) {
+			continue
+		}
+		choice, _ := choices[i].(map[string]any)
+		for _, key := range []string{"delta", "message"} {
+			wireInner, _ := wireChoice.Vals[key].(*pyjson.Object)
+			inner, _ := choice[key].(map[string]any)
+			if wireInner == nil || inner == nil {
+				continue
+			}
+			if details, ok := wireInner.Vals["reasoning_details"].([]any); ok {
+				inner["reasoning_details"] = details
+			}
+		}
+	}
+}
+
 // Reasoning text from the structured fields, else thinking blocks or inline tags in the content
 func ccExtractReasoning(plain, reasoningContent string, details []any, content any) string {
 	var parts []string
@@ -495,7 +535,7 @@ func ccExtractReasoning(plain, reasoningContent string, details []any, content a
 	add(plain)
 	add(reasoningContent)
 	for _, d := range details {
-		dm, ok := d.(map[string]any)
+		dm, ok := pyjson.Dict(d)
 		if !ok {
 			continue
 		}
@@ -645,17 +685,25 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 		}
 		content = conv
 	}
-	reasoning := ccExtractReasoning(reasoningPlain, reasoningContent, details, content)
+	reasoning := reasoningPlain
+	if reasoning == "" {
+		_, textKeys := declaredCarrierKeys(context.Background())
+		for _, k := range textKeys {
+			if v, ok := carrierField(msg, k).(string); ok && v != "" {
+				reasoning = v
+				break
+			}
+		}
+	}
 	message := &state.Message{Role: "assistant", Content: content, ToolCalls: toolCalls, Reasoning: reasoning, FinishReason: finish}
 	if reasoningContent != "" {
 		message.ReasoningContent = reasoningContent
-	} else if reasoning != "" {
-		message.ReasoningContent = reasoning
 	}
 	kept := make([]any, 0, len(details)+1)
 	for _, d := range details {
-		if dm, ok := d.(map[string]any); ok {
-			kept = append(kept, dm)
+		switch d.(type) {
+		case map[string]any, *pyjson.Object:
+			kept = append(kept, d)
 		}
 	}
 	if rec := ccNativeCarrierRecord(signature, toolCarriers); rec != nil {

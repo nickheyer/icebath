@@ -143,7 +143,7 @@ func TestChildRunSendsMultimodalGoalTurn(t *testing.T) {
 }
 
 func TestImagesAdvertisedPerTaskOnly(t *testing.T) {
-	props := tools.DelegateTaskSchema["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := tools.DelegateTaskSchema.Vals["parameters"].(map[string]any)["properties"].(map[string]any)
 	item := props["tasks"].(map[string]any)["items"].(map[string]any)
 	images := item["properties"].(map[string]any)["images"].(map[string]any)
 	required, _ := item["required"].([]any)

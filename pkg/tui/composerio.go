@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -443,11 +444,16 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 		return a.openSessionSwitcher(), true
 	case "tui.agents":
 		return a.openSpawnTree(0, nil), true
+	case "tui.agents.dock":
+		a.agentDockCollapsed = !a.agentDockCollapsed
+		return nil, true
 	case "tui.editor":
 		return a.openEditor(), true
 	case "tui.redraw":
 		a.card.view.invalidate()
 		return tea.ClearScreen, true
+	case "tui.suspend":
+		return a.suspend(), true
 	case "tui.paste.image":
 		return a.pasteClipboardImage(false), true
 	case "tui.voice":
@@ -456,19 +462,17 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 		return a.card.composer.Insert("\n"), true
 	case "composer.paste":
 		return a.pasteFromClipboard(), true
-	case "tui.suspend":
-		return a.suspendToShell(), true
 	}
 	return a.stashAction(id)
 }
 
-// Suspends the terminal UI to the shell like a Ctrl+Z job, naming the agent and how fg brings it back
-func (a *app) suspendToShell() tea.Cmd {
-	name := trimJS(a.store.ui.Theme.Brand.Name)
-	if name == "" {
-		name = defaultBrand.Name
+// Stops to the shell with the line the classic CLI prints, the unsupported line on a platform without job control
+func (a *app) suspend() tea.Cmd {
+	if runtime.GOOS == "windows" {
+		a.sys(i18n.T(a.ctx, "cli.tui.suspend_unsupported", "", nil))
+		return nil
 	}
-	return tty.Suspend(i18n.T(a.ctx, "cli.tui.suspended", "", map[string]any{"agent_name": name}))
+	return tty.Suspend("\n" + i18n.T(a.ctx, "cli.tui.suspended", "", map[string]any{"agent_name": a.store.ui.Theme.Brand.Name}))
 }
 
 // Messages of the composer and widget machinery the root update hands on
@@ -485,10 +489,11 @@ func (a *app) updateExtras(m tea.Msg) (bool, tea.Cmd) {
 		return true, a.widgets.onTick(m)
 	case widgetsLoadedMsg:
 		a.widgets.loaded = true
-		a.card.composer.SetCommands(a.composerCommands())
 		return true, nil
 	case dieMsg:
 		return true, a.die(m.code)
+	case completionDueMsg:
+		return true, a.askCompletion(m)
 	}
 	return false, nil
 }

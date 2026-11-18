@@ -22,7 +22,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Clock behind every catalog TTL in this slice
@@ -42,7 +44,7 @@ func (e *modelsHTTPError) Error() string {
 	return fmt.Sprintf("HTTP Error %d for %s", e.Status, e.URL)
 }
 
-// GET a catalog URL and parse its JSON body, credentials dropped on a cross origin redirect
+// GET a catalog URL through open_credentialed_url and parse its JSON body, headers sent in their recorded order
 func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string, tlsCfg *tls.Config) (any, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -50,29 +52,15 @@ func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, he
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	var transport http.RoundTripper = &http.Transport{
-		Proxy:               probeProxyFromEnvironment,
-		DialContext:         (&net.Dialer{Timeout: timeout}).DialContext,
-		TLSClientConfig:     tlsCfg,
-		TLSHandshakeTimeout: timeout,
-		DisableCompression:  true,
+	var lines []pyhttpx.HeaderLine
+	acceptEncoding := ""
+	for _, k := range pyhttpx.HeaderOrder(headers) {
+		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
+		if pystr.Capitalize(k) == "Accept-encoding" {
+			acceptEncoding = headers[k]
+		}
 	}
-	if modelsTransport != nil {
-		transport = modelsTransport
-	}
-	client := &http.Client{
-		Transport:     transport,
-		Timeout:       timeout,
-		CheckRedirect: credentialRedirectPolicy(rawURL),
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := client.Do(req)
+	resp, err := urllibOpen(ctx, urllibCall{url: rawURL, headers: lines, credentialed: true, tls: tlsCfg, timeout: timeout, base: modelsTransport})
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +72,7 @@ func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, he
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &modelsHTTPError{URL: rawURL, Status: resp.StatusCode, Body: body}
 	}
-	if strings.EqualFold(req.Header.Get("Accept-Encoding"), "gzip") && strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+	if acceptEncoding == "gzip" && strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
 		zr, err := gzip.NewReader(strings.NewReader(string(body)))
 		if err != nil {
 			return nil, err
@@ -463,7 +451,8 @@ func FetchNousRecommendedModels(ctx context.Context, portalBaseURL string, timeo
 	origins = append(origins, origin{base, timeout})
 	var data map[string]any
 	for _, o := range origins {
-		payload, err := modelsGetJSON(ctx, o.url+"/api/nous/recommended-models", o.timeout, map[string]string{"Accept": "application/json", "Accept-Encoding": "gzip"}, nil)
+		payload, err := modelsGetJSON(ctx, o.url+"/api/nous/recommended-models", o.timeout,
+			pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "Accept-Encoding", Value: "gzip"}), nil)
 		if err != nil {
 			continue
 		}
@@ -788,7 +777,7 @@ func fetchAIGatewayModelsLive(ctx context.Context, timeout time.Duration) ([]str
 	if baseURL == "" {
 		baseURL = AIGatewayBaseURL
 	}
-	headers := map[string]string{"Authorization": "Bearer " + apiKey, "User-Agent": userAgent("icebath-cli")}
+	headers := pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey}, pyhttpx.HeaderLine{Name: "User-Agent", Value: userAgent("icebath-cli")})
 	payload, err := modelsGetJSON(ctx, strings.TrimRight(baseURL, "/")+"/models", timeout, headers, nil)
 	if err != nil {
 		return nil, false
@@ -891,10 +880,11 @@ func fetchDeepinfraCatalog(ctx context.Context, timeout time.Duration, forceRefr
 			return nil, false
 		}
 	}
-	headers := map[string]string{"User-Agent": userAgent("icebath-cli")}
+	lines := []pyhttpx.HeaderLine{{Name: "User-Agent", Value: userAgent("icebath-cli")}}
 	if apiKey := deepinfraEnv(ctx, "DEEPINFRA_API_KEY"); apiKey != "" {
-		headers["Authorization"] = "Bearer " + apiKey
+		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
 	}
+	headers := pyhttpx.OrderedHeaderMap(lines...)
 	payload, err := modelsGetJSON(ctx, rawURL, timeout, headers, nil)
 	doc, _ := asMap(payload)
 	items, ok := asList(doc["data"])

@@ -1,46 +1,146 @@
 package pyhttpx
 
 import (
-	"bytes"
+	"encoding"
 	"encoding/json"
+	"reflect"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Body bytes httpx writes for a json= request, compact and with every non ASCII character and markup character raw
+// Body bytes the Python SDKs and httpx write for a json request, dict order kept, compact, non ASCII raw and NaN refused
 func JSONBody(v any) ([]byte, error) {
-	var b bytes.Buffer
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	value, err := wireValue(v)
+	if err != nil {
 		return nil, err
 	}
-	return rawLineSeparators(bytes.TrimSuffix(b.Bytes(), []byte("\n"))), nil
+	text, err := pyjson.Dumps(value, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false),
+		pyjson.Default(wireDefault))
+	if err != nil {
+		return nil, err
+	}
+	return []byte(text), nil
 }
 
-// Turns the escaped U+2028 and U+2029 Go writes inside strings back into the raw characters Python writes
-func rawLineSeparators(in []byte) []byte {
-	if !bytes.Contains(in, []byte(`\u202`)) {
-		return in
-	}
-	out := make([]byte, 0, len(in))
-	inString := false
-	for i := 0; i < len(in); i++ {
-		c := in[i]
-		switch {
-		case !inString:
-			inString = c == '"'
-		case c == '"':
-			inString = false
-		case c == '\\' && i+5 < len(in) && in[i+1] == 'u' && string(in[i+2:i+5]) == "202" && (in[i+5] == '8' || in[i+5] == '9'):
-			out = append(out, " "[:2]...)
-			out = append(out, 0xa8+(in[i+5]-'8'))
-			i += 5
-			continue
-		case c == '\\':
-			out = append(out, c, in[i+1])
-			i++
-			continue
+// Value with every raw JSON fragment and Go marshaler replaced by the ordered value json.loads reads from its text
+func wireValue(v any) (any, error) {
+	switch t := v.(type) {
+	case nil, string, bool, float64, int, int64, json.Number:
+		return v, nil
+	case json.RawMessage:
+		if len(t) == 0 {
+			return nil, nil
 		}
-		out = append(out, c)
+		return pyjson.LoadsBytes(t)
+	case *pyjson.Object:
+		if t == nil {
+			return v, nil
+		}
+		var out *pyjson.Object
+		for i, k := range t.Keys {
+			item, err := wireValue(t.Vals[k])
+			if err != nil {
+				return nil, err
+			}
+			if out == nil && !sameValue(item, t.Vals[k]) {
+				out = &pyjson.Object{Keys: append([]string(nil), t.Keys...), Vals: make(map[string]any, len(t.Vals))}
+				for _, prev := range t.Keys[:i] {
+					out.Vals[prev] = t.Vals[prev]
+				}
+			}
+			if out != nil {
+				out.Vals[k] = item
+			}
+		}
+		if out == nil {
+			return t, nil
+		}
+		return out, nil
+	case map[string]any:
+		var out map[string]any
+		for k, val := range t {
+			item, err := wireValue(val)
+			if err != nil {
+				return nil, err
+			}
+			if out == nil && !sameValue(item, val) {
+				out = make(map[string]any, len(t))
+				for pk, pv := range t {
+					out[pk] = pv
+				}
+			}
+			if out != nil {
+				out[k] = item
+			}
+		}
+		if out == nil {
+			return t, nil
+		}
+		return out, nil
+	case []any:
+		var out []any
+		for i, val := range t {
+			item, err := wireValue(val)
+			if err != nil {
+				return nil, err
+			}
+			if out == nil && !sameValue(item, val) {
+				out = append([]any(nil), t...)
+			}
+			if out != nil {
+				out[i] = item
+			}
+		}
+		if out == nil {
+			return t, nil
+		}
+		return out, nil
+	case []map[string]any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			item, err := wireValue(val)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = item
+		}
+		return out, nil
 	}
-	return out
+	return v, nil
+}
+
+// Identity of a value before and after the walk, containers by their backing storage
+func sameValue(a, b any) bool {
+	ra, rb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if ra.Kind() != rb.Kind() || ra.Type() != rb.Type() {
+		return false
+	}
+	switch ra.Kind() {
+	case reflect.Map, reflect.Pointer:
+		return ra.Pointer() == rb.Pointer()
+	case reflect.Slice:
+		return ra.Len() == rb.Len() && (ra.Len() == 0 || ra.Pointer() == rb.Pointer())
+	}
+	return true
+}
+
+// Ordered value of a Go marshaler or struct the SDK encoder would have dumped from its model fields
+func wireDefault(v any) (any, error) {
+	var raw []byte
+	var err error
+	switch m := v.(type) {
+	case json.Marshaler:
+		raw, err = m.MarshalJSON()
+	case encoding.TextMarshaler:
+		var text []byte
+		if text, err = m.MarshalText(); err == nil {
+			return string(text), nil
+		}
+	default:
+		raw, err = json.Marshal(v)
+	}
+	if err != nil {
+		return nil, &pyjson.TypeError{Msg: "Object of type " + reflect.TypeOf(v).String() + " is not JSON serializable"}
+	}
+	return pyjson.LoadsBytes(raw)
 }

@@ -130,7 +130,7 @@ func runKanbanGoalLoopChat(c *CLI, firstResponse string) error {
 		fmt.Fprintln(c.console.Out, msg)
 	}
 	return runKanbanGoalLoopQ(c, firstResponse, func(p string) (any, error) {
-		if response, ok := c.chat(p, nil, false); ok && response != "" {
+		if response, ok := c.chat(p, nil); ok && response != "" {
 			return response, nil
 		}
 		return "", nil
@@ -465,8 +465,8 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 	}
 	c.showSecurityAdvisories()
 	c.singleQueryTurnAuthor = takeTurnAuthorFromProcessEnv()
-	response, _ := c.chat(query, images, false)
-	if _, rerr := kanban.RecoverFailedKanbanTurns(c.ctx, func(nudge string) { response, _ = c.chat(nudge, nil, false) },
+	response, _ := c.chat(query, images)
+	if _, rerr := kanban.RecoverFailedKanbanTurns(c.ctx, func(nudge string) { response, _ = c.chat(nudge, nil) },
 		func() map[string]any { return c.lastTurnResult }, func(msg string) { fmt.Fprintln(stderrWriter(), msg) }); rerr != nil {
 		fmt.Fprintln(stderrWriter(), rerr.Error())
 		exitSingleQuery(1)
@@ -476,6 +476,6 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 			cliLogger.Debug(fmt.Sprintf("kanban goal loop failed: %v", err))
 		}
 	}
-	c.printExitSummary(false)
+	c.printExitSummary()
 	exitSingleQuery(singleQueryExitCode(c.lastTurnResult, c.credentialsRateLimited, c.credentialsTerminal))
 }

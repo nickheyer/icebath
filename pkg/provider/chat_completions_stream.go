@@ -324,7 +324,7 @@ type ccStreamState struct {
 	detailDisplayParts []string
 	refusalParts       []string
 	pendingText        []string
-	reasoningDetails   []map[string]any
+	reasoningDetails   []*pyjson.Object
 	tools              *ccToolCallAccumulator
 	partialToolNames   []string
 	signature          string
@@ -677,7 +677,7 @@ func assembleStreamedToolCalls(acc *ccToolCallAccumulator, finishReason string) 
 				}
 			}
 			if finishReason == "" && IsRepetitionDominated(arguments) {
-				catalogLog.Warn(fmt.Sprintf("Tool call '%s' has repetition-dominated arguments without a finish_reason; treating as a dropped tool call.", name))
+				streamingCallLog.Warn(fmt.Sprintf("Tool call '%s' has repetition-dominated arguments without a finish_reason; treating as a dropped tool call.", name))
 				truncated = true
 			}
 		} else if finishReason == "" {
@@ -732,11 +732,11 @@ func (s *ccStreamState) finish(latency time.Duration) (*Response, error) {
 			}
 			dropped = append(dropped, name)
 		}
-		catalogLog.Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%v). The server or a proxy closed the stream cleanly; not an output-length truncation.", dropped))
+		streamingCallLog.Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%v). The server or a proxy closed the stream cleanly; not an output-length truncation.", dropped))
 		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, dropped, partialStreamStubOptions{cleanEOF: true}), nil
 	}
 	if finishReason == "" && (len(s.contentParts) > 0 || len(s.reasoningParts) > 0) && s.tools.Len() == 0 && s.usage == nil {
-		catalogLog.Warn("Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering text with no tool calls. The server or a proxy closed the stream cleanly.")
+		streamingCallLog.Warn("Clean EOF, no finish_reason: server ended the stream (no transport exception) after delivering text with no tool calls. The server or a proxy closed the stream cleanly.")
 		return buildPartialStreamStub(s.c.route, fullContent, fullReasoning, model, usage, nil, partialStreamStubOptions{cleanEOF: true}), nil
 	}
 	effective := finishReason
@@ -788,7 +788,7 @@ func (s *ccStreamState) finish(latency time.Duration) (*Response, error) {
 	}
 	if s.runaway != "" {
 		payload[ccRawRunaway] = true
-		catalogLog.Warn(fmt.Sprintf("Stream cut: the %s turned into a runaway repetition loop (model=%s, provider=%s).", s.runaway, model, orUnknown2(s.c.route.Provider)))
+		streamingCallLog.Warn(fmt.Sprintf("Stream cut: the %s turned into a runaway repetition loop (model=%s, provider=%s).", s.runaway, model, orUnknown2(s.c.route.Provider)))
 	}
 	outUsage := Usage{}
 	if usage != nil {
@@ -974,6 +974,7 @@ func (c *chatCompletionsClient) decodeFrame(f *sseFrame, headers http.Header) (m
 	if err := json.Unmarshal([]byte(f.Data), &chunk); err != nil {
 		return nil, false, c.streamError(providerStreamErrorFromNonJSON(f.Data, headers))
 	}
+	spliceOrderedReasoningDetails([]byte(f.Data), chunk)
 	if eo := chunk["error"]; eo != nil && !detailValueEmpty(eo) {
 		if em, ok := eo.(map[string]any); ok && len(em) == 0 {
 			return nil, true, nil

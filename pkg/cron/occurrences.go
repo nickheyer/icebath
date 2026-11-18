@@ -44,7 +44,7 @@ func completedOccurrence(s *Store, job *Job, instant string) bool {
 	earliestReal := slot.Add(-FireClaimSkewSeconds * time.Second)
 	rows, err := completedExecutions(s, job.ID, *canonical)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Cannot check completed occurrence for job %s", job.ID), "error", err)
+		s.logAs("cron.occurrences").Warn(fmt.Sprintf("Cannot check completed occurrence for job %s", job.ID), "error", err)
 		return false
 	}
 	for _, row := range rows {
@@ -67,7 +67,7 @@ func completedOccurrence(s *Store, job *Job, instant string) bool {
 		if stamp != nil {
 			shown = *stamp
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s' (%s): scheduled occurrence %s was already completed by execution %s (finished %s); "+
+		s.logAs("cron.occurrences").Warn(fmt.Sprintf("Job '%s' (%s): scheduled occurrence %s was already completed by execution %s (finished %s); "+
 			"skipping the due slot without a new run", label, job.ID, *canonical, row.ID, shown))
 		return true
 	}

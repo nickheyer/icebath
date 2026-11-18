@@ -66,14 +66,12 @@ type GatewayProcessView struct {
 	connection *gatewaycli.GatewayConnection
 	sessionID  func() string
 
-	mu                  sync.Mutex
-	rows                []gatewayProc
-	dirty               bool
-	delegations         int
-	polled              float64
-	refreshing          sync.Mutex
-	subagentsPolled     float64
-	subagentsWatchUntil float64
+	mu          sync.Mutex
+	rows        []gatewayProc
+	dirty       bool
+	delegations int
+	polled      float64
+	refreshing  sync.Mutex
 }
 
 var (
@@ -343,12 +341,4 @@ func (v *GatewayProcessView) activeDelegations() int {
 	defer state.Unlock()
 	n, _ := pyIntValue(state.Usage["active_subagents"])
 	return n
-}
-
-// Polls the subagent roster for a while even with no turn running
-func (v *GatewayProcessView) watchSubagents(seconds float64) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.subagentsWatchUntil = nowSeconds() + seconds
-	v.subagentsPolled = 0
 }

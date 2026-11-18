@@ -49,7 +49,10 @@ func RegisterRelayDemand(name string, demanded func(ctx context.Context) bool) {
 }
 
 // Whether Relay has a consumer for ctx's profile, a plugin file Relay discovers, a plugin variable, or a registered consumer
-func RelayDemanded(ctx context.Context) bool {
+func RelayDemanded(ctx context.Context) bool { return RelayDemandedBeyond(ctx, "") }
+
+// Whether Relay has a consumer for ctx's profile other than the consumer registered under name
+func RelayDemandedBeyond(ctx context.Context, name string) bool {
 	if pystr.Strip(os.Getenv(RelayPluginsConfigEnv)) != "" || len(RelayDiscoveredPluginFiles()) > 0 {
 		return true
 	}
@@ -63,7 +66,12 @@ func RelayDemanded(ctx context.Context) bool {
 		return true
 	}
 	relayDemandMu.Lock()
-	checks := relayDemands.Values()
+	var checks []func(ctx context.Context) bool
+	for registered, demanded := range relayDemands.All() {
+		if registered != name {
+			checks = append(checks, demanded)
+		}
+	}
 	relayDemandMu.Unlock()
 	for _, demanded := range checks {
 		if demanded(ctx) {

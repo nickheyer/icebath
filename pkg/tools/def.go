@@ -25,8 +25,8 @@ type Handler func(ctx context.Context, call *Call) string
 type Def struct {
 	Name    string
 	Toolset string
-	// OpenAI function schema with name, description, and parameters
-	Schema      map[string]any
+	// OpenAI function schema with name, description, and parameters in definition order
+	Schema      *pyjson.Object
 	Handler     Handler
 	Check       func(env *Env) bool
 	RequiresEnv []string
@@ -35,12 +35,12 @@ type Def struct {
 	// Zero means the global tool output limit applies
 	MaxResultChars int
 	// Merged over Schema at every definition read so limits in descriptions stay current
-	DynamicSchema func(env *Env) map[string]any
+	DynamicSchema func(env *Env) *pyjson.Object
 	Timeout       time.Duration
 	Override      bool
 	Plugin        string
 	// Builds Schema on the first registry read when Schema is nil, deferring config reads past init
-	SchemaBuilder func() map[string]any
+	SchemaBuilder func() *pyjson.Object
 	schemaOnce    *sync.Once
 }
 
@@ -66,6 +66,8 @@ type AuxOptions struct {
 	Temperature *float64
 	JSONSchema  map[string]any
 	Timeout     time.Duration
+	// Routes the call through the async call_llm path the reference vision tools use
+	Async bool
 }
 
 // Aux performs auxiliary model completions for vision, summaries, and compression
@@ -238,11 +240,20 @@ func (d *Def) resolveSchema() *Def {
 			panic("tools: " + err.Error())
 		}
 		d.Schema = schema
-		if s, ok := schema["description"].(string); ok && d.Description == "" {
+		if s, ok := schema.Vals["description"].(string); ok && d.Description == "" {
 			d.Description = s
 		}
 	})
 	return d
+}
+
+// Plain map view of the schema for readers that never write it
+func (d *Def) SchemaMap() map[string]any {
+	if d == nil || d.Schema == nil {
+		return nil
+	}
+	m, _ := pyjson.Plain(d.Schema).(map[string]any)
+	return m
 }
 
 // Names lists registered tool names sorted

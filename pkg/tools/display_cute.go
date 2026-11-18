@@ -808,7 +808,37 @@ func GetCuteToolMessage(ctx context.Context, env *Env, toolName string, args map
 		}
 		message = displayT(ctx, "display.cute.completed", map[string]any{"tool": pystr.Ljust(safeName, 9), "duration": safeDuration})
 	}()
-	return renderCuteToolMessage(ctx, env, toolName, args, duration, result)
+	return renderCuteToolMessage(ctx, env, toolName, pythonDisplayArgs(args), duration, result)
+}
+
+// Plain decoded args with integral floats read back as the ints JSON carried, ordered Python values kept as they are
+func pythonDisplayArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = pythonDisplayValue(v)
+	}
+	return out
+}
+
+func pythonDisplayValue(v any) any {
+	switch t := v.(type) {
+	case float64:
+		if t == math.Trunc(t) && math.Abs(t) < 1e15 {
+			return int64(t)
+		}
+	case map[string]any:
+		return pythonDisplayArgs(t)
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = pythonDisplayValue(item)
+		}
+		return out
+	}
+	return v
 }
 
 // One completed call row without padding, Failure nil when the row succeeded
@@ -825,6 +855,7 @@ func GetToolRowParts(ctx context.Context, env *Env, toolName string, args map[st
 			parts = []ToolRowPart{{Emoji: "⚡", Verb: toolName}}
 		}
 	}()
+	args = pythonDisplayArgs(args)
 	if redacted := RedactToolArgsForDisplay(env, toolName, args); len(redacted) > 0 {
 		args = redacted
 	} else if len(args) == 0 {

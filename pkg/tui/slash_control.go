@@ -584,7 +584,8 @@ func (a *app) controlCommands() []slashCommand {
 				r.sys("error: " + err.Error())
 				return nil
 			}
-			path := filepath.Join(dir, "tui-heap-"+time.Now().Format("20060102-150405")+".pprof")
+			stamp := strings.NewReplacer(":", "-", ".", "-").Replace(time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+			path := filepath.Join(dir, fmt.Sprintf("icebath-%s-%d-manual.pprof", stamp, os.Getpid()))
 			file, err := os.Create(path)
 			if err != nil {
 				r.sys("error: " + err.Error())
@@ -605,7 +606,6 @@ func (a *app) controlCommands() []slashCommand {
 			for i, w := range widgets {
 				names[i] = "/" + w.ID
 			}
-			a.card.composer.SetCommands(a.composerCommands())
 			r.sys(countNoun(len(widgets), "widget") + ": " + strings.Join(names, " "))
 			return nil
 		}},

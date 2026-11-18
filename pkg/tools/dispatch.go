@@ -581,7 +581,7 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			toolsLogger(call.Env).Error(fmt.Sprintf("Tool %s dispatch error: %s", call.Name, boundModelErrorText(call.Env, fmt.Sprint(rec))))
+			toolsLogger(call.Env).With("logger", "tools.registry").Error(fmt.Sprintf("Tool %s dispatch error: %s", call.Name, boundModelErrorText(call.Env, fmt.Sprint(rec))))
 			kind := "panic"
 			if err, ok := rec.(error); ok {
 				kind = exceptionTypeName(err)
@@ -633,7 +633,7 @@ func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs 
 	if !ScopedDeferrableNames(ctx, env, currentDefs)[underlying] {
 		return toolErrorJSON(ScopeBlockReason(ctx, env, underlying), nil), "", nil, true
 	}
-	if probe := ValidateDeferredCallArgs(ctx, env, underlying, underlyingArgs); probe != "" {
+	if probe := validateDeferredCallArgsAt(ctx, env, underlying, DeferredCallArguments(pyArgs), dispatchValidationFrameDepth); probe != "" {
 		return probe, "", nil, true
 	}
 	return "", underlying, underlyingArgs, true

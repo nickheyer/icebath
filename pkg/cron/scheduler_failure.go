@@ -346,7 +346,7 @@ func (s *Store) upsertIncidentForFailure(job *Job, errText string, outputFile *s
 		return nil
 	}()
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Incident store unavailable for job %s (delivery unaffected): %v", job.ID, err))
+		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Incident store unavailable for job %s (delivery unaffected): %v", job.ID, err))
 		return false, nil
 	}
 	return withheld, incidentID
@@ -364,7 +364,7 @@ func (s *Store) resolveIncidentsForRecoveredJob(job *Job) {
 		return err
 	}()
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Incident store unavailable for job %s (delivery unaffected): %v", job.ID, err))
+		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Incident store unavailable for job %s (delivery unaffected): %v", job.ID, err))
 	}
 }
 
@@ -383,7 +383,7 @@ func (s *Store) markIncidentAlerted(incidentID *string) {
 		return err
 	}()
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Failed marking incident %s alerted: %v", *incidentID, err))
+		s.logAs("cron.scheduler").Debug(fmt.Sprintf("Failed marking incident %s alerted: %v", *incidentID, err))
 	}
 }
 
@@ -489,10 +489,10 @@ func (s *Store) resolveJobReasoningConfig(job *Job, cfg config.Tree, model strin
 	if job.ReasoningEffort != nil {
 		pinned := *job.ReasoningEffort
 		if parsed := config.ParseReasoningEffort(pinned); parsed != nil {
-			s.log.Info(fmt.Sprintf("Job '%s': using per-job reasoning_effort '%s'", jobIDOrUnknown(job), pinned))
+			s.logAs("cron.scheduler").Info(fmt.Sprintf("Job '%s': using per-job reasoning_effort '%s'", jobIDOrUnknown(job), pinned))
 			return parsed
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s': invalid stored reasoning_effort %s — ignoring the pin "+
+		s.logAs("cron.scheduler").Warn(fmt.Sprintf("Job '%s': invalid stored reasoning_effort %s — ignoring the pin "+
 			"and falling back to config resolution. Fix with `cronjob "+
 			"action=update job_id=%s reasoning_effort=<level>` (valid: none, "+
 			"minimal, low, medium, high, xhigh, max, ultra).", jobIDOrUnknown(job), pyrepr.StrRepr(pinned), jobIDOrUnknown(job)))

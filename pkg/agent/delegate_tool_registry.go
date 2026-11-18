@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -24,12 +25,33 @@ type subagentRecords struct {
 
 func (s *subagentRecords) get(id string) map[string]any { return s.m[id] }
 
+// Spawn position of the next built child, the registry listing children in the order their parents spawned them
+var childSpawnSeq atomic.Uint64
+
+// Spawn position of a record's child, zero for a record without a built child
+func recordSpawnSeq(record map[string]any) uint64 {
+	if child, ok := record["agent"].(*AIAgent); ok && child != nil {
+		return child.spawnSeq
+	}
+	return 0
+}
+
 func (s *subagentRecords) set(id string, record map[string]any) {
 	if s.m == nil {
 		s.m = map[string]map[string]any{}
 	}
 	if _, ok := s.m[id]; !ok {
-		s.keys = append(s.keys, id)
+		at := len(s.keys)
+		if seq := recordSpawnSeq(record); seq != 0 {
+			for at > 0 {
+				prev := recordSpawnSeq(s.m[s.keys[at-1]])
+				if prev == 0 || prev < seq {
+					break
+				}
+				at--
+			}
+		}
+		s.keys = append(s.keys[:at:at], append([]string{id}, s.keys[at:]...)...)
 	}
 	s.m[id] = record
 }

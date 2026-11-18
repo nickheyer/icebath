@@ -73,7 +73,7 @@ func exitAfterGracefulShutdown(ctx context.Context, exitCode int) {
 			return struct{}{}, nil
 		},
 		func() (struct{}, error) {
-			observability.StampExit("clean", "")
+			observability.StampExit("clean", "none")
 			code := exitCode
 			gateway.MarkExited(ctx, &code, "graceful_shutdown", "")
 			return struct{}{}, nil

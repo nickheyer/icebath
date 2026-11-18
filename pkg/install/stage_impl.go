@@ -74,8 +74,8 @@ func (r *Runner) stagePrerequisites(ctx context.Context) error {
 	return nil
 }
 
-// Whether stable applies to this run, an explicit channel first then the official main line
-func (r *Runner) stableApplies(repo Repo) bool {
+// Whether this run installs the latest stable release, an explicit channel first then the main branch default
+func (r *Runner) stableApplies() bool {
 	if r.opts.Commit != "" {
 		return false
 	}
@@ -85,7 +85,7 @@ func (r *Runner) stableApplies(repo Repo) bool {
 	case "stable":
 		return true
 	}
-	return r.opts.Branch == "main" && repo.Official
+	return r.opts.Branch == "main"
 }
 
 // Release this run installs, nil with no error when a rerun keeps its installed binary
@@ -104,7 +104,7 @@ func (r *Runner) resolveTarget(ctx context.Context) (*ReleaseTarget, error) {
 		}
 		return t, nil
 	}
-	if r.stableApplies(repo) {
+	if r.stableApplies() {
 		tag := LatestStableRelease(ctx, repo)
 		if tag == "" {
 			return nil, r.stableUnreachable("could not look up the latest stable release")
@@ -192,7 +192,7 @@ func (r *Runner) placeBinary(ctx context.Context) error {
 	if err := os.MkdirAll(r.installDir, 0o777); err != nil {
 		return fail(fmt.Sprintf("cannot create %s: %v", r.installDir, err), "filesystem_error")
 	}
-	if r.opts.Binary != "" {
+	if r.opts.Binary != "" && r.stableApplies() {
 		if _, err := os.Stat(r.opts.Binary); err != nil {
 			return fail(fmt.Sprintf("binary %s is missing: %v", r.opts.Binary, err), "download_failed")
 		}
@@ -200,6 +200,9 @@ func (r *Runner) placeBinary(ctx context.Context) error {
 			if err := copyFile(r.opts.Binary, dest, 0o755); err != nil {
 				return fail(fmt.Sprintf("cannot place %s: %v", dest, err), "filesystem_error")
 			}
+		}
+		if err := placeCompanionFiles(filepath.Dir(r.opts.Binary), r.installDir); err != nil {
+			return fail(err.Error(), "filesystem_error")
 		}
 		tag := r.opts.Version
 		if tag == "" {
@@ -213,7 +216,7 @@ func (r *Runner) placeBinary(ctx context.Context) error {
 		return err
 	}
 	goos, goarch := hostKey()
-	name := BinaryAssetName(goos, goarch)
+	name := ReleaseArchiveName(t.Tag, goos, goarch)
 	sum, err := t.ExpectedSHA256(ctx, name)
 	if err != nil {
 		if errors.As(err, new(errDigestMismatch)) {
@@ -221,17 +224,19 @@ func (r *Runner) placeBinary(ctx context.Context) error {
 		}
 		return fail(err.Error(), "download_failed")
 	}
-	staged := dest + ".download"
-	if err := r.download(ctx, fmt.Sprintf("Downloading Icebath Agent %s (%s-%s)", t.Tag, goos, goarch), t.AssetURL(name), staged, sum); err != nil {
-		os.Remove(staged)
+	unpacked, err := os.MkdirTemp(r.installDir, ".icebath-release-")
+	if err != nil {
+		return fail(fmt.Sprintf("cannot stage the release in %s: %v", r.installDir, err), "filesystem_error")
+	}
+	defer os.RemoveAll(unpacked)
+	if err := r.download(ctx, fmt.Sprintf("Downloading Icebath Agent %s (%s-%s)", t.Tag, goos, goarch), t.AssetURL(name), filepath.Join(unpacked, name), sum); err != nil {
 		return err
 	}
-	if err := os.Chmod(staged, 0o755); err != nil {
-		os.Remove(staged)
-		return fail(fmt.Sprintf("cannot mark %s executable: %v", staged, err), "filesystem_error")
+	if err := extractReleaseArchive(filepath.Join(unpacked, name), unpacked, goos); err != nil {
+		return fail(err.Error(), "download_failed")
 	}
-	if err := replaceFile(staged, dest); err != nil {
-		return fail(fmt.Sprintf("cannot place %s: %v", dest, err), "filesystem_error")
+	if err := placeUnpackedRelease(unpacked, r.installDir, goos); err != nil {
+		return fail(err.Error(), "filesystem_error")
 	}
 	r.logSuccess(fmt.Sprintf("Icebath Agent %s installed at %s", t.Tag, dest))
 	return nil
@@ -389,6 +394,12 @@ func (r *Runner) stageComplete(ctx context.Context) error {
 		branch := r.opts.Branch
 		if _, err := writeMarker(r.installDir, &commit, &branch, time.Now().UTC().Truncate(time.Second)); err != nil {
 			return fail(err.Error(), "filesystem_error")
+		}
+	}
+	if r.opts.InstallMethod == MethodWinGet {
+		version := strings.TrimPrefix(InstalledRelease(ctx, InstallBinaryPath(r.installDir)).Tag, "v")
+		if err := registerUninstallEntry(r.installDir, version); err != nil {
+			return fail("cannot register icebath in Apps and Features: "+err.Error(), "filesystem_error")
 		}
 	}
 	if r.opts.Channel != "" {

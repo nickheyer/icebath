@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Primes the Portal reasoning capability cache with the upstream fixture entries
@@ -27,7 +29,9 @@ func seedNousPortalCatalog(t *testing.T) Profile {
 }
 
 func nousExtras(p Profile, r *Reasoning, supports bool, model string) (map[string]any, map[string]any) {
-	return p.BuildAPIKwargsExtras(r, map[string]any{"supports_reasoning": supports, "model": model})
+	extra, top := p.BuildAPIKwargsExtras(r, map[string]any{"supports_reasoning": supports, "model": model})
+	plain, _ := pyjson.Plain(extra).(map[string]any)
+	return plain, top
 }
 
 func TestNousPluginProfileMatchesUpstreamRegistration(t *testing.T) {
@@ -73,23 +77,23 @@ func TestNousStickySessionIDNormalizesCronTimestamp(t *testing.T) {
 	p := bundledPluginProfile(t, "nous")
 	first := p.BuildExtraBody("cron_job42_20260801_090000", map[string]any{})
 	second := p.BuildExtraBody("cron_job42_20260802_090000", map[string]any{})
-	if first["session_id"] != "cron_job42" || first["session_id"] != second["session_id"] {
-		t.Fatalf("sticky = %v %v", first["session_id"], second["session_id"])
+	if first.Vals["session_id"] != "cron_job42" || first.Vals["session_id"] != second.Vals["session_id"] {
+		t.Fatalf("sticky = %v %v", first.Vals["session_id"], second.Vals["session_id"])
 	}
 }
 
 func TestNousExtraBodyIgnoresProviderPreferences(t *testing.T) {
 	p := bundledPluginProfile(t, "nous")
 	body := p.BuildExtraBody("", map[string]any{"provider_preferences": map[string]any{"allow": []any{"anthropic"}, "sort": "price"}})
-	if _, ok := body["provider"]; ok || body["tags"] == nil {
+	if _, ok := body.Vals["provider"]; ok || body.Vals["tags"] == nil {
 		t.Fatalf("body = %v", body)
 	}
 	body = p.BuildExtraBody("", map[string]any{"data_use": map[string]bool{"zero_retention": true}})
-	if !reflect.DeepEqual(body["provider"], map[string]any{"data_collection": "deny", "zdr": true}) {
+	if !reflect.DeepEqual(body.Vals["provider"], map[string]any{"data_collection": "deny", "zdr": true}) {
 		t.Fatalf("data use body = %v", body)
 	}
 	body = p.BuildExtraBody("", map[string]any{"data_use": []string{"no_training"}})
-	if !reflect.DeepEqual(body["provider"], map[string]any{"data_collection": "deny"}) {
+	if !reflect.DeepEqual(body.Vals["provider"], map[string]any{"data_collection": "deny"}) {
 		t.Fatalf("data use body = %v", body)
 	}
 }
@@ -98,14 +102,14 @@ func TestNousStickyKeyMatchesConversationTag(t *testing.T) {
 	p := bundledPluginProfile(t, "nous")
 	ctx := WithPortalConversationContext(context.Background(), "root-conversation")
 	body := p.BuildExtraBody("segment-after-compaction", map[string]any{hookCtxKey: ctx})
-	if body["session_id"] != "root-conversation" || !slices.Contains(body["tags"].([]any), any(conversationTag("root-conversation"))) {
+	if body.Vals["session_id"] != "root-conversation" || !slices.Contains(body.Vals["tags"].([]any), any(conversationTag("root-conversation"))) {
 		t.Fatalf("body = %v", body)
 	}
-	if aux := p.BuildExtraBody("", map[string]any{hookCtxKey: ctx}); aux["session_id"] != "root-conversation" {
+	if aux := p.BuildExtraBody("", map[string]any{hookCtxKey: ctx}); aux.Vals["session_id"] != "root-conversation" {
 		t.Fatalf("aux body = %v", aux)
 	}
 	scoped := p.BuildExtraBody("segment", map[string]any{hookCtxKey: WithPortalAffinityScope(ctx, "declared-chat")})
-	if scoped["session_id"] != "declared-chat" || !slices.Contains(scoped["tags"].([]any), any(conversationTag("root-conversation"))) {
+	if scoped.Vals["session_id"] != "declared-chat" || !slices.Contains(scoped.Vals["tags"].([]any), any(conversationTag("root-conversation"))) {
 		t.Fatalf("scoped body = %v", scoped)
 	}
 }

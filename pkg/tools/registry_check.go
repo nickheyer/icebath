@@ -187,9 +187,9 @@ func CheckFnCacheScope(env *Env) (scope string, bypass bool) {
 
 func checkLogger(env *Env) *slog.Logger {
 	if env != nil && env.Log != nil {
-		return env.Log
+		return env.Log.With("logger", "tools.registry")
 	}
-	return slog.Default()
+	return slog.Default().With("logger", "tools.registry")
 }
 
 // runCheckUncached runs a probe and converts a panic into an unavailable verdict

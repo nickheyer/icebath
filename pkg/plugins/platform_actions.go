@@ -182,7 +182,7 @@ func NewPlatformActions(pluginID string) *PlatformActions {
 func (p *PlatformActions) capabilityGranted(ctx context.Context) bool {
 	cfg, err := loadConfig(home.Dir(ctx))
 	if err != nil {
-		logDebug(fmt.Sprintf("platform_actions capability check failed for %s", p.pluginID), "error", err)
+		logPlatformActions.debug(fmt.Sprintf("platform_actions capability check failed for %s", p.pluginID), "error", err)
 		return false
 	}
 	return CapabilityGranted(cfg, p.pluginID, PlatformActionCapability)
@@ -213,7 +213,7 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 			profile = activeProfileName(ctx)
 			return nil
 		}); err != nil {
-			logDebug(fmt.Sprintf("platform_actions: profile resolution failed for %s", p.pluginID), "error", err)
+			logPlatformActions.debug(fmt.Sprintf("platform_actions: profile resolution failed for %s", p.pluginID), "error", err)
 			return nil, actionErr("adapter_not_registered", fmt.Sprintf("no %s adapter is registered (active profile could not be resolved)", value))
 		}
 		adapter = resolve(ctx, value, profile)
@@ -300,7 +300,7 @@ func (p *PlatformActions) audit(verb string, platform any, result map[string]any
 	if !pyrepr.Truthy(result["ok"]) {
 		tail = " error=" + pyrepr.Str(result["error"])
 	}
-	logInfo(fmt.Sprintf("platform_action plugin=%s verb=%s platform=%s ok=%s%s", p.pluginID, verb, pyrepr.Str(platform), pyrepr.Str(result["ok"]), tail))
+	logPlatformActions.info(fmt.Sprintf("platform_action plugin=%s verb=%s platform=%s ok=%s%s", p.pluginID, verb, pyrepr.Str(platform), pyrepr.Str(result["ok"]), tail))
 }
 
 // Python attribute of the facade a hosted plugin reads, both verbs answering as coroutine methods

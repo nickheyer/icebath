@@ -2,6 +2,7 @@ package cron
 
 import (
 	"fmt"
+	"path"
 	"log/slog"
 	"math"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Bounds of the per job catch up override in minutes, zero meaning never catch up
@@ -50,6 +52,15 @@ func (w *knobWarner) reset() {
 	w.mu.Unlock()
 }
 
+// Whether ZoneInfo accepts a key, a normalized relative path naming a zone file, Local being no file
+func zoneInfoKey(name string) bool {
+	if name == "Local" || strings.HasPrefix(name, "/") || path.Clean(name) != name || strings.HasPrefix(name, "..") {
+		return false
+	}
+	_, err := time.LoadLocation(name)
+	return err == nil
+}
+
 // NormalizeTimezone validates a job timezone and returns its IANA key, nil meaning inherit the profile
 func NormalizeTimezone(value any) (*string, error) {
 	if value == nil {
@@ -57,14 +68,14 @@ func NormalizeTimezone(value any) (*string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return nil, fmt.Errorf("timezone must be an IANA name such as 'Asia/Hong_Kong', not %T.", value)
+		return nil, fmt.Errorf("timezone must be an IANA name such as 'Asia/Hong_Kong', not %s.", pyrepr.TypeName(value))
 	}
-	name := strings.TrimSpace(text)
+	name := pystr.Strip(text)
 	if name == "" {
 		return nil, nil
 	}
-	if _, err := time.LoadLocation(name); err != nil || strings.ContainsAny(name, " \t") || strings.HasPrefix(name, "/") {
-		return nil, fmt.Errorf("Unknown timezone %q. Use an IANA key from the system zone database, e.g. 'Asia/Hong_Kong'.", name)
+	if !zoneInfoKey(name) {
+		return nil, fmt.Errorf("Unknown timezone %s. Use an IANA key from `zoneinfo.available_timezones()`, e.g. 'Asia/Hong_Kong'.", pyrepr.StrRepr(name))
 	}
 	return &name, nil
 }

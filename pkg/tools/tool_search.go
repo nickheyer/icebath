@@ -156,7 +156,7 @@ func ToolSearchConfigFromRaw(raw any) ToolSearchConfig {
 	if deferRaw, present := m["defer"]; present && deferRaw != nil {
 		list, isList := toolSearchAsList(deferRaw)
 		if !isList {
-			slog.Warn(fmt.Sprintf("tools.tool_search.defer is %v, expected a YAML list of tool names (e.g. [todo_list, computer_use]; [] keeps every tool eager) - using the curated default set.", deferRaw))
+			toolSearchLog().Warn(fmt.Sprintf("tools.tool_search.defer is %v, expected a YAML list of tool names (e.g. [todo_list, computer_use]; [] keeps every tool eager) - using the curated default set.", deferRaw))
 		} else {
 			deferTools = map[string]bool{}
 			for _, n := range list {
@@ -317,14 +317,14 @@ func ListingTokenBudget(cfg ToolSearchConfig, contextLength int) int {
 }
 
 // One OpenAI style function schema for a bridge tool
-func toolSearchBridgeSchema(name, description string, properties map[string]any, required []string) map[string]any {
+func toolSearchBridgeSchema(name, description string, properties *pyjson.Object, required []string) map[string]any {
 	req := make([]any, len(required))
 	for i, r := range required {
 		req[i] = r
 	}
-	return map[string]any{"type": "function", "function": map[string]any{
-		"name": name, "description": description,
-		"parameters": map[string]any{"type": "object", "properties": properties, "required": req}}}
+	return fnDef(Dict(
+		"name", name, "description", description,
+		"parameters", Dict("type", "object", "properties", properties, "required", req)))
 }
 
 const toolSearchConnectionsHint = " Searches also cover the user's connected app accounts, whose tools are hosted and so " +
@@ -370,48 +370,48 @@ func BridgeToolSchemas(deferredCount int, listing, listingForm string, connectio
 	return []map[string]any{
 		toolSearchBridgeSchema(ToolSearchName,
 			toolSearchDescription(deferredCount, listing, listingForm, connectionsGranted),
-			map[string]any{
-				"queries": map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "One query per capability: service + action + object keywords (e.g. ['gmail send email', 'github create issue']), never a question; every word must match tool text. Searched in parallel.",
-				},
-				"limit": map[string]any{
-					"type":        "integer",
-					"description": "Max matches per query (default 5).",
-				},
-			},
+			Dict(
+				"queries", Dict(
+					"type", "array",
+					"items", Dict("type", "string"),
+					"description", "One query per capability: service + action + object keywords (e.g. ['gmail send email', 'github create issue']), never a question; every word must match tool text. Searched in parallel.",
+				),
+				"limit", Dict(
+					"type", "integer",
+					"description", "Max matches per query (default 5).",
+				),
+			),
 			[]string{"queries"}),
 		toolSearchBridgeSchema(ToolDescribeName,
 			fmt.Sprintf("Load the full JSON schemas for tools returned by `%s`. ", ToolSearchName)+
 				fmt.Sprintf("Required before `%s` if a tool's parameters are unknown. ", ToolCallName)+
 				"Batch every schema you need into one call.",
-			map[string]any{
-				"names": map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "Exact tool names (as returned by tool_search). A single string is accepted and treated as one name.",
-				},
-			},
+			Dict(
+				"names", Dict(
+					"type", "array",
+					"items", Dict("type", "string"),
+					"description", "Exact tool names (as returned by tool_search). A single string is accepted and treated as one name.",
+				),
+			),
 			[]string{"names"}),
 		toolSearchBridgeSchema(ToolCallName,
 			"Invoke deferred tools: `calls` is an array of {name, arguments}, one entry per "+
 				"invocation (batch independent calls; results come back in order). Arguments match "+
 				fmt.Sprintf("the schema from `%s`; approvals and hooks apply as usual.", ToolDescribeName),
-			map[string]any{
-				"calls": map[string]any{
-					"type": "array",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"name":      map[string]any{"type": "string", "description": "Exact tool name to invoke."},
-							"arguments": map[string]any{"type": "object", "description": "Arguments matching the tool schema."},
-						},
-						"required": []any{"name", "arguments"},
-					},
-					"description": "One or more independent deferred tool invocations.",
-				},
-			},
+			Dict(
+				"calls", Dict(
+					"type", "array",
+					"items", Dict(
+						"type", "object",
+						"properties", Dict(
+							"name", Dict("type", "string", "description", "Exact tool name to invoke."),
+							"arguments", Dict("type", "object", "description", "Arguments matching the tool schema."),
+						),
+						"required", []any{"name", "arguments"},
+					),
+					"description", "One or more independent deferred tool invocations.",
+				),
+			),
 			[]string{"calls"}),
 	}
 }
@@ -477,7 +477,7 @@ func AssembleToolDefs(ctx context.Context, env *Env, toolDefs []map[string]any, 
 	case "full", "names", "mixed":
 		tier = 1
 	}
-	slog.Info(fmt.Sprintf("tool_search activated (tier %d): %d core/visible tools kept, %d deferred (~%d tokens), listing %s (budget ~%d tokens)",
+	toolSearchLog().Info(fmt.Sprintf("tool_search activated (tier %d): %d core/visible tools kept, %d deferred (~%d tokens), listing %s (budget ~%d tokens)",
 		tier, len(visible), len(deferrable), deferrableTokens, listingForm, listingBudget))
 	return AssemblyResult{ToolDefs: append(append([]map[string]any{}, visible...), bridge...), Activated: true,
 		DeferredCount: len(deferrable), DeferredTokens: deferrableTokens, ThresholdTokens: listingBudget,
@@ -499,7 +499,7 @@ func toolSearchClipDescription(text string, cap int) string {
 func toolSearchSharedToolRecord(entry CatalogEntry) *pyjson.Object {
 	required := []any{}
 	if fn, ok := pyjson.Dict(entry.Schema["function"]); ok {
-		if params, ok := fn["parameters"].(map[string]any); ok {
+		if params, ok := pyjson.Dict(fn["parameters"]); ok {
 			if list, ok := params["required"].([]any); ok {
 				for _, r := range list {
 					s, ok := r.(string)
@@ -810,3 +810,6 @@ func ResolveUnderlyingCall(ctx context.Context, env *Env, args map[string]any, s
 	}
 	return name, rawArgs, ""
 }
+
+// Logger of the reference module tools.tool_search
+func toolSearchLog() *slog.Logger { return slog.Default().With("logger", "tools.tool_search") }

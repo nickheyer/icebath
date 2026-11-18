@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -730,40 +729,40 @@ func outputPathDescription(h string) string {
 }
 
 // Static text_to_speech schema
-func ttsSchema() map[string]any {
-	return map[string]any{
-		"name":        "text_to_speech",
-		"description": "Convert text to speech audio. Returns a MEDIA: path that the platform delivers as native audio. Compatible providers render as a voice bubble on Telegram; otherwise audio is sent as a regular attachment. In CLI mode, saves to ~/voice-memos/. " + configuredVoiceSentence,
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"text": map[string]any{"type": "string",
-					"description": "The text to convert to speech. Provider-specific per-request character caps apply automatically (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k depending on model); longer input is split into ordered chunks without silent truncation."},
-				"output_path": map[string]any{"type": "string", "description": outputPathDescription("the profile ICEBATH_HOME")},
-				"speed": map[string]any{"type": "number",
-					"description": "Playback speed multiplier. 1.0 = normal, 0.5 = very slow (language learning), 2.0 = fast. Range: 0.25-4.0. Overrides the speed configured in config.yaml."},
-				"instructions": map[string]any{"type": "string",
-					"description": "Optional voice-design guidance: tone, emotion, pacing, accent, whispering, impressions (e.g. 'Speak in a cheerful, excited whisper'). Forwarded to the OpenAI backend (gpt-4o-mini-tts and OpenAI-compatible voice-design servers). Silently ignored by backends that don't support it."},
-			},
-			"required": []any{"text"},
-		},
-	}
+func ttsSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name",        "text_to_speech",
+		"description", "Convert text to speech audio. Returns a MEDIA: path that the platform delivers as native audio. Compatible providers render as a voice bubble on Telegram; otherwise audio is sent as a regular attachment. In CLI mode, saves to ~/voice-memos/. " + configuredVoiceSentence,
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"text", pyjson.ObjectOf("type", "string",
+					"description", "The text to convert to speech. Provider-specific per-request character caps apply automatically (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k depending on model); longer input is split into ordered chunks without silent truncation."),
+				"output_path", pyjson.ObjectOf("type", "string", "description", outputPathDescription("the profile ICEBATH_HOME")),
+				"speed", pyjson.ObjectOf("type", "number",
+					"description", "Playback speed multiplier. 1.0 = normal, 0.5 = very slow (language learning), 2.0 = fast. Range: 0.25-4.0. Overrides the speed configured in config.yaml."),
+				"instructions", pyjson.ObjectOf("type", "string",
+					"description", "Optional voice-design guidance: tone, emotion, pacing, accent, whispering, impressions (e.g. 'Speak in a cheerful, excited whisper'). Forwarded to the OpenAI backend (gpt-4o-mini-tts and OpenAI-compatible voice-design servers). Silently ignored by backends that don't support it."),
+			),
+			"required", []any{"text"},
+		),
+	)
 }
 
 // Schema overrides rebuilt from the active profile, adding voice selection when ElevenLabs is configured
-func ttsSchemaOverrides(env *tools.Env) map[string]any {
+func ttsSchemaOverrides(env *tools.Env) *pyjson.Object {
 	ctx := context.Background()
 	schema := ttsSchema()
-	params := pycopy.DeepCopy(schema["parameters"]).(map[string]any)
-	params["properties"].(map[string]any)["output_path"].(map[string]any)["description"] = outputPathDescription(home.Display(ttsHome(ctx, env)))
+	params := pyjson.Clone(schema.Vals["parameters"]).(*pyjson.Object)
+	props := params.Vals["properties"].(*pyjson.Object)
+	props.Vals["output_path"].(*pyjson.Object).Set("description", outputPathDescription(home.Display(ttsHome(ctx, env))))
 	if !elevenLabsVoiceSelectionActive(loadTTSConfig(ctx, env)) {
-		return map[string]any{"parameters": params}
+		return pyjson.ObjectOf("parameters", params)
 	}
-	props := params["properties"].(map[string]any)
-	props["voice_id"] = map[string]any{"type": "string", "description": "ElevenLabs voice for this audio (a voice_id from find_voices). Omit to use the user's configured voice."}
-	props["find_voices"] = findVoicesSchema()
-	params["required"] = []any{}
-	return map[string]any{"parameters": params, "description": strings.ReplaceAll(schema["description"].(string), configuredVoiceSentence, elevenLabsVoiceSentence)}
+	props.Set("voice_id", pyjson.ObjectOf("type", "string", "description", "ElevenLabs voice for this audio (a voice_id from find_voices). Omit to use the user's configured voice."))
+	props.Set("find_voices", findVoicesSchema())
+	params.Set("required", []any{})
+	return pyjson.ObjectOf("parameters", params, "description", strings.ReplaceAll(schema.Vals["description"].(string), configuredVoiceSentence, elevenLabsVoiceSentence))
 }
 
 // Optional string argument, empty for None or a non string

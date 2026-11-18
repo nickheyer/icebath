@@ -99,7 +99,7 @@ func askChoice(ctx context.Context, question any, choices []any) (string, bool, 
 		return "", false, nil
 	}
 	if runningLoop(ctx) {
-		logWarn("ask_choice needs a sync slash-command handler: an async one would block the event loop that delivers the answer; returning None")
+		logPluginChoices.warn("ask_choice needs a sync slash-command handler: an async one would block the event loop that delivers the answer; returning None")
 		return "", false, nil
 	}
 	labels := make([]string, len(options))

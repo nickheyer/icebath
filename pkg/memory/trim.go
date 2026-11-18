@@ -253,7 +253,7 @@ func TrimMemory(ctx context.Context, env *tools.Env, opts TrimOptions) (released
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			envLog(env).Warn(fmt.Sprintf("memory trim failed after %s: %T: %v", reason, rec, rec))
+			envLog(env).With("logger", "hermes_cli.mem_trim").Warn(fmt.Sprintf("memory trim failed after %s: %T: %v", reason, rec, rec))
 			released = false
 		}
 	}()
@@ -268,7 +268,7 @@ func TrimMemory(ctx context.Context, env *tools.Env, opts TrimOptions) (released
 	duration := float64(time.Since(started).Microseconds()) / 1000
 	trimCallCount++
 	if released && shouldLogTrim(opts.Force, logEveryN, trimCallCount, before, after, minDelta) {
-		envLog(env).Info(fmt.Sprintf("memory trim: reason=%s malloc_trim=%d collected=%s rss_kib=%s->%s rss_anon_kib=%s->%s "+
+		envLog(env).With("logger", "hermes_cli.mem_trim").Info(fmt.Sprintf("memory trim: reason=%s malloc_trim=%d collected=%s rss_kib=%s->%s rss_anon_kib=%s->%s "+
 			"threads=%d duration_ms=%.1f", reason, result, pyStr(collect), optInt(before.RSSKiB), optInt(after.RSSKiB),
 			optInt(before.RSSAnonKiB), optInt(after.RSSAnonKiB), after.ThreadCount, duration))
 	}
@@ -312,7 +312,7 @@ func TrimMemoryWhenIdle(ctx context.Context, env *tools.Env, reason string, cloc
 	freesBefore := stats.Frees
 	trimCollect()
 	runtime.ReadMemStats(&stats)
-	envLog(env).Info(fmt.Sprintf("idle full collection: reason=%s quiet_s=%d unreachable=%d duration_ms=%.1f",
+	envLog(env).With("logger", "hermes_cli.mem_trim").Info(fmt.Sprintf("idle full collection: reason=%s quiet_s=%d unreachable=%d duration_ms=%.1f",
 		reason, int(quietFor.Seconds()), stats.Frees-freesBefore, float64(time.Since(started).Microseconds())/1000))
 	return TrimMemory(ctx, env, TrimOptions{Force: true, Reason: reason + " after idle collection", AllocatorOnly: true})
 }

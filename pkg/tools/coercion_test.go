@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"testing"
 )
@@ -9,7 +10,7 @@ import (
 func coercionRegistry(t *testing.T, parameters string) (*Registry, *Env) {
 	t.Helper()
 	reg := NewRegistry()
-	reg.Register(Def{Name: "test_tool", Toolset: "test", Schema: map[string]any{"name": "test_tool", "description": "test", "parameters": jsonRound(t, parameters)},
+	reg.Register(Def{Name: "test_tool", Toolset: "test", Schema: pyjson.ObjectOf("name", "test_tool", "description", "test", "parameters", jsonRound(t, parameters)),
 		Handler: func(ctx context.Context, call *Call) string { return "{}" }})
 	return reg, &Env{}
 }

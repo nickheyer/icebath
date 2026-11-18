@@ -157,7 +157,7 @@ func StartBackgroundPluginDiscovery(ctx context.Context) {
 			return nil, nil
 		})
 		if err != nil {
-			logWarn("background plugin discovery failed: " + err.Error())
+			logPlugins.warn("background plugin discovery failed: " + err.Error())
 		}
 	}()
 }
@@ -223,7 +223,7 @@ func persistPluginToolsetKeys(ctx context.Context) {
 		}
 	}
 	if err != nil {
-		logDebug("plugin toolset key persist failed: " + err.Error())
+		logPlugins.debug("plugin toolset key persist failed: " + err.Error())
 	}
 }
 
@@ -670,7 +670,7 @@ func GetPluginErrorClassification(ctx context.Context, in ErrorClassificationInp
 		winner["error_context"] = ec
 	}
 	if len(picks) > 1 {
-		logWarn(fmt.Sprintf("transform_api_error_classification: skipped %d valid classification(s) after the first result in registration order won (run-all-then-pick-first)", len(picks)-1))
+		logPlugins.warn(fmt.Sprintf("transform_api_error_classification: skipped %d valid classification(s) after the first result in registration order won (run-all-then-pick-first)", len(picks)-1))
 	}
 	return winner, nil
 }

@@ -6,22 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"math/big"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// SetupDocsBase is the documentation root the setup screens link to
-const SetupDocsBase = "https://hermes-agent.nousresearch.com/docs"
 
 var setupLog = logging.GetLogger("hermes_cli.setup")
 
@@ -106,7 +101,7 @@ func runSetupProviderPicker(ctx context.Context) (skipped bool, err error) {
 // SetupModelProvider runs the shared provider and model picker, then reloads and resaves the config it wrote
 func SetupModelProvider(ctx context.Context, cfg config.Tree) error {
 	PrintSetupHeader("Inference Provider", false)
-	SetupInfo("Choose how to connect to your main chat model.", "   Guide: "+SetupDocsBase+"/integrations/providers", nil)
+	SetupInfo("Choose how to connect to your main chat model.", nil)
 	skipped, err := runSetupProviderPicker(ctx)
 	switch {
 	case skipped:
@@ -162,119 +157,6 @@ func ApplyDefaultAgentSettings(ctx context.Context, cfg config.Tree) error {
 	return nil
 }
 
-// Python int of a prompted answer, false when it does not parse
-func promptSetupInt(label string, current any) (*big.Int, bool) {
-	return pyint.Parse(SetupPrompt(label, pyrepr.Str(current), false))
-}
-
-// Python float of a prompted answer, false when it does not parse
-func promptSetupFloat(label string, current any) (float64, bool) {
-	f, err := pyint.ParseFloat(SetupPrompt(label, pyrepr.Str(current), false))
-	return f, err == nil
-}
-
-// Stores a prompted int under key only when it parses and accept holds for it
-func promptIntSetting(section map[string]any, key, label string, current any, accept func(*big.Int) bool) {
-	if value, ok := promptSetupInt(label, current); ok && accept(value) {
-		section[key] = pyint.Native(value)
-	}
-}
-
-var toolProgressHelp = []any{
-	"Tool Progress Display", "Controls how much tool activity is shown (CLI and messaging).",
-	"  off     — Silent, just the final response",
-	"  new     — Show tool name only when it changes (less noise)",
-	"  all     — Show every tool call with a short preview",
-	"  verbose — Full args, results, and debug logs",
-	"  log     — Silent in chat; write every tool call to ~/.icebath/logs/tool_calls.log (gateway only)",
-}
-
-// SetupAgentSettings prompts for max iterations, the tool progress mode and the compression threshold
-func SetupAgentSettings(ctx context.Context, cfg config.Tree) error {
-	h := home.Dir(ctx)
-	PrintSetupHeader("Agent Settings", false)
-	SetupInfo("   Guide: "+SetupDocsBase+"/user-guide/configuration", nil)
-	current, ok := config.CfgGet(cfg, "agent", "max_turns")
-	if !ok {
-		current = 90
-	}
-	currentMax := pyrepr.Str(current)
-	SetupInfo("Maximum tool-calling iterations per conversation.",
-		"Higher = more complex tasks, but costs more tokens.",
-		fmt.Sprintf("Press Enter to keep %s. Use 90 for most tasks or 150+ for open exploration.", currentMax))
-	maxIter, parsed := promptSetupInt("Max iterations", currentMax)
-	if !parsed {
-		SetupPrintWarning("Invalid number, keeping current value")
-	} else if maxIter.Sign() > 0 {
-		agent, err := SetdefaultDict(cfg, "agent")
-		if err != nil {
-			return err
-		}
-		agent["max_turns"] = pyint.Native(maxIter)
-		delete(cfg, "max_turns")
-		if _, err := config.RemoveHomeEnvValue(ctx, h, "ICEBATH_MAX_ITERATIONS"); err != nil {
-			return err
-		}
-		SetupPrintSuccess(fmt.Sprintf("Max iterations set to %s", maxIter.String()))
-	}
-
-	SetupInfo(append([]any{""}, toolProgressHelp...)...)
-	currentMode, _ := config.CfgGet(cfg, "display", "tool_progress")
-	question := "Tool progress mode (Enter keeps per-platform defaults)"
-	if pyrepr.Truthy(currentMode) {
-		question = "Tool progress mode"
-	}
-	mode := setupPromptValue(question, currentMode, false)
-	if !pyrepr.Truthy(mode) && !pyrepr.Truthy(currentMode) {
-		SetupPrintInfo("Keeping each platform's default tool progress")
-	} else {
-		text, isText := mode.(string)
-		if !isText {
-			return &SetupAttributeError{Msg: fmt.Sprintf("'%s' object has no attribute 'lower'", pyrepr.TypeName(mode))}
-		}
-		switch lower := pystr.Lower(text); lower {
-		case "off", "new", "all", "verbose", "log":
-			display, err := SetdefaultDict(cfg, "display")
-			if err != nil {
-				return err
-			}
-			display["tool_progress"] = lower
-			if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-				return err
-			}
-			SetupPrintSuccess("Tool progress set to: " + lower)
-		default:
-			keep := "per-platform defaults"
-			if pyrepr.Truthy(currentMode) {
-				keep = pyrepr.Str(currentMode)
-			}
-			SetupPrintWarning(fmt.Sprintf("Unknown mode '%s', keeping '%s'", text, keep))
-		}
-	}
-
-	PrintSetupHeader("Context Compression", false)
-	SetupInfo("Automatically summarizes old messages when context gets too long.",
-		"Higher threshold = compress later (use more context). Lower = compress sooner.")
-	compression, err := SetdefaultDict(cfg, "compression")
-	if err != nil {
-		return err
-	}
-	compression["enabled"] = true
-	currentThreshold, ok := config.CfgGet(cfg, "compression", "threshold")
-	if !ok {
-		currentThreshold = 0.50
-	}
-	if threshold, ok := promptSetupFloat("Compression threshold (0.5-0.95)", currentThreshold); ok && 0.5 <= threshold && threshold <= 0.95 {
-		compression["threshold"] = threshold
-	}
-	shown, ok := compression["threshold"]
-	if !ok {
-		shown = 0.50
-	}
-	SetupPrintSuccess("Context compression threshold set to " + pyrepr.Str(shown))
-	return config.SaveConfig(ctx, h, cfg, config.SaveOptions{})
-}
-
 // SetupToolsEnv is the tool environment the setup sections run their tool configuration in
 func SetupToolsEnv(ctx context.Context) *tools.Env {
 	h := home.Dir(ctx)
@@ -283,13 +165,7 @@ func SetupToolsEnv(ctx context.Context) *tools.Env {
 	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: slog.Default()}
 }
 
-// SetupTools runs the tools command flow on the setup console, first install skipping the platform menu
-func SetupTools(ctx context.Context, cfg config.Tree, firstInstall bool) error {
-	s := &tools.ToolsSetup{Ctx: ctx, Env: SetupToolsEnv(ctx), Con: setupUI()}
-	return s.ToolsCommand(nil, firstInstall, cfg)
-}
-
-// Setup wizard console of the terminal backend section, the setup prompts and prints
+// Setup console of the terminal backend section, the setup prompts and prints
 type setupTerminalUI struct{}
 
 func (setupTerminalUI) Prompt(question, def string, password bool) string {

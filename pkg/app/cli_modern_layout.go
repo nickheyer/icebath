@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	modernSpin                  = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 	modernRST                   = "\x1b[0m"
 	modernBold                  = "\x1b[1m"
 	modernDim                   = "\x1b[2m"
@@ -27,7 +26,6 @@ const (
 	modernReasoningPreviewLines = 10
 	modernDefaultAccent         = "#FFBF00"
 	modernDefaultResponseLabel  = " ☤ Icebath "
-	modernDefaultPromptSymbol   = "❯"
 	modernDefaultBrandGlyph     = "☤"
 	modernDefaultBrandName      = "Icebath"
 )

@@ -60,6 +60,9 @@ var persistenceOnlyFields = func() map[string]bool {
 	return fields
 }()
 
+// Row id, active and compacted flags the dict form of a stored message carries where the Python row holds none
+var rowBookkeepingFields = map[string]bool{"id": true, "active": true, "compacted": true}
+
 // Replay carriers priced at zero, opaque signatures, duplicate reasoning copies and ordered sidecars
 var unpricedCoreFields = []string{"_anthropic_content_blocks", "reasoning_details", "extra_content", "bedrock_content_blocks", "data_use"}
 
@@ -80,9 +83,12 @@ func unpricedReplayFields() map[string]bool {
 	return out
 }
 
-// Message as the Python dict row the estimator reads, numbers as ints or floats and the live ordered sidecar included
+// Message as the Python dict row the estimator reads, every dict key of the message, numbers as ints or floats and the live ordered sidecar included
 func messageRow(m *state.Message) map[string]any {
-	raw, _ := json.Marshal(m)
+	raw, err := json.Marshal(state.MessageToDict(m))
+	if err != nil {
+		raw, _ = json.Marshal(m)
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var decoded any
@@ -113,7 +119,7 @@ func mapShadow(row map[string]any) map[string]any {
 	unpriced := unpricedReplayFields()
 	shadow := map[string]any{}
 	for k, v := range row {
-		if unpriced[k] || persistenceOnlyFields[k] || (k == "reasoning" && dropReasoningDup) {
+		if unpriced[k] || persistenceOnlyFields[k] || rowBookkeepingFields[k] || (k == "reasoning" && dropReasoningDup) {
 			continue
 		}
 		switch {
@@ -462,6 +468,16 @@ func payloadChars(v any, imageCost int) int {
 	switch c := v.(type) {
 	case nil:
 		return 0
+	case *omap:
+		if c == nil {
+			return 0
+		}
+		return payloadChars(c.vals, imageCost)
+	case *pyjson.Object:
+		if c == nil {
+			return 0
+		}
+		return payloadChars(c.Vals, imageCost)
 	case map[string]any:
 		if t, ok := c["type"].(string); ok && imagePartTypes[t] {
 			for _, k := range []string{"image_url", "image", "source", "file_id"} {

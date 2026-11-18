@@ -64,7 +64,7 @@ func TestMessageDictRoundTrip(t *testing.T) {
 		"role": "assistant", "content": "hi", "tool_call_id": "",
 		"tool_calls": []any{pyjson.ObjectOf("call_id", "c1", "id", "c1", "function", pyjson.ObjectOf("arguments", "{}", "name", "f")),
 			pyjson.ObjectOf("id", "c2", "type", "function", "function", pyjson.ObjectOf("name", "g", "arguments", "{}"))},
-		"reasoning_details": []any{map[string]any{"type": "t"}},
+		"reasoning_details": []any{pyjson.ObjectOf("type", "t")},
 		"_withheld_prompt":  "w", "data_use": []any{"x"}, "timestamp": 1.5, "id": int64(7), DBPersistedMarker: true,
 	}
 	m := MessageFromDict(d)

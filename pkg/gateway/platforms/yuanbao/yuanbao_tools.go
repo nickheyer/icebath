@@ -473,17 +473,17 @@ func checkYuanbao(env *tools.Env) bool {
 }
 
 // String property of a tool schema
-func stringProp(description string) map[string]any {
-	return map[string]any{"type": "string", "description": description}
+func stringProp(description string) *pyjson.Object {
+	return pyjson.ObjectOf("type", "string", "description", description)
 }
 
 // Function schema of a tool with its properties and required names
-func toolSchema(name, description string, properties map[string]any, required ...any) map[string]any {
+func toolSchema(name, description string, properties *pyjson.Object, required ...any) *pyjson.Object {
 	if required == nil {
 		required = []any{}
 	}
-	return map[string]any{"name": name, "description": description,
-		"parameters": map[string]any{"type": "object", "properties": properties, "required": required}}
+	return pyjson.ObjectOf("name", name, "description", description,
+		"parameters", pyjson.ObjectOf("type", "object", "properties", properties, "required", required))
 }
 
 const groupCodeDescription = "The unique group identifier (group_code)."
@@ -492,7 +492,7 @@ const groupCodeDescription = "The unique group identifier (group_code)."
 var yuanbaoToolDefs = []tools.Def{
 	{Name: "yb_query_group_info", Emoji: "👥", Handler: ybTool("get_group_info", getGroupInfo),
 		Schema: toolSchema("yb_query_group_info", "Query a group's name, owner and member count (a group is '派/Pai' in the app).",
-			map[string]any{"group_code": stringProp(groupCodeDescription)}, "group_code")},
+			pyjson.ObjectOf("group_code", stringProp(groupCodeDescription)), "group_code")},
 	{Name: "yb_query_group_members", Emoji: "📋", Handler: ybTool("query_group_members", queryGroupMembers),
 		Schema: toolSchema("yb_query_group_members",
 			"Query members of a group (called '派/Pai' in the app). "+
@@ -500,44 +500,44 @@ var yuanbaoToolDefs = []tools.Def{
 				"list bots (including Yuanbao AI), or list all members. "+
 				"IMPORTANT: You MUST call this tool before @mentioning any user, "+
 				"because you need the exact nickname to construct the @mention format.",
-			map[string]any{
-				"group_code": stringProp(groupCodeDescription),
-				"action": map[string]any{"type": "string", "enum": []any{"find", "list_bots", "list_all"},
-					"description": "find — search a user by name (use when you need to @mention or look up someone); " +
+			pyjson.ObjectOf(
+				"group_code", stringProp(groupCodeDescription),
+				"action", pyjson.ObjectOf("type", "string", "enum", []any{"find", "list_bots", "list_all"},
+					"description", "find — search a user by name (use when you need to @mention or look up someone); " +
 						"list_bots — list bots and Yuanbao AI assistants; " +
-						"list_all — list all members."},
-				"name": stringProp("User name to search (partial match, case-insensitive). " +
+						"list_all — list all members."),
+				"name", stringProp("User name to search (partial match, case-insensitive). " +
 					"Required for 'find'. Use the name the user mentioned in the conversation."),
-				"mention": map[string]any{"type": "boolean",
-					"description": "Set to true when you need to @mention/at someone in your reply. " +
-						"The response will include the exact @mention format to use."},
-			}, "group_code", "action")},
+				"mention", pyjson.ObjectOf("type", "boolean",
+					"description", "Set to true when you need to @mention/at someone in your reply. " +
+						"The response will include the exact @mention format to use."),
+			), "group_code", "action")},
 	{Name: "yb_send_dm", Emoji: "✉️", Handler: ybTool("send_dm", sendDM),
 		Schema: toolSchema("yb_send_dm",
 			"Send a private message (DM / 私信) to a group member by name, with optional media. "+
 				"It looks the user up in the group member list (or pass user_id if known). "+
 				"Use it when someone asks to privately message a user. "+
 				"Supports text, images, and file attachments.",
-			map[string]any{
-				"group_code": stringProp("The group where the target user belongs. " +
+			pyjson.ObjectOf(
+				"group_code", stringProp("The group where the target user belongs. " +
 					"Extract from chat_id: 'group:328306697' → '328306697'. " +
 					"Required when user_id is not provided."),
-				"name": stringProp("Target user's display name (partial match, case-insensitive). " +
+				"name", stringProp("Target user's display name (partial match, case-insensitive). " +
 					"Required when user_id is not provided."),
-				"message": stringProp("The message text to send as a DM. Can be empty if only sending media."),
-				"user_id": stringProp("Target user's account ID. If provided, skips the member lookup. " +
+				"message", stringProp("The message text to send as a DM. Can be empty if only sending media."),
+				"user_id", stringProp("Target user's account ID. If provided, skips the member lookup. " +
 					"Usually obtained from a previous yb_query_group_members call."),
-				"media_files": map[string]any{"type": "array",
-					"description": "Optional list of media files to send along with the DM. " +
+				"media_files", pyjson.ObjectOf("type", "array",
+					"description", "Optional list of media files to send along with the DM. " +
 						"Images (.jpg/.png/.gif/.webp/.bmp) are sent as image messages; " +
 						"other files are sent as document attachments.",
-					"items": map[string]any{"type": "object",
-						"properties": map[string]any{
-							"path":     stringProp("Absolute local file path of the media to send."),
-							"is_voice": map[string]any{"type": "boolean", "description": "Whether this file is a voice message (default false)."},
-						},
-						"required": []any{"path"}}},
-			})},
+					"items", pyjson.ObjectOf("type", "object",
+						"properties", pyjson.ObjectOf(
+							"path",     stringProp("Absolute local file path of the media to send."),
+							"is_voice", pyjson.ObjectOf("type", "boolean", "description", "Whether this file is a voice message (default false)."),
+						),
+						"required", []any{"path"})),
+			))},
 	{Name: "yb_search_sticker", Emoji: "🔍", Handler: ybTool("search_sticker", searchSticker),
 		Schema: toolSchema("yb_search_sticker",
 			"Search the built-in Yuanbao sticker (TIM face / 表情包) catalogue by keyword. "+
@@ -545,11 +545,11 @@ var yuanbaoToolDefs = []tools.Def{
 				"Use this BEFORE yb_send_sticker to discover the right sticker_id. "+
 				"Sticker = 贴纸 = TIM face — NOT a message reaction. "+
 				"Prefer sending a sticker over bare Unicode emoji when reacting/expressing emotion.",
-			map[string]any{
-				"query": stringProp("Search keyword (Chinese or English, e.g. '666', '比心', 'cool', '吃瓜'). " +
+			pyjson.ObjectOf(
+				"query", stringProp("Search keyword (Chinese or English, e.g. '666', '比心', 'cool', '吃瓜'). " +
 					"Empty string returns the first N stickers."),
-				"limit": map[string]any{"type": "integer", "description": "Max number of candidates to return (default 10, max 50)."},
-			})},
+				"limit", pyjson.ObjectOf("type", "integer", "description", "Max number of candidates to return (default 10, max 50)."),
+			))},
 	{Name: "yb_send_sticker", Emoji: "🎨", Handler: ybTool("send_sticker", sendSticker),
 		Schema: toolSchema("yb_send_sticker",
 			"Send a built-in sticker (TIMFaceElem / 贴纸表情) to the current Yuanbao chat. "+
@@ -562,13 +562,13 @@ var yuanbaoToolDefs = []tools.Def{
 				"yb_search_sticker first. When the recent thread shows users sending stickers, "+
 				"prefer matching that tone by replying with a sticker instead of (or in "+
 				"addition to) text.",
-			map[string]any{
-				"sticker": stringProp("Sticker name (e.g. '六六六', '比心', 'ok') or numeric sticker_id " +
+			pyjson.ObjectOf(
+				"sticker", stringProp("Sticker name (e.g. '六六六', '比心', 'ok') or numeric sticker_id " +
 					"(e.g. '278'). Empty string sends a random built-in sticker."),
-				"chat_id": stringProp("Target chat. Defaults to the current session. " +
+				"chat_id", stringProp("Target chat. Defaults to the current session. " +
 					"Format: 'direct:{account_id}', 'group:{group_code}', or bare account_id."),
-				"reply_to": stringProp("Optional ref_msg_id to quote-reply (group chat only)."),
-			})},
+				"reply_to", stringProp("Optional ref_msg_id to quote-reply (group chat only)."),
+			))},
 }
 
 // Registers the Yuanbao tools, available in a Yuanbao session or while an adapter is connected

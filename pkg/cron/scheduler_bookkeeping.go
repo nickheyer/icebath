@@ -23,7 +23,7 @@ func failEmptyResponse(d *runDelivery, finalResponse string) {
 func (s *Store) finishInterruptedRun(ctx context.Context, job *Job, executionID string, deliveryError *string) error {
 	if deliveryError != nil && *deliveryError != "" {
 		if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"last_delivery_error": *deliveryError}); err != nil {
-			s.log.Debug(fmt.Sprintf("Failed recording delivery_error for interrupted job %s: %v", job.ID, err))
+			s.logAs("cron.scheduler").Debug(fmt.Sprintf("Failed recording delivery_error for interrupted job %s: %v", job.ID, err))
 		}
 	}
 	_, err := openExecutionsLedger(s).Finish(ctx, executionID, false, strPtr("Interrupted by gateway shutdown before terminal completion."), nil, false)

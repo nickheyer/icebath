@@ -155,7 +155,7 @@ func dbResults(t *testing.T, out map[string]any) []map[string]any {
 
 // The delegate_task function definition of a home
 func dbDefinition(h string) map[string]any {
-	return tools.BuildDelegateDynamicSchemaOverrides(&tools.Env{Home: h, Values: &sync.Map{}})
+	return pyjson.Plain(tools.BuildDelegateDynamicSchemaOverrides(&tools.Env{Home: h, Values: &sync.Map{}})).(map[string]any)
 }
 
 // Per task properties of a definition
@@ -176,17 +176,17 @@ func dbJSON(t *testing.T, v any) string {
 // Go provider standing in for the hermes test classes with one route rule
 type dbProvider struct {
 	name   string
-	params map[string]map[string]any
+	params *pyjson.Object
 	route  func(task, config map[string]any) (map[string]any, error)
 }
 
-func (p *dbProvider) Name() string                                            { return p.name }
-func (p *dbProvider) DisplayName() string                                     { return p.name }
-func (p *dbProvider) GetSetupSchema() map[string]any                          { return map[string]any{} }
-func (p *dbProvider) Summary() string                                         { return "" }
-func (p *dbProvider) IsAvailable() bool                                       { return true }
-func (p *dbProvider) Description(map[string]any) string                       { return "" }
-func (p *dbProvider) TaskParameters(map[string]any) map[string]map[string]any { return p.params }
+func (p *dbProvider) Name() string                                 { return p.name }
+func (p *dbProvider) DisplayName() string                          { return p.name }
+func (p *dbProvider) GetSetupSchema() map[string]any               { return map[string]any{} }
+func (p *dbProvider) Summary() string                              { return "" }
+func (p *dbProvider) IsAvailable() bool                            { return true }
+func (p *dbProvider) Description(map[string]any) string            { return "" }
+func (p *dbProvider) TaskParameters(map[string]any) *pyjson.Object { return p.params }
 func (p *dbProvider) RouteTask(task, config map[string]any) (map[string]any, error) {
 	return p.route(task, config)
 }
@@ -212,7 +212,7 @@ func TestRouteTaskAlwaysSeesTheCoreTaskPosition(t *testing.T) {
 	dbRealRegistry(t)
 	var mu sync.Mutex
 	var seen []any
-	positional := &dbProvider{name: "positional", params: map[string]map[string]any{"index": {"type": "integer"}},
+	positional := &dbProvider{name: "positional", params: pyjson.ObjectOf("index", pyjson.ObjectOf("type", "integer")),
 		route: func(task, _ map[string]any) (map[string]any, error) {
 			mu.Lock()
 			seen = append(seen, task["index"])
@@ -224,7 +224,7 @@ func TestRouteTaskAlwaysSeesTheCoreTaskPosition(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	ctx := home.WithOverride(context.Background(), h)
 	params, _ := tools.SchemaExtension(ctx, map[string]any{"backend": "positional"})
-	if len(params) != 0 {
+	if params.Len() != 0 {
 		t.Fatalf("schema extension %v", params)
 	}
 	_, refusal, err := resolveTaskRoutes(ctx, []map[string]any{{"goal": "first", "index": 7}, {"goal": "second", "index": 0}},
@@ -273,7 +273,7 @@ func TestRuntimeWithZeroPluginsLoadedStillDelegatesOnTheBundledDefault(t *testin
 }
 
 func TestAReplacementDefaultStrategyGetsTheFullRouteContract(t *testing.T) {
-	replacement := &dbProvider{name: "default", params: map[string]map[string]any{},
+	replacement := &dbProvider{name: "default", params: pyjson.NewObject(),
 		route: func(map[string]any, map[string]any) (map[string]any, error) {
 			return map[string]any{"base_url": "https://chatgpt.com/backend-api/codex", "api_key": "k", "model": "gpt-6-astra",
 				"service_tier": "fast", "label": "codex-fast"}, nil

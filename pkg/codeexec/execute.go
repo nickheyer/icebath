@@ -3,6 +3,7 @@ package codeexec
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"math/big"
 	"slices"
@@ -217,7 +218,7 @@ var toolDocLines = []struct{ name, doc string }{
 }
 
 // Schema listing only the enabled sandbox tools, nil meaning all, with the cwd sentence of the mode
-func buildExecuteCodeSchema(env *tools.Env, enabledSandboxTools []string, mode string) map[string]any {
+func buildExecuteCodeSchema(env *tools.Env, enabledSandboxTools []string, mode string) *pyjson.Object {
 	if enabledSandboxTools == nil {
 		enabledSandboxTools = sandboxAllowedTools
 	}
@@ -271,20 +272,20 @@ func buildExecuteCodeSchema(env *tools.Env, enabledSandboxTools []string, mode s
 		"json_parse(text) — tolerant " +
 		"json.loads for terminal() output; shell_quote(s) — shlex.quote for " +
 		"dynamic shell args; retry(fn, max_attempts=3, delay=2) — exponential backoff."
-	return map[string]any{
-		"name":        "execute_code",
-		"description": description,
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"code": map[string]any{"type": "string", "description": "Python code to execute. Import tools with " +
-					"`from icebath_tools import " + importStr + "` " +
-					"and print your final result to stdout."},
-				"reset": map[string]any{"type": "boolean", "description": "Discard the kernel's persistent state and start fresh before running this code."},
-			},
-			"required": []any{"code"},
-		},
-	}
+	return pyjson.ObjectOf(
+		"name", "execute_code",
+		"description", description,
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"code", pyjson.ObjectOf("type", "string", "description", "Python code to execute. Import tools with "+
+					"`from icebath_tools import "+importStr+"` "+
+					"and print your final result to stdout."),
+				"reset", pyjson.ObjectOf("type", "boolean", "description", "Discard the kernel's persistent state and start fresh before running this code."),
+			),
+			"required", []any{"code"},
+		),
+	)
 }
 
 // Redirects misdirected calls with an actionable error before dispatching to the executor
@@ -320,7 +321,7 @@ func rewriteExecuteCode(env *tools.Env, _ map[string]any, available map[string]b
 
 func init() {
 	tools.Register(tools.Def{
-		Name: "execute_code", Toolset: "code_execution", SchemaBuilder: func() map[string]any { return buildExecuteCodeSchema(nil, nil, "") },
+		Name: "execute_code", Toolset: "code_execution", SchemaBuilder: func() *pyjson.Object { return buildExecuteCodeSchema(nil, nil, "") },
 		Handler: executeCodeHandler, Check: checkSandboxRequirements, Emoji: "\U0001f40d",
 		MaxResultChars: 100_000,
 	})

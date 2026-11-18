@@ -263,7 +263,7 @@ func (s *Store) reconcilePendingJournals(ctx context.Context, allowConnect bool)
 	sort.Strings(journals)
 	for _, journal := range journals {
 		if err := s.reconcileJournal(ctx, journal, allowConnect); err != nil {
-			s.log.Warn(fmt.Sprintf("Cron receipt recovery deferred: %s", journal), "error", err)
+			s.logAs("cron.scheduler_authority").Warn(fmt.Sprintf("Cron receipt recovery deferred: %s", journal), "error", err)
 		}
 	}
 	return nil
@@ -365,7 +365,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 	success, errText, declared := applyAgentFailureMarker(job, outcome.Success, outcome.Error, outcome.FinalResponse)
 	d := &runDelivery{job: job, success: success, err: errText, agentDeclared: declared}
 	fenced := job.Clone()
-	fenced.FireClaim = nil
+	fenced.setNull("fire_claim")
 	fence := s.newFireOwnership(fenced, nil, nil, nil)
 	if err := s.saveComposeDeliver(ctx, d, fence, outcome.FinalResponse, outcome.Output, runOneJobOptions{}, nil); err != nil {
 		return err

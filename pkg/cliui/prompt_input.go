@@ -165,7 +165,7 @@ func (p *inputPrompt) fieldLines(room int) []string {
 		return []string{p.field(room)}
 	}
 	caret := p.c.paint(" ", textStyle{reverse: true})
-	return hung(p.c.textRows(p.spec.fallback, textStyle{color: activeTheme().Faint}, room-1), caret, " ")
+	return hung(p.c.textRows(p.spec.fallback, textStyle{color: promptTheme.Faint}, room-1), caret, " ")
 }
 
 // Painted row of typed text with the caret, scrolled sideways so the caret stays within the room
@@ -215,7 +215,7 @@ func (p *inputPrompt) field(room int) string {
 
 // Key hint rows for the state the field is in
 func (p *inputPrompt) hintLines(body int) []string {
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	if p.escArmed {
 		return p.c.hintRows([]string{"press esc again to cancel"}, body, t.Warn)
 	}
@@ -238,7 +238,7 @@ func (p *inputPrompt) hintLines(body int) []string {
 
 // Lines of the field for a terminal of maxRows by cols
 func (p *inputPrompt) frame(maxRows, cols int) []string {
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	body := bodyWidth(cols)
 	field := hung(p.fieldLines(body-2), "    "+p.c.paint(g.cursor, textStyle{color: t.Accent, bold: true})+" ", "      ")
 	lines := p.c.titleLines(p.spec.title, body)
@@ -254,7 +254,7 @@ func (p *inputPrompt) frame(maxRows, cols int) []string {
 
 // Answer line a finished field leaves, the text, a masked count, the kept fallback or the cancellation
 func (p *inputPrompt) answer(outcome inputOutcome, failed bool) []string {
-	g, t := p.c.glyphs(), activeTheme()
+	g, t := p.c.glyphs(), promptTheme
 	text := string(p.ed.buf)
 	switch {
 	case outcome == inputBack:
@@ -279,7 +279,6 @@ func (p *inputPrompt) run() (string, inputOutcome, error) {
 		return "", inputDone, errEditorUnavailable
 	}
 	defer release()
-	defer p.c.graceQuiet()
 	region := p.c.openRegion()
 	defer region.close(nil)
 	p.c.enterMode("paste", "\x1b[?2004h", "\x1b[?2004l")

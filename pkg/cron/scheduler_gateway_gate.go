@@ -58,7 +58,7 @@ func (s *Store) noteFireRefused(ctx context.Context, jobIDs []string, detail str
 			job.LastFireError = &Stamp{At: s.clk.nowISO(), Detail: pystr.Slice(detail, 0, 500)}
 			job.PendingSlot = nil
 			if job.RunClaim != nil {
-				job.RunClaim = nil
+				job.setNull("run_claim")
 			}
 		}
 		return s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
@@ -87,6 +87,6 @@ func refuseAgentJobsWithoutGateway(ctx context.Context, s *Store, due []*Job) ([
 	if err := s.noteFireRefused(home.WithOverride(ctx, s.home), agentIDs, "Skipped: "+hint); err != nil {
 		return nil, err
 	}
-	s.log.Warn(fmt.Sprintf("Cron tick for %s skipped %d agent job(s) (%s): %s", h, len(agentIDs), strings.Join(agentIDs, ", "), hint))
+	s.logAs("cron.scheduler_gateway_gate").Warn(fmt.Sprintf("Cron tick for %s skipped %d agent job(s) (%s): %s", h, len(agentIDs), strings.Join(agentIDs, ", "), hint))
 	return scriptJobs, nil
 }

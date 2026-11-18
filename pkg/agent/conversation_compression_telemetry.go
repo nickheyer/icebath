@@ -188,7 +188,7 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 	if compressor != nil {
 		contextLength = compressor.ContextLength()
 	} else if a.contextCompressor != nil {
-		contextLength = a.contextCompressor.Base().ContextLength
+		contextLength = engineContextLength(a.contextCompressor)
 	}
 	if owner, ok := compressionMetricOwner(ctx); ok {
 		observability.FinishCompressionAttempt(ctx, owner, e.CommitStatus, failureClass, contextLength, a)

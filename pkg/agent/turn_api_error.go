@@ -80,7 +80,7 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 
 	ctxLen := 200000
 	if a.contextCompressor != nil {
-		ctxLen = a.contextCompressor.Base().ContextLength
+		ctxLen = engineContextLength(a.contextCompressor)
 	}
 	in := provider.ClassifyInput{Err: apiError, Headers: apiErrorHeaders(apiError), Provider: a.provider, Model: a.model,
 		ApproxTokens: s.ApproxTokens, ContextLength: ctxLen, NumMessages: len(s.APIMessages), BaseURL: a.baseURL, APIKey: a.apiKey}

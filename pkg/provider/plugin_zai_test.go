@@ -3,6 +3,8 @@ package provider
 import (
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (
@@ -12,7 +14,9 @@ var (
 
 func zaiExtras(t *testing.T, p Profile, r *Reasoning, model string) (map[string]any, map[string]any) {
 	t.Helper()
-	return p.BuildAPIKwargsExtras(r, map[string]any{"model": model})
+	extra, top := p.BuildAPIKwargsExtras(r, map[string]any{"model": model})
+	plain, _ := pyjson.Plain(extra).(map[string]any)
+	return plain, top
 }
 
 func zaiEffort(effort string) *Reasoning { return &Reasoning{Enabled: bptr(true), Effort: effort} }

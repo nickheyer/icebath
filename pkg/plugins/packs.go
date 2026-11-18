@@ -707,13 +707,13 @@ func InstallPackPlugins(ctx context.Context, pack *PluginPack, resolved []Resolv
 		}, catalogName, identifier)
 		if err != nil {
 			if _, isOp := err.(*PluginOperationError); !isOp {
-				logError("pack install failed for "+display, "error", err)
+				logPluginPacks.error("pack install failed for "+display, "error", err)
 			}
 			failed(display, pyErrorText(err))
 			continue
 		}
 		if err := packPromptEnv(ctx, h, manifest, console); err != nil {
-			logDebug("requires_env prompt failed for "+installedName, "error", err)
+			logPluginPacks.debug("requires_env prompt failed for "+installedName, "error", err)
 		}
 		if err := packSetEnabled(ctx, h, installedName, true, nil, nil); err != nil {
 			if refused, ok := err.(*AdmissionRefused); ok {

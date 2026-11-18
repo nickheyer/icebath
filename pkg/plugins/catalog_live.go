@@ -73,7 +73,7 @@ func FetchLiveCatalog(ctx context.Context, force bool) map[string]any {
 		if err == nil {
 			return data
 		}
-		logDebug("Plugin catalog: unreadable live cache "+cache, "error", err)
+		logPluginCatalog.debug("Plugin catalog: unreadable live cache "+cache, "error", err)
 	}
 	liveFetchMu.Lock()
 	failedUntil := liveFetchFailedUntil
@@ -83,7 +83,7 @@ func FetchLiveCatalog(ctx context.Context, force bool) map[string]any {
 	}
 	data, err := downloadLiveCatalog(ctx, cache)
 	if err != nil {
-		logDebug("Plugin catalog: live fetch failed", "error", err)
+		logPluginCatalog.debug("Plugin catalog: live fetch failed", "error", err)
 		liveFetchMu.Lock()
 		liveFetchFailedUntil = epochNow() + LiveCatalogFailureTTLSeconds
 		liveFetchMu.Unlock()
@@ -167,7 +167,7 @@ func InTreeCatalogTime() *float64 {
 			if v, err := strconv.ParseFloat(out, 64); err == nil {
 				resolved = &v
 			} else {
-				logDebug("Plugin catalog: could not date the in-tree catalog", "error", err)
+				logPluginCatalog.debug("Plugin catalog: could not date the in-tree catalog", "error", err)
 			}
 		}
 		if resolved == nil {

@@ -80,7 +80,7 @@ func init() {
 	}
 }
 
-// Tools section of icebath setup asked through a flow asker, the Blank Slate tool selector included
+// Tools section of /setup asked through a flow asker, the Blank Slate tool selector included
 func RunToolsSetupFlow(ctx context.Context, h string, ask setupflow.Asker) error {
 	cfg, err := config.LoadReadonly(ctx, h, nil)
 	if err != nil {

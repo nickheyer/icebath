@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strings"
 )
@@ -18,23 +19,23 @@ func upstagePluginProfiles() []Profile {
 }
 
 // Top level Solar effort, an unset config turning reasoning on at medium and explicit settings always winning
-func upstageBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func upstageBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	if upstageNonReasoningModelRE.MatchString(strings.ToLower(strings.TrimSpace(hookString(kw, "model")))) {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	rc := reasoningConfigMap(reasoning)
 	if len(rc) == 0 {
-		return map[string]any{}, map[string]any{"reasoning_effort": "medium"}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "medium"}
 	}
 	if enabled, ok := rc["enabled"].(bool); ok && !enabled {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	effort := strings.ToLower(strings.TrimSpace(reasoning.Effort))
 	if effort == "" {
-		return map[string]any{}, map[string]any{"reasoning_effort": "medium"}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "medium"}
 	}
 	if effort == "minimal" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	mapped := clampEffort(effort, solarEfforts, nil)
 	if !containsStr(solarEfforts, mapped) {
@@ -44,7 +45,7 @@ func upstageBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[s
 		}
 	}
 	if mapped == "" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
-	return map[string]any{}, map[string]any{"reasoning_effort": mapped}
+	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": mapped}
 }

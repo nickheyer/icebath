@@ -14,6 +14,7 @@ import (
 const (
 	mutuallyExclusiveAnnotation = "cobra_annotation_mutually_exclusive"
 	oneRequiredAnnotation       = "cobra_annotation_one_required"
+	argparseTopAnnotation       = "argparse_top"
 )
 
 // ArgparseError is a parse failure reported as usage and the prog error line with exit status 2
@@ -24,9 +25,23 @@ type ArgparseError struct {
 
 func (e *ArgparseError) Error() string { return e.Msg }
 
-// Usage line followed by the prog error line, the text ArgumentParser.error writes to stderr
+// Usage line followed by the prog error line, leftover arguments reported by the parser parse_args ran on
 func (e *ArgparseError) Stderr() string {
-	return argparseUsage(e.Cmd) + e.Cmd.CommandPath() + ": error: " + e.Msg
+	cmd := e.Cmd
+	if strings.HasPrefix(e.Msg, "unrecognized arguments: ") {
+		cmd = argparseTop(cmd)
+	}
+	return argparseUsage(cmd) + cmd.CommandPath() + ": error: " + e.Msg
+}
+
+// Command whose parser runs parse_args, the nearest one carrying its own ArgumentParser or else the root
+func argparseTop(cmd *cobra.Command) *cobra.Command {
+	for c := cmd; c.HasParent(); c = c.Parent() {
+		if c.Annotations[argparseTopAnnotation] != "" {
+			return c
+		}
+	}
+	return cmd.Root()
 }
 
 // Option strings of a flag joined by slashes, the name argparse gives an optional action

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"sync"
 	"testing"
@@ -39,7 +40,7 @@ func registryExecutor(t *testing.T, defs ...Def) (*Executor, *fakeExecutorHost, 
 }
 
 func handlerDef(name string, handler func(ctx context.Context, call *Call) string) Def {
-	return Def{Name: name, Toolset: "web", Schema: map[string]any{"name": name, "parameters": map[string]any{"type": "object"}},
+	return Def{Name: name, Toolset: "web", Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
 		Check: func(*Env) bool { return true }, Handler: handler}
 }
 

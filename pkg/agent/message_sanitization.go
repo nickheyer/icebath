@@ -261,7 +261,7 @@ func applyReasoningContentPolicy(sourceMsg, apiMsg map[string]any, needsThinking
 		var private []any
 		items, _ := popped.([]any)
 		for _, d := range items {
-			if dict, ok := d.(map[string]any); ok && strings.HasSuffix(pyStrOr(dict["type"], ""), ".native_assistant") {
+			if dict, ok := pyjson.Dict(d); ok && strings.HasSuffix(pyStrOr(dict["type"], ""), ".native_assistant") {
 				private = append(private, d)
 			}
 		}

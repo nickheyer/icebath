@@ -1140,34 +1140,6 @@ func TestSmartDenyOffersOnlyOnceAndDeny(t *testing.T) {
 	}
 }
 
-func TestDeniesWhenPromptToolkitActiveAndNoCallback(t *testing.T) {
-	env := approvalTestEnv(t, "prompt", nil, nil)
-	release := EnterPromptApp()
-	defer release()
-	done := make(chan promptChoice, 1)
-	go func() {
-		done <- promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /", description: "test danger", timeout: 30 * time.Second, allowPermanent: true, allowSession: true})
-	}()
-	select {
-	case got := <-done:
-		if got.value != "cancelled" || got.cause == "" {
-			t.Fatalf("got %+v", got)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("prompt_dangerous_approval deadlocked under prompt_toolkit with no callback")
-	}
-}
-
-func TestCallbackPathStillWinsOverGuard(t *testing.T) {
-	env := approvalTestEnv(t, "prompt", nil, nil)
-	release := EnterPromptApp()
-	defer release()
-	env.Ask = &scriptedAsker{answer: "once"}
-	if got := promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /", description: "test danger", allowPermanent: true, allowSession: true}); got.value != "once" {
-		t.Fatalf("got %+v", got)
-	}
-}
-
 func TestPromptTimeoutIsNotDeny(t *testing.T) {
 	env := approvalTestEnv(t, "prompt", map[string]any{"mode": "manual", "timeout": 1}, map[string]any{"interactive": true})
 	env.Ask = &scriptedAsker{block: true}

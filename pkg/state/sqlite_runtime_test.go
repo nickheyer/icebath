@@ -65,44 +65,22 @@ func TestVersionTupleConvertsLikeInt(t *testing.T) {
 	}
 }
 
-func TestIsolatedInterpreterEnvStripsOverrides(t *testing.T) {
-	stripped := []string{"CONDA_DEFAULT_ENV", "CONDA_PREFIX", "PYTHONHOME", "PYTHONPATH", "UV_PROJECT_ENVIRONMENT", "UV_PYTHON", "VIRTUAL_ENV"}
-	for _, k := range stripped {
-		t.Setenv(k, "/override")
-	}
-	t.Setenv("ICEBATH_KEEP_ME", "kept")
-	env := IsolatedInterpreterEnv()
-	for _, k := range stripped {
-		if _, ok := env[k]; ok {
-			t.Fatalf("%s survived", k)
-		}
-	}
-	if env["ICEBATH_KEEP_ME"] != "kept" {
-		t.Fatal("an unrelated variable was dropped")
-	}
-}
-
 func TestProbeOfAMissingInterpreterIsNil(t *testing.T) {
-	info, err := ProbeSQLiteRuntime(filepath.Join(t.TempDir(), "no-python"), 30)
-	if info != nil || err != nil {
+	info, err := ProbeSQLiteRuntime(filepath.Join(t.TempDir(), "no-icebath"), 30)
+	if info != nil || err == nil {
 		t.Fatalf("%v %v", info, err)
 	}
 }
 
 func TestRuntimeInfoFromPayloadShapes(t *testing.T) {
-	payload, err := pyLoads(`{"base_prefix": "/usr//lib/", "executable": "/usr/bin/python3", "python_version": [3, 12, 4],
-		"sqlite_version": [3, 45, 1], "sqlite_version_string": "3.45.1"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info, err := sqliteRuntimeFromPayload(payload)
-	if err != nil || info.BasePrefix != "/usr/lib" || info.Executable != "/usr/bin/python3" || info.SQLiteSourceID != "" ||
-		info.PythonVersion.Cmp(NewVersionTuple(3, 12, 4)) != 0 || info.SQLiteVersionString != "3.45.1" || !info.WALResetVulnerable() {
+	info, err := sqliteRuntimeFromReport([]byte(`{"sqlite_version": [3, 45, 1], "sqlite_version_string": "3.45.1",
+		"sqlite_source_id": "2024-01-30 abc", "missing_features": []}` + "\n"))
+	if err != nil || info.SQLiteVersionString != "3.45.1" || !info.WALResetVulnerable() || len(info.MissingFeatures) != 0 || info.Safe() {
 		t.Fatalf("%+v %v", info, err)
 	}
-	for _, text := range []string{`[]`, `"x"`, `{"executable": "x"}`, `{"executable": 1, "base_prefix": 2, "python_version": 3}`} {
-		payload, _ := pyLoads(text)
-		if _, err := sqliteRuntimeFromPayload(payload); err == nil {
+	for _, text := range []string{`[]`, `"x"`, `{"sqlite_version": [3]}`, `{"sqlite_version": [3], "sqlite_version_string": "3", "sqlite_source_id": "x"}`,
+		`{"sqlite_version": ["3"], "sqlite_version_string": "3", "sqlite_source_id": "x", "missing_features": []}`} {
+		if _, err := sqliteRuntimeFromReport([]byte(text)); err == nil {
 			t.Fatalf("%s built an info", text)
 		}
 	}

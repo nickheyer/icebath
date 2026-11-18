@@ -21,6 +21,9 @@ var keptSpans = regexp.MustCompile(`https?://[^\s"'<>)\]` + "`" + `]+` +
 // Possessive of the product name, whose new spelling takes an apostrophe s
 var possessive = regexp.MustCompile(`(^|[^'"\w])Hermes'( )`)
 
+// Upstream setup command with its section, backticked or bare, a bare one keeping the character after it
+var setupCommand = regexp.MustCompile("`hermes setup((?: (?:model|tts|terminal|gateway|tools|agent|telemetry))?)`|\\bhermes setup((?: (?:model|tts|terminal|gateway|tools|agent|telemetry))?)($|[^\\w-])")
+
 // Product renames applied outside kept spans in order, CLI, home directory, environment prefix, module and product names
 var productRenames = []struct{ from, to string }{
 	{"HERMES", "ICEBATH"},
@@ -51,6 +54,7 @@ func renameText(s string) string {
 }
 
 func renameSegment(s string) string {
+	s = setupCommand.ReplaceAllString(s, "start `icebath` and type `/setup${1}${2}`${3}")
 	s = possessive.ReplaceAllString(s, "${1}Icebath's${2}")
 	for _, r := range productRenames {
 		s = strings.ReplaceAll(s, r.from, r.to)

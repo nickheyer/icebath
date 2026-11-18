@@ -546,7 +546,7 @@ func (c *CLI) handoffWait(platformName, sessionTitle string) bool {
 			cp("", "  "+c.commandsT("handoff.complete", map[string]any{"platform": platformName}),
 				"  "+c.commandsT("handoff.resume_hint", map[string]any{"title": sessionTitle}), "")
 			markSessionHandedOff(c.sessionID)
-			c.setShouldExit(false)
+			c.setShouldExit()
 			return false
 		}
 		if current == "failed" {

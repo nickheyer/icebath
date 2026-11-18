@@ -1,6 +1,9 @@
 package provider
 
-import "strings"
+import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"strings"
+)
 
 // Profiles the bundled ollama-cloud plugin registers
 func ollamaCloudPluginProfiles() []Profile {
@@ -12,20 +15,20 @@ func ollamaCloudPluginProfiles() []Profile {
 }
 
 // Top level effort for thinking models with xhigh mapped to max, none when disabled and nothing for an unset effort
-func ollamaCloudBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func ollamaCloudBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	supports, _ := kw["supports_reasoning"].(bool)
 	if !supports || len(reasoningConfigMap(reasoning)) == 0 {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	effort := strings.ToLower(strings.TrimSpace(reasoning.Effort))
 	if reasoning.Enabled != nil && !*reasoning.Enabled || effort == "none" {
-		return map[string]any{}, map[string]any{"reasoning_effort": "none"}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "none"}
 	}
 	if effort == "" {
-		return map[string]any{}, map[string]any{}
+		return pyjson.ObjectOf(), map[string]any{}
 	}
 	if clamped := clampEffort(effort, ollamaCloudEfforts, ollamaCloudOverrides); containsStr(ollamaCloudEfforts, clamped) {
-		return map[string]any{}, map[string]any{"reasoning_effort": clamped}
+		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": clamped}
 	}
-	return map[string]any{}, map[string]any{}
+	return pyjson.ObjectOf(), map[string]any{}
 }

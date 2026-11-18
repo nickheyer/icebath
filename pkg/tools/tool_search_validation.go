@@ -2,10 +2,7 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -13,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 // Literal keywords hold instance data rather than schemas
@@ -23,9 +20,7 @@ var validationSchemaLiteralKeys = map[string]bool{"const": true, "default": true
 
 var validationIdentifierRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-var validationWhitespaceRe = regexp.MustCompile(`\s+`)
-
-// JSON Schema compatible copy honoring OpenAPI nullable true
+// JSON Schema compatible copy honoring OpenAPI nullable true, key order kept
 func validationSchemaForLocal(node any) any {
 	switch t := node.(type) {
 	case []any:
@@ -34,23 +29,23 @@ func validationSchemaForLocal(node any) any {
 			out[i] = validationSchemaForLocal(item)
 		}
 		return out
-	case map[string]any:
-		normalized := map[string]any{}
-		for key, value := range t {
+	case *pyjson.Object:
+		normalized := pyjson.NewObject()
+		for _, key := range t.Keys {
 			if key == "nullable" {
 				continue
 			}
 			if validationSchemaLiteralKeys[key] {
-				normalized[key] = schemaDeepCopy(value)
+				normalized.Set(key, pyjson.Clone(t.Vals[key]))
 			} else {
-				normalized[key] = validationSchemaForLocal(value)
+				normalized.Set(key, validationSchemaForLocal(t.Vals[key]))
 			}
 		}
-		if nullable, ok := t["nullable"].(bool); !ok || !nullable {
+		if nullable, ok := t.Vals["nullable"].(bool); !ok || !nullable {
 			return normalized
 		}
 		var types []any
-		switch st := normalized["type"].(type) {
+		switch st := normalized.Vals["type"].(type) {
 		case string:
 			types = []any{st}
 		case []any:
@@ -59,16 +54,16 @@ func validationSchemaForLocal(node any) any {
 		if types != nil {
 			hasNull := false
 			for _, v := range types {
-				if s, ok := v.(string); ok && s == "null" {
+				if pyrepr.Equal(v, "null") {
 					hasNull = true
 				}
 			}
 			if !hasNull {
-				normalized["type"] = append(append([]any{}, types...), "null")
+				normalized.Set("type", append(append([]any{}, types...), "null"))
 			}
 			return normalized
 		}
-		return map[string]any{"anyOf": []any{normalized, map[string]any{"type": "null"}}}
+		return pyjson.ObjectOf("anyOf", []any{normalized, pyjson.ObjectOf("type", "null")})
 	default:
 		return node
 	}
@@ -84,15 +79,15 @@ func validationSchemaHasExternalRef(node any) bool {
 			}
 		}
 		return false
-	case map[string]any:
-		if ref, ok := t["$ref"].(string); ok && !strings.HasPrefix(ref, "#") {
+	case *pyjson.Object:
+		if ref, ok := t.Vals["$ref"].(string); ok && !strings.HasPrefix(ref, "#") {
 			return true
 		}
-		for key, value := range t {
+		for _, key := range t.Keys {
 			if validationSchemaLiteralKeys[key] {
 				continue
 			}
-			if validationSchemaHasExternalRef(value) {
+			if validationSchemaHasExternalRef(t.Vals[key]) {
 				return true
 			}
 		}
@@ -102,20 +97,25 @@ func validationSchemaHasExternalRef(node any) bool {
 	}
 }
 
-// Formats a JSON pointer instance location as a compact argument path
-func validationPath(instanceLocation string) string {
+// Python frames under validate_deferred_call_args in the reference, unwrapped by the tool executor or dispatched through handle_function_call
+const (
+	deferredValidationFrameDepth = 22
+	dispatchValidationFrameDepth = 24
+)
+
+// Formats a jsonschema absolute path as a compact argument path
+func validationPath(absolutePath []any) string {
 	path := "arguments"
-	if instanceLocation == "" {
-		return path
-	}
-	for _, raw := range strings.Split(strings.TrimPrefix(instanceLocation, "/"), "/") {
-		part := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
-		if _, err := strconv.Atoi(part); err == nil {
-			path += "[" + part + "]"
-		} else if validationIdentifierRe.MatchString(part) {
-			path += "." + part
-		} else {
-			path += "[" + jsonCompact(part) + "]"
+	for _, part := range absolutePath {
+		switch p := part.(type) {
+		case string:
+			if validationIdentifierRe.MatchString(p) {
+				path += "." + p
+			} else {
+				path += "[" + pyDumps(p, pyjson.EnsureASCII(false)) + "]"
+			}
+		case int:
+			path += "[" + strconv.Itoa(p) + "]"
 		}
 	}
 	return path
@@ -126,104 +126,108 @@ func validationError(message, path, constraint string, parameters any) string {
 		"hint", "Retry tool_call with 'arguments' matching the parameters schema above."))
 }
 
-// Weak keywords lose relevance ties the way jsonschema best_match treats anyOf and oneOf
-var validationWeakKeywords = map[string]bool{"anyOf": true, "oneOf": true}
-
-func validationKeyword(err *jsonschema.ValidationError) string {
-	loc := err.KeywordLocation
-	if idx := strings.LastIndex(loc, "/"); idx >= 0 {
-		loc = loc[idx+1:]
+// re.sub of \s+ with one space over a message, whitespace as str.isspace reads it
+func validationCollapseSpace(s string) string {
+	var b strings.Builder
+	inSpace := false
+	for _, r := range pystr.Runes(s) {
+		if pystr.IsSpace(r) {
+			if !inSpace {
+				b.WriteByte(' ')
+			}
+			inSpace = true
+			continue
+		}
+		inSpace = false
+		b.WriteString(pystr.FromRunes([]rune{r}))
 	}
-	if loc == "" {
-		return "schema"
-	}
-	return loc
+	return b.String()
 }
 
-func validationPathDepth(err *jsonschema.ValidationError) int {
-	if err.InstanceLocation == "" {
-		return 0
+// Arguments a dict holds as an ordered Python object, false for anything that is not a dict
+func validationArgsObject(args any) (*pyjson.Object, bool) {
+	switch a := args.(type) {
+	case *pyjson.Object:
+		return a, a != nil
+	case map[string]any:
+		keys := make([]string, 0, len(a))
+		for k := range a {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		o := pyjson.NewObject()
+		for _, k := range keys {
+			o.Set(k, a[k])
+		}
+		return o, true
 	}
-	return strings.Count(err.InstanceLocation, "/")
+	return nil, false
 }
 
-// Flattens nested causes into the leaf errors jsonschema iter_errors would yield
-func validationLeaves(err *jsonschema.ValidationError) []*jsonschema.ValidationError {
-	if len(err.Causes) == 0 {
-		return []*jsonschema.ValidationError{err}
+// Copy of the arguments after the schema guided coercion dispatch applies, in the key order coerce_tool_args leaves
+func deferredCandidateArgs(ctx context.Context, env *Env, name string, args *pyjson.Object, parametersRaw any) *pyjson.Object {
+	vals := make(map[string]any, len(args.Keys))
+	for _, k := range args.Keys {
+		vals[k] = args.Vals[k]
 	}
-	if validationWeakKeywords[validationKeyword(err)] {
-		return []*jsonschema.ValidationError{err}
+	coerced := coercePythonToolArgs(ctx, Default, env, name, vals)
+	order := args.Keys
+	parameters, _ := pyjson.Dict(parametersRaw)
+	if properties, _ := pyjson.Dict(parameters["properties"]); len(properties) > 0 {
+		if unrenamed, ok := UnrenameToolArgs(parametersRaw, args, nil).(*pyjson.Object); ok {
+			order = unrenamed.Keys
+		}
 	}
-	var out []*jsonschema.ValidationError
-	for _, c := range err.Causes {
-		out = append(out, validationLeaves(c)...)
+	out := pyjson.NewObject()
+	for _, k := range order {
+		if v, ok := coerced[k]; ok {
+			out.Set(k, v)
+		}
 	}
 	return out
 }
 
-// Relevance ordering of jsonschema best_match with shallower paths and strong keywords first
-func validationMoreRelevant(a, b *jsonschema.ValidationError) bool {
-	da, db := validationPathDepth(a), validationPathDepth(b)
-	if da != db {
-		return da < db
+// Python valued arguments of the entry a tool_call resolves to, nil when the call holds no entry
+func DeferredCallArguments(toolCallArgs map[string]any) *pyjson.Object {
+	entries, errMsg := NormalizeToolCallEntries(toolCallArgs)
+	if errMsg != "" {
+		return nil
 	}
-	wa, wb := validationWeakKeywords[validationKeyword(a)], validationWeakKeywords[validationKeyword(b)]
-	if wa != wb {
-		return !wa
-	}
-	return false
+	return entries[0].Arguments
 }
 
-func validationSameRelevance(a, b *jsonschema.ValidationError) bool {
-	return !validationMoreRelevant(a, b) && !validationMoreRelevant(b, a)
+// Checks tool_call arguments, a dict as a map or ordered object, against the deferred tool schema, failing open
+func ValidateDeferredCallArgs(ctx context.Context, env *Env, name string, args any) string {
+	return validateDeferredCallArgsAt(ctx, env, name, args, deferredValidationFrameDepth)
 }
 
-// Picks the single most useful error the way jsonschema best_match does
-func validationBestMatch(root *jsonschema.ValidationError) *jsonschema.ValidationError {
-	leaves := validationLeaves(root)
-	if len(leaves) == 0 {
-		return root
+// Deferred argument validation whose validator runs callerDepth Python frames deep, the depth of the reference call site it mirrors
+func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args any, callerDepth int) string {
+	argsObj, isDict := validationArgsObject(args)
+	if !isDict {
+		return ""
 	}
-	sort.SliceStable(leaves, func(i, j int) bool { return validationMoreRelevant(leaves[i], leaves[j]) })
-	best := leaves[0]
-	for len(best.Causes) > 0 {
-		context := make([]*jsonschema.ValidationError, 0, len(best.Causes))
-		for _, c := range best.Causes {
-			context = append(context, validationLeaves(c)...)
-		}
-		if len(context) == 0 {
-			break
-		}
-		sort.SliceStable(context, func(i, j int) bool { return validationMoreRelevant(context[j], context[i]) })
-		if len(context) >= 2 && validationSameRelevance(context[0], context[1]) {
-			return best
-		}
-		best = context[0]
-	}
-	return best
-}
-
-// ValidateDeferredCallArgs validates tool_call arguments against the deferred tool's schema, failing open
-func ValidateDeferredCallArgs(ctx context.Context, env *Env, name string, args map[string]any) string {
 	def := Default.Entry(ctx, env, name)
 	if def == nil || def.Schema == nil {
 		return ""
 	}
-	schema := def.Schema
+	schema, _ := pyjson.Ordered(def.Schema).(*pyjson.Object)
 	fn := schema
-	if t, _ := schema["type"].(string); t == "function" {
-		fn, _ = pyjson.Dict(schema["function"])
+	if t, _ := schema.Vals["type"].(string); t == "function" {
+		fn, _ = schema.Vals["function"].(*pyjson.Object)
 	}
-	params, _ := fn["parameters"].(map[string]any)
+	if fn == nil {
+		return ""
+	}
+	params, _ := fn.Vals["parameters"].(*pyjson.Object)
 	if params == nil {
 		return ""
 	}
 	var missing []string
-	if required, ok := params["required"].([]any); ok {
+	if required, ok := params.Vals["required"].([]any); ok {
 		for _, r := range required {
 			if s, ok := r.(string); ok {
-				if _, has := args[s]; !has {
+				if _, has := argsObj.Vals[s]; !has {
 					missing = append(missing, s)
 				}
 			}
@@ -239,61 +243,27 @@ func ValidateDeferredCallArgs(ctx context.Context, env *Env, name string, args m
 		slog.Debug("Skipping local deferred-argument validation: external $ref", "tool", name)
 		return ""
 	}
-	candidate := make(map[string]any, len(args))
-	for k, v := range args {
-		candidate[k] = v
-	}
-	candidate = CoerceToolArgs(ctx, Default, env, name, candidate)
-	compiled, err := validationCompile(validationSchema)
+	candidate := deferredCandidateArgs(ctx, env, name, argsObj, def.Schema.Vals["parameters"])
+	best, err := pyjsonschema.BestMatch(candidate, validationSchema, callerDepth)
 	if err != nil {
-		slog.Debug("validate_deferred_call_args schema compile failed", "tool", name, "error", err)
+		slog.Debug("validate_deferred_call_args failed", "tool", name, "error", err)
 		return ""
 	}
-	raw, err := pyjson.EncodeWTF8(candidate)
-	if err != nil {
+	if best == nil {
 		return ""
 	}
-	instance, err := pyjson.DecodeWTF8(raw)
-	if err != nil {
-		return ""
+	path := validationPath(best.AbsolutePath)
+	constraint := "schema"
+	if s, ok := best.Validator.(string); ok && s != "" {
+		constraint = s
 	}
-	verr := compiled.Validate(instance)
-	if verr == nil {
-		return ""
-	}
-	var ve *jsonschema.ValidationError
-	if !errors.As(verr, &ve) {
-		slog.Debug("validate_deferred_call_args failed", "tool", name, "error", verr)
-		return ""
-	}
-	best := validationBestMatch(ve)
-	path := validationPath(best.InstanceLocation)
-	constraint := validationKeyword(best)
-	detail := strings.TrimSpace(validationWhitespaceRe.ReplaceAllString(best.Message, " "))
-	if len(detail) > 600 {
-		detail = detail[:597] + "..."
+	detail := pystr.Strip(validationCollapseSpace(best.Message))
+	if pystr.Len(detail) > 600 {
+		detail = pystr.Slice(detail, 0, 597) + "..."
 	}
 	return validationError(
 		fmt.Sprintf("tool_call to '%s' failed argument validation at %s (%s): %s. The tool was NOT invoked.", name, path, constraint, detail),
 		path, constraint, params)
-}
-
-// Compiles a parameters schema as draft 2020-12 with every remote load refused
-func validationCompile(schema any) (*jsonschema.Schema, error) {
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		return nil, err
-	}
-	compiler := jsonschema.NewCompiler()
-	compiler.Draft = jsonschema.Draft2020
-	compiler.LoadURL = func(url string) (io.ReadCloser, error) {
-		return nil, fmt.Errorf("remote schema load refused: %s", url)
-	}
-	const url = "icebath://tool-parameters.json"
-	if err := compiler.AddResource(url, strings.NewReader(string(raw))); err != nil {
-		return nil, err
-	}
-	return compiler.Compile(url)
 }
 
 // ToolCallEntry is one normalized tool_call batch entry, its arguments the dict Python holds

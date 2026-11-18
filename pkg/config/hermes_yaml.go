@@ -5,18 +5,30 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 	"gopkg.in/yaml.v3"
 )
 
-// Parse, construct or represent failure of the shared YAML reader and writer
+// Failure of the shared YAML reader or writer, a ruamel YAMLError or the Python exception a load raised
 type YAMLError struct{ Err error }
 
 func (e *YAMLError) Error() string { return e.Err.Error() }
 
 func (e *YAMLError) Unwrap() error { return e.Err }
+
+// Python class of the underlying failure, YAMLError for a writer failure without one
+func (e *YAMLError) PyTypeName() string {
+	if p, ok := e.Err.(ry.PyError); ok {
+		return p.PyTypeName()
+	}
+	return "YAMLError"
+}
 
 // Reports whether err is a failure of the shared YAML reader or writer
 func IsYAMLError(err error) bool {
@@ -42,235 +54,117 @@ func readYAMLStream(stream any) ([]byte, error) {
 	return nil, fmt.Errorf("'%s' object has no attribute 'read'", PyTypeName(stream))
 }
 
-// Value of one YAML document read from text, bytes or a reader with YAML 1.1 booleans
+// Value of one YAML document given as a Python str, bytes or a reader yielding bytes, as hermes_yaml.safe_load builds it
 func SafeLoad(stream any) (any, error) {
+	if s, ok := stream.(string); ok {
+		return safeLoadInput(ry.TextInput(s))
+	}
 	data, err := readYAMLStream(stream)
 	if err != nil {
 		return nil, err
 	}
-	return loadYAMLDocument(data)
+	return safeLoadInput(ry.BytesInput(data))
 }
 
-// Document bytes rewritten for the parser and whether a YAML 1.2 directive selects 1.2 resolution
-func yamlDocumentVersion(src []byte) ([]byte, bool, error) {
-	m := yamlDirectiveVersion.FindSubmatchIndex(src)
-	if m == nil {
-		return src, false, nil
-	}
-	major, minor := string(src[m[4]:m[5]]), string(src[m[6]:m[7]])
-	if major != "1" {
-		line := bytes.Count(src[:m[3]], []byte("\n")) + 1
-		return nil, false, &YAMLError{fmt.Errorf("yaml: line %d: found incompatible YAML document (version 1.* is required)", line)}
-	}
-	switch strings.TrimLeft(minor, "0") {
-	case "1":
-		return src, false, nil
-	case "2":
-		patched := append(append(append([]byte{}, src[:m[6]]...), '1'), src[m[7]:]...)
-		return patched, true, nil
-	}
-	n := strings.TrimLeft(minor, "0")
-	if n == "" {
-		n = "0"
-	}
-	return nil, false, fmt.Errorf("version minor part can only be 2 or 1, got (1, %s)", n)
-}
-
-// Single document node of a stream, nil for an empty stream, refusing a second document
-func parseSingleYAMLDocument(src []byte) (*yaml.Node, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(src))
-	var node yaml.Node
-	if err := dec.Decode(&node); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, nil
-		}
-		return nil, &YAMLError{err}
-	}
-	var extra yaml.Node
-	if err := dec.Decode(&extra); err == nil {
-		return nil, &YAMLError{fmt.Errorf("yaml: line %d: but found another document", extra.Line)}
-	} else if !errors.Is(err, io.EOF) {
-		return nil, &YAMLError{err}
-	}
-	return &node, nil
-}
-
-// Tags the safe constructor builds values for, any other explicit tag is refused
-var safeConstructorTags = map[string]bool{
-	"!!null": true, "!!bool": true, "!!int": true, "!!float": true, "!!binary": true, "!!timestamp": true,
-	"!!omap": true, "!!pairs": true, "!!set": true, "!!str": true, "!!seq": true, "!!map": true, "!!merge": true,
-}
-
-// Full spelling of a tag the parser shortened to its secondary handle
-func longYAMLTag(tag string) string {
-	if strings.HasPrefix(tag, "!!") {
-		return "tag:yaml.org,2002:" + tag[2:]
-	}
-	return tag
-}
-
-// Refuses explicit tags without a safe constructor and rewrites omap and pairs into the values they build
-func checkSafeTags(n *yaml.Node, seen map[*yaml.Node]bool) error {
-	if seen[n] {
-		return nil
-	}
-	seen[n] = true
-	if n.Kind == yaml.AliasNode {
-		return nil
-	}
-	if n.Style&yaml.TaggedStyle != 0 && !safeConstructorTags[n.Tag] {
-		return &YAMLError{fmt.Errorf("yaml: line %d: could not determine a constructor for the tag '%s'", n.Line, longYAMLTag(n.Tag))}
-	}
-	for _, c := range n.Content {
-		if err := checkSafeTags(c, seen); err != nil {
-			return err
-		}
-	}
-	switch n.Tag {
-	case "!!omap":
-		return orderedPairsNode(n, "while constructing an ordered map", true)
-	case "!!pairs":
-		return orderedPairsNode(n, "while constructing pairs", false)
-	}
-	return nil
-}
-
-// Turns a sequence of one item mappings into an omap mapping or a pairs list of key value lists
-func orderedPairsNode(n *yaml.Node, context string, omap bool) error {
-	if n.Kind != yaml.SequenceNode {
-		return &YAMLError{fmt.Errorf("yaml: line %d: %s expected a sequence, but found %s", n.Line, context, yamlNodeID(n))}
-	}
-	var content []*yaml.Node
-	for _, sub := range n.Content {
-		if sub.Kind != yaml.MappingNode {
-			return &YAMLError{fmt.Errorf("yaml: line %d: %s expected a mapping of length 1, but found %s", sub.Line, context, yamlNodeID(sub))}
-		}
-		if len(sub.Content) != 2 {
-			return &YAMLError{fmt.Errorf("yaml: line %d: %s expected a single mapping item, but found %d items", sub.Line, context, len(sub.Content)/2)}
-		}
-		if omap {
-			content = append(content, sub.Content...)
-			continue
-		}
-		content = append(content, &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: sub.Content, Line: sub.Line, Column: sub.Column})
-	}
-	n.Content, n.Style = content, n.Style&^yaml.TaggedStyle
-	if omap {
-		n.Kind, n.Tag = yaml.MappingNode, "!!map"
-	} else {
-		n.Tag = "!!seq"
-	}
-	return nil
-}
-
-// Node class name the constructor messages print
-func yamlNodeID(n *yaml.Node) string {
-	switch n.Kind {
-	case yaml.MappingNode:
-		return "mapping"
-	case yaml.SequenceNode:
-		return "sequence"
-	}
-	return "scalar"
-}
-
-// Value of one YAML document under the safe constructor, YAML 1.1 rules unless the document asks for 1.2
-func loadYAMLDocument(data []byte) (any, error) {
-	src, v12, err := yamlDocumentVersion(bytes.TrimPrefix(data, utf8BOM))
+// Value of a YAML file's bytes read the way open with utf-8 or utf-8-sig and read does, universal newlines included
+func SafeLoadText(data []byte, sig bool) (any, error) {
+	text, err := PyReadText(data, sig)
 	if err != nil {
 		return nil, err
 	}
-	node, err := parseSingleYAMLDocument(src)
-	if err != nil || node == nil || len(node.Content) == 0 {
-		return nil, err
+	return safeLoadInput(ry.TextInput(text))
+}
+
+// Text of file bytes as a text mode read gives it, strict utf-8 or utf-8-sig with CRLF and CR turned into LF
+func PyReadText(data []byte, sig bool) (string, error) {
+	var text string
+	var err error
+	if sig {
+		text, err = pystr.DecodeUTF8Sig(data)
+	} else {
+		text, err = pystr.DecodeUTF8(data)
 	}
-	if err := checkSafeTags(node, map[*yaml.Node]bool{}); err != nil {
-		return nil, err
+	if err != nil {
+		return "", &YAMLError{ry.Raise("UnicodeDecodeError", err.Error())}
 	}
-	resolveYAMLVersion(node, false, v12)
-	if err := yaml11TimestampError(node); err != nil {
-		return nil, err
-	}
-	markYAMLBigInts(node)
-	var doc any
-	if err := node.Decode(&doc); err != nil {
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), nil
+}
+
+// The C loader's value, the pure loader answering any YAMLError of it, every other exception raised as is
+func safeLoadInput(in ry.Input) (any, error) {
+	doc, ok, err := ry.ComposeC(in)
+	if err != nil {
 		return nil, &YAMLError{err}
 	}
-	doc = restoreYAMLBigInts(normalizeMaps(doc))
-	recordNodeOrder(node, doc)
-	return pythonizeDocument(node, doc, v12, src)
+	if ok {
+		value, warnings, cerr := constructRoot(doc)
+		emitYAMLWarnings(warnings)
+		if cerr == nil {
+			return value, nil
+		}
+		if !ry.IsYAMLError(cerr) {
+			return nil, &YAMLError{cerr}
+		}
+	}
+	pure, err := ry.ComposePure(in, false)
+	if pure != nil {
+		emitYAMLWarnings(pure.Warnings)
+	}
+	if err != nil {
+		return nil, &YAMLError{err}
+	}
+	value, warnings, cerr := constructRoot(pure)
+	emitYAMLWarnings(warnings)
+	if cerr != nil {
+		return nil, &YAMLError{cerr}
+	}
+	return value, nil
 }
 
-// Duplicate key refusal of a round trip mapping, keys compared by the value they construct
-func checkDuplicateKeys(n *yaml.Node, seen map[*yaml.Node]bool) error {
-	if seen[n] {
-		return nil
+// Constructed value of a composed document, None for an empty stream
+func constructRoot(doc *ry.Document) (any, []ry.Warning, error) {
+	if doc.Root == nil {
+		return nil, nil, nil
 	}
-	seen[n] = true
-	if n.Kind == yaml.MappingNode {
-		first := map[string]*yaml.Node{}
-		for i := 0; i+1 < len(n.Content); i += 2 {
-			k := n.Content[i]
-			if k.Kind != yaml.ScalarNode || (k.Tag == "!!merge" && k.Value == "<<") {
-				continue
-			}
-			id := constructedKeyID(k)
-			if prev, ok := first[id]; ok {
-				return &YAMLError{fmt.Errorf("yaml: line %d: found duplicate key %q with value %q (original value: %q)", k.Line, k.Value, scalarText(n.Content[i+1]), scalarText(n.Content[mappingIndexOf(n, prev)]))}
-			}
-			first[id] = k
-		}
-	}
-	for _, c := range n.Content {
-		if err := checkDuplicateKeys(c, seen); err != nil {
-			return err
-		}
-	}
-	return nil
+	return constructDocument(doc)
 }
 
-// Index of the value node that follows a key node in a mapping
-func mappingIndexOf(n *yaml.Node, key *yaml.Node) int {
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i] == key {
-			return i + 1
+// Stream Python warnings of YAML loads are written to
+var YAMLWarningOut io.Writer = os.Stderr
+
+var (
+	yamlWarnMu   sync.Mutex
+	yamlWarnSeen = map[string]bool{}
+)
+
+// Prints load warnings the way Python's warning display does, once filters by text and default ones by text and site
+func emitYAMLWarnings(warnings []ry.Warning) {
+	yamlWarnMu.Lock()
+	defer yamlWarnMu.Unlock()
+	for _, w := range warnings {
+		key := w.Category + "\x00" + w.Message
+		if !w.Site.Once {
+			key += "\x00" + w.Site.Where
 		}
+		if yamlWarnSeen[key] {
+			continue
+		}
+		yamlWarnSeen[key] = true
+		fmt.Fprintf(YAMLWarningOut, "%s: %s: %s\n  %s\n", w.Site.Where, w.Category, w.Message, w.Site.Source)
 	}
-	return 0
 }
 
-func scalarText(n *yaml.Node) string {
-	if n.Kind == yaml.ScalarNode {
-		return n.Value
+// Document bytes rewritten for the go-yaml editor and whether a YAML 1.2 directive selects 1.2 resolution
+func yamlDocumentVersion(src []byte) ([]byte, bool) {
+	m := yamlDirectiveVersion.FindSubmatchIndex(src)
+	if m == nil {
+		return src, false
 	}
-	return ""
-}
-
-// Equality class of a scalar key the way Python compares constructed keys, so true and 1 collide
-func constructedKeyID(k *yaml.Node) string {
-	if k.Style != 0 && k.Style&yaml.TaggedStyle == 0 {
-		return "s" + k.Value
+	if strings.TrimLeft(string(src[m[6]:m[7]]), "0") == "2" {
+		patched := append(append(append([]byte{}, src[:m[6]]...), '1'), src[m[7]:]...)
+		return patched, true
 	}
-	probe := &yaml.Node{Kind: yaml.ScalarNode, Tag: k.Tag, Value: k.Value, Style: k.Style}
-	resolveYAMLVersion(probe, false, false)
-	switch probe.Tag {
-	case "!!bool":
-		if probe.Value == "true" {
-			return "n1"
-		}
-		return "n0"
-	case "!!int":
-		return "n" + probe.Value
-	case "!!null":
-		return "null"
-	case "!!float":
-		var f float64
-		if probe.Decode(&f) == nil && f == float64(int64(f)) {
-			return fmt.Sprintf("n%d", int64(f))
-		}
-		return "f" + probe.Value
-	}
-	return "s" + k.Value
+	return src, false
 }
 
 // Comment, quote and order keeping editor for user authored YAML, lines never folded
@@ -285,26 +179,86 @@ type RoundtripDoc struct {
 // Fresh round trip editor, every operation owns its own parser and emitter state
 func NewRoundtripYAML() *RoundtripYAML { return &RoundtripYAML{} }
 
-// Parses a document for editing, refusing duplicate keys and further documents, nil node for an empty stream
+// Parses a document for editing through the round trip loader, nil node for an empty stream
 func (r *RoundtripYAML) Load(stream any) (*RoundtripDoc, error) {
 	data, err := readYAMLStream(stream)
 	if err != nil {
 		return nil, err
 	}
-	src, _, err := yamlDocumentVersion(bytes.TrimPrefix(data, utf8BOM))
+	text, err := PyReadText(data, false)
 	if err != nil {
 		return nil, err
 	}
-	node, err := parseSingleYAMLDocument(src)
-	if err != nil {
+	in := ry.TextInput(text)
+	if _, err := roundtripLoadValue(in); err != nil {
 		return nil, err
 	}
-	if node != nil {
-		if err := checkDuplicateKeys(node, map[*yaml.Node]bool{}); err != nil {
-			return nil, err
+	src, _ := yamlDocumentVersion(bytes.TrimPrefix([]byte(text), utf8BOM))
+	dec := yaml.NewDecoder(bytes.NewReader(src))
+	var node yaml.Node
+	if err := dec.Decode(&node); err != nil {
+		if errors.Is(err, io.EOF) {
+			return &RoundtripDoc{Source: data}, nil
 		}
+		doc, cerr := ry.ComposePure(in, true)
+		if cerr != nil {
+			return nil, &YAMLError{cerr}
+		}
+		return &RoundtripDoc{Node: editorDocument(doc.Root), Source: data}, nil
 	}
-	return &RoundtripDoc{Node: node, Source: data}, nil
+	return &RoundtripDoc{Node: &node, Source: data}, nil
+}
+
+var editorStyles = map[rune]yaml.Style{'\'': yaml.SingleQuotedStyle, '"': yaml.DoubleQuotedStyle, '|': yaml.LiteralStyle, '>': yaml.FoldedStyle}
+
+// Editing node tree of a document the round trip loader composed, anchors and aliases kept, positions one based
+func editorDocument(root *ry.Node) *yaml.Node {
+	doc := &yaml.Node{Kind: yaml.DocumentNode}
+	if root == nil {
+		return doc
+	}
+	built := map[*ry.Node]*yaml.Node{}
+	var conv func(n *ry.Node) *yaml.Node
+	conv = func(n *ry.Node) *yaml.Node {
+		if y, ok := built[n]; ok {
+			return &yaml.Node{Kind: yaml.AliasNode, Value: y.Anchor, Alias: y, Line: y.Line, Column: y.Column}
+		}
+		tag := n.Tag()
+		if strings.HasPrefix(tag, yamlTagPrefix) {
+			tag = "!!" + strings.TrimPrefix(tag, yamlTagPrefix)
+		}
+		y := &yaml.Node{Tag: tag, Line: n.Start.Line + 1, Column: n.Start.Column + 1, Style: editorStyles[n.Style]}
+		if n.Anchor != nil {
+			y.Anchor = *n.Anchor
+		}
+		if n.Handle != nil {
+			y.Style |= yaml.TaggedStyle
+		}
+		built[n] = y
+		switch n.Kind {
+		case ry.ScalarNode:
+			y.Kind, y.Value = yaml.ScalarNode, strings.ReplaceAll(n.Value, "\a", "")
+		case ry.SequenceNode:
+			y.Kind = yaml.SequenceNode
+			if n.Flow {
+				y.Style |= yaml.FlowStyle
+			}
+			for _, it := range n.Items {
+				y.Content = append(y.Content, conv(it))
+			}
+		case ry.MappingNode:
+			y.Kind = yaml.MappingNode
+			if n.Flow {
+				y.Style |= yaml.FlowStyle
+			}
+			for _, p := range n.Pairs {
+				y.Content = append(y.Content, conv(p.Key), conv(p.Value))
+			}
+		}
+		return y
+	}
+	doc.Content = []*yaml.Node{conv(root)}
+	return doc
 }
 
 // Python value the document holds under YAML 1.1 rules, the loaded view of the editable data
@@ -316,7 +270,7 @@ func (d *RoundtripDoc) Value() (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadYAMLDocument([]byte(text))
+	return SafeLoad(text)
 }
 
 // Root mapping of the document, created empty for an empty document

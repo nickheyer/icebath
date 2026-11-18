@@ -43,7 +43,7 @@ func TestMetaAIReasoningEffort(t *testing.T) {
 	p := bundledPluginProfile(t, "meta-ai")
 	effort := func(r *Reasoning) any {
 		extra, top := p.BuildAPIKwargsExtras(r, map[string]any{})
-		if len(extra) != 0 {
+		if extra.Len() != 0 {
 			t.Fatalf("extra body used = %v", extra)
 		}
 		return top["reasoning_effort"]

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -24,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -180,7 +180,7 @@ func AuxClientCustomHeaders(c AuxClient) map[string]string {
 	if len(oc.customHeaders) == 0 {
 		return nil
 	}
-	return maps.Clone(oc.customHeaders)
+	return pyhttpx.OrderedHeaderMap(oc.customHeaderLines()...)
 }
 
 // AuxClientDefaultHeaders is the header set an SDK client sends on every request, nil for adapters
@@ -208,6 +208,12 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 		c.apiKeyProvider = k
 	case func() string:
 		c.apiKeyProvider = func() (string, error) { return k(), nil }
+	case func(context.Context) (string, error):
+		c.apiKeyProvider = func() (string, error) { return k(context.Background()) }
+	case *TaggedTokenSource:
+		c.apiKeyProvider = func() (string, error) { return k.Token(context.Background()) }
+	case *CommandTokenSource:
+		c.apiKeyProvider = func() (string, error) { return k.Token(context.Background()) }
 	case nil:
 		env, ok := os.LookupEnv("OPENAI_API_KEY")
 		if !ok {
@@ -230,7 +236,7 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 	for k, v := range opts.DefaultHeaders {
 		c.customHeaders[k] = v
 	}
-	c.customOrder = sortedHeaderKeys(opts.DefaultHeaders)
+	c.customOrder = pyhttpx.HeaderOrder(opts.DefaultHeaders)
 	for k, v := range opts.DefaultQuery {
 		c.customQuery[k] = v
 	}
@@ -395,12 +401,12 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 		for k, v := range h {
 			r.headers[k] = v
 		}
-		r.headerOrder = sortedHeaderKeys(h)
+		r.headerOrder = config.MappingKeys(h)
 	case map[string]string:
 		for k, v := range h {
 			r.headers[k] = v
 		}
-		r.headerOrder = sortedHeaderKeys(h)
+		r.headerOrder = pyhttpx.HeaderOrder(h)
 	}
 	switch q := kwargs["extra_query"].(type) {
 	case map[string]any:
@@ -451,12 +457,26 @@ var auxSDKBodyOrder = map[string][]string{
 		"stream_options", "temperature", "text", "tool_choice", "tools", "top_logprobs", "top_p", "truncation", "user"},
 }
 
+// Chat completions messages and tools in the dict order the agent builds them, every other parameter as given
+func auxSDKWireParam(path, key string, v any) any {
+	if path != "chat/completions" {
+		return v
+	}
+	switch key {
+	case "messages":
+		return chatWireMessages(v)
+	case "tools":
+		return chatWireTools(v)
+	}
+	return v
+}
+
 // Encodes the body for the request path, signature parameters first, other keys sorted, then extra_body merged over them
 func (r *auxSDKRequest) encodeBody() error {
 	body := pyjson.NewObject()
 	for _, k := range auxSDKBodyOrder[r.path] {
 		if v, ok := r.params[k]; ok {
-			body.Set(k, v)
+			body.Set(k, auxSDKWireParam(r.path, k, v))
 		}
 	}
 	for _, k := range sortedHeaderKeys(r.params) {
@@ -466,7 +486,7 @@ func (r *auxSDKRequest) encodeBody() error {
 	}
 	if r.extra != nil {
 		for _, k := range r.extra.Keys {
-			body.Set(k, r.extra.Vals[k])
+			body.Set(k, auxSDKWireParam(r.path, k, r.extra.Vals[k]))
 		}
 	}
 	r.stream, _ = body.Vals["stream"].(bool)
@@ -666,7 +686,12 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 func auxSDKResponseData(header http.Header, data []byte) (any, error) {
 	parsed, err := pyjson.LoadsBytes(data)
 	if err == nil {
-		return pyjson.WTF8Shape(parsed), nil
+		shaped := pyjson.WTF8Shape(parsed)
+		if m, ok := shaped.(map[string]any); ok {
+			spliceOrderedReasoningDetails(data, m)
+			spliceNonStringToolArguments(data, m)
+		}
+		return shaped, nil
 	}
 	if contentType, _, _ := strings.Cut(header.Get("Content-Type"), ";"); !strings.HasSuffix(contentType, "json") {
 		return pyhttpx.DecodeText(header, data), nil
@@ -1069,7 +1094,7 @@ func (s *auxSDKStream) decode(line string) *auxSSEEvent {
 	return nil
 }
 
-// Next chunk map, io.EOF after [DONE] or the body end, a streamed error object raised as APIError
+// Next chunk map, io.EOF at body end or after [DONE] which discards the connection, streamed errors raised as APIError
 func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
 	s.mu.Lock()
 	released := s.released
@@ -1101,6 +1126,9 @@ func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
 			return nil, sdkStreamReadError(err, s.resp)
 		}
 		if strings.HasPrefix(ev.data, "[DONE]") {
+			if conn := s.auxAttemptConn(); conn != nil {
+				auxShutdownConn(conn)
+			}
 			s.finish()
 			return nil, io.EOF
 		}
@@ -1110,6 +1138,7 @@ func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
 			return nil, &AuxTransportError{Class: "JSONDecodeError", Message: err.Error(), Err: err, Doc: ev.data}
 		}
 		m, isMap := data.(map[string]any)
+		spliceOrderedReasoningDetails([]byte(ev.data), m)
 		if strings.HasPrefix(ev.event, "thread.") {
 			return map[string]any{"data": data, "event": ev.event}, nil
 		}

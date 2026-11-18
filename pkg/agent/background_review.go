@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -212,7 +213,7 @@ func contextDerivedReviewInputBudget(reviewAgent *AIAgent) int {
 	if reviewAgent == nil || reviewAgent.contextCompressor == nil {
 		return reviewMaxInputTokensFallback
 	}
-	window := reviewAgent.contextCompressor.Base().ContextLength
+	window := engineContextLength(reviewAgent.contextCompressor)
 	if window <= 0 {
 		return reviewMaxInputTokensFallback
 	}
@@ -239,6 +240,9 @@ func reviewInputTokenBudget(ctx context.Context, taskCfg map[string]any, reviewA
 // Whether automatic reviews are enabled with the task config, disabled for safe workers and finite turns
 var loadBackgroundReviewSettings = func(ctx context.Context) (bool, map[string]any) {
 	if config.SafeWorkerEnabled() {
+		return false, map[string]any{}
+	}
+	if required, ok := gateway.FiniteTurnRequired(ctx).(bool); ok && required {
 		return false, map[string]any{}
 	}
 	if tools.FiniteTurnRequired != nil {

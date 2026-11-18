@@ -134,7 +134,7 @@ var doctorRunOK = func(ctx context.Context, cmd []string, timeout time.Duration)
 
 // Termux fallback notes, the Matrix line present only when this binary was built without the goolm tag
 func doctorTermuxInstallAllFallbackNotes() []string {
-	notes := []string{"Termux uses the Icebath APT package: pkg install icebath-agent."}
+	notes := []string{"Termux runs icebath in a Debian userland: " + config.TermuxInstallCommand}
 	if !matrix.E2EEBuiltIn {
 		notes = append(notes, "Matrix E2EE is excluded from this binary (built without the goolm tag).")
 	}

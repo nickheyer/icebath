@@ -218,23 +218,23 @@ func handleProject(ctx context.Context, call *Call) string {
 	return projectFail("action must be one of: create, switch, list.")
 }
 
-var projectSchema = map[string]any{
-	"name": "desktop_project",
-	"description": "Create or switch Projects (named workspaces). create: one and switch " +
-		"this chat into it — pass path to anchor it to a repo/folder (the " +
-		"chat's workspace moves there, the sidebar follows). switch: move " +
-		"this chat into an existing project by name/slug/id — the " +
+var projectSchema = Dict(
+	"name", "desktop_project",
+	"description", "Create or switch Projects (named workspaces). create: one and switch "+
+		"this chat into it — pass path to anchor it to a repo/folder (the "+
+		"chat's workspace moves there, the sidebar follows). switch: move "+
+		"this chat into an existing project by name/slug/id — the "+
 		"intentional way to move the session, not `cd`. list: all projects + which one this chat is in.",
-	"parameters": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"action": map[string]any{"type": "string", "enum": []any{"create", "switch", "list"}},
-			"name":   map[string]any{"type": "string", "description": "create: human name. switch: name, slug, or id."},
-			"path":   map[string]any{"type": "string", "description": "create: repo/folder to anchor to."},
-		},
-		"required": []any{"action"},
-	},
-}
+	"parameters", Dict(
+		"type", "object",
+		"properties", Dict(
+			"action", Dict("type", "string", "enum", []any{"create", "switch", "list"}),
+			"name", Dict("type", "string", "description", "create: human name. switch: name, slug, or id."),
+			"path", Dict("type", "string", "description", "create: repo/folder to anchor to."),
+		),
+		"required", []any{"action"},
+	),
+)
 
 // Registers the project tool of the TUI project toolset
 func registerProjectTools() {

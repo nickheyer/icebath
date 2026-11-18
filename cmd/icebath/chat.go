@@ -719,6 +719,9 @@ func cmdChat(a *chatArgs) int {
 			OneshotExit: a.OneshotExit, SafeMode: a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig})
 	}
 	confirmStartupExpensiveModelOverride(a)
+	if useTUI && a.TUIDev {
+		return runTUIFromSource(os.Args[1:])
+	}
 	if useTUI {
 		return app.LaunchTUI(ctx, app.TUILaunch{Resume: a.Resume, Native: a.TUINative, Model: a.Model, AcceptHooks: a.AcceptHooks,
 			Provider: a.Provider, BaseURL: a.BaseURL, APIKey: a.APIKey, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Skills: a.Skills,

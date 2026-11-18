@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/url"
 	"strconv"
 	"strings"
@@ -73,13 +74,13 @@ func kimiFetchModels(ctx context.Context, fetch modelsFetcher, profileBase, apiK
 }
 
 // Effort when one is requested, else the thinking toggle, K2 thinking keeping replayed reasoning
-func kimiBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
+func kimiBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
 	extraBody, topLevel := thinkingToggleExtras(hookReasoningCfg(reasoning), kimiK3Efforts, kimiK3Overrides, false)
-	if thinking, ok := extraBody["thinking"].(map[string]any); ok && thinking["type"] == "enabled" &&
+	if thinking, ok := extraBody.Vals["thinking"].(*pyjson.Object); ok && thinking.Vals["type"] == "enabled" &&
 		strings.Contains(strings.ToLower(hookString(kw, "model")), "k2") {
-		next := copyDict(thinking)
-		next["keep"] = "all"
-		extraBody["thinking"] = next
+		next := thinking.Copy()
+		next.Set("keep", "all")
+		extraBody.Set("thinking", next)
 	}
 	return extraBody, topLevel
 }

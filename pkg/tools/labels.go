@@ -875,6 +875,7 @@ func previewBuilderFor(toolName string) previewBuilder {
 
 // BuildToolPreview renders a short preview of a tool call's primary argument, nil max len uses the global cap
 func BuildToolPreview(env *Env, toolName string, args map[string]any, maxLen *int) string {
+	args = pythonDisplayArgs(args)
 	limit := GetToolPreviewMaxLen()
 	if maxLen != nil {
 		limit = *maxLen
@@ -1079,6 +1080,7 @@ func BuildStatusPhrase(env *Env, toolName string, args map[string]any, maxLen in
 
 // BuildToolLabel renders the one line friendly label of a tool call
 func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int) string {
+	args = pythonDisplayArgs(args)
 	limit := GetToolPreviewMaxLen()
 	if maxLen != nil {
 		limit = *maxLen

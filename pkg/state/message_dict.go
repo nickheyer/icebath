@@ -6,7 +6,9 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -29,7 +31,153 @@ func MessageToDict(m *Message) map[string]any {
 func MessageFromDict(d map[string]any) *Message {
 	m := &Message{}
 	dictToStruct(d, reflect.ValueOf(m).Elem(), messageBookkeepingKeys)
+	if keys, ok := m.Extra[WireKeyOrder].([]string); ok {
+		m.Keys = append([]string(nil), keys...)
+		delete(m.Extra, WireKeyOrder)
+		if len(m.Extra) == 0 {
+			m.Extra = nil
+		}
+	} else {
+		m.Keys = restoredKeyOrderOf(d)
+	}
 	return m
+}
+
+// Go only key of a wire message copy holding its dict key order where the encoder default differs
+const WireKeyOrder = "\x00wire_key_order"
+
+// Dict key order of every restored message a conversion adopted, by durable message uid or row id
+var restoredKeyOrders sync.Map
+
+// Restored message dicts of the latest store loads with the key order each was built in
+var restoredLoads struct {
+	sync.Mutex
+	loads []map[uintptr]restoredDict
+}
+
+// One restored dict kept alive so its identity stays unique while it is looked up
+type restoredDict struct {
+	dict map[string]any
+	keys []string
+}
+
+// Number of store loads whose dicts keep their identity lookup
+const restoredLoadsKept = 8
+
+// Registry key of a message dict, its durable uid or else its row id
+func restoredKeyOrderID(d map[string]any) string {
+	if uid, ok := d[MessageUID].(string); ok && uid != "" {
+		return "uid:" + uid
+	}
+	if id, ok := exactInt(d["_row_id"]); ok {
+		return "row:" + strconv.FormatInt(id, 10)
+	}
+	return ""
+}
+
+// Remembers the dicts one store load returned with the key order each was built in, dropping the oldest load
+func recordRestoredLoad(msgs []map[string]any, orderOf func(map[string]any) []string) {
+	load := make(map[uintptr]restoredDict, len(msgs))
+	for _, m := range msgs {
+		if keys := orderOf(m); m != nil && keys != nil {
+			load[reflect.ValueOf(m).Pointer()] = restoredDict{dict: m, keys: keys}
+		}
+	}
+	restoredLoads.Lock()
+	defer restoredLoads.Unlock()
+	restoredLoads.loads = append(restoredLoads.loads, load)
+	if len(restoredLoads.loads) > restoredLoadsKept {
+		restoredLoads.loads = restoredLoads.loads[len(restoredLoads.loads)-restoredLoadsKept:]
+	}
+}
+
+// Restore key order of a message dict, adopting it by uid when the dict itself came from a recent store load
+func restoredKeyOrderOf(d map[string]any) []string {
+	ptr := reflect.ValueOf(d).Pointer()
+	restoredLoads.Lock()
+	var keys []string
+	for i := len(restoredLoads.loads) - 1; i >= 0 && keys == nil; i-- {
+		if hit, ok := restoredLoads.loads[i][ptr]; ok && reflect.ValueOf(hit.dict).Pointer() == ptr {
+			keys = hit.keys
+		}
+	}
+	restoredLoads.Unlock()
+	id := restoredKeyOrderID(d)
+	if keys != nil {
+		if id != "" {
+			restoredKeyOrders.Store(id, keys)
+		}
+		return append([]string(nil), keys...)
+	}
+	if id == "" {
+		return nil
+	}
+	if adopted, ok := restoredKeyOrders.Load(id); ok {
+		return append([]string(nil), adopted.([]string)...)
+	}
+	return nil
+}
+
+// Keys of d in insertion order after the ones already listed, several new keys in sorted order
+func appendNewKeys(order []string, d map[string]any) []string {
+	listed := make(map[string]bool, len(order))
+	for _, k := range order {
+		listed[k] = true
+	}
+	var added []string
+	for k := range d {
+		if !listed[k] {
+			added = append(added, k)
+		}
+	}
+	sort.Strings(added)
+	return append(order, added...)
+}
+
+// Key order the agent builds a fresh assistant message in before its carriers and tool calls
+var assistantBuildKeyOrder = []string{"role", "content", "reasoning", "finish_reason", "timestamp", "reasoning_content", "reasoning_details",
+	"anthropic_content_blocks", "bedrock_content_blocks", "codex_reasoning_items", "codex_message_items"}
+
+// Key order the agent builds a fresh tool result message in
+var toolBuildKeyOrder = []string{"role", "name", "tool_name", "content", "tool_call_id", "_tool_output_risk", "effect_disposition"}
+
+// Key order of every other fresh message
+var plainBuildKeyOrder = []string{"role", "name", "content", "tool_calls", "tool_call_id"}
+
+// Dict keys of a message the struct renders, recorded order first, then the build order of its role, then sorted
+func MessageKeyOrder(m *Message, d map[string]any) []string {
+	var build []string
+	switch m.Role {
+	case "assistant":
+		build = append(build, assistantBuildKeyOrder...)
+		known := map[string]bool{"tool_calls": true}
+		for _, k := range assistantBuildKeyOrder {
+			known[k] = true
+		}
+		rt := reflect.TypeOf(Message{})
+		for i := range rt.NumField() {
+			if key, _ := fieldKey(rt.Field(i), messageBookkeepingKeys); key != "" {
+				known[key] = true
+			}
+		}
+		var carriers []string
+		for k := range d {
+			if !known[k] && !strings.HasPrefix(k, "_") {
+				carriers = append(carriers, k)
+			}
+		}
+		sort.Strings(carriers)
+		build = append(append(build, carriers...), "tool_calls")
+	case "tool":
+		build = toolBuildKeyOrder
+	default:
+		build = plainBuildKeyOrder
+	}
+	present := make(map[string]any, len(d))
+	for k := range d {
+		present[k] = nil
+	}
+	return orderedDict(present, m.Keys, build).Keys
 }
 
 // Key order the agent builds a tool call dict in
@@ -119,6 +267,11 @@ func structToDict(rv reflect.Value, bookkeeping map[string]string) map[string]an
 			continue
 		}
 		out[key] = fieldToDictValue(fv)
+		if raw, isRaw := fv.Interface().(json.RawMessage); isRaw && key == "reasoning_details" && len(raw) > 0 {
+			if ordered, err := pyjson.LoadsOrdered(raw); err == nil {
+				out[key] = ordered
+			}
+		}
 	}
 	if extra, ok := rv.FieldByName("Extra").Interface().(map[string]any); ok {
 		for k, v := range extra {
@@ -219,7 +372,7 @@ func assignDictValue(fv reflect.Value, value any) bool {
 			return false
 		}
 		candidate := reflect.ValueOf(json.RawMessage(raw))
-		if !reflect.DeepEqual(fieldToDictValue(candidate), plainDictTree(value)) {
+		if !reflect.DeepEqual(plainDictTree(fieldToDictValue(candidate)), plainDictTree(value)) {
 			return false
 		}
 		fv.Set(candidate)

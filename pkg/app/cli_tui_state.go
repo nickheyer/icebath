@@ -18,30 +18,11 @@ type slashConfirmModalState struct {
 	Selected      int
 }
 
-// commandPaletteEntry is one palette row, command, category and description
-type commandPaletteEntry struct{ Command, Category, Description string }
-
-// commandPaletteModalState is the open command palette
-type commandPaletteModalState struct {
-	Entries      []commandPaletteEntry
-	Filter       string
-	Selected     int
-	ScrollOffset int
-	VisibleCount *int
-}
-
 // clarifyQuestion is one question of a clarify batch
 type clarifyQuestion struct {
 	QID, Question string
 	Choices       []string
 	MultiSelect   bool
-}
-
-// clarifyAnswerMeta remembers how a clarify question was answered so a revisit restores it
-type clarifyAnswerMeta struct {
-	Kind      string
-	Choices   []string
-	OtherText string
 }
 
 // Entries of the clarify callback payload as questions
@@ -63,17 +44,7 @@ func clarifyQuestionsFrom(entries []any) []clarifyQuestion {
 	return out
 }
 
-// Index of a value in a list, minus one when absent
-func indexOf(list []string, value string) int {
-	for i, v := range list {
-		if v == value {
-			return i
-		}
-	}
-	return -1
-}
-
-// Points the clarify panel at a question, restoring the cursor and checkboxes of an earlier answer
+// Points the clarify panel at a question with the cursor on its first choice
 func (c *CLI) clarifyBatchSetActive(state *clarifyModalState, index int) {
 	index = max(0, min(index, len(state.Questions)-1))
 	entry := state.Questions[index]
@@ -82,39 +53,9 @@ func (c *CLI) clarifyBatchSetActive(state *clarifyModalState, index int) {
 	state.Choices = entry.Choices
 	state.Selected = 0
 	state.MultiSelect = entry.MultiSelect
-	state.SelectedIndices = nil
-	if entry.MultiSelect {
-		state.SelectedIndices = map[int]bool{}
-	}
 	c.uiMu.Lock()
 	c.clarifyFreetext = len(entry.Choices) == 0
-	c.clarifyMultiBase = nil
 	c.uiMu.Unlock()
-	meta, ok := state.AnswerMeta[entry.QID]
-	if !ok {
-		return
-	}
-	switch meta.Kind {
-	case "choice":
-		if answer := state.Answers[entry.QID]; answer != nil {
-			if i := indexOf(entry.Choices, *answer); i >= 0 {
-				state.Selected = i
-			}
-		}
-	case "other":
-		state.Selected = len(entry.Choices)
-	case "multi":
-		checked := map[int]bool{}
-		for _, choice := range meta.Choices {
-			if i := indexOf(entry.Choices, choice); i >= 0 {
-				checked[i] = true
-			}
-		}
-		if meta.OtherText != "" {
-			checked[len(entry.Choices)] = true
-		}
-		state.SelectedIndices = checked
-	}
 }
 
 // Locked answers keyed by question id, a skipped question mapping to nil
@@ -145,7 +86,7 @@ func (c *CLI) clarifyCallback(questions []any) map[string]any {
 	timeout := tools.ResolveClarifyTimeout(config.Tree(CLIConfig(c.ctx)))
 	response := make(chan map[string]any, 1)
 	state := &clarifyModalState{Questions: clarifyQuestionsFrom(questions), Answers: map[string]*string{},
-		AnswerMeta: map[string]clarifyAnswerMeta{}, response: response}
+		response: response}
 	c.uiMu.Lock()
 	c.clarifyState = state
 	c.uiMu.Unlock()

@@ -22,7 +22,7 @@ var ComponentPrefixes = map[string][]string{
 	"tools":   {"tools"},
 	"cli":     {"hermes_cli", "cli"},
 	"cron":    {"cron"},
-	"gui":     {"tui_gateway"},
+	"gui":     {"hermes_cli.web_server", "hermes_cli.pty_bridge", "hermes_cli.desktop", "tui_gateway", "uvicorn"},
 }
 
 var noisyLoggers = []string{

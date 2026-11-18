@@ -168,6 +168,7 @@ type tuiStore struct {
 	delegation             delegationState
 	petFlash               *petFlash
 	goodVibesTick          int
+	transcriptGen          int
 	bubblesShown           map[string]bool
 	voicePartial           string
 	connectionOp           *connectionOperation

@@ -413,89 +413,11 @@ func postStreamTransformOutput(response string, result map[string]any) string {
 	return "\n" + i18n.T(context.Background(), "cli.render.response_transformed", "", nil) + "\n" + response
 }
 
-// Clamps the persistent output line limit to at least 10, 200 when the value does not parse
-func coerceOutputHistoryLimit(value any) int {
-	n, ok := pyIntOf(value)
-	if !ok {
-		return 200
-	}
-	return max(10, n)
-}
-
-// paintedLine is a recorded output line tagged with the width it was painted at
-type paintedLine struct {
-	Text  string
-	Width *int
-	plain bool
-}
-
-// Drops the recorded output and the chrome floor cleared with the screen
-func clearOutputHistory() {
-	outputHistoryMu.Lock()
-	outputHistory = nil
-	outputHistoryMu.Unlock()
-}
-
-// Reports whether output is being recorded for replay
-func outputHistoryRecording() bool {
-	outputHistoryMu.Lock()
-	defer outputHistoryMu.Unlock()
-	return outputHistoryEnabled && !outputHistoryReplaying && !outputHistorySuppressed
-}
-
-// Appends entries to the bounded history, the oldest dropped past the line limit
-func appendOutputHistory(entries ...any) {
-	outputHistoryMu.Lock()
-	defer outputHistoryMu.Unlock()
-	outputHistory = append(outputHistory, entries...)
-	if over := len(outputHistory) - outputHistoryMaxLines; over > 0 {
-		outputHistory = append([]any(nil), outputHistory[over:]...)
-	}
-}
-
-// Records a line, a painted line or a callable rendering lines when recording is on
-func recordOutputHistoryEntry(entry any) {
-	if !outputHistoryRecording() {
-		return
-	}
-	if text, ok := entry.(string); ok {
-		entry = &paintedLine{Text: text, plain: true}
-	}
-	appendOutputHistory(entry)
-}
-
-// Width the terminal soft wraps a print at right now, nil when unknown
-func paintedColumns() *int {
-	_, cols, err := console().Size()
-	if err != nil {
-		return nil
-	}
-	return &cols
-}
-
-// Records text as painted now, force skipping the recording check made at print request time
-func recordOutputHistory(text string, force bool) {
-	if !force && !outputHistoryRecording() {
-		return
-	}
-	width := paintedColumns()
-	var lines []any
-	for _, line := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
-		lines = append(lines, &paintedLine{Text: line, Width: width})
-	}
-	appendOutputHistory(lines...)
-}
-
 // Prints ANSI text and a newline straight to the console
 func ptPrintANSI(text string) { fmt.Fprintln(console().Out, text) }
 
-// Prints ANSI text straight to the console, recording it in the output history
-func cprint(text string) {
-	if outputHistoryRecording() {
-		recordOutputHistory(text, true)
-	}
-	ptPrintANSI(text)
-}
+// Prints ANSI text and a newline straight to the console
+func cprint(text string) { ptPrintANSI(text) }
 
 // Prepends a one shot note to a user message, folded into the first text part of a content list
 func prependNoteToMessage(message any, note string) any {

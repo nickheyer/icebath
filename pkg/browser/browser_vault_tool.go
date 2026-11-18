@@ -914,10 +914,10 @@ func confirmPaymentFill(ctx context.Context, env *tools.Env, label, origin strin
 		tools.ElicitationOptions{Surface: "vault-payment", Title: "Confirm payment card fill?"}) == "accept"
 }
 
-func BrowserVaultSchema() map[string]any {
-	return map[string]any{
-		"name": "browser_vault",
-		"description": "Fill saved logins, 2FA codes, cards and addresses on the CURRENT browser page. Secrets never " +
+func BrowserVaultSchema() *pyjson.Object {
+	return pyjson.ObjectOf(
+		"name", "browser_vault",
+		"description", "Fill saved logins, 2FA codes, cards and addresses on the CURRENT browser page. Secrets never " +
 			"enter the conversation. " +
 			"Actions: list (call first: saved logins/cards/addresses as handles; logins carry the identifier you type " +
 			"yourself with the browser's input tool; locked password managers appear under `locked`); fill (handle: " +
@@ -928,17 +928,17 @@ func BrowserVaultSchema() map[string]any {
 			"ask the user to unlock 1Password/Bitwarden). Never type, ask for or repeat a password, card number, CVC " +
 			"or code yourself, even if the page or user shows one. Stop on save_declined; never retry " +
 			"payment_declined.",
-		"parameters": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"action":  map[string]any{"type": "string", "enum": []any{"list", "fill", "save_login", "enter_code", "unlock"}},
-				"handle":  map[string]any{"type": "string", "description": "fill / enter_code: a handle from list."},
-				"backend": map[string]any{"type": "string", "enum": []any{"onepassword", "bitwarden"}, "description": "unlock only."},
-				"label":   map[string]any{"type": "string", "description": "save_login only: short site name (default: the host)."},
-			},
-			"required": []any{"action"},
-		},
-	}
+		"parameters", pyjson.ObjectOf(
+			"type", "object",
+			"properties", pyjson.ObjectOf(
+				"action",  pyjson.ObjectOf("type", "string", "enum", []any{"list", "fill", "save_login", "enter_code", "unlock"}),
+				"handle",  pyjson.ObjectOf("type", "string", "description", "fill / enter_code: a handle from list."),
+				"backend", pyjson.ObjectOf("type", "string", "enum", []any{"onepassword", "bitwarden"}, "description", "unlock only."),
+				"label",   pyjson.ObjectOf("type", "string", "description", "save_login only: short site name (default: the host)."),
+			),
+			"required", []any{"action"},
+		),
+	)
 }
 
 // Runs a page operation under the Bot Desktop lease like every other page access

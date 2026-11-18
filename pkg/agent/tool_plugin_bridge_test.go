@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"sync"
 	"testing"
@@ -31,7 +32,7 @@ func bridgedDispatcher(t *testing.T, handler tools.Handler) (*tools.Dispatcher, 
 	t.Helper()
 	r := tools.NewRegistry()
 	r.Register(tools.Def{Name: "web_search", Toolset: "test", Handler: handler,
-		Schema: map[string]any{"name": "web_search", "description": "web_search", "parameters": map[string]any{"type": "object"}}})
+		Schema: pyjson.ObjectOf("name", "web_search", "description", "web_search", "parameters", pyjson.ObjectOf("type", "object"))})
 	d := tools.NewDispatcher(r)
 	installToolPluginBridge(d)
 	return d, &tools.Env{Home: t.TempDir()}

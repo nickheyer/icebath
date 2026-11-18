@@ -6,6 +6,5 @@ import "golang.org/x/sys/unix"
 
 const (
 	tcGets      = unix.TIOCGETA
-	tcSetsNow   = unix.TIOCSETA
 	tcSetsFlush = unix.TIOCSETAF
 )

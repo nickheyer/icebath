@@ -22,4 +22,6 @@ func (c *CLI) addInstallSelf(root *cobra.Command) {
 	bf(cmd, "no-playwright", "", "alias of --skip-browser")
 	bf(cmd, "skip-computer-use", "", "Do not install the computer-use driver (cua-driver). Remembered the same way; undo with 'icebath pm install cua-driver'.")
 	bf(cmd, "release-info", "", "print the release tag and commit of this binary as JSON")
+	sf(cmd, "install-method", "", "script", "install method stamped beside the binary, winget registering the install in Apps and Features for the WinGet nested installer")
+	c.choice(cmd, "install-method", "script", "winget")
 }

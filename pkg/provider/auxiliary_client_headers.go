@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -44,11 +45,8 @@ var auxAuthJSONPathOverride string
 
 // OpenRouter attribution headers every OpenRouter call carries
 func auxORHeadersBase() map[string]string {
-	return map[string]string{
-		"HTTP-Referer":            attributionReferer,
-		"X-Title":                 attributionTitle,
-		"X-OpenRouter-Categories": "productivity,cli-agent",
-	}
+	return pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "HTTP-Referer", Value: attributionReferer},
+		pyhttpx.HeaderLine{Name: "X-Title", Value: attributionTitle}, pyhttpx.HeaderLine{Name: "X-OpenRouter-Categories", Value: "productivity,cli-agent"})
 }
 
 // Merges model.default_headers and its model.extra_headers alias over the resolved headers, user values winning
@@ -59,35 +57,51 @@ func auxApplyUserDefaultHeaders(ctx context.Context, headers map[string]string) 
 	}
 	userHeaders, _ := config.CfgGet(tree, "model", "default_headers")
 	aliasHeaders, _ := config.CfgGet(tree, "model", "extra_headers")
+	type entry struct {
+		key   string
+		value any
+	}
+	var user []entry
+	at := map[string]int{}
+	put := func(k string, v any) {
+		if i, ok := at[k]; ok {
+			user[i].value = v
+			return
+		}
+		at[k] = len(user)
+		user = append(user, entry{k, v})
+	}
+	base, isMap := userHeaders.(map[string]any)
 	if alias, ok := aliasHeaders.(map[string]any); ok && len(alias) > 0 {
-		merged := map[string]any{}
-		if base, ok := userHeaders.(map[string]any); ok {
-			for k, v := range base {
-				merged[k] = v
-			}
+		for _, k := range config.MappingKeys(base) {
+			put(k, base[k])
 		}
-		for k, v := range alias {
-			merged[k] = v
+		for _, k := range config.MappingKeys(alias) {
+			put(k, alias[k])
 		}
-		userHeaders = merged
-	}
-	user, ok := userHeaders.(map[string]any)
-	if !ok || len(user) == 0 {
+	} else if isMap {
+		for _, k := range config.MappingKeys(base) {
+			put(k, base[k])
+		}
+	} else {
 		return headers
 	}
-	merged := map[string]string{}
-	for k, v := range headers {
-		merged[k] = v
-	}
-	for k, v := range user {
-		if v != nil {
-			merged[k] = pyrepr.Str(v)
-		}
-	}
-	if len(merged) == 0 {
+	if len(user) == 0 {
 		return headers
 	}
-	return merged
+	var lines []pyhttpx.HeaderLine
+	for _, k := range pyhttpx.HeaderOrder(headers) {
+		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
+	}
+	for _, e := range user {
+		if e.value != nil {
+			lines = append(lines, pyhttpx.HeaderLine{Name: e.key, Value: pyrepr.Str(e.value)})
+		}
+	}
+	if len(lines) == 0 {
+		return headers
+	}
+	return pyhttpx.OrderedHeaderMap(lines...)
 }
 
 // Resolved headers with model.default_headers and model.extra_headers merged over them, user values winning
@@ -115,6 +129,7 @@ func BuildORHeaders(ctx context.Context, orConfig map[string]any) (map[string]st
 		return headers, nil
 	}
 	headers["X-OpenRouter-Cache"] = "true"
+	pyhttpx.SetHeaderOrder(headers, append(pyhttpx.HeaderOrder(auxORHeadersBase()), "X-OpenRouter-Cache"))
 	if envTTL := strings.TrimSpace(os.Getenv("ICEBATH_OPENROUTER_CACHE_TTL")); envTTL != "" {
 		if auxIsDigitString(envTTL) {
 			n, ok := auxPyIntDigits(envTTL)

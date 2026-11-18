@@ -316,7 +316,7 @@ func PopRelayScope(ctx context.Context, relay *NemoRelay, handle, output, metada
 	return relay.Scope.Pop(ctx, handle, kwargs)
 }
 
-// Pops handle only while it tops the scope stack and reports whether it was popped
+// Pops handle only while it tops the scope stack, reporting a scope pushed over it meanwhile as not popped
 func PopRelayScopeIfTop(ctx context.Context, relay *NemoRelay, handle, output, metadata any) (bool, error) {
 	top, err := relayCurrentTop(ctx, relay)
 	if err != nil {
@@ -326,6 +326,9 @@ func PopRelayScopeIfTop(ctx context.Context, relay *NemoRelay, handle, output, m
 		return false, nil
 	}
 	if _, err := PopRelayScope(ctx, relay, handle, output, metadata, nil); err != nil {
+		if now, topErr := relayCurrentTop(ctx, relay); topErr == nil && now != nil && !relaySameHandle(now, handle) {
+			return false, nil
+		}
 		return false, err
 	}
 	return true, nil

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,7 +42,7 @@ func TestTransformToolResultIntegrationWithRealPlugin(t *testing.T) {
 	plugins.GetPluginManager(ctx).DiscoverAndLoad(ctx, false)
 	r := tools.NewRegistry()
 	r.Register(tools.Def{Name: "some_tool", Toolset: "test", Handler: func(context.Context, *tools.Call) string { return `{"payload": 42}` },
-		Schema: map[string]any{"name": "some_tool", "description": "some_tool", "parameters": map[string]any{"type": "object"}}})
+		Schema: pyjson.ObjectOf("name", "some_tool", "description", "some_tool", "parameters", pyjson.ObjectOf("type", "object"))})
 	d := tools.NewDispatcher(r)
 	installToolPluginBridge(d)
 	out := d.DispatchWith(tools.WithDispatcher(ctx, d), &tools.Call{Name: "some_tool", Args: map[string]any{}, TaskID: "t1", SessionID: "s1",

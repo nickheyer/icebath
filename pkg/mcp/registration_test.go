@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"sort"
 	"strings"
@@ -46,7 +47,7 @@ func regSetup(t *testing.T, scopes ...string) (*tools.Env, context.Context) {
 
 // Tool with an optional readOnlyHint annotation
 func regTool(name string, readOnly *bool) *Tool {
-	t := &Tool{Name: name, Description: "desc " + name, InputSchema: map[string]any{"type": "object"}}
+	t := &Tool{Name: name, Description: "desc " + name, InputSchema: pyjson.ObjectOf("type", "object")}
 	if readOnly != nil {
 		t.Annotations = &ToolAnnotations{ReadOnlyHint: readOnly}
 	}
@@ -242,13 +243,13 @@ func TestRegistrationBuiltinCollisionGuard(t *testing.T) {
 	})
 	t.Run("test_mcp_tool_rejected_when_collision_is_another_mcp", func(t *testing.T) {
 		def := testToolDef("mcp__srv__do_thing", "mcp-old")
-		def.Schema = map[string]any{"name": "mcp__srv__do_thing", "description": "From another MCP server"}
+		def.Schema = pyjson.ObjectOf("name", "mcp__srv__do_thing", "description", "From another MCP server")
 		tools.Default.Remove(def.Name)
 		tools.Default.Register(def)
 		t.Cleanup(func() { tools.Default.Remove(def.Name) })
 		got := mustRegister(t, ctx, regServer(env, "srv", capsOf(false, false), regTool("do_thing", nil)), map[string]any{})
 		entry := tools.Default.Lookup(ctx, "", "mcp__srv__do_thing")
-		if len(got) != 0 || entry == nil || entry.Toolset != "mcp-old" || entry.Schema["description"] != "From another MCP server" || tools.Default.ToolsetForTool(ctx, "", "mcp__srv__do_thing") != "mcp-old" {
+		if len(got) != 0 || entry == nil || entry.Toolset != "mcp-old" || entry.Schema.Vals["description"] != "From another MCP server" || tools.Default.ToolsetForTool(ctx, "", "mcp__srv__do_thing") != "mcp-old" {
 			t.Fatalf("existing MCP owner must be preserved, got %v", got)
 		}
 		if logs.count("already owned by MCP toolset 'mcp-old'") != 1 {
@@ -291,7 +292,7 @@ func TestRegistrationNameCollisions(t *testing.T) {
 		}
 	})
 	t.Run("test_native_tool_wins_over_generated_utility_on_collision", func(t *testing.T) {
-		native := &Tool{Name: "read_resource", Description: "Native read-resource tool", InputSchema: map[string]any{"type": "object"}}
+		native := &Tool{Name: "read_resource", Description: "Native read-resource tool", InputSchema: pyjson.ObjectOf("type", "object")}
 		s := regServer(env, "srv", capsOf(true, false), native, regTool("safe_tool", nil))
 		got := mustRegister(t, ctx, s, map[string]any{"tools": map[string]any{"prompts": false}})
 		defer func() {
