@@ -2,13 +2,15 @@ package tui
 
 import (
 	_ "embed"
-	"math"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -37,10 +39,10 @@ var enCatalog = func() enCatalogFile {
 var enLogic = map[string]func(args []any) string{
 	"status.sessionCount": func(args []any) string {
 		word := "sessions"
-		if jsNumberEquals(arg(args, 0), 1) {
+		if n, isNumber := argNumber(arg(args, 0)); isNumber && n == 1 {
 			word = "session"
 		}
-		return jsString(arg(args, 0)) + " " + word
+		return argText(arg(args, 0)) + " " + word
 	},
 }
 
@@ -54,53 +56,30 @@ func arg(args []any, i int) any {
 	return nil
 }
 
-// Numeric argument strictly equal to n
-func jsNumberEquals(v any, n float64) bool {
+// Value of a numeric catalog argument, false for anything else
+func argNumber(v any) (float64, bool) {
 	switch t := v.(type) {
 	case int:
-		return float64(t) == n
+		return float64(t), true
 	case int64:
-		return float64(t) == n
+		return float64(t), true
 	case float64:
-		return t == n
+		return t, true
 	}
-	return false
+	return 0, false
 }
 
-// Text of a value as JavaScript String renders it
-func jsString(v any) string {
+// Text of a catalog argument, numbers in their shortest decimal form
+func argText(v any) string {
 	switch t := v.(type) {
 	case nil:
-		return "null"
+		return ""
 	case string:
 		return t
-	case bool:
-		return strconv.FormatBool(t)
-	case int:
-		return strconv.Itoa(t)
-	case int64:
-		return strconv.FormatInt(t, 10)
 	case float64:
-		switch {
-		case math.IsNaN(t):
-			return "NaN"
-		case math.IsInf(t, 1):
-			return "Infinity"
-		case math.IsInf(t, -1):
-			return "-Infinity"
-		case t == 0:
-			return "0"
-		case math.Abs(t) >= 1e21 || math.Abs(t) < 1e-6:
-			s := strconv.FormatFloat(t, 'e', -1, 64)
-			mant, exp, _ := strings.Cut(s, "e")
-			if exp[0] == '+' {
-				return mant + "e+" + strings.TrimLeft(exp[1:], "0")
-			}
-			return mant + "e-" + strings.TrimLeft(exp[1:], "0")
-		}
 		return strconv.FormatFloat(t, 'f', -1, 64)
 	}
-	return ""
+	return fmt.Sprint(v)
 }
 
 // Template with each {n} replaced by argument n, unknown indices left as written
@@ -110,7 +89,7 @@ func formatPositional(template string, args []any) string {
 		if err != nil || i >= len(args) {
 			return m
 		}
-		return jsString(args[i])
+		return argText(args[i])
 	})
 }
 
@@ -166,13 +145,9 @@ func tr(key string, args ...any) string {
 	return key
 }
 
-// Language id of display.language the way the backend normalizes it, English for anything empty or not a string
-func normalizeLanguageID(raw any) string {
-	s, isString := raw.(string)
-	if !isString {
-		return defaultLocale
-	}
-	id := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "_", "-")
+// Language id of display.language the way the backend normalizes it, English for an empty one
+func normalizeLanguageID(language string) string {
+	id := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(language)), "_", "-")
 	if id == "" {
 		return defaultLocale
 	}
@@ -184,30 +159,21 @@ type requestFunc func(method string, params map[string]any) (any, error)
 
 // TUI pack messages of a language from i18n.catalog, false when the backend lacks it or answers without messages
 func fetchCatalogPack(request requestFunc, lang string) (map[string]string, bool) {
-	raw, err := request("i18n.catalog", map[string]any{"lang": lang, "surface": tuiSurface})
+	params := tuigateway.I18nCatalogParams{Lang: lang, Surface: tuigateway.LocaleSurface(tuiSurface)}
+	raw, err := request(tuigateway.I18nCatalog.Name(), wireParams(params))
 	if err != nil {
 		return nil, false
 	}
-	result, isDict := raw.(map[string]any)
-	if !isDict {
+	result, err := tuigateway.I18nCatalog.Result(raw)
+	if err != nil || result.Messages == nil {
 		return nil, false
 	}
-	messages, isDict := result["messages"].(map[string]any)
-	if !isDict {
-		return nil, false
-	}
-	out := map[string]string{}
-	for k, v := range messages {
-		if s, isString := v.(string); isString {
-			out[k] = s
-		}
-	}
-	return out, true
+	return result.Messages, true
 }
 
 // Loads and applies the pack of display.language, English needing no request and a repeat joining the one in flight
-func syncTUILocale(request requestFunc, rawLanguage any) {
-	lang := normalizeLanguageID(rawLanguage)
+func syncTUILocale(request requestFunc, language string) {
+	lang := normalizeLanguageID(language)
 	catalog.mu.Lock()
 	if lang == catalog.lastRequested && (catalog.inFlight != nil || lang == catalog.lang) {
 		wait := catalog.inFlight

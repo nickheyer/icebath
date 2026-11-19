@@ -1010,6 +1010,13 @@ func (s *Session) handleNotification(msg *Message) {
 		pkgLog().Debug(fmt.Sprintf("MCP server '%s': prompts/list_changed (ignored)", s.opts.Name))
 	case methodResourcesListChanged:
 		pkgLog().Debug(fmt.Sprintf("MCP server '%s': resources/list_changed (ignored)", s.opts.Name))
+	case methodElicitationComplete:
+		var p struct {
+			ElicitationID string `json:"elicitationId"`
+		}
+		if tracker, ok := s.opts.Elicitor.(urlElicitationTracker); ok && json.Unmarshal(msg.Params, &p) == nil && p.ElicitationID != "" {
+			tracker.ElicitationComplete(p.ElicitationID)
+		}
 	case methodLoggingMessage:
 		s.onServerLog(msg.Params)
 	case methodProgress:
@@ -1184,6 +1191,11 @@ func pyJSONString(s string) string {
 
 // Sends one request and waits for its answer, telling the server when the caller gives up
 func (s *Session) request(ctx context.Context, msg *Message, out any) error {
+	if version, modern := s.modernEra(); modern {
+		if err := s.stampMeta(msg, version); err != nil {
+			return err
+		}
+	}
 	ch := make(chan *Message, 1)
 	key := IDKey(msg.ID)
 	s.mu.Lock()
@@ -1309,7 +1321,14 @@ func (s *Session) Initialize(ctx context.Context) (*InitializeResult, error) {
 // Stateless server/discover probe adopting the capabilities and revision it names
 func (s *Session) Discover(ctx context.Context) (*InitializeResult, error) {
 	var result InitializeResult
-	if err := s.call(ctx, methodDiscover, nil, &result); err != nil {
+	msg, err := NewRequest(methodDiscover, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.stampMeta(msg, LatestProtocolVersion); err != nil {
+		return nil, err
+	}
+	if err := s.request(ctx, msg, &result); err != nil {
 		return nil, err
 	}
 	version := result.ProtocolVersion
@@ -1518,7 +1537,7 @@ func (s *Session) ListPrompts(ctx context.Context) ([]*Prompt, error) {
 // Contents of one resource
 func (s *Session) ReadResource(ctx context.Context, uri string) (*ReadResourceResult, error) {
 	var out ReadResourceResult
-	if err := s.call(ctx, methodResourcesRead, map[string]any{"uri": uri}, &out); err != nil {
+	if err := s.callWithInputs(ctx, methodResourcesRead, map[string]any{"uri": uri}, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1531,7 +1550,7 @@ func (s *Session) GetPrompt(ctx context.Context, name string, args map[string]st
 		params["arguments"] = args
 	}
 	var out GetPromptResult
-	if err := s.call(ctx, methodPromptsGet, params, &out); err != nil {
+	if err := s.callWithInputs(ctx, methodPromptsGet, params, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -1540,31 +1559,18 @@ func (s *Session) GetPrompt(ctx context.Context, name string, args map[string]st
 // ProgressFunc receives one progress update of a running call
 type ProgressFunc func(progress float64, total *float64, message string)
 
-// Calls a tool, opting into notifications/progress with the request id as token when a progress sink is given
+// Calls a tool, opting into notifications/progress with the request id as token, a browser step the user refused or left unfinished answering as a tool error
 func (s *Session) CallTool(ctx context.Context, name string, args map[string]any, progress ProgressFunc) (*CallToolResult, error) {
 	if args == nil {
 		args = map[string]any{}
 	}
-	id := nextID()
-	params := map[string]any{"name": name, "arguments": args}
-	if progress != nil {
-		params["_meta"] = map[string]any{"progressToken": json.RawMessage(id)}
-		key := IDKey(id)
-		s.mu.Lock()
-		s.progress[key] = func(p ProgressParams) { progress(p.Progress, p.Total, p.Message) }
-		s.mu.Unlock()
-		defer func() {
-			s.mu.Lock()
-			delete(s.progress, key)
-			s.mu.Unlock()
-		}()
-	}
-	raw, err := marshalParams(params)
-	if err != nil {
-		return nil, err
-	}
 	var out CallToolResult
-	if err := s.request(ctx, &Message{JSONRPC: "2.0", ID: id, Method: methodToolsCall, Params: raw}, &out); err != nil {
+	err := s.callWithInputs(ctx, methodToolsCall, map[string]any{"name": name, "arguments": args}, progress, &out)
+	var step *URLElicitationError
+	if errors.As(err, &step) {
+		return &CallToolResult{Content: []*ContentBlock{{Type: "text", Text: step.Error()}}, IsError: true}, nil
+	}
+	if err != nil {
 		return nil, err
 	}
 	return &out, nil

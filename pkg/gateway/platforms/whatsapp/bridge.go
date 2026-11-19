@@ -285,11 +285,17 @@ func RunPairingEnv(ctx context.Context, session, mode string, overrides map[stri
 	return b.exitCode
 }
 
+// Whether a listen failed because the port is taken, EADDRINUSE and the Winsock WSAEADDRINUSE 10048
+func addrInUse(err error) bool {
+	var errno syscall.Errno
+	return errors.As(err, &errno) && (errno == syscall.EADDRINUSE || errno == 10048)
+}
+
 // Binds the loopback HTTP server, a FATAL line and exit 1 when the port is taken
 func (b *bridgeHost) listen() {
 	ln, err := bridgeListen(b.cfg.port)
 	if err != nil {
-		if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use") || strings.Contains(err.Error(), "Only one usage") {
+		if addrInUse(err) {
 			b.console.log("FATAL: port %d already in use on 127.0.0.1 — another bridge or process is listening there.", b.cfg.port)
 		} else {
 			b.console.log("FATAL: bridge HTTP server error: %s", err.Error())

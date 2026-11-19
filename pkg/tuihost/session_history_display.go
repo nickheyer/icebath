@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -323,7 +324,7 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 			}
 		}
 		if role == "tool" {
-			messages = append(messages, toolHistoryRow(m, index))
+			messages = append(messages, toolHistoryRow(ctx, m, index))
 			continue
 		}
 		hasDetail := role == "assistant" && slices.ContainsFunc(historyAssistantDetail, func(k string) bool { return pyrepr.Truthy(m[k]) })
@@ -366,8 +367,8 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 	return ProjectHistoryCommentary(ctx, messages, profileHome)
 }
 
-// Compact display row of a tool result labelled from the call that produced it
-func toolHistoryRow(m map[string]any, index map[any]toolCallArgs) map[string]any {
+// Compact display row of a tool result labelled from the call that produced it, a failed or refused call with its reason
+func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCallArgs) map[string]any {
 	key := m["tool_call_id"]
 	if !pyrepr.Truthy(key) {
 		key = ""
@@ -388,6 +389,14 @@ func toolHistoryRow(m map[string]any, index map[any]toolCallArgs) map[string]any
 	argsDict := toolArgsDict(args)
 	labels := BridgedToolLabels(name, argsDict)
 	row := map[string]any{"role": "tool", "name": name, "context": ToolCtx(name, argsDict)}
+	if content, isText := m["content"].(string); isText {
+		if failed, refused, reason := tools.ToolOutcome(ctx, name, content); failed {
+			row["is_error"], row["error"] = true, reason
+			if refused {
+				row["refused"] = true
+			}
+		}
+	}
 	if editCardTools[name] {
 		row["content"] = m["content"]
 	}

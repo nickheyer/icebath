@@ -163,19 +163,28 @@ func materializeProbeAPIKey(v any) string {
 	return ""
 }
 
-// Context carrying the session home so provider lookups read the right profile
-func visionCtx(ctx context.Context, env *Env) context.Context {
+// Context whose home override is the profile home the env is bound to, ctx itself for an env naming none
+func envHomeCtx(ctx context.Context, env *Env) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if env != nil && env.Home != "" {
-		return home.WithOverride(ctx, env.Home)
+		ctx = home.WithOverride(ctx, env.Home)
+	}
+	return ctx
+}
+
+// Context of a vision check, the env home plus that profile's secret scope while multiplexing with none bound yet
+func visionCtx(ctx context.Context, env *Env) context.Context {
+	ctx = envHomeCtx(ctx, env)
+	if BindProfileSecretScope != nil && contextSecretScope(ctx) == nil && MultiplexActiveFor(ctx, env) {
+		ctx = BindProfileSecretScope(ctx, home.Dir(ctx))
 	}
 	return ctx
 }
 
 // Context whose home override is the profile home the env is bound to, ctx itself for an env naming none
-func WithEnvHome(ctx context.Context, env *Env) context.Context { return visionCtx(ctx, env) }
+func WithEnvHome(ctx context.Context, env *Env) context.Context { return envHomeCtx(ctx, env) }
 
 // Capability boolean from real bools, 0 or 1, and YAML boolean tokens only
 func coerceCapabilityBool(raw any) (bool, bool) {

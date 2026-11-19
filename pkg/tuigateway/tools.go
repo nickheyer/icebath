@@ -50,7 +50,7 @@ type ToolStartPayload struct {
 	ToolName   *string        `json:"tool_name,omitzero"`
 }
 
-// A tool call finished, its result text, summary, duration, inline diff and the task list a planning tool left
+// A tool call finished, its verdict and reason, result text, summary, duration, inline diff and the task list
 type ToolCompletePayload struct {
 	ToolID     string         `json:"tool_id"`
 	Name       string         `json:"name"`
@@ -61,6 +61,8 @@ type ToolCompletePayload struct {
 	ToolCallID *string        `json:"tool_call_id,omitzero"`
 	ToolName   *string        `json:"tool_name,omitzero"`
 	IsError    *bool          `json:"is_error,omitzero"`
+	Refused    *bool          `json:"refused,omitzero"`
+	Error      *string        `json:"error,omitzero"`
 	Result     *string        `json:"result,omitzero"`
 	DurationS  *float64       `json:"duration_s,omitzero"`
 	Summary    *string        `json:"summary,omitzero"`

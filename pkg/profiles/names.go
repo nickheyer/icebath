@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -153,7 +154,7 @@ func NormalizeProfileName(name string) (string, error) {
 func NormalizeProfileNameValue(name any) (string, error) {
 	s, ok := name.(string)
 	if !ok {
-		return "", &ValueError{fmt.Sprintf("profile name must be a string, got %s: %s", config.PyTypeName(name), config.PyRepr(name))}
+		return "", &ValueError{fmt.Sprintf("profile name must be text, got %s: %s", errchain.Kind(name), errchain.Show(name))}
 	}
 	return NormalizeProfileName(s)
 }

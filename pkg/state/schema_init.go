@@ -245,6 +245,9 @@ func (s *sessionSchema) healSessionModelUsagePK(ctx context.Context, conn SQLite
 func (s *sessionSchema) initSchema(ctx context.Context) error {
 	reportStartupProgress(600.0, "state_db_init_schema")
 	conn := s.host.writerConn()
+	if err := refuseNewerSchema(ctx, conn, s.host.dbPath()); err != nil {
+		return err
+	}
 	if err := executeScript(ctx, conn, SchemaSQL); err != nil {
 		return err
 	}
@@ -312,6 +315,22 @@ func (s *sessionSchema) initSchema(ctx context.Context) error {
 		}
 	}
 	return endTransaction(ctx, conn, "COMMIT")
+}
+
+// Stops the open of a store a newer icebath stamped, before any statement of this build touches it
+func refuseNewerSchema(ctx context.Context, conn SQLiteConn, path string) error {
+	table, err := fetchOne(ctx, conn, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'")
+	if err != nil || table == nil {
+		return err
+	}
+	row, err := fetchOne(ctx, conn, "SELECT MAX(version) FROM schema_version")
+	if err != nil || row == nil {
+		return err
+	}
+	if stored, isInt := row[0].(int64); isInt && stored > SchemaVersion {
+		return &StateDBNewerSchemaError{Path: path, Stored: stored}
+	}
+	return nil
 }
 
 // Writes the current schema version and the provenance markers of a freshly created store
@@ -476,7 +495,7 @@ func (s *sessionSchema) advanceMessageUIDBackfill(ctx context.Context, conn SQLi
 	high, _ := highRow[0].(int64)
 	if doneThrough.Cmp(big.NewInt(high)) < 0 {
 		if !doneThrough.IsInt64() || doneThrough.Int64() > math.MaxInt64-messageUIDBackfillChunk {
-			return &pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to SQLite INTEGER"}
+			return oversizedInteger(new(big.Int).Add(doneThrough, big.NewInt(messageUIDBackfillChunk)))
 		}
 		through := doneThrough.Int64()
 		deadline := monotonicSeconds() + messageUIDBackfillBudgetS
@@ -795,9 +814,9 @@ func sqliteParam(index int, v any) (any, error) {
 		if t.IsInt64() {
 			return t.Int64(), nil
 		}
-		return nil, &pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to SQLite INTEGER"}
+		return nil, oversizedParam(index)
 	}
-	return nil, &SQLiteError{Class: SQLiteProgrammingError, Msg: fmt.Sprintf("Error binding parameter %d: type '%s' is not supported", index, pyrepr.TypeName(v))}
+	return nil, unbindableParam(index, v)
 }
 
 // Fills NULL gateway metadata columns from the legacy sessions.json index, never overwriting newer data

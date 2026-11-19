@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tui
 
 import (
@@ -54,13 +56,13 @@ func (a *app) hatchCommands() []slashCommand {
 			concept := trimJS(r.arg)
 			switch {
 			case strings.EqualFold(concept, "cancel"):
-				return tea.Batch(r.ran(), a.pet.cancelHatch())
+				return tea.Batch(r.ran(), a.petView().cancelHatch())
 			case concept == "":
 				ran := r.ran()
 				r.sys(tr("slashCmd.session.hatch.usage"))
 				return ran
 			}
-			return tea.Batch(r.ran(), a.pet.startHatch(concept))
+			return tea.Batch(r.ran(), a.petView().startHatch(concept))
 		}}}
 }
 

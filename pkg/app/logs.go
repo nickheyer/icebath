@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/logging"
 )
 
@@ -341,11 +342,17 @@ func followLog(ctx context.Context, w io.Writer, path string, f logFilters) erro
 
 // Reads and shows log lines with the level, session, since and component filters, following on request
 func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
+	if line, refused := linktier.Refusal("icebath logs "+o.Name, logging.LogTiers[o.Name]); refused {
+		fmt.Fprintln(w, line)
+		return 1, nil
+	}
 	filename, ok := logFiles[o.Name]
 	if !ok {
 		names := make([]string, 0, len(logFiles))
 		for k := range logFiles {
-			names = append(names, k)
+			if linktier.Linked(logging.LogTiers[k]) || logging.LogTiers[k] == "" {
+				names = append(names, k)
+			}
 		}
 		sort.Strings(names)
 		fmt.Fprintf(w, "Unknown log: %s. Available: %s\n", errchain.Show(o.Name), strings.Join(names, ", "))
@@ -458,6 +465,9 @@ func ListLogs(ctx context.Context, w io.Writer) error {
 	logDir := filepath.Join(home.Dir(ctx), "logs")
 	var rootLogs []string
 	for _, name := range logging.RootHomeLogs {
+		if tier := logging.LogTiers[name]; tier != "" && !linktier.Linked(tier) {
+			continue
+		}
 		path, _ := logFilePath(ctx, name)
 		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() && filepath.Dir(path) != logDir {
 			rootLogs = append(rootLogs, path)

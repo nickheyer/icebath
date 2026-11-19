@@ -161,7 +161,6 @@ gateway:
     not_enough: "Sıkıştırmak için yeterli konuşma yok (en az 4 mesaj gerekli)."
     no_provider: "Yapılandırılmış sağlayıcı yok — sıkıştırılamıyor."
     nothing_to_do: "Henüz sıkıştırılacak bir şey yok (transkript hâlâ tamamen korunan bağlam)."
-    aggressive_unsupported: "--aggressive desteklenmiyor; yalnızca son alışverişleri tutmak için '/compress here [N]' kullanın veya turları silmek için /undo kullanın."
     focus_line: "Odak: \"{topic}\""
     summary_failed: "⚠️ Özet oluşturma başarısız ({error}). {count} geçmiş mesaj kaldırılıp yer tutucuyla değiştirildi; önceki bağlam artık kurtarılamaz. auxiliary.compression model yapılandırmanızı kontrol edin."
     aborted: "⚠️ Sıkıştırma iptal edildi ({error}). Hiçbir mesaj silinmedi — konuşma değişmedi. Tekrar denemek için /compress, temiz bir oturum için /reset komutunu çalıştırın veya auxiliary.compression model yapılandırmanızı kontrol edin."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ Yapay zekâ model servisi sürekli hata verdi. Yeniden denemek için /retry, model değiştirmek için /model kullanın. Ayrıntılar gateway günlüğünde (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ Oturum depolaması geçici olarak kullanılamadı; konuşma geçmişinizi korumak için bu tur durduruldu. Lütfen boş disk alanını kontrol edin, ardından mesajınızı yeniden gönderin."
     session_storage_unavailable: "⚠️ Oturum depolaması geçici olarak kullanılamadı; konuşma geçmişinizi korumak için bu tur durduruldu. Mesajınız kaydedilmiş olmalı — lütfen kısa süre sonra yeniden gönderin."
+    session_storage_held: "⚠️ Oturum depolaması şu anda kullanılamıyor ({cause}), bu yüzden mesajınız beklemede. Mesajınız saklanıyor ve depolama yeniden çalıştığında burada yanıtlanacak; tekrar göndermenize gerek yok."
     generic_failed: "⚠️ Bir sorun oluştu ve bu yanıtı tamamlayamadım. Yeniden denemek için /retry, yeni bir konuşma başlatmak için /new kullanın. Teknik ayrıntılar gateway günlüğünde (`icebath logs`)."
     interrupted_before_start: "⚠️ Mesajınız işleme başlamadan önce kesildi (muhtemelen yakın zamandaki bir /stop nedeniyle). Lütfen yeniden gönderin."
     processing_incomplete: "işleme tamamlanmadı"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ Oturum veritabanında bozulma tespit edildi. Mesajlar kalıcı olarak kaydedilmeyebilir. Kurtarma seçenekleri:\n1. `icebath {profile_arg}doctor --fix` çalıştırın\n2. Gateway'i durdurun, ardından şununla kurtarın:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (kurtarılabilir olduğunu bildirirse) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — kurtarma önce hasarlı dosyanın anlık görüntüsünü alır; canlı state.db üzerinde `sqlite3 ... \".recover\"` ÇALIŞTIRMAYIN, açığı olan bir sqlite3 CLI dosyayı daha da bozabilir\n3. {backups_dir}/ içindeki bir yedekten geri yükleyin\nTemizlenmiş tanılama için `icebath {profile_arg}doctor` çalıştırın."
     db_fts_corrupt: "⚠️ Oturum veritabanı yalnızca arama dizinini (FTS5) etkileyen bir bozulma hatası bildirdi; mesaj tabloları hasarlı değil. Onarılana kadar mesajlar kalıcı olarak kaydedilmeyebilir: `icebath {profile_arg}doctor --fix` çalıştırıp gateway'i yeniden başlatın. `icebath {profile_arg}doctor` hasarı doğrulamadıkça kurtarma araçlarını çalıştırmayın veya yedek geri yüklemeyin."
     db_then_restart: "{action} Ardından `icebath {profile_arg}gateway restart` çalıştırın."
-    db_unavailable: "⚠️ Oturum veritabanı kullanılamıyor — mesajlar kaydedilmeyebilir ve /resume boş olacak. Neden: {cause}. {action}"
+    db_unavailable: "⚠️ Oturum veritabanı kullanılamıyor — yeni mesajlar bekletiliyor ve yeniden çalıştığında yanıtlanacak. Neden: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ Cron deposu {store} {since} tarihinden beri yazılamıyor ({error}). Yeniden yazma kabul edene kadar zamanlanmış işler atlanıyor. Çözüm: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "Diğer / yanıt yazın"
       header: "Soru"
       question: "❓ {question}"
+      submit_button: "Gönder"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ {user} kullanıcısının yanıt yazması bekleniyor…"
+      pick_one: "En az bir seçenek seçin, ardından Gönder'e basın."
+    approval:
+
+      resolved_once: "✅ {user} bir kez izin verdi"
+      resolved_session: "✅ {user} bu oturum için izin verdi"
+      resolved_always: "✅ {user} her zaman izin verdi"
+      resolved_deny: "❌ {user} reddetti"
+    confirm:
+
+      default_title: "Onayla"
+      approve_once: "Bir kez onayla"
+      always_approve: "Her zaman onayla"
+      cancel: "İptal"
+      decided_once: "✅ {user} bir kez onayladı"
+      decided_always: "🔒 {user} her zaman onayladı"
+      decided_cancel: "❌ {user} iptal etti"
     typing:
 
       thinking: "Icebath düşünüyor…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "Geçerli oturumu dallandır (Discord/Telegram/Slack/Matrix'te yeni konu; --here burada kalır)"
+    core_description: "Geçerli oturumu dallandır (--here burada kalır)"
   worktree:
 
     description: "Yalıtılmış git worktree'lerini göster, listele, oluştur veya temizle"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "'{platform}' platformu gateway'de yapılandırılmamış/etkin değil."
       no_home_channel: "{platform} için ana kanal yapılandırılmamış."
       set_home_hint: "Önce hedef sohbette /sethome ile bir ana kanal ayarlayın."
+      enable_platform_hint: "icebath gateway setup ile kurun, ardından ağ geçidini icebath gateway restart ile yeniden başlatın."
       session_row_failed: "state.db içinde oturum satırı sağlanamadı: {error}"
       picked_up: "Gateway devraldı; aktarılıyor..."
       complete: "↻ Devir tamamlandı. Oturum artık {platform} üzerinde etkin."

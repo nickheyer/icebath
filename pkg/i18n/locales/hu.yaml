@@ -164,7 +164,6 @@ gateway:
     not_enough: "Nincs elég beszélgetés a tömörítéshez (legalább 4 üzenet kell)."
     no_provider: "Nincs konfigurált szolgáltató — nem lehet tömöríteni."
     nothing_to_do: "Még nincs mit tömöríteni (a teljes átirat még védett kontextus)."
-    aggressive_unsupported: "A --aggressive nem támogatott; használd a '/compress here [N]' parancsot, hogy csak a legutóbbi váltásokat tartsd meg, vagy a /undo parancsot körök törléséhez."
     focus_line: "Fókusz: \"{topic}\""
     summary_failed: "⚠️ Az összefoglaló generálása sikertelen ({error}). {count} korábbi üzenet eltávolítva és helykitöltővel helyettesítve; a korábbi kontextus már nem helyreállítható. Érdemes ellenőrizni az auxiliary.compression modell konfigurációját."
     aborted: "⚠️ Tömörítés megszakítva ({error}). Egyetlen üzenet sem lett eldobva — a beszélgetés változatlan. Futtass /compress parancsot az újrapróbálkozáshoz, /reset egy új munkamenethez, vagy ellenőrizd az auxiliary.compression modell konfigurációt."
@@ -743,6 +742,7 @@ gateway:
     provider_kept_failing: "⚠️ Az AI-modellszolgáltatás folyamatosan hibázott. Próbáld újra a /retry paranccsal, vagy válts modellt a /model paranccsal. A részletek az átjáró naplójában vannak (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ A munkamenet-tároló átmenetileg nem volt elérhető, ezért ez a kör leállt a beszélgetési előzményeid védelmében. Ellenőrizd a szabad lemezhelyet, majd küldd el újra az üzenetet."
     session_storage_unavailable: "⚠️ A munkamenet-tároló átmenetileg nem volt elérhető, ezért ez a kör leállt a beszélgetési előzményeid védelmében. Az üzeneted valószínűleg már mentve van — küldd el újra kis idő múlva."
+    session_storage_held: "⚠️ A munkamenet-tároló most nem érhető el ({cause}), ezért az üzeneted várakozik. Megőrizzük, és itt válaszolunk rá, amint a tároló újra működik; nem kell újra elküldened."
     generic_failed: "⚠️ Hiba történt, és nem tudtam befejezni ezt a választ. Próbáld újra a /retry paranccsal, vagy kezdj új beszélgetést a /new paranccsal. A technikai részletek az átjáró naplójában vannak (`icebath logs`)."
     interrupted_before_start: "⚠️ Az üzeneted feldolgozása még el sem kezdődött, amikor megszakadt (valószínűleg egy friss /stop miatt). Küldd el újra."
     processing_incomplete: "a feldolgozás nem fejeződött be"
@@ -946,7 +946,7 @@ gateway:
     db_corrupt: "⚠️ A munkamenet-adatbázis sérülését észleltük. Az üzenetek mentése sikertelen lehet. Helyreállítási lehetőségek:\n1. Futtasd: `icebath {profile_arg}doctor --fix`\n2. Állítsd le az átjárót, majd állítsd helyre így:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (ha helyreállíthatónak jelzi) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — a helyreállítás először pillanatképet készít a sérült fájlról; NE futtasd a `sqlite3 ... \".recover\"` parancsot az élő state.db fájlon, egy sebezhető sqlite3 CLI tovább rongálhatja\n3. Állítsd vissza egy biztonsági mentésből innen: {backups_dir}/\nA `icebath {profile_arg}doctor` parancs tisztított diagnosztikát ad."
     db_fts_corrupt: "⚠️ A munkamenet-adatbázis a keresőindexre (FTS5) korlátozódó sérülési hibát jelzett; az üzenettáblák nem sérültek. A javításig az üzenetek mentése sikertelen lehet: futtasd a `icebath {profile_arg}doctor --fix` parancsot, majd indítsd újra az átjárót. Ne futtass helyreállító eszközöket, és ne állíts vissza biztonsági mentést, hacsak a `icebath {profile_arg}doctor` nem igazol sérülést."
     db_then_restart: "{action} Ezután: `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ A munkamenet-adatbázis nem érhető el — az üzenetek mentése sikertelen lehet, és a /resume üres lesz. Ok: {cause}. {action}"
+    db_unavailable: "⚠️ A munkamenet-adatbázis nem érhető el — az új üzenetek várakoznak, és válaszolunk rájuk, amint újra működik. Ok: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ A(z) {store} cron tároló {since} óta nem írható ({error}). Az ütemezett feladatok kimaradnak, amíg újra el nem fogadja az írást. Javítás: {fix}."
@@ -1574,6 +1574,25 @@ platform:
       other_button: "Egyéb / írd be a választ"
       header: "Kérdés"
       question: "❓ {question}"
+      submit_button: "Küldés"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ Várakozás, hogy {user} beírja a választ…"
+      pick_one: "Válassz legalább egy lehetőséget, majd nyomd meg a Küldés gombot."
+    approval:
+
+      resolved_once: "✅ Egyszer engedélyezte: {user}"
+      resolved_session: "✅ Erre a munkamenetre engedélyezte: {user}"
+      resolved_always: "✅ Mindig engedélyezte: {user}"
+      resolved_deny: "❌ Elutasította: {user}"
+    confirm:
+
+      default_title: "Megerősítés"
+      approve_once: "Jóváhagyás egyszer"
+      always_approve: "Jóváhagyás mindig"
+      cancel: "Mégse"
+      decided_once: "✅ Egyszer jóváhagyta: {user}"
+      decided_always: "🔒 Mindig jóváhagyta: {user}"
+      decided_cancel: "❌ Megszakította: {user}"
     typing:
 
       thinking: "Icebath gondolkodik…"
@@ -1749,6 +1768,7 @@ slash:
   branch:
 
     description: "Az aktuális munkamenet elágaztatása (új szál Discordon/Telegramon/Slacken/Matrixon; a --here itt marad)"
+    core_description: "Az aktuális munkamenet elágaztatása (a --here itt marad)"
   worktree:
 
     description: "Izolált git worktree-k megjelenítése, listázása, létrehozása vagy tisztítása"
@@ -2658,6 +2678,7 @@ cli:
       platform_not_enabled: "A(z) '{platform}' platform nincs beállítva/bekapcsolva az átjáróban."
       no_home_channel: "Nincs otthoni csatorna beállítva ehhez: {platform}."
       set_home_hint: "Először állíts be egyet a /sethome paranccsal a célcsevegésben."
+      enable_platform_hint: "Állítsd be az icebath gateway setup paranccsal, majd indítsd újra a gatewayt az icebath gateway restart paranccsal."
       session_row_failed: "Nem sikerült biztosítani a munkamenet sorát a state.db-ben: {error}"
       picked_up: "Az átjáró felvette; átvitel folyamatban..."
       complete: "↻ Átadás kész. A munkamenet mostantól itt aktív: {platform}."

@@ -1,9 +1,12 @@
+//go:build !icebath_core
+
 package tools
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -46,7 +49,7 @@ func handleFeishuDocRead(ctx context.Context, call *Call) string {
 	if docToken == "" {
 		return toolErrorJSON("doc_token is required", nil)
 	}
-	client := FeishuClient(ctx)
+	client := feishuclient.From(ctx)
 	if client == nil {
 		return toolErrorJSON("Feishu client not available (not in a Feishu comment context)", nil)
 	}

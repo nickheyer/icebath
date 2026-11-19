@@ -71,6 +71,7 @@ type bedrockClientKey struct {
 	service     string
 	region      string
 	readTimeout time.Duration
+	bearer      string
 }
 
 var (
@@ -90,7 +91,7 @@ func bedrockRequestTimeout(ctx context.Context, model string) (time.Duration, bo
 
 // Cached client per home, service, region and read timeout, built from the routed profile's own credentials
 func bedrockCachedClient(ctx context.Context, service, region string, readTimeout time.Duration) (*awsServiceClient, error) {
-	key := bedrockClientKey{service: service, region: region, readTimeout: readTimeout}
+	key := bedrockClientKey{service: service, region: region, readTimeout: readTimeout, bearer: resolveBedrockBearerTokenCtx(ctx)}
 	if o := home.Override(ctx); o != "" {
 		key.home = home.Key(o)
 	}
@@ -108,7 +109,7 @@ func bedrockCachedClient(ctx context.Context, service, region string, readTimeou
 		attempts = 1
 	}
 	c := newAWSServiceClient(awsClientConfig{service: service, signingName: "bedrock", region: region, session: opts,
-		bearer: resolveBedrockBearerTokenCtx(ctx), readTimeout: readTimeout, totalMaxAttempts: attempts, routed: key.home != ""})
+		bearer: key.bearer, readTimeout: readTimeout, totalMaxAttempts: attempts, routed: key.home != ""})
 	bedrockClients[key] = c
 	return c, nil
 }
@@ -254,13 +255,27 @@ func isBedrockOpenAIBaseURL(baseURL string) bool {
 	return ok && (path == "" || path == "/openai" || path == "/openai/v1")
 }
 
-// Bedrock API key from the process environment
+// Bedrock API key pooled by icebath auth add bedrock, empty when the pool holds none
+func pooledBedrockBearer(ctx context.Context) string {
+	if entry, ok := LoadPool(modelsPoolEnv(ctx), "bedrock").Select(""); ok {
+		return strings.TrimSpace(entry.RuntimeAPIKey())
+	}
+	return ""
+}
+
+// Bedrock API key from the credential pool, then the process environment
 func resolveBedrockBearerToken() string {
+	if key := pooledBedrockBearer(context.Background()); key != "" {
+		return key
+	}
 	return strings.TrimSpace(os.Getenv("AWS_BEARER_TOKEN_BEDROCK"))
 }
 
-// Bedrock API key read through the routed profile's secret scope under a home override
+// Bedrock API key from the routed profile's credential pool, then its secret scope under a home override
 func resolveBedrockBearerTokenCtx(ctx context.Context) string {
+	if key := pooledBedrockBearer(ctx); key != "" {
+		return key
+	}
 	if home.Override(ctx) != "" {
 		return strings.TrimSpace(GetSecretStr(ctx, "AWS_BEARER_TOKEN_BEDROCK", ""))
 	}
@@ -486,14 +501,17 @@ func resolveAWSAuthEnvVarFrom(ctx context.Context, env func(string) string, inst
 	return ""
 }
 
-// Active AWS auth source name of the process environment, empty when none resolves
+// Active AWS auth source name of the process environment or the bedrock credential pool, empty when none resolves
 func resolveAWSAuthEnvVar(ctx context.Context) string {
-	return resolveAWSAuthEnvVarFrom(ctx, os.Getenv, true)
+	if source := resolveAWSAuthEnvVarFrom(ctx, os.Getenv, true); source != "" || pooledBedrockBearer(ctx) == "" {
+		return source
+	}
+	return "pool:bedrock"
 }
 
 // Reports any AWS credential source, env fast path then the default chain with IMDS when asked
 func hasAWSCredentials(ctx context.Context, instanceMetadata bool) bool {
-	return resolveAWSAuthEnvVarFrom(ctx, os.Getenv, instanceMetadata) != ""
+	return resolveAWSAuthEnvVarFrom(ctx, os.Getenv, instanceMetadata) != "" || pooledBedrockBearer(ctx) != ""
 }
 
 // HasAWSCredentials reports whether any AWS credential source resolves for the process

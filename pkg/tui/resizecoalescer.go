@@ -44,4 +44,3 @@ func (r *resizeCoalescer) fire(m resizeReflowMsg) bool {
 	r.pending, r.ran, r.last = false, true, time.Now()
 	return true
 }
-

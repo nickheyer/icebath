@@ -309,7 +309,7 @@ func setFast(ctx context.Context, rid any, params map[string]any, key string, va
 			}
 		}
 		if targetModel == "" {
-			return rpcErr(rid, 4002, "fast mode is not available without a selected model", nil)
+			return rpcErr(rid, 4002, "fast mode needs a selected model; pick one with /model first", nil)
 		}
 		tier := ""
 		if nv == "ultrafast" {
@@ -324,7 +324,7 @@ func setFast(ctx context.Context, rid any, params map[string]any, key string, va
 			}
 		}
 		if overrides == nil {
-			return rpcErr(rid, 4002, nv+" mode is not available for this model", nil)
+			return rpcErr(rid, 4002, "the provider of "+targetModel+" offers no "+nv+" tier for it; switch with /model to a model that has one", nil)
 		}
 	}
 	if session != nil {
@@ -822,7 +822,7 @@ func setPersonality(ctx context.Context, rid any, params map[string]any, key str
 	if info != nil {
 		var typed tuigateway.SessionInfo
 		if err := tuigateway.Loose(info, &typed); err != nil {
-			tuihost.ReportMisfit("result of", "config.set", err)
+			tuigateway.ReportMisfit("result of", "config.set", err)
 		} else {
 			result.Info = &typed
 		}

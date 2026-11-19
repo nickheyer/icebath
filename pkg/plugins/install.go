@@ -621,6 +621,11 @@ func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) 
 	if err != nil {
 		return fail(console, fmt.Sprintf("[red]Error:[/red] %v", err))
 	}
+	if entry != nil {
+		if line, absent := catalogTierRefusal(entry.Name); absent {
+			return fail(console, line)
+		}
+	}
 	if strings.HasPrefix(gitURL, "http://") || strings.HasPrefix(gitURL, "file://") {
 		console.Print("[yellow]Warning:[/yellow] Using insecure/local URL scheme. Consider using https:// or git@ for production installs.")
 	}

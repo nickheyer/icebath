@@ -412,7 +412,7 @@ func prepareRefresh(ctx context.Context, a *SessionAuthority, sessionID string, 
 	if err != nil {
 		return nil, err
 	}
-	if _, surface := Surfaces[old.Source]; old.IgnoreUserConfig || !surface {
+	if old.IgnoreUserConfig || SourceSurface(old.Source) == "" {
 		return nil, nil
 	}
 	dbPath, err := pypath.Resolve(a.DB.Path())

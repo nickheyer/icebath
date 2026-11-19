@@ -38,6 +38,28 @@ type PlatformActionAdapter interface {
 	IsConnected() bool
 }
 
+// Adapter whose platform API adds an emoji reaction to a message
+type MessageReactionAdapter interface {
+	AddReaction(ctx context.Context, chatID, messageID, emoji string) error
+}
+
+// What each verb sets, for the refusal of a platform whose API lacks it
+var verbObjects = map[string]string{"add_reaction": "message reactions", "set_thread_title": "thread titles"}
+
+// Verb implementation an adapter carries itself, nil when its platform API has no such call
+func adapterVerb(verb string, adapter any) func(context.Context, any, []string) (map[string]any, error) {
+	a, ok := adapter.(MessageReactionAdapter)
+	if verb != "add_reaction" || !ok {
+		return nil
+	}
+	return func(ctx context.Context, _ any, args []string) (map[string]any, error) {
+		if err := a.AddReaction(ctx, args[0], args[1], args[2]); err != nil {
+			return nil, err
+		}
+		return actionOK(map[string]any{"action": verb}), nil
+	}
+}
+
 type telegramReactionAdapter interface {
 	SetReaction(ctx context.Context, chatID, messageID, emoji string) (bool, error)
 }
@@ -262,7 +284,10 @@ func (p *PlatformActions) run(ctx context.Context, verb string, platform any, na
 		}
 		impl := platformVerbs[verb][value]
 		if impl == nil {
-			result = actionErr("unsupported_platform_action", fmt.Sprintf("%s is not implemented for %s", verb, pyrepr.Str(platform)))
+			impl = adapterVerb(verb, adapter)
+		}
+		if impl == nil {
+			result = actionErr("unsupported_platform_action", fmt.Sprintf("%s has no %s a bot can set", value, verbObjects[verb]))
 		} else {
 			args := make([]string, len(values))
 			for i, v := range values {

@@ -196,7 +196,7 @@ func auxResolveCallClient(ctx context.Context, req auxCallRequest, route auxTask
 		}
 	}
 	if client == nil {
-		return auxResolvedAuxRoute{}, &AuxiliaryClientUnavailable{Message: fmt.Sprintf("No LLM provider configured for task=%s provider=%s. Start icebath and type /setup aux",
+		return auxResolvedAuxRoute{}, &AuxiliaryClientUnavailable{NoProvider: true, Message: fmt.Sprintf("No LLM provider configured for task=%s provider=%s. Start icebath and type /setup aux",
 			auxTaskText(task), resolvedProvider)}
 	}
 	return auxResolvedAuxRoute{Client: client, FinalModel: finalModel, ResolvedProvider: resolvedProvider, EffectiveProvider: effectiveProvider}, nil
@@ -588,7 +588,8 @@ func auxLadderProviderFallback(ctx context.Context, yield auxLadderYield, firstE
 		auxMarkProviderUnhealthy(ctx, auxOrDefault(pool, resolvedProvider), auxUnhealthyTTLSeconds, route.BaseInfo, auxUnhealthyPaymentReason, slog.LevelWarn)
 	}
 	if reason == "request timed out" {
-		stalled := strings.Contains(firstErr.Error(), "Auxiliary chat stream")
+		var watchdog *AuxTimeoutError
+		stalled := errors.As(firstErr, &watchdog) && watchdog.Watchdog
 		detail := fmt.Sprintf("timed out after %ss", auxOrDefault(route.TimeoutText, pyrepr.Str(route.Timeout)))
 		knob := "timeout"
 		if stalled {

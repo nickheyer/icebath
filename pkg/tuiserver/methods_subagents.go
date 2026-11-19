@@ -11,12 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Record keys a subagent snapshot carries to the client
-var subagentSnapshotFields = []string{"subagent_id", "parent_id", "depth", "goal", "delegation_id", "model",
-	"started_at", "status", "tool_count", "last_tool", "accepting_steer"}
 
 // Bytes of a live transcript a tail read returns at most
 const subagentTailBytes = 16384
@@ -30,27 +27,45 @@ func init() {
 	subagentsRegistry.install()
 }
 
+// Typed value of a generic row a sender projects, a misfit reported against the method
+func typedRow[T any](method string, raw any) T {
+	var row T
+	if err := tuigateway.Strict(raw, &row); err != nil {
+		tuigateway.ReportMisfit("result of", method, err)
+	}
+	return row
+}
+
 // Live children of a session this transport steers plus those its conversation lineage owns, and its failed delegations
 func subagentList(ctx context.Context, rid any, params map[string]any) map[string]any {
-	sessionID := strParam(params, "session_id", "")
-	transport, owner := currentSessionSteerAuthority(ctx, sessionID)
+	request, err := tuigateway.SubagentList.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	transport, owner := currentSessionSteerAuthority(ctx, request.SessionID)
 	if transport == nil || owner == nil {
 		return rpcErr(rid, 4001, "session not found or not owned by this transport", nil)
 	}
-	live := agent.VisibleSubagentRecords(sessionID, transport, owner, sessionAgent(owner))
-	rows := make([]any, 0, len(live))
-	for _, record := range live {
-		row := make(map[string]any, len(subagentSnapshotFields))
-		for _, key := range subagentSnapshotFields {
-			row[key] = record[key]
-		}
-		rows = append(rows, row)
+	result := tuigateway.SubagentListResult{Subagents: []tuigateway.SubagentSnapshot{}, Delegations: failedDelegations(ctx, request.SessionID, owner)}
+	for _, record := range agent.VisibleSubagentRecords(request.SessionID, transport, owner, sessionAgent(owner)) {
+		result.Subagents = append(result.Subagents, subagentSnapshotOf(record))
 	}
-	return ok(rid, map[string]any{"subagents": rows, "delegations": failedDelegations(ctx, sessionID, owner)})
+	return ok(rid, tuigateway.Plain(result))
+}
+
+// Snapshot row of one live child record, its private keys left out
+func subagentSnapshotOf(record map[string]any) tuigateway.SubagentSnapshot {
+	row := map[string]any{}
+	for _, key := range tuigateway.WireNames[tuigateway.SubagentSnapshot]() {
+		if value, present := record[key]; present {
+			row[key] = value
+		}
+	}
+	return typedRow[tuigateway.SubagentSnapshot]("subagent.list", row)
 }
 
 // Recently failed async delegations of the session read under its profile home, none when the store fails
-func failedDelegations(ctx context.Context, sessionID string, owner *tuihost.Session) []any {
+func failedDelegations(ctx context.Context, sessionID string, owner *tuihost.Session) []tuigateway.FailedDelegation {
 	agentSessionID := ""
 	if a := sessionAgent(owner); a != nil {
 		agentSessionID = a.SessionID()
@@ -68,13 +83,13 @@ func failedDelegations(ctx context.Context, sessionID string, owner *tuihost.Ses
 		env := &tools.Env{Home: home.Dir(scoped)}
 		return tools.FailedDelegationsForSession(env, sessionID, agentSessionID, 20, nil)
 	}()
+	out := []tuigateway.FailedDelegation{}
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("subagent.list: failed-delegation read failed for %s", sessionID), "error", err)
-		return []any{}
+		return out
 	}
-	out := make([]any, len(rows))
-	for i, row := range rows {
-		out[i] = row
+	for _, row := range rows {
+		out = append(out, typedRow[tuigateway.FailedDelegation]("subagent.list", row))
 	}
 	return out
 }
@@ -91,11 +106,14 @@ func ownedSubagentRecord(sessionID string, transport, owner any, subagentID stri
 
 // Hard interrupts one owned live child by the object the authority resolved
 func subagentInterrupt(ctx context.Context, rid any, params map[string]any) map[string]any {
-	subagentID := strParam(params, "subagent_id", "")
+	request, err := tuigateway.SubagentInterrupt.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	subagentID, sessionID := request.SubagentID, request.SessionID
 	if subagentID == "" {
 		return rpcErr(rid, 4000, "subagent_id required", nil)
 	}
-	sessionID := strParam(params, "session_id", "")
 	transport, owner := currentSessionSteerAuthority(ctx, sessionID)
 	if transport == nil || owner == nil {
 		return rpcErr(rid, 4001, "session not found or not owned by this transport", nil)
@@ -117,13 +135,16 @@ func subagentInterrupt(ctx context.Context, rid any, params map[string]any) map[
 			found = agent.RequestHardInterruptOf(child, &reason, nil)
 		}()
 	}
-	return ok(rid, map[string]any{"found": found, "subagent_id": subagentID})
+	return ok(rid, tuigateway.Plain(tuigateway.SubagentInterruptResult{Found: found, SubagentID: subagentID}))
 }
 
-// Last bytes of one owned live child's transcript, unavailable while it has none or the file races away
+// Last bytes of an owned child's transcript, a finished child's read from its stored session row
 func subagentTail(ctx context.Context, rid any, params map[string]any) map[string]any {
-	sessionID := strParam(params, "session_id", "")
-	subagentID := strParam(params, "subagent_id", "")
+	request, err := tuigateway.SubagentTail.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	sessionID, subagentID := request.SessionID, request.SubagentID
 	if subagentID == "" {
 		return rpcErr(rid, 4000, "subagent_id required", nil)
 	}
@@ -131,20 +152,36 @@ func subagentTail(ctx context.Context, rid any, params map[string]any) map[strin
 	if transport == nil || owner == nil {
 		return rpcErr(rid, 4001, "session not found or not owned by this transport", nil)
 	}
-	result := map[string]any{"subagent_id": subagentID, "available": false, "text": "", "truncated": false}
+	result := tuigateway.SubagentTailResult{SubagentID: subagentID}
 	path := ""
 	if record := ownedSubagentRecord(sessionID, transport, owner, subagentID); record != nil {
 		path = agent.LiveTranscriptPathOf(record["agent"])
 	}
 	if path == "" {
-		return ok(rid, result)
+		if path, err = finishedTranscript(ctx, owner, subagentID); err != nil {
+			return rpcErr(rid, 5000, "subagent.tail: "+err.Error(), nil)
+		}
 	}
-	text, size, err := readTranscriptTail(path)
-	if err != nil {
-		return ok(rid, result)
+	if path != "" {
+		if text, size, err := readTranscriptTail(path); err == nil {
+			result.Available, result.Text, result.Truncated = true, text, size > subagentTailBytes
+		}
 	}
-	result["available"], result["text"], result["truncated"] = true, text, size > subagentTailBytes
-	return ok(rid, result)
+	return ok(rid, tuigateway.Plain(result))
+}
+
+// Log of a finished child the session's conversation spawned, looked up in the session store
+func finishedTranscript(ctx context.Context, owner *tuihost.Session, subagentID string) (string, error) {
+	ownerSessionID := strOr(owner.Get("session_key"))
+	if a := sessionAgent(owner); a != nil && a.SessionID() != "" {
+		ownerSessionID = a.SessionID()
+	}
+	db, release := sessionDB(ctx, owner)
+	defer release()
+	if db == nil {
+		return "", fmt.Errorf("the session store of %s did not open", ownerSessionID)
+	}
+	return tools.FinishedSubagentTranscript(ctx, db, ownerSessionID, subagentID)
 }
 
 // Last tail bytes of a file decoded as UTF-8 with invalid sequences dropped, and the file size

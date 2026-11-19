@@ -107,6 +107,13 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	if err != nil {
 		return nil, err
 	}
+	if payload.GetOr("refresh", nil) == true {
+		provider.ClearAllProviderModelsCache(ctx)
+	}
+	_, named := payload.Get("model")
+	if _, picked := payload.Get("provider"); !named && !picked {
+		return pyjson.ObjectOf("status", "refreshed", "model", current.Model, "provider", current.Provider), nil
+	}
 	reset, err := isModelReset(payload)
 	if err != nil {
 		return nil, err
@@ -132,8 +139,11 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	if value, has := payload.Get("provider"); has {
 		explicit = pyrepr.Str(value)
 	}
-	raw, _ := payload.Get("model")
-	result, err := provider.SwitchModel(ctx, provider.SwitchModelOptions{RawInput: pyrepr.Str(raw), CurrentProvider: current.Provider,
+	rawModel := ""
+	if raw, has := payload.Get("model"); has {
+		rawModel = pyrepr.Str(raw)
+	}
+	result, err := provider.SwitchModel(ctx, provider.SwitchModelOptions{RawInput: rawModel, CurrentProvider: current.Provider,
 		CurrentBaseURL: current.BaseURL, CurrentAPIKey: current.APIKey, ExplicitProvider: explicit, UserProviders: userProviders, CustomProviders: customProviders})
 	if err != nil {
 		return nil, err
@@ -145,12 +155,25 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	if !result.Success {
 		return nil, runtimeRefusal("model_resolution_failed")
 	}
-	if !reset {
+	if !reset && ctx.Value(onceRestoreKey{}) == nil {
 		snapshot, _ := prepared.Get("snapshot")
 		refusal, err := selectionGuardRefusal(ctx, a, live, payload, snapshot, current, result)
 		if err != nil || refusal != nil {
 			return refusal, err
 		}
+	}
+	if payload.GetOr("persist", nil) == true {
+		if err := provider.PersistModelSelection(ctx, result, filepath.Join(authorityHome(a), "config.yaml")); err != nil {
+			return nil, err
+		}
+	}
+	extra := []any{}
+	if payload.GetOr("once", nil) == true && current.Model != "" {
+		restore := pyjson.ObjectOf("model", current.Model)
+		if current.Provider != "" {
+			restore.Set("provider", current.Provider)
+		}
+		extra = append(extra, "restore", restore)
 	}
 	frozen, err := old.config(ctx, nil, true)
 	if err != nil {
@@ -276,7 +299,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	if err != nil {
 		return nil, err
 	}
-	return preparedWith(prepared, "policy", bound.asDict()), nil
+	return preparedWith(prepared, append([]any{"policy", bound.asDict()}, extra...)...), nil
 }
 
 // Copy of the secrets without one path
@@ -305,9 +328,9 @@ func secretPathKey(path secretPath) string {
 
 // Whether a model payload is the reset token, refusing it beside any other selection field
 func isModelReset(payload *pyjson.Object) (bool, error) {
-	raw, err := pyItem(payload, "model")
-	if err != nil {
-		return false, err
+	raw, named := payload.Get("model")
+	if !named {
+		return false, nil
 	}
 	if strings.ToLower(strings.TrimSpace(pyrepr.Str(raw))) != provider.ModelSwitchResetToken {
 		return false, nil

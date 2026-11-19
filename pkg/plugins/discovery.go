@@ -139,7 +139,7 @@ func CollectDirectoryManifests(h string) []*Manifest {
 	var out []*Manifest
 	out = append(out, bundledManifests()...)
 	if dir := bundledOverrideDir(); dir != "" {
-		out = append(out, ScanDirectory(dir, "bundled", bundledSkipNames)...)
+		out = append(out, ScanDirectory(dir, "bundled", skipAbsentTiers(bundledSkipNames))...)
 	}
 	out = append(out, ScanDirectory(home.PluginsDir(h), "user", nil)...)
 	if envEnabled(EnvEnableProjectPlugins) {

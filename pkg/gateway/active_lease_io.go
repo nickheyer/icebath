@@ -11,10 +11,13 @@ import (
 type LeaseReleaser interface{ Release() error }
 
 var (
-	leaseIOMu      sync.Mutex
-	leaseIOCond    = sync.NewCond(&leaseIOMu)
-	leaseIOQueue   []LeaseReleaser
-	leaseIOStarted bool
+	leaseIOMu        sync.Mutex
+	leaseIOCond      = sync.NewCond(&leaseIOMu)
+	leaseIOLanded    = sync.NewCond(&leaseIOMu)
+	leaseIOQueue     []LeaseReleaser
+	leaseIOStarted   bool
+	leaseIOSubmitted uint64
+	leaseIOCompleted uint64
 )
 
 // Retires the lease from this process registry view now and queues its durable release on one worker
@@ -26,8 +29,19 @@ func ReleaseSoon(lease LeaseReleaser) {
 		go leaseIOWorker()
 	}
 	leaseIOQueue = append(leaseIOQueue, lease)
+	leaseIOSubmitted++
 	leaseIOMu.Unlock()
 	leaseIOCond.Signal()
+}
+
+// Blocks until every release queued before the call has run, so no registry write outlives the caller
+func AwaitLeaseReleases() {
+	leaseIOMu.Lock()
+	defer leaseIOMu.Unlock()
+	target := leaseIOSubmitted
+	for leaseIOCompleted < target {
+		leaseIOLanded.Wait()
+	}
 }
 
 // Runs queued releases one at a time in submission order
@@ -41,6 +55,10 @@ func leaseIOWorker() {
 		leaseIOQueue = leaseIOQueue[1:]
 		leaseIOMu.Unlock()
 		releaseQueuedLease(lease)
+		leaseIOMu.Lock()
+		leaseIOCompleted++
+		leaseIOMu.Unlock()
+		leaseIOLanded.Broadcast()
 	}
 }
 

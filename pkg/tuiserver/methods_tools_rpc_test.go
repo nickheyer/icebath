@@ -119,8 +119,7 @@ func TestRollbackRestoreRefusesANonBooleanAllBeforeTouchingAnything(t *testing.T
 			}
 			resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "rollback.restore", "params": params})
 			errObj, _ := resp["error"].(map[string]any)
-			want := map[string]any{"reason": "invalid_params", "field": "all", "detail": "must be a boolean"}
-			if !reflect.DeepEqual(errObj["data"], want) {
+			if message, _ := errObj["message"].(string); errObj["code"] != 4000 || !strings.Contains(message, "all: wants true or false") {
 				t.Fatalf("value %v extra %v: resp = %v", value, extra, resp)
 			}
 			if !reflect.DeepEqual(session.Get("history"), history) {

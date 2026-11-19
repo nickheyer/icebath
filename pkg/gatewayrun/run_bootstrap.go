@@ -260,10 +260,26 @@ func startGatewayReserveProfiles(ctx context.Context, profileHomes []profiles.Se
 		}
 		return false, nil
 	case pypath.IsOSError(err):
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) && pathErr.Op == "mkdir" {
+			return false, homeDirStoreError(ctx, homes, pathErr, err)
+		}
 		pkgLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", pyrepr.ExceptionMessage(err)))
 		return false, nil
 	}
 	return false, err
+}
+
+// Store error of the served home whose folder could not be created, named as the terminal UI's gateway names it
+func homeDirStoreError(ctx context.Context, homes []string, pathErr *os.PathError, err error) error {
+	target := homes[0]
+	for _, h := range homes {
+		if h == pathErr.Path || strings.HasPrefix(h, pathErr.Path+string(filepath.Separator)) {
+			target = h
+			break
+		}
+	}
+	return state.NewStoreUnavailableError(ctx, filepath.Join(target, "state.db"), &state.StateDBDirError{Dir: pathErr.Path, Err: err})
 }
 
 // Starts the host toolchain probe in the background unless agent.environment_probe is off

@@ -3,11 +3,16 @@ package plugins
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -62,6 +67,9 @@ func admitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool
 	if err != nil {
 		return &AdmissionRefused{Msg: err.Error()}
 	}
+	if !pm.ManagerLinked() {
+		return admitWithoutPackageManager(ctx, resolvedHome, enabled, disabled, opts)
+	}
 	extra := []any{}
 	for _, d := range opts.ExtraDirs {
 		r, err := pypath.Realpath(d, pypath.Lax)
@@ -86,6 +94,72 @@ func admitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool
 		return &DependencyConflict{Cause: conflict.InstallError.Cause, Plugin: opts.Plugin}
 	}
 	return &AdmissionRefused{Msg: err.Error()}
+}
+
+// Writes a plugin set change into the home config of a build without the package manager, refusing a new plugin that needs Python packages
+func admitWithoutPackageManager(ctx context.Context, h string, enabled, disabled map[string]bool, opts admitOptions) error {
+	before := getEnabledSet(h)
+	for _, name := range sortedKeys(enabled) {
+		if before[name] {
+			continue
+		}
+		entry, err := FindPluginEntry(h, name)
+		if err != nil {
+			return &AdmissionRefused{Msg: err.Error()}
+		}
+		if entry == nil {
+			continue
+		}
+		if reqs := declaredRequirements(&Manifest{Path: entry.Dir}); len(reqs) > 0 {
+			return &AdmissionRefused{Msg: linktier.Missing(fmt.Sprintf("plugin '%s' needs the Python packages %s, and the tool package manager that installs them",
+				name, strings.Join(reqs, ", ")), linktier.Extras)}
+		}
+	}
+	if opts.ExpectedConfig != "" {
+		current, err := pluginSelectionVersion(h)
+		if err != nil {
+			return &AdmissionRefused{Msg: err.Error()}
+		}
+		if current != opts.ExpectedConfig {
+			return &AdmissionRefused{Msg: "Plugin configuration changed since this selection was read; retry."}
+		}
+	}
+	changes := config.Changes{Set: []config.KeyValue{
+		{Key: "plugins.enabled", Value: sortedCopy(sortedKeys(enabled))},
+		{Key: "plugins.disabled", Value: sortedCopy(sortedKeys(disabled))},
+	}}
+	record, present, err := settledUpdateRecord(h, disabled, opts.Settled)
+	if err != nil {
+		return &AdmissionRefused{Msg: err.Error()}
+	}
+	switch {
+	case len(record) > 0:
+		changes.Set = append(changes.Set, config.KeyValue{Key: "plugins." + pm.DisabledByUpdateRecord, Value: record})
+	case present:
+		changes.Unset = append(changes.Unset, "plugins."+pm.DisabledByUpdateRecord)
+	}
+	if err := (config.FileBackend{}).WritePath(ctx, filepath.Join(h, "config.yaml"), changes); err != nil {
+		return &AdmissionRefused{Msg: err.Error()}
+	}
+	return nil
+}
+
+// Record of plugins an update disabled without the ones just settled or no longer disabled, and whether the config holds one
+func settledUpdateRecord(h string, disabled map[string]bool, settled []string) (map[string]any, bool, error) {
+	user, err := config.ReadUser(h)
+	if err != nil {
+		return nil, false, err
+	}
+	plugins, _ := user["plugins"].(map[string]any)
+	raw, present := plugins[pm.DisabledByUpdateRecord]
+	record, _ := raw.(map[string]any)
+	kept := map[string]any{}
+	for name, why := range record {
+		if disabled[name] && !slices.Contains(settled, name) {
+			kept[name] = why
+		}
+	}
+	return kept, present, nil
 }
 
 // Member dirs of the candidate selection, every recorded home selection kept without an active plugins dir

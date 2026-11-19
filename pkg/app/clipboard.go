@@ -131,6 +131,26 @@ func SaveClipboardImage(dest string) bool { return saveClipboardImage(dest) }
 // Reports whether the clipboard currently holds an image
 func HasClipboardImage() bool { return hasClipboardImage() }
 
+// What keeps this host from reading a clipboard image, the missing program to install or no desktop reachable at all
+func ClipboardImageBlocker() (missing string, noDesktop bool) {
+	if clipboardPlatform == "darwin" || clipboardPlatform == "windows" || clipIsWSL() {
+		return "", false
+	}
+	switch {
+	case os.Getenv("WAYLAND_DISPLAY") != "":
+		if _, err := exec.LookPath("wl-paste"); err != nil {
+			return "wl-paste (package wl-clipboard)", false
+		}
+	case os.Getenv("DISPLAY") != "":
+		if _, err := exec.LookPath("xclip"); err != nil {
+			return "xclip", false
+		}
+	default:
+		return "", true
+	}
+	return "", false
+}
+
 func saveClipboardImage(dest string) bool {
 	_ = os.MkdirAll(filepath.Dir(dest), 0o777)
 	switch clipboardPlatform {

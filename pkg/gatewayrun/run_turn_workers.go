@@ -70,8 +70,18 @@ func (r *GatewayRunner) runAgentWriteToolLog(ctx context.Context, logQueue *turn
 	}
 }
 
-// Starts the streaming TTS consumer of a voice input turn on an auto TTS chat, leaving the holder empty when inactive
+// Starts the streaming TTS consumer of a voice input turn on an auto TTS chat or a local voice turn, leaving the holder empty when inactive
 func (r *GatewayRunner) runAgentStartStreamingTTS(ctx context.Context, tc *TurnContext, messageType gateway.MessageType, statusThreadMetadata map[string]any) {
+	if tc.source != nil && tc.source.Platform == gateway.PlatformLocal {
+		if gateway.OpenLocalVoiceTurn == nil {
+			return
+		}
+		if consumer := gateway.OpenLocalVoiceTurn(ctx, tc.source); consumer != nil && consumer.Active() {
+			tc.setStreamingTTSConsumer(consumer)
+			consumer.Start()
+		}
+		return
+	}
 	adapter, _ := r.deliveryAdapterFor(ctx, tc.source)
 	isVoice := strings.ToLower(string(messageType)) == "voice"
 	if adapter == nil || !isVoice || !gateway.ShouldAutoTTSForChat(adapter, tc.source.ChatID) {

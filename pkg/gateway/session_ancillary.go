@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,11 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-// Fields of a subagent record the subagent list projects
-var ancillarySubagentFields = []string{"subagent_id", "parent_id", "depth", "goal", "delegation_id", "model",
-	"started_at", "status", "tool_count", "last_tool", "accepting_steer"}
 
 const (
 	// Bytes of a child's live transcript the tail read returns
@@ -103,14 +101,23 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 	}
 	if !steer {
 		found := !nilAgent(child) && hardInterruptWith(child, "Interrupted via TUI ("+sub+")")
-		return pyjson.ObjectOf("found", found, "subagent_id", sub), nil
+		return tuigateway.Plain(tuigateway.SubagentInterruptResult{Found: found, SubagentID: sub}), nil
 	}
 	text := params.GetOr("text", "").(string)
-	status := "rejected"
+	status := tuigateway.SteerStatus("rejected")
 	if AncillaryAgent.SteerSubagent(sub, child, text) {
 		status = "queued"
 	}
-	return pyjson.ObjectOf("status", status, "subagent_id", sub, "text", text), nil
+	return tuigateway.Plain(tuigateway.SubagentSteerResult{Status: status, SubagentID: sub, Text: text}), nil
+}
+
+// Typed value of a generic row a verb projects, a misfit reported against the method
+func canonicalRow[T any](method string, raw any) T {
+	var row T
+	if err := tuigateway.Strict(raw, &row); err != nil {
+		tuigateway.ReportMisfit("result of", method, err)
+	}
+	return row
 }
 
 // Nil interface or nil pointer standing for a Python None agent
@@ -314,7 +321,7 @@ func skillRows(value any) []map[string]any {
 	return nil
 }
 
-// One of the session control, process, subagent and tail projections, read off the owner loop
+// Control, process, subagent or tail projection read off the owner loop, a tail restoring a stored session
 func ancillaryRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
 	fields := []string{"session_id", "profile"}
 	if kind == "tail" {
@@ -325,18 +332,25 @@ func ancillaryRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 		return nil, runtimeRefusal("invalid_params")
 	}
 	a := c.authority
+	if kind == "tail" {
+		if err := authorizeBusy(ctx, a, c.actor, ref, params, "session:read"); err != nil {
+			return nil, err
+		}
+	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
 		return nil, runtimeRefusal("not_found")
 	}
-	if err := authorizeBusy(ctx, a, c.actor, ref, params, "session:read"); err != nil {
-		return nil, err
+	if kind != "tail" {
+		if err := authorizeBusy(ctx, a, c.actor, ref, params, "session:read"); err != nil {
+			return nil, err
+		}
 	}
-	return forwardOffThread(ctx, func() (*pyjson.Object, error) { return readProjection(ctx, a, live, ref, params, kind) })
+	return forwardOffThread(ctx, func() (any, error) { return readProjection(ctx, a, live, ref, params, kind) })
 }
 
 // Projection under the session's event lock, a session popped meanwhile reading as not found
-func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, params *pyjson.Object, kind string) (*pyjson.Object, error) {
+func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
 	projected, err := project(ctx, a, ref, params, kind)
@@ -350,7 +364,7 @@ func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession,
 }
 
 // Control, subagent, tail or process projection of a session
-func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *pyjson.Object, kind string) (*pyjson.Object, error) {
+func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
 	if kind == "control" {
 		snapshot, err := controlSnapshot(ctx, a, ref)
 		if err != nil {
@@ -367,23 +381,46 @@ func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *p
 	}
 	switch kind {
 	case "subagents":
-		rows := make([]any, 0, len(records))
-		for _, record := range records {
-			row := pyjson.NewObject()
-			for _, key := range ancillarySubagentFields {
-				row.Set(key, record[key])
-			}
-			rows = append(rows, row)
+		failed, err := failedDelegations(ctx, a, ref)
+		if err != nil {
+			return nil, err
 		}
-		return pyjson.ObjectOf("subagents", rows, "delegations", []any{}), nil
+		result := tuigateway.SubagentListResult{Subagents: []tuigateway.SubagentSnapshot{}, Delegations: failed}
+		for _, record := range records {
+			row := map[string]any{}
+			for _, key := range tuigateway.WireNames[tuigateway.SubagentSnapshot]() {
+				if value, present := record[key]; present {
+					row[key] = value
+				}
+			}
+			result.Subagents = append(result.Subagents, canonicalRow[tuigateway.SubagentSnapshot]("subagent.list", row))
+		}
+		return tuigateway.Plain(result), nil
 	case "tail":
-		return subagentTail(records, params.GetOr("subagent_id", "").(string)), nil
+		subagentID := params.GetOr("subagent_id", "").(string)
+		path := ""
+		for _, record := range records {
+			if pyjson.Equal(record["subagent_id"], subagentID) {
+				path = AncillaryAgent.TranscriptPath(record["agent"])
+				break
+			}
+		}
+		if path == "" {
+			target, err := physicalTarget(ctx, a, ref)
+			if err != nil {
+				return nil, err
+			}
+			if path, err = tools.FinishedSubagentTranscript(ctx, a.DB, target, subagentID); err != nil {
+				return nil, err
+			}
+		}
+		return tuigateway.Plain(subagentTail(path, subagentID)), nil
 	}
 	snapshot, err := processSnapshot(ctx, a, ref, agent, records)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("processes", snapshot), nil
+	return tuigateway.Plain(tuigateway.ProcessListResult{Processes: snapshot}), nil
 }
 
 // Session's own processes a selector keeps, read under the event lock against the current route
@@ -436,8 +473,9 @@ func killProcess(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	if len(ids) == 0 {
 		return nil, runtimeRefusal("process_not_found")
 	}
-	return forwardOffThread(ctx, func() (map[string]any, error) {
-		return tools.DefaultProcessRegistry().KillProcess(ctx, scopedToolEnv(ctx), ids[0], "process.kill", true), nil
+	return forwardOffThread(ctx, func() (any, error) {
+		killed := tools.DefaultProcessRegistry().KillProcess(ctx, scopedToolEnv(ctx), ids[0], "process.kill", true)
+		return tuigateway.Plain(canonicalRow[tuigateway.ProcessKillResult]("process.kill", killed)), nil
 	})
 }
 
@@ -657,7 +695,7 @@ func stopProcesses(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("killed", killed, "delegations", delegations), nil
+	return tuigateway.Plain(tuigateway.ProcessStopResult{Killed: int64(killed), Delegations: int64(delegations)}), nil
 }
 
 // Interrupts the background delegations this session dispatched by its route or durable id
@@ -671,6 +709,23 @@ func interruptDelegations(ctx context.Context, a *SessionAuthority, ref SessionR
 		return 0, err
 	}
 	return tools.InterruptAsyncDelegationsForSession(live.Route, "", target, "/stop"), nil
+}
+
+// Recently failed async delegations the session or its conversation dispatched, read from the profile's ledger
+func failedDelegations(ctx context.Context, a *SessionAuthority, ref SessionRef) ([]tuigateway.FailedDelegation, error) {
+	target, err := physicalTarget(ctx, a, ref)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tools.FailedDelegationsForSession(scopedToolEnv(ctx), ref.SessionID, target, 20, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := []tuigateway.FailedDelegation{}
+	for _, row := range rows {
+		out = append(out, canonicalRow[tuigateway.FailedDelegation]("subagent.list", row))
+	}
+	return out, nil
 }
 
 // Refuses a route that no longer serves this conversation
@@ -741,18 +796,9 @@ func controlSnapshot(ctx context.Context, a *SessionAuthority, ref SessionRef) (
 	return AncillaryAgent.ControlSnapshot(ctx, a.DB.GetMeta, target)
 }
 
-// Last bytes of a child's live transcript, unavailable when it has none or it cannot be read
-func subagentTail(records []map[string]any, subagentID string) *pyjson.Object {
-	result := func() *pyjson.Object {
-		return pyjson.ObjectOf("subagent_id", subagentID, "available", false, "text", "", "truncated", false)
-	}
-	var path string
-	for _, record := range records {
-		if pyjson.Equal(record["subagent_id"], subagentID) {
-			path = AncillaryAgent.TranscriptPath(record["agent"])
-			break
-		}
-	}
+// Last bytes of a child's transcript file, available false when the child recorded none or the file is gone
+func subagentTail(path, subagentID string) tuigateway.SubagentTailResult {
+	result := func() tuigateway.SubagentTailResult { return tuigateway.SubagentTailResult{SubagentID: subagentID} }
 	if path == "" {
 		return result()
 	}
@@ -774,9 +820,7 @@ func subagentTail(records []map[string]any, subagentID string) *pyjson.Object {
 		return result()
 	}
 	out := result()
-	out.Set("available", true)
-	out.Set("text", strings.ToValidUTF8(string(data[:n]), ""))
-	out.Set("truncated", size > ancillaryTailBytes)
+	out.Available, out.Text, out.Truncated = true, strings.ToValidUTF8(string(data[:n]), ""), size > ancillaryTailBytes
 	return out
 }
 
@@ -819,32 +863,36 @@ func ownedViews(views []tools.ProcessView, keys, owners map[string]bool) []tools
 }
 
 // Dock rows of the processes this session owns with their elapsed, exit and tail fields
-func processSnapshot(ctx context.Context, a *SessionAuthority, ref SessionRef, agent any, records []map[string]any) ([]any, error) {
+func processSnapshot(ctx context.Context, a *SessionAuthority, ref SessionRef, agent any, records []map[string]any) ([]tuigateway.ProcessEntry, error) {
 	keys, owners, err := processOwnership(ctx, a, ref, agent, records)
 	if err != nil {
 		return nil, err
 	}
-	rows := []any{}
+	rows := []tuigateway.ProcessEntry{}
+	nowEpoch := float64(time.Now().UnixNano()) / 1e9
 	for _, view := range ownedViews(tools.DefaultProcessRegistry().ProcessViews(ancillaryProcessTailChars), keys, owners) {
 		command := []rune(view.Command)
 		if len(command) > 200 {
 			command = command[:200]
 		}
-		status := "running"
-		var completion any
-		if view.Exited {
-			status, completion = "exited", view.CompletionReason
+		uptime, preview := int64(nowEpoch-view.StartedAt), []rune(view.OutputTail)
+		if len(preview) > 200 {
+			preview = preview[len(preview)-200:]
 		}
-		var exitCode, exitedAt any
+		previewText := string(preview)
+		row := tuigateway.ProcessEntry{SessionID: view.ID, Command: string(command), Status: "running", StartedEpoch: &view.StartedAt,
+			UptimeSeconds: &uptime, OutputPreview: &previewText, OutputTail: &view.OutputTail}
+		if view.Exited {
+			row.Status, row.CompletionReason = "exited", &view.CompletionReason
+		}
 		if view.ExitCode != nil {
-			exitCode = *view.ExitCode
+			exitCode := int64(*view.ExitCode)
+			row.ExitCode = &exitCode
 		}
 		if view.ExitedAt != 0 {
-			exitedAt = view.ExitedAt
+			row.ExitedAt = &view.ExitedAt
 		}
-		rows = append(rows, pyjson.ObjectOf("session_id", view.ID, "command", string(command), "status", status,
-			"exit_code", exitCode, "started_epoch", view.StartedAt, "exited_at", exitedAt,
-			"completion_reason", completion, "output_tail", view.OutputTail))
+		rows = append(rows, row)
 	}
 	return rows, nil
 }

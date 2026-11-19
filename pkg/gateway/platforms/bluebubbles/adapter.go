@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/list"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -447,6 +448,40 @@ func (a *BlueBubblesAdapter) postMessage(ctx context.Context, path string, paylo
 		return gateway.SendResult{}, ctx.Err()
 	}
 	return gateway.SendResult{Success: false, Error: errText(err)}, nil
+}
+
+// iMessage tapbacks by emoji and by name
+var tapbacks = map[string]string{"❤": "love", "👍": "like", "👎": "dislike", "😂": "laugh", "‼": "emphasize", "❗": "emphasize", "❓": "question",
+	"love": "love", "like": "like", "dislike": "dislike", "laugh": "laugh", "emphasize": "emphasize", "question": "question"}
+
+// Adds a tapback to a message through the Private API helper
+func (a *BlueBubblesAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	tapback, ok := tapbacks[strings.ToLower(strings.ReplaceAll(strings.TrimSpace(emoji), "\ufe0f", ""))]
+	if !ok {
+		return fmt.Errorf("iMessage tapbacks are ❤️ 👍 👎 😂 ‼️ ❓ (love, like, dislike, laugh, emphasize, question), %s is none of them", emoji)
+	}
+	a.mu.Lock()
+	ready := a.privateAPIEnabled && a.helperConnected && a.client != nil
+	a.mu.Unlock()
+	if !ready {
+		return errors.New("tapbacks go through the BlueBubbles Private API helper, turn on the Private API in the BlueBubbles server settings")
+	}
+	guid, err := a.resolveChatGUID(ctx, chatID)
+	if err != nil {
+		return err
+	}
+	if guid == "" {
+		return fmt.Errorf("BlueBubbles knows no chat %s", chatID)
+	}
+	body, err := json.Marshal(map[string]any{"chatGuid": guid, "selectedMessageGuid": messageID, "reaction": tapback, "partIndex": 0})
+	if err != nil {
+		return err
+	}
+	resp, err := doRequest(ctx, a.httpClient(), http.MethodPost, a.apiURL("/api/v1/message/react"), body, "application/json", 10*time.Second)
+	if err != nil {
+		return err
+	}
+	return raiseForStatus(resp, "/api/v1/message/react")
 }
 
 // Private API chat action for typing or read, true only when the call was made

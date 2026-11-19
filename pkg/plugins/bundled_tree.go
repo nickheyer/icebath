@@ -131,7 +131,7 @@ func compiledBundledManifest(key string) (map[string]any, bool) {
 		}
 		return false
 	}
-	if !walk(".", "", 0, listingBundledSkip) {
+	if !walk(".", "", 0, skipAbsentTiers(listingBundledSkip)) {
 		return nil, false
 	}
 	return found, true

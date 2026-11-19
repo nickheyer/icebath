@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -77,9 +78,21 @@ var storageFailures = map[string]storageFailureCopy{
 		"another icebath process took over this session",
 		"Wait for it to finish, then send your message again.",
 	},
+	"newer_schema": {
+		"storage_newer_schema",
+		"the session database was written by a newer icebath than this one",
+		"Run the newer icebath that wrote it, or install that release over this one, then start it again; " +
+			"this build leaves the file untouched.",
+	},
+	"store_dir": {
+		"storage_dir_unwritable",
+		"the folder that holds the session database cannot be created",
+		"Make the folder named above creatable (fix its permissions or remove the file that sits in its place), " +
+			"or point ICEBATH_HOME at a writable folder, then start icebath again.",
+	},
 	"unknown": {
 		"storage_unavailable",
-		"the session database could not be opened",
+		"the session database could not be opened, read or written",
 		storageDoctorAction,
 	},
 }
@@ -91,12 +104,49 @@ func DescribeStorageFailure(ctx context.Context, excOrStr any) StorageFailure {
 	if cause == "disk" && IsDiskFullError(excOrStr) {
 		key = "disk_full"
 	}
+	return describeStorageKey(ctx, cause, key)
+}
+
+// Description of a cause bucket a caller already classified, as a turn result carries it
+func DescribeStorageCause(ctx context.Context, cause string) StorageFailure {
+	return describeStorageKey(ctx, cause, cause)
+}
+
+// Gloss, code and profile pinned action of the copy key, the unknown copy for a key without one
+func describeStorageKey(ctx context.Context, cause, key string) StorageFailure {
 	c, ok := storageFailures[key]
 	if !ok {
 		c = storageFailures["unknown"]
 	}
 	action := strings.ReplaceAll(c.action, "{profile_arg}", home.ProfileCLISelector(home.Dir(ctx)))
 	return StorageFailure{Cause: cause, Code: c.code, Gloss: c.gloss, Action: action}
+}
+
+// Whether the error came from the session database itself, a SQLite failure or one of the store refusals
+func IsStoreFailure(err error) bool {
+	if _, ok := sqliteClassOf(err); ok {
+		return true
+	}
+	_, ok := persistenceCauseByType(err)
+	return ok
+}
+
+// Session store that would not open, its text naming the store, the cause and what the user does
+type StoreUnavailableError struct {
+	Path  string
+	Cause error
+	text  string
+}
+
+func (e *StoreUnavailableError) Error() string { return e.text }
+
+func (e *StoreUnavailableError) Unwrap() error { return e.Cause }
+
+// Open failure of the store at path described with the storage failure gloss, details and remedy
+func NewStoreUnavailableError(ctx context.Context, path string, cause error) *StoreUnavailableError {
+	failure := DescribeStorageFailure(ctx, cause)
+	return &StoreUnavailableError{Path: path, Cause: cause, text: fmt.Sprintf("Session storage %s is unavailable: %s (%s). %s",
+		path, failure.Gloss, StorageFailureDetails(cause, 200), failure.Action)}
 }
 
 // Whitespace flattened raw cause cut to limit code points with an ellipsis

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -478,15 +479,16 @@ func progressMoaAggregating(ctx context.Context, sid string, name, preview any, 
 
 // Emits a subagent lifecycle event and mirrors it into the child's watch window
 func progressSubagent(ctx context.Context, sid string, name, preview any, kw map[string]any, eventType string) {
-	payload, err := tuihost.SubagentPayload(eventType, name, preview, kw, sessionShowReasoning(ctx, sid))
+	payload, err := tuihost.SubagentEvent(eventType, name, preview, kw, sessionShowReasoning(ctx, sid))
 	if err != nil {
 		panic(err)
 	}
+	wire, _ := tuigateway.Plain(payload).(map[string]any)
 	if eventType != "subagent.text" {
-		emitEvent(ctx, eventType, sid, objectMap(payload))
+		emitEvent(ctx, eventType, sid, wire)
 	}
 	if parent := tuihost.SessionRecord(sid); parent != nil {
-		mirrorSubagentToChild(ctx, eventType, objectMap(payload), parent.Get("profile_home"))
+		mirrorSubagentToChild(ctx, eventType, wire, parent.Get("profile_home"))
 	}
 }
 

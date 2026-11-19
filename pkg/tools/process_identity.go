@@ -24,7 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Spawn tags, the machine wide spawn ledger, the Windows job object and the POSIX owner death supervisor
+// Spawn tags, the machine wide spawn ledger and the owner death supervisor, a shell on POSIX and kill on close jobs on Windows
 
 // SpawnEnvVar carries the spawn tag a spawner stamps on every long lived child
 const SpawnEnvVar = "ICEBATH_SPAWN"
@@ -771,9 +771,6 @@ func killProcessTreeWindows(pid int) {
 	}
 }
 
-// AttachSelfToKillOnCloseJob places this process in a job that dies whole when it dies, Windows only
-func AttachSelfToKillOnCloseJob() bool { return attachSelfToKillOnCloseJob() }
-
 //go:embed process_supervisor.sh
 var supervisorScriptFS embed.FS
 
@@ -1008,9 +1005,6 @@ func ReleaseProcessGroups(pgids []int) { ReleaseProcessGroupsFn(pgids) }
 
 // ReleaseProcessGroupOnceEmpty releases pgid once no member is left, polling the leader through poll
 func ReleaseProcessGroupOnceEmpty(pgid int, poll func(), timeout time.Duration) bool {
-	if isWindowsHost {
-		return false
-	}
 	deadline := time.Now().Add(timeout)
 	for {
 		if poll != nil {
@@ -1029,9 +1023,6 @@ func ReleaseProcessGroupOnceEmpty(pgid int, poll func(), timeout time.Duration) 
 
 // StopOwnedGroupSurvivors stops what is left of owned group pgid after its leader exited, then releases it
 func StopOwnedGroupSurvivors(pgid int, poll func(), grace time.Duration) bool {
-	if isWindowsHost {
-		return false
-	}
 	supervisorMu.Lock()
 	owned := supervisedPgids[pgid]
 	supervisorMu.Unlock()
@@ -1057,11 +1048,8 @@ func StopOwnedGroupSurvivors(pgid int, poll func(), grace time.Duration) bool {
 
 // SpawnOwned starts a long lived child that dies with this process and records it in the ledger
 func SpawnOwned(ctx context.Context, cmd *exec.Cmd, purpose string) error {
-	if isWindowsHost {
-		return cmd.Start()
-	}
 	startNewSession(cmd)
-	if err := cmd.Start(); err != nil {
+	if err := startCommand(cmd); err != nil {
 		return err
 	}
 	OwnProcessGroupsFn([]int{cmd.Process.Pid})
@@ -1071,9 +1059,6 @@ func SpawnOwned(ctx context.Context, cmd *exec.Cmd, purpose string) error {
 
 // Sends register or unregister lines for pgids to this process's supervisor, failures never fail a child
 func updateSupervisedPgids(verb string, pgids []int) {
-	if isWindowsHost {
-		return
-	}
 	wanted := map[int]bool{}
 	for _, pgid := range pgids {
 		wanted[pgid] = true

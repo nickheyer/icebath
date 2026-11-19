@@ -14,25 +14,26 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Stops this child at the named marker protocol step, a scheduling pause the test resumes
-func lkStopAt(step string) {
+// Parks this child at the named marker protocol step until the test touches the go file beside the marker
+func lkStopAt(step, marker string) {
 	hook := func(point string) {
 		if point == step {
 			pausePoint.Store(nil)
-			_ = syscall.Kill(os.Getpid(), syscall.SIGSTOP)
+			lkTouch(marker + ".paused")
+			pcWaitFile(marker + ".go")
 		}
 	}
 	pausePoint.Store(&hook)
 }
 
-// Child stand-ins that stop themselves, start new sessions or hand descriptors on
+// Child stand-ins that park themselves, start new sessions or hand descriptors on
 func lockChildPOSIX(ctx context.Context, mode string, args []string) (int, bool) {
 	switch mode {
 	case "lock_stale_reader":
-		lkStopAt("unlink")
+		lkStopAt("unlink", args[0])
 		ReadLiveUpdate(ctx, args[0], "")
 	case "lock_reclaim_paused_reader":
-		lkStopAt("reclaim")
+		lkStopAt("reclaim", args[0])
 		pcPrint(lkPyBool(ReadLiveUpdate(ctx, args[0], args[1]) != nil))
 	case "lock_handoff_owner":
 		base := args[0]

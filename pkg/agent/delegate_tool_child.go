@@ -208,6 +208,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	child.delegateParentRef = weak.Make(parent)
 	if parentSID != "" && child.sessionInitModelConfig != nil {
 		child.sessionInitModelConfig["_delegate_from"] = parentSID
+		child.sessionInitModelConfig[tools.SubagentIDConfigKey] = subagentID
 	}
 	child.delegateProfileHome = spec.ProfileHome
 	if childPool != nil {

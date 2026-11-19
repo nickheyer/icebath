@@ -901,7 +901,7 @@ func isStreamUnavailableError(err error) bool {
 	if strings.Contains(lower, "stream") && strings.Contains(lower, "not supported") {
 		return true
 	}
-	if strings.Contains(lower, "unexpected event order") {
+	if IsStreamEventOrderError(err) {
 		return true
 	}
 	return strings.Contains(lower, "invokemodelwithresponsestream") && (strings.Contains(lower, "accessdenied") || strings.Contains(lower, "not authorized"))
@@ -933,7 +933,7 @@ func (l *doLoop) maybeDisableStreaming(err error, apiErr *APIError) {
 	}
 	lower := strings.ToLower(err.Error())
 	unsupported := strings.Contains(lower, "stream") && strings.Contains(lower, "not supported")
-	if strings.Contains(lower, "unexpected event order") && !unsupported {
+	if IsStreamEventOrderError(err) && !unsupported {
 		if l.route.Mode != ModeAnthropicMessages || l.route.Provider == "bedrock" {
 			return
 		}

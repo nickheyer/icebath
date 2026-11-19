@@ -174,6 +174,9 @@ func pluginsToggle(ctx context.Context, rid any, params map[string]any) (map[str
 	if ident == "" {
 		return rpcErr(rid, 4019, "plugins.toggle requires a 'key' or 'name'", nil), nil
 	}
+	if _, isBool := params["enable"].(bool); !isBool {
+		return rpcErr(rid, 4019, "plugins.toggle requires 'enable' as true or false, got "+errchain.Kind(params["enable"]), nil), nil
+	}
 	if err := ensurePluginActivationListener(ctx); err != nil {
 		return nil, err
 	}
@@ -460,20 +463,15 @@ var pluginsActions = map[string]pluginsAction{
 	"update": pluginsUpdate, "remove": pluginsRemove, "settings": pluginsSettings,
 }
 
-// Dispatches the action param, list by default, through the table, an unknown action answering 4017
+// Dispatches the fitted action param, list by default, through the table, an action the table lacks answering 4017
 func runAction[A any](rid any, params map[string]any, table map[string]A, label string, invoke func(A) (map[string]any, error)) (map[string]any, error) {
-	action, present := params["action"]
-	if !present {
-		action = "list"
+	name, _ := params["action"].(string)
+	if name == "" {
+		name = "list"
 	}
-	switch action.(type) {
-	case []any, map[string]any:
-		return nil, fmt.Errorf("the %s action must be text, got %s", label, errchain.Kind(action))
-	}
-	name, isText := action.(string)
 	handler, known := table[name]
-	if !isText || !known {
-		return rpcErr(rid, 4017, fmt.Sprintf("unknown %s action: %s", label, errchain.Show(action)), nil), nil
+	if !known {
+		return rpcErr(rid, 4017, fmt.Sprintf("unknown %s action: %s", label, name), nil), nil
 	}
 	return invoke(handler)
 }

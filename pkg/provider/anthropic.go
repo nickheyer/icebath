@@ -927,7 +927,7 @@ func (t *anthDirectTransport) StreamUnavailable(err error) bool {
 	if strings.Contains(msg, "stream") && strings.Contains(msg, "not supported") {
 		return true
 	}
-	return strings.Contains(msg, "unexpected event order")
+	return IsStreamEventOrderError(err)
 }
 
 func (t *anthDirectTransport) GuardrailIntervened(map[string]any) bool { return false }

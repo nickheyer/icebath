@@ -86,7 +86,7 @@ func qqbotAPIJSON(ctx context.Context, client *http.Client, headers map[string]s
 		if !pyrepr.Truthy(detail) {
 			detail = pystr.Slice(resp.Text(), 0, 200)
 		}
-		return nil, runtimeError(fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(detail)))
+		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(detail)), BizCode: bizCodeOf(dict)}
 	}
 	if !isDict {
 		return map[string]any{}, nil

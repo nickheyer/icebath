@@ -78,6 +78,9 @@ type ManagerAbsentError struct{ Line string }
 
 func (e *ManagerAbsentError) Error() string { return e.Line }
 
+// Whether this build links the package manager, false where plugin changes publish with no dependency environment
+func ManagerLinked() bool { return syncVenvEntry != nil }
+
 // Refusal naming the build that carries the package manager
 func managerAbsent() error {
 	return &ManagerAbsentError{Line: linktier.Missing("the tool package manager", linktier.Extras)}

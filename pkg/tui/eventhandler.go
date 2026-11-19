@@ -1,12 +1,15 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 	"unsafe"
+
+	"github.com/nickheyer/icebath/pkg/linktier"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -30,6 +33,7 @@ type eventApp interface {
 	setVoiceEnabled(on bool)
 	setVoiceRecording(on bool)
 	setVoiceProcessing(on bool)
+	interruptTurn() tea.Cmd
 	recoverSidRef() *string
 	bellOnComplete() bool
 	bellOnPrompt() bool
@@ -42,6 +46,8 @@ type slashCatalog struct {
 	Categories []slashCategory
 	Pairs      [][2]string
 	SkillCount int
+	// Commands that run only in messaging chats with their descriptions
+	Chat map[string]string
 }
 
 // Named group of catalog pairs
@@ -149,14 +155,12 @@ func (h *eventHandler) update(m tea.Msg) (bool, tea.Cmd) {
 // Gateway request that prints its own failure and hands nil to then
 func (h *eventHandler) rpc(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd {
 	return gatewayCall(h.gw, method, params, func(v any, err error) tea.Cmd {
-		var result map[string]any
+		result, isObject := v.(map[string]any)
 		switch {
 		case err != nil:
 			h.app.sys("error: " + rpcErrorMessage(err))
-		case asRPCResult(v) == nil:
+		case !isObject:
 			h.app.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
-		default:
-			result = asRPCResult(v)
 		}
 		if then == nil {
 			return nil
@@ -241,40 +245,25 @@ func (h *eventHandler) flushAbandonedClarify() {
 	h.store.overlay.Clarify = nil
 }
 
-// Wire form of a subagent as spawn_tree.save stores it
-func subagentJSON(s subagentProgress) map[string]any {
-	out := map[string]any{"depth": float64(s.Depth), "goal": s.Goal, "id": s.ID, "index": float64(s.Index), "notes": s.Notes, "status": s.Status, "taskCount": float64(s.TaskCount), "thinking": s.Thinking, "toolCount": float64(s.ToolCount), "tools": s.Tools, "parentId": nil}
-	if s.ParentID != "" {
-		out["parentId"] = s.ParentID
-	}
-	optional := map[string]*float64{"apiCalls": s.APICalls, "costUsd": s.CostUSD, "durationSeconds": s.DurationSeconds, "inputTokens": s.InputTokens, "iteration": s.Iteration, "outputTokens": s.OutputTokens, "reasoningTokens": s.ReasoningTokens, "startedAt": s.StartedAt}
-	for k, v := range optional {
-		if v != nil {
-			out[k] = *v
-		}
-	}
-	for k, v := range map[string]string{"delegationId": s.DelegationID, "model": s.Model, "summary": s.Summary} {
-		if v != "" {
-			out[k] = v
-		}
-	}
-	for k, v := range map[string][]string{"filesRead": s.FilesRead, "filesWritten": s.FilesWritten, "toolsets": s.Toolsets} {
-		if v != nil {
-			out[k] = v
-		}
-	}
+// Saved form of a subagent as spawn_tree.save stores it
+func spawnTreeSubagentOf(s subagentProgress) tuigateway.SpawnTreeSubagent {
+	out := tuigateway.SpawnTreeSubagent{Depth: float64(s.Depth), Goal: s.Goal, ID: s.ID, Index: float64(s.Index), Notes: s.Notes, Status: tuigateway.SubagentStatus(s.Status),
+		TaskCount: float64(s.TaskCount), Thinking: s.Thinking, ToolCount: float64(s.ToolCount), Tools: s.Tools, ParentID: optionalText(s.ParentID),
+		APICalls: s.APICalls, CostUSD: s.CostUSD, DurationSeconds: s.DurationSeconds, InputTokens: s.InputTokens, Iteration: s.Iteration,
+		OutputTokens: s.OutputTokens, ReasoningTokens: s.ReasoningTokens, StartedAt: s.StartedAt, DelegationID: s.DelegationID, Model: s.Model,
+		Summary: s.Summary, FilesRead: s.FilesRead, FilesWritten: s.FilesWritten, Toolsets: s.Toolsets}
 	if s.OutputTail != nil {
-		tail := make([]map[string]any, len(s.OutputTail))
+		out.OutputTail = make([]tuigateway.SpawnTreeOutput, len(s.OutputTail))
 		for i, e := range s.OutputTail {
-			tail[i] = map[string]any{"isError": e.IsError, "preview": e.Preview, "tool": e.Tool}
+			out.OutputTail[i] = tuigateway.SpawnTreeOutput{IsError: e.IsError, Preview: e.Preview, Tool: e.Tool}
 		}
-		out["outputTail"] = tail
 	}
 	return out
 }
 
-// Saves a finished fan out to disk so replay survives a restart
-func (h *eventHandler) persistSpawnTree(subagents []subagentProgress, sessionID string) tea.Cmd {
+// Saves a finished fan out to disk so replay survives a restart, a later save replacing its file
+func (h *eventHandler) persistSpawnTree(snap spawnSnapshot) tea.Cmd {
+	subagents, sessionID := snap.Subagents, snap.SessionID
 	startedAt := 0.0
 	for _, s := range subagents {
 		if s.StartedAt == nil || *s.StartedAt == 0 {
@@ -292,22 +281,21 @@ func (h *eventHandler) persistSpawnTree(subagents []subagentProgress, sessionID 
 			top = append(top, s.Goal)
 		}
 	}
-	label := jsString(float64(len(subagents))) + " subagents"
+	label := strconv.Itoa(len(subagents)) + " subagents"
 	if len(top) > 0 {
 		label = strings.Join(top, " · ")
 	}
 	if sessionID == "" {
 		sessionID = "default"
 	}
-	var started any
+	params := tuigateway.SpawnTreeSaveParams{FinishedAt: ptr(snap.FinishedAt / 1000), Label: ptr(jsSlice(label, 0, 120)), SessionID: &sessionID}
 	if startedAt != 0 {
-		started = startedAt / 1000
+		params.StartedAt = ptr(startedAt / 1000)
 	}
-	wire := make([]map[string]any, len(subagents))
-	for i, s := range subagents {
-		wire[i] = subagentJSON(s)
+	for _, s := range subagents {
+		params.Subagents = append(params.Subagents, spawnTreeSubagentOf(s))
 	}
-	return h.rpc("spawn_tree.save", map[string]any{"finished_at": h.store.nowMillis() / 1000, "label": jsSlice(label, 0, 120), "session_id": sessionID, "started_at": started, "subagents": wire}, nil)
+	return ask(h.rpc, h.app.sys, tuigateway.SpawnTreeSave, params, done)
 }
 
 // State the main view of the reference redraws on, its event handler built anew at each redraw
@@ -372,62 +360,35 @@ func (h *eventHandler) refreshDelegationStatus(force bool) {
 		return
 	}
 	h.lastDelegationFetchAt = now
-	h.queue(h.rpc("delegation.status", map[string]any{}, func(r map[string]any) tea.Cmd {
-		h.store.applyDelegationStatus(r)
+	h.queue(ask(h.rpc, h.app.sys, tuigateway.DelegationStatus, tuigateway.ProfileParams{}, func(r *tuigateway.DelegationStatusResult) tea.Cmd {
+		if r != nil {
+			h.store.applyDelegationStatus(*r)
+		}
 		return nil
 	}))
 }
 
 // Loads the slash catalog for a session, dropped when the session changed meanwhile
 func (h *eventHandler) loadSlashCatalog(sid string) tea.Cmd {
-	params := map[string]any{}
-	if sid != "" {
-		params["session_id"] = sid
-	}
-	return h.rpc("commands.catalog", params, func(r map[string]any) tea.Cmd {
-		pairs, isList := r["pairs"].([]any)
-		if r == nil || !truthyJS(r["pairs"]) || h.store.ui.Sid != sid {
+	return ask(h.rpc, h.app.sys, tuigateway.CommandsCatalog, tuigateway.CommandsCatalogParams{SessionID: sid}, func(r *tuigateway.CommandsCatalogResult) tea.Cmd {
+		if r == nil || len(r.Pairs) == 0 || h.store.ui.Sid != sid {
 			return nil
 		}
-		catalog := &slashCatalog{Canon: stringMap(r["canon"]), Pairs: catalogPairs(pairs, isList)}
-		if n, isNum := r["skill_count"].(float64); isNum {
-			catalog.SkillCount = int(n)
-		}
-		categories, _ := r["categories"].([]any)
-		catalog.Categories = []slashCategory{}
-		for _, raw := range categories {
-			c, _ := raw.(map[string]any)
-			list, listed := c["pairs"].([]any)
-			catalog.Categories = append(catalog.Categories, slashCategory{Name: jsValueString(c["name"]), Pairs: catalogPairs(list, listed)})
+		catalog := &slashCatalog{Canon: r.Canon, Pairs: r.Pairs, SkillCount: int(r.SkillCount), Categories: []slashCategory{}, Chat: r.ChatCommands}
+		for _, c := range r.Categories {
+			catalog.Categories = append(catalog.Categories, slashCategory{Name: c.Name, Pairs: c.Pairs})
 		}
 		h.app.setCatalog(catalog)
-		if truthyJS(r["warning"]) {
-			h.turn.pushActivity(jsValueString(r["warning"]), "warn", "")
+		if r.Warning != "" {
+			h.turn.pushActivity(r.Warning, "warn", "")
 		}
 		return nil
 	})
 }
 
-// Name and description pairs of a catalog list
-func catalogPairs(list []any, isList bool) [][2]string {
-	out := [][2]string{}
-	if !isList {
-		return out
-	}
-	for _, raw := range list {
-		pair, _ := raw.([]any)
-		var p [2]string
-		for i := 0; i < 2 && i < len(pair); i++ {
-			p[i] = jsValueString(pair[i])
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
 // Reloads the slash catalog when the skills changed, true when the event was that
 func (h *eventHandler) refreshSlashCatalogOnSkillsChange(ev gatewayEventMsg) bool {
-	if ev.Type != "skills.changed" {
+	if ev.Type != tuigateway.SkillsChangedEvent.Name() {
 		return false
 	}
 	h.queue(h.loadSlashCatalog(h.store.ui.Sid))
@@ -465,7 +426,7 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 		h.queue(h.store.applySkin(skin))
 	}
 	h.ensureAgentsNudgeConfig()
-	if !h.store.wakeUserDisabled {
+	if !h.store.wakeUserDisabled && linktier.Linked(linktier.Extras) {
 		h.queue(ask(h.rpc, h.app.sys, tuigateway.WakeStart, tuigateway.WakeStartParams{Surface: "tui"}, done[tuigateway.WakeStartResult]))
 	}
 	if h.store.ui.Sid == "" {
@@ -507,21 +468,22 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 }
 
 // Shows a gateway notice, its detail line first
-func (h *eventHandler) showGatewayNotice(p map[string]any) {
-	if !truthyJS(p["text"]) {
+func (h *eventHandler) showGatewayNotice(p tuigateway.NotificationShowPayload) {
+	if p.Text == "" {
 		return
 	}
-	if detail, isStr := p["detail"].(string); isStr && strings.TrimFunc(detail, isJSSpace) != "" {
-		h.app.sys(detail)
+	if strings.TrimFunc(p.Detail, isJSSpace) != "" {
+		h.app.sys(p.Detail)
 	}
-	n := notice{ID: paramStr(p["id"]), Key: paramStr(p["key"]), Kind: "sticky", Level: "info", Text: jsValueString(p["text"])}
-	if p["kind"] == "ttl" {
+	n := notice{ID: p.ID, Key: p.Key, Kind: "sticky", Level: "info", Text: p.Text}
+	if p.Kind == "ttl" {
 		n.Kind = "ttl"
 	}
-	if level, isStr := p["level"].(string); isStr && (level == "error" || level == "info" || level == "success" || level == "warn") {
-		n.Level = level
+	if p.Level == "error" || p.Level == "info" || p.Level == "success" || p.Level == "warn" {
+		n.Level = p.Level
 	}
-	if ttl, isNum := p["ttl_ms"].(float64); isNum {
+	if p.TTLMs != nil {
+		ttl := float64(*p.TTLMs)
 		n.TTLms = &ttl
 	}
 	h.turn.showNotice(n)
@@ -606,15 +568,12 @@ func (h *eventHandler) handleWakeDetected(p tuigateway.WakeDetectedPayload) {
 			params := tuigateway.VoiceRecordParams{Action: "start", SessionID: sid}
 			return ask(h.rpc, h.app.sys, tuigateway.VoiceRecord, params, done[tuigateway.VoiceRecordResult])
 		}
-		if h.gw.canonical() {
-			return gatewayCall(h.gw, "slash.exec", map[string]any{"command": "voice on", "session_id": sid}, func(_ any, err error) tea.Cmd {
-				if err != nil {
-					return fail(err)
-				}
-				return record()
-			})
-		}
-		return ask(h.rpc, h.app.sys, tuigateway.VoiceToggle, tuigateway.VoiceToggleParams{Action: "on"}, func(*tuigateway.VoiceToggleResult) tea.Cmd { return record() })
+		return call(h.gw, tuigateway.VoiceToggle, tuigateway.VoiceToggleParams{Action: "on", SessionID: sid}, func(_ *tuigateway.VoiceToggleResult, err error) tea.Cmd {
+			if err != nil {
+				return fail(err)
+			}
+			return record()
+		})
 	}
 	if p.StartNewSession {
 		h.queue(h.app.newSession(arm))

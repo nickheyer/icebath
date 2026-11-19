@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tui
 
 import (
@@ -363,7 +365,7 @@ func (a *app) petInfo(r *slashRun) tea.Cmd {
 				{tr("slashCmd.session.pet.infoFrames"), strings.Join(frames, " · ")},
 				{tr("slashCmd.session.pet.infoRows"), strings.Join(info.StateRows, " · ")},
 				{tr("slashCmd.session.pet.infoRevision"), info.SpritesheetRevision},
-				{tr("slashCmd.session.pet.infoDrawing"), a.pet.drawing()},
+				{tr("slashCmd.session.pet.infoDrawing"), a.petView().drawing()},
 			}
 			a.panel(cmp.Or(info.DisplayName, info.Slug), []panelSection{{Rows: rows}})
 			return nil

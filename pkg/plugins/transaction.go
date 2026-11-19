@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -105,10 +107,76 @@ func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newM
 			return err
 		}
 	}
+	if !pm.ManagerLinked() {
+		return publishWithoutPackageManager(resolvePath(staged), absTarget, oldMetadata, newMetadata, digest)
+	}
 	return syncVenv(ctx, pm.SyncVenvOptions{Explicit: true, Plugins: &pm.StagedUpdate{Data: map[string]any{
 		"staged": resolvePath(staged), "target": absTarget, "old_metadata": oldMetadata,
 		"new_metadata": newMetadata, "target_digest": digest,
 	}}})
+}
+
+// Swaps a staged tree over its install and records its metadata in a build without the package manager, refusing a tree that needs Python packages
+func publishWithoutPackageManager(staged, target string, oldMetadata, newMetadata map[string]any, digest any) error {
+	name := filepath.Base(target)
+	if reqs := declaredRequirements(&Manifest{Path: staged}); len(reqs) > 0 {
+		return &PluginOperationError{Msg: linktier.Missing(fmt.Sprintf("plugin '%s' needs the Python packages %s, and the tool package manager that installs them",
+			name, strings.Join(reqs, ", ")), linktier.Extras), FailureClass: "dependencies"}
+	}
+	metadataPath := filepath.Join(filepath.Dir(target), ".install-metadata.json")
+	current, err := readInstallMetadataFile(metadataPath)
+	if err != nil {
+		return err
+	}
+	if !jsonSame(current[name], oldMetadata[name]) {
+		return &PluginOperationError{Msg: "Plugin install metadata changed while preparing the update; retry."}
+	}
+	existed := false
+	if _, err := os.Lstat(target); err == nil {
+		existed = true
+		now, err := pm.TreeDigest(target)
+		if err != nil {
+			return err
+		}
+		if digest != nil && !jsonSame(now, digest) {
+			return &PluginOperationError{Msg: "Plugin files changed while preparing the update; retry."}
+		}
+	}
+	current[name] = newMetadata[name]
+	encoded, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return err
+	}
+	backup := filepath.Join(filepath.Dir(target), fmt.Sprintf(".previous-%s-%d", name, os.Getpid()))
+	if existed {
+		if err := os.Rename(target, backup); err != nil {
+			return err
+		}
+	}
+	restore := func(cause error) error {
+		if existed {
+			_ = os.RemoveAll(target)
+			_ = os.Rename(backup, target)
+		}
+		return cause
+	}
+	if err := os.Rename(staged, target); err != nil {
+		return restore(err)
+	}
+	if err := pm.DurableWriteBytes(metadataPath, append(encoded, '\n')); err != nil {
+		return restore(err)
+	}
+	if existed {
+		return os.RemoveAll(backup)
+	}
+	return nil
+}
+
+// Whether two JSON shaped values encode the same
+func jsonSame(a, b any) bool {
+	left, errA := json.Marshal(a)
+	right, errB := json.Marshal(b)
+	return errA == nil && errB == nil && string(left) == string(right)
 }
 
 // Effective enabled plugin trees, swapped by tests that pin the selection

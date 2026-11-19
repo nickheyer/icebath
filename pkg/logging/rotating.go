@@ -88,9 +88,13 @@ type lockTimeoutError struct{}
 
 func (*lockTimeoutError) Error() string { return "Cannot acquire lock after 20 attempts" }
 
-// Reports whether err is the concurrent-log-handler lock timeout on a Windows host
+// Reports whether err is the log lock timeout on a Windows host, also when it crossed a text boundary as a runtime error
 func isWindowsConcurrentLogLockTimeout(err error) bool {
-	return goos == "windows" && err != nil && errorClass(err) == "RuntimeError" && strings.Contains(err.Error(), "Cannot acquire lock after 20 attempts")
+	if goos != "windows" || err == nil {
+		return false
+	}
+	var timeout *lockTimeoutError
+	return errors.As(err, &timeout) || strings.Contains(err.Error(), (&lockTimeoutError{}).Error())
 }
 
 // Warns once per process that a cross process log lock timed out and records were dropped

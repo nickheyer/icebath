@@ -83,6 +83,15 @@ func auxCloseQuietly(target any, failureNote string) {
 // Text the context compressor reads as a retry ladder timeout
 const CodexStreamStallMarker = "stream stalled"
 
+// Main model stream that stopped producing chunks after it had started
+var ErrStreamStalled = errors.New(CodexStreamStallMarker)
+
+// Whether a failure is a stream that stopped producing output after it had started
+func IsStreamStall(err error) bool {
+	var t *AuxTimeoutError
+	return (errors.As(err, &t) && t.Kind == AuxTimeoutStalled) || errors.Is(err, ErrStreamStalled)
+}
+
 // Progress aware deadline and connection safe timeout watchdog of one Codex auxiliary stream attempt
 type auxCodexStreamGuard struct {
 	ctx                   context.Context
@@ -185,15 +194,27 @@ func (g *auxCodexStreamGuard) recordProgress() {
 
 // Hard ceiling, first token or mid stream stall wording of the timeout
 func (g *auxCodexStreamGuard) timeoutMessage() string {
+	msg, _ := g.timeoutWording()
+	return msg
+}
+
+// Timeout error of the guard over the failure that ended the stream
+func (g *auxCodexStreamGuard) timeoutError(cause error) *AuxTimeoutError {
+	msg, kind := g.timeoutWording()
+	return &AuxTimeoutError{Message: msg, Err: cause, Kind: kind}
+}
+
+// Wording of the timeout and what ran out of time
+func (g *auxCodexStreamGuard) timeoutWording() (string, AuxTimeoutKind) {
 	elapsed := time.Since(g.start).Seconds()
 	if !time.Now().Before(g.hardDeadline) {
-		return fmt.Sprintf("Codex auxiliary Responses stream exceeded %.1fs hard ceiling", g.hardDeadline.Sub(g.start).Seconds())
+		return fmt.Sprintf("Codex auxiliary Responses stream exceeded %.1fs hard ceiling", g.hardDeadline.Sub(g.start).Seconds()), 0
 	}
 	if !g.sawContent.Load() {
 		return fmt.Sprintf("Codex auxiliary Responses stream produced no output within %.1fs (no-progress timeout, %.1fs elapsed)",
-			g.noProgressTimeout, elapsed)
+			g.noProgressTimeout, elapsed), AuxTimeoutNoOutput
 	}
-	return fmt.Sprintf("Codex auxiliary Responses %s: no new output for %.1fs (%.1fs elapsed)", CodexStreamStallMarker, g.noProgressTimeout, elapsed)
+	return fmt.Sprintf("Codex auxiliary Responses %s: no new output for %.1fs (%.1fs elapsed)", CodexStreamStallMarker, g.noProgressTimeout, elapsed), AuxTimeoutStalled
 }
 
 // Closes or shuts down the client once the timeout wins, waking only the attempt stream after an owner cancel
@@ -232,7 +253,7 @@ func (g *auxCodexStreamGuard) checkCancelled() error {
 		if !g.timedOut.Load() {
 			g.closeClientOnTimeout(true)
 		}
-		return &AuxTimeoutError{Message: g.timeoutMessage()}
+		return g.timeoutError(nil)
 	}
 	if auxInterruptCancelRequested(g.ctx) {
 		return &AuxiliaryExplicitCancellation{}
@@ -572,7 +593,7 @@ func (s *auxGuardedCodexStream) Next(ctx context.Context) (map[string]any, error
 		if errors.Is(err, io.EOF) {
 			cause = nil
 		}
-		return nil, &AuxTimeoutError{Message: s.guard.timeoutMessage(), Err: cause}
+		return nil, s.guard.timeoutError(cause)
 	}
 	return event, err
 }

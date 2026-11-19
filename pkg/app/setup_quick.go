@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -125,23 +126,30 @@ func runFirstTimeQuickSetup(ctx context.Context, cfg config.Tree, icebathHome, i
 		return err
 	}
 	setupPrintln("")
-	gatewayChoice := provider.PromptChoice("Connect a messaging platform? (Telegram, Discord, etc.)", []string{
-		"Set up messaging now (recommended)", "Skip — set up later with '/setup gateway'",
-	}, 0, "")
-	if gatewayChoice == 0 {
+	gatewayChoice := -1
+	if linktier.Linked(linktier.Plugins) {
+		gatewayChoice = provider.PromptChoice("Connect a messaging platform? (Telegram, Discord, etc.)", []string{
+			"Set up messaging now (recommended)", "Skip — set up later with '/setup gateway'",
+		}, 0, "")
+	}
+	switch {
+	case gatewayChoice == -1:
+	case gatewayChoice == 0:
 		if err := setupGatewayFn(ctx, cfg); err != nil {
 			return err
 		}
 		if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
 			return err
 		}
-	} else if _, err := setupEnsureGatewayService(ctx, provider.SetupOutput(), gateway.ServiceSetupOptions{Context: "setup", Interactive: true, Config: cfg}); err != nil {
-		return err
+	default:
+		if _, err := setupEnsureGatewayService(ctx, provider.SetupOutput(), gateway.ServiceSetupOptions{Context: "setup", Interactive: true, Config: cfg}); err != nil {
+			return err
+		}
 	}
 	setupPrintln("")
 	provider.SetupPrintSuccess("Setup complete! You're ready to go.")
 	provider.SetupInfo(nil, "  Configure all settings:    /setup")
-	if gatewayChoice != 0 {
+	if gatewayChoice > 0 {
 		provider.SetupPrintInfo("  Connect Telegram/Discord:  /setup gateway")
 	}
 	if err := printMacosFDATip(); err != nil {

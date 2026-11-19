@@ -16,14 +16,12 @@ var agentHooks struct {
 	maxIteration  func(result any) bool
 }
 
-// Agent hook the run path needs that this build never installed, classed ModuleNotFoundError
-type agentModuleMissingError struct{ hook string }
+// Agent hook the run path needs left unset, an invariant pkg/agent keeps by binding every hook at init wherever cron is linked
+type agentHookUnsetError struct{ hook string }
 
-func (e *agentModuleMissingError) Error() string {
-	return fmt.Sprintf("the cron %s is not linked into this build", e.hook)
+func (e *agentHookUnsetError) Error() string {
+	return fmt.Sprintf("the cron %s is unset, pkg/agent binds it at init in every build that links cron", e.hook)
 }
-
-func (e *agentModuleMissingError) PyTypeName() string { return "ModuleNotFoundError" }
 
 // Installs the run_agent AIAgent constructor cron runs build their agent with
 func SetAgentFactory(f func(ctx context.Context, o AgentOptions) (CronAgent, error)) {
@@ -68,11 +66,11 @@ var newCronAgent = func(ctx context.Context, o AgentOptions) (CronAgent, error) 
 	agentHooks.RUnlock()
 	switch {
 	case factory == nil || explain == nil:
-		return nil, &agentModuleMissingError{"agent factory"}
+		return nil, &agentHookUnsetError{"agent factory"}
 	case interrupt == nil:
-		return nil, &agentModuleMissingError{"hard interrupt hook"}
+		return nil, &agentHookUnsetError{"hard interrupt hook"}
 	case maxIteration == nil:
-		return nil, &agentModuleMissingError{"turn failure explanation hook"}
+		return nil, &agentHookUnsetError{"turn failure explanation hook"}
 	}
 	return factory(ctx, o)
 }
@@ -107,7 +105,7 @@ func cleanupStaleAsyncClients() error {
 	f := agentHooks.cleanup
 	agentHooks.RUnlock()
 	if f == nil {
-		return &agentModuleMissingError{"auxiliary client cleanup hook"}
+		return &agentHookUnsetError{"auxiliary client cleanup hook"}
 	}
 	f()
 	return nil

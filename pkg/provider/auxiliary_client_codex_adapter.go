@@ -353,7 +353,7 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 			return cause
 		}
 		if guard.timedOut.Load() {
-			return &AuxTimeoutError{Message: guard.timeoutMessage(), Err: cause}
+			return guard.timeoutError(cause)
 		}
 		pkgLog().Debug(fmt.Sprintf("Codex auxiliary Responses API call failed: %v", cause))
 		return cause

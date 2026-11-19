@@ -158,9 +158,9 @@ const platformHint = "You are on Google Chat. Limited markdown subset is rendere
 	"messages. You are in a space (DM or group). Images render inline; audio, video, and document attachments " +
 	"render as download cards (no native voice/video UI). To send files, include MEDIA:/absolute/path/to/file " +
 	"in your response. Native file attachments require the user to run /setup-files once in their own DM — " +
-	"until they do, file requests fall back to a text notice with the host path. Do NOT generate interactive " +
-	"Card v2 buttons — Google Chat interactivity is not yet supported by this gateway; ask for typed " +
-	"confirmations instead. While you are generating a response, an 'Icebath is thinking…' marker message " +
+	"until they do, file requests fall back to a text notice with the host path. Command approvals and clarify " +
+	"questions with choices reach the user as Card v2 buttons they click; your own replies are plain text, so do " +
+	"not write card markup or button syntax. While you are generating a response, an 'Icebath is thinking…' marker message " +
 	"appears in the space and is replaced by your response once it is ready. You do NOT have access to Google " +
 	"Chat-specific APIs — you cannot search space history, list space members, or manage spaces. Do not " +
 	"promise to perform these actions; explain that you can only read messages sent directly to you and " +

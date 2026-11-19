@@ -27,3 +27,14 @@ func clarifyInlineExecutor(ctx context.Context, host tools.ExecutorHost, args ma
 	}
 	return "", fmt.Errorf("clarify_callback is a %T, not a clarify callback", callback)
 }
+
+// Clarify surface of the agent as a callback, nil when the agent carries none
+func (a *AIAgent) clarifySurface() tools.ClarifyCallback {
+	switch cb := a.clarifyCallback.(type) {
+	case tools.ClarifyCallback:
+		return cb
+	case func(context.Context, []any) (map[string]any, error):
+		return cb
+	}
+	return nil
+}

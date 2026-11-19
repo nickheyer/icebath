@@ -17,6 +17,9 @@ func (b *BasePlatformAdapter) MessageHandlerOwner() any {
 	return b.messageHandlerOwner
 }
 
+// Platform value the plugin platform actions route their verbs by
+func (b *BasePlatformAdapter) PlatformValue() string { return string(b.Platform) }
+
 // Whether the runner installed a platform bound authorization callback
 func (b *BasePlatformAdapter) HasAuthorizationCheck() bool {
 	b.mu.Lock()

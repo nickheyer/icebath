@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -766,6 +767,36 @@ func (a *FeishuAdapter) reactionsEnabled(ctx context.Context) bool {
 		return false
 	}
 	return true
+}
+
+// Feishu emoji types of common emoji, Feishu reacting only with its own named set
+var feishuEmojiTypes = map[string]string{
+	"👍": "THUMBSUP", "👎": "ThumbsDown", "👌": "OK", "🙏": "THANKS", "💪": "MUSCLE", "👏": "APPLAUSE", "👊": "FISTBUMP",
+	"🤝": "SHAKE", "👋": "WAVE", "✌": "YEAH", "🫡": "SALUTE", "✅": "CheckMark", "❌": "CrossMark", "😄": "SMILE", "😊": "BLUSH",
+	"😆": "LAUGH", "😂": "LOL", "😉": "WINK", "😍": "LOVE", "😘": "KISS", "🤔": "THINKING", "😢": "CRY", "😭": "SOB",
+	"😠": "ANGRY", "😲": "SHOCKED", "😮": "WOW", "😓": "SWEAT", "😴": "SLEEP", "🤮": "PUKE", "💀": "SKULL", "💩": "POOP",
+	"❤": "HEART", "💔": "HEARTBROKEN", "🌹": "ROSE", "🎉": "PARTY", "🍺": "BEER", "🎂": "CAKE", "🎁": "GIFT", "☕": "Coffee",
+	"🔥": "Fire", "🏆": "Trophy", "💯": "Hundred", "📌": "Pin", "⏰": "Alarm", "💣": "BOMB", "🎵": "Music", "🎄": "XmasTree",
+	"⛄": "Snowman", "🎆": "FIREWORKS", "🧧": "REDPACKET",
+}
+
+// Adds an emoji reaction to a message, a unicode emoji sent as its Feishu emoji type and a type name kept as given
+func (a *FeishuAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	key := strings.ReplaceAll(strings.TrimSpace(emoji), "\ufe0f", "")
+	emojiType, ok := feishuEmojiTypes[key]
+	if !ok && key != "" && strings.Trim(key, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == "" {
+		emojiType, ok = key, true
+	}
+	if !ok {
+		return fmt.Errorf("Feishu reacts with its own emoji types such as THUMBSUP, %s has none", emoji)
+	}
+	if a.currentClient() == nil {
+		return errors.New("the Feishu client is not connected")
+	}
+	if a.addReaction(ctx, messageID, emojiType) == nil {
+		return fmt.Errorf("Feishu refused the %s reaction on %s", emojiType, messageID)
+	}
+	return nil
 }
 
 // Adds an emoji reaction and returns its reaction id, nil on failure

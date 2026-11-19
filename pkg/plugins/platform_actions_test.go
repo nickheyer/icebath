@@ -178,7 +178,7 @@ func TestPlatformActionsStructuredErrors(t *testing.T) {
 	}
 	slack := &paAdapter{platform: "slack", connected: true}
 	ctx = paSetup(t, paGranted, paRunner{map[string]any{"slack": slack}})
-	if r := pa.AddReaction(ctx, "slack", "1", "2", "x"); r["error"] != "unsupported_platform_action" || r["detail"] != "add_reaction is not implemented for slack" {
+	if r := pa.AddReaction(ctx, "slack", "1", "2", "x"); r["error"] != "unsupported_platform_action" || r["detail"] != "slack has no message reactions a bot can set" {
 		t.Fatalf("unsupported %v", r)
 	}
 }

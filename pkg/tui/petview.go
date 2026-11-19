@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tui
 
 import (
@@ -39,9 +41,6 @@ const (
 	petCellPxW, petCellPxH = 8, 16
 )
 
-// Next frame of the pet animation
-type petTickMsg struct{ gen int }
-
 // Next probe of the active pet
 type petPollMsg struct{ gen int }
 
@@ -66,13 +65,6 @@ type petKitty struct {
 type petSpot struct {
 	x, y, cols, rows int
 	visible          bool
-}
-
-// Corner stack of the session window and the room it takes from the transcript
-type petPlacement struct {
-	rows   []string
-	gutter int
-	band   int
 }
 
 // Sixel or iTerm2 frames of the reference renderer for one protocol, by state, with their pixel size
@@ -114,6 +106,18 @@ type petView struct {
 	surface      *gfx.Surface
 	placedAt     *[2]int
 	hatch        *hatchJob
+}
+
+// Binds the pet card and the /pet and /hatch commands
+func init() {
+	newPetCard = func(a *app) petCard { return newPetView(a) }
+	tierCommands = append(tierCommands, func(a *app) []slashCommand { return append(a.petCommands(), a.hatchCommands()...) })
+}
+
+// Pet card of the app as the pet view the pet commands drive
+func (a *app) petView() *petView {
+	p, _ := a.pet.(*petView)
+	return p
 }
 
 // Animated pet of an app with nothing selected yet, asking for graphics when stdout is a terminal
@@ -371,7 +375,7 @@ func (p *petView) renderMode() string {
 
 // Sixel or iTerm2 protocol the render mode and the terminal allow, kitty coming from pet.cells alone
 func (p *petView) protocol() gfx.Protocol {
-	g := p.a.arena.graphics
+	g := p.a.graphics
 	switch p.renderMode() {
 	case "auto":
 		if proto := g.Protocol(); proto == gfx.Sixel || proto == gfx.ITerm {
@@ -392,11 +396,11 @@ func (p *petView) protocol() gfx.Protocol {
 // Asks the terminal what it draws the first time the pet may want sixel or iTerm2 images
 func (p *petView) probe() tea.Cmd {
 	mode := p.renderMode()
-	if !p.enabled || mode == "unicode" || mode == "off" || mode == "kitty" || p.a.arena.probed {
+	if !p.enabled || mode == "unicode" || mode == "off" || mode == "kitty" || p.a.graphicsProbed {
 		return nil
 	}
-	p.a.arena.probed = true
-	return p.a.arena.graphics.Probe()
+	p.a.graphicsProbed = true
+	return p.a.graphics.Probe()
 }
 
 // Fetches the spritesheet of the revision and encodes its frames beside the UI once the sixel or iTerm2 path wants them
@@ -477,7 +481,7 @@ func (p *petView) imageBox() (int, int, bool) {
 	if proto == gfx.ITerm {
 		return max(1, size[0]/petCellPxW), max(1, size[1]/petCellPxH), true
 	}
-	cw, ch := p.a.arena.graphics.Cell()
+	cw, ch := p.a.graphics.Cell()
 	cw, ch = max(cw, 1), max(ch, 1)
 	return (size[0] + cw - 1) / cw, (size[1] + ch - 1) / ch, true
 }
@@ -494,7 +498,7 @@ func (p *petView) drawImage() tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 	if p.surface == nil {
-		p.surface = p.a.arena.graphics.NewSurface(proto)
+		p.surface = p.a.graphics.NewSurface(proto)
 		p.surface.SetRate(int((time.Second + petFrameEvery - 1) / petFrameEvery))
 	}
 	s := p.surface
@@ -655,24 +659,6 @@ func (p *petView) place(w, h, top int) petPlacement {
 		return out
 	}
 	return petPlacement{}
-}
-
-// Transcript rows with the band rows below them and the corner stack laid over their bottom right
-func (pl petPlacement) over(body []string, w int) []string {
-	if len(pl.rows) == 0 {
-		return body
-	}
-	out := append(append([]string{}, body...), make([]string, pl.band)...)
-	first := max(len(out)-len(pl.rows), 0)
-	for i, row := range pl.rows {
-		if first+i >= len(out) {
-			break
-		}
-		keep := max(w-1-ansi.StringWidth(row), 0)
-		left := ansi.Truncate(out[first+i], keep, "")
-		out[first+i] = left + strings.Repeat(" ", max(keep-ansi.StringWidth(left), 0)) + row + " "
-	}
-	return out
 }
 
 // Half block of two pixels, a lone opaque half drawn alone so the window shows through the other

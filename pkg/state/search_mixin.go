@@ -71,10 +71,10 @@ func (s *sessionSearch) writer() (SQLiteConn, error) {
 	return nil, errWriterClosed
 }
 
-// Binds a Python int as SQLite does, OverflowError past the signed 64 bit range
+// Integer as SQLite binds it, a typed rejection past the signed 64 bit range
 func sqliteInt(n *big.Int) (int64, error) {
 	if !n.IsInt64() {
-		return 0, &pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to SQLite INTEGER"}
+		return 0, oversizedInteger(n)
 	}
 	return n.Int64(), nil
 }

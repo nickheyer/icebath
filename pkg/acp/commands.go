@@ -360,9 +360,6 @@ func (a *IcebathACPAgent) cmdCompress(ctx context.Context, args string, st *Sess
 		return "Context compression not available for this agent.", nil
 	}
 	request := agent.ParseCompressArgs(args)
-	if request.Aggressive {
-		return agent.AggressiveUnsupported, nil
-	}
 	system := agentCachedSystemPrompt(st.Agent)
 	var result agent.CompressResult
 	var failure error

@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/setupflow"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -124,11 +125,16 @@ var (
 	setupRunBlankSlateSetupFn     = runBlankSlateSetup
 )
 
-// Quick Setup keeping an imported model, with default agent settings, terminal and messaging
-var quickSetupMode = firstTimeMode{"Quick Setup — keeps an imported model, default agent settings, terminal + messaging (recommended)",
-	func(ctx context.Context, cfg config.Tree, h, importedFrom string) error {
+// Quick Setup keeping an imported model, with default agent settings, terminal and messaging when the build links platforms
+func quickSetupMode() firstTimeMode {
+	label := "Quick Setup — keeps an imported model, default agent settings, terminal + messaging (recommended)"
+	if !linktier.Linked(linktier.Plugins) {
+		label = "Quick Setup — keeps an imported model, default agent settings and terminal (recommended)"
+	}
+	return firstTimeMode{label, func(ctx context.Context, cfg config.Tree, h, importedFrom string) error {
 		return setupRunFirstTimeQuickSetupFn(ctx, cfg, h, importedFrom)
 	}}
+}
 
 // Blank Slate with everything off except the bare minimum
 var blankSlateMode = firstTimeMode{"Blank Slate — everything off except the bare minimum; opt in to each capability",
@@ -238,7 +244,7 @@ func hostedQuickSetup(ctx context.Context, _ setupflow.Asker) error {
 		if err != nil {
 			return err
 		}
-		return runFirstTimeMode(ctx, cfg, h, quickSetupMode, importedFrom)
+		return runFirstTimeMode(ctx, cfg, h, quickSetupMode(), importedFrom)
 	})
 }
 

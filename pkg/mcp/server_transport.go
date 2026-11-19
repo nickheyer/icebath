@@ -351,9 +351,6 @@ func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) 
 	if len(safeEnv) == 0 {
 		safeEnv = nil
 	}
-	if !tools.AttachSelfToKillOnCloseJob() {
-		pkgLog().Debug("job-object self-attach failed before stdio spawn")
-	}
 	killOrphanedMCPChildren(false, "")
 	writeStderrLogHeader(ctx, s.name)
 	var logw io.Writer = io.Discard

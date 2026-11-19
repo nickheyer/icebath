@@ -145,6 +145,26 @@ var (
 	stateDBGuardMu             sync.Mutex
 )
 
+// Lead of the refusal a test gets for opening the real state database, the one failure never cached
+const LiveSystemGuardLead = "live-system guard: "
+
+// Refusal a test context process gets for opening a production state database
+type LiveSystemGuardError struct {
+	Path string
+	Root string
+}
+
+func (e *LiveSystemGuardError) Error() string {
+	return LiveSystemGuardLead + "test attempted to open production state.db at " + e.Path +
+		" (under real Icebath root " + e.Root + "). Tests run against a temporary ICEBATH_HOME: " +
+		"set ICEBATH_HOME to a temporary directory or pass an explicit temporary db path. " +
+		"A test or spawned child process that genuinely needs the live database exports " +
+		stateDBGuardBypassEnv + "=1 in its environment."
+}
+
+// Exception class the init error record names for the refusal
+func (e *LiveSystemGuardError) PyTypeName() string { return "RuntimeError" }
+
 // Refuses a test context process opening a production state database before any connection or probe
 func ensureTestIsolation(dbPath string) error {
 	stateDBGuardMu.Lock()
@@ -171,14 +191,7 @@ func ensureTestIsolation(dbPath string) error {
 	}
 	for _, root := range roots {
 		if isProductionStateDB(resolved, root) {
-			return &pyint.Error{Kind: "RuntimeError", Msg: "live-system guard: test attempted to open production " +
-				fmt.Sprintf("state.db at %s (under real Icebath root %s). ", resolved, root) +
-				"Tests must run against a temporary ICEBATH_HOME — pass an " +
-				"explicit tmp db_path or let the hermetic conftest redirect " +
-				"ICEBATH_HOME. If this test genuinely needs the live database, mark it with " +
-				"@pytest.mark.live_system_guard_bypass — or, for a spawned " +
-				fmt.Sprintf("child process, export %s=1 in ", stateDBGuardBypassEnv) +
-				"its environment."}
+			return &LiveSystemGuardError{Path: resolved, Root: root}
 		}
 	}
 	return nil

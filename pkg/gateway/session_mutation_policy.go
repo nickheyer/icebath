@@ -186,4 +186,204 @@ func prepareEditPolicy(ctx context.Context, a *SessionAuthority, live *LiveSessi
 type policyPreparer func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error)
 
 // Prepare steps of the policy only operations
-var policyPreparers = map[string]policyPreparer{"reasoning": prepareReasoning, "workspace": prepareWorkspace, "edit_policy": prepareEditPolicy}
+var policyPreparers = map[string]policyPreparer{"reasoning": prepareReasoning, "workspace": prepareWorkspace, "edit_policy": prepareEditPolicy,
+	"launch": prepareLaunch}
+
+// Launch flags that change which endpoint the session's turns reach
+var launchRouteFields = []string{"model", "provider", "base_url"}
+
+// Lays a resume's launch flags over the frozen policy, a newly set bypass flag rebuilding it from code defaults
+func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+	old, err := preparedPolicy(prepared)
+	if err != nil {
+		return nil, err
+	}
+	sid, err := preparedSessionID(prepared)
+	if err != nil {
+		return nil, err
+	}
+	overrides, _ := pyjson.Plain(payload).(map[string]any)
+	cwd := old.Cwd
+	if raw, moved := overrides["cwd"]; moved {
+		if cwd, err = pypath.Abspath(pypath.Expanduser(home.TranslateCwdForWSLBackend(pyrepr.Str(raw)))); err != nil {
+			return nil, err
+		}
+		if !isDir(cwd) {
+			return nil, refuseText("cwd", "must be an existing directory")
+		}
+	}
+	request := policyObject(old.RequestJSON)
+	routed := false
+	for _, key := range launchRouteFields {
+		if _, has := overrides[key]; has {
+			routed = true
+		}
+	}
+	if routed {
+		delete(request, "model_requested")
+		delete(request, "route_derived")
+	}
+	for key, value := range overrides {
+		if key != "cwd" {
+			request[key] = value
+		}
+	}
+	if request["safe_mode"] == true || request["ignore_user_config"] == true {
+		if !old.SafeMode && !old.IgnoreUserConfig {
+			_, moved := overrides["cwd"]
+			return relaunchBypass(ctx, a, prepared, old, sid, request, cwd, moved)
+		}
+	}
+	frozen, err := old.config(ctx, nil, true)
+	if err != nil {
+		return nil, err
+	}
+	policy := *old
+	launch := map[string]any{}
+	for key, value := range overrides {
+		if key != "cwd" {
+			launch[key] = value
+		}
+	}
+	var key *string
+	if routed {
+		resolved, changed, err := resolveLaunchRoute(profileEnvScope(ctx, ""), launch, frozen)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			request["model_requested"] = launch["model"]
+			derived := []any{}
+			for _, field := range []string{"base_url", "provider"} {
+				_, now := resolved[field]
+				_, before := launch[field]
+				if now && !before {
+					derived = append(derived, field)
+				}
+			}
+			request["route_derived"] = derived
+			for _, field := range launchRouteFields {
+				if value, has := resolved[field]; has {
+					request[field] = value
+				}
+			}
+		}
+		if routedKey, has := resolved["api_key"].(string); has && routedKey != "" {
+			key = &routedKey
+		}
+		delete(resolved, "api_key")
+		launch = resolved
+	}
+	if err := applyLaunchOverrides(ctx, launch, frozen); err != nil {
+		return nil, err
+	}
+	if model, has := launch["model"].(string); has {
+		policy.Model = &model
+	}
+	if _, has := launch["toolsets"]; has {
+		enabled, err := resolveToolsets(ctx, request, frozen, old.Source, old.SafeMode, old.CodingPosture, old.IgnoreUserConfig)
+		if err != nil {
+			return nil, err
+		}
+		policy.Toolsets = sortedNames(enabled)
+	}
+	if _, has := launch["skills"]; has {
+		if policy.SkillsPrompt, err = renderLaunchSkills(ctx, request, sid); err != nil {
+			return nil, err
+		}
+	}
+	if policy.ConfigJSON, err = pyjson.Dumps(frozen); err != nil {
+		return nil, err
+	}
+	if policy.RequestJSON, err = pyjson.Dumps(request, pyjson.SortKeys(true)); err != nil {
+		return nil, err
+	}
+	secrets := &RecoveredSecrets{}
+	if old.ConfigSecretRef != nil {
+		recovered, err := recoverConfigSecrets(ctx, a, old)
+		if err != nil {
+			return nil, err
+		}
+		block, _ := frozen["model"].(map[string]any)
+		for i, path := range recovered.paths {
+			if len(path) == 2 && path[0] == "model" {
+				if _, kept := block[pyrepr.Str(path[1])]; !kept {
+					continue
+				}
+			}
+			secrets.Set(path, recovered.values[i])
+		}
+	}
+	_, newProvider := launch["provider"]
+	_, newBase := launch["base_url"]
+	if key == nil && !newProvider && !newBase {
+		if key, err = launchKey(a, old); err != nil {
+			return nil, err
+		}
+	}
+	_, moved := overrides["cwd"]
+	return bindRelaunched(ctx, a, prepared, &policy, sid, cwd, moved, key, secrets)
+}
+
+// Policy of a resume that newly asks for a bypass launch, built from code defaults with the session's own bindings kept
+func relaunchBypass(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, old *LocalSessionPolicy, sid string, request map[string]any,
+	cwd string, moved bool) (*pyjson.Object, error) {
+	params := map[string]any{}
+	for key, value := range request {
+		if CreateFields[key] && key != "request_id" && key != "skills" {
+			params[key] = value
+		}
+	}
+	if _, has := params["model"]; !has && old.Model != nil {
+		params["model"] = *old.Model
+	}
+	for field, value := range map[string]any{"provider": old.Provider(), "base_url": old.BaseURL()} {
+		if text, ok := value.(string); ok && text != "" {
+			if _, has := params[field]; !has {
+				params[field] = text
+			}
+		}
+	}
+	params["source"], params["cwd"] = old.Source, cwd
+	secrets := &RecoveredSecrets{}
+	built, err := bypassPolicy(ctx, params, secrets, !old.ClientEnvRemote)
+	if err != nil {
+		return nil, err
+	}
+	key, err := launchKey(a, old)
+	if err != nil {
+		return nil, err
+	}
+	policy := *built
+	policy.Source, policy.Platform = old.Source, old.Platform
+	policy.EditorMCPJSON, policy.KanbanJSON, policy.EditApprovalPolicy = old.EditorMCPJSON, old.KanbanJSON, old.EditApprovalPolicy
+	policy.ClientEnvJSON, policy.ClientEnvRemote, policy.ClientEnvRulesJSON = old.ClientEnvJSON, old.ClientEnvRemote, old.ClientEnvRulesJSON
+	return bindRelaunched(ctx, a, prepared, &policy, sid, cwd, moved, key, secrets)
+}
+
+// Prepared result of a relaunched policy bound to its key and secrets, the moved cwd with its git identity
+func bindRelaunched(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, policy *LocalSessionPolicy, sid, cwd string,
+	moved bool, key *string, secrets *RecoveredSecrets) (*pyjson.Object, error) {
+	extra := []any{}
+	if moved {
+		loaded, err := pyjson.Loads(policy.TerminalJSON)
+		if err != nil {
+			return nil, err
+		}
+		ordered, ok := loaded.(*pyjson.Object)
+		if !ok {
+			return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
+		}
+		ordered.Set("TERMINAL_CWD", cwd)
+		if policy.TerminalJSON, err = pyjson.Dumps(ordered); err != nil {
+			return nil, err
+		}
+		policy.Cwd = cwd
+		extra = append(extra, "git", map[string]any{"branch": tuihost.Branch(cwd), "root": tuihost.CommonRepoRoot(cwd)})
+	}
+	bound, err := bindLaunchKey(ctx, a, sid, policy, key, secrets)
+	if err != nil {
+		return nil, err
+	}
+	return preparedWith(prepared, append([]any{"policy", bound.asDict()}, extra...)...), nil
+}

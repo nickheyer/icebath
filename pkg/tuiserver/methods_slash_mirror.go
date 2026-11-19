@@ -28,9 +28,6 @@ var PersistPersonality func(ctx context.Context, value any) bool
 // Compresses the live session and returns the user facing feedback, a held lock answering with its skip note
 func compressLiveWithFeedback(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string, snapshotKwargs bool) (string, error) {
 	request := agent.ParseCompressArgs(arg)
-	if request.Aggressive {
-		return agent.AggressiveUnsupported, nil
-	}
 	scope := sessionProfileRuntimeScope(ctx, session, true)
 	if request.Preview {
 		preview := slashRows(slashHistorySnapshot(session))

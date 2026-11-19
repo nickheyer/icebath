@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -53,6 +54,31 @@ var (
 	// ACP edit approval policies in mode order
 	EditApprovalPolicies = []string{"ask", "workspace_session", "session"}
 )
+
+// Spelling of a free session source tag, the label a script or integration files its sessions under
+var sourceTagPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$`)
+
+// Labels of the sessions icebath itself files, never a free source tag
+var reservedSourceLabels = map[string]bool{"a2a": true, "cron": true, "kanban": true, "bot_room": true}
+
+// Agent surface a creation label runs on, a free source tag running on the cli surface, empty for no valid label
+func SourceSurface(label string) string {
+	if surface, known := Surfaces[label]; known {
+		return surface
+	}
+	if !reservedSourceLabels[label] && sourceTagPattern.MatchString(label) {
+		return "cli"
+	}
+	return ""
+}
+
+// Why a creation label is no source, a reserved label named as one
+func sourceRefusal(source any) string {
+	if label, ok := source.(string); ok && reservedSourceLabels[label] {
+		return label + " is reserved for the sessions icebath files itself, pick another tag"
+	}
+	return "a source is a surface or a tag of letters, digits and _ . : - up to 64 characters, not " + pyrepr.Repr(source)
+}
 
 // Labels and surfaces joined into one group whenever a label runs on a surface
 func surfaceGroups() map[string]map[string]bool {
@@ -564,7 +590,11 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		surfaces[label] = surface
 	}
 	surfaces["cron"], surfaces["kanban"], surfaces["bot_room"] = "cron", "cli", "bot_room"
-	if surface, known := surfaces[p.Source]; !isForwardPolicy(p) && (!known || p.Platform != surface) {
+	surface, labelled := surfaces[p.Source]
+	if !labelled {
+		surface = SourceSurface(p.Source)
+	}
+	if !isForwardPolicy(p) && (surface == "" || p.Platform != surface) {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	approval := false

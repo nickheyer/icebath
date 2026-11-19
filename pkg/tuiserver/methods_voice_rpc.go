@@ -8,50 +8,29 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-var voiceRPCRegistry = &handlerRegistry{}
-
+// Binds the wake word and voice method handlers
 func init() {
-	voiceRPCRegistry.method("client.capabilities", clientCapabilities)
-	voiceRPCRegistry.method("wake.start", wakeStart)
-	voiceRPCRegistry.method("wake.stop", wakeStop)
-	voiceRPCRegistry.method("wake.resume", wakeResume)
-	voiceRPCRegistry.method("wake.status", wakeStatus)
-	voiceRPCRegistry.method("voice.toggle", voiceToggle)
-	voiceRPCRegistry.method("voice.record", voiceRecord)
-	voiceRPCRegistry.install()
+	voiceHandlers["wake.start"] = wakeStart
+	voiceHandlers["wake.stop"] = wakeStop
+	voiceHandlers["wake.resume"] = wakeResume
+	voiceHandlers["wake.status"] = wakeStatus
+	voiceHandlers["voice.toggle"] = voiceToggle
+	voiceHandlers["voice.record"] = voiceRecord
 }
 
 // Tool env of the scoped profile home a voice call reads
 func voiceEnv(ctx context.Context) *tools.Env {
 	return tools.EnvForProfileHome(ctx, nil, home.Dir(ctx))
-}
-
-// Records what the calling client handles
-func clientCapabilities(ctx context.Context, rid any, params map[string]any) map[string]any {
-	transport := callerTransport(ctx)
-	if raw, present := params["server_requests"]; present {
-		tuihost.Advertise(transport, truthy(raw))
-	}
-	names := make([]string, 0, len(tuihost.ServerRequests))
-	for name := range tuihost.ServerRequests {
-		names = append(names, name)
-	}
-	for _, entry := range tuigateway.Entries(tuigateway.KindRequest) {
-		names = append(names, entry.Name)
-	}
-	sort.Strings(names)
-	return ok(rid, map[string]any{"server_requests": names, "declines_not_shown": true, "canonical_clarify_batch": true})
 }
 
 // Lease result of an owner gated wake call, reason not_owner when it did nothing
@@ -328,9 +307,26 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 		action = "status"
 	}
 	text, isText := action.(string)
+	if isText && (text == "status" || text == "on" || text == "off" || text == "tts") {
+		if sid := relayString(params["session_id"]); sid != "" {
+			mode, held, err := gateway.LocalVoiceMode(sid)
+			if err != nil {
+				return rpcErr(rid, 5025, err.Error(), nil)
+			}
+			if held {
+				return sessionVoiceToggle(ctx, rid, sid, mode, text)
+			}
+		}
+		if gateway.ActiveAPIRunner() != nil && text != "status" {
+			return rpcErr(rid, 4014, "voice mode belongs to a session on the shared gateway: name the session_id of a live session", nil)
+		}
+	}
 	switch {
 	case isText && text == "status":
 		payload := voiceStatusPayload(ctx, nil)
+		if gateway.ActiveAPIRunner() != nil {
+			payload["enabled"], payload["tts"] = false, false
+		}
 		func() {
 			defer func() {
 				if failure := recover(); failure != nil {
@@ -436,6 +432,12 @@ func voiceRecord(ctx context.Context, rid any, params map[string]any) (response 
 		}
 	}
 	sid := relayString(params["session_id"])
+	if action == "start" && sid != "" {
+		if _, held, _ := gateway.LocalVoiceMode(sid); held {
+			claimSessionSpeaker(sid, transport)
+			cutSessionSpeech(sid, false)
+		}
+	}
 	voiceSidMu.Lock()
 	captureSID := voiceCaptureSID
 	voiceSidMu.Unlock()

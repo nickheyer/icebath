@@ -354,7 +354,7 @@ func (c *streamingCall) abandonWedgedWorker(elapsed float64, attempt int, kind s
 	c.requestCancelled.Store(true)
 	var abandon error
 	if kind == "stale" {
-		abandon = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: fmt.Errorf("Provider stream stalled: no chunks and the request worker did not unwind after %d stale-stream kills; request abandoned.", c.mon.sameKills)}
+		abandon = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: fmt.Errorf("Provider %w: no chunks and the request worker did not unwind after %d stale-stream kills; request abandoned.", ErrStreamStalled, c.mon.sameKills)}
 	} else {
 		abandon = &StreamLifetimeExceededError{Elapsed: elapsed, Cap: c.mon.lifetime.cap}
 	}

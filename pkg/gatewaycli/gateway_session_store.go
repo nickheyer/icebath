@@ -27,7 +27,7 @@ import (
 var (
 	// Mutations the owner refuses without the execution generation they were read at
 	generationFenced = map[string]bool{"delete": true, "rewind": true, "reset": true, "branch": true, "model": true,
-		"compress": true, "workspace": true}
+		"compress": true, "workspace": true, "launch": true}
 	// Launch options of the classic CLI that are creation policy on the gateway session
 	launchPolicyFields = []string{"model", "provider", "toolsets", "reasoning", "api_key", "base_url", "max_turns",
 		"ignore_rules", "checkpoints", "pass_session_id", "skills"}
@@ -225,10 +225,11 @@ func (s *GatewaySessionStore) OpenSession(ctx context.Context, cli OpenSessionCL
 	if pyrepr.Truthy(cli.ExplicitIgnoreRules) {
 		checked["ignore_rules"] = cli.ExplicitIgnoreRules
 	}
-	if err := checkResumeLaunch(ctx, checked, snapshot); err != nil {
+	relaunched, err := s.relaunch(ctx, cli.SessionID, checked, snapshot)
+	if err != nil {
 		return "", err
 	}
-	return s.adopt(snapshot)
+	return s.adopt(relaunched)
 }
 
 // Creates a gateway session with the launch policy and an optional title, adopting and returning its id
@@ -807,7 +808,7 @@ func launchCwd() (string, error) {
 	return pypath.Realpath(chosen, pypath.Lax)
 }
 
-// Run budget and verbose flags of the classic CLI, which the thin client refuses
+// Run budget and verbose flags of the classic CLI as session policy
 func classicOnlyPolicy(launch map[string]any) map[string]any {
 	policy := map[string]any{}
 	if launch["run_budget"] != nil {
@@ -836,31 +837,33 @@ func pyFloatOf(v any) float64 {
 	return float64(pyIntOf(v))
 }
 
-// Refuses explicit launch flags on a resume that differ from the session's frozen route
-func checkResumeLaunch(ctx context.Context, launch map[string]any, snapshot *pyjson.Object) error {
+// Lays the launch flags that differ from the resumed session's frozen launch over it, the fresh snapshot after
+func (s *GatewaySessionStore) relaunch(ctx context.Context, sessionID string, launch map[string]any, snapshot *pyjson.Object) (*pyjson.Object, error) {
 	fields := map[string]any{}
 	for _, key := range launchPolicyFields {
 		fields[key] = launch[key]
 	}
 	fields["toolsets"] = joinedToolsets(fields["toolsets"])
-	if err := CheckResumePolicy(ctx, fields, snapshot); err != nil {
-		return err
+	overrides, err := ResumeOverrides(ctx, fields, snapshot)
+	if err != nil {
+		return nil, err
 	}
 	var frozen map[string]any
 	if info, ok := pyjson.AsObject(snapshot.Vals["info"]); ok {
 		frozen, _ = plainDict(info.Vals["launch_request"])
 	}
-	var differs []string
-	classic := classicOnlyPolicy(launch)
-	for _, key := range []string{"run_budget", "verbose"} {
-		if value, ok := classic[key]; ok && !pyjson.Equal(frozen[key], value) {
-			differs = append(differs, key)
+	for key, value := range classicOnlyPolicy(launch) {
+		if !pyjson.Equal(frozen[key], value) {
+			overrides[key] = value
 		}
 	}
-	if len(differs) > 0 {
-		return ResumePolicyError(differs)
+	if len(overrides) == 0 {
+		return snapshot, nil
 	}
-	return nil
+	if _, err := s.Mutate(ctx, sessionID, "launch", overrides, snapshot); err != nil {
+		return nil, err
+	}
+	return s.callObject(ctx, "session.resume", map[string]any{"session_id": sessionID})
 }
 
 // Moves the gateway session's frozen cwd into a new worktree first, then this process and TERMINAL_CWD follow

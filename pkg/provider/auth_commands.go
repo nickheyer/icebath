@@ -4,17 +4,20 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -583,7 +586,7 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 		}},
 	"minimax-oauth": {
 		login: func(c *authCLI) (map[string]any, error) {
-			return authCmdMinimaxOAuthLoginFn(c.env, c.out, "", !nsFlag(c.ns, "no_browser"), authTimeout(c.ns, 15*time.Second))
+			return authCmdMinimaxOAuthLoginFn(c.env, c.out, authTextOr(c.ns["region"]), !nsFlag(c.ns, "no_browser"), authTimeout(c.ns, 15*time.Second))
 		},
 		token:  func(creds map[string]any) string { return authTextOr(creds["access_token"]) },
 		source: authConstSource(SourceManual + ":minimax_oauth"),
@@ -673,6 +676,17 @@ func (c *authCLI) add() error {
 			requestedType = AuthTypeOAuth
 		}
 	}
+	if provider == "vertex" && requestedType != AuthTypeOAuth {
+		return c.addVertexServiceAccount()
+	}
+	asked := provider
+	if sibling, ok := oauthSiblingProviders[provider]; ok && requestedType == AuthTypeOAuth && !isCustom {
+		fmt.Fprintf(c.out, "%s signs in with OAuth through the provider %s, starting its sign-in.\n", provider, sibling)
+		if provider == "minimax-cn" {
+			c.ns["region"] = "cn"
+		}
+		provider = sibling
+	}
 	pool := LoadPool(c.env, provider)
 	if !isCustom {
 		c.unsuppressProviderSources(provider)
@@ -689,6 +703,10 @@ func (c *authCLI) add() error {
 		}
 		return err
 	}
+	if asked != provider {
+		fmt.Fprintf(c.out, "Stored under the provider id %s: `icebath auth list %s` shows it and `--provider %s` uses it.\n",
+			provider, provider, provider)
+	}
 	if wanted, ok := authWantedPriority(c.ns); ok {
 		placed := LoadPool(c.env, provider)
 		moved, ok := placed.MoveEntry(entry.ID, wanted)
@@ -700,6 +718,76 @@ func (c *authCLI) add() error {
 	return nil
 }
 
+// Saves a Google service account key as the profile's VERTEX_CREDENTIALS_PATH, the credential the Vertex runtime reads
+func (c *authCLI) addVertexServiceAccount() error {
+	path := strings.TrimSpace(authTextOr(c.ns["api_key"]))
+	if path == "" {
+		answer, err := authCmdLineInputFn("Path to the Vertex service account JSON: ")
+		if err != nil {
+			return err
+		}
+		path = strings.TrimSpace(answer)
+	}
+	if path == "" {
+		return authExit("No service account JSON path given.")
+	}
+	if strings.HasPrefix(path, "~") {
+		if userHome, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(userHome, strings.TrimPrefix(path, "~"))
+		}
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return authExit(fmt.Sprintf("Cannot read the service account JSON at %s: %v", path, err))
+	}
+	var key struct {
+		Type        string `json:"type"`
+		ClientEmail string `json:"client_email"`
+		PrivateKey  string `json:"private_key"`
+		ProjectID   string `json:"project_id"`
+	}
+	if json.Unmarshal(data, &key) != nil || key.Type != "service_account" || key.ClientEmail == "" || key.PrivateKey == "" {
+		return authExit(fmt.Sprintf("%s is not a Google service account key: it needs \"type\": \"service_account\", client_email and private_key. "+
+			"Create one in the Google Cloud console under IAM & Admin > Service accounts > Keys.", path))
+	}
+	if err := config.SaveEnvValueContext(c.env.ctx(), c.env.Store.Home(), "VERTEX_CREDENTIALS_PATH", path); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.out, "Saved Vertex service account %s (project %s) as VERTEX_CREDENTIALS_PATH\n", key.ClientEmail, key.ProjectID)
+	return nil
+}
+
+// Providers whose OAuth sign in runs and stores under a sibling provider id
+var oauthSiblingProviders = map[string]string{
+	"xai": "xai-oauth", "minimax": "minimax-oauth", "minimax-cn": "minimax-oauth", "openai-api": "openai-codex",
+}
+
+// What a provider without an icebath OAuth sign in signs in with, and the command that adds it
+func noOAuthSignInMessage(provider string) string {
+	switch provider {
+	case "bedrock":
+		return "Bedrock has no OAuth sign-in of its own; AWS signs it in. Run `aws sso login` or `aws configure` (or set AWS_PROFILE), " +
+			"or add a Bedrock API key with `icebath auth add bedrock --type api-key`."
+	case "vertex":
+		return "Vertex has no OAuth sign-in of its own; Google signs it in through Application Default Credentials. " +
+			"Run `gcloud auth application-default login`, or add a service account JSON with `icebath auth add vertex`."
+	case "azure-foundry":
+		return "Azure Foundry signs in without a key through Microsoft Entra ID and the Azure credential chain (az login, managed identity, " +
+			"workload identity, or AZURE_CLIENT_ID with a secret): set model.auth_mode: entra_id in config.yaml or pick " +
+			"'Microsoft Entra ID' in `icebath model`. An API key goes in with `icebath auth add azure-foundry --type api-key`."
+	}
+	oauth := []string{"copilot"}
+	for name := range authOAuthAddSpecs {
+		oauth = append(oauth, name)
+	}
+	sort.Strings(oauth)
+	return fmt.Sprintf("`%s` signs in with an API key only; it offers no OAuth sign-in. Add a key with `icebath auth add %s --type api-key`. "+
+		"OAuth sign-in exists for %s.", provider, provider, strings.Join(oauth, ", "))
+}
+
 // One pool entry per login so every added account rotates on its own token pair
 func (c *authCLI) addCredential(provider string, pool *Pool, requestedType string) (PooledCredential, error) {
 	if requestedType == AuthTypeAPIKey {
@@ -707,7 +795,7 @@ func (c *authCLI) addCredential(provider string, pool *Pool, requestedType strin
 	}
 	spec, ok := authOAuthAddSpecs[provider]
 	if !ok {
-		return PooledCredential{}, authExit(fmt.Sprintf("`icebath auth add %s` is not implemented for auth type %s yet.", provider, requestedType))
+		return PooledCredential{}, authExit(noOAuthSignInMessage(provider))
 	}
 	creds, err := spec.login(c)
 	if err != nil {

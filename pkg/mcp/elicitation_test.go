@@ -54,11 +54,23 @@ func newTestElicitor(cfg map[string]any, callContext func() context.Context) *el
 	return newElicitationHandler("pay", &tools.Env{Platform: "cli"}, cfg, callContext).(*elicitationHandler)
 }
 
+// Asker answering every question batch with the scripted answers in order
+type scriptedAsker struct {
+	answers []tools.Answer
+	asked   [][]tools.Question
+}
+
+func (a *scriptedAsker) Ask(ctx context.Context, qs []tools.Question) (tools.FormResult, error) {
+	a.asked = append(a.asked, qs)
+	return tools.FormResult{Outcome: "submitted", Answers: a.answers[:len(qs)]}, nil
+}
+
 func TestElicitFormModeAcceptAndCancel(t *testing.T) {
 	setConsent(t, answer("accept"))
 	h := newTestElicitor(map[string]any{"timeout": 5}, nil)
+	h.env.Ask = &scriptedAsker{answers: []tools.Answer{{Status: "answered", Selected: []string{"yes"}}}}
 	res, rpcErr := h.Elicit(context.Background(), formParams("authorize a payment of $0.50", `{"properties":{"approved":{"type":"boolean"}}}`))
-	if rpcErr != nil || res.Action != "accept" || res.Content == nil || len(res.Content) != 0 || mustJSON(t, res) != `{"action":"accept","content":{}}` {
+	if rpcErr != nil || res.Action != "accept" || mustJSON(t, res) != `{"action":"accept","content":{"approved":true}}` {
 		t.Fatalf("accept = %+v %v", res, rpcErr)
 	}
 	if m := h.Metrics(); m["accepted"] != 1 || m["declined"] != 0 {
@@ -72,11 +84,15 @@ func TestElicitFormModeAcceptAndCancel(t *testing.T) {
 }
 
 func TestElicitFailureModes(t *testing.T) {
-	calls := setConsent(t, func(context.Context, *tools.Env) string { panic("URL mode must not prompt") })
+	calls := setConsent(t, answer("accept"))
 	h := newTestElicitor(map[string]any{"timeout": 5}, nil)
 	res, _ := h.Elicit(context.Background(), &ElicitParams{Mode: "url", Message: "open this url", URL: "https://example.com/auth", ElicitationID: "e1"})
-	if res.Action != "decline" || h.Metrics()["declined"] != 1 || len(*calls) != 0 {
-		t.Fatalf("url mode = %+v %v %d", res, h.Metrics(), len(*calls))
+	if res.Action != "accept" || res.Content != nil || h.Metrics()["accepted"] != 1 || len(*calls) != 1 || (*calls)[0].opts.URL != "https://example.com/auth" ||
+		!strings.Contains((*calls)[0].description, "https://example.com/auth") || h.ElicitationDone("e1") == nil {
+		t.Fatalf("url mode = %+v %v %+v", res, h.Metrics(), *calls)
+	}
+	if _, rpcErr := h.Elicit(context.Background(), &ElicitParams{Mode: "url", Message: "open", URL: "javascript:alert(1)"}); rpcErr == nil || rpcErr.Code != CodeInvalidParams {
+		t.Fatalf("unusable url = %v", rpcErr)
 	}
 	setConsent(t, func(context.Context, *tools.Env) string { panic("approval system blew up") })
 	h = newTestElicitor(map[string]any{"timeout": 5}, nil)
@@ -129,13 +145,15 @@ func TestElicitContextBridge(t *testing.T) {
 func TestElicitRequestedSchemaReachesConsentDescription(t *testing.T) {
 	calls := setConsent(t, answer("decline"))
 	h := newTestElicitor(map[string]any{"timeout": 5}, nil)
-	h.Elicit(context.Background(), formParams("authorize a payment of $0.50",
+	asker := &scriptedAsker{answers: []tools.Answer{{Status: "answered", Text: "12345"}, {Status: "answered", Text: "4242"}}}
+	h.env.Ask = asker
+	res, _ := h.Elicit(context.Background(), formParams("authorize a payment of $0.50",
 		`{"type":"object","properties":{"zip":{"type":"string"},"card_number":{"type":"string","description":"card to charge"}}}`))
-	want := "Fields requested by MCP server 'pay':\n  - zip (string)\n  - card_number (string): card to charge"
-	if len(*calls) != 1 || (*calls)[0].description != want || (*calls)[0].message != "authorize a payment of $0.50" {
+	want := "Answers for MCP server 'pay':\n  zip: \"12345\"\n  card_number: \"4242\""
+	if res.Action != "decline" || len(*calls) != 1 || (*calls)[0].description != want || (*calls)[0].message != "Send these answers?" {
 		t.Fatalf("consent calls = %+v", *calls)
 	}
-	if !strings.Contains((*calls)[0].description, "card_number") {
-		t.Fatal("schema field missing from the description")
+	if len(asker.asked) != 1 || !strings.Contains(asker.asked[0][0].Text, "authorize a payment of $0.50") || !strings.Contains(asker.asked[0][1].Text, "card to charge") {
+		t.Fatalf("questions = %+v", asker.asked)
 	}
 }

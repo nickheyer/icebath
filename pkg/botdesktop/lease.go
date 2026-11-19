@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -201,11 +200,8 @@ func leaseWrite(path string, l BotDesktopLease) error {
 	return os.Rename(tmp, path)
 }
 
-// Cross process critical section over a sibling lock file, a no op where fcntl is unavailable
+// Cross process critical section over a sibling lock file
 func leaseLocked(path string, fn func() error) error {
-	if runtime.GOOS == "windows" {
-		return fn()
-	}
 	lockfile := strings.TrimSuffix(path, filepath.Ext(path)) + ".lock"
 	if err := leasePrivateDir(lockfile); err != nil {
 		return err

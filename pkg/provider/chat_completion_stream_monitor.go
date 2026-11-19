@@ -444,7 +444,7 @@ func (w *streamWatchdog) abandonWedgedWorker(elapsed float64, kind string) {
 	pkgLog().Error(fmt.Sprintf("Streaming worker did not unwind after %d %s kills of attempt %d (%.0fs); abandoning the request. model=%s", w.kills, kind, w.attempt, elapsed, w.model))
 	var cause error
 	if kind == "stale" {
-		cause = fmt.Errorf("Provider stream stalled: no chunks and the request worker did not unwind after %d stale-stream kills; request abandoned.", w.kills)
+		cause = fmt.Errorf("Provider %w: no chunks and the request worker did not unwind after %d stale-stream kills; request abandoned.", ErrStreamStalled, w.kills)
 	} else {
 		cause = &StreamLifetimeExceededError{Elapsed: elapsed, Cap: w.lifetime.Seconds()}
 	}

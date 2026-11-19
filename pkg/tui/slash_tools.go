@@ -13,18 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 )
 
-// Text entries of a gateway list answer
-func rpcStrings(v any) []string {
-	out := []string{}
-	items, _ := v.([]any)
-	for _, item := range items {
-		if text, ok := item.(string); ok {
-			out = append(out, text)
-		}
-	}
-	return out
-}
-
 // Tool catalog of a session grouped by toolset with the total underneath
 func toolsCatalogText(ctx context.Context, res tuigateway.ToolsShowResult) string {
 	lines := []string{}

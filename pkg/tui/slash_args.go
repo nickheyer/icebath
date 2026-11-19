@@ -258,18 +258,11 @@ func (a *app) argOffers(input string, then func([]cards.Offer, int) tea.Cmd) tea
 		return then(nil, replace)
 	}
 	if kind == argPaths {
-		params := map[string]any{"word": arg.partial}
-		if cwd := a.store.sessionCwd(); cwd != "" {
-			params["cwd"] = cwd
-		}
-		if sid := a.store.ui.Sid; sid != "" {
-			params["session_id"] = sid
-		}
-		return gatewayCall(a.gw, "complete.path", params, func(raw any, err error) tea.Cmd {
+		return call(a.gw, tuigateway.CompletePath, *a.store.pathCompletionParams(arg.partial), func(r *tuigateway.CompletionItemsResult, err error) tea.Cmd {
 			if err != nil {
 				return then(unavailableOffer(err), replace)
 			}
-			return then(offersOf(asRPCResult(raw)), replace)
+			return then(offersOf(r.Items, false), replace)
 		})
 	}
 	return a.argValues(kind, func(values []cards.Offer, err error) tea.Cmd {
@@ -289,15 +282,14 @@ func unavailableOffer(err error) []cards.Offer {
 	return []cards.Offer{{Display: tr("libText.completion.unavailable"), Meta: meta}}
 }
 
-// Offers of a completion answer's items
-func offersOf(r map[string]any) []cards.Offer {
-	items, _ := r["items"].([]any)
+// Offers of completion rows, only the skills when asked
+func offersOf(items []tuigateway.CompletionItem, skillsOnly bool) []cards.Offer {
 	var out []cards.Offer
-	for _, raw := range items {
-		item, _ := raw.(map[string]any)
-		if item != nil {
-			out = append(out, cards.Offer{Text: stringOr(item["text"], ""), Display: stringOr(item["display"], ""), Meta: stringOr(item["meta"], "")})
+	for _, item := range items {
+		if skillsOnly && (item.Kind == nil || *item.Kind != "skill") {
+			continue
 		}
+		out = append(out, cards.Offer{Text: item.Text, Display: item.Display, Meta: item.Meta})
 	}
 	return out
 }

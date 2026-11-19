@@ -322,26 +322,28 @@ func displaySessionCwd(ctx context.Context, session *tuihost.Session) string {
 }
 
 // Session store owning the row of a session, a profile db handle else the shared launch one, with its release
-func workdirOwnerDB(ctx context.Context, session *tuihost.Session, failLog string) (db *state.DB, failed bool, release func()) {
-	release = func() {}
+func workdirOwnerDB(ctx context.Context, session *tuihost.Session) (*state.DB, func(), error) {
+	release := func() {}
 	profileHome := strOr(session.Get("profile_home"))
 	if profileHome == "" {
-		return getDB(ctx), false, release
+		db, err := getDB(ctx)
+		return db, release, err
 	}
-	opened, err := state.Acquire(ctx, filepath.Join(profileHome, "state.db"))
+	path := filepath.Join(profileHome, "state.db")
+	opened, err := state.Acquire(ctx, path)
 	if err != nil {
-		pkgLog().Debug(failLog, "error", err)
-		return nil, true, release
+		return nil, release, storeUnavailable(ctx, path, err)
 	}
-	return opened, false, func() {
+	return opened, func() {
 		suppress(func() { state.ReleaseOrClose(opened) })
-	}
+	}, nil
 }
 
 // Session store owning the row of a session with its release, nil when unavailable
 func sessionDB(ctx context.Context, session *tuihost.Session) (*state.DB, func()) {
-	db, failed, release := workdirOwnerDB(ctx, session, "failed to open profile db for session")
-	if failed {
+	db, release, err := workdirOwnerDB(ctx, session)
+	if err != nil {
+		pkgLog().Warn("session store failed to open", "error", err)
 		return nil, release
 	}
 	return db, release

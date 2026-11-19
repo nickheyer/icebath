@@ -181,7 +181,10 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx) []string {
 		lead := toneStyle(c.t.Color.Prompt).Bold(true).Render(c.ut.Glyphs.Prompt + " ")
 		lines = userLines(m.Text, c, lead)
 	case m.Role == "assistant":
-		lines = v.markdownLines(m.Text, c)
+		if len(m.Tools) > 0 {
+			lines = trailLines(msg{Kind: "trail", Role: "system", Tools: m.Tools}, c)
+		}
+		lines = append(lines, v.markdownLines(m.Text, c)...)
 	case isUsageGaugeRow(m):
 		lines = []string{strings.Repeat(" ", transcriptIndent) + usageGaugeRowView(c.t, m.Text)}
 	default:
@@ -367,19 +370,31 @@ func panelLines(p panelData, c renderCtx) []string {
 	return lines
 }
 
-// Tool row painted by its outcome, the mark of a failed call in the error tone
+// Tool row painted by its outcome, a failed or refused call with its reason wrapped below
 func toolRow(line string, c renderCtx) []string {
 	pad := strings.Repeat(" ", transcriptIndent)
 	rows := strings.Split(line, "\n")
-	tone := c.t.Color.Tool
-	if strings.HasSuffix(strings.TrimSpace(rows[0]), "✗") {
+	head := strings.TrimSpace(rows[0])
+	tone, verdict := c.t.Color.Tool, ""
+	switch {
+	case strings.HasSuffix(head, "⊘"):
+		tone, verdict = c.t.Color.Warn, c.t.Color.Warn
+	case strings.HasSuffix(head, "✗"):
+		tone, verdict = c.t.Color.Error, c.t.Color.Error
+	case strings.HasSuffix(strings.TrimSpace(line), "✗"):
 		tone = c.t.Color.Error
 	}
 	hint := ""
-	if strings.HasPrefix(rows[0], "Delegate Task") {
+	if strings.HasPrefix(rows[0], "Delegate Task") && verdict == "" {
 		hint = delegateMonitorHint("delegate_task", c)
 	}
 	out := []string{pad + toneStyle(tone).Render(truncateEnd(rows[0], max(c.width-transcriptIndent-ansi.StringWidth(hint), 8))) + hint}
+	if verdict != "" {
+		for _, row := range strings.Split(ansi.Wrap(strings.Join(rows[1:], " "), max(c.width-transcriptIndent-2, 8), ""), "\n") {
+			out = append(out, pad+"  "+toneStyle(verdict).Render(row))
+		}
+		return out
+	}
 	for _, extra := range rows[1:] {
 		out = append(out, pad+"  "+toneStyle(c.t.Color.Muted).Render(truncateEnd(extra, max(c.width-transcriptIndent-2, 8))))
 	}

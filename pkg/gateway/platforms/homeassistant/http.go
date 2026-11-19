@@ -173,7 +173,7 @@ func (f *tlsFailure) get() error {
 func sslConnectError(rawURL string, err error) error {
 	text := pyrequests.SSLErrorText(err)
 	host, port := hostPort(rawURL)
-	if strings.HasPrefix(text, "[SSL: CERTIFICATE_VERIFY_FAILED]") {
+	if pyrequests.CertificateVerifyFailed(err) {
 		return &clientError{kind: "ClientConnectorCertificateError",
 			text: fmt.Sprintf("Cannot connect to host %s:%s: the TLS certificate could not be verified (%s)", host, port, text), err: err}
 	}

@@ -200,6 +200,7 @@ func (a *AIAgent) Close() error { return a.CloseContext(context.Background()) }
 
 // Releases every resource the agent holds under the caller's profile scope, each step isolated
 func (a *AIAgent) CloseContext(ctx context.Context) error {
+	a.joinOpenRouterPrewarm()
 	sessionMessages := a.liveSessionMessages()
 	var dicts []map[string]any
 	if sessionMessages != nil {

@@ -32,12 +32,6 @@ func gatewayCall(gw turnGateway, method string, params map[string]any, then func
 	}
 }
 
-// Object result of a request, nil for anything else
-func asRPCResult(v any) map[string]any {
-	m, _ := v.(map[string]any)
-	return m
-}
-
 const tuiSessionModelFlag = "--tui-session"
 
 var (
@@ -104,7 +98,11 @@ func (s *tuiStore) retireCanonicalControls(sid, keep string) {
 // Whether an error carries the owner's refusal reason
 func hasRefusalReason(err error) bool {
 	var rerr *rpcError
-	return errors.As(err, &rerr) && truthyJS(rerr.Data["reason"])
+	if !errors.As(err, &rerr) {
+		return false
+	}
+	reason, _ := rerr.Data["reason"].(string)
+	return reason != ""
 }
 
 // Compare and swap mutation of a session, reading its revision first unless a pending request is retried

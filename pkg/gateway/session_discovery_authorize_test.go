@@ -5,19 +5,20 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestDiscoveryAuthorizesBeforeScanning(t *testing.T) {
 	savedCatalog, savedCompletions := CommandCatalog, SlashCompletions
 	t.Cleanup(func() { CommandCatalog, SlashCompletions = savedCatalog, savedCompletions })
-	CommandCatalog = func(context.Context, func(context.Context) (context.Context, error)) (map[string]any, error) {
+	CommandCatalog = func(context.Context, func(context.Context) (context.Context, error)) (tuigateway.CommandsCatalogResult, error) {
 		t.Fatal("unauthorized request reached discovery")
-		return nil, nil
+		return tuigateway.CommandsCatalogResult{}, nil
 	}
-	SlashCompletions = func(context.Context, string, func(context.Context) (context.Context, error)) (map[string]any, error) {
+	SlashCompletions = func(context.Context, string, func(context.Context) (context.Context, error)) (tuigateway.CompleteSlashResult, error) {
 		t.Fatal("unauthorized request reached discovery")
-		return nil, nil
+		return tuigateway.CompleteSlashResult{}, nil
 	}
 	authority := &SessionAuthority{InstanceID: "owned", ProfileID: t.TempDir(), Events: map[string]tuihost.Transport{}}
 	ctx := context.Background()

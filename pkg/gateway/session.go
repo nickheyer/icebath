@@ -524,6 +524,8 @@ type SessionStore struct {
 	Config      *GatewayConfig
 	// Called with the key, session id and origin once a route names another conversation
 	RouteNamed func(sessionKey, sessionID string, origin *SessionSource)
+	// Called with the cause when transcript rows stop reaching the store and wait in the spool
+	StoreFailed func(err error)
 
 	ctx                        context.Context
 	mu                         sync.Mutex
@@ -682,10 +684,9 @@ func (s *SessionStore) getOrCreateSessionImpl(ctx context.Context, source *Sessi
 	s.mu.Unlock()
 	var checks *routeChecks
 	if !forceNew && observed != nil {
-		sid := observed.SessionID
-		checks = &routeChecks{sessionID: sid, canonicalID: s.compressionTipForSessionID(ctx, sid),
-			isStale:     s.isSessionEndedInDB(ctx, sid, "") && s.localReceiptTarget(ctx, observed) == "" && !s.apiBound(ctx, observed),
-			resetReason: s.routeResetReason(observed)}
+		if checks, err = s.observedRouteChecks(ctx, observed); err != nil {
+			return nil, err
+		}
 	}
 	decision := s.applyRouteChecks(ctx, sessionKey, checks, forceNew, touchActivity, now, source)
 	if decision.needsRecover && decision.prevSessionID == nil {
@@ -726,6 +727,34 @@ func (s *SessionStore) getOrCreateSessionImpl(ctx context.Context, source *Sessi
 		s.announceRoute(sessionKey, decision.entry)
 	}
 	return decision.entry, nil
+}
+
+// Canonical id and staleness of an observed route read from its store, a store that cannot answer returned
+func (s *SessionStore) observedRouteChecks(ctx context.Context, observed *SessionEntry) (*routeChecks, error) {
+	sid := observed.SessionID
+	canonical, err := s.compressionTipForSessionID(ctx, sid)
+	if err != nil {
+		return nil, err
+	}
+	stale, err := s.sessionEndedInDB(ctx, sid, s.ownerKeyForSessionID(sid))
+	if err != nil {
+		return nil, err
+	}
+	if stale {
+		target, err := s.localReceiptTarget(ctx, observed)
+		if err != nil {
+			return nil, err
+		}
+		stale = target == ""
+	}
+	if stale {
+		bound, err := s.apiBound(ctx, observed)
+		if err != nil {
+			return nil, err
+		}
+		stale = !bound
+	}
+	return &routeChecks{sessionID: sid, canonicalID: canonical, isStale: stale, resetReason: s.routeResetReason(observed)}, nil
 }
 
 // Applies the stale and reset decisions under the lock, a replaced entry reading as healthy

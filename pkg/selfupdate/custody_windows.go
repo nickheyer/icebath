@@ -9,10 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 
+	"github.com/nickheyer/icebath/pkg/internal/treekill"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -61,7 +61,7 @@ func (a *winJoinAPI) note(err error) bool {
 }
 
 func (a *winJoinAPI) Assign(job, process uintptr) bool {
-	return a.note(windows.AssignProcessToJobObject(windows.Handle(job), windows.Handle(process)))
+	return a.note(treekill.AssignHandle(windows.Handle(job), windows.Handle(process)))
 }
 
 func (a *winJoinAPI) CurrentProcess() uintptr { return uintptr(windows.CurrentProcess()) }
@@ -75,53 +75,41 @@ func (a *winJoinAPI) LastError() int {
 }
 
 func (a *winJoinAPI) CreateJob() uintptr {
-	job, err := windows.CreateJobObject(nil, nil)
+	job, err := treekill.CreateJob(0)
 	a.note(err)
 	return uintptr(job)
 }
 
 func (a *winJoinAPI) SetKillOnClose(job uintptr) bool {
-	var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	_, err := windows.SetInformationJobObject(windows.Handle(job), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits)))
-	return a.note(err)
+	return a.note(treekill.SetLimits(windows.Handle(job), treekill.KillOnClose))
 }
 
 func (a *winJoinAPI) InJob(process, job uintptr) bool {
-	var inside int32
-	ok, _, err := procIsProcessInJob.Call(process, job, uintptr(unsafe.Pointer(&inside)))
-	if ok == 0 {
+	inside, err := treekill.InJob(windows.Handle(process), windows.Handle(job))
+	if err != nil {
 		a.lastErr = err
 		return false
 	}
-	return inside != 0
+	return inside
 }
 
 func (a *winJoinAPI) CloseHandle(handle uintptr) { _ = windows.CloseHandle(windows.Handle(handle)) }
 
-var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
-
-var procNtResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResumeProcess")
-
 func (a *winJoinAPI) Resume(process uintptr) int {
-	status, _, _ := procNtResumeProcess.Call(process)
-	return int(int32(status))
+	var status windows.NTStatus
+	if errors.As(treekill.Resume(windows.Handle(process)), &status) {
+		return int(int32(status))
+	}
+	return 0
 }
 
 func (a *winJoinAPI) Terminate(job uintptr, code uint32) {
-	_ = windows.TerminateJobObject(windows.Handle(job), code)
-}
-
-// JOBOBJECT_BASIC_ACCOUNTING_INFORMATION whose ActiveProcesses says when the command's tree is gone
-type jobAccounting struct {
-	TotalUserTime, TotalKernelTime, ThisPeriodTotalUserTime, ThisPeriodTotalKernelTime int64
-	TotalPageFaultCount, TotalProcesses, ActiveProcesses, TotalTerminatedProcesses     uint32
+	_ = treekill.TerminateJob(windows.Handle(job), code)
 }
 
 func (a *winJoinAPI) ActiveProcesses(job uintptr) (uint32, bool) {
-	var usage jobAccounting
-	err := windows.QueryInformationJobObject(windows.Handle(job), windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&usage)), uint32(unsafe.Sizeof(usage)), nil)
-	return usage.ActiveProcesses, a.note(err)
+	n, err := treekill.ActiveProcesses(windows.Handle(job))
+	return n, a.note(err)
 }
 
 func (a *winJoinAPI) Stderr() io.Writer { return os.Stderr }

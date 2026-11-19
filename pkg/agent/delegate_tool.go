@@ -275,6 +275,9 @@ func buildDelegateChildren(ctx context.Context, taskList []map[string]any, taskS
 		if i < len(liveWriters) && liveWriters[i] != nil {
 			child.toolProgressCallback = wrapProgressCallback(child.toolProgressCallback, liveWriters[i])
 			child.liveTranscriptPath = liveWriters[i].Path()
+			if child.sessionInitModelConfig != nil {
+				child.sessionInitModelConfig[tools.LiveTranscriptConfigKey] = child.liveTranscriptPath
+			}
 		}
 		if report := route.Report(); report != nil {
 			child.delegateRoute = report
@@ -348,6 +351,9 @@ func oneshotSpawnBudget(ctx context.Context, parent *AIAgent, requested int) str
 
 func delegateToolError(msg string) string { return tools.ErrorResult(errors.New(msg)) }
 
+// Result of a spawn the delegation policy declined before any child was built
+func delegateRefusal(msg string) string { return tools.RefusedResult(msg) }
+
 // Live transcript creator of a batch, swapped by tests that lose a writer
 var createLiveTranscriptsFn = createLiveTranscripts
 
@@ -373,7 +379,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		return delegateToolError(fmt.Sprintf("Unknown action '%s'. Use spawn (default), list, steer, or stop.", actionText)), nil
 	}
 	if isSpawnPaused() {
-		return delegateToolError("Delegation spawning is paused. Clear the pause via the TUI " +
+		return delegateRefusal("Delegation spawning is paused. Clear the pause via the TUI " +
 			"(`p` in /agents) or the `delegation.pause` RPC before retrying."), nil
 	}
 	topRole := normalizeDelegateRole(kwargs["role"])
@@ -384,7 +390,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 	depth := parent.delegateDepth
 	maxSpawn := tools.MaxSpawnDepth(ctx)
 	if depth >= maxSpawn {
-		return delegateToolError(fmt.Sprintf("Delegation depth limit reached (depth=%d, max_spawn_depth=%d). Raise "+
+		return delegateRefusal(fmt.Sprintf("Delegation depth limit reached (depth=%d, max_spawn_depth=%d). Raise "+
 			"delegation.max_spawn_depth in config.yaml if deeper nesting is required (no hard ceiling, but each level "+
 			"multiplies API cost).", depth, maxSpawn)), nil
 	}
@@ -434,7 +440,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		}
 	}
 	if len(runnable) == 0 {
-		return delegateToolError(strings.Join(refusals, " ")), nil
+		return delegateRefusal(strings.Join(refusals, " ")), nil
 	}
 	creds := runnable[0].Creds
 	for _, r := range runnable {
@@ -447,11 +453,11 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		}
 	}
 	if refusal := oneshotSpawnBudget(ctx, parent, len(runnable)); refusal != "" {
-		return delegateToolError(refusal), nil
+		return delegateRefusal(refusal), nil
 	}
 	overallStart := time.Now()
 	liveHome := parentLiveHome(parent)
-	liveDelegID, liveWriters, livePaths := createLiveTranscriptsFn(ctx, taskList, kwargs["context"], creds["model"], creds["provider"], liveHome)
+	liveDelegID, liveWriters, livePaths := createLiveTranscriptsFn(withLiveTranscriptStore(ctx, parent.sessionDB), taskList, kwargs["context"], creds["model"], creds["provider"], liveHome)
 	if len(refused) > 0 {
 		settleRefusedTranscripts(refused, liveDelegID, liveWriters, liveHome)
 	}

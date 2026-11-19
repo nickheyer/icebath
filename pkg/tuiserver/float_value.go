@@ -1,6 +1,7 @@
 package tuiserver
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -48,7 +49,7 @@ func pyFloat(v any) (float64, error) {
 		}
 		text = strings.ReplaceAll(text, "_", "")
 		if valid {
-			if f, err := strconv.ParseFloat(text, 64); err == nil || strings.Contains(err.Error(), "value out of range") {
+			if f, err := strconv.ParseFloat(text, 64); err == nil || errors.Is(err, strconv.ErrRange) {
 				return f, nil
 			}
 		}

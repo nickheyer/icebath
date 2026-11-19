@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -325,7 +324,7 @@ func (r *voiceReceiver) onPacket(data []byte) {
 		if userID != 0 {
 			plain, err := creds.dave.decrypt(userID, daveMediaAudio, decrypted)
 			if err != nil {
-				if !strings.Contains(err.Error(), "Unencrypted") {
+				if !errors.Is(err, errUnencryptedFrame) {
 					if debugCount <= 10 {
 						pkgLog().Warn(fmt.Sprintf("DAVE decrypt failed for ssrc=%d: %s", ssrc, err))
 					}

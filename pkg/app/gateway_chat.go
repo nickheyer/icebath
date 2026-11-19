@@ -22,25 +22,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Options that change execution or need frontend facilities the authority does not expose
-var gatewayChatUnsupported = []string{"image", "worktree", "w", "no_restore_cwd", "run_budget", "verbose", "compact"}
-
-// Where each refused option lives now
-var gatewayChatRelocated = map[string]string{
-	"image":                               "`icebath` (the terminal UI) to attach the image",
-	"worktree":                            "`icebath -w`",
-	"w":                                   "`icebath -w`",
-	"no_restore_cwd":                      "`--in <dir>` (the gateway keeps the session's frozen cwd)",
-	"run_budget":                          "`agent.run_budget_seconds` in config.yaml",
-	"verbose":                             "`icebath logs --follow`, or `icebath chat -v`",
-	"compact":                             "`display.compact: true` in config.yaml",
-	"create-if-missing without -c <name>": "`-c <name> --create-if-missing`",
-}
 
 // Runnable bypass launch example the safe mode refusal prints
 const gatewayChatSafeModeExample = `icebath chat --safe-mode --provider openrouter --model anthropic/claude-sonnet-4 -q "hello"`
@@ -88,32 +74,10 @@ func gatewayWantsLatest(args map[string]any) bool {
 	return args["continue_last"] == true
 }
 
-// Refuses unsupported options naming where each went, and a bypass launch without an explicit model
+// Warns of a nameless create-if-missing as the direct chat does and refuses a bypass launch without an explicit model
 func gatewayValidateOptions(args map[string]any) error {
-	var unsupported []string
-	for _, name := range gatewayChatUnsupported {
-		if pyrepr.Truthy(args[name]) {
-			unsupported = append(unsupported, name)
-		}
-	}
-	if _, titled := gatewayContinueTitle(args); pyrepr.Truthy(args["create_if_missing"]) && !titled {
-		unsupported = append(unsupported, "create-if-missing without -c <name>")
-	}
-	if len(unsupported) > 0 {
-		spell := func(name string) string {
-			if pystr.Len(name) == 1 {
-				return "-" + name
-			}
-			return "--" + strings.ReplaceAll(name, "_", "-")
-		}
-		flags := make([]string, len(unsupported))
-		var where strings.Builder
-		for i, name := range unsupported {
-			flags[i] = spell(name)
-			where.WriteString(fmt.Sprintf("\n  %s: use %s", spell(name), gatewayChatRelocated[name]))
-		}
-		return &gateway.GatewayClientError{Msg: fmt.Sprintf("Unsupported gateway CLI options: %s. No local fallback or policy changes were made.%s",
-			strings.Join(flags, ", "), where.String())}
+	if args["continue_last"] == true && !pyrepr.Truthy(args["resume"]) && pyrepr.Truthy(args["create_if_missing"]) {
+		fmt.Fprintln(stderrWriter(), "--create-if-missing requires a session name: `-c <name> --create-if-missing`")
 	}
 	resuming := pyrepr.Truthy(args["resume"]) || pyrepr.Truthy(args["continue_last"])
 	if BypassLaunch(args) && !pyrepr.Truthy(args["model"]) && !resuming {
@@ -162,7 +126,7 @@ func gatewayResume(ctx context.Context, client gatewayChatPeer, args map[string]
 	if err != nil {
 		var refused *gateway.GatewayClientError
 		if key != "" && errors.As(err, &refused) && refused.Msg == "admission_conflict" {
-			return nil, &gateway.GatewayClientError{Msg: gateway.ResumeKeyMismatch}
+			return nil, &gateway.GatewayClientError{Msg: gateway.ResumeKeyMismatch, ResumeRefused: true}
 		}
 		return nil, err
 	}
@@ -253,9 +217,6 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 	} else if has(sources, "oneshot") {
 		source = "oneshot"
 	}
-	if !has(sources, source) {
-		return nil, &gateway.GatewayClientError{Msg: "Gateway does not support source " + errchain.Show(source)}
-	}
 	parameters, _ := gatewayGetOr(contract, "parameters", []any{}).([]any)
 	policy := gatewaycli.RequestedPolicy(args)
 	policy.Delete("source")
@@ -277,14 +238,7 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case has(parameters, "cwd"):
-		policy.Set("cwd", cwd)
-	case pyrepr.Truthy(args["in_dir"]):
-		return nil, &gateway.GatewayClientError{Msg: "Gateway does not support --in / caller cwd; update the gateway"}
-	default:
-		fmt.Fprintln(stderrWriter(), "Warning: this gateway cannot preserve caller cwd; it uses its configured execution directory.")
-	}
+	policy.Set("cwd", cwd)
 	var missing []string
 	for _, key := range policy.Keys {
 		if !has(parameters, key) {
@@ -293,7 +247,9 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return nil, &gateway.GatewayClientError{Msg: "Gateway does not support creation options: " + strings.Join(missing, ", ")}
+		return nil, &gateway.GatewayClientError{Msg: fmt.Sprintf("The gateway this chat attached to is icebath build %s, which takes no %s at session "+
+			"creation. Restart it on this build with `icebath gateway restart`, or point ICEBATH_TUI_GATEWAY_URL at a gateway of this build.",
+			pyrepr.Str(gatewayGetOr(description, "build", "unknown")), strings.Join(missing, ", "))}
 	}
 	params := map[string]any{"request_id": uuidHex(), "source": source}
 	for _, key := range policy.Keys {
@@ -341,6 +297,46 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 	if err != nil {
 		return 0, err
 	}
+	var attachments []any
+	if pyrepr.Truthy(args["image"]) {
+		staged, err := gatewayStageImage(ctx, pyrepr.Str(args["image"]))
+		if err != nil {
+			return 0, err
+		}
+		attachments = append(attachments, staged)
+	}
+	if pyrepr.Truthy(args["no_restore_cwd"]) && !pyrepr.Truthy(args["in_dir"]) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return 0, err
+		}
+		args["in_dir"] = cwd
+	}
+	sessionID := ""
+	if pyrepr.Truthy(args["worktree"]) || pyrepr.Truthy(args["w"]) {
+		var info map[string]any
+		setup := func() (bool, error) {
+			var err error
+			info, err = gatewayChatWorktree(ctx, args)
+			return info != nil, err
+		}
+		if emitter != nil {
+			_, err = gatewayStdoutToStderr(setup)
+		} else {
+			_, err = setup()
+		}
+		if err != nil || info == nil {
+			return 1, err
+		}
+		defer func() {
+			finish := func() (bool, error) { finishGatewayWorktree(ctx, info, sessionID); return true, nil }
+			if emitter != nil {
+				_, _ = gatewayStdoutToStderr(finish)
+			} else {
+				_, _ = finish()
+			}
+		}()
+	}
 	title, titled := gatewayContinueTitle(args)
 	createIfMissing := titled && title != "" && pyrepr.Truthy(args["create_if_missing"])
 	latest := gatewayWantsLatest(args)
@@ -348,7 +344,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 	switch {
 	case latest:
 		if snapshot, err = gatewayResumeLatest(ctx, client, args); err == nil {
-			err = gatewaycli.CheckResumePolicy(ctx, args, snapshot)
+			snapshot, err = gatewayRelaunch(ctx, client, args, snapshot)
 		}
 	case pyrepr.Truthy(args["resume"]) || (titled && title != "" && !createIfMissing):
 		name := title
@@ -356,7 +352,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 			name = pyrepr.Str(args["resume"])
 		}
 		if snapshot, err = gatewayResumeNamed(ctx, client, args, name); err == nil {
-			err = gatewaycli.CheckResumePolicy(ctx, args, snapshot)
+			snapshot, err = gatewayRelaunch(ctx, client, args, snapshot)
 		}
 	default:
 		snapshot, err = gatewayCreateSession(ctx, client, args, description, createIfMissing, title, oneshotPrompt)
@@ -364,7 +360,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 	if err != nil {
 		return 0, err
 	}
-	sessionID := pyrepr.Str(requireKey(snapshot, "stored_session_id"))
+	sessionID = pyrepr.Str(requireKey(snapshot, "stored_session_id"))
 	if !oneshotPrompt {
 		fmt.Fprintln(stderrWriter(), "Session: "+sessionID)
 	}
@@ -376,6 +372,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 		usageFile = pyrepr.Str(args["usage_file"])
 	}
 	view := newGatewayChatView(client, snapshot, quiet, emitter, usageFile)
+	view.attachments = attachments
 	if pyrepr.Truthy(args["api_key"]) {
 		view.launchAPIKey = pyrepr.Str(args["api_key"])
 	}
@@ -394,12 +391,88 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 	return view.Run(ctx, query)
 }
 
+// Lays the resume flags that differ from the frozen launch over the session, the snapshot read again after
+func gatewayRelaunch(ctx context.Context, client gatewayChatPeer, args map[string]any, snapshot map[string]any) (map[string]any, error) {
+	overrides, err := gatewaycli.ResumeOverrides(ctx, args, snapshot)
+	if err != nil || len(overrides) == 0 {
+		return snapshot, err
+	}
+	sessionID := pyrepr.Str(requireKey(snapshot, "stored_session_id"))
+	params := map[string]any{"session_id": sessionID, "operation": "launch", "payload": overrides, "request_id": uuidHex(),
+		"expected_revision": requireKey(snapshot, "revision"), "expected_generation": requireKey(snapshot, "execution_generation")}
+	if _, err := client.RPCTimeout(ctx, "session.mutate", params, 0); err != nil {
+		return nil, err
+	}
+	return gatewayResume(ctx, client, args, map[string]any{"session_id": sessionID})
+}
+
+// Image of the image flag staged in this home's media cache as a prompt attachment
+func gatewayStageImage(ctx context.Context, path string) (map[string]any, error) {
+	resolved, err := pypath.Resolve(pypath.Expanduser(path))
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(resolved)
+	if err != nil {
+		return nil, &gateway.GatewayClientError{ExitStatus: 2, Msg: fmt.Sprintf("cannot read --image %s: %s", path, errchain.OSText(err))}
+	}
+	mime := gateway.SniffIngressImageMime(data)
+	if mime == "" {
+		return nil, &gateway.GatewayClientError{ExitStatus: 2, Msg: fmt.Sprintf("--image %s is no PNG, JPEG, GIF or WebP image", path)}
+	}
+	staged, err := mediacache.CacheImageFromBytes(ctx, home.Dir(ctx), data, gateway.IngressImageExt[mime])
+	var refused *mediacache.ValueError
+	if errors.As(err, &refused) {
+		return nil, &gateway.GatewayClientError{ExitStatus: 2, Msg: fmt.Sprintf("--image %s: %s", path, refused.Error())}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"path": staged, "mime": mime}, nil
+}
+
+// Fresh worktree of the caller's repository the chat runs in, the in flag naming the repository, nil after a printed failure
+func gatewayChatWorktree(ctx context.Context, args map[string]any) (map[string]any, error) {
+	if pyrepr.Truthy(args["in_dir"]) {
+		dir, err := gatewayCallerCwd(args)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Chdir(dir); err != nil {
+			return nil, &gateway.GatewayClientError{ExitStatus: 1, Msg: fmt.Sprintf("cannot enter --in directory %s: %s",
+				pyrepr.Str(args["in_dir"]), errchain.OSText(err))}
+		}
+	}
+	info, err := setupTUIWorktree(ctx, stderrWriter())
+	var exit *tuiExitError
+	if errors.As(err, &exit) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	args["in_dir"] = info["path"]
+	return info, nil
+}
+
+// Removes the chat's worktree when clean and idle, else keeps it for the session and says where it is
+func finishGatewayWorktree(ctx context.Context, info map[string]any, sessionID string) {
+	if removeIdleCleanTUIWorktree(ctx, info) {
+		return
+	}
+	path, _ := info["path"].(string)
+	if sessionID != "" {
+		repoRoot, _ := info["repo_root"].(string)
+		tools.RetainWorktreeForSession(repoRoot, path, sessionID, home.StatePath(home.Dir(ctx)))
+	}
+	fmt.Fprintf(stderrWriter(), "Worktree retained for this session: %s\n", path)
+}
+
 // Prints a refused resume as the usage error every classic path exits 2 with, nil for any other failure
 func ExitOnResumeRefusal(err error) error {
-	msg, refused := gatewayRefusalText(err)
-	if refused && (strings.HasPrefix(msg, "Resume retains gateway session policy; creation overrides are unsupported on resume.") ||
-		strings.HasPrefix(msg, gateway.ResumeKeyMismatch)) {
-		fmt.Fprintln(stderrWriter(), "Error: "+msg)
+	var refusal *gateway.GatewayClientError
+	if errors.As(err, &refusal) && refusal.ResumeRefused {
+		fmt.Fprintln(stderrWriter(), "Error: "+refusal.Msg)
 		return &pm.SystemExit{Code: 2}
 	}
 	return nil
@@ -564,7 +637,7 @@ func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 			if err != nil {
 				return failed(stdinQueryError(err), 2), nil
 			}
-			if pystr.Strip(text) == "" {
+			if pystr.Strip(text) == "" && !pyrepr.Truthy(args["image"]) {
 				return failed(QuerylessChatUsage, 2), nil
 			}
 			args["query"] = text
@@ -584,9 +657,18 @@ func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 		return code
 	}
 	if msg, refused := gatewayRefusalText(err); refused {
+		var rpcErr *gateway.GatewayRPCError
+		if errors.As(err, &rpcErr) && pyrepr.Truthy(rpcErr.Data["detail"]) {
+			why := pyrepr.Str(rpcErr.Data["detail"])
+			if pyrepr.Truthy(rpcErr.Data["field"]) {
+				why = pyrepr.Str(rpcErr.Data["field"]) + ": " + why
+			}
+			msg = fmt.Sprintf("%s (%s)", msg, why)
+		}
 		exitCode := 1
-		if strings.Contains(msg, "Unsupported") || strings.Contains(msg, "unsupported") {
-			exitCode = 2
+		var refusal *gateway.GatewayClientError
+		if errors.As(err, &refusal) && refusal.ExitStatus != 0 {
+			exitCode = refusal.ExitStatus
 		}
 		return failed(msg, exitCode)
 	}

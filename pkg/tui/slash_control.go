@@ -196,7 +196,7 @@ func (a *app) controlCommands() []slashCommand {
 				return a.resumeByID(res.SessionID, nil)
 			})
 		}},
-		{name: "setup", help: "configure a section: model, aux, agent, tts, terminal, tools, gateway, or start over with quick, blank or import", usage: "[section] [provider]", suggest: func(string) []string {
+		{name: "setup", help: setupHelpLine(), usage: "[section] [provider]", suggest: func(string) []string {
 			keys := []string{}
 			for _, s := range setupSections() {
 				keys = append(keys, s.key)
@@ -328,25 +328,12 @@ func (a *app) controlCommands() []slashCommand {
 			if action != "on" && action != "off" && action != "tts" {
 				action = "status"
 			}
-			if a.gw.canonical() && action == "tts" {
-				r.sys(tr("canonical.controls.notAvailable", "voice tts"))
+			if a.gw.canonical() && r.sid == "" && action != "status" {
+				r.sys(tr("slashCmd.session.voice.noActiveSession"))
 				return nil
 			}
-			if a.gw.canonical() && r.sid != "" {
-				return r.rpc("slash.exec", map[string]any{"command": "voice " + action, "session_id": r.sid}, func(res map[string]any) tea.Cmd {
-					if out, _ := res["output"].(string); trimJS(out) != "" {
-						r.sys(trimJS(out))
-					}
-					return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "voice", SessionID: r.sid}, func(cfg *tuigateway.ConfigGetResult) tea.Cmd {
-						if cfg != nil {
-							mode := configWord(cfg)
-							a.voiceEnabled = mode == "voice_only" || mode == "all"
-						}
-						return nil
-					})
-				})
-			}
-			return ask(r.rpc, r.sys, tuigateway.VoiceToggle, tuigateway.VoiceToggleParams{Action: tuigateway.VoiceToggleAction(action)}, func(res *tuigateway.VoiceToggleResult) tea.Cmd {
+			params := tuigateway.VoiceToggleParams{Action: tuigateway.VoiceToggleAction(action), SessionID: r.sid}
+			return ask(r.rpc, r.sys, tuigateway.VoiceToggle, params, func(res *tuigateway.VoiceToggleResult) tea.Cmd {
 				if res == nil {
 					return nil
 				}

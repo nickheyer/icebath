@@ -804,7 +804,7 @@ func (c *kanbanCLI) cmdShow() (int, error) {
 	} else if cfgVal := c.kanbanConfig()["failure_limit"]; cfgVal != nil {
 		n, err := pyint.Of(cfgVal)
 		if err != nil {
-			return 0, &ValueError{err.Error()}
+			return 0, &ValueError{"config kanban.failure_limit: " + wholeNumberRefusal(cfgVal)}
 		}
 		if !n.IsInt64() || n.Int64() != DefaultFailureLimit {
 			fmt.Fprintf(c.w, "  max-retries: %s (config kanban.failure_limit)\n", n.String())

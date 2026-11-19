@@ -107,7 +107,8 @@ func profileDB(ctx context.Context, params map[string]any, writer bool) (*state.
 		return nil, func() {}, err
 	}
 	if home == "" {
-		return getDB(ctx), func() {}, nil
+		db, err := getDB(ctx)
+		return db, func() {}, err
 	}
 	dbPath := filepath.Join(home, "state.db")
 	db, err := func() (*state.DB, error) {
@@ -119,9 +120,8 @@ func profileDB(ctx context.Context, params map[string]any, writer bool) (*state.
 		}
 		return openBrowseSessionDB(ctx, dbPath)
 	}()
-	if err != nil || db == nil {
-		pkgLog().Warn(fmt.Sprintf("TUI profile session store unavailable for %s: %v", profile, err))
-		return nil, func() {}, nil
+	if err != nil {
+		return nil, func() {}, storeUnavailable(ctx, dbPath, err)
 	}
 	return db, func() { suppress(func() { _ = db.Close() }) }, nil
 }

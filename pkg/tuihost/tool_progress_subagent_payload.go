@@ -7,70 +7,69 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// One optional subagent payload field with its presence test and coercion, nil from coerce dropping it
-type subagentField struct {
-	key     string
-	present func(any) bool
-	coerce  func(any) (any, error)
+// Text of a truthy progress value, nil for an absent or falsy one
+func subagentText(v any) *string {
+	if !pyrepr.Truthy(v) {
+		return nil
+	}
+	text := pyrepr.Str(v)
+	return &text
 }
 
-func subagentNotNone(v any) bool { return v != nil }
-
-func subagentStr(v any) (any, error) { return pyrepr.Str(v), nil }
-
-func subagentInt(v any) (any, error) {
+// Integer of a present progress value, refused when it is no integer
+func subagentInt(v any) (*int64, error) {
+	if v == nil {
+		return nil, nil
+	}
 	n, err := pyint.Int64(v)
 	if err != nil {
 		return nil, err
 	}
-	return n, nil
+	return &n, nil
 }
 
-func subagentFloat(v any) (any, error) {
+// Integer of a usage rollup value, nil for junk so the field is left out
+func subagentCount(v any) *int64 {
+	if v == nil {
+		return nil
+	}
+	n, err := pyint.Int64(v)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
+// Number of a present progress value, refused when it is no number
+func subagentFloat(v any) (*float64, error) {
+	if v == nil {
+		return nil, nil
+	}
 	f, err := pyint.Float(v)
 	if err != nil {
 		return nil, err
 	}
-	return f, nil
+	return &f, nil
 }
 
-// Integer of a rollup value, nil for junk from older emitters so the field is omitted
-func subagentIntOrSkip(v any) (any, error) {
-	n, err := pyint.Int64(v)
-	if err != nil {
-		return nil, nil
-	}
-	return n, nil
-}
-
-func subagentStrList(v any) (any, error) {
-	items, err := subagentList(v)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]any, 0, len(items))
-	for _, item := range items {
-		out = append(out, pyrepr.Str(item))
-	}
-	return out, nil
-}
-
-func subagentList(v any) ([]any, error) {
+// Items of a progress list value, a text read as its characters
+func subagentItems(v any) ([]any, error) {
 	switch typed := v.(type) {
 	case []any:
-		return append([]any(nil), typed...), nil
+		return typed, nil
 	case []string:
-		out := make([]any, 0, len(typed))
-		for _, s := range typed {
-			out = append(out, s)
+		out := make([]any, len(typed))
+		for i, s := range typed {
+			out[i] = s
 		}
 		return out, nil
 	case []map[string]any:
-		out := make([]any, 0, len(typed))
-		for _, m := range typed {
-			out = append(out, m)
+		out := make([]any, len(typed))
+		for i, m := range typed {
+			out[i] = m
 		}
 		return out, nil
 	case string:
@@ -83,20 +82,105 @@ func subagentList(v any) ([]any, error) {
 	return nil, fmt.Errorf("the subagent list is %s, expected a list", errchain.Kind(v))
 }
 
-func subagentListCoerce(v any) (any, error) { return subagentList(v) }
+// Texts of a truthy progress list value, nil for a falsy one
+func subagentTexts(v any) ([]string, error) {
+	if !pyrepr.Truthy(v) {
+		return nil, nil
+	}
+	items, err := subagentItems(v)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(items))
+	for i, item := range items {
+		out[i] = pyrepr.Str(item)
+	}
+	return out, nil
+}
 
-// Optional subagent payload fields in wire order
-var subagentFields = []subagentField{
-	{"subagent_id", pyrepr.Truthy, subagentStr}, {"parent_id", pyrepr.Truthy, subagentStr},
-	{"child_session_id", pyrepr.Truthy, subagentStr}, {"delegation_id", pyrepr.Truthy, subagentStr},
-	{"depth", subagentNotNone, subagentInt}, {"model", pyrepr.Truthy, subagentStr},
-	{"tool_count", subagentNotNone, subagentInt}, {"toolsets", pyrepr.Truthy, subagentStrList},
-	{"input_tokens", subagentNotNone, subagentIntOrSkip}, {"output_tokens", subagentNotNone, subagentIntOrSkip},
-	{"reasoning_tokens", subagentNotNone, subagentIntOrSkip}, {"api_calls", subagentNotNone, subagentIntOrSkip},
-	{"files_read", pyrepr.Truthy, subagentStrList}, {"files_written", pyrepr.Truthy, subagentStrList},
-	{"output_tail", pyrepr.Truthy, subagentListCoerce}, {"tool_name", pyrepr.Truthy, subagentStr},
-	{"text", pyrepr.Truthy, subagentStr}, {"status", pyrepr.Truthy, subagentStr},
-	{"summary", pyrepr.Truthy, subagentStr}, {"duration_seconds", subagentNotNone, subagentFloat},
+// Output tail rows of a finished child, nil for a falsy value
+func subagentOutputTail(v any) ([]tuigateway.SubagentOutputTailEntry, error) {
+	if !pyrepr.Truthy(v) {
+		return nil, nil
+	}
+	items, err := subagentItems(pyjson.Plain(v))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tuigateway.SubagentOutputTailEntry, len(items))
+	for i, item := range items {
+		if err := tuigateway.Strict(item, &out[i]); err != nil {
+			return nil, fmt.Errorf("output_tail[%d]: %w", i, err)
+		}
+	}
+	return out, nil
+}
+
+// Subagent event payload of an agent progress callback, the chain of thought dropped while reasoning is hidden
+func SubagentEvent(eventType string, name, preview any, kw map[string]any, showReasoning bool) (tuigateway.SubagentEventPayload, error) {
+	var p tuigateway.SubagentEventPayload
+	if pyrepr.Truthy(kw["goal"]) {
+		p.Goal = pyrepr.Str(kw["goal"])
+	}
+	taskCount, err := pyint.Int64(orDefault(kw["task_count"], 1))
+	if err != nil {
+		return p, err
+	}
+	taskIndex, err := pyint.Int64(orDefault(kw["task_index"], 0))
+	if err != nil {
+		return p, err
+	}
+	p.TaskCount, p.TaskIndex = taskCount, taskIndex
+	p.SubagentID, p.ParentID = subagentText(kw["subagent_id"]), subagentText(kw["parent_id"])
+	p.ChildSessionID, p.DelegationID = subagentText(kw["child_session_id"]), subagentText(kw["delegation_id"])
+	p.Model, p.ToolName, p.Text, p.Summary = subagentText(kw["model"]), subagentText(name), subagentText(preview), subagentText(kw["summary"])
+	if p.Depth, err = subagentInt(kw["depth"]); err != nil {
+		return p, err
+	}
+	if p.ToolCount, err = subagentInt(kw["tool_count"]); err != nil {
+		return p, err
+	}
+	if p.DurationSeconds, err = subagentFloat(kw["duration_seconds"]); err != nil {
+		return p, err
+	}
+	if p.CostUSD, err = subagentFloat(kw["cost_usd"]); err != nil {
+		return p, err
+	}
+	p.InputTokens, p.OutputTokens = subagentCount(kw["input_tokens"]), subagentCount(kw["output_tokens"])
+	p.ReasoningTokens, p.APICalls = subagentCount(kw["reasoning_tokens"]), subagentCount(kw["api_calls"])
+	if p.Toolsets, err = subagentTexts(kw["toolsets"]); err != nil {
+		return p, err
+	}
+	if p.FilesRead, err = subagentTexts(kw["files_read"]); err != nil {
+		return p, err
+	}
+	if p.FilesWritten, err = subagentTexts(kw["files_written"]); err != nil {
+		return p, err
+	}
+	if p.OutputTail, err = subagentOutputTail(kw["output_tail"]); err != nil {
+		return p, err
+	}
+	if status := subagentText(kw["status"]); status != nil {
+		typed := tuigateway.SubagentStatus(*status)
+		p.Status = &typed
+	}
+	if eventType == "subagent.thinking" && !showReasoning {
+		p.Text = nil
+	}
+	if pyrepr.Truthy(preview) && eventType == "subagent.tool" {
+		p.ToolPreview = subagentText(preview)
+	}
+	return p, nil
+}
+
+// Subagent event payload as the ordered object the session event stream publishes
+func SubagentPayload(eventType string, name, preview any, kw map[string]any, showReasoning bool) (*pyjson.Object, error) {
+	payload, err := SubagentEvent(eventType, name, preview, kw, showReasoning)
+	if err != nil {
+		return nil, err
+	}
+	object, _ := pyjson.Ordered(tuigateway.Plain(payload)).(*pyjson.Object)
+	return object, nil
 }
 
 func orDefault(v any, fallback any) any {
@@ -104,46 +188,4 @@ func orDefault(v any, fallback any) any {
 		return v
 	}
 	return fallback
-}
-
-// Subagent event payload with goal and task position first, the chain of thought dropped while reasoning is hidden
-func SubagentPayload(eventType string, name, preview any, kw map[string]any, showReasoning bool) (*pyjson.Object, error) {
-	payload := pyjson.NewObject()
-	payload.Set("goal", pyrepr.Str(orDefault(kw["goal"], "")))
-	taskCount, err := pyint.Int64(orDefault(kw["task_count"], 1))
-	if err != nil {
-		return nil, err
-	}
-	payload.Set("task_count", taskCount)
-	taskIndex, err := pyint.Int64(orDefault(kw["task_index"], 0))
-	if err != nil {
-		return nil, err
-	}
-	payload.Set("task_index", taskIndex)
-	source := make(map[string]any, len(kw)+2)
-	for k, v := range kw {
-		source[k] = v
-	}
-	source["tool_name"], source["text"] = name, preview
-	for _, field := range subagentFields {
-		raw := source[field.key]
-		if !field.present(raw) {
-			continue
-		}
-		val, err := field.coerce(raw)
-		if err != nil {
-			return nil, err
-		}
-		if val != nil {
-			payload.Set(field.key, val)
-		}
-	}
-	if eventType == "subagent.thinking" && !showReasoning {
-		payload.Delete("text")
-	}
-	if pyrepr.Truthy(preview) && eventType == "subagent.tool" {
-		payload.Set("tool_preview", pyrepr.Str(preview))
-		payload.Set("text", pyrepr.Str(preview))
-	}
-	return payload, nil
 }

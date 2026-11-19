@@ -382,7 +382,9 @@ func FetchModelMetadata(ctx context.Context, forceRefresh bool) map[string]map[s
 		pkgLog().Debug("fetched OpenRouter model metadata", "models", len(cache))
 		return cache
 	}
-	pkgLog().Warn("Failed to fetch model metadata from OpenRouter", "error", err)
+	if ctx.Err() == nil {
+		pkgLog().Warn("Failed to fetch model metadata from OpenRouter", "error", err)
+	}
 	if len(modelMetadataCache) > 0 {
 		return modelMetadataCache
 	}

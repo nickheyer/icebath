@@ -59,11 +59,11 @@ func kwargText(kwargs map[string]any, key string) string {
 	return text
 }
 
-// Value of a key the upload credentials must carry, the KeyError a missing key raises
+// Value of a key the upload credential reply must carry, the KeyError naming it when missing
 func requiredKey(obj *pyjson.Object, key string) (any, error) {
 	value, ok := obj.Get(key)
 	if !ok {
-		return nil, &KeyError{Key: key}
+		return nil, &KeyError{Of: "upload credential reply", Key: key}
 	}
 	return value, nil
 }
@@ -76,7 +76,7 @@ func uploadInt(upload *pyjson.Object, key string) int64 {
 
 // TIMImageElem body of an uploaded image
 func imageMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
-	urlText, err := protoText(upload.GetOr("url", ""))
+	urlText, err := protoText(upload.GetOr("url", ""), "the uploaded image URL")
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (documentHandler) acquireFile(ctx context.Context, adapter *YuanbaoAdapter,
 }
 
 func (documentHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
-	urlText, err := protoText(upload.GetOr("url", ""))
+	urlText, err := protoText(upload.GetOr("url", ""), "the uploaded file URL")
 	if err != nil {
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func (h *heartbeatManager) sendHeartbeatOnce(ctx context.Context, chatID string,
 		return
 	}
 	err := func() error {
-		fromAccount, err := protoText(adapter.botIDValue())
+		fromAccount, err := protoText(adapter.botIDValue(), "the bot id")
 		if err != nil {
 			return err
 		}
@@ -670,11 +670,11 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 // Sends a message body to an account, the group code marking a direct message that started in a group
 func (s *messageSender) sendC2CMsgBody(ctx context.Context, toAccount string, msgBody []any, groupCode any) (sendOutcome, error) {
 	reqID := fmt.Sprintf("c2c_%d", NextSeqNo())
-	fromAccount, err := protoText(s.adapter.botIDValue())
+	fromAccount, err := protoText(s.adapter.botIDValue(), "the bot id")
 	if err != nil {
 		return sendOutcome{}, err
 	}
-	group, err := protoText(groupCode)
+	group, err := protoText(groupCode, "the group code")
 	if err != nil {
 		return sendOutcome{}, err
 	}
@@ -688,7 +688,7 @@ func (s *messageSender) sendC2CMsgBody(ctx context.Context, toAccount string, ms
 // Sends a message body to a group, quoting the message it replies to
 func (s *messageSender) sendGroupMsgBody(ctx context.Context, groupCode string, msgBody []any, replyTo string) (sendOutcome, error) {
 	reqID := fmt.Sprintf("grp_%d", NextSeqNo())
-	fromAccount, err := protoText(s.adapter.botIDValue())
+	fromAccount, err := protoText(s.adapter.botIDValue(), "the bot id")
 	if err != nil {
 		return sendOutcome{}, err
 	}

@@ -29,7 +29,7 @@ func (c *ContextCompressor) restartHandoffProbeBounds(messages []map[string]any)
 
 // Head rows to protect beyond the system prompt, decayed to zero once the session was compressed
 func (c *ContextCompressor) effectiveProtectFirstN(messages []map[string]any) int {
-	if c.ContextEngineBase.CompressionCount >= 1 || (c.previousSummary != nil && *c.previousSummary != "") {
+	if c.aggressive || c.ContextEngineBase.CompressionCount >= 1 || (c.previousSummary != nil && *c.previousSummary != "") {
 		return 0
 	}
 	if len(messages) > 0 && c.ProtectFirstN > 0 {
@@ -363,6 +363,9 @@ func (c *ContextCompressor) findTailCut(messages []map[string]any, headEnd int, 
 		budget = *tokenBudget
 	}
 	n := len(messages)
+	if c.aggressive {
+		return n
+	}
 	availableTail := max(0, n-headEnd-1)
 	minTailFloor := max(3, min(c.ProtectLastN, maxTailMessageFloor))
 	compressibleTailCap := max(3, availableTail-2)
@@ -774,6 +777,9 @@ func (c *ContextCompressor) compressPass(ctx context.Context, messages []map[str
 	telemetry.Set("has_focus_topic", focusTopic != nil && *focusTopic != "")
 	nMessages := len(messages)
 	minForCompress := c.protectHeadSize(messages) + 3 + 1
+	if c.aggressive {
+		minForCompress = c.protectHeadSize(messages) + 1
+	}
 	if nMessages <= minForCompress {
 		c.structuralNoOpResult(telemetry, "insufficient_messages", fmt.Sprintf("only %d messages (need > %d)", nMessages, minForCompress), nMessages)
 		return messages, nil

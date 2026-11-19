@@ -34,6 +34,7 @@ type LiveSession struct {
 	Route         string
 	EventStream   *SessionEvents
 	drain         chan struct{}
+	scheduled     uint64
 	Rescan        bool
 	Settling      map[string]*pyjson.Object
 	RetireTimer   *time.Timer
@@ -47,6 +48,8 @@ type LiveSession struct {
 	ReaskPick     bool
 	// Principal and level of a reasoning command that arrived while a turn ran
 	PendingReasoning *pendingReasoning
+	// Model a one turn switch replaced, put back at the boundary after that turn
+	OnceRestore      *onceRestore
 	CompressionCount int
 	// Context breakdown payload and the inputs it was built from
 	contextBreakdown *contextBreakdownCache
@@ -73,8 +76,10 @@ func NewLiveSession(source *SessionSource, route string) *LiveSession {
 
 // Gateway owned live sessions and canonical durable FIFO scheduling of one profile store
 type SessionAuthority struct {
-	mu                     sync.Mutex
-	Runner                 AuthorityRunner
+	mu     sync.Mutex
+	Runner AuthorityRunner
+	// User messages admitted to a FIFO and not yet claimed, kept until a claim takes them
+	queuedInputs           map[string]queuedInput
 	ProfileID              string
 	InstanceID             string
 	DB                     *state.SessionDB
@@ -364,6 +369,7 @@ func startSessionDrain(ctx context.Context, a *SessionAuthority, ref SessionRef)
 		return &pyKeyError{ref.SessionID}
 	}
 	live.Rescan = true
+	live.scheduled++
 	start := live.drain == nil
 	if !start {
 		select {
@@ -382,13 +388,32 @@ func startSessionDrain(ctx context.Context, a *SessionAuthority, ref SessionRef)
 		return nil
 	}
 	go func() {
-		defer close(done)
-		defer persistWorkCount(a)
-		if err := drainSessionFIFO(withDrainTask(context.WithoutCancel(ctx), live), a, ref); err != nil {
-			logDrainFailure(err)
+		for {
+			a.mu.Lock()
+			seen := live.scheduled
+			a.mu.Unlock()
+			if err := drainSessionFIFO(withDrainTask(context.WithoutCancel(ctx), live), a, ref); err != nil {
+				logDrainFailure(err)
+			}
+			persistWorkCount(a)
+			if !drainEnded(a, live, done, seen) {
+				continue
+			}
+			return
 		}
 	}()
 	return nil
+}
+
+// Closes the drain unless a schedule arrived while it ran, that schedule found the drain open and left its input to this one
+func drainEnded(a *SessionAuthority, live *LiveSession, done chan struct{}, seen uint64) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if live.scheduled != seen {
+		return false
+	}
+	close(done)
+	return true
 }
 
 // Scheduler of a session's FIFO drain, replaced by tests that admit input without running its turns
@@ -412,6 +437,11 @@ func (a *SessionAuthority) admitted(ctx context.Context, ref SessionRef, event *
 			event.OnCommit()
 		}
 		markProducerAdmission(a, event, row)
+		if rowString(row, "status") == AdmissionQueued && !event.Internal {
+			a.mu.Lock()
+			lazyMap(&a.queuedInputs)[rowString(row, "admission_id")] = queuedInput{sessionID: ref.SessionID, event: event, seq: queuedInputSeq.Add(1)}
+			a.mu.Unlock()
+		}
 	}
 	if err := a.publishPending(ctx, ref); err != nil {
 		return AdmissionReceipt{}, err

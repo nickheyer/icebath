@@ -22,6 +22,7 @@ var voiceModeOps struct {
 	stopThinkingSound  func()
 	markInterrupted    func()
 	takeInterrupted    func() bool
+	releaseTransport   func(transport tuihost.Transport)
 }
 
 // Ends the voice chat of a session, nothing to end without voice mode
@@ -104,4 +105,11 @@ func markSpeechInterrupted() {
 // Pops the spoken reply cut off latch, false without voice mode
 func takeSpeechInterrupted() bool {
 	return voiceModeOps.takeInterrupted != nil && voiceModeOps.takeInterrupted()
+}
+
+// Forgets the speech playback and speaker claims of a window that left, nothing to forget without voice mode
+func releaseVoiceForTransport(transport tuihost.Transport) {
+	if voiceModeOps.releaseTransport != nil {
+		voiceModeOps.releaseTransport(transport)
+	}
 }

@@ -58,7 +58,7 @@ func (e *SessionEvents) Watermark() (string, int) {
 func sealCanonicalPayload(eventType string, payload any) any {
 	if typed := tuigateway.Lookup(tuigateway.KindEvent, eventType); typed != nil && payload != nil {
 		if err := typed.CheckResult(payload); err != nil {
-			tuihost.ReportMisfit("payload of", eventType, err)
+			tuigateway.ReportMisfit("payload of", eventType, err)
 		}
 	}
 	return payload

@@ -551,7 +551,8 @@ func TestDrainOnlyTouchesOwnSession(t *testing.T) {
 	}
 }
 
-func TestSpoolFailureDegradesToPlainDrop(t *testing.T) {
+// A spool that refuses the evicted rows keeps every row queued until the store takes them all in order
+func TestSpoolFailureKeepsEveryRowQueued(t *testing.T) {
 	ctx, _ := newTestStateDB(t)
 	home := os.Getenv("ICEBATH_HOME")
 	store, db := spoolCapStore(ctx, t, 4)
@@ -560,18 +561,19 @@ func TestSpoolFailureDegradesToPlainDrop(t *testing.T) {
 	for i := range transcriptMaxPendingPerSession + 5 {
 		appendTranscript(ctx, t, store, "sess-x", "user", "msg"+string(rune('0'+i)))
 	}
-	if got := queuedContents(store, "sess-x"); len(got) > transcriptMaxPendingPerSession {
+	if got := queuedContents(store, "sess-x"); len(got) != transcriptMaxPendingPerSession+5 {
 		t.Fatalf("pending = %v", got)
 	}
 	if files := pendingSpoolFiles(t, home); len(files) != 0 {
 		t.Fatalf("spool files = %v", files)
 	}
-	if levels := capturedLevels(logs, "on-disk spool unavailable"); !slices.Equal(levels, slices.Repeat([]string{"WARN"}, 5)) {
-		t.Fatalf("degraded warnings = %v", levels)
+	if levels := capturedLevels(logs, "keeping all"); !slices.Equal(levels, slices.Repeat([]string{"WARN"}, 5)) {
+		t.Fatalf("kept warnings = %v", levels)
 	}
 	db.broken = false
 	appendTranscript(ctx, t, store, "sess-x", "user", "fin")
-	if contents := db.contents(); contents[len(contents)-1] != "fin" {
+	contents := db.contents()
+	if len(contents) != transcriptMaxPendingPerSession+6 || contents[0] != "msg0" || contents[len(contents)-1] != "fin" {
 		t.Fatalf("rows = %v", contents)
 	}
 }

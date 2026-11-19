@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -60,29 +62,6 @@ func xsEnv(t *testing.T) *Env {
 	CredentialPools = nil
 	t.Cleanup(func() { CredentialPools = prev })
 	return isrcEnv(t, "local")
-}
-
-// Pool double selecting one xai-oauth entry
-type fakePools struct {
-	token, base string
-	asked       []string
-	refreshed   string
-}
-
-func (f *fakePools) SelectPooled(env *Env, provider string) (string, string, bool) {
-	f.asked = append(f.asked, provider)
-	if provider != "xai-oauth" {
-		return "", "", false
-	}
-	return f.token, f.base, f.token != ""
-}
-
-func (f *fakePools) RefreshMatching(env *Env, provider, apiKeyHint string) (string, string, bool) {
-	f.asked = append(f.asked, "refresh:"+apiKeyHint)
-	if f.refreshed == "" {
-		return "", "", false
-	}
-	return f.refreshed, f.base, true
 }
 
 func TestXSearchPostsResponsesRequest(t *testing.T) {

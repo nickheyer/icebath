@@ -8,9 +8,9 @@ import (
 	"os"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/treekill"
 	"golang.org/x/sys/windows"
 )
 
@@ -116,14 +116,8 @@ func UpdateTreeJob() (windows.Handle, error) {
 	if treeJob.handle != 0 {
 		return treeJob.handle, nil
 	}
-	job, err := windows.CreateJobObject(nil, nil)
+	job, err := treekill.CreateJob(treekill.KillOnClose | treekill.BreakawayOK)
 	if err != nil {
-		return 0, err
-	}
-	var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
-	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits))); err != nil {
-		windows.CloseHandle(job)
 		return 0, err
 	}
 	treeJob.handle = job
@@ -157,25 +151,13 @@ func bindToKillOnCloseJob(pid int) error {
 	if err != nil {
 		return err
 	}
-	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(process)
-	return windows.AssignProcessToJobObject(job, process)
+	return treekill.AssignPid(job, pid)
 }
-
-var ntResumeProcess = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtResumeProcess")
 
 // Resumes a CreateSuspended child, killing it when the resume fails
 func ResumeSuspendedChild(process *os.Process) error {
-	handle, err := windows.OpenProcess(0x0800, false, uint32(process.Pid))
-	if err == nil {
-		status, _, _ := ntResumeProcess.Call(uintptr(handle))
-		windows.CloseHandle(handle)
-		if status == 0 {
-			return nil
-		}
+	if treekill.ResumePid(process.Pid) == nil {
+		return nil
 	}
 	_ = process.Kill()
 	return fmt.Errorf("could not resume update child %d", process.Pid)

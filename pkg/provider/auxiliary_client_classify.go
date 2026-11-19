@@ -337,7 +337,8 @@ var auxTimeoutNoRetryTasks = map[string]bool{"compression": true, "vision": true
 
 // True when a full budget timeout on a critical path task goes straight to fallback
 func auxShouldSkipSameProviderRetry(task string, err error) bool {
-	return auxTimeoutNoRetryTasks[task] && auxIsTimeoutError(err) && !strings.Contains(err.Error(), "no-progress timeout")
+	var t *AuxTimeoutError
+	return auxTimeoutNoRetryTasks[task] && auxIsTimeoutError(err) && !(errors.As(err, &t) && t.Kind == AuxTimeoutNoOutput)
 }
 
 // Drops this profile's cached clients for a provider without closing them so fresh credentials apply

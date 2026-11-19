@@ -1102,6 +1102,17 @@ func (a *DingTalkAdapter) getAccessToken(ctx context.Context) (any, error) {
 	return token, nil
 }
 
+// Adds an emoji as a DingTalk emotion reply on the message
+func (a *DingTalkAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	a.mu.Lock()
+	ready := a.robotSDK != nil
+	a.mu.Unlock()
+	if !ready {
+		return errors.New("the DingTalk robot client is not connected")
+	}
+	return a.sendEmotion(ctx, messageID, chatID, emoji, false)
+}
+
 // Adds or recalls an emoji reaction on a message, every failure logged at debug
 func (a *DingTalkAdapter) sendEmotion(ctx context.Context, openMsgID, openConversationID, emojiName string, recall bool) error {
 	a.mu.Lock()

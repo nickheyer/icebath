@@ -36,18 +36,6 @@ type gatewaySkin struct {
 	HelpHeader  string
 }
 
-// String entries of a payload object, null and other values left out
-func stringMap(v any) map[string]string {
-	raw, _ := v.(map[string]any)
-	out := make(map[string]string, len(raw))
-	for k, value := range raw {
-		if s, isStr := value.(string); isStr {
-			out[k] = s
-		}
-	}
-	return out
-}
-
 // Skin of a gateway.ready or skin.changed payload
 func gatewaySkinOf(p *tuigateway.SkinPayloadModel) *gatewaySkin {
 	if p == nil {

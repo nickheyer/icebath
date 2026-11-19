@@ -164,7 +164,9 @@ func sessionEngineCompress(ctx context.Context, engine ContextEngine, job gatewa
 	refusedWouldGrow.Delete(engine)
 	tokens := estimateRequestRowsRough(ctx, job.Head, "", nil)
 	call := compressCall{engine: engine, kwargs: supportedCompressionKwargs(engine, &tokens, job.FocusTopic, true, memoryContext, false)}
+	restore := aggressiveCompression(engine, job.Aggressive)
 	compressed, err := call.run(ctx, cloneRows(job.Head))
+	restore()
 	if err != nil {
 		return nil, err
 	}

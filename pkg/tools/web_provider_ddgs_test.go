@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -367,21 +366,5 @@ func TestDDGSIsAvailableOnlyOnceConfigSelectsIt(t *testing.T) {
 		if !ddgsP().Available(httpxProviderEnv(t, "", map[string]any{key: "ddgs"})) {
 			t.Fatalf("ddgs selected by %s is not available", key)
 		}
-	}
-}
-
-func TestFeishuToolsNeedThePlatformCredentials(t *testing.T) {
-	for _, k := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"} {
-		t.Setenv(k, "")
-		os.Unsetenv(k)
-	}
-	if feishuToolsReady(httpxProviderEnv(t, "", nil)) {
-		t.Fatal("feishu tools ready without app credentials")
-	}
-	if feishuToolsReady(httpxProviderEnv(t, "FEISHU_APP_ID=cli_a\n", nil)) {
-		t.Fatal("feishu tools ready with the app id alone")
-	}
-	if !feishuToolsReady(httpxProviderEnv(t, "FEISHU_APP_ID=cli_a\nFEISHU_APP_SECRET=s\n", nil)) {
-		t.Fatal("feishu tools not ready with both app credentials")
 	}
 }

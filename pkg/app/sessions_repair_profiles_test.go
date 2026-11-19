@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -251,7 +250,7 @@ func TestDryRunNamesEveryCrossingAndChangesNothing(t *testing.T) {
 	scope := repairScope(t, homes)
 	for _, want := range [][2]string{{"mislabelled", "mislabelled"}, {"wrong_store", "stray-parent"}, {"wrong_store", "stray-child"},
 		{"legacy_main", "legacy-main"}, {"unclaimed_namespace", "ghost"}, {"wrong_store", "acme-in-beta"}, {"crossed_parent", "beta-child"},
-		{"routing_unclaimed", repairGhostKey + " (scope " + pyrepr.Repr(scope) + ")"}, {"topic_profile_less", "chat 200 thread 7"},
+		{"routing_unclaimed", repairGhostKey + " (scope " + scope + ")"}, {"topic_profile_less", "chat 200 thread 7"},
 		{"voice_profile_less", "telegram:200"}, {"sessions_json_unclaimed", repairGhostKey}} {
 		if !kinds[want] {
 			t.Fatalf("missing finding %v in %v", want, kinds)

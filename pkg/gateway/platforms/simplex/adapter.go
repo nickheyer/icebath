@@ -919,6 +919,11 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	msgEvent.Source, msgEvent.MessageType = source, msgType
 	msgEvent.MediaURLs, msgEvent.MediaTypes = mediaURLs, mediaTypes
 	msgEvent.Timestamp, msgEvent.RawMessage = timestamp, chatItem
+	if metaDict, isDict := meta.(map[string]any); isDict && metaDict["itemId"] != nil {
+		itemID := metaDict["itemId"]
+		id := pyrepr.Str(itemID)
+		msgEvent.MessageID = &id
+	}
 	pkgLog().Debug(fmt.Sprintf("SimpleX: message from %s in %s: %s", redactID(senderID), pystr.Slice(chatID, 0, 20), pystr.Slice(body, 0, 50)))
 	if msgType == gateway.MessageTypeText && body != "" {
 		return a.EnqueueTextEvent(ctx, msgEvent)
@@ -1052,6 +1057,34 @@ func (a *SimplexAdapter) sendItems(ctx context.Context, chatID string, items []a
 		return gateway.SendResult{Success: true}, nil
 	}
 	return gateway.SendResult{Success: false, Error: failure}, nil
+}
+
+// Adds an emoji reaction to a chat item, SimpleX answering chatCmdError for a reaction it does not allow
+func (a *SimplexAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	if a.socket() == nil {
+		return errors.New("the SimpleX chat client is not connected")
+	}
+	target := "@" + chatID
+	if strings.HasPrefix(chatID, "group:") {
+		target = "#" + chatID[6:]
+	}
+	reaction, err := pyjson.Dumps(pyjson.ObjectOf("type", "emoji", "emoji", emoji))
+	if err != nil {
+		return err
+	}
+	resp, err := a.sendCommand(ctx, fmt.Sprintf("/_reaction %s %s on %s", target, messageID, reaction), 15.0)
+	if err != nil {
+		return err
+	}
+	answer, _ := resp.(map[string]any)
+	if answer == nil {
+		return errors.New("SimpleX gave no answer to the reaction")
+	}
+	if kind := pyrepr.Str(answer["type"]); strings.Contains(kind, "Error") || strings.Contains(kind, "error") {
+		detail, _ := pyjson.Dumps(answer)
+		return fmt.Errorf("SimpleX refused the reaction: %s", detail)
+	}
+	return nil
 }
 
 // Sends the text without waiting for a reply, then every MEDIA tag path as a voice note or a document

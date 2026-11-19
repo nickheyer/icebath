@@ -2,13 +2,11 @@ package gatewaycli
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/codeexec"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -107,7 +105,7 @@ func TestClientEnvPolicyReadsTheEffectiveConfigAndBypassReadsNone(t *testing.T) 
 	}
 }
 
-func TestResumeAcceptsTheCreationAliasAndStillRefusesAnotherModel(t *testing.T) {
+func TestResumeAcceptsTheCreationAliasAndRelaunchesAnotherModel(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	config := "model:\n  provider: custom\n  base_url: http://127.0.0.1:1/v1\n  default: model-main\n" +
@@ -121,14 +119,13 @@ func TestResumeAcceptsTheCreationAliasAndStillRefusesAnotherModel(t *testing.T) 
 		"provider": "custom", "base_url": "http://127.0.0.1:3/v1"}}}
 	ctx := context.Background()
 	for _, model := range []string{"fast", "model-alias"} {
-		if err := CheckResumePolicy(ctx, map[string]any{"resume": "s", "model": model, "query": "x"}, frozen); err != nil {
-			t.Fatalf("%s refused: %v", model, err)
+		if overrides, err := ResumeOverrides(ctx, map[string]any{"resume": "s", "model": model, "query": "x"}, frozen); err != nil || len(overrides) != 0 {
+			t.Fatalf("%s relaunched: %v %v", model, overrides, err)
 		}
 	}
 	for _, model := range []string{"model-main", "other"} {
-		var refused *gateway.GatewayClientError
-		if err := CheckResumePolicy(ctx, map[string]any{"resume": "s", "model": model, "query": "x"}, frozen); !errors.As(err, &refused) {
-			t.Fatalf("%s accepted: %v", model, err)
+		if overrides, err := ResumeOverrides(ctx, map[string]any{"resume": "s", "model": model, "query": "x"}, frozen); err != nil || overrides["model"] != model {
+			t.Fatalf("%s overrides %v %v", model, overrides, err)
 		}
 	}
 }

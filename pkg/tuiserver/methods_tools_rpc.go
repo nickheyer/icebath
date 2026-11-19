@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -145,28 +146,25 @@ func sessionToolsets(ctx context.Context, session *tuihost.Session) ([]string, [
 
 // Host battery for the status bar, unavailable on any read failure
 func systemBattery(ctx context.Context, rid any, params map[string]any) map[string]any {
-	var out map[string]any
+	out := tuigateway.SystemBatteryResult{Category: "dim"}
 	if catchPanic(func() {
 		batt := hostinfo.ReadBattery(true)
-		var percent, plugged any
+		out = tuigateway.SystemBatteryResult{Available: batt.Available, Plugged: batt.Plugged,
+			Category: tuigateway.BatteryCategory(hostinfo.BatteryCategory(batt))}
 		if batt.Percent != nil {
-			percent = *batt.Percent
+			percent := int64(*batt.Percent)
+			out.Percent = &percent
 		}
-		if batt.Plugged != nil {
-			plugged = *batt.Plugged
-		}
-		out = map[string]any{"available": batt.Available, "percent": percent, "plugged": plugged,
-			"category": hostinfo.BatteryCategory(batt)}
 	}) != nil {
-		out = map[string]any{"available": false, "percent": nil, "plugged": nil, "category": "dim"}
+		out = tuigateway.SystemBatteryResult{Category: "dim"}
 	}
-	return ok(rid, out)
+	return ok(rid, tuigateway.Plain(out))
 }
 
 // Kills every background process of the registry as a deliberate stop
 func processStop(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	killed := tools.DefaultProcessRegistry().KillAll(ctx, tools.ToolEnvFrom(ctx), "", nil, "process.stop", false)
-	return ok(rid, map[string]any{"killed": killed}), nil
+	return ok(rid, tuigateway.Plain(tuigateway.ProcessStopResult{Killed: int64(killed)})), nil
 }
 
 // Re-reads the home env file into the process environment
@@ -175,26 +173,34 @@ func reloadEnv(ctx context.Context, rid any, params map[string]any, _ *tuihost.S
 	if err != nil {
 		return nil, err
 	}
-	return ok(rid, map[string]any{"updated": updated}), nil
+	return ok(rid, tuigateway.Plain(tuigateway.ReloadEnvResult{Updated: int64(updated)})), nil
 }
 
 // Loaded plugins with their version and enabled state in discovery order
 func pluginsList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	rows := []map[string]any{}
+	rows := []tuigateway.LegacyPluginRow{}
 	for _, p := range plugins.GetPluginManager(ctx).LoadedPluginsInOrder() {
-		rows = append(rows, map[string]any{"name": p.Key, "version": "?", "enabled": p.Plugin.Enabled})
+		rows = append(rows, tuigateway.LegacyPluginRow{Name: p.Key, Version: "?", Enabled: p.Plugin.Enabled})
 	}
-	return ok(rid, map[string]any{"plugins": rows}), nil
+	return ok(rid, tuigateway.Plain(tuigateway.PluginsListResult{Plugins: rows})), nil
 }
 
 // Background processes the calling session owns
 func processList(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
-	return ok(rid, map[string]any{"processes": sessionProcesses(ctx, session)}), nil
+	result := tuigateway.ProcessListResult{Processes: []tuigateway.ProcessEntry{}}
+	for _, row := range sessionProcesses(ctx, session) {
+		result.Processes = append(result.Processes, typedRow[tuigateway.ProcessEntry]("process.list", row))
+	}
+	return ok(rid, tuigateway.Plain(result)), nil
 }
 
 // Kills one background process the calling session owns
 func processKill(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
-	procID := strOr(params["process_id"])
+	request, err := tuigateway.ProcessKill.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil), nil
+	}
+	procID := request.ProcessID
 	if procID == "" {
 		return rpcErr(rid, 4012, "process_id required", nil), nil
 	}
@@ -204,7 +210,8 @@ func processKill(ctx context.Context, rid any, params map[string]any, session *t
 	if proc == nil || proc.SessionKey != strOr(session.Get("session_key")) {
 		return rpcErr(rid, 4044, "no such process: "+procID, nil), nil
 	}
-	return ok(rid, registry.KillProcess(ctx, env, procID, "process.kill", true)), nil
+	killed := typedRow[tuigateway.ProcessKillResult]("process.kill", registry.KillProcess(ctx, env, procID, "process.kill", true))
+	return ok(rid, tuigateway.Plain(killed)), nil
 }
 
 // The approvals mcp_reload_confirm flag of the disk config, true on any failure
@@ -314,5 +321,5 @@ func commandsCatalog(ctx context.Context, rid any, params map[string]any, _ *tui
 	if err != nil {
 		return nil, err
 	}
-	return ok(rid, catalog), nil
+	return ok(rid, tuigateway.Plain(catalog)), nil
 }

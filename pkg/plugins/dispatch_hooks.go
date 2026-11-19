@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -150,7 +151,7 @@ func pyFloat(v any) (float64, bool) {
 			return 0, false
 		}
 		f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
-		if err != nil && !strings.Contains(err.Error(), "value out of range") {
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return 0, false
 		}
 		return f, true

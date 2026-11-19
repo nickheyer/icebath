@@ -78,7 +78,6 @@ type GoogleChatAdapter struct {
 	typingMessages    map[string]string
 	typingInflight    map[string]chan struct{}
 	orphanTyping      map[string][]string
-	clarifyState      map[string]string
 	rateLimitHits     map[string]int
 	lastInboundThread map[string]string
 	inflightBytes     int
@@ -139,7 +138,7 @@ func NewGoogleChatAdapter(ctx context.Context, config *gateway.PlatformConfig) (
 	a := &GoogleChatAdapter{threadCounts: newThreadCountStore(ctx), dedup: gateway.NewMessageDeduplicator(2000, 300),
 		userCredsByEmail: map[string]*userCreds{}, userAPIByEmail: map[string]*restClient{}, lastSenderByChat: map[string]string{},
 		typingMessages: map[string]string{}, typingInflight: map[string]chan struct{}{}, orphanTyping: map[string][]string{},
-		clarifyState: map[string]string{}, rateLimitHits: map[string]int{}, lastInboundThread: map[string]string{}}
+		rateLimitHits: map[string]int{}, lastInboundThread: map[string]string{}}
 	a.inflightCond = sync.NewCond(&a.mu)
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.Platform("google_chat"), a)
 	a.Traits = googleChatAdapterTraits()
@@ -487,6 +486,17 @@ func (a *GoogleChatAdapter) handlePubSubMessage(ctx context.Context, path string
 		redacted := tools.RedactSensitiveTextWith(&tools.Env{Home: home.Dir(ctx)}, string(dump), tools.RedactOptions{Force: true})
 		pkgLog().Debug("[GoogleChat] RAW envelope (redacted): " + pystr.Slice(redacted, 0, 2000))
 	}
+	if click, ok := parseCardClick(envelope); ok {
+		a.mu.Lock()
+		scope := a.scopeCtx
+		a.mu.Unlock()
+		if scope == nil {
+			scope = ctx
+		}
+		go a.handleCardClick(scope, click, false)
+		ack()
+		return
+	}
 	switch {
 	case strings.Contains(ceType, "membership") || strings.Contains(ceType, "MEMBERSHIP"):
 		chat, _ := envelope["chat"].(map[string]any)
@@ -509,8 +519,6 @@ func (a *GoogleChatAdapter) handlePubSubMessage(ctx context.Context, path string
 		} else {
 			pkgLog().Info("[GoogleChat] REMOVED_FROM_SPACE " + spaceName)
 		}
-	case strings.Contains(ceType, "widget") || strings.Contains(strings.ToLower(ceType), "card"):
-		pkgLog().Info("[GoogleChat] Card/widget event ack'd")
 	default:
 		if msg, env, ok := a.prepareInbound(envelope, ceType, true); ok {
 			size := len(data)

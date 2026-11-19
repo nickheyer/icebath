@@ -59,7 +59,7 @@ func terminalCurrent(run *sectionRun) string {
 // Backend menu, the built in backends the gateway links, the registered ones and a row that keeps the current backend
 func terminalBackendChoices(run *sectionRun) []sectionChoice {
 	choices := []sectionChoice{}
-	linked, _ := tuigateway.SetupValue[[]string](run.values, "terminal.builtin_backends")
+	linked, _ := tuigateway.SetupValue[tuigateway.SetupLinkedBackends](run.values, "terminal.builtin_backends")
 	for _, name := range terminalBuiltins {
 		if name != "local" && !slices.Contains(linked, name) {
 			continue

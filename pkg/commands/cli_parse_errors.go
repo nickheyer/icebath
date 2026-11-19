@@ -21,6 +21,8 @@ const (
 type ArgparseError struct {
 	Cmd *cobra.Command
 	Msg string
+	// Leftover arguments the parser could not place, reported against the top command
+	Unrecognized bool
 }
 
 func (e *ArgparseError) Error() string { return e.Msg }
@@ -28,7 +30,7 @@ func (e *ArgparseError) Error() string { return e.Msg }
 // Usage line followed by the prog error line, leftover arguments reported by the parser parse_args ran on
 func (e *ArgparseError) Stderr() string {
 	cmd := e.Cmd
-	if strings.HasPrefix(e.Msg, "unrecognized arguments: ") {
+	if e.Unrecognized {
 		cmd = argparseTop(cmd)
 	}
 	return argparseUsage(cmd) + cmd.CommandPath() + ": error: " + e.Msg
@@ -67,7 +69,7 @@ func argparseFlagError(cmd *cobra.Command, err error) error {
 	var syntax *pflag.InvalidSyntaxError
 	switch {
 	case errors.As(err, &invalid) && errors.Is(invalid, errHelpRemoved):
-		return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + removedHelpToken(cmd, invalid.GetValue())}
+		return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + removedHelpToken(cmd, invalid.GetValue())}
 	case errors.As(err, &invalid):
 		return &ArgparseError{Cmd: cmd, Msg: "argument " + actionName(invalid.GetFlag()) + ": " + invalidValueText(invalid)}
 	case errors.As(err, &required):
@@ -77,9 +79,9 @@ func argparseFlagError(cmd *cobra.Command, err error) error {
 		if short := missing.GetSpecifiedShortnames(); short != "" {
 			token = "-" + short
 		}
-		return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + token}
+		return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + token}
 	case errors.As(err, &syntax):
-		return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + syntax.GetSpecifiedFlag()}
+		return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + syntax.GetSpecifiedFlag()}
 	}
 	return err
 }
@@ -195,7 +197,7 @@ func (c *CLI) withArgparseGroups(inner cobra.PositionalArgs) cobra.PositionalArg
 			return err
 		}
 		if extras := c.droppedOptions(cmd); len(extras) > 0 {
-			return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(extras, " ")}
+			return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + strings.Join(extras, " ")}
 		}
 		return nil
 	}
@@ -271,7 +273,7 @@ func findSubcommand(cmd *cobra.Command, token string) *cobra.Command {
 // Refuses any positional on a command that declares none, the argparse unrecognized arguments error
 func argparseNoArgs(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(args, " ")}
+		return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + strings.Join(args, " ")}
 	}
 	return nil
 }

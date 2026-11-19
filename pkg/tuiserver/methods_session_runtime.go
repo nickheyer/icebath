@@ -50,9 +50,6 @@ func statusRow(ctx context.Context, session *tuihost.Session, params map[string]
 		panic(err)
 	}
 	defer release2()
-	if db2 == nil {
-		return map[string]any{}
-	}
 	return tryGetSession(ctx, db2, key)
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 type turnErrorCopy struct{ title, hint string }
@@ -117,7 +118,7 @@ func busyMessage(command string, compressing bool) string {
 	return "session busy — Icebath is still replying. Stop the current reply first (Stop button, or Ctrl+C in a terminal), then run /" + name + "."
 }
 
-const authLockTimeoutPrefix = "Timed out waiting for auth store lock"
+const authLockTimeoutPrefix = provider.AuthLockTimeoutLead
 
 // Agent start failure copy, the wait for the lock holder when auth lock contention caused it
 func agentInitFailedMessage(err any) string {

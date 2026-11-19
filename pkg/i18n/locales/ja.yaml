@@ -161,7 +161,6 @@ gateway:
     not_enough: "圧縮するための会話が不十分です (少なくとも 4 件のメッセージが必要)。"
     no_provider: "プロバイダーが構成されていません — 圧縮できません。"
     nothing_to_do: "まだ圧縮するものがありません (トランスクリプトはすべて保護されたコンテキストのままです)。"
-    aggressive_unsupported: "--aggressive はサポートされていません。'/compress here [N]' で直近のやり取りだけを残すか、/undo でターンを削除してください。"
     focus_line: "フォーカス: \"{topic}\""
     summary_failed: "⚠️ 要約の生成に失敗しました ({error})。{count} 件の履歴メッセージが削除され、プレースホルダーに置き換えられました。以前のコンテキストは復元できません。auxiliary.compression モデルの設定を確認してください。"
     aborted: "⚠️ 圧縮が中止されました ({error})。メッセージは削除されていません — 会話はそのままです。再試行するには /compress、新しいセッションを開始するには /reset を実行するか、auxiliary.compression モデル設定を確認してください。"
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ AI モデルサービスの失敗が続きました。/retry で再試行するか、/model でモデルを切り替えてください。詳細はゲートウェイのログ (`icebath logs`) にあります。"
     session_storage_unavailable_disk: "⚠️ セッションストレージが一時的に利用できなかったため、会話履歴を保護するためにこのターンを停止しました。ディスクの空き容量を確認してから、メッセージをもう一度送信してください。"
     session_storage_unavailable: "⚠️ セッションストレージが一時的に利用できなかったため、会話履歴を保護するためにこのターンを停止しました。メッセージはすでに保存されているはずです — 少し待ってからもう一度送信してください。"
+    session_storage_held: "⚠️ セッションストレージは現在利用できません（{cause}）。そのため、メッセージは保留中です。保存されており、ストレージが再び動作し次第ここで返信します。再送信する必要はありません。"
     generic_failed: "⚠️ 問題が発生し、この返答を完了できませんでした。/retry で再試行するか、/new で新しい会話を始めてください。技術的な詳細はゲートウェイのログ (`icebath logs`) にあります。"
     interrupted_before_start: "⚠️ あなたのメッセージは処理開始前に中断されました (直前の /stop が原因の可能性があります)。もう一度送信してください。"
     processing_incomplete: "処理が未完了"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ セッションデータベースの破損を検出しました。メッセージが永続化されない可能性があります。復旧オプション:\n1. `icebath {profile_arg}doctor --fix` を実行\n2. ゲートウェイを停止し、次で復旧:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (復旧可能と報告された場合) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — 復旧は先に破損ファイルのスナップショットを取ります。稼働中の state.db に対して `sqlite3 ... \".recover\"` を実行しないでください。脆弱な sqlite3 CLI はさらに破損させる可能性があります\n3. {backups_dir}/ のバックアップから復元\nサニタイズ済みの診断情報は `icebath {profile_arg}doctor` で確認できます。"
     db_fts_corrupt: "⚠️ セッションデータベースが検索インデックス (FTS5) に限定された破損エラーを報告しました。メッセージテーブルは損傷していません。修復されるまでメッセージが永続化されない可能性があります: `icebath {profile_arg}doctor --fix` を実行し、ゲートウェイを再起動してください。`icebath {profile_arg}doctor` が損傷を確認しない限り、復旧ツールの実行やバックアップからの復元は行わないでください。"
     db_then_restart: "{action} その後 `icebath {profile_arg}gateway restart` を実行してください。"
-    db_unavailable: "⚠️ セッションデータベースが利用できません — メッセージが保存されず、/resume が空になる可能性があります。原因: {cause}。{action}"
+    db_unavailable: "⚠️ セッションデータベースを利用できません — 新しいメッセージは保留され、再び動作し次第返信されます。原因: {cause}。{action}"
   cron_store:
 
     unwritable: "⚠️ cron ストア {store} は {since} から書き込みできません（{error}）。書き込みが可能になるまで、スケジュール済みジョブはスキップされます。対処: {fix}。"
@@ -1557,6 +1557,25 @@ platform:
       other_button: "その他 / 回答を入力"
       header: "質問"
       question: "❓ {question}"
+      submit_button: "送信"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ {user} さんの回答入力を待っています…"
+      pick_one: "少なくとも 1 つ選んでから「送信」を押してください。"
+    approval:
+
+      resolved_once: "✅ {user} さんが 1 回だけ許可しました"
+      resolved_session: "✅ {user} さんがこのセッションで許可しました"
+      resolved_always: "✅ {user} さんが常に許可しました"
+      resolved_deny: "❌ {user} さんが拒否しました"
+    confirm:
+
+      default_title: "確認"
+      approve_once: "1 回だけ承認"
+      always_approve: "常に承認"
+      cancel: "キャンセル"
+      decided_once: "✅ {user} さんが 1 回だけ承認しました"
+      decided_always: "🔒 {user} さんが常に承認しました"
+      decided_cancel: "❌ {user} さんがキャンセルしました"
     typing:
 
       thinking: "Icebath が考えています…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "現在のセッションを分岐（Discord/Telegram/Slack/Matrix では新しいスレッド。--here でここに留まる）"
+    core_description: "現在のセッションを分岐（--here でここに留まる）"
   worktree:
 
     description: "分離された git worktree の表示、一覧、作成、または削除"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "プラットフォーム '{platform}' はゲートウェイで設定/有効化されていません。"
       no_home_channel: "{platform} のホームチャンネルが設定されていません。"
       set_home_hint: "先に宛先のチャットで /sethome を実行して設定してください。"
+      enable_platform_hint: "icebath gateway setup で設定し、icebath gateway restart でゲートウェイを再起動してください。"
       session_row_failed: "state.db にセッション行を確保できませんでした: {error}"
       picked_up: "ゲートウェイが受け取りました。転送中..."
       complete: "↻ 引き継ぎが完了しました。セッションは現在 {platform} でアクティブです。"

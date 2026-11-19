@@ -26,6 +26,7 @@ func init() {
 	tools.BoundSecretScope = CurrentSecretScope
 	tools.BoundSecretScopeHome = CurrentSecretScopeHome
 	tools.LaunchBodySecretScope = launchBodyMapping
+	tools.BindProfileSecretScope = BindProfileSecretScope
 }
 
 // Launch profile mapping of the body the context marks, nil outside a launch body

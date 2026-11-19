@@ -26,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
@@ -142,7 +143,7 @@ func refuseIfStewardOwned(w io.Writer) bool {
 func findShellConfigs() []string {
 	h := uninstallUserHome()
 	var out []string
-	for _, name := range []string{".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile"} {
+	for _, name := range []string{".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile", filepath.Join(".config", "fish", "config.fish")} {
 		if p := filepath.Join(h, name); uninstallPathExists(p) {
 			out = append(out, p)
 		}
@@ -160,7 +161,7 @@ func stripShellConfigPath(content string) string {
 			skipNext = true
 			continue
 		}
-		if skipNext && strings.Contains(lower, "icebath") && strings.Contains(line, "PATH") {
+		if skipNext && strings.Contains(lower, "path") {
 			skipNext = false
 			continue
 		}
@@ -212,6 +213,7 @@ func removePathFromShellConfigs(ctx context.Context, w io.Writer) []string {
 func removeWrapperScript(w io.Writer) []string {
 	h := uninstallUserHome()
 	local := filepath.Join(h, ".local", "bin")
+	root := uninstallProjectRoot()
 	var removed []string
 	for _, wrapper := range []string{filepath.Join(local, "icebath"), filepath.Join(local, "icebath-acp"), filepath.Join(local, "icebath-agent"),
 		"/usr/local/bin/icebath", "/usr/local/bin/icebath-acp", "/usr/local/bin/icebath-agent"} {
@@ -219,6 +221,13 @@ func removeWrapperScript(w io.Writer) []string {
 			continue
 		}
 		err := func() error {
+			if pm.OwnsLauncher(wrapper, root) {
+				if err := pypath.Unlink(wrapper); err != nil {
+					return err
+				}
+				removed = append(removed, wrapper)
+				return nil
+			}
 			raw, err := os.ReadFile(wrapper)
 			if err != nil {
 				return err
@@ -841,7 +850,7 @@ func printUninstallDryRun(ctx context.Context, w io.Writer, projectRoot, h strin
 	fmt.Fprintln(w, "  • Icebath PATH entries from shell configs / Windows User PATH")
 	fmt.Fprintln(w, "  • Icebath wrapper scripts and Icebath-managed node/npm/npx symlinks")
 	if install.InstallerCreated(projectRoot) {
-		fmt.Fprintf(w, "  • Code checkout: %s\n", projectRoot)
+		fmt.Fprintf(w, "  • Install directory: %s\n", projectRoot)
 	} else {
 		fmt.Fprintf(w, "  • Code: %s, uninstall leaves it in place\n", install.UnmanagedTreeDescription(projectRoot))
 	}

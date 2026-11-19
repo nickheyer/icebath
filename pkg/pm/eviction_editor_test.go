@@ -218,7 +218,7 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 		t.Fatalf("unhashable enabled item %v", err)
 	}
 	doc, _ = loadRoundtrip([]byte("plugins:\n  disabled: {a: slow}\n  disabled_by_update:\n    slow: {enabled: false}\n"))
-	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpell("slow")); !edPyError(err, "KeyError", "0") {
+	if err := rejoinPlugin(rtGet(rtRoot(doc), "plugins"), "slow", edSpell("slow")); !edPyError(err, "KeyError", "the mapping of names has no key 0") {
 		t.Fatalf("mapping without index keys %v", err)
 	}
 }

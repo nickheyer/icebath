@@ -328,7 +328,9 @@ func (q *composerQueue) cancelServerRow(row *pendingRow, then func(err error) te
 		return call(q.gw, tuigateway.CanonicalPromptCancel, tuigateway.PromptCancelParams{SessionID: sid, AdmissionID: row.AdmissionID}, settled)
 	}
 	if row.ExecutionGeneration == nil {
-		return resolved(func() tea.Cmd { return settled(nil, tuigateway.MissingParam(tuigateway.CanonicalPromptResolveUnknown.Name(), "execution_generation")) })
+		return resolved(func() tea.Cmd {
+			return settled(nil, tuigateway.MissingParam(tuigateway.CanonicalPromptResolveUnknown.Name(), "execution_generation"))
+		})
 	}
 	return call(q.gw, tuigateway.CanonicalPromptResolveUnknown, tuigateway.PromptResolveUnknownParams{SessionID: sid, AdmissionID: row.AdmissionID, ExecutionGeneration: *row.ExecutionGeneration}, settled)
 }

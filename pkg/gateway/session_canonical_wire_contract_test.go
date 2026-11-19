@@ -3,15 +3,14 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Socket double for a connection whose frames the case never reads
@@ -61,13 +60,8 @@ func TestEveryCanonicalVerbHasADeclaredContract(t *testing.T) {
 	}
 	var undeclared, orphaned []string
 	for name := range served {
-		if tuihost.Methods[name] == nil && tuihost.CanonicalMethods[name] == nil && tuigateway.Lookup(tuigateway.KindMethod, name) == nil && tuigateway.Lookup(tuigateway.KindCanonical, name) == nil {
+		if tuigateway.Lookup(tuigateway.KindMethod, name) == nil && tuigateway.Lookup(tuigateway.KindCanonical, name) == nil {
 			undeclared = append(undeclared, name)
-		}
-	}
-	for name := range tuihost.CanonicalMethods {
-		if !served[name] {
-			orphaned = append(orphaned, name)
 		}
 	}
 	for _, entry := range tuigateway.Entries(tuigateway.KindCanonical) {
@@ -177,7 +171,7 @@ func TestCanonicalResumeRejectsUnknownKeysAndValidatesRealSnapshot(t *testing.T)
 		served[name] = true
 	}
 	for name := range served {
-		if tuihost.Methods[name] == nil && tuihost.CanonicalMethods[name] == nil && tuigateway.Lookup(tuigateway.KindMethod, name) == nil && tuigateway.Lookup(tuigateway.KindCanonical, name) == nil {
+		if tuigateway.Lookup(tuigateway.KindMethod, name) == nil && tuigateway.Lookup(tuigateway.KindCanonical, name) == nil {
 			t.Fatalf("%s is served without a declared contract", name)
 		}
 	}
@@ -239,15 +233,16 @@ func TestCanonicalResultValidationCatchesAHandlerContractViolation(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	strict := tuihost.Strict
-	tuihost.Strict = true
-	declared := tuihost.Methods["ping"]
-	broken := *declared
-	broken.Result = pydantic.NewModel("BrokenPingResult", tuihost.ClosedConfig, pydantic.Req("not_pong", pydantic.Bool))
-	tuihost.Methods["ping"] = &broken
-	t.Cleanup(func() { tuihost.Strict, tuihost.Methods["ping"] = strict, declared })
+	strict := tuigateway.PanicOnMisfit
+	tuigateway.PanicOnMisfit = true
+	declared := tuigateway.Lookup(tuigateway.KindMethod, "ping")
+	result := declared.Result
+	declared.Result = reflect.TypeFor[struct {
+		NotPong bool `json:"not_pong"`
+	}]()
+	t.Cleanup(func() { tuigateway.PanicOnMisfit, declared.Result = strict, result })
 	defer func() {
-		violation, ok := recover().(*tuihost.ContractViolation)
+		violation, ok := recover().(*tuigateway.ContractViolation)
 		if !ok || !strings.Contains(violation.Message, "ping") {
 			t.Fatalf("dispatch raised %v, want a ContractViolation naming ping", violation)
 		}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,11 +28,16 @@ const clipboardImageLimit = 15 * time.Second
 // Saves the clipboard image of the host to a PNG file, false when the clipboard holds none
 var ClipboardImage func(dest string) bool
 
+// Program this host lacks to read clipboard images, or that no desktop clipboard is reachable
+var ClipboardImageBlocker func() (missing string, noDesktop bool)
+
 // Clipboard image saved to a temp file, or why there is none
 type clipboardImageMsg struct {
 	path        string
 	dir         string
 	err         error
+	missing     string
+	noDesktop   bool
 	quiet       bool
 	destination submissionDestination
 	revision    int
@@ -61,7 +67,7 @@ func (a *app) syncTokens() tea.Cmd {
 			continue
 		}
 		if t.Kind == "image" && t.Path != "" && !a.gw.canonical() && a.store.ui.Sid != "" {
-			cmds = append(cmds, a.events.quietRequest("image.detach", map[string]any{"path": t.Path, "session_id": a.store.ui.Sid}))
+			cmds = append(cmds, fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: t.Path, SessionID: a.store.ui.Sid}))
 		}
 	}
 	a.tokens = kept
@@ -99,26 +105,20 @@ func (a *app) stageImage(path string, then func(image *stagedImage, err error) t
 			return then(image, err)
 		})
 	}
-	return gatewayCall(a.gw, "image.attach", map[string]any{"path": path, "session_id": destination.Sid}, func(v any, err error) tea.Cmd {
-		r := asRPCResult(v)
+	return call(a.gw, tuigateway.ImageAttach, tuigateway.ImageAttachParams{Path: path, SessionID: destination.Sid}, func(r *tuigateway.AttachedImageResult, err error) tea.Cmd {
 		if !current() {
-			if attached, _ := r["path"].(string); attached != "" {
-				return a.events.quietRequest("image.detach", map[string]any{"path": attached, "session_id": destination.Sid})
+			if r != nil && r.Path != "" {
+				return fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: r.Path, SessionID: destination.Sid})
 			}
 			return nil
 		}
 		if err != nil {
 			return then(nil, err)
 		}
-		name, _ := r["name"].(string)
-		if name == "" {
+		if r.Name == "" {
 			return then(nil, nil)
 		}
-		image := &stagedImage{Name: name}
-		image.Path, _ = r["path"].(string)
-		image.Mime, _ = r["mime"].(string)
-		image.Remainder, _ = r["remainder"].(string)
-		return then(image, nil)
+		return then(&stagedImage{Name: r.Name, Path: r.Path, Remainder: val(r.Remainder)}, nil)
 	})
 }
 
@@ -151,20 +151,19 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 	}
 	revision := a.composerRevision()
 	if !a.gw.canonical() {
-		return gatewayCall(a.gw, "clipboard.paste", map[string]any{"session_id": destination.Sid}, func(v any, err error) tea.Cmd {
+		return call(a.gw, tuigateway.ClipboardPaste, tuigateway.SessionIDParams{SessionID: destination.Sid}, func(r *tuigateway.AttachedImageResult, err error) tea.Cmd {
 			if !a.store.isCurrentDestination(destination) || revision != a.composerRevision() {
 				return nil
 			}
-			r := asRPCResult(v)
 			if err != nil {
 				if !quiet {
 					a.sys(tr("canonical.queue.clipboardImageFailed", rpcErrorMessage(err)))
 				}
 				return nil
 			}
-			if !truthyJS(r["attached"]) {
+			if !r.Attached {
 				if !quiet {
-					message, _ := r["message"].(string)
+					message := r.Message
 					if message == "" {
 						message = "No image found in clipboard"
 					}
@@ -172,11 +171,7 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 				}
 				return nil
 			}
-			image := &stagedImage{}
-			image.Path, _ = r["path"].(string)
-			image.Mime, _ = r["mime"].(string)
-			image.Name, _ = r["name"].(string)
-			return a.attachImageToken(image)
+			return a.attachImageToken(&stagedImage{Path: r.Path, Name: r.Name})
 		})
 	}
 	return func() tea.Msg {
@@ -200,6 +195,8 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 		case ok := <-saved:
 			if ok {
 				out.path = dest
+			} else if ClipboardImageBlocker != nil {
+				out.missing, out.noDesktop = ClipboardImageBlocker()
 			}
 		case <-ctx.Done():
 			out.err = fmt.Errorf("reading the clipboard image took longer than %s", clipboardImageLimit)
@@ -228,7 +225,12 @@ func (a *app) onClipboardImage(m clipboardImageMsg) tea.Cmd {
 	}
 	if m.path == "" {
 		cleanup()
-		if !m.quiet {
+		switch {
+		case m.missing != "":
+			a.sys(tr("composer.clipboardImageTool", m.missing))
+		case m.noDesktop:
+			a.sys(tr("composer.clipboardNoDesktop"))
+		case !m.quiet:
 			a.sys("No image found in clipboard")
 		}
 		return nil
@@ -253,11 +255,10 @@ func (a *app) insertPaste(cleaned string) tea.Cmd {
 	}
 	label := pasteTokenLabel(cleaned, lineCount)
 	a.tokens = trimTokens(append(a.tokens, composerToken{Kind: "paste", Label: label, Text: cleaned}))
-	collapse := gatewayCall(a.gw, "paste.collapse", map[string]any{"text": cleaned}, func(v any, err error) tea.Cmd {
-		path, _ := asRPCResult(v)["path"].(string)
+	collapse := call(a.gw, tuigateway.PasteCollapse, tuigateway.PasteCollapseParams{Text: cleaned}, func(r *tuigateway.PasteCollapseResult, err error) tea.Cmd {
 		for i := range a.tokens {
-			if err == nil && path != "" && a.tokens[i].Kind == "paste" && a.tokens[i].Label == label && a.tokens[i].Text == cleaned {
-				a.tokens[i].Path = path
+			if err == nil && r.Path != "" && a.tokens[i].Kind == "paste" && a.tokens[i].Label == label && a.tokens[i].Text == cleaned {
+				a.tokens[i].Path = r.Path
 			}
 		}
 		return nil
@@ -285,13 +286,12 @@ func (a *app) pasted(content string) tea.Cmd {
 		if err == nil && image != nil {
 			return a.attachImageToken(image)
 		}
-		return gatewayCall(a.gw, "input.detect_drop", map[string]any{"session_id": sid, "text": cleaned}, func(v any, err error) tea.Cmd {
+		return call(a.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{SessionID: sid, Text: cleaned}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
 			if !current() {
 				return nil
 			}
-			r := asRPCResult(v)
-			if text, _ := r["text"].(string); err == nil && truthyJS(r["matched"]) && text != "" {
-				return a.card.composer.Insert(text)
+			if err == nil && r.Matched && r.Text != "" {
+				return a.card.composer.Insert(r.Text)
 			}
 			return a.insertPaste(cleaned)
 		})
@@ -375,21 +375,12 @@ func (a *app) interpolate(text string, destination submissionDestination, item *
 	cmds := make([]tea.Cmd, len(matches))
 	for i, m := range matches {
 		index := i
-		cmds[i] = gatewayCall(a.gw, "shell.exec", map[string]any{"command": text[m[2]:m[3]], "session_id": destination.Sid}, func(v any, err error) tea.Cmd {
-			r := asRPCResult(v)
-			switch {
-			case err != nil:
+		params := tuigateway.CanonicalShellExecParams{Command: text[m[2]:m[3]], SessionID: destination.Sid}
+		cmds[i] = call(a.gw, tuigateway.CanonicalShellExec, params, func(r *tuigateway.ShellExecResult, err error) tea.Cmd {
+			if err != nil {
 				results[index] = "(error: " + describeShellExecError(err) + ")"
-			case r == nil:
-				results[index] = "(error: " + misfitText(tr("session.common.invalidResponse", "shell.exec")) + ")"
-			default:
-				var parts []string
-				for _, k := range []string{"stdout", "stderr"} {
-					if s, _ := r[k].(string); s != "" {
-						parts = append(parts, s)
-					}
-				}
-				results[index] = trimJS(strings.Join(parts, "\n"))
+			} else {
+				results[index] = trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
 			}
 			pending--
 			if pending == 0 {

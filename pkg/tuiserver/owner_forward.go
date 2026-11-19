@@ -112,24 +112,7 @@ func ownerPayloadFor(eventType string, payload any) map[string]any {
 		}
 		return shaped
 	}
-	contract := tuihost.Events[eventType]
-	if contract == nil || contract.Payload == nil {
-		return nil
-	}
-	shaped := map[string]any{}
-	for _, name := range contract.Payload.ModelFields() {
-		if value, present := fields[name]; present {
-			shaped[name] = value
-		}
-	}
-	if contract.Payload.ModelValidate(shaped) != nil {
-		if eventType != "message.complete" {
-			return nil
-		}
-		text, _ := fields["text"].(string)
-		shaped = map[string]any{"text": text}
-	}
-	return shaped
+	return nil
 }
 
 // Admission receipt or the failure handed to the waiting submit

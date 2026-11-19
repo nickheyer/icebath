@@ -35,14 +35,17 @@ func azureEntraCredentials(cfgEntra map[string]any) (func(context.Context) (stri
 	return azureEntraCredentialsIn(context.Background(), cfgEntra)
 }
 
-// Azure Foundry API key from the explicit arg, the .env file, then the environment
+// Azure Foundry API key from the explicit arg, the credential pool, the .env file, then the environment
 func (r *resolver) azureFoundryAPIKey(explicitAPIKey string) (string, error) {
 	if explicitAPIKey != "" {
 		return explicitAPIKey, nil
 	}
+	if cred, ok := r.credentialForModel("azure-foundry", ""); ok && strings.TrimSpace(cred.APIKey) != "" {
+		return strings.TrimSpace(cred.APIKey), nil
+	}
 	apiKey := strings.TrimSpace(r.secret("AZURE_FOUNDRY_API_KEY"))
 	if apiKey == "" {
-		return "", newAuthErr("azure-foundry", "Azure Foundry requires an API key. Set AZURE_FOUNDRY_API_KEY in "+
+		return "", newAuthErr("azure-foundry", "Azure Foundry requires an API key. Add one with `icebath auth add azure-foundry`, set AZURE_FOUNDRY_API_KEY in "+
 			"~/.icebath/.env or run 'icebath model' to configure. To use "+
 			"keyless Microsoft Entra ID auth instead, set "+
 			"model.auth_mode: entra_id in config.yaml (or pick "+

@@ -7,12 +7,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Palette catalog and slash completion builders of pkg/tuiserver, assigned in cmd/icebath/wiring.go
 var (
-	CommandCatalog   func(ctx context.Context, scope func(context.Context) (context.Context, error)) (map[string]any, error)
-	SlashCompletions func(ctx context.Context, text string, scope func(context.Context) (context.Context, error)) (map[string]any, error)
+	CommandCatalog   func(ctx context.Context, scope func(context.Context) (context.Context, error)) (tuigateway.CommandsCatalogResult, error)
+	SlashCompletions func(ctx context.Context, text string, scope func(context.Context) (context.Context, error)) (tuigateway.CompleteSlashResult, error)
 )
 
 // Command catalog or slash completions for this profile, skills read in the session workspace when one is named
@@ -52,9 +53,17 @@ func discoverCommands(ctx context.Context, a *SessionAuthority, actor Principal,
 	scoped := profileRuntimeScope(ctx, a.ProfileID, true)
 	if completion {
 		text, _ := params.GetOr("text", "").(string)
-		return SlashCompletions(scoped, text, scope)
+		result, err := SlashCompletions(scoped, text, scope)
+		if err != nil {
+			return nil, err
+		}
+		return tuigateway.Plain(result), nil
 	}
-	return CommandCatalog(scoped, scope)
+	catalog, err := CommandCatalog(scoped, scope)
+	if err != nil {
+		return nil, err
+	}
+	return tuigateway.Plain(catalog), nil
 }
 
 // Plugins this profile's manager loaded with their counts and errors, plugin toolsets and portable MCP servers

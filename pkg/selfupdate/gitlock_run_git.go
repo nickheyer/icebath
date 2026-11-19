@@ -9,7 +9,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
+
+// Binds the git runner of the tools git lock sweeps to the updater custody run
+func init() { tools.GitlockRunGit = GitlockRunGit }
 
 // Runs an updater git for the tools git lock in the update's custody, the run_git the process wiring assigns
 func GitlockRunGit(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {

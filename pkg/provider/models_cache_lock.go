@@ -39,7 +39,7 @@ func providerModelsCacheLock(path string) (func(), error) {
 		if time.Now().After(deadline) {
 			f.Close()
 			providerModelsCacheThreadLock.Unlock()
-			return nil, &LockTimeoutError{LockPath: lockPath, Hint: "Timed out waiting for the provider models cache lock (" + path + ")"}
+			return nil, &LockTimeoutError{Lock: "the provider models cache lock of " + path, LockPath: lockPath}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

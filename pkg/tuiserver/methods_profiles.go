@@ -233,7 +233,9 @@ func canonicalSessionRow(ctx context.Context, db *state.DB, profilePath string) 
 		"started_at":    firstTruthy(tipRow.GetOr("started_at", nil), started),
 		"last_active":   firstTruthy(tipRow.GetOr("last_activity_at", nil), tipRow.GetOr("started_at", nil), started),
 		"message_count": firstTruthy(tipRow.GetOr("message_count", nil), 0)}
-	for key, value := range liveCountField(ctx, db, tip) {
+	counted, err := liveCountField(ctx, db, tip)
+	panicIf(err)
+	for key, value := range counted {
 		out[key] = value
 	}
 	return out
@@ -271,7 +273,9 @@ func latestProfileSessionRows(ctx context.Context, db *state.DB) (human, worker 
 			human = map[string]any{"id": id, "title": title, "preview": firstTruthy(preview, s.GetOr("preview", nil), ""),
 				"started_at": firstTruthy(s.GetOr("started_at", nil), 0), "last_active": lastActive,
 				"message_count": firstTruthy(s.GetOr("message_count", nil), 0)}
-			for key, value := range liveCountField(ctx, db, pyrepr.Str(id)) {
+			counted, err := liveCountField(ctx, db, pyrepr.Str(id))
+			panicIf(err)
+			for key, value := range counted {
 				human[key] = value
 			}
 		}

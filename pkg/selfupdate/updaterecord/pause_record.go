@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -1306,7 +1307,7 @@ func runPauseResume(ctx context.Context, token map[string]any) (failure string) 
 	}
 	pauseWarn(pauseStderr, "→ Restarting gateway(s) paused by an interrupted `icebath update`...")
 	if pauseGatewayResumer == nil {
-		return "the gateway resumer is not installed (pkg/selfupdate is not linked into this program)"
+		return linktier.Missing("restarting the gateways an interrupted update paused", linktier.Extras)
 	}
 	if err := pauseGatewayResumer(ctx, token, pauseStderr); err != nil {
 		return err.Error()

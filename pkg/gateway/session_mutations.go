@@ -82,7 +82,7 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 			if prepared, err = mutationPrepareStep(operation, editorServers)(ctx, a, live, payload, prepared); err != nil {
 				return nil, err
 			}
-			if status, _ := prepared.Get("status"); status == "preview" || status == "noop" || status == "confirmation_required" {
+			if status, _ := prepared.Get("status"); status == "preview" || status == "noop" || status == "confirmation_required" || status == "refreshed" {
 				return preparedWith(pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation), flattenObject(prepared)...), nil
 			}
 		}
@@ -91,6 +91,13 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 	result, err := commitMutation(ctx, a, ref, live, params, prepared, fields, authorizeWrite, editorServers, &applied, commitLock)
 	if err != nil {
 		return nil, err
+	}
+	if operation == "model" && live != nil && prepared != nil {
+		if restore, ok := pyjson.AsObject(prepared.GetOr("restore", nil)); ok {
+			a.mu.Lock()
+			live.OnceRestore = &onceRestore{principal: principalID, payload: restore}
+			a.mu.Unlock()
+		}
 	}
 	if operation == "delete" {
 		if err := a.DB.CollectRetiredMedia(ctx); err != nil {

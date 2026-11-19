@@ -36,7 +36,10 @@ func submitAndSettle(t *testing.T, hz *turnHarness, text string) bool {
 
 func TestARegisteredStaleCloseIsClearedBeforeTheTurnAndRotationPublishes(t *testing.T) {
 	hz := newTurnHarness(t, []any{fakellm.Text{Text: "ok"}}, "")
-	db := getDB(context.Background())
+	db, err := getDB(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	stampEnded(t, db, hz.key, "tui_close")
 	if !submitAndSettle(t, hz, "go") {
 		t.Fatal("turn refused on a registered session")
@@ -70,7 +73,10 @@ func TestOnlyAnExplicitCloseOnAStillRegisteredSessionIsCleared(t *testing.T) {
 	}{{"session_reset", false}, {"new_session", false}, {"compression", false}, {"ws_disconnect", false}, {"tui_close", true}} {
 		t.Run(tc.reason, func(t *testing.T) {
 			hz := newTurnHarness(t, []any{fakellm.Text{Text: "ok"}}, "")
-			db := getDB(context.Background())
+			db, err := getDB(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
 			stampEnded(t, db, hz.key, tc.reason)
 			if !db.TryAcquireCompressionLock(hz.key, "elsewhere", 300) {
 				t.Fatal("compression lease refused")

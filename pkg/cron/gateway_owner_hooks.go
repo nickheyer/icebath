@@ -59,6 +59,7 @@ func (c *ownerLatchCancel) Set()           { c.event.Set() }
 func (c *ownerLatchCancel) Reason() string { return "" }
 
 func init() {
+	gateway.WebhookExecuteJobForEvent = ExecuteJobForEvent
 	gateway.SetCronOwnerHooks(&gateway.CronOwnerHooks{
 		GetJob: func(ctx context.Context, jobID string) (*pyjson.Object, error) {
 			job, err := ownerStore(ctx).getJob(ctx, jobID)

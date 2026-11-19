@@ -153,7 +153,7 @@ func TestPrepareDailyLimitBecomesTypedError(t *testing.T) {
 		t.Fatal(err)
 	}
 	api := func(context.Context, string, string, *pyjson.Object, float64) (any, error) {
-		return nil, &RuntimeError{"API error biz_code=40093002"}
+		return nil, &RuntimeError{Msg: "API error biz_code=40093002", BizCode: 40093002}
 	}
 	_, err := NewChunkedUploader(api, nil, "T").Upload(context.Background(), "c2c", "u", f, 4, "a.bin")
 	limit, ok := err.(*UploadDailyLimitExceededError)

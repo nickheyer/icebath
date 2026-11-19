@@ -314,7 +314,7 @@ func (d *SessionDB) BindTelegramTopic(ctx context.Context, b TelegramTopicBindin
 		if len(existing) > 0 {
 			e := existing[0]
 			if pyStr(e["profile_name"]) != profileName || pyStr(e["chat_id"]) != b.ChatID || pyStr(e["thread_id"]) != b.ThreadID {
-				return &pyConvError{"ValueError", "session is already linked to another Telegram topic"}
+				return &TopicAlreadyLinkedError{}
 			}
 		}
 		_, err = conn.ExecContext(ctx, `

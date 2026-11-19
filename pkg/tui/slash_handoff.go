@@ -52,12 +52,12 @@ func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 		return nil
 	}
 	w := &handoffWatch{r: r, sid: r.sid, platform: platform, subscriptionHeld: a.life.subscriptions[r.sid]}
-	return gatewayCall(a.gw, "handoff.request", map[string]any{"session_id": r.sid, "platform": platform}, func(v any, err error) tea.Cmd {
+	return call(a.gw, tuigateway.HandoffRequest, tuigateway.HandoffRequestParams{SessionID: r.sid, Platform: platform}, func(res *tuigateway.HandoffRequestResult, err error) tea.Cmd {
 		if err != nil {
 			r.sys(refusalDetail(err))
 			return nil
 		}
-		home := jsValueString(asRPCResult(v)["home_name"])
+		home := res.HomeName
 		return a.storedTitle(r.sid, func(title string) tea.Cmd {
 			w.title = title
 			if w.title == "" {
@@ -97,14 +97,15 @@ func (a *app) storedTitle(sid string, then func(title string) tea.Cmd) tea.Cmd {
 func (a *app) pollHandoff(w *handoffWatch) tea.Cmd {
 	return tea.Tick(handoffPollEvery, func(time.Time) tea.Msg {
 		return asyncDoneMsg{run: func() tea.Cmd {
-			return gatewayCall(a.gw, "handoff.state", map[string]any{"session_id": w.sid}, func(v any, err error) tea.Cmd {
-				current := "pending"
+			return call(a.gw, tuigateway.HandoffState, tuigateway.SessionIDParams{SessionID: w.sid}, func(res *tuigateway.HandoffStateResult, err error) tea.Cmd {
+				current, failure := "pending", ""
 				if err == nil {
-					if state := jsValueString(asRPCResult(v)["state"]); state != "" {
-						current = state
+					if res.State != "" {
+						current = res.State
 					}
+					failure = res.Error
 				}
-				return a.advanceHandoff(w, current, jsValueString(asRPCResult(v)["error"]))
+				return a.advanceHandoff(w, current, failure)
 			})
 		}}
 	})
@@ -131,10 +132,10 @@ func (a *app) advanceHandoff(w *handoffWatch, current, failure string) tea.Cmd {
 		return nil
 	case "pending":
 		if now.After(w.pendingDeadline) {
-			return gatewayCall(a.gw, "handoff.fail", map[string]any{"session_id": w.sid, "error": "timed out waiting for gateway"}, func(v any, err error) tea.Cmd {
-				if err == nil && !truthyJS(asRPCResult(v)["failed"]) {
-					if state := jsValueString(asRPCResult(v)["state"]); state != "" && state != "pending" {
-						return a.advanceHandoff(w, state, "")
+			return call(a.gw, tuigateway.HandoffFail, tuigateway.HandoffFailParams{SessionID: w.sid, Error: "timed out waiting for gateway"}, func(res *tuigateway.HandoffFailResult, err error) tea.Cmd {
+				if err == nil && !res.Failed {
+					if res.State != "" && res.State != "pending" {
+						return a.advanceHandoff(w, res.State, "")
 					}
 				}
 				a.store.ui.Status = w.previousStatus

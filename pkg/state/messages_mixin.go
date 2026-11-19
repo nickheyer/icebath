@@ -535,8 +535,17 @@ func (d *SessionDB) walkTurnLeaseKeyOnConn(ctx context.Context, conn SQLiteConn,
 	return sessionID, nil
 }
 
-// Bind values of the shared message INSERT for one message dict, reasoning columns NULL unless kept
+// Driver values of the shared message INSERT, a typed rejection for a value no column can store
 func messageRowParams(sessionID, role string, msg map[string]any, toolCalls any, timestamp float64, keepReasoning bool) ([]any, error) {
+	params, err := messageRowValues(sessionID, role, msg, toolCalls, timestamp, keepReasoning)
+	if err != nil {
+		return nil, unstorableValue(err)
+	}
+	return bindParams(params)
+}
+
+// Bind values of the shared message INSERT for one message dict, reasoning columns NULL unless kept
+func messageRowValues(sessionID, role string, msg map[string]any, toolCalls any, timestamp float64, keepReasoning bool) ([]any, error) {
 	strOrNone := func(v any) any {
 		if s, ok := v.(string); ok {
 			return SanitizeSurrogates(s)
@@ -715,7 +724,7 @@ func (d *SessionDB) AppendMessage(ctx context.Context, sessionID string, fields 
 	role, _ := msg["role"].(string)
 	meta, err := encodeDisplayMetadata(msg["display_metadata"])
 	if err != nil {
-		return 0, err
+		return 0, unstorableValue(err)
 	}
 	msg["display_metadata"] = meta
 	toolCalls := parseToolCalls(msg["tool_calls"])

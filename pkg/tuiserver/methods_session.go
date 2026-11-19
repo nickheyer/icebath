@@ -84,11 +84,10 @@ func withSessionDB(code int, fn func(ctx context.Context, rid any, params map[st
 func withProfileDB(code int, fn func(ctx context.Context, rid any, params map[string]any, db *state.DB) map[string]any) Handler {
 	return func(ctx context.Context, rid any, params map[string]any) map[string]any {
 		db, release, err := profileDB(ctx, params, false)
-		panicIf(err)
-		defer release()
-		if db == nil {
-			return dbUnavailableError(ctx, rid, code)
+		if err != nil {
+			return storeFailure(ctx, rid, code, err)
 		}
+		defer release()
 		return fn(ctx, rid, params, db)
 	}
 }
@@ -148,10 +147,15 @@ func makeAgentInContext(ctx context.Context, sid, key string, o makeAgentOptions
 // Dedicated handle on a profile home's state db with its release, else the shared launch db
 func profileSessionDB(ctx context.Context, profileHome string) (*state.DB, bool, error) {
 	if profileHome != "" {
-		db, err := state.Acquire(ctx, filepath.Join(profileHome, "state.db"))
-		return db, true, err
+		path := filepath.Join(profileHome, "state.db")
+		db, err := state.Acquire(ctx, path)
+		if err != nil {
+			return nil, true, storeUnavailable(ctx, path, err)
+		}
+		return db, true, nil
 	}
-	return getDB(ctx), false, nil
+	db, err := getDB(ctx)
+	return db, false, err
 }
 
 // Releases a dedicated db handle, swallowing any failure
@@ -269,7 +273,8 @@ func seedRow(ctx context.Context, record *tuihost.Session) {
 	key := strOr(record.Get("session_key"))
 	stopped := false
 	if failure := catchPanic(func() {
-		if !ensureSessionDBRow(ctx, record) {
+		if err := ensureSessionDBRow(ctx, record); err != nil {
+			pkgLog().Warn(fmt.Sprintf("seeded session %s failed to store: %s", key, err))
 			stopped = true
 			return
 		}
@@ -372,6 +377,11 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 	profile := pystr.Strip(strOr(params["profile"]))
 	profileHomeDir, err := profileHome(profile)
 	panicIf(err)
+	if store, owned, err := profileSessionDB(ctx, profileHomeDir); err != nil {
+		return storeFailure(ctx, rid, 5000, err)
+	} else if owned {
+		releaseDB(store)
+	}
 	conflict, err := modelOverrideConflict(ctx, params, func(c context.Context) context.Context { return profileBuildScope(c, profileHomeDir) })
 	panicIf(err)
 	if conflict != nil {
@@ -394,10 +404,8 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 			return rpcErr(rid, 4008, "parent_session_id is required when copying parent history", nil)
 		}
 		db, release, err := profileDB(ctx, params, false)
-		panicIf(err)
-		if db == nil {
-			release()
-			return dbUnavailableError(ctx, rid, 5008)
+		if err != nil {
+			return storeFailure(ctx, rid, 5008, err)
 		}
 		_, displayHistory, err := db.GetResumeConversations(ctx, parentSessionID)
 		release()

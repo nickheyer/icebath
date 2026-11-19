@@ -19,9 +19,13 @@ import (
 
 const canonUNI = "日本語テキスト🎉 café Ω ≈ 中文字符串"
 
-type shutdownRuntimeError struct{ msg string }
+type shutdownRuntimeError struct {
+	msg   string
+	cause error
+}
 
 func (e *shutdownRuntimeError) Error() string   { return e.msg }
+func (e *shutdownRuntimeError) Unwrap() error   { return e.cause }
 func (e *shutdownRuntimeError) PyRuntimeError() {}
 
 func TestIsInterpreterShutdownError(t *testing.T) {
@@ -31,7 +35,11 @@ func TestIsInterpreterShutdownError(t *testing.T) {
 		"Cannot Schedule New Futures After Interpreter Shutdown": true,
 		"connection reset by peer":                               false,
 	} {
-		if got := isInterpreterShutdownError(&shutdownRuntimeError{msg}); got != want {
+		var cause error
+		if want {
+			cause = tools.ErrPoolShutdown
+		}
+		if got := isInterpreterShutdownError(&shutdownRuntimeError{msg, cause}); got != want {
 			t.Fatalf("%q: got %v want %v", msg, got, want)
 		}
 	}

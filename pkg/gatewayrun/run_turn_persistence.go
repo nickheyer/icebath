@@ -484,6 +484,10 @@ func hmwaUserTranscriptEntry(ctx context.Context, event *gateway.MessageEvent, p
 func (r *GatewayRunner) hmwaPersistTurnTranscript(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, entry *gateway.SessionEntry, sessionKey string, agentResult map[string]any,
 	agentMessages []map[string]any, prepared *preparedTurn, response string, failedEarly, hiddenIncomplete, overflow bool) error {
 	ts := float64(time.Now().UnixNano()) / 1e9
+	if reason, _ := agentResult["failure_reason"].(string); strings.HasPrefix(reason, "session_persistence_failed:") {
+		cause := strings.TrimPrefix(reason, "session_persistence_failed:")
+		r.noteSessionStoreOutage(ctx, state.DescribeStorageCause(ctx, cause), "a turn could not write its rows: "+cause)
+	}
 	store := r.AsyncSessionStore().Store()
 	sid := entry.SessionID
 	history := prepared.history

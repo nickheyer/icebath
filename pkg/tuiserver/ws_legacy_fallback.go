@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -107,13 +106,8 @@ func ticketProfileRequest(req map[string]any, ticketHome string) (map[string]any
 		return resp, target, ok
 	}
 	method, _ := req["method"].(string)
-	takesProfile := false
-	if typed := tuigateway.Lookup(tuigateway.KindMethod, method); typed != nil {
-		takesProfile = typed.TakesParam("profile")
-	} else if contract := tuihost.Methods[method]; contract != nil {
-		takesProfile = slices.Contains(contract.Params.ModelFields(), "profile")
-	}
-	if !takesProfile {
+	typed := tuigateway.Lookup(tuigateway.KindMethod, method)
+	if typed == nil || !typed.TakesParam("profile") {
 		return req, ticketHome, true
 	}
 	name, _ := gateway.ProfileNameForHome(ticketHome)

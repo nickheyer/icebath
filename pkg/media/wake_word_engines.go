@@ -187,6 +187,12 @@ var sherpaKWSModel = fetch.Asset{Name: sherpaKWSModelDir + ".tar.bz2", Size: 176
 	URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/" + sherpaKWSModelDir + ".tar.bz2",
 	SHA256: "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a"}
 
+// Whether the pinned model archive already sits verified in the fetch cache, so preparing it downloads nothing
+func sherpaModelArchived() bool {
+	info, err := os.Stat(filepath.Join(fetch.Root(), sherpaKWSModel.SHA256, sherpaKWSModel.Name))
+	return err == nil && info.Mode().IsRegular() && info.Size() == sherpaKWSModel.Size
+}
+
 func sherpaModelRoot(ctx context.Context) string {
 	return filepath.Join(home.Dir(ctx), "cache", "wakewords")
 }
@@ -199,7 +205,9 @@ func ensureSherpaModel(ctx context.Context, root string) (string, error) {
 	if target := filepath.Join(root, sherpaKWSModelDir); fileExists(filepath.Join(target, "tokens.txt")) {
 		return target, nil
 	}
-	pkgLog().Info("wake word: preparing the sherpa KWS model (first use downloads about 17 MB)")
+	if !sherpaModelArchived() {
+		pkgLog().Info("wake word: downloading the sherpa KWS model (about 17 MB, once)")
+	}
 	tree, err := fetch.Tree(ctx, sherpaKWSModel)
 	if err != nil {
 		return "", err

@@ -6,8 +6,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Key of a server request id as the channel stringifies it
-func requestKey(id any) string { return jsString(id) }
+// Key of a server request id, a text id as it is and a numeric id in its shortest decimal form
+func requestKey(id any) string { return argText(id) }
 
 // Keeps a live server request so its card's answer resolves it
 func (s *tuiStore) rememberServerRequest(r *serverRequest) {
@@ -126,7 +126,7 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 		for i, c := range p.Choices {
 			choices[i] = string(c)
 		}
-		s.overlay.Approval = &approvalReq{AllowPermanent: p.AllowPermanent == nil || *p.AllowPermanent, Choices: choices, Command: p.Command, Description: description, RequestID: id, SmartDenied: val(p.SmartDenied)}
+		s.overlay.Approval = &approvalReq{AllowPermanent: p.AllowPermanent == nil || *p.AllowPermanent, Choices: choices, Command: p.Command, Description: description, OpenURL: val(p.OpenURL), RequestID: id, SmartDenied: val(p.SmartDenied)}
 		open(tr("session.status.approvalNeeded"))
 	case tuigateway.SudoRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.SudoRequest)

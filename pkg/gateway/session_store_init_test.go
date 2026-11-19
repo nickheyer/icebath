@@ -63,7 +63,7 @@ func TestSessionStoreInitPrimesActiveScopeAndRoutingHome(t *testing.T) {
 func TestSessionStoreInitRaisesLiveSystemGuard(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
-	guard := errors.New("live-system guard: test attempted to open production state.db")
+	guard := &state.LiveSystemGuardError{Path: filepath.Join(dir, "state.db"), Root: dir}
 	swapAcquireSessionDB(t, func(ctx context.Context, path string) (*state.SessionDB, error) {
 		return nil, guard
 	})

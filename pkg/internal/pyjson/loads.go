@@ -1,6 +1,7 @@
 package pyjson
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -174,7 +175,7 @@ func (p *parser) number(i int) (any, int, error) {
 	text := string(p.s[i:j])
 	if isFloat {
 		f, err := strconv.ParseFloat(text, 64)
-		if err != nil && !strings.Contains(err.Error(), "value out of range") {
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return nil, i, err
 		}
 		return f, j, nil

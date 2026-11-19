@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -191,7 +192,7 @@ func EnsureGatewayService(ctx context.Context, w io.Writer, o ServiceSetupOption
 			}
 			if !wants {
 				con.PrintInfo("No service installed. Run: icebath gateway run")
-				con.PrintInfo("Without a service, scheduled jobs and messaging stop at logout/reboot; jobs cannot run while the host is off.")
+				con.PrintInfo(serviceAbsentNotice("Without a service, scheduled jobs and messaging stop at logout/reboot; jobs cannot run while the host is off."))
 				return errServiceDeclined
 			}
 			if supportsSystemd {
@@ -299,7 +300,7 @@ func wizardInstallService(ctx context.Context, w io.Writer, backend string) erro
 		return err
 	}
 	if !wants {
-		con.PrintInfo("Without a service, messaging and scheduled jobs stop at logout/reboot; jobs cannot run while the host is off.")
+		con.PrintInfo(serviceAbsentNotice("Without a service, messaging and scheduled jobs stop at logout/reboot; jobs cannot run while the host is off."))
 		if !startNow {
 			con.PrintInfo("Run later: icebath gateway run. Install later: icebath gateway install")
 			return nil
@@ -732,4 +733,15 @@ func servedProfileNeedsNoService(ctx context.Context, w io.Writer) (bool, error)
 	con.PrintInfo("  (served now by the running multiplexed gateway — add its bot token and it connects)")
 	con.PrintInfo("  No standalone gateway service was installed or started.")
 	return true, nil
+}
+
+// What stops without a gateway service, the full build's line naming scheduled jobs and the other builds naming what they run
+func serviceAbsentNotice(full string) string {
+	switch {
+	case linktier.Linked(linktier.Extras):
+		return full
+	case linktier.Linked(linktier.Plugins):
+		return "Without a service, messaging stops at logout/reboot."
+	}
+	return "Without a service, the gateway stops at logout/reboot."
 }

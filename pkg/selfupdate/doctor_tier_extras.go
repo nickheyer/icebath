@@ -19,6 +19,7 @@ func init() {
 	setDoctorPackageProbe("PortAudio (voice mode audio)", func(context.Context) bool { return pysounddevice.Load() == nil })
 	setDoctorPackageProbe("Porcupine (wake word)", func(ctx context.Context) bool { return media.LoadPorcupineLibrary(ctx) == nil })
 	setDoctorPackageProbe("openWakeWord (wake word)", func(ctx context.Context) bool { return media.LoadOpenWakeWordLibrary(ctx) == nil })
+	setDoctorPackageProbe("sherpa-onnx (wake word)", func(context.Context) bool { return media.SherpaOnnxAvailable() })
 	setDoctorPackageProbe("Python on PATH (execute_code)", func(ctx context.Context) bool {
 		_, err := codeexec.RuntimePython(ctx)
 		return err == nil

@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Commands of the spawn tree, its window with pause and status words, the replay of finished trees and their diff
@@ -14,9 +17,13 @@ func (a *app) agentsCommands() []slashCommand {
 			run: func(r *slashRun) tea.Cmd {
 				switch sub := strings.ToLower(trimJS(r.arg)); sub {
 				case "pause", "resume", "unpause":
-					return r.rpc("delegation.pause", map[string]any{"paused": sub == "pause"}, func(res map[string]any) tea.Cmd {
-						a.store.applyDelegationStatus(map[string]any{"paused": res["paused"]})
-						if truthyJS(res["paused"]) {
+					params := tuigateway.DelegationPauseParams{Paused: ptr(sub == "pause")}
+					return ask(r.rpc, r.sys, tuigateway.DelegationPause, params, func(res *tuigateway.DelegationPauseResult) tea.Cmd {
+						if res == nil {
+							return nil
+						}
+						a.store.applyDelegationPause(res.Paused)
+						if res.Paused {
 							r.sys(tr("slashCmd.ops.agents.paused"))
 						} else {
 							r.sys(tr("slashCmd.ops.agents.resumed"))
@@ -33,12 +40,30 @@ func (a *app) agentsCommands() []slashCommand {
 						if v == nil {
 							return "?"
 						}
-						return jsString(*v)
+						return strconv.FormatFloat(*v, 'f', -1, 64)
 					}
 					r.sys(tr("slashCmd.ops.agents.status", state, limit(d.MaxSpawnDepth), limit(d.MaxConcurrentChildren)))
+					if failed := a.store.failedDelegations(); len(failed) > 0 {
+						r.sys(tr("slashCmd.ops.agents.failedHeader", len(failed)))
+						for _, f := range failed {
+							goal := f.Goal
+							if goal == "" {
+								goal = tr("hubs.agents.subagentFallback")
+							}
+							r.sys(tr("slashCmd.ops.agents.failedLine", goal, agentStatusLabel(failedDelegationStatus(f)), firstText(val(f.Error), "-")))
+						}
+					}
 					return nil
 				}
 				return a.openSpawnTree(0, nil)
+			}},
+		{name: "processes", aliases: []string{"ps"}, help: "list the background processes of the session, read their output or kill one",
+			run: func(r *slashRun) tea.Cmd {
+				if r.sid == "" {
+					r.sys(tr("processes.none"))
+					return nil
+				}
+				return a.openProcesses(r.sid)
 			}},
 		{name: "replay", help: "replay a completed spawn tree", usage: "[N|last|list|load <path>]",
 			suggest: func(string) []string { return []string{"last", "list", "load"} },
@@ -57,13 +82,15 @@ func (a *app) replayCommand(r *slashRun) tea.Cmd {
 		if sid == "" {
 			sid = "default"
 		}
-		return r.rpc("spawn_tree.list", map[string]any{"limit": 30, "session_id": sid}, func(res map[string]any) tea.Cmd {
-			entries, _ := res["entries"].([]any)
-			if len(entries) == 0 {
+		return ask(r.rpc, r.sys, tuigateway.SpawnTreeList, tuigateway.SpawnTreeListParams{Limit: ptr(int64(30)), SessionID: &sid}, func(res *tuigateway.SpawnTreeListResult) tea.Cmd {
+			if res == nil {
+				return nil
+			}
+			if len(res.Entries) == 0 {
 				r.sys(tr("slashCmd.ops.replay.noneOnDisk"))
 				return nil
 			}
-			return a.openSavedSpawnTrees(entries)
+			return a.openSavedSpawnTrees(res.Entries)
 		})
 	}
 	if strings.HasPrefix(lower, "load ") {
@@ -72,7 +99,7 @@ func (a *app) replayCommand(r *slashRun) tea.Cmd {
 			r.sys(tr("slashCmd.ops.replay.usageLoad"))
 			return nil
 		}
-		return a.loadSpawnTree(path, r.rpc)
+		return a.loadSpawnTree(path, r.rpc, r.sys)
 	}
 	history := a.store.spawnHistory
 	if len(history) == 0 {
@@ -81,8 +108,8 @@ func (a *app) replayCommand(r *slashRun) tea.Cmd {
 	}
 	index := 1
 	if raw != "" && lower != "last" {
-		parsed, ok := jsParseInt(raw)
-		if !ok || parsed < 1 || parsed > len(history) {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > len(history) {
 			r.sys(tr("slashCmd.ops.replay.indexOutOfRange", len(history)))
 			return nil
 		}
@@ -105,7 +132,7 @@ func (a *app) replayDiffCommand(r *slashRun) tea.Cmd {
 	}
 	history := a.store.spawnHistory
 	resolve := func(token string) *spawnSnapshot {
-		if n, ok := jsParseInt(token); ok && n >= 1 && n <= len(history) {
+		if n, err := strconv.Atoi(token); err == nil && n >= 1 && n <= len(history) {
 			return &history[n-1]
 		}
 		return nil

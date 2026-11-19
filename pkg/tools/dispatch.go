@@ -578,6 +578,9 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 	}
 	entry := d.Registry.Entry(ctx, call.Env, call.Name)
 	if entry == nil {
+		if line, refused := ToolTierRefusal(call.Name); refused {
+			return toolErrorJSON(line, nil)
+		}
 		return toolErrorJSON("Unknown tool: "+call.Name, nil)
 	}
 	defer func() {

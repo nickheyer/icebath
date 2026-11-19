@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
@@ -93,6 +94,7 @@ func PrintFastVersionInfo(ctx context.Context, w io.Writer, checkUpdates bool) {
 		fmt.Fprintln(w, "Install method: "+method)
 	}
 	fmt.Fprintln(w, "Go: "+hostinfo.GoVersion())
+	fmt.Fprintln(w, linktier.BuildLine())
 	for _, line := range VersionLines {
 		fmt.Fprintln(w, line())
 	}
@@ -109,6 +111,9 @@ var VersionLines []func() string
 
 // Passive update check line printed when the status names one
 func printUpdateStatus(ctx context.Context, w io.Writer, root string) {
+	if UpdateCheck == nil {
+		return
+	}
 	status, err := UpdateCheck(ctx, root, home.Dir(ctx))
 	if err != nil || status == nil {
 		return

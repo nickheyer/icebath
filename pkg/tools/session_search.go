@@ -838,8 +838,11 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 		opts.BeforeTS = &v
 	}
 	rawResults, errJSON := loud(func() ([]*pyjson.Object, error) {
-		if (afterTS != nil && afterTS.overflow) || (beforeTS != nil && beforeTS.overflow) {
-			return nil, errors.New("Python int too large to convert to SQLite INTEGER")
+		if afterTS != nil && afterTS.overflow {
+			return nil, errors.New("the after timestamp is beyond the 64-bit integer range the session store holds")
+		}
+		if beforeTS != nil && beforeTS.overflow {
+			return nil, errors.New("the before timestamp is beyond the 64-bit integer range the session store holds")
 		}
 		return db.SearchMessages(ctx, query, opts)
 	}, "FTS5 search failed: %v", "Search failed")

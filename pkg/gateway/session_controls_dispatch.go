@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Method to handler of every verb dispatch serves outside the group controls, session_controls.py handlers L215
@@ -120,20 +119,11 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 	if typed == nil {
 		typed = tuigateway.Lookup(tuigateway.KindMethod, method)
 	}
-	var contract *tuihost.MethodContract
 	if typed != nil {
 		var refused *tuigateway.ParamsRefusal
 		if err := typed.FitParams(params); errors.As(err, &refused) {
 			return refusalReply(rid, 4001, "invalid_params", map[string]any{"reason": "invalid_params", "fields": refused.Fields(), "detail": refused.Error()}), nil
 		}
-	} else if contract = tuihost.CanonicalMethods[method]; contract != nil {
-		if problems := tuihost.CanonicalParamProblems(contract, params); len(problems) > 0 {
-			return refusalReply(rid, 4001, "invalid_params", map[string]any{"reason": "invalid_params", "fields": problems}), nil
-		}
-	}
-	original := params.Copy()
-	if contract == nil && typed == nil {
-		contract = tuihost.Methods[method]
 	}
 	a := c.authority
 	if _, held := a.live(ref.SessionID); ref.SessionID != "" && !a.Retiring && ref.ProfileID == a.ProfileID && !held {
@@ -149,11 +139,11 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 	case groupMethods[method] != "" || method == "profiles.list":
 		result, err = dispatchGroupControl(scoped, c, method, params)
 	case verbs[method] == nil || (connectionMethods[method] && !sessionOwned(params)):
-		return refusalReply(rid, -32601, tuihost.UnknownMethodMessage(method), map[string]any{"reason": "unknown_method"}), nil
+		return refusalReply(rid, -32601, tuigateway.UnknownMethodMessage(method), map[string]any{"reason": "unknown_method"}), nil
 	default:
 		result, err = verbs[method](scoped, ref, params)
 		if deferred, isDeferred := result.(*DeferredReply); err == nil && isDeferred {
-			check := func(result any) error { checkCanonicalResult(typed, contract, original, method, result); return nil }
+			check := func(result any) error { checkCanonicalResult(typed, method, result); return nil }
 			if err = deferred.Start(scoped, c, rid, check); err == nil {
 				return nil, nil
 			}
@@ -176,16 +166,16 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		}
 		return nil, err
 	}
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "result", checkCanonicalResult(typed, contract, original, method, result)), nil
+	return pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "result", checkCanonicalResult(typed, method, result)), nil
 }
 
-// Result of a verb checked against its typed contract or its pydantic one, a misfit reported and the result sent as the verb gave it
-func checkCanonicalResult(typed *tuigateway.Entry, contract *tuihost.MethodContract, original *pyjson.Object, method string, result any) any {
+// Result of a verb checked against its typed contract, a misfit reported and the result sent as the verb gave it
+func checkCanonicalResult(typed *tuigateway.Entry, method string, result any) any {
 	if typed == nil {
-		tuihost.CheckParamsAccepted(contract, original)
-		tuihost.CheckResult(contract, result)
-	} else if err := typed.CheckResult(result); err != nil {
-		tuihost.ReportMisfit("result of", method, err)
+		return result
+	}
+	if err := typed.CheckResult(result); err != nil {
+		tuigateway.ReportMisfit("result of", method, err)
 	}
 	return result
 }

@@ -35,9 +35,9 @@ func init() {
 	installConnectionUpdateHook()
 }
 
-// Connector refusal carrying the wire value of its ConnectorErrorReason member in the error data
-func connectorRPCError(rid any, code int, reason, message string) map[string]any {
-	return rpcErr(rid, code, message, map[string]any{"reason": tuihost.ConnectorErrorReason.Member(reason)})
+// Connector refusal carrying its reason in the error data, the same reason the session authority's verbs send
+func connectorRPCError(rid any, code int, reason tuigateway.ConnectorErrorReason, message string) map[string]any {
+	return rpcErr(rid, code, message, map[string]any{"reason": string(reason)})
 }
 
 // Refusal of one connector refusal spec

@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,14 +50,63 @@ var nickSuffixRE = pyre.MustCompile(`_(\d+)$`)
 
 // One parsed IRC protocol line
 type ircMessage struct {
+	tags    map[string]string
 	prefix  string
 	command string
 	params  []string
 }
 
-// Prefix, command and params of a raw IRC line with the trailing param last
+// Escaped characters of an IRCv3 tag value
+var tagValueEscapes = [][2]string{{"\\", "\\\\"}, {";", "\\:"}, {" ", "\\s"}, {"\r", "\\r"}, {"\n", "\\n"}}
+
+// IRCv3 tag value with its escapes undone
+func unescapeTagValue(v string) string {
+	var b strings.Builder
+	for i := 0; i < len(v); i++ {
+		if v[i] != '\\' || i+1 == len(v) {
+			b.WriteByte(v[i])
+			continue
+		}
+		i++
+		switch v[i] {
+		case ':':
+			b.WriteByte(';')
+		case 's':
+			b.WriteByte(' ')
+		case 'r':
+			b.WriteByte('\r')
+		case 'n':
+			b.WriteByte('\n')
+		default:
+			b.WriteByte(v[i])
+		}
+	}
+	return b.String()
+}
+
+// IRCv3 tag value escaped for an outgoing line
+func escapeTagValue(v string) string {
+	for _, pair := range tagValueEscapes {
+		v = strings.ReplaceAll(v, pair[0], pair[1])
+	}
+	return v
+}
+
+// Tags, prefix, command and params of a raw IRC line with the trailing param last
 func parseIRCMessage(raw string) ircMessage {
 	prefix, trailing := "", ""
+	tags := map[string]string{}
+	if strings.HasPrefix(raw, "@") {
+		var tagText string
+		tagText, raw, _ = strings.Cut(raw[1:], " ")
+		for _, tag := range strings.Split(tagText, ";") {
+			key, value, _ := strings.Cut(tag, "=")
+			if key != "" {
+				tags[key] = unescapeTagValue(value)
+			}
+		}
+		raw = strings.TrimLeft(raw, " ")
+	}
 	if strings.HasPrefix(raw, ":") {
 		prefix, raw, _ = strings.Cut(raw[1:], " ")
 	}
@@ -75,7 +125,7 @@ func parseIRCMessage(raw string) ircMessage {
 	if len(parts) > 0 {
 		command = parts[0]
 	}
-	return ircMessage{prefix: prefix, command: command, params: params}
+	return ircMessage{tags: tags, prefix: prefix, command: command, params: params}
 }
 
 // Nickname part of a nick!user@host prefix
@@ -279,8 +329,12 @@ type IRCAdapter struct {
 	recvTask          *gateway.AdapterTask
 	currentNick       any
 	registered        bool
+	messageTags       bool
 	registrationEvent *gateway.InterruptEvent
 }
+
+// Context key carrying the server msgid of the PRIVMSG being dispatched
+type msgIDKey struct{}
 
 // Class attributes the IRC adapter declares over the base defaults
 func ircAdapterTraits() gateway.AdapterTraits {
@@ -443,6 +497,9 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 			return false, err
 		}
 	}
+	if err := a.sendRaw("CAP REQ :message-tags"); err != nil {
+		return false, err
+	}
 	if err := a.sendRaw("NICK " + nickname); err != nil {
 		return false, err
 	}
@@ -513,6 +570,17 @@ func (a *IRCAdapter) Disconnect(ctx context.Context) error {
 	a.mu.Unlock()
 	a.registrationEvent.Clear()
 	return nil
+}
+
+// Reacts to a message by its server msgid with an IRCv3 +draft/react TAGMSG
+func (a *IRCAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	a.mu.Lock()
+	tagged := a.messageTags
+	a.mu.Unlock()
+	if !tagged {
+		return errors.New("this IRC server did not grant the message-tags capability, so it carries no reactions")
+	}
+	return a.sendRaw("@+draft/reply=" + escapeTagValue(messageID) + ";+draft/react=" + escapeTagValue(emoji) + " TAGMSG " + chatID)
 }
 
 // Sends the content as flood paced PRIVMSG lines, a write failure ending the send with its text
@@ -678,7 +746,17 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 		a.currentNick = next
 		a.mu.Unlock()
 		return a.sendRaw("NICK " + next)
+	case command == "CAP" && len(params) >= 3 && (params[1] == "ACK" || params[1] == "NAK"):
+		if params[1] == "ACK" && slices.Contains(strings.Fields(params[2]), "message-tags") {
+			a.mu.Lock()
+			a.messageTags = true
+			a.mu.Unlock()
+		}
+		return a.sendRaw("CAP END")
 	case command == "PRIVMSG" && len(params) >= 2:
+		if msgID := msg.tags["msgid"]; msgID != "" {
+			ctx = context.WithValue(ctx, msgIDKey{}, msgID)
+		}
 		return a.handlePrivmsg(ctx, extractNick(msg.prefix), params[0], params[1])
 	case command == "NICK" && len(params) > 0:
 		a.mu.Lock()
@@ -757,7 +835,10 @@ func (a *IRCAdapter) dispatchMessage(ctx context.Context, text, chatID, chatType
 	source := a.BuildSource(ctx, chatID, gateway.SourceFields{ChatName: &chatID, ChatType: chatType, UserID: &userID, UserName: &userName})
 	event := gateway.NewMessageEvent(text)
 	event.MessageType, event.Source = gateway.MessageTypeText, source
-	messageID := strings.ReplaceAll(uuid.NewString(), "-", "")
+	messageID, _ := ctx.Value(msgIDKey{}).(string)
+	if messageID == "" {
+		messageID = strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
 	event.MessageID = &messageID
 	return a.HandleMessage(ctx, event)
 }

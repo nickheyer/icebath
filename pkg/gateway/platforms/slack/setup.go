@@ -93,6 +93,9 @@ func slashCommandEntries(ctx context.Context) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if AppManifest == nil {
+		return nil, errors.New("the slack app manifest builder is unset, cmd/icebath binds it in every build that links slack")
+	}
 	raw, _ := AppManifest(ctx, cfg)["features"].(map[string]any)["slash_commands"].([]map[string]any)
 	slashes := make([]any, 0, len(raw))
 	for _, e := range raw {

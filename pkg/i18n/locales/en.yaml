@@ -164,7 +164,6 @@ gateway:
     not_enough: "Not enough conversation to compress (need at least 4 messages)."
     no_provider: "No provider configured -- cannot compress."
     nothing_to_do: "Nothing to compress yet (the transcript is still all protected context)."
-    aggressive_unsupported: "--aggressive is not supported; use '/compress here [N]' to keep only recent exchanges, or /undo to drop turns."
     focus_line: "Focus: \"{topic}\""
     summary_failed: "⚠️ Summary generation failed ({error}). {count} historical message(s) were removed and replaced with a placeholder; earlier context is no longer recoverable. Consider checking your auxiliary.compression model configuration."
     aborted: "⚠️ Compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration."
@@ -741,6 +740,7 @@ gateway:
     provider_kept_failing: "⚠️ The AI model service kept failing. Use /retry to try again, or /model to switch models. Details are in the gateway log (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ Session storage was temporarily unavailable, so this turn was stopped to protect your conversation history. Please check available disk space, then send your message again."
     session_storage_unavailable: "⚠️ Session storage was temporarily unavailable, so this turn was stopped to protect your conversation history. Your message should already be saved — please send it again in a moment."
+    session_storage_held: "⚠️ Session storage is unavailable right now ({cause}), so your message is on hold. It is kept and answered here once storage works again; there is no need to send it again."
     generic_failed: "⚠️ Something went wrong and I couldn't finish this reply. Use /retry to try again, or /new to start a fresh conversation. Technical details are in the gateway log (`icebath logs`)."
     interrupted_before_start: "⚠️ Your message was interrupted before processing started (likely by a recent /stop). Please send it again."
     processing_incomplete: "processing incomplete"
@@ -960,7 +960,7 @@ gateway:
     db_corrupt: "⚠️ Session database corruption detected. Messages may not be persisted. Recovery options:\n1. Run `icebath {profile_arg}doctor --fix`\n2. Stop the gateway, then recover with:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (if it reports recoverable) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — recovery snapshots the damaged file first; do NOT run `sqlite3 ... \".recover\"` against the live state.db, a vulnerable sqlite3 CLI can corrupt it further\n3. Restore from a backup in {backups_dir}/\nRun `icebath {profile_arg}doctor` for sanitized diagnostics."
     db_fts_corrupt: "⚠️ Session database reported a corruption error confined to the search index (FTS5); the message tables are not damaged. Messages may not be persisted until it is repaired: run `icebath {profile_arg}doctor --fix`, then restart the gateway. Do not run recovery tools or restore a backup unless `icebath {profile_arg}doctor` confirms damage."
     db_then_restart: "{action} Then `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ Session database unavailable — messages may not be saved and /resume will be empty. Cause: {cause}. {action}"
+    db_unavailable: "⚠️ Session database unavailable — new messages are held and answered once it works again. Cause: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ Cron store {store} is not writable ({error}) since {since}. Scheduled jobs are being skipped until it accepts writes again. Fix: {fix}."
@@ -1617,6 +1617,25 @@ platform:
       other_button: "Other / type answer"
       header: "Question"
       question: "❓ {question}"
+      submit_button: "Send"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ Waiting for {user} to type an answer…"
+      pick_one: "Pick at least one option, then press Send."
+    approval:
+
+      resolved_once: "✅ Allowed once by {user}"
+      resolved_session: "✅ Allowed for this session by {user}"
+      resolved_always: "✅ Always allowed by {user}"
+      resolved_deny: "❌ Denied by {user}"
+    confirm:
+
+      default_title: "Confirm"
+      approve_once: "Approve Once"
+      always_approve: "Always Approve"
+      cancel: "Cancel"
+      decided_once: "✅ Approved once by {user}"
+      decided_always: "🔒 Always approved by {user}"
+      decided_cancel: "❌ Cancelled by {user}"
     typing:
 
       thinking: "Icebath is thinking…"
@@ -1801,12 +1820,13 @@ slash:
   branch:
 
     description: "Branch the current session (new thread on Discord/Telegram/Slack/Matrix; --here stays here)"
+    core_description: "Branch the current session (--here stays here)"
   worktree:
 
     description: "Show, list, create, or prune isolated git worktrees"
   compress:
 
-    description: "Compress conversation context (add 'here [N]' to keep recent N turns; --preview shows what would happen)"
+    description: "Compress conversation context (add 'here [N]' to keep recent N turns; --aggressive keeps only the last exchange under the shortest summary; --preview shows what would happen)"
   rollback:
 
     description: "List or restore filesystem checkpoints (restores keep your hand-edits; --all overrides)"
@@ -2719,6 +2739,7 @@ cli:
       platform_not_enabled: "Platform '{platform}' is not configured/enabled in the gateway."
       no_home_channel: "No home channel configured for {platform}."
       set_home_hint: "Set one with /sethome on the destination chat first."
+      enable_platform_hint: "Set it up with icebath gateway setup, then restart the gateway with icebath gateway restart."
       session_row_failed: "Could not ensure session row in state.db: {error}"
       picked_up: "Gateway picked it up; transferring..."
       complete: "↻ Handoff complete. The session is now active on {platform}."

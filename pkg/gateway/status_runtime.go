@@ -221,6 +221,22 @@ func FlushRuntimeStatus(timeout time.Duration) bool {
 	return w == nil || w.Flush(timeout)
 }
 
+// Waits until every runtime status update submitted so far was written or failed
+func SettleRuntimeStatus() {
+	runtimeStatusStateMu.Lock()
+	w := runtimeStatusWriter
+	runtimeStatusStateMu.Unlock()
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	generation := w.submittedGeneration
+	w.mu.Unlock()
+	if generation > 0 {
+		_, _ = w.Wait(generation, nil)
+	}
+}
+
 // Longest a stopping adapter waits for its final runtime status to reach disk
 const adapterStopStatusWait = 2 * time.Second
 

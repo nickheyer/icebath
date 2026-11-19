@@ -162,9 +162,14 @@ func (a *AIAgent) ClearCredentialPool() {
 
 func (a *AIAgent) CredentialPoolEnv() provider.PoolEnv { return agentPoolEnv(a.homeContext()) }
 
-func (a *AIAgent) IsHeadedMode() (bool, error) { return tools.IsHeadedMode(a.env), nil }
+func (a *AIAgent) IsHeadedMode() (bool, error) {
+	return tools.IsHeadedMode != nil && tools.IsHeadedMode(a.env), nil
+}
 
 func (a *AIAgent) CleanupBrowser(ctx context.Context, taskID string) error {
+	if tools.CleanupBrowser == nil {
+		return nil
+	}
 	return tools.CleanupBrowser(tools.WithEnvHome(ctx, a.env), a.env, taskID)
 }
 
@@ -405,8 +410,13 @@ func (a *AIAgent) closeTaskResources(taskID string) {
 	steps := []func() error{
 		killProcesses,
 		func() error { tools.CleanupVM(a.env, taskID, false); return nil },
-		func() error { return tools.CleanupBrowser(tools.WithEnvHome(ctx, a.env), a.env, taskID) },
-		func() error { tools.ReleaseComputerUseSession(ctx, taskID); return nil },
+		func() error { return a.CleanupBrowser(ctx, taskID) },
+		func() error {
+			if tools.ReleaseComputerUseSession != nil {
+				tools.ReleaseComputerUseSession(ctx, taskID)
+			}
+			return nil
+		},
 		forgetFileState,
 	}
 	for _, step := range steps {

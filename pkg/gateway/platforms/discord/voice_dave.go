@@ -509,6 +509,9 @@ func daveFrameEncrypted(frame []byte) bool {
 	return n >= 2 && frame[n-1] == 0xfa && frame[n-2] == 0xfa
 }
 
+// Plain frame that arrived while passthrough was off
+var errUnencryptedFrame = errors.New("DecryptionFailed(UnencryptedWhenPassthroughDisabled)")
+
 // Plaintext of one user's frame, an Unencrypted error when a plain frame arrives outside passthrough
 func (s *daveSession) decrypt(userID int64, mediaType int, frame []byte) ([]byte, error) {
 	if len(frame) == 0 {
@@ -529,7 +532,7 @@ func (s *daveSession) decrypt(userID int64, mediaType int, frame []byte) ([]byte
 	case code == daveResultOK:
 		return out[:written], nil
 	case !daveFrameEncrypted(frame):
-		return nil, errors.New("DecryptionFailed(UnencryptedWhenPassthroughDisabled)")
+		return nil, errUnencryptedFrame
 	}
 	return nil, fmt.Errorf("DecryptionFailed(%s)", daveDecryptorResult(code))
 }

@@ -3,20 +3,51 @@ package tui
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// Module packages the terminal UI may import, the contract, the UI kit, paths, language and drawing
-var uiImportFence = []string{"pkg/ui/", "pkg/tuigateway", "pkg/i18n", "pkg/home", "pkg/pet", "pkg/vxl"}
+// Module packages the terminal UI may import, the contract, the UI kit, paths, language and the tiers this binary links
+var uiImportFence = []string{"pkg/ui/", "pkg/tuigateway", "pkg/i18n", "pkg/home", "pkg/linktier"}
+
+// Packages of the extras tier only its tagged files may import, pets and voxel drawing
+var uiExtrasImportFence = []string{"pkg/pet", "pkg/vxl"}
+
+// Whether a file's build constraint negates both lower builds at its top level, the extras tier tag
+func extrasTierFile(file *ast.File) bool {
+	negated := map[string]bool{}
+	var walk func(x constraint.Expr)
+	walk = func(x constraint.Expr) {
+		switch e := x.(type) {
+		case *constraint.AndExpr:
+			walk(e.X)
+			walk(e.Y)
+		case *constraint.NotExpr:
+			if t, ok := e.X.(*constraint.TagExpr); ok {
+				negated[t.Tag] = true
+			}
+		}
+	}
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if expr, err := constraint.Parse(c.Text); err == nil && constraint.IsGoBuild(c.Text) {
+				walk(expr)
+			}
+		}
+	}
+	return negated["icebath_core"] && negated["icebath_noextras"]
+}
 
 // Imports of the package's files, test files included, that reach an engine package past the fence
 func importsPastTheFence() ([]string, error) {
@@ -27,9 +58,13 @@ func importsPastTheFence() ([]string, error) {
 	}
 	var past []string
 	for _, name := range files {
-		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly|parser.ParseComments)
 		if err != nil {
 			return nil, err
+		}
+		fence := uiImportFence
+		if extrasTierFile(file) {
+			fence = append(slices.Clone(uiImportFence), uiExtrasImportFence...)
 		}
 		for _, spec := range file.Imports {
 			path, _ := strconv.Unquote(spec.Path.Value)
@@ -38,7 +73,7 @@ func importsPastTheFence() ([]string, error) {
 				continue
 			}
 			allowed := false
-			for _, prefix := range uiImportFence {
+			for _, prefix := range fence {
 				allowed = allowed || rel == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(rel, strings.TrimSuffix(prefix, "/")+"/")
 			}
 			if !allowed {

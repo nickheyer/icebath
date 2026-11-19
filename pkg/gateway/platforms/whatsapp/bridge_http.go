@@ -34,6 +34,7 @@ func (b *bridgeHost) httpHandler() http.Handler {
 	mux.HandleFunc("POST /send-location", b.handleSendLocation)
 	mux.HandleFunc("POST /typing", b.handleTyping)
 	mux.HandleFunc("POST /read", b.handleRead)
+	mux.HandleFunc("POST /react", b.handleReact)
 	mux.HandleFunc("GET /chat/{id}", b.handleChat)
 	mux.HandleFunc("GET /health", b.handleHealth)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -584,6 +585,45 @@ func (b *bridgeHost) handleRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, jsonObj("success", true, "marked", true))
+}
+
+// Reacts to a message with an emoji, the original sender taken from the message store
+func (b *bridgeHost) handleReact(w http.ResponseWriter, r *http.Request) {
+	client := b.requireConnected(w, "Not connected to WhatsApp")
+	if client == nil {
+		return
+	}
+	req := b.body(w, r)
+	if req == nil {
+		return
+	}
+	chatID, messageID, emoji := jsTruthyString(req.GetOr("chatId", nil)), jsTruthyString(req.GetOr("messageId", nil)), jsTruthyString(req.GetOr("emoji", nil))
+	if chatID == "" || messageID == "" || emoji == "" {
+		writeJSON(w, 400, jsonObj("error", "chatId, messageId, and emoji are required"))
+		return
+	}
+	chat, err := parseChat(chatID)
+	if err != nil {
+		writeJSON(w, 400, jsonObj("error", err.Error()))
+		return
+	}
+	sender := chat
+	if stored, ok := b.messageStore.get(messageID, true); ok {
+		switch {
+		case stored.info.IsFromMe:
+			sender = ownJID(client)
+		case stored.info.IsGroup:
+			sender = stored.info.Sender.ToNonAD()
+		}
+	} else if chat.Server == types.GroupServer {
+		writeJSON(w, 404, jsonObj("error", "message "+messageID+" is not in the bridge message store, so its group sender is unknown"))
+		return
+	}
+	if _, _, err := b.sendOne(client, chat, client.BuildReaction(chat, sender, messageID, emoji)); err != nil {
+		writeJSON(w, 500, jsonObj("error", err.Error()))
+		return
+	}
+	writeJSON(w, 200, jsonObj("success", true))
 }
 
 func (b *bridgeHost) handleChat(w http.ResponseWriter, r *http.Request) {

@@ -84,7 +84,19 @@ func (e *AuxSDKError) PyTypeName() string {
 type AuxRuntimeError struct {
 	Message       string
 	ProviderError map[string]any
+	// Fault of the completion the error reports, zero for other failures
+	Fault AuxReplyFault
 }
+
+// Way an auxiliary completion was unusable
+type AuxReplyFault int
+
+const (
+	// The provider returned no response object
+	AuxReplyMissing AuxReplyFault = iota + 1
+	// The response holds no choices[0].message
+	AuxReplyMalformed
+)
 
 func (e *AuxRuntimeError) Error() string { return e.Message }
 
@@ -148,12 +160,7 @@ func auxErrBody(err error) any {
 // True for an HTTP 200 empty or malformed chat completion, routed like model incompatibility
 func auxIsInvalidAuxResponseError(err error) bool {
 	var re *AuxRuntimeError
-	if !errors.As(err, &re) {
-		return false
-	}
-	msg := strings.ToLower(re.Message)
-	return strings.Contains(msg, "auxiliary ") && strings.Contains(msg, "llm returned invalid response") &&
-		strings.Contains(msg, "choices[0].message")
+	return errors.As(err, &re) && re.Fault == AuxReplyMalformed
 }
 
 // True for a status less structured provider error such as an SSE error event after a committed 200

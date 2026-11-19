@@ -54,7 +54,13 @@ func GatewayWSTarget(endpoint *GatewayEndpoint, ticket string) (string, []string
 	return u, []string{CanonicalGatewayProtocol, GatewayWSTicketPrefix + ticket}
 }
 
-type GatewayClientError struct{ Msg string }
+type GatewayClientError struct {
+	Msg string
+	// Refusal of the resume request itself, a policy or launch key mismatch
+	ResumeRefused bool
+	// Exit status of a refused command line, zero meaning 1
+	ExitStatus int
+}
 
 func (e *GatewayClientError) Error() string { return e.Msg }
 

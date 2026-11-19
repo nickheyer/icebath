@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -218,7 +219,7 @@ func reloadEnv(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("updated", updated), nil
+	return tuigateway.Plain(tuigateway.ReloadEnvResult{Updated: int64(updated)}), nil
 }
 
 // Blocks or unblocks new delegate spawns across this owner, running children keep going
@@ -244,7 +245,7 @@ func pauseDelegation(ctx context.Context, c *AuthorityConnection, ref SessionRef
 			return nil, runtimeRefusal("profile_mismatch")
 		}
 	}
-	return pyjson.ObjectOf("paused", AncillaryAgent.SetSpawnPaused(paused)), nil
+	return tuigateway.Plain(tuigateway.DelegationPauseResult{Paused: AncillaryAgent.SetSpawnPaused(paused)}), nil
 }
 
 // Checkpoint list, diff, restore and session diff over the session's checkpoints keyed by its frozen cwd
@@ -312,24 +313,31 @@ func rollback(ctx context.Context, c *AuthorityConnection, ref SessionRef, param
 	for key, value := range terminalFields {
 		terminal[key] = pyrepr.Str(value)
 	}
-	result, err := forwardOffThread(ctx, func() (*pyjson.Object, error) {
+	result, err := forwardOffThread(ctx, func() (any, error) {
 		return runRollback(ctx, kind, kwargs, terminal, policy.Cwd, taskID, params, filePath)
 	})
 	if err != nil {
 		return nil, err
 	}
-	if kind == "restore" && pyrepr.Truthy(result.GetOr("success", nil)) && filePath == "" {
+	if restored, isRestore := result.(tuigateway.RollbackRestoreResult); isRestore && restored.Success && filePath == "" {
 		removed, err := rewindLastTurn(ctx, c, ref)
 		if err != nil {
 			return nil, err
 		}
-		result.Set("history_removed", removed)
+		restored.HistoryRemoved = &removed
+		result = restored
 	}
-	return result, nil
+	return tuigateway.Plain(result), nil
+}
+
+// Typed outcome of a checkpoint restore, a key the contract does not declare refused
+func RestoreOutcome(res map[string]any) (tuigateway.RollbackRestoreResult, error) {
+	var out tuigateway.RollbackRestoreResult
+	return out, tuigateway.Strict(res, &out)
 }
 
 // One rollback verb against a checkpoint manager built from the session's frozen checkpoints policy
-func runRollback(ctx context.Context, kind string, kwargs map[string]any, terminal tools.TerminalPolicy, cwd, taskID string, params *pyjson.Object, filePath string) (*pyjson.Object, error) {
+func runRollback(ctx context.Context, kind string, kwargs map[string]any, terminal tools.TerminalPolicy, cwd, taskID string, params *pyjson.Object, filePath string) (any, error) {
 	options, err := tools.CheckpointManagerOptionsFromKwargs(pyrepr.Truthy(kwargs["checkpoints_enabled"]), kwargs)
 	if err != nil {
 		return nil, err
@@ -338,16 +346,16 @@ func runRollback(ctx context.Context, kind string, kwargs map[string]any, termin
 	mgr := tools.NewCheckpointManager(env, options)
 	if !mgr.Enabled && (kind == "list" || kind == "session_diff") {
 		if kind == "list" {
-			return pyjson.ObjectOf("enabled", false, "checkpoints", []any{}), nil
+			return tuigateway.RollbackListResult{Checkpoints: []tuigateway.RollbackCheckpoint{}}, nil
 		}
-		return pyjson.ObjectOf("enabled", false), nil
+		return tuigateway.RollbackSessionDiffResult{}, nil
 	}
 	if kind == "list" {
-		rows := []any{}
+		rows := []tuigateway.RollbackCheckpoint{}
 		for _, entry := range mgr.ListCheckpoints(cwd) {
-			rows = append(rows, pyjson.ObjectOf("hash", entry.Hash, "timestamp", entry.Timestamp, "message", entry.Reason))
+			rows = append(rows, tuigateway.RollbackCheckpoint{Hash: entry.Hash, Timestamp: entry.Timestamp, Message: entry.Reason})
 		}
-		return pyjson.ObjectOf("enabled", true, "checkpoints", rows), nil
+		return tuigateway.RollbackListResult{Enabled: true, Checkpoints: rows}, nil
 	}
 	scoped := *env
 	scoped.TerminalScope = &tools.TerminalScope{Policy: terminal}
@@ -363,7 +371,7 @@ func runRollback(ctx context.Context, kind string, kwargs map[string]any, termin
 			invalid.Cause = err
 			return nil, invalid
 		}
-		return pyjson.ObjectOf("success", false, "error", err.Error()), nil
+		return tuigateway.RollbackRestoreResult{Error: err.Error()}, nil
 	}
 	if kind == "diff" {
 		if refusal != "" {
@@ -377,22 +385,21 @@ func runRollback(ctx context.Context, kind string, kwargs map[string]any, termin
 		if runes := []rune(raw); len(runes) > 4000 {
 			raw = string(runes[:4000])
 		}
-		stat, ok := result["stat"]
-		if !ok {
-			stat = ""
+		stat := ""
+		if value, ok := result["stat"]; ok {
+			stat = pyrepr.Str(value)
 		}
-		payload := pyjson.ObjectOf("stat", stat, "diff", raw)
-		if rendered, ok := tuihost.RenderDiff(raw, 80); ok && rendered != "" {
-			payload.Set("rendered", rendered)
+		payload := tuigateway.RollbackDiffResult{Stat: stat, Diff: raw}
+		if rendered, ok := tuihost.RenderDiff(raw, 80); ok {
+			payload.Rendered = rendered
 		}
 		return payload, nil
 	}
 	if refusal != "" {
-		return pyjson.ObjectOf("success", false, "error", refusal), nil
+		return tuigateway.RollbackRestoreResult{Error: refusal}, nil
 	}
 	all := pyrepr.Truthy(params.GetOr("all", nil))
-	restored, _ := pyjson.AsObject(mgr.Restore(cwd, target, filePath, filePath == "" && !all))
-	return restored, nil
+	return RestoreOutcome(mgr.Restore(cwd, target, filePath, filePath == "" && !all))
 }
 
 // A rollback number names its checkpoint's hash, anything that is not a number passes through
@@ -425,9 +432,9 @@ func pyIntLiteral(text string) (int64, error) {
 var pyIntPattern = regexp.MustCompile(`^\s*[+-]?\d+(_\d+)*\s*$`)
 
 // Earliest retained checkpoint against the tree as data, cut to the frame budget by whole lines
-func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) *pyjson.Object {
+func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) tuigateway.RollbackSessionDiffResult {
 	if refusal != "" {
-		return pyjson.ObjectOf("enabled", true, "success", false, "error", refusal)
+		return tuigateway.RollbackSessionDiffResult{Enabled: true, Error: refusal}
 	}
 	result := mgr.SessionDiff(cwd)
 	if !pyrepr.Truthy(result["success"]) {
@@ -435,7 +442,7 @@ func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) *pyjson.Obje
 		if pyrepr.Truthy(result["error"]) {
 			message = pyrepr.Str(result["error"])
 		}
-		return pyjson.ObjectOf("enabled", true, "success", false, "error", message)
+		return tuigateway.RollbackSessionDiffResult{Enabled: true, Error: message}
 	}
 	diff, stat := "", ""
 	if value, ok := result["diff"]; ok {
@@ -446,8 +453,8 @@ func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) *pyjson.Obje
 	}
 	stat = fitFrame(stat, sessionDiffBytes)
 	body := fitFrame(diff, sessionDiffBytes-wireBytes(stat))
-	return pyjson.ObjectOf("enabled", true, "success", true, "stat", stat, "diff", body,
-		"diff_lines", len(pystr.Splitlines(diff, false)), "empty", pyrepr.Truthy(result["empty"]))
+	return tuigateway.RollbackSessionDiffResult{Enabled: true, Success: true, Stat: stat, Diff: body,
+		DiffLines: int64(len(pystr.Splitlines(diff, false))), Empty: pyrepr.Truthy(result["empty"])}
 }
 
 // Bytes text takes inside a frame, JSON escaped without ASCII escaping and then UTF-8

@@ -125,6 +125,7 @@ func terminalValues(extra map[string]any) map[string]any {
 	cwd, _ := os.Getwd()
 	values := map[string]any{
 		"terminal.plugin_backends":      []any{map[string]any{"name": "singularity", "display_name": "Singularity/Apptainer", "description": "HPC-friendly rootless container"}},
+		"terminal.builtin_backends":     []any{"local", "docker", "modal", "daytona", "vercel_sandbox", "ssh"},
 		"terminal.docker":               map[string]any{"path": "/usr/bin/docker", "runtime": "Docker"},
 		"terminal.ssh_defaults":         map[string]any{"user": "nick", "key": "/home/nick/.ssh/id_rsa"},
 		"terminal.vercel_linked:" + cwd: map[string]any{},
@@ -148,7 +149,7 @@ func TestTerminalSectionKeepSavesTheWholeConfigWithoutAnswers(t *testing.T) {
 	for _, key := range g.loaded["config_keys"].([]any) {
 		keys[key] = true
 	}
-	if len(g.loaded["values"].([]any)) != 5 || !keys["terminal.vercel_runtime"] || !keys["terminal.container_disk"] {
+	if len(g.loaded["values"].([]any)) != 6 || !keys["terminal.vercel_runtime"] || !keys["terminal.container_disk"] {
 		t.Fatalf("load %+v", g.loaded)
 	}
 }

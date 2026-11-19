@@ -28,20 +28,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/hosted"
 	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
-	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/lsp"
+	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/startupfast"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tui"
 	_ "github.com/nickheyer/icebath/pkg/vxl"
 	"github.com/spf13/cobra"
 )
@@ -72,7 +72,7 @@ func init() {
 			"kanban": kanbanGroup, "vault": vaultGroup, "security": securityGroup, "update": updateGroup, "update-takeover": updateTakeoverGroup,
 			"update-finish": updateFinishGroup, "update-restart-recovery": updateRestartRecoveryGroup,
 			"update-completion": updateCompletionGroup, "venv-sync": venvSyncGroup, "source-completion": sourceCompletionGroup,
-			"import-health": importHealthGroup})
+			"import-health": importHealthGroup, "pets": petsGroup})
 	})
 	tierAtExit = append(tierAtExit, func() { browser.AtexitCleanup(context.Background()) }, codeexec.ShutdownAllKernels,
 		codeexec.ShutdownAllRemoteKernels, codeexec.ShutdownComputerUseBackends, cron.ShutdownParallelPools, lsp.AtExitShutdown)
@@ -91,21 +91,10 @@ func init() {
 
 // Hooks the extras tier installs into the core packages
 func installExtrasWiring() {
+	tui.SpeechOutput.Play, tui.SpeechOutput.Stop = media.PlayAudioFile, media.StopPlayback
+	tui.SpeechOutput.StartThinking, tui.SpeechOutput.StopThinking = media.StartThinkingSound, media.StopThinkingSound
 	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
 	selfupdate.RunCLIHook = run
-	tools.GitlockRunGit = selfupdate.GitlockRunGit
-	acp.NewSurfaceLabelReader = func(db *state.SessionDB) acp.RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }
-	acp.NewPreparedMutations = func() acp.PreparedMutations { return app.NewACPMutations() }
-	acp.SlashMutation, acp.ModelRefusalText, acp.ConfirmationTitle = app.ACPSlashMutation, app.ACPModelRefusalText, app.ACPConfirmationTitle
-	acp.CommandRefusal, acp.RewindTo = app.ACPCommandRefusal, app.ACPRewindTo
-	acp.ReplayGapOwedReply, acp.ReplayGapPendingStatus, acp.ReplayGapSettled = app.ACPReplayGapOwedReply, app.ACPReplayGapPendingStatus, app.ACPReplayGapSettled
-	acp.EnvLaunchFlags = gatewaycli.EnvLaunchFlags
-	acp.ResolveCommand = func(name string) (string, bool) {
-		if d := commands.Resolve(name); d != nil {
-			return d.Name, true
-		}
-		return "", false
-	}
 	acp.RunModelSetup = func(context.Context) int { return run([]string{"model"}) }
 	gateway.HostedEntryKeywords = hosted.EntryKeywords
 	cron.SetupWorkerLogging = logging.SetupHomeLogging
@@ -117,7 +106,6 @@ func installExtrasWiring() {
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	pm.CuaDriverChildEnv = cuaDriverChildEnv
 	gateway.ReleaseVaultUnlocks = browser.ReleaseVaultSession
-	gateway.WebhookExecuteJobForEvent = cron.ExecuteJobForEvent
 	agent.ResetScreenshotDedup = codeexec.ResetScreenshotDedup
 	agent.DelegatedChildDisposers = append(agent.DelegatedChildDisposers, codeexec.ShutdownKernelsForDelegatedChild)
 	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
@@ -546,4 +534,11 @@ func sourceCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Co
 // Answers the import health probe an update runs against this install's binary
 func importHealthGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return selfupdate.ImportHealthMain(args, cmd.OutOrStdout()), nil
+}
+
+// Runs icebath pets with the subcommand named by the path
+func petsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	ns := namespace(cli, cmd, path, args)
+	ns["pets_command"] = nilWhenEmpty(secondWord(path))
+	return app.PetsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }

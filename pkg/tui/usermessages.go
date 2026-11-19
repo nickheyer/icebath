@@ -29,6 +29,7 @@ var (
 	sessionNotFoundRe   = regexp.MustCompile(`(?i)session not found`)
 	notConnectedRe      = regexp.MustCompile(`^gateway not (?:connected|running)\b`)
 	timedOutRe          = regexp.MustCompile(`^request timed out after (\d+)s`)
+	invalidParamsRe     = regexp.MustCompile(`^invalid params for (\S+): ([^:]+): (.+)$`)
 	jsWhitespaceRunRe   = regexp.MustCompile(`[\t\n\v\f\r \x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]+`)
 	notMineRefusalRe    = regexp.MustCompile(`^skill command: use command\.dispatch for /|use command\.dispatch for /snapshot restore`)
 	slashFallbackStopRe = regexp.MustCompile(`slash worker|timed out|not connected|not running`)
@@ -197,6 +198,8 @@ var rpcErrorRows = []rpcErrorRow{
 		func([]string) string { return tr("userMessages.rpc.sessionReadOnly") }},
 	{func(_ rpcShape, text string) []string { return matched(text == "session_has_children") },
 		func([]string) string { return tr("userMessages.rpc.sessionHasChildren") }},
+	{func(_ rpcShape, text string) []string { return matched(text == "fast_unavailable") },
+		func([]string) string { return tr("userMessages.rpc.fastUnavailable") }},
 	{func(_ rpcShape, text string) []string { return matched(notConnectedRe.MatchString(text)) },
 		func([]string) string { return tr("userMessages.rpc.notConnected") }},
 	{func(_ rpcShape, text string) []string { return unavailableMethodRe.FindStringSubmatch(text) },
@@ -206,6 +209,14 @@ var rpcErrorRows = []rpcErrorRow{
 	}, func([]string) string { return tr("userMessages.rpc.launchCredentialsChanged") }},
 	{func(_ rpcShape, text string) []string { return timedOutRe.FindStringSubmatch(text) },
 		func(m []string) string { return tr("userMessages.rpc.timedOut", groupOr(m, 1)) }},
+	{func(s rpcShape, text string) []string {
+		if !s.hasCode || s.code != rpcInvalidParams {
+			return nil
+		}
+		return invalidParamsRe.FindStringSubmatch(text)
+	}, func(m []string) string {
+		return tr("userMessages.rpc.invalidParams", groupOr(m, 1), groupOr(m, 2), groupOr(m, 3))
+	}},
 }
 
 // Match group i, a question mark when the row matched without groups
@@ -296,7 +307,7 @@ func describeShellExecError(err error) string {
 func describeSlashExecError(command string, err error) string {
 	s := shapeOf(err)
 	if isUnsupportedCommand(err) {
-		refusal := tr("canonical.controls.notAvailable", command)
+		refusal := tr("canonical.controls.notThroughGateway", command)
 		if detail, isString := s.data["detail"].(string); isString && strings.TrimFunc(detail, isJSSpace) != "" {
 			return refusal + "\n" + strings.TrimFunc(detail, isJSSpace)
 		}

@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Gateway functions provider reads, installed by the gateway package at init
+// Gateway functions provider reads, installed by the gateway package at init, each answering for no gateway while unset
 var GatewayHooks struct {
 	LegacyJSON            func(h string) map[string]any
 	BridgedAllowAllUsers  func() (string, bool)
@@ -15,42 +15,42 @@ var GatewayHooks struct {
 	ServesHome            func(h string) bool
 }
 
-// Legacy gateway.json mapping of the home, nil when the file holds no mapping
+// Mapping of the home's legacy gateway.json, nil when no gateway is linked or the file holds none
 func gatewayLegacyJSON(h string) map[string]any {
 	if GatewayHooks.LegacyJSON == nil {
-		panic("provider: the gateway package must install GatewayHooks.LegacyJSON (gateway/config_loader.py load_legacy_gateway_json)")
+		return nil
 	}
 	return GatewayHooks.LegacyJSON(h)
 }
 
-// GATEWAY_ALLOW_ALL_USERS when the gateway config bridge wrote it
+// Allow all users value the gateway copied from its config into the environment, unset without a gateway
 func gatewayBridgedAllowAllUsers() (string, bool) {
 	if GatewayHooks.BridgedAllowAllUsers == nil {
-		panic("provider: the gateway package must install GatewayHooks.BridgedAllowAllUsers (gateway/config_loader.py bridged_allow_all_users)")
+		return "", false
 	}
 	return GatewayHooks.BridgedAllowAllUsers()
 }
 
-// Platform blocks merged into gwData platforms in the gateway loader order
+// Platform blocks of config.yaml merged into the gateway platforms mapping, unchanged without a gateway
 func gatewayMergePlatformSections(yamlCfg map[string]any, gatewayBlock any, gwData map[string]any, also []string) map[string]any {
 	if GatewayHooks.MergePlatformSections == nil {
-		panic("provider: the gateway package must install GatewayHooks.MergePlatformSections (gateway/config_loader.py merge_platform_sections)")
+		return gwData
 	}
 	return GatewayHooks.MergePlatformSections(yamlCfg, gatewayBlock, gwData, also)
 }
 
-// Enabled flag and token text of a platform block read as PlatformConfig.from_dict reads it
+// Enabled flag and token of one platform block as the gateway reads it, disabled without a gateway
 func gatewayPlatformEnabled(block map[string]any) (bool, string) {
 	if GatewayHooks.PlatformEnabled == nil {
-		panic("provider: the gateway package must install GatewayHooks.PlatformEnabled (gateway/config.py PlatformConfig.from_dict)")
+		return false, ""
 	}
 	return GatewayHooks.PlatformEnabled(block)
 }
 
-// Whether a live gateway serves the home, the uncached liveness ladder scoped to it, false on any error
+// Whether a live gateway serves the home, false without a gateway linked or on any error
 func gatewayServesHome(h string) bool {
 	if GatewayHooks.ServesHome == nil {
-		panic("provider: the gateway package must install GatewayHooks.ServesHome (gateway/status.py resolve_gateway_liveness)")
+		return false
 	}
 	return GatewayHooks.ServesHome(h)
 }

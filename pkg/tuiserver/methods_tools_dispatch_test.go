@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -301,27 +300,23 @@ func TestCommandCatalogListsPluginOwnedRegistryCommandsWithTheirSubcommands(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	pairs := fmt.Sprint(catalog["pairs"])
+	pairs := fmt.Sprint(catalog.Pairs)
 	if !strings.Contains(pairs, "[/boundfix Design fixture]") || strings.Contains(pairs, "shadowed") {
 		t.Fatalf("pairs %s", pairs)
 	}
-	canon := catalog["canon"].(*pyjson.Object)
-	if bf, _ := canon.Get("/bf"); bf != "/boundfix" {
+	if bf := catalog.Canon["/bf"]; bf != "/boundfix" {
 		t.Fatalf("alias canon %v", bf)
 	}
-	sub := catalog["sub"].(*pyjson.Object)
-	if subs, _ := sub.Get("/boundfix"); fmt.Sprint(subs) != "[audit polish]" {
+	if subs := catalog.Sub["/boundfix"]; fmt.Sprint(subs) != "[audit polish]" {
 		t.Fatalf("subcommands %v", subs)
 	}
 	listed := false
-	for _, raw := range catalog["categories"].([]any) {
-		group := raw.(*pyjson.Object)
-		if name, _ := group.Get("name"); name == "Plugin commands" {
-			rows, _ := group.Get("pairs")
-			listed = strings.Contains(fmt.Sprint(rows), "[/boundfix Design fixture]")
+	for _, group := range catalog.Categories {
+		if group.Name == "Plugin commands" {
+			listed = strings.Contains(fmt.Sprint(group.Pairs), "[/boundfix Design fixture]")
 		}
 	}
 	if !listed {
-		t.Fatalf("categories %v", catalog["categories"])
+		t.Fatalf("categories %v", catalog.Categories)
 	}
 }

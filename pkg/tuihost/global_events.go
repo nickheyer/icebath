@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Connected client transports global broadcasts fan out to, and whether stdout is the JSON RPC client channel
@@ -48,7 +49,7 @@ func StdioIsRPCChannel() bool { return stdioIsRPCChannel.Load() }
 
 // JSON RPC event notification of one event for a session, the payload key present only with a payload
 func EventFrame(event, sid string, payload map[string]any) *pyjson.Object {
-	payload = SealPayload(event, payload)
+	payload = tuigateway.SealPayload(event, payload)
 	params := pyjson.ObjectOf("type", event, "session_id", sid)
 	if payload != nil {
 		params.Set("payload", payload)

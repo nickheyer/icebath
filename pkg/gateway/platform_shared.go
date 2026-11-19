@@ -91,7 +91,12 @@ func YAMLEnvSetter(ctx context.Context) func(name string, value any) {
 var SendMessageSendersError func(message string) map[string]any
 
 // Standalone sender failure envelope with vendor exception text redacted
-func SendError(message any) map[string]any { return SendMessageSendersError(pyrepr.Str(message)) }
+func SendError(message any) map[string]any {
+	if SendMessageSendersError == nil {
+		return map[string]any{"error": "the sender failure envelope is unset, pkg/gateway/messagetools binds it in every build that links the platform senders"}
+	}
+	return SendMessageSendersError(pyrepr.Str(message))
+}
 
 // Active profile's adapter of the in process gateway for a platform, wired by the message tools package
 var SendMessageSendersLiveAdapter func(ctx context.Context, platform Platform) PlatformAdapter

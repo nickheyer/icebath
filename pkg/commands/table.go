@@ -85,7 +85,7 @@ var Builtin = []Def{
 		Meta{}, Def{Aliases: []string{"fork"}, ArgsHint: "[--here] [name]"}),
 	def("worktree", "Show, list, create, or prune isolated git worktrees", CategorySession,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[new [name]|list|prune [--dry-run]]", Subcommands: []string{"new", "list", "prune"}}),
-	def("compress", "Compress conversation context (add 'here [N]' to keep recent N turns; --preview shows what would happen)", CategorySession,
+	def("compress", "Compress conversation context (add 'here [N]' to keep recent N turns; --aggressive keeps only the last exchange under the shortest summary; --preview shows what would happen)", CategorySession,
 		Meta{}, Def{Aliases: []string{"compact"}, ArgsHint: "[here [N] | focus topic | --preview|--dry-run]"}),
 	def("rollback", "List or restore filesystem checkpoints (restores keep your hand-edits; --all overrides)", CategorySession,
 		Meta{}, Def{ArgsHint: "[number] [--all]"}),

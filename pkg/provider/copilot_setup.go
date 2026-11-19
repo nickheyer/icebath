@@ -371,13 +371,13 @@ func copilotAuthArg(args []string, flag string) string {
 // Both ends of the terminal, so a piped run never blocks on the device poll
 func copilotHasTerminal() bool { return streamIsTTY(os.Stdin) && streamIsTTY(os.Stdout) }
 
-// icebath auth add copilot signs in by GitHub device code and pools the token, other actions stay with core
+// icebath auth add copilot signs in by GitHub device code and pools the token, an explicit oauth also without a terminal
 func copilotAuthHandler(action string, args []string, _ string) (bool, error) {
 	if action != "add" || copilotAuthArg(args, "--api-key") != "" {
 		return false, nil
 	}
 	authType := strings.ToLower(pystr.Strip(copilotAuthArg(args, "--type")))
-	if authType == "api-key" || authType == "api_key" || !copilotHasTerminal() {
+	if authType == "api-key" || authType == "api_key" || (authType != "oauth" && !copilotHasTerminal()) {
 		return false, nil
 	}
 	ctx := context.Background()

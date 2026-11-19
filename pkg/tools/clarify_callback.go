@@ -11,6 +11,22 @@ import (
 // The surface callback of the clarify tool, shown questions in and an answers outcome notice dict out
 type ClarifyCallback func(ctx context.Context, shown []any) (map[string]any, error)
 
+type clarifyCallbackKey struct{}
+
+// Binds the session's clarify surface to the tool calls of a turn
+func WithClarifyCallback(ctx context.Context, cb ClarifyCallback) context.Context {
+	return context.WithValue(ctx, clarifyCallbackKey{}, cb)
+}
+
+// Clarify surface bound to the turn, nil when the session has none
+func ClarifyCallbackFrom(ctx context.Context) ClarifyCallback {
+	if ctx == nil {
+		return nil
+	}
+	cb, _ := ctx.Value(clarifyCallbackKey{}).(ClarifyCallback)
+	return cb
+}
+
 // Clarify result JSON through the session asker, the registry handler of the tool
 func ClarifyTool(ctx context.Context, env *Env, questions any) string {
 	return clarifyTool(ctx, env, questions)

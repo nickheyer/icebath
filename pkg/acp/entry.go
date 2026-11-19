@@ -119,6 +119,10 @@ var pmEnsure = func(ctx context.Context, name string, explicit bool) error {
 
 // Runs the interactive model setup, then offers the browser tools install on a terminal
 func runSetup(ctx context.Context, stderr io.Writer) int {
+	if RunModelSetup == nil {
+		fmt.Fprintln(stderr, "acp: the model setup runner is unset, cmd/icebath binds it in every build that links the adapter")
+		return 1
+	}
 	if code := RunModelSetup(ctx); code != 0 {
 		return code
 	}

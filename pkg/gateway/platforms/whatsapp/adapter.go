@@ -238,7 +238,7 @@ func (r bridgeResponse) json() (any, error) { return pyjson.LoadsBytes(r.body) }
 // Issues one request against a bridge endpoint bounded by the total timeout
 func (a *WhatsAppAdapter) bridgeReq(ctx context.Context, client *http.Client, method, path string, timeout time.Duration, payload any) (bridgeResponse, error) {
 	if client == nil {
-		return bridgeResponse{}, errors.New("'NoneType' object has no attribute '" + strings.ToLower(method) + "'")
+		return bridgeResponse{}, errors.New("the WhatsApp bridge HTTP session is not open")
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -818,6 +818,22 @@ func (a *WhatsAppAdapter) Send(ctx context.Context, chatID, content, replyTo str
 	}
 	return gateway.SendResult{Success: true, MessageID: last, ContinuationMessageIDs: continuation,
 		RawResponse: map[string]any{"message_ids": ids}}, nil
+}
+
+// Adds an emoji reaction to a message through the bridge
+func (a *WhatsAppAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	if unavailable := a.bridgeUnavailable(ctx); unavailable != "" {
+		return errors.New(unavailable)
+	}
+	resp, err := a.bridgeReq(ctx, a.httpSession, http.MethodPost, "react", 15*time.Second,
+		map[string]any{"chatId": gateway.ToWhatsAppJID(chatID), "messageId": messageID, "emoji": emoji})
+	if err != nil {
+		return err
+	}
+	if resp.status != 200 {
+		return fmt.Errorf("the WhatsApp bridge refused the reaction: %s", resp.body)
+	}
+	return nil
 }
 
 // Edits a sent message through the bridge

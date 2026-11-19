@@ -10,5 +10,7 @@ func releaseUnlocks(sessionID string) {
 			pkgLog().Debug("vault manager lock on session close failed", "error", r)
 		}
 	}()
-	ReleaseVaultUnlocks(sessionID)
+	if ReleaseVaultUnlocks != nil {
+		ReleaseVaultUnlocks(sessionID)
+	}
 }

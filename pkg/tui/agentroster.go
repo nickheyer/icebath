@@ -1,33 +1,28 @@
 package tui
 
 import (
-	"math"
 	"reflect"
 	"slices"
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Subagent list of the session it belongs to, as subagent.list reports it
 type agentSnapshot struct {
 	Sid  string
-	Data map[string]any
-}
-
-func emptyAgentList() map[string]any {
-	return map[string]any{"subagents": []any{}, "delegations": []any{}}
+	Data tuigateway.SubagentListResult
 }
 
 // Replaces the agent snapshot only when its session or list changed
-func (s *tuiStore) applyAgentSnapshot(sid string, data map[string]any) {
-	if data == nil {
-		data = emptyAgentList()
-	}
+func (s *tuiStore) applyAgentSnapshot(sid string, data tuigateway.SubagentListResult) {
 	if s.agentSnapshot.Sid != sid || !reflect.DeepEqual(s.agentSnapshot.Data, data) {
 		s.agentSnapshot = agentSnapshot{Sid: sid, Data: data}
 	}
 }
 
 // Roster of the live subagent events merged with the polled list, events keeping their own progress
-func mergeAgentRoster(events []subagentProgress, data map[string]any) []subagentProgress {
+func mergeAgentRoster(events []subagentProgress, data tuigateway.SubagentListResult) []subagentProgress {
 	var order []string
 	merged := map[string]subagentProgress{}
 	for _, e := range events {
@@ -36,28 +31,18 @@ func mergeAgentRoster(events []subagentProgress, data map[string]any) []subagent
 		}
 		merged[e.ID] = e
 	}
-	list, _ := data["subagents"].([]any)
-	for index, raw := range list {
-		s, _ := raw.(map[string]any)
-		if s == nil {
-			s = map[string]any{}
-		}
-		id, _ := s["subagent_id"].(string)
+	for index, s := range data.Subagents {
+		id := s.SubagentID
 		previous, had := merged[id]
 		var next subagentProgress
 		if had {
 			next = previous
 		} else {
-			depth := 0
-			if d, isNum := s["depth"].(float64); isNum {
-				depth = int(d)
-			}
-			parent, _ := s["parent_id"].(string)
-			next = subagentProgress{Depth: depth, Index: index, ParentID: parent, Notes: []string{}, Thinking: []string{}, TaskCount: 1}
+			next = subagentProgress{Depth: int(val(s.Depth)), Index: index, ParentID: val(s.ParentID), Notes: []string{}, Thinking: []string{}, TaskCount: 1}
 			order = append(order, id)
 		}
 		next.ID = id
-		switch goal, _ := s["goal"].(string); {
+		switch goal := val(s.Goal); {
 		case goal != "":
 			next.Goal = goal
 		case had && previous.Goal != "":
@@ -65,30 +50,26 @@ func mergeAgentRoster(events []subagentProgress, data map[string]any) []subagent
 		default:
 			next.Goal = "Starting agent"
 		}
-		if delegation, isStr := s["delegation_id"].(string); isStr {
-			next.DelegationID = delegation
+		if s.DelegationID != nil {
+			next.DelegationID = *s.DelegationID
 		}
-		if model, isStr := s["model"].(string); isStr {
-			next.Model = model
+		if s.Model != nil {
+			next.Model = *s.Model
 		}
-		if started, isNum := s["started_at"].(float64); isNum {
-			ms := started * 1000
+		if s.StartedAt != nil {
+			ms := *s.StartedAt * 1000
 			next.StartedAt = &ms
 		}
 		switch {
 		case had && previous.Status != "queued":
 			next.Status = previous.Status
-		case s["status"] == "queued":
+		case val(s.Status) == "queued":
 			next.Status = "queued"
 		default:
 			next.Status = "running"
 		}
-		toolCount := 0.0
-		if n, isNum := s["tool_count"].(float64); isNum {
-			toolCount = n
-		}
-		next.ToolCount = int(math.Max(toolCount, float64(previous.ToolCount)))
-		switch last, _ := s["last_tool"].(string); {
+		next.ToolCount = max(int(val(s.ToolCount)), previous.ToolCount)
+		switch last := val(s.LastTool); {
 		case had && len(previous.Tools) > 0:
 			next.Tools = slices.Clone(previous.Tools)
 		case last != "":
@@ -107,9 +88,29 @@ func mergeAgentRoster(events []subagentProgress, data map[string]any) []subagent
 
 // Roster of the current session from the turn's subagent events and the polled snapshot
 func (s *tuiStore) currentAgentRoster() []subagentProgress {
-	data := emptyAgentList()
-	if s.agentSnapshot.Sid == s.ui.Sid && s.agentSnapshot.Data != nil {
+	var data tuigateway.SubagentListResult
+	if s.agentSnapshot.Sid == s.ui.Sid {
 		data = s.agentSnapshot.Data
 	}
 	return mergeAgentRoster(s.turn.Subagents, data)
+}
+
+// Failed delegations of the session in view as the last subagent.list reported them, newest first
+func (s *tuiStore) failedDelegations() []tuigateway.FailedDelegation {
+	if s.agentSnapshot.Sid != s.ui.Sid {
+		return nil
+	}
+	return s.agentSnapshot.Data.Delegations
+}
+
+// Status of a failed delegation in the words of the spawn tree, the ledger's synonyms folded into them
+func failedDelegationStatus(d tuigateway.FailedDelegation) string {
+	switch status := strings.ToLower(d.Status); status {
+	case "failure":
+		return "failed"
+	case "":
+		return "error"
+	default:
+		return status
+	}
 }

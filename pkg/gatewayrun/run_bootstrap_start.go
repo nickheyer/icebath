@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -396,6 +397,12 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	go loop.Run(loopCtx)
 	stopSignals := func() {}
 	defer func() {
+		var described *state.StoreUnavailableError
+		if err != nil && !errors.As(err, &described) && state.IsStoreFailure(err) {
+			err = state.NewStoreUnavailableError(settled, state.ResolveDefaultDBPath(settled), err)
+		}
+	}()
+	defer func() {
 		defer func() {
 			if plannedStop != nil {
 				plannedStop.Set()
@@ -427,7 +434,10 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	if err := recoverLeftCoreAtGatewayStart(ctx); err != nil {
 		return false, err
 	}
-	pin := pinLaunchStore(ctx)
+	pin, pinErr := pinLaunchStore(ctx)
+	if pinErr != nil {
+		return false, pinErr
+	}
 	r, err = func() (*GatewayRunner, error) {
 		defer unpinLaunchStore(pin)
 		return NewGatewayRunner(ctx, resolved)

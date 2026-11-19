@@ -1,11 +1,14 @@
 package tuihost
 
-import "github.com/nickheyer/icebath/pkg/tools"
+import (
+	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+)
 
 // One connector refusal as both connector handlers send it, a wire code, a ConnectorErrorReason and a message
 type ConnectorRefusalSpec struct {
 	Code    int
-	Reason  string
+	Reason  tuigateway.ConnectorErrorReason
 	Message string
 }
 

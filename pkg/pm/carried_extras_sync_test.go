@@ -114,7 +114,7 @@ func TestCarriedExtraThatCannotBuildIsLeftOutAndNotCarriedAgain(t *testing.T) {
 	if reasons := declinedReasons(ctx, ""); !reflect.DeepEqual(reasons, map[string]string{"matrix": "it no longer builds on this machine"}) {
 		t.Fatalf("reasons %v", reasons)
 	}
-	if !strings.Contains(notice, "'matrix'") || !strings.Contains(notice, "icebath pm install --extra matrix") {
+	if !strings.Contains(notice, "matrix extra") || !strings.Contains(notice, "icebath pm install --extra matrix") {
 		t.Fatalf("notice %q", notice)
 	}
 	builds := len(c.applied)
@@ -124,7 +124,7 @@ func TestCarriedExtraThatCannotBuildIsLeftOutAndNotCarriedAgain(t *testing.T) {
 	if len(c.applied) != builds {
 		t.Fatalf("a current environment rebuilt %v", c.applied)
 	}
-	if err := syncVenv(ctx, SyncVenvOptions{Extras: []string{"matrix"}}); err == nil || !strings.Contains(err.Error(), "an update left 'matrix' out") {
+	if err := syncVenv(ctx, SyncVenvOptions{Extras: []string{"matrix"}}); err == nil || !strings.Contains(err.Error(), "an update left matrix out") {
 		t.Fatalf("lazy use %v", err)
 	}
 }

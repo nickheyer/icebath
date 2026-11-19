@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -221,7 +223,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 				}
 				count := ""
 				if r.count > 0 {
-					count = jsString(r.count)
+					count = countText(r.count)
 				}
 				out[i] = []string{mark, title, strings.ReplaceAll(r.preview, "\n", " "), count, whenText(r.when)}
 			}
@@ -275,30 +277,25 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 }
 
 // Lists what a hub shows, an owner without the hub method answering through its command worker in the pager
-func (a *app) hubRequest(method, command string, show func(r map[string]any) tea.Cmd) tea.Cmd {
+func hubRequest[P, R any](a *app, m tuigateway.Method[P, R], params P, command string, show func(r *R) tea.Cmd) tea.Cmd {
 	sid := a.store.ui.Sid
-	return gatewayCall(a.gw, method, map[string]any{"action": "list"}, func(v any, err error) tea.Cmd {
+	return call(a.gw, m, params, func(r *R, err error) tea.Cmd {
 		var refused *rpcError
 		if errors.As(err, &refused) && refused.HasCode && refused.Code == -32601 {
-			return gatewayCall(a.gw, "slash.exec", map[string]any{"command": command, "session_id": nilIfEmpty(sid)}, func(v any, err error) tea.Cmd {
+			return call(a.gw, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: command, SessionID: sid}, func(res *tuigateway.SlashExecResult, err error) tea.Cmd {
 				if err != nil {
 					a.sys("error: " + describeSlashExecError(command, err))
 					return nil
 				}
-				out, _ := asRPCResult(v)["output"].(string)
+				out := res.Output
 				if out == "" {
 					out = "/" + command + ": no output"
 				}
 				return a.showOutput(out, command)
 			})
 		}
-		r := asRPCResult(v)
-		switch {
-		case err != nil:
+		if err != nil {
 			a.sys("error: " + rpcErrorMessage(err))
-			return nil
-		case r == nil:
-			a.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
 			return nil
 		}
 		return show(r)
@@ -307,12 +304,11 @@ func (a *app) hubRequest(method, command string, show func(r map[string]any) tea
 
 // Skills hub, every installed skill by category with what it does and an install action
 func (a *app) openSkillsHub() tea.Cmd {
-	return a.hubRequest("skills.manage", "skills", func(r map[string]any) tea.Cmd {
-		skills, _ := r["skills"].(map[string]any)
+	return hubRequest(a, tuigateway.SkillsManage, tuigateway.SkillsManageParams{Action: "list"}, "skills", func(r *tuigateway.SkillsManageResult) tea.Cmd {
 		type skillRow struct{ category, name string }
 		var rows []skillRow
-		for _, category := range sortedKeys(skills) {
-			for _, name := range stringList(skills[category]) {
+		for _, category := range slices.Sorted(maps.Keys(r.Skills)) {
+			for _, name := range r.Skills[category] {
 				rows = append(rows, skillRow{category, name})
 			}
 		}
@@ -344,17 +340,19 @@ func (a *app) openSkillsHub() tea.Cmd {
 					if _, loaded := details[name]; loaded {
 						return toggle
 					}
-					return tea.Batch(toggle, a.events.rpc("skills.manage", map[string]any{"action": "inspect", "query": name}, func(res map[string]any) tea.Cmd {
-						info, _ := res["info"].(map[string]any)
-						description, _ := info["description"].(string)
-						path, _ := info["path"].(string)
-						details[name] = append(strings.Split(description, "\n"), "", path)
+					return tea.Batch(toggle, ask(a.events.rpc, a.sys, tuigateway.SkillsManage, tuigateway.SkillsManageParams{Action: "inspect", Query: name}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						info := tuigateway.SkillInspectInfo{}
+						if res != nil && res.Info != nil {
+							info = *res.Info
+						}
+						details[name] = append(strings.Split(info.Description, "\n"), "", info.Path)
+						l.Refresh()
 						return nil
 					}))
 				},
 				"tui.skills.install": func(l *cards.List, i int) tea.Cmd {
 					name := rows[i].name
-					return a.events.rpc("skills.manage", map[string]any{"action": "install", "query": name}, func(res map[string]any) tea.Cmd {
+					return ask(a.events.rpc, a.sys, tuigateway.SkillsManage, tuigateway.SkillsManageParams{Action: "install", Query: name}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
 						if res == nil {
 							return nil
 						}
@@ -369,37 +367,35 @@ func (a *app) openSkillsHub() tea.Cmd {
 
 // Plugins hub, every plugin with its state, toggled in place
 func (a *app) openPluginsHub() tea.Cmd {
-	return a.hubRequest("plugins.manage", "plugins", func(r map[string]any) tea.Cmd {
-		plugins, _ := r["plugins"].([]any)
-		text := func(p map[string]any, key string) string {
-			s, _ := p[key].(string)
-			return s
-		}
+	return hubRequest(a, tuigateway.PluginsManage, tuigateway.PluginsManageParams{Action: "list"}, "plugins", func(r *tuigateway.PluginsManageResult) tea.Cmd {
+		plugins := r.Plugins
 		list := cards.NewList(a.cardEnv(), cards.ListSpec{
 			Title: "plugins", Glyph: a.toolkit.Glyphs.Ext, Key: "tui:plugins", Context: pluginsContext, Primary: "tui.plugins.toggle",
 			Columns: []render.Column{{Title: "on"}, {Title: "plugin", Flex: 2}, {Title: "source"}, {Title: "what it adds", Flex: 4}},
 			Rows: func() [][]string {
 				out := make([][]string, len(plugins))
-				for i, raw := range plugins {
-					p, _ := raw.(map[string]any)
+				for i, p := range plugins {
 					mark := "○"
-					if truthyJS(p["enabled"]) {
+					if p.Enabled() {
 						mark = "●"
 					}
-					out[i] = []string{mark, text(p, "name"), text(p, "source"), strings.ReplaceAll(text(p, "description"), "\n", " ")}
+					out[i] = []string{mark, p.Name, p.Source, strings.ReplaceAll(p.Description, "\n", " ")}
 				}
 				return out
 			},
 			Empty: func() string { return "no plugins are installed" },
 			Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 				"tui.plugins.toggle": func(l *cards.List, i int) tea.Cmd {
-					p, _ := plugins[i].(map[string]any)
-					name := text(p, "name")
-					return a.events.rpc("plugins.manage", map[string]any{"action": "toggle", "enable": !truthyJS(p["enabled"]), "name": name}, func(res map[string]any) tea.Cmd {
-						if updated, _ := res["plugin"].(map[string]any); updated != nil {
-							plugins[i] = updated
-						} else if res != nil {
-							p["enabled"] = !truthyJS(p["enabled"])
+					p := plugins[i]
+					params := tuigateway.PluginsManageParams{Action: "toggle", Enable: ptr(!p.Enabled()), Key: p.Key, Name: p.Name}
+					return ask(a.events.rpc, a.sys, tuigateway.PluginsManage, params, func(res *tuigateway.PluginsManageResult) tea.Cmd {
+						switch {
+						case res != nil && res.Plugin != nil:
+							plugins[i] = *res.Plugin
+						case res != nil && p.Enabled():
+							plugins[i].Status = "disabled"
+						case res != nil:
+							plugins[i].Status = "enabled"
 						}
 						l.Refresh()
 						return nil

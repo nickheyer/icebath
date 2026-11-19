@@ -33,7 +33,7 @@ func (r *ConnectorRefusal) Unwrap() error       { return r.RuntimeStoreError }
 // Store refusal of a connector refusal spec with the cause that raised it
 func connectorRefusal(spec tuihost.ConnectorRefusalSpec, cause error) *ConnectorRefusal {
 	detail := spec.Message
-	refusal := state.NewRuntimeStoreError(spec.Reason, nil, &detail)
+	refusal := state.NewRuntimeStoreError(string(spec.Reason), nil, &detail)
 	refusal.Cause = cause
 	return &ConnectorRefusal{RuntimeStoreError: refusal, code: spec.Code, message: spec.Message}
 }

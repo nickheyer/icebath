@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -44,6 +45,9 @@ func (r *GatewayRunner) initSessionStore(ctx context.Context) {
 	r.sessionStore = gateway.NewSessionStore(ctx, r.config.SessionsDir, r.config, func(key string) (bool, error) {
 		return tools.DefaultProcessRegistry().HasActiveForSession(key, nil), nil
 	})
+	r.sessionStore.StoreFailed = func(err error) {
+		r.noteSessionStoreOutage(ctx, state.DescribeStorageFailure(ctx, err), state.StorageFailureDetails(err, 200))
+	}
 	r.asyncSessionStore = gateway.NewAsyncSessionStore(r.sessionStore)
 	r.deliveryRouter = gateway.NewDeliveryRouter(r.config, nil)
 }

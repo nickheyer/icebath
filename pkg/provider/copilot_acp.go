@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/linktier"
 )
 
 const (
@@ -50,6 +53,7 @@ func copilotACPProfile() Profile {
 	p.AccountCard = map[string]string{"name": "GitHub Copilot (ACP)", "flow": "external", "cli_command": "copilot login",
 		"docs_url": "https://docs.github.com/en/copilot"}
 	p.AccountStatus = copilotACPAccountStatus
+	p.AuthHandler = copilotACPAuthHandler
 	p.ExternalAuthEvidenceHook = copilotCLIAuthEvidence
 	p.CreateClientHook = copilotACPCreateClient
 	p.FetchModelsHook = copilotACPFetchModels
@@ -91,10 +95,10 @@ func (o *copilotACPObject) Call(ctx context.Context, method string, _ []any, kwa
 	return nil, fmt.Errorf("the Copilot ACP client has no %s method", method)
 }
 
-// Copilot CLI ACP client from client kwargs, an error when the acpclient package is not linked
+// Copilot CLI ACP client from client kwargs, the build line when the plugins tier that carries acpclient is absent
 func newCopilotACPChatClient(ctx context.Context, clientKwargs map[string]any) (CopilotACPChatClient, error) {
 	if NewCopilotACPClient == nil {
-		return nil, errors.New("copilot-acp: the ACP client is not linked into this binary")
+		return nil, errors.New(linktier.Missing("the copilot-acp provider", linktier.Plugins))
 	}
 	return NewCopilotACPClient(ctx, clientKwargs)
 }
@@ -289,4 +293,29 @@ func copilotACPModelFlowBody(r *ModelFlowRun) error {
 	}
 	fmt.Fprintf(r.Out, "Default model set to: %s (via GitHub Copilot ACP)\n", selected)
 	return nil
+}
+
+// icebath auth add copilot-acp runs the GitHub Copilot CLI's own login, the CLI keeping the credential it signs in with
+func copilotACPAuthHandler(action string, args []string, _ string) (bool, error) {
+	if action != "add" {
+		return false, nil
+	}
+	ctx := context.Background()
+	creds, err := copilotACPCLIStatus(ctx)
+	if err != nil {
+		return false, &PluginAuthError{Message: err.Error() + " GitHub Copilot CLI installs with `npm install -g @github/copilot`; " +
+			"then run `icebath auth add copilot-acp` again."}
+	}
+	command := creds.Command
+	if command == "" {
+		command = "copilot"
+	}
+	login := exec.Command(command, "login")
+	login.Stdin, login.Stdout, login.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := login.Run(); err != nil {
+		return false, &PluginAuthError{Message: fmt.Sprintf("`%s login` did not finish (%v); nothing changed. Run it again to sign GitHub Copilot CLI in.", command, err)}
+	}
+	clearCopilotACPSessionMemo()
+	fmt.Fprintln(os.Stdout, "copilot-acp is signed in through GitHub Copilot CLI.")
+	return true, nil
 }

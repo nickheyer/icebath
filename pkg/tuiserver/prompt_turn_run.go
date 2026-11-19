@@ -767,8 +767,11 @@ func init() { runPromptSubmit = runPromptSubmitTurn }
 
 // Admits and starts one prompt turn on its own goroutine, false when it never started
 func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, o promptSubmitOptions) bool {
-	if !ensureSessionDBRow(ctx, session) {
-		pkgLog().Warn(fmt.Sprintf("prompt dispatch: session store unavailable for %s — this turn may not persist", sessionKeyOr(session, sid)))
+	if err := ensureSessionDBRow(ctx, session); err != nil {
+		storage := state.DescribeStorageFailure(ctx, storeCause(err))
+		tuihost.Emit(ctx, "error", sid, map[string]any{"message": fmt.Sprintf("Session storage is unavailable, so this turn was not started. "+
+			"Cause: %s. %s", storage.Gloss, storage.Action)})
+		return false
 	}
 	images, a, admitted := admitPromptTurn(ctx, sid, session, text, o.imagePaths, o.queuedPromptGeneration, o.displayKind, o.displayMetadata, !o.silentOwnershipRefusal)
 	if !admitted {

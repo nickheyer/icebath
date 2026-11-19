@@ -316,13 +316,13 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 			previous = text
 		}
 	}
-	messages, errResp := parseResponsesInput(body.GetOr("input", nil))
+	messages, errResp := parseResponsesInput(ctx, body.GetOr("input", nil))
 	if errResp != nil {
 		return nil, errResp, nil
 	}
 	history := []any{}
 	if raw := body.GetOr("conversation_history", nil); pyrepr.Truthy(raw) {
-		if history, errResp = parseConversationHistory(raw); errResp != nil {
+		if history, errResp = parseConversationHistory(ctx, raw); errResp != nil {
 			return nil, errResp, nil
 		}
 	}

@@ -105,12 +105,12 @@ func TestAuthFailureAborts(t *testing.T) {
 			t.Fatalf("network %v %v %v", result, c.lastSummaryNetworkFailure, c.lastSummaryAuthFailure)
 		}
 	})
-	for _, text := range []string{"Auxiliary compression: LLM returned None response",
-		"Auxiliary compression: LLM returned invalid response (type=str): 'oops'. Expected object with .choices[0].message — check provider adapter or custom endpoint compatibility."} {
+	for _, raised := range []*provider.AuxRuntimeError{{Message: "Auxiliary compression: LLM returned None response", Fault: provider.AuxReplyMissing},
+		{Message: "Auxiliary compression: LLM returned invalid response (type=str): 'oops'. Expected object with .choices[0].message — check provider adapter or custom endpoint compatibility.", Fault: provider.AuxReplyMalformed}} {
 		t.Run("auxiliary terminal response aborts compression", func(t *testing.T) {
-			c := aborts(t, &provider.AuxRuntimeError{Message: text}, false)
+			c := aborts(t, raised, false)
 			if !c.lastSummaryEmptyContentFailure {
-				t.Fatalf("empty content flag for %q", text)
+				t.Fatalf("empty content flag for %q", raised.Message)
 			}
 		})
 	}
@@ -148,7 +148,7 @@ func TestStreamingClosedFailure(t *testing.T) {
 		}
 	}
 	stall := fmt.Sprintf("Codex auxiliary Responses %s: no new output for %.1fs (%.1fs elapsed)", provider.CodexStreamStallMarker, 300.0, 0.0)
-	c := failOnMain(t, &provider.AuxTimeoutError{Message: stall})
+	c := failOnMain(t, &provider.AuxTimeoutError{Message: stall, Kind: provider.AuxTimeoutStalled})
 	if c.lastSummaryNetworkFailure || c.consecutiveTimeoutFailures != 1 {
 		t.Fatalf("codex stall network=%v timeouts=%d", c.lastSummaryNetworkFailure, c.consecutiveTimeoutFailures)
 	}

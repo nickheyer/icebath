@@ -29,7 +29,7 @@ func fakeTerminalTool(t *testing.T, payload map[string]any, seen *tools.Terminal
 func TestBackendDirEntriesPreconfirmsInternalListing(t *testing.T) {
 	var seen tools.TerminalRequest
 	fakeTerminalTool(t, map[string]any{"output": "src/\nREADME.md\n", "exit_code": 0}, &seen)
-	entries := backendDirEntries(context.Background(), "/workspace", "sess")
+	entries, _ := backendDirEntries(context.Background(), "/workspace", "sess")
 	if !seen.Force {
 		t.Fatal("listing was not pre-confirmed")
 	}
@@ -41,7 +41,7 @@ func TestBackendDirEntriesPreconfirmsInternalListing(t *testing.T) {
 func TestBackendDirEntriesKeepsSessionRouting(t *testing.T) {
 	var seen tools.TerminalRequest
 	fakeTerminalTool(t, map[string]any{"output": "src/\nREADME.md\n", "exit_code": 0}, &seen)
-	backendDirEntries(context.Background(), "~/proj", "sess-42")
+	_, _ = backendDirEntries(context.Background(), "~/proj", "sess-42")
 	if seen.TaskID != "sess-42" {
 		t.Fatalf("task id %q", seen.TaskID)
 	}
@@ -50,7 +50,7 @@ func TestBackendDirEntriesKeepsSessionRouting(t *testing.T) {
 func TestBackendDirEntriesSwallowsFailedListings(t *testing.T) {
 	for _, payload := range []map[string]any{{"output": "boom", "exit_code": 1}, {"error": "backend unreachable"}} {
 		fakeTerminalTool(t, payload, nil)
-		if entries := backendDirEntries(context.Background(), "/workspace", "sess"); len(entries) != 0 {
+		if entries, _ := backendDirEntries(context.Background(), "/workspace", "sess"); len(entries) != 0 {
 			t.Fatalf("%v -> %v", payload, entries)
 		}
 	}

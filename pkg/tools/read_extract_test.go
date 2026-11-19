@@ -187,7 +187,7 @@ func TestReadExtractHelpersGolden(t *testing.T) {
 	if msg := extractionMessage(checkDocumentSize(maxDocumentBytes+1, maxDocumentBytes)); msg != g.str(t, "size_err") {
 		t.Fatalf("size error %q", msg)
 	}
-	if got := needsOCRWarning("/tmp/my scan.pdf", []int{2, 3}, "HostedError: boom"); got != g.str(t, "ocr_warning") {
+	if got := needsOCRWarning("/tmp/my scan.pdf", []int{2, 3}, "HostedError: boom", ""); got != g.str(t, "ocr_warning") {
 		t.Fatalf("ocr warning:\n got  %q\n want %q", got, g.str(t, "ocr_warning"))
 	}
 	gap := pdfGapMap([]int{100, 0, 0, 50, 0, 3}, []string{"Intro   text here", "", "", "Chapter two starts", "", "x"}, []int{2, 3, 5, 6})
@@ -211,8 +211,8 @@ func TestReadExtractHelpersGolden(t *testing.T) {
 	if IsExtractableDocument("x.TXT") || !IsExtractableDocument("/a/B.PDF") || IsExtractableDocument(".docx") || !IsExtractableDocument("deck.ppsx") {
 		t.Fatal("extension recognition")
 	}
-	if _, err := ExtractDocumentText(context.Background(), nil, "notes.txt"); extractionMessage(err) != "Unsupported document type: 'notes.txt'" {
-		t.Fatalf("unsupported: %v", err)
+	if _, err := ExtractDocumentText(context.Background(), nil, "notes.txt"); !strings.Contains(extractionMessage(err), "notes.txt") {
+		t.Fatalf("missing plain file: %v", err)
 	}
 }
 
@@ -303,12 +303,12 @@ func TestReadExtractPDFNeedsOCR(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	p := writeFixture(t, "scan.pdf", scannedPDF())
 	got, err := ExtractDocumentText(context.Background(), nil, p)
-	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "") {
+	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "", "pdftoppm, pdftotext and tesseract are not on PATH, install poppler and tesseract") {
 		t.Fatalf("needs ocr: %q %v", got, err)
 	}
-	_, err = ExtractDocumentBytes(context.Background(), nil, scannedPDF(), "scan.pdf")
-	if extractionMessage(err) != "NeedsOcrError: all 2 pages need OCR" {
-		t.Fatalf("bytes needs ocr: %v", err)
+	got, err = ExtractDocumentBytes(context.Background(), nil, scannedPDF(), "scan.pdf")
+	if err != nil || got != needsOCRWarning("scan.pdf", []int{1, 2}, "", "pdftoppm, pdftotext and tesseract are not on PATH, install poppler and tesseract") {
+		t.Fatalf("bytes needs ocr: %q %v", got, err)
 	}
 	if HostedOCRAvailable(nil) {
 		t.Fatal("hosted OCR must be off without a key")
@@ -369,7 +369,7 @@ func TestReadExtractPDFHostedOCR(t *testing.T) {
 	}
 	status = 402
 	got, err = ExtractDocumentText(context.Background(), nil, p)
-	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "hosted PDF parsing failed: Firecrawl Parse is out of credits: no credits") {
+	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "hosted PDF parsing failed: Firecrawl Parse is out of credits: no credits", "pdftoppm, pdftotext and tesseract are not on PATH, install poppler and tesseract") {
 		t.Fatalf("hosted failure: %q %v", got, err)
 	}
 }

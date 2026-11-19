@@ -161,7 +161,6 @@ gateway:
     not_enough: "Nicht genug Konversation zum Komprimieren (mindestens 4 Nachrichten erforderlich)."
     no_provider: "Kein Anbieter konfiguriert — Komprimierung nicht möglich."
     nothing_to_do: "Noch nichts zu komprimieren (das Transkript ist weiterhin vollständig geschützter Kontext)."
-    aggressive_unsupported: "--aggressive wird nicht unterstützt; verwende '/compress here [N]', um nur die letzten Austausche zu behalten, oder /undo, um Beiträge zu entfernen."
     focus_line: "Fokus: \"{topic}\""
     summary_failed: "⚠️ Zusammenfassungsgenerierung fehlgeschlagen ({error}). {count} historische Nachricht(en) wurden entfernt und durch einen Platzhalter ersetzt; früherer Kontext ist nicht mehr wiederherstellbar. Überprüfen Sie die Konfiguration des auxiliary.compression-Modells."
     aborted: "⚠️ Komprimierung abgebrochen ({error}). Keine Nachrichten wurden entfernt — die Konversation ist unverändert. Führe /compress aus, um es erneut zu versuchen, /reset für eine neue Sitzung, oder prüfe deine auxiliary.compression-Modellkonfiguration."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ Der KI-Modelldienst ist wiederholt fehlgeschlagen. Versuchen Sie es mit /retry erneut oder wechseln Sie das Modell mit /model. Details stehen im Gateway-Log (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ Der Sitzungsspeicher war vorübergehend nicht verfügbar, daher wurde dieser Zug abgebrochen, um Ihren Konversationsverlauf zu schützen. Bitte prüfen Sie den freien Speicherplatz und senden Sie Ihre Nachricht dann erneut."
     session_storage_unavailable: "⚠️ Der Sitzungsspeicher war vorübergehend nicht verfügbar, daher wurde dieser Zug abgebrochen, um Ihren Konversationsverlauf zu schützen. Ihre Nachricht sollte bereits gespeichert sein — bitte senden Sie sie in einem Moment erneut."
+    session_storage_held: "⚠️ Der Sitzungsspeicher ist gerade nicht verfügbar ({cause}), deshalb wartet deine Nachricht. Sie bleibt erhalten und wird hier beantwortet, sobald der Speicher wieder funktioniert; du musst sie nicht erneut senden."
     generic_failed: "⚠️ Etwas ist schiefgelaufen und ich konnte diese Antwort nicht fertigstellen. Versuchen Sie es mit /retry erneut oder starten Sie mit /new eine neue Konversation. Technische Details stehen im Gateway-Log (`icebath logs`)."
     interrupted_before_start: "⚠️ Ihre Nachricht wurde unterbrochen, bevor die Verarbeitung begonnen hat (wahrscheinlich durch ein kürzliches /stop). Bitte senden Sie sie erneut."
     processing_incomplete: "Verarbeitung unvollständig"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ Beschädigung der Sitzungsdatenbank erkannt. Nachrichten werden möglicherweise nicht gespeichert. Wiederherstellungsoptionen:\n1. Führen Sie `icebath {profile_arg}doctor --fix` aus\n2. Stoppen Sie das Gateway und stellen Sie dann wieder her mit:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (falls als wiederherstellbar gemeldet) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — die Wiederherstellung sichert zuerst einen Schnappschuss der beschädigten Datei; führen Sie NICHT `sqlite3 ... \\\".recover\\\"` gegen die laufende state.db aus, eine anfällige sqlite3-CLI kann sie weiter beschädigen\n3. Stellen Sie ein Backup aus {backups_dir}/ wieder her\nFühren Sie `icebath {profile_arg}doctor` für bereinigte Diagnosen aus."
     db_fts_corrupt: "⚠️ Die Sitzungsdatenbank hat einen Beschädigungsfehler gemeldet, der auf den Suchindex (FTS5) beschränkt ist; die Nachrichtentabellen sind nicht beschädigt. Nachrichten werden bis zur Reparatur möglicherweise nicht gespeichert: Führen Sie `icebath {profile_arg}doctor --fix` aus und starten Sie dann das Gateway neu. Verwenden Sie keine Wiederherstellungstools und stellen Sie kein Backup wieder her, sofern `icebath {profile_arg}doctor` keinen Schaden bestätigt."
     db_then_restart: "{action} Danach `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ Sitzungsdatenbank nicht verfügbar — Nachrichten werden möglicherweise nicht gespeichert und /resume bleibt leer. Ursache: {cause}. {action}"
+    db_unavailable: "⚠️ Sitzungsdatenbank nicht verfügbar — neue Nachrichten werden zurückgehalten und beantwortet, sobald sie wieder funktioniert. Ursache: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ Cron-Speicher {store} ist seit {since} nicht beschreibbar ({error}). Geplante Jobs werden übersprungen, bis er wieder Schreibzugriffe annimmt. Lösung: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "Sonstiges / Antwort eingeben"
       header: "Frage"
       question: "❓ {question}"
+      submit_button: "Senden"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ Warte darauf, dass {user} eine Antwort eingibt…"
+      pick_one: "Wähle mindestens eine Option und drücke dann Senden."
+    approval:
+
+      resolved_once: "✅ Einmal erlaubt von {user}"
+      resolved_session: "✅ Für diese Sitzung erlaubt von {user}"
+      resolved_always: "✅ Immer erlaubt von {user}"
+      resolved_deny: "❌ Abgelehnt von {user}"
+    confirm:
+
+      default_title: "Bestätigen"
+      approve_once: "Einmal genehmigen"
+      always_approve: "Immer genehmigen"
+      cancel: "Abbrechen"
+      decided_once: "✅ Einmal genehmigt von {user}"
+      decided_always: "🔒 Immer genehmigt von {user}"
+      decided_cancel: "❌ Abgebrochen von {user}"
     typing:
 
       thinking: "Icebath denkt nach…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "Aktuelle Sitzung verzweigen (neuer Thread auf Discord/Telegram/Slack/Matrix; --here bleibt hier)"
+    core_description: "Aktuelle Sitzung verzweigen (--here bleibt hier)"
   worktree:
 
     description: "Isolierte Git-Worktrees anzeigen, auflisten, erstellen oder bereinigen"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "Plattform '{platform}' ist im Gateway nicht konfiguriert/aktiviert."
       no_home_channel: "Kein Heimkanal für {platform} konfiguriert."
       set_home_hint: "Legen Sie zuerst mit /sethome im Ziel-Chat einen fest."
+      enable_platform_hint: "Richte sie mit icebath gateway setup ein und starte das Gateway dann mit icebath gateway restart neu."
       session_row_failed: "Sitzungseintrag in state.db konnte nicht sichergestellt werden: {error}"
       picked_up: "Gateway hat sie übernommen; Übertragung läuft..."
       complete: "↻ Übergabe abgeschlossen. Die Sitzung ist jetzt auf {platform} aktiv."

@@ -159,7 +159,7 @@ var (
 
 // Running Bot Screen line of the environment block, empty without a readable running screen or a bot desktop
 func botScreenHint(env *tools.Env) string {
-	if botScreenPublishedEnvFn == nil {
+	if botScreenPublishedEnvFn == nil || botScreenLeaseHolderFn == nil {
 		return ""
 	}
 	published, err := botScreenPublishedEnvFn(env)

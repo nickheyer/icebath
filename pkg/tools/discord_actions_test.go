@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -127,5 +129,21 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	discordResetCapabilityCache()
 	if caps := discordDetectCapabilities(env, "bot-d", false); caps.GetOr("detected", nil) != true || caps.GetOr("has_members_intent", nil) != false {
 		t.Fatalf("first blocking caps %v", caps)
+	}
+}
+
+func TestFeishuToolsNeedThePlatformCredentials(t *testing.T) {
+	for _, k := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"} {
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	if feishuToolsReady(httpxProviderEnv(t, "", nil)) {
+		t.Fatal("feishu tools ready without app credentials")
+	}
+	if feishuToolsReady(httpxProviderEnv(t, "FEISHU_APP_ID=cli_a\n", nil)) {
+		t.Fatal("feishu tools ready with the app id alone")
+	}
+	if !feishuToolsReady(httpxProviderEnv(t, "FEISHU_APP_ID=cli_a\nFEISHU_APP_SECRET=s\n", nil)) {
+		t.Fatal("feishu tools not ready with both app credentials")
 	}
 }

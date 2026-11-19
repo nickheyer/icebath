@@ -221,16 +221,8 @@ func spoolSortKey(payload *pyjson.Object) (float64, float64) {
 
 // Whether the database refused the row values themselves so no retry can write it
 func IsRowRejection(err error) bool {
-	var pyErr *PyError
-	if errors.As(err, &pyErr) {
-		switch pyErr.Kind {
-		case "TypeError", "ValueError", "AttributeError", "OverflowError":
-			return true
-		}
-		return false
-	}
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "binding parameter") || strings.HasPrefix(text, "sql: converting argument")
+	var unbindable *state.SQLiteError
+	return errors.As(err, &unbindable) && unbindable.UnbindableValue
 }
 
 // Deletes a replayed spool file, remembering it for this process when the delete fails
@@ -479,8 +471,27 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 	if !hasTS {
 		ts = int64(math.Floor(shutdownFlushNow()))
 	}
+	if kept, err := admissionKept(ctx, target, payload); err != nil || kept {
+		return kept, err
+	}
 	_, err = target.AppendMessage(ctx, sessionID, map[string]any{"role": "user", "content": text, "timestamp": ts}, state.AppendGuards{})
 	return err == nil, err
+}
+
+// Whether the store already holds the admission a store outage copy names, so replaying it would show the message twice
+func admissionKept(ctx context.Context, target TranscriptAppender, payload *pyjson.Object) (bool, error) {
+	admissionID, ok := payload.Get("admission_id")
+	if !ok || !pyTruthy(admissionID) {
+		return false, nil
+	}
+	lookup, ok := target.(interface {
+		GetSessionAdmission(ctx context.Context, admissionID string) (*pyjson.Object, error)
+	})
+	if !ok {
+		return false, &PyError{Kind: "AttributeError", Msg: "session store has no attribute 'get_session_admission'"}
+	}
+	row, err := lookup.GetSessionAdmission(ctx, pyStrOf(admissionID))
+	return row != nil, err
 }
 
 // Not after bound a payload ts gives the resolver, the int error for a value the resolver cannot bound by

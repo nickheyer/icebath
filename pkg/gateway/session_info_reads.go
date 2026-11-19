@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/linktier"
 )
 
 // Line builders of the classic CLI a local session's owner reads run, assigned in cmd/icebath/wiring.go
@@ -73,6 +75,9 @@ func cronRead(tokens []string) string {
 // Cron command run by the owner in its profile, the store written here and never by a client
 func runCron(ctx context.Context, a *SessionAuthority, arg string) (map[string]any, error) {
 	return ownerLines(ctx, a, func(ctx context.Context) ([]string, error) {
+		if SessionReadLines.Cron == nil {
+			return []string{linktier.Missing("/cron", linktier.Extras)}, nil
+		}
 		return SessionReadLines.Cron(ctx, a.ProfileID, arg)
 	})
 }

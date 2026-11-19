@@ -70,7 +70,7 @@ func jsToFixed(x float64, digits int) string {
 		return "NaN"
 	}
 	if math.IsInf(x, 0) || math.Abs(x) >= 1e21 {
-		return jsString(x)
+		return strconv.FormatFloat(x, 'g', -1, 64)
 	}
 	exact := new(big.Float).SetPrec(2048).SetFloat64(math.Abs(x))
 	scale := new(big.Float).SetPrec(2048).SetFloat64(math.Pow(10, float64(digits)))
@@ -351,26 +351,52 @@ func tookSuffix(duration *float64) string {
 	return " (" + jsToFixed(*duration, 1) + "s)"
 }
 
-func resultMark(failed bool) string {
-	if failed {
+// Outcome of a finished call as the gateway judged it, refused when the tool declined it before running
+type toolVerdict struct {
+	Failed  bool
+	Refused bool
+	Reason  string
+}
+
+// Verdict a tool.complete event or a stored tool row carries
+func verdictOf(isError, refused *bool, reason *string) toolVerdict {
+	return toolVerdict{Failed: val(isError) || val(refused), Refused: val(refused), Reason: strings.TrimFunc(val(reason), isJSSpace)}
+}
+
+// Mark closing a trail row, a check, a cross for a failure and a barred circle for a refusal
+func resultMark(v toolVerdict) string {
+	switch {
+	case v.Refused:
+		return "⊘"
+	case v.Failed:
 		return "✗"
 	}
 	return "✓"
 }
 
-// Finished trail row of an already phrased call
-func toolTrailLine(call string, failed bool, note string, duration *float64) string {
-	detail := compactPreview(note, 72)
+// Words of a failed or refused row, the reason the gateway gave
+func verdictNote(v toolVerdict) string {
+	if v.Refused {
+		return tr("tool.refused", v.Reason)
+	}
+	return v.Reason
+}
+
+// Finished trail row of an already phrased call, a failed or refused one with its reason on the lines below
+func toolTrailLine(call string, v toolVerdict, note string, duration *float64) string {
 	line := call + tookSuffix(duration)
-	if detail != "" {
+	if v.Failed && v.Reason != "" {
+		return line + " " + resultMark(v) + "\n" + verdictNote(v)
+	}
+	if detail := compactPreview(note, 72); detail != "" {
 		line += " :: " + detail
 	}
-	return line + " " + resultMark(failed)
+	return line + " " + resultMark(v)
 }
 
 // Finished trail row of a named call with its context
-func buildToolTrailLine(name, context string, failed bool, note string, duration *float64) string {
-	return toolTrailLine(formatToolCall(name, context), failed, note, duration)
+func buildToolTrailLine(name, context string, v toolVerdict, note string, duration *float64) string {
+	return toolTrailLine(formatToolCall(name, context), v, note, duration)
 }
 
 // Labeled block of a verbose row, capped to a small persisted preview
@@ -383,10 +409,13 @@ func verboseToolBlock(label, text string) string {
 }
 
 // Finished trail row with the Args and Result blocks of an already phrased call
-func verboseToolTrailLine(call string, failed bool, duration *float64, argsText, resultText string) string {
+func verboseToolTrailLine(call string, v toolVerdict, duration *float64, argsText, resultText string) string {
 	resultLabel := tr("libText.text.resultLabel")
-	if failed {
+	if v.Failed {
 		resultLabel = tr("libText.text.errorLabel")
+	}
+	if v.Refused && v.Reason != "" {
+		resultText = verdictNote(v)
 	}
 	var blocks []string
 	for _, block := range []string{verboseToolBlock(tr("libText.text.argsLabel"), argsText), verboseToolBlock(resultLabel, resultText)} {
@@ -398,7 +427,7 @@ func verboseToolTrailLine(call string, failed bool, duration *float64, argsText,
 	if detail := strings.Join(blocks, "\n"); detail != "" {
 		line += " :: " + detail
 	}
-	return line + " " + resultMark(failed)
+	return line + " " + resultMark(v)
 }
 
 // Whether a trail line is a passing status that a real row replaces
@@ -408,7 +437,7 @@ func isTransientTrailLine(line string) bool {
 
 // Whether a trail entry belongs to the tool group of the label
 func sameToolTrailGroup(label, entry string) bool {
-	return entry == label+" ✓" || entry == label+" ✗" || strings.HasPrefix(entry, label+"(") ||
+	return entry == label+" ✓" || entry == label+" ✗" || entry == label+" ⊘" || strings.HasPrefix(entry, label+"(") ||
 		strings.HasPrefix(entry, label+" ::") || strings.HasPrefix(entry, label+":")
 }
 

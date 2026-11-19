@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -258,55 +256,6 @@ func TestSessionsFloorCoalescesBurstButKeepsTrailingEdge(t *testing.T) {
 		t.Fatalf("events = %v", got)
 	}
 	watchPass(13)
-	if !events.has("sessions.changed") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestPetSigStaysOffWithoutARenderablePet(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchPass(0)
-	watchWriteFile(t, filepath.Join(h, "config.yaml"), "display:\n  pet:\n    enabled: true\n    slug: boba\n")
-	watchPass(10)
-	if got := events.named("pet.changed"); len(got) != 0 {
-		t.Fatalf("pet events = %v", got)
-	}
-}
-
-func TestRenderablePetBroadcastsMetaPayload(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchWriteFile(t, filepath.Join(h, "config.yaml"), "display:\n  pet:\n    enabled: true\n    slug: boba\n")
-	watchPass(0)
-	sheet := filepath.Join(h, "sheet.png")
-	watchWriteFile(t, sheet, "png")
-	prev := petActiveSelection
-	petActiveSelection = func(context.Context) (bool, *pet.InstalledPet, float64, error) {
-		return true, &pet.InstalledPet{Slug: "boba", DisplayName: "Boba", Spritesheet: sheet}, 0.33, nil
-	}
-	t.Cleanup(func() { petActiveSelection = prev })
-	watchPass(10)
-	got := events.named("pet.changed")
-	if len(got) == 0 {
-		t.Fatalf("events = %v", events.all())
-	}
-	payload := got[0].payload
-	if payload["enabled"] != true || payload["slug"] != "boba" || payload["spritesheetRevision"] == "" {
-		t.Fatalf("payload = %v", payload)
-	}
-}
-
-func TestBrokenProbeNeverKillsThePass(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	watchPass(0)
-	prev := slices.Clone(changeWatches)
-	for i := range changeWatches {
-		if changeWatches[i].event == "pet.changed" {
-			changeWatches[i] = changeWatch{"pet.changed", 2.0, func(context.Context) any { panic(errors.New("boom")) }, emptyChangePayload}
-		}
-	}
-	t.Cleanup(func() { changeWatches = prev })
-	writeSessionChange(t, filepath.Join(h, "state.db"), "created")
-	watchPass(10)
 	if !events.has("sessions.changed") {
 		t.Fatalf("events = %v", events.all())
 	}

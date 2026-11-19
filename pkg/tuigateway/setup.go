@@ -64,7 +64,9 @@ type SetupFlowStepResult struct {
 
 type SetupHostedFlow string
 
-func (SetupHostedFlow) Values() []string { return []string{"model", "gateway", "import", "quick", "blank"} }
+func (SetupHostedFlow) Values() []string {
+	return []string{"model", "gateway", "import", "quick", "blank"}
+}
 
 type SetupHostedStartParams struct {
 	Flow  SetupHostedFlow `json:"flow"`
@@ -161,6 +163,9 @@ type SetupTerminalBackend struct {
 	DisplayName string `json:"display_name"`
 	Description string `json:"description"`
 }
+
+// Built in terminal backends the running build links, local included, the terminal.builtin_backends value
+type SetupLinkedBackends []string
 
 // Container runtime found on the gateway host, the terminal.docker value
 type SetupDockerRuntime struct {

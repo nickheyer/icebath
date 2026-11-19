@@ -161,7 +161,6 @@ gateway:
     not_enough: "對話內容不足，無法壓縮（至少需要 4 則訊息）。"
     no_provider: "未設定提供方 — 無法壓縮。"
     nothing_to_do: "目前沒有可壓縮的內容（對話記錄仍全部為受保護的上下文）。"
-    aggressive_unsupported: "不支援 --aggressive；請使用 '/compress here [N]' 只保留最近的對話，或使用 /undo 刪除回合。"
     focus_line: "聚焦：\"{topic}\""
     summary_failed: "⚠️ 摘要產生失敗（{error}）。{count} 則歷史訊息已被移除並以佔位符取代；先前的上下文已無法復原。建議檢查 auxiliary.compression 模型設定。"
     aborted: "⚠️ 壓縮已中止 ({error})。未刪除任何訊息 — 對話保持不變。執行 /compress 重試，執行 /reset 開始新工作階段，或檢查你的 auxiliary.compression 模型設定。"
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ AI 模型服務持續失敗。請使用 /retry 重試，或使用 /model 切換模型。詳細資訊請見閘道日誌（`icebath logs`）。"
     session_storage_unavailable_disk: "⚠️ 工作階段儲存空間暫時無法使用，為保護你的對話歷史，這一輪已停止。請檢查可用硬碟空間，然後重新傳送訊息。"
     session_storage_unavailable: "⚠️ 工作階段儲存空間暫時無法使用，為保護你的對話歷史，這一輪已停止。你的訊息應已儲存 — 請稍後再傳送一次。"
+    session_storage_held: "⚠️ 工作階段儲存目前無法使用（{cause}），因此您的訊息已暫緩處理。訊息已保留，儲存恢復運作後會在此回覆；無需重新傳送。"
     generic_failed: "⚠️ 發生錯誤，我無法完成這則回覆。請使用 /retry 重試，或使用 /new 開始新的對話。技術細節請見閘道日誌（`icebath logs`）。"
     interrupted_before_start: "⚠️ 你的訊息在開始處理前就被中斷（可能是因為剛才的 /stop）。請重新傳送。"
     processing_incomplete: "處理未完成"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ 偵測到工作階段資料庫損毀。訊息可能無法保存。復原選項：\n1. 執行 `icebath {profile_arg}doctor --fix`\n2. 停止閘道，然後以下列指令復原：\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   （若回報可復原）icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — 復原前會先為受損檔案建立快照；切勿對線上的 state.db 執行 `sqlite3 ... \".recover\"`，有漏洞的 sqlite3 CLI 可能使其進一步損毀\n3. 從 {backups_dir}/ 中的備份還原\n執行 `icebath {profile_arg}doctor` 可取得去識別化的診斷資訊。"
     db_fts_corrupt: "⚠️ 工作階段資料庫回報的損毀錯誤僅限於搜尋索引（FTS5）；訊息資料表並未受損。修復前訊息可能無法保存：請執行 `icebath {profile_arg}doctor --fix`，然後重新啟動閘道。除非 `icebath {profile_arg}doctor` 確認有損毀，否則請勿執行復原工具或還原備份。"
     db_then_restart: "{action} 然後執行 `icebath {profile_arg}gateway restart`。"
-    db_unavailable: "⚠️ 工作階段資料庫無法使用 — 訊息可能不會被儲存，且 /resume 將是空的。原因：{cause}。{action}"
+    db_unavailable: "⚠️ 工作階段資料庫無法使用 — 新訊息會暫緩處理，待其恢復運作後再回覆。原因：{cause}。{action}"
   cron_store:
 
     unwritable: "⚠️ Cron 儲存區 {store} 自 {since} 起無法寫入（{error}）。在恢復可寫入之前，排程工作將被略過。修復方式：{fix}。"
@@ -1557,6 +1557,25 @@ platform:
       other_button: "其他／輸入答案"
       header: "問題"
       question: "❓ {question}"
+      submit_button: "傳送"
+      resolved: "✅ {user}：{choice}"
+      awaiting: "✏️ 正在等待 {user} 輸入回答…"
+      pick_one: "請至少選擇一個選項，然後按傳送。"
+    approval:
+
+      resolved_once: "✅ {user} 允許一次"
+      resolved_session: "✅ {user} 在本工作階段中允許"
+      resolved_always: "✅ {user} 一律允許"
+      resolved_deny: "❌ {user} 已拒絕"
+    confirm:
+
+      default_title: "確認"
+      approve_once: "核准一次"
+      always_approve: "一律核准"
+      cancel: "取消"
+      decided_once: "✅ {user} 已核准一次"
+      decided_always: "🔒 {user} 已一律核准"
+      decided_cancel: "❌ {user} 已取消"
     typing:
 
       thinking: "Icebath 正在思考…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "分支目前工作階段（在 Discord/Telegram/Slack/Matrix 開新討論串；--here 留在原處）"
+    core_description: "分支目前工作階段（--here 留在原處）"
   worktree:
 
     description: "顯示、列出、建立或清理隔離的 git 工作樹"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "平台「{platform}」尚未在閘道中設定或啟用。"
       no_home_channel: "{platform} 尚未設定主頻道。"
       set_home_hint: "請先在目的地聊天中用 /sethome 設定一個。"
+      enable_platform_hint: "請用 icebath gateway setup 設定，然後用 icebath gateway restart 重新啟動閘道。"
       session_row_failed: "無法在 state.db 中確保工作階段資料列：{error}"
       picked_up: "閘道已接手；正在轉移…"
       complete: "↻ 交接完成。此工作階段現已在 {platform} 上啟用。"

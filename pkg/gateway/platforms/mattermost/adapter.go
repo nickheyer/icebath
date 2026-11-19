@@ -323,6 +323,25 @@ func (a *MattermostAdapter) apiPost(ctx context.Context, path string, payload *p
 	return a.api(ctx, "POST", path, payload)
 }
 
+// Adds an emoji reaction to a post under the bot user
+func (a *MattermostAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	name, ok := gateway.ReactionShortcode(emoji)
+	if !ok {
+		return fmt.Errorf("%s has no Mattermost emoji name, pass a name such as thumbsup", emoji)
+	}
+	reply, err := a.apiPost(ctx, "reactions", pyjson.ObjectOf("user_id", pyrepr.Str(a.botUserID), "post_id", messageID, "emoji_name", name))
+	if err != nil {
+		return err
+	}
+	if empty, isMap := reply.(map[string]any); isMap && len(empty) == 0 {
+		a.mu.Lock()
+		status, detail := a.lastPostStatus, a.lastPostError
+		a.mu.Unlock()
+		return fmt.Errorf("Mattermost refused the reaction (status %v): %s", status, detail)
+	}
+	return nil
+}
+
 // Whether the last failed POST clearly names an invalid or missing thread root
 func (a *MattermostAdapter) lastPostFailureIsBrokenThreadRoot() bool {
 	a.mu.Lock()

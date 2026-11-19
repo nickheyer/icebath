@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -155,6 +156,15 @@ func pyReprValue(v any) string {
 
 // Python exception class and message a numeric conversion raises
 type pyConvError struct{ Class, Msg string }
+
+// Binding refused because the session already belongs to another Telegram topic, a ValueError to class readers
+type TopicAlreadyLinkedError struct{}
+
+func (*TopicAlreadyLinkedError) Error() string {
+	return "session is already linked to another Telegram topic"
+}
+
+func (*TopicAlreadyLinkedError) PyTypeName() string { return "ValueError" }
 
 func (e *pyConvError) Error() string { return e.Msg }
 
@@ -324,7 +334,7 @@ func pyParseFloat(s string) (float64, bool) {
 		text += "e" + expSign + digits
 	}
 	f, err := strconv.ParseFloat(text, 64)
-	if err != nil && !strings.Contains(err.Error(), "value out of range") {
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return 0, false
 	}
 	return f, true

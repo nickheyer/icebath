@@ -161,7 +161,6 @@ gateway:
     not_enough: "Não há conversa suficiente para comprimir (são necessárias pelo menos 4 mensagens)."
     no_provider: "Nenhum fornecedor configurado — não é possível comprimir."
     nothing_to_do: "Ainda não há nada para comprimir (a transcrição continua a ser todo o contexto protegido)."
-    aggressive_unsupported: "--aggressive não é suportado; usa '/compress here [N]' para manter apenas as trocas recentes, ou /undo para remover turnos."
     focus_line: "Foco: \"{topic}\""
     summary_failed: "⚠️ Falha ao gerar o resumo ({error}). {count} mensagem(ns) histórica(s) foram removidas e substituídas por um marcador; o contexto anterior já não pode ser recuperado. Considera verificar a configuração do modelo auxiliary.compression."
     aborted: "⚠️ Compressão abortada ({error}). Nenhuma mensagem foi removida — a conversa está inalterada. Executa /compress para tentar de novo, /reset para uma sessão nova, ou verifica a configuração do modelo auxiliary.compression."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ O serviço do modelo de IA continuou falhando. Use /retry para tentar novamente ou /model para trocar de modelo. Os detalhes estão no log do gateway (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ O armazenamento de sessões ficou temporariamente indisponível, então este turno foi interrompido para proteger o histórico da conversa. Verifique o espaço em disco disponível e envie sua mensagem novamente."
     session_storage_unavailable: "⚠️ O armazenamento de sessões ficou temporariamente indisponível, então este turno foi interrompido para proteger o histórico da conversa. Sua mensagem já deve estar salva — envie-a novamente em instantes."
+    session_storage_held: "⚠️ O armazenamento de sessões está indisponível agora ({cause}), por isso a sua mensagem está em espera. Ela fica guardada e será respondida aqui assim que o armazenamento voltar a funcionar; não é preciso enviá-la novamente."
     generic_failed: "⚠️ Algo deu errado e não consegui concluir esta resposta. Use /retry para tentar novamente ou /new para iniciar uma nova conversa. Os detalhes técnicos estão no log do gateway (`icebath logs`)."
     interrupted_before_start: "⚠️ Sua mensagem foi interrompida antes de o processamento começar (provavelmente por um /stop recente). Envie-a novamente."
     processing_incomplete: "processamento incompleto"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ Corrupção detectada no banco de dados de sessões. As mensagens podem não ser persistidas. Opções de recuperação:\n1. Execute `icebath {profile_arg}doctor --fix`\n2. Pare o gateway e depois recupere com:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (se indicar que é recuperável) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — a recuperação cria um instantâneo do arquivo danificado primeiro; NÃO execute `sqlite3 ... \".recover\"` no state.db em uso, um CLI sqlite3 vulnerável pode corrompê-lo ainda mais\n3. Restaure a partir de um backup em {backups_dir}/\nExecute `icebath {profile_arg}doctor` para diagnósticos sanitizados."
     db_fts_corrupt: "⚠️ O banco de dados de sessões relatou um erro de corrupção restrito ao índice de busca (FTS5); as tabelas de mensagens não estão danificadas. As mensagens podem não ser persistidas até o reparo: execute `icebath {profile_arg}doctor --fix` e depois reinicie o gateway. Não execute ferramentas de recuperação nem restaure um backup a menos que `icebath {profile_arg}doctor` confirme o dano."
     db_then_restart: "{action} Em seguida, `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ Banco de dados de sessões indisponível — as mensagens podem não ser salvas e /resume ficará vazio. Causa: {cause}. {action}"
+    db_unavailable: "⚠️ Banco de dados de sessões indisponível — as novas mensagens ficam em espera e serão respondidas assim que ele voltar a funcionar. Causa: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ O armazenamento do cron {store} não aceita gravação ({error}) desde {since}. Os trabalhos agendados estão sendo ignorados até que volte a aceitar gravações. Correção: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "Outra / digitar resposta"
       header: "Pergunta"
       question: "❓ {question}"
+      submit_button: "Enviar"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ Aguardando {user} digitar uma resposta…"
+      pick_one: "Escolha pelo menos uma opção e toque em Enviar."
+    approval:
+
+      resolved_once: "✅ Permitido uma vez por {user}"
+      resolved_session: "✅ Permitido nesta sessão por {user}"
+      resolved_always: "✅ Sempre permitido por {user}"
+      resolved_deny: "❌ Negado por {user}"
+    confirm:
+
+      default_title: "Confirmar"
+      approve_once: "Aprovar uma vez"
+      always_approve: "Sempre aprovar"
+      cancel: "Cancelar"
+      decided_once: "✅ Aprovado uma vez por {user}"
+      decided_always: "🔒 Sempre aprovado por {user}"
+      decided_cancel: "❌ Cancelado por {user}"
     typing:
 
       thinking: "Icebath está pensando…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "Ramificar a sessão atual (novo tópico no Discord/Telegram/Slack/Matrix; --here permanece aqui)"
+    core_description: "Ramificar a sessão atual (--here permanece aqui)"
   worktree:
 
     description: "Mostrar, listar, criar ou limpar worktrees git isolados"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "A plataforma '{platform}' não está configurada/ativada no gateway."
       no_home_channel: "Nenhum canal inicial configurado para {platform}."
       set_home_hint: "Defina um primeiro com /sethome no chat de destino."
+      enable_platform_hint: "Configure-a com icebath gateway setup e depois reinicie o gateway com icebath gateway restart."
       session_row_failed: "Não foi possível garantir a linha da sessão no state.db: {error}"
       picked_up: "O gateway assumiu; transferindo..."
       complete: "↻ Transferência concluída. A sessão agora está ativa em {platform}."

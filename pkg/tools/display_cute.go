@@ -908,3 +908,11 @@ func GetToolRowParts(ctx context.Context, env *Env, toolName string, args map[st
 	}
 	return []ToolRowPart{{Emoji: row.Emoji, Verb: row.Verb, Detail: row.Detail, Failure: callFailure}}
 }
+
+// Value at a key, the default when the key is absent
+func getOr(m map[string]any, key string, def any) any {
+	if v, ok := m[key]; ok {
+		return v
+	}
+	return def
+}

@@ -102,6 +102,10 @@ func (c *PendingControls) register(ctx context.Context, sessionID, route string,
 		prompt.Set("edit", pyjson.Clone(edit))
 		prompt.Set("choices", []any{"once", "deny"})
 	}
+	if link, ok := data["open_url"].(string); ok && link != "" {
+		prompt.Set("open_url", link)
+		prompt.Set("choices", []any{"once", "deny"})
+	}
 	if timeoutS != nil {
 		prompt.Set("timeout_s", wholeSeconds(*timeoutS))
 	}

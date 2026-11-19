@@ -683,38 +683,101 @@ func (r *GatewayRunner) sendHomeChannelStartupNotifications(ctx context.Context,
 	return delivered
 }
 
-// Broadcasts a state.db failure warning to every launch profile home channel unless the store recovered
-func (r *GatewayRunner) sendSessionDBWarningNotifications(ctx context.Context) {
-	if r.sessionDBInitError == nil || *r.sessionDBInitError == "" {
+// Causes that end one session's write while the store itself keeps working, never a store outage
+var sessionScopedStorageCauses = map[string]bool{"session_row_missing": true}
+
+// Outage causes the live handle writes through again once cleared, so the warning asks for no restart
+var liveRecoverableStorageCauses = map[string]bool{"locked": true, "disk": true}
+
+// Records a store outage met while running, logging it and warning the home channels once until a probe write lands
+func (r *GatewayRunner) noteSessionStoreOutage(ctx context.Context, failure state.StorageFailure, detail string) {
+	if selfClearingStorageCauses[failure.Cause] || sessionScopedStorageCauses[failure.Cause] {
 		return
 	}
-	failure := *r.sessionDBInitError
-	if r.sessionDBHandleCache != nil {
-		_, _ = r.openSessionDBForActiveScope(ctx, false)
-		if r.sessionDBInitError == nil || *r.sessionDBInitError == "" {
-			pkgLog().Info("state.db recovered before the home-channel warning went out; not broadcasting")
-			return
-		}
-		failure = *r.sessionDBInitError
+	r.sessionStoreOutageMu.Lock()
+	first := r.sessionStoreOutage == nil
+	if first {
+		r.sessionStoreOutage = &storeOutage{failure: failure, detail: detail}
 	}
-	cause := state.ClassifyPersistenceError(failure)
+	r.sessionStoreOutageMu.Unlock()
+	if !first {
+		return
+	}
+	pkgLog().Error(fmt.Sprintf("Session storage %s stopped working while the gateway runs: %s (%s). %s Turns are refused until it "+
+		"works again; transcript rows the gateway accepted wait in the pending_messages spool and are written once it does.",
+		state.ResolveDefaultDBPath(ctx), failure.Gloss, detail, failure.Action))
+	settled := context.WithoutCancel(ctx)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				pkgLog().Debug(fmt.Sprintf("state.db warning broadcast failed: %v", rec))
+			}
+		}()
+		r.sendSessionDBWarningNotifications(settled, failure, detail)
+	}()
+}
+
+// Whether the store takes writes, a noted outage cleared once a probe write lands so the next one warns again
+func (r *GatewayRunner) probeSessionStoreOutage(ctx context.Context) bool {
+	r.sessionStoreOutageMu.Lock()
+	noted := r.sessionStoreOutage != nil
+	r.sessionStoreOutageMu.Unlock()
+	if !noted {
+		return true
+	}
+	db := r.SessionDB(ctx)
+	if db == nil {
+		return false
+	}
+	if err := db.SetMeta(ctx, "gateway_store_probe", fmt.Sprintf("%d", time.Now().Unix())); err != nil {
+		pkgLog().Debug(fmt.Sprintf("Session storage probe write failed: %v", err))
+		return false
+	}
+	r.sessionStoreOutageMu.Lock()
+	r.sessionStoreOutage = nil
+	r.sessionStoreOutageMu.Unlock()
+	pkgLog().Info(fmt.Sprintf("Session storage %s takes writes again", state.ResolveDefaultDBPath(ctx)))
+	return true
+}
+
+// Writes held transcript rows once the store takes them and clears a noted outage, until the runner stops
+func (r *GatewayRunner) heldTranscriptWatcher(ctx context.Context, interval float64) error {
+	for r.running.Load() {
+		if err := interruptibleSleep(ctx, r, max(1, int(interval))); err != nil {
+			return err
+		}
+		if r.sessionStore == nil {
+			continue
+		}
+		written, waiting := r.sessionStore.ReplayHeldTranscripts(ctx)
+		if written > 0 {
+			pkgLog().Info(fmt.Sprintf("Wrote %d held transcript row(s) into the session store; %d session(s) still waiting", written, waiting))
+		}
+		if waiting == 0 && r.probeSessionStoreOutage(ctx) {
+			r.replayStoreHeldEvents(ctx)
+		}
+	}
+	return nil
+}
+
+// Warns every launch profile home channel that the session store stopped working while the gateway runs
+func (r *GatewayRunner) sendSessionDBWarningNotifications(ctx context.Context, described state.StorageFailure, detail string) {
 	profileArg := home.ProfileCLISelector(home.Dir(ctx))
 	var message string
-	switch cause {
+	switch described.Cause {
 	case "corrupt":
 		message = i18n.T(ctx, "gateway.startup.db_corrupt", "", map[string]any{"profile_arg": profileArg,
 			"db_path": state.ResolveDefaultDBPath(ctx), "backups_dir": filepath.Join(home.Root(), "backups")})
 	case "fts_index":
 		message = i18n.T(ctx, "gateway.startup.db_fts_corrupt", "", map[string]any{"profile_arg": profileArg})
 	default:
-		described := state.DescribeStorageFailure(ctx, failure)
 		action := described.Action
-		if !selfClearingStorageCauses[described.Cause] {
+		if !selfClearingStorageCauses[described.Cause] && !liveRecoverableStorageCauses[described.Cause] {
 			action = i18n.T(ctx, "gateway.startup.db_then_restart", "", map[string]any{"action": action, "profile_arg": profileArg})
 		}
 		message = i18n.T(ctx, "gateway.startup.db_unavailable", "", map[string]any{"cause": described.Gloss, "action": action})
 	}
-	pkgLog().Warn(fmt.Sprintf("Broadcasting state.db failure warning to home channels: %s", failure))
+	pkgLog().Warn(fmt.Sprintf("Broadcasting state.db failure warning to home channels: %s", detail))
 	for _, t := range r.homeChannelTransports(ctx) {
 		target := t
 		_, err := config.PresentNotification(ctx, func(ctx context.Context) error {

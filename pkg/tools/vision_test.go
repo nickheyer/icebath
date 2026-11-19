@@ -853,14 +853,9 @@ func TestVisionRequirements(t *testing.T) {
 		t.Fatal("no aux and no native route")
 	}
 	env.Aux = &fakeVisionAux{}
-	func() {
-		defer func() {
-			if rec := recover(); rec == nil || !strings.Contains(fmt.Sprint(rec), "AuxTaskResolver") {
-				t.Fatalf("an unprobeable aux client must not read as available: %v", rec)
-			}
-		}()
-		checkVideoRequirements(env)
-	}()
+	if checkVideoRequirements(env) {
+		t.Fatal("an unprobeable aux client must not read as available")
+	}
 	r := &resolvingAux{resolves: map[string]bool{"auto": true}}
 	env.Aux = r
 	if !checkVideoRequirements(env) || strings.Join(r.asked, ",") != "vision|,vision|auto" {
@@ -876,12 +871,9 @@ func TestVisionRequirements(t *testing.T) {
 		t.Fatal("native route keeps vision_analyze available")
 	}
 	r.err = errors.New("named custom provider lookup failed")
-	defer func() {
-		if rec := recover(); rec == nil || !strings.Contains(fmt.Sprint(rec), "lookup failed") {
-			t.Fatalf("resolver crash swallowed: %v", rec)
-		}
-	}()
-	checkVideoRequirements(env)
+	if checkVideoRequirements(env) {
+		t.Fatal("a failing vision probe must not read as available")
+	}
 }
 
 func TestVisionCPUBurstCap(t *testing.T) {

@@ -178,22 +178,17 @@ func workdirRowModelConfig(ctx context.Context, session *tuihost.Session) (strin
 	return rowModel, tools.WithSessionYolo(modelConfig, strOr(session.Get("session_key")))
 }
 
-// Persists the session row on first real activity, false only when the store failed to open
-func ensureSessionDBRow(ctx context.Context, session *tuihost.Session) bool {
+// Persists the session row on first real activity, the open failure of its store returned
+func ensureSessionDBRow(ctx context.Context, session *tuihost.Session) error {
 	key := strOr(session.Get("session_key"))
 	if key == "" {
-		return true
+		return nil
 	}
 	profileHome := strOr(session.Get("profile_home"))
-	db, failed, release := workdirOwnerDB(ctx, session, "failed to open profile db for session row")
+	db, release, err := workdirOwnerDB(ctx, session)
 	defer release()
-	if failed {
-		return false
-	}
-	if db == nil {
-		dbMu.Lock()
-		defer dbMu.Unlock()
-		return dbError == ""
+	if err != nil {
+		return err
 	}
 	rowModel, modelConfig := workdirRowModelConfig(ctx, session)
 	func() {
@@ -234,7 +229,7 @@ func ensureSessionDBRow(ctx context.Context, session *tuihost.Session) bool {
 		}
 		scheduleRowGitMeta(ctx, session, key, db)
 	}()
-	return true
+	return nil
 }
 
 // Git enriches a lazily created row once per live session when its row lacks branch or repo root

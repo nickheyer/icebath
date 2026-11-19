@@ -475,7 +475,11 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 	sessionsLock.Unlock()
 	db := o.sessionDB
 	if db == nil {
-		db = getDB(ctx)
+		launch, err := getDB(ctx)
+		if err != nil {
+			return nil, err
+		}
+		db = launch
 	}
 	reasoning := o.reasoningConfigOverride
 	if !o.reasoningOverrideSet {

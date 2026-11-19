@@ -66,7 +66,7 @@ func validateSummaryUserProvenance(summary string, hasUserTurn bool) error {
 	}
 	attributed, _ := userAskedAttributionRE.MatchString(summary)
 	if snapshot != noUserTaskSentinel || attributed {
-		return &summaryRuntimeError{"Context compression summary invented user attribution for a session with no user-authored turns"}
+		return &summaryRuntimeError{msg: "Context compression summary invented user attribution for a session with no user-authored turns"}
 	}
 	return nil
 }

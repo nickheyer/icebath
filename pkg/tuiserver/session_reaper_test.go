@@ -93,7 +93,7 @@ func reaperRow(t *testing.T, db *state.DB, sid string) map[string]any {
 // Sweep scope of the TestSweepOrphanedSessionRows cases over the given store
 func sweepScope(t *testing.T, db *state.DB, ttl float64, records map[string]*tuihost.Session) {
 	t.Helper()
-	swapVar(t, &reaperDB, func(context.Context) *state.DB { return db })
+	swapVar(t, &reaperDB, func(context.Context) (*state.DB, error) { return db, nil })
 	swapVar(t, &sessionTTLS, ttl)
 	swapSessions(t, records)
 }
@@ -252,7 +252,7 @@ func TestConfigFlagReadsSessionsStartupOrphanSweep(t *testing.T) {
 // Heartbeat scope of the TestBackendHeartbeatRefresher cases over the given store
 func heartbeatScope(t *testing.T, db *state.DB) {
 	t.Helper()
-	swapVar(t, &reaperDB, func(context.Context) *state.DB { return db })
+	swapVar(t, &reaperDB, func(context.Context) (*state.DB, error) { return db, nil })
 	swapVar(t, &heartbeatRefreshS, 0)
 	swapVar(t, &heartbeatRefresherStarted, false)
 	swapVar(t, &backendIDForThisProcess, func(context.Context) string { return "test-backend-A" })

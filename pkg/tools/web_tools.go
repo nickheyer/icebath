@@ -858,7 +858,7 @@ var errPluginDiscoveryUnwired = errors.New("plugin discovery is not installed")
 func ensureWebPluginsLoaded(ctx context.Context, env *Env) {
 	err := errPluginDiscoveryUnwired
 	if EnsurePluginsDiscovered != nil {
-		err = EnsurePluginsDiscovered(visionCtx(ctx, env))
+		err = EnsurePluginsDiscovered(envHomeCtx(ctx, env))
 	}
 	if err != nil {
 		envLog(env).Warn("Web plugin discovery failed (non-fatal): " + err.Error())

@@ -128,7 +128,11 @@ func BundledPlugin(key string) (Plugin, bool) { return bundledPlugin(key) }
 
 // Profile-local plugin install metadata keyed by plugin directory name
 func readInstallMetadata(h string) (map[string]any, error) {
-	path := filepath.Join(home.PluginsDir(h), ".install-metadata.json")
+	return readInstallMetadataFile(filepath.Join(home.PluginsDir(h), ".install-metadata.json"))
+}
+
+// Install metadata records of one metadata file, empty when the file is absent
+func readInstallMetadataFile(path string) (map[string]any, error) {
 	if _, err := os.Stat(path); err != nil {
 		return map[string]any{}, nil
 	}

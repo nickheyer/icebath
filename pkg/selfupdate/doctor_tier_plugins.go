@@ -12,11 +12,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/media"
 )
 
-// Binds the doctor rows of Discord voice, FFmpeg, sherpa-onnx, Matrix E2EE and the WhatsApp session, and the local speech probes
+// Binds the doctor rows of Discord voice, FFmpeg, Matrix E2EE and the WhatsApp session, and the local speech probes
 func init() {
 	setDoctorPackageProbe("Opus (Discord voice playback)", func(context.Context) bool { return discord.LoadOpusLibrary() == nil })
 	setDoctorPackageProbe("FFmpeg (audio conversion)", func(context.Context) bool { return media.FindFFmpegBinary() != "" })
-	setDoctorPackageProbe("sherpa-onnx (wake word)", func(context.Context) bool { return media.SherpaOnnxAvailable() })
 	doctorMatrixE2EE = func() (bool, string) { return matrix.E2EEBuiltIn, matrix.E2EEBuildCommand }
 	doctorWhatsAppSession = whatsAppSessionOfGatewayConfig
 	doctorLiveSpeech = func(e *doctorLiveEnv) {

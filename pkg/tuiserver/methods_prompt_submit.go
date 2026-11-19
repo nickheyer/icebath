@@ -182,10 +182,8 @@ func persistSessionRowForSubmit(ctx context.Context, rid any, session *tuihost.S
 	var errResp map[string]any
 	persisted := false
 	failure := catchPanic(func() {
-		if !ensureSessionDBRow(ctx, session) {
-			dbMu.Lock()
-			cause := dbError
-			dbMu.Unlock()
+		if err := ensureSessionDBRow(ctx, session); err != nil {
+			cause := storeCause(err)
 			storage := state.DescribeStorageFailure(ctx, cause)
 			errResp = rpcErr(rid, 5072, fmt.Sprintf("Session storage is unavailable, so this message was not saved. Cause: %s. "+
 				"%s Then send your message again.", storage.Gloss, storage.Action), storageErrorData(storage, cause))

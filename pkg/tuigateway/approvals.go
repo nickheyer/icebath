@@ -17,6 +17,7 @@ type ApprovalRequestParams struct {
 	SmartDenied      *bool            `json:"smart_denied,omitzero"`
 	ToolName         *string          `json:"tool_name,omitzero"`
 	GatewaySessionID *string          `json:"gateway_session_id,omitzero"`
+	OpenURL          *string          `json:"open_url,omitzero"`
 	Extra            map[string]any   `json:"-" wire:"extra"`
 }
 

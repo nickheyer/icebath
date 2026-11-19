@@ -275,4 +275,3 @@ func TestEmptyModelNeverFuzzyMatchesEndpointCatalog(t *testing.T) {
 		t.Fatalf("single model endpoints resolve with an empty name, got %d %v", got, ok)
 	}
 }
-

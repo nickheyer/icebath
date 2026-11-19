@@ -39,7 +39,7 @@ func TestTUII18nCatalog(t *testing.T) {
 				t.Fatalf("%s is a leaf and a namespace", keys[i-1])
 			}
 		}
-		if len(keys) != 1263 {
+		if len(keys) != 1284 {
 			t.Fatalf("%d keys", len(keys))
 		}
 	})
@@ -89,7 +89,7 @@ func TestTUII18nRuntime(t *testing.T) {
 
 func TestTUII18nLoader(t *testing.T) {
 	t.Run("normalizes display.language like the backend", func(t *testing.T) {
-		if normalizeLanguageID(" PT_BR ") != "pt-br" || normalizeLanguageID("") != "en" || normalizeLanguageID(nil) != "en" {
+		if normalizeLanguageID(" PT_BR ") != "pt-br" || normalizeLanguageID("") != "en" {
 			t.Fatal("normalize")
 		}
 	})

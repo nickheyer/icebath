@@ -37,7 +37,7 @@ func installFakeAgent(t *testing.T, f func(ctx context.Context, o AgentOptions) 
 func TestNewCronAgentWithoutFactoryFailsLikeTheRunAgentImport(t *testing.T) {
 	installFakeAgent(t, nil)
 	_, err := newCronAgent(context.Background(), AgentOptions{})
-	if err == nil || err.Error() != "the cron agent factory is not linked into this build" || cronExceptionName(err) != "ModuleNotFoundError" {
+	if err == nil || err.Error() != "the cron agent factory is unset, pkg/agent binds it at init in every build that links cron" || cronExceptionName(err) != "RuntimeError" {
 		t.Fatalf("err = %v (%s)", err, cronExceptionName(err))
 	}
 }
@@ -50,12 +50,12 @@ func TestNewCronAgentNamesEachMissingAgentModule(t *testing.T) {
 	agentHooks.hardInterrupt = nil
 	agentHooks.Unlock()
 	t.Cleanup(func() { SetRequestHardInterrupt(interrupt); SetMaxIterationHandoffCheck(maxIteration) })
-	if _, err := newCronAgent(context.Background(), AgentOptions{}); err == nil || err.Error() != "the cron hard interrupt hook is not linked into this build" {
+	if _, err := newCronAgent(context.Background(), AgentOptions{}); err == nil || err.Error() != "the cron hard interrupt hook is unset, pkg/agent binds it at init in every build that links cron" {
 		t.Fatalf("interrupt err = %v", err)
 	}
 	SetRequestHardInterrupt(interrupt)
 	SetMaxIterationHandoffCheck(nil)
-	if _, err := newCronAgent(context.Background(), AgentOptions{}); err == nil || err.Error() != "the cron turn failure explanation hook is not linked into this build" {
+	if _, err := newCronAgent(context.Background(), AgentOptions{}); err == nil || err.Error() != "the cron turn failure explanation hook is unset, pkg/agent binds it at init in every build that links cron" {
 		t.Fatalf("handoff err = %v", err)
 	}
 	SetMaxIterationHandoffCheck(maxIteration)
@@ -70,7 +70,7 @@ func TestCleanupStaleAsyncClientsReportsTheMissingAuxiliaryModule(t *testing.T) 
 	agentHooks.cleanup = nil
 	agentHooks.Unlock()
 	t.Cleanup(func() { SetCleanupStaleAsyncClients(prev) })
-	if err := cleanupStaleAsyncClients(); err == nil || err.Error() != "the cron auxiliary client cleanup hook is not linked into this build" {
+	if err := cleanupStaleAsyncClients(); err == nil || err.Error() != "the cron auxiliary client cleanup hook is unset, pkg/agent binds it at init in every build that links cron" {
 		t.Fatalf("err = %v", err)
 	}
 	calls := 0

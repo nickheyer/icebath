@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -8,28 +10,11 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// Open Platform request the feishu doc and drive tools send, the lark SDK client of the feishu adapter in production
-type FeishuAPI interface {
-	Do(ctx context.Context, req *larkcore.ApiReq) (*larkcore.ApiResp, error)
-}
-
-type feishuClientKey struct{}
-
-// Context carrying the lark client the feishu doc and drive tools use for the comment agent turn
-func WithFeishuClient(ctx context.Context, client FeishuAPI) context.Context {
-	return context.WithValue(ctx, feishuClientKey{}, client)
-}
-
-// Lark client of the comment agent turn, nil outside one
-func FeishuClient(ctx context.Context) FeishuAPI {
-	client, _ := ctx.Value(feishuClientKey{}).(FeishuAPI)
-	return client
-}
 
 // One query pair of a lark request, the value sent the way requests encodes params
 type larkQuery struct {
@@ -149,7 +134,7 @@ func larkResponseOf(raw *larkcore.ApiResp) larkResponse {
 }
 
 // Sends a request through the lark client, a transport failure raised to the dispatcher
-func larkRequest(ctx context.Context, client FeishuAPI, req *larkcore.ApiReq) larkResponse {
+func larkRequest(ctx context.Context, client feishuclient.API, req *larkcore.ApiReq) larkResponse {
 	raw, err := client.Do(ctx, req)
 	if err != nil {
 		panic(err)
@@ -158,7 +143,7 @@ func larkRequest(ctx context.Context, client FeishuAPI, req *larkcore.ApiReq) la
 }
 
 // Builds and sends a request returning its code, msg and data
-func larkCall(ctx context.Context, client FeishuAPI, method, uri string, paths map[string]string, queries []larkQuery, body any) (any, any, any) {
+func larkCall(ctx context.Context, client feishuclient.API, method, uri string, paths map[string]string, queries []larkQuery, body any) (any, any, any) {
 	resp := larkRequest(ctx, client, buildLarkRequest(method, uri, paths, queries, body))
 	return resp.code, resp.msg, larkResponseData(resp)
 }

@@ -57,16 +57,20 @@ func toolLifecyclePayload(callID, toolName, args any) *pyjson.Object {
 	return payload
 }
 
-// Tool complete event as every viewer reads it, the start contract plus the verdict, result and verbose text
+// Tool complete event as every viewer reads it, the start contract plus the verdict and its reason, result and verbose text
 func toolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool, verbose bool) *pyjson.Object {
-	failed := false
-	if isError == nil {
-		failed, _ = tools.DetectToolFailure(ctx, pyrepr.Str(toolName), result)
-	} else {
-		failed = *isError
+	failed, refused, reason := tools.ToolOutcome(ctx, pyrepr.Str(toolName), result)
+	if isError != nil {
+		failed = *isError || refused
 	}
 	payload := toolLifecyclePayload(callID, toolName, args)
 	payload.Set("is_error", failed)
+	if refused {
+		payload.Set("refused", true)
+	}
+	if failed && reason != "" {
+		payload.Set("error", reason)
+	}
 	payload.Set("result", boundedResult(result, failed))
 	if verbose {
 		payload.Set("result_text", tuihost.ToolResultText(result))

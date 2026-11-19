@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -54,9 +55,14 @@ func textParam(params map[string]any, key string) string {
 	return text
 }
 
+// Directive answer of command.dispatch
+func directive(rid any, d tuigateway.CommandDispatchResult) map[string]any {
+	return ok(rid, tuigateway.Plain(d))
+}
+
 // Display only command.dispatch result
 func execOut(rid any, output string) map[string]any {
-	return ok(rid, map[string]any{"type": "exec", "output": output})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "exec", Output: output})
 }
 
 // Stdout and stderr of a captured run, the non empty parts newline joined and stripped
@@ -70,8 +76,8 @@ func joinedOutput(stdout, stderr string) string {
 	return pystr.Strip(strings.Join(parts, "\n"))
 }
 
-// Captured text run of a shell command line, UTF-8 decoded with replacement and no console window
-func captureShellRun(ctx context.Context, command string, env map[string]string, timeout int) (*pysubprocess.Completed, string, string, error) {
+// Captured text run of a shell command line in dir, the process cwd when empty, UTF-8 decoded with replacement and no console window
+func captureShellRun(ctx context.Context, command string, env map[string]string, dir string, timeout int) (*pysubprocess.Completed, string, string, error) {
 	cmd, err := pysubprocess.ShellCommand(command)
 	if err != nil {
 		return nil, "", "", err
@@ -81,7 +87,7 @@ func captureShellRun(ctx context.Context, command string, env map[string]string,
 		childEnv = append(childEnv, k+"="+v)
 	}
 	argv := append([]string{cmd.Path}, cmd.Args[1:]...)
-	res, err := pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Env: childEnv, Timeout: time.Duration(timeout) * time.Second,
+	res, err := pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Dir: dir, Env: childEnv, Timeout: time.Duration(timeout) * time.Second,
 		Attr: tools.WindowsHideAttr()})
 	if err != nil {
 		return res, "", "", err
@@ -159,7 +165,7 @@ func dispatchQuick(ctx context.Context, rid any, params map[string]any, session 
 		if raw, has := entry["command"]; has {
 			command = pyrepr.Str(raw)
 		}
-		res, stdout, stderr, err := captureShellRun(ctx, command, env, 30)
+		res, stdout, stderr, err := captureShellRun(ctx, command, env, "", 30)
 		panicIf(err)
 		output := pystr.Slice(joinedOutput(stdout, stderr), 0, 4000)
 		if output != "" {
@@ -174,11 +180,11 @@ func dispatchQuick(ctx context.Context, rid any, params map[string]any, session 
 		return execOut(rid, output)
 	}
 	if entry["type"] == "alias" {
-		target, has := entry["target"]
-		if !has {
-			target = ""
+		target := ""
+		if raw, has := entry["target"]; has && raw != nil {
+			target = pyrepr.Str(raw)
 		}
-		return ok(rid, map[string]any{"type": "alias", "target": target})
+		return directive(rid, tuigateway.CommandDispatchResult{Type: "alias", Target: target})
 	}
 	return nil
 }
@@ -250,7 +256,7 @@ func dispatchPlugin(ctx context.Context, rid any, params map[string]any, session
 	if catchPanic(func() {
 		output, err := runPluginCommand(ctx, handler, arg, session, strOr(params["session_id"]))
 		panicIf(err)
-		res = ok(rid, map[string]any{"type": "plugin", "output": output})
+		res = directive(rid, tuigateway.CommandDispatchResult{Type: "plugin", Output: output})
 	}) != nil {
 		return nil
 	}
@@ -267,7 +273,7 @@ func dispatchBound(ctx context.Context, rid any, params map[string]any, session 
 	if err != nil {
 		return rpcErr(rid, 4018, "bound command failed: "+errorMessage(err), nil)
 	}
-	return ok(rid, map[string]any{"type": "skill", "message": message, "name": bound.Name, "display": tuihost.SkillScaffoldProjection(message)})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "skill", Message: message, Name: bound.Name, Display: tuihost.SkillScaffoldProjection(message)})
 }
 
 // Skill bundle key of a name that is not a registry command, false otherwise or on failure
@@ -313,7 +319,7 @@ func dispatchBundle(ctx context.Context, rid any, params map[string]any, session
 	if len(missing) > 0 {
 		notice += "\nSkipped missing skills: " + strings.Join(missing, ", ")
 	}
-	return ok(rid, map[string]any{"type": "send", "message": msg, "notice": notice, "display": tuihost.SkillScaffoldProjection(msg)})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: msg, Notice: notice, Display: tuihost.SkillScaffoldProjection(msg)})
 }
 
 // Skill command stage, stacked leading skill tokens loaded together over the remaining instruction
@@ -329,9 +335,9 @@ func dispatchSkill(ctx context.Context, rid any, params map[string]any, session 
 		if !has {
 			return
 		}
-		skillName := any(name)
-		if named, hasName := entry["name"]; hasName {
-			skillName = named
+		skillName := name
+		if named, hasName := entry["name"]; hasName && named != nil {
+			skillName = pyrepr.Str(named)
 		}
 		extraKeys, userInstruction, err := scope.SplitStackedSkillCommands(ctx, arg, true)
 		panicIf(err)
@@ -343,15 +349,15 @@ func dispatchSkill(ctx context.Context, rid any, params map[string]any, session 
 				if len(missing) > 0 {
 					notice += "\nSkipped missing skills: " + strings.Join(missing, ", ")
 				}
-				res = ok(rid, map[string]any{"type": "skill", "message": msg, "name": skillName, "notice": notice,
-					"display": tuihost.SkillScaffoldProjection(msg)})
+				res = directive(rid, tuigateway.CommandDispatchResult{Type: "skill", Message: msg, Name: skillName, Notice: notice,
+					Display: tuihost.SkillScaffoldProjection(msg)})
 				return
 			}
 		}
 		msg, _, err := scope.BuildSkillInvocationMessage(ctx, key, userInstruction, sessionTaskID(session), "")
 		panicIf(err)
 		if msg != "" {
-			res = ok(rid, map[string]any{"type": "skill", "message": msg, "name": skillName, "display": tuihost.SkillScaffoldProjection(msg)})
+			res = directive(rid, tuigateway.CommandDispatchResult{Type: "skill", Message: msg, Name: skillName, Display: tuihost.SkillScaffoldProjection(msg)})
 		}
 	})
 	return res

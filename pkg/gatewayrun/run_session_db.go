@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -52,26 +53,22 @@ func (r *GatewayRunner) openSessionDBForActiveScope(ctx context.Context, raiseOn
 			if err != nil {
 				return nil, err
 			}
-			if borrowed != nil {
-				db, ok := borrowed.(*state.SessionDB)
-				if !ok {
-					return nil, &pyRuntimeError{msg: fmt.Sprintf("SessionStore SQLite handle %T is not a SessionDB", borrowed)}
-				}
-				if db != nil {
-					return state.NewBorrowedAsyncSessionDB(db), nil
-				}
+			if borrowed == nil {
+				return nil, storeOpenCause(store, path)
 			}
-			return nil, &pyRuntimeError{msg: "SessionStore SQLite handle unavailable"}
+			db, ok := borrowed.(*state.SessionDB)
+			if !ok || db == nil {
+				return nil, &pyRuntimeError{msg: fmt.Sprintf("SessionStore SQLite handle %T is not a SessionDB", borrowed)}
+			}
+			return state.NewBorrowedAsyncSessionDB(db), nil
 		}
 		db, err := state.Acquire(ctx, "")
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("SQLite session store not available: %s", pyrepr.ExceptionMessage(err)))
 			return nil, err
 		}
 		return state.NewAsyncSessionDB(db), nil
 	}
 	recovered := func() {
-		r.sessionDBInitError = nil
 		pkgLog().Info("SQLite session store recovered")
 	}
 	handle, err := cache.GetWith(ctx, path, open, gateway.HandleCacheGetOptions{RaiseOnError: raiseOnError, OnRecovered: recovered})
@@ -130,17 +127,27 @@ func (r *GatewayRunner) closeAllSessionDBHandles() {
 	r.sessionDBHandleCache.CloseAll(closeHandle)
 }
 
-// Session database handles and the startup state db maintenance of every served profile
-func (r *GatewayRunner) initSessionDB(ctx context.Context) {
+// Open failure the session store recorded for path, the open another caller has in flight when none is recorded
+func storeOpenCause(store *gateway.SessionStore, path string) error {
+	if cause := store.DBHandleCache().LastFailure(path); cause != nil {
+		return cause
+	}
+	return &pyRuntimeError{msg: fmt.Sprintf("another caller is still opening %s", path)}
+}
+
+// Session database handles and the startup state db maintenance, a launch store that will not open stopping the start
+func (r *GatewayRunner) initSessionDB(ctx context.Context) error {
 	r.sessionDBPinned = sessionDBPin{}
 	r.sessionDBHandles = map[string]any{}
 	r.sessionDBHandlesLock = new(sync.Mutex)
 	r.sessionDBHandleCache = gateway.NewRecoverableHandleCacheWith(gateway.RecoverableHandleCacheOptions{
 		Handles: r.sessionDBHandles, Lock: r.sessionDBHandlesLock})
 	if _, err := r.openSessionDBForActiveScope(ctx, true); err != nil {
-		pkgLog().Warn(fmt.Sprintf("SQLite session store not available: %s", pyrepr.ExceptionMessage(err)), "error", err)
-		msg := pyrepr.ExceptionMessage(err)
-		r.sessionDBInitError = &msg
+		var described *state.StoreUnavailableError
+		if errors.As(err, &described) {
+			return err
+		}
+		return state.NewStoreUnavailableError(ctx, state.ResolveDefaultDBPath(ctx), err)
 	}
 	launch := launchSessionsDir(ctx, r.config)
 	housekeepingChore("state.db startup maintenance", func() error {
@@ -148,6 +155,7 @@ func (r *GatewayRunner) initSessionDB(ctx context.Context) {
 			return housekeepingStateDBMaintenance(ctx, launch)
 		})
 	})
+	return nil
 }
 
 // Launch home with its configured transcript dir, nil when the config carries none

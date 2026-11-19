@@ -27,7 +27,7 @@ func (b webBackendPlugin) Register(ctx *plugins.Context) error {
 var backends = []webBackendPlugin{
 	{"brave_free", "web-brave-free", "Brave Search (free tier) — web search via Brave's Data-for-Search API. Requires BRAVE_SEARCH_API_KEY (free signup at https://brave.com/search/api/, 2k queries/month).",
 		tools.NewBraveFreeWebProvider},
-	{"ddgs", "web-ddgs", "DuckDuckGo web search via the ddgs Python package — no API key required. Install with `pip install ddgs`.",
+	{"ddgs", "web-ddgs", "DuckDuckGo web search through the ddgs client built into icebath — no API key required.",
 		tools.NewDDGSWebProvider},
 	{"exa", "web-exa", "Exa web search and content extraction. Requires EXA_API_KEY — sign up at https://exa.ai.", tools.NewExaWebProvider},
 	{"firecrawl", "web-firecrawl", "Firecrawl web search + content extraction. Supports keyless cloud and the direct API.",

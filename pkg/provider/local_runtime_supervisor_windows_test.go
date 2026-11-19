@@ -16,9 +16,7 @@ func lr6Job(t *testing.T) *WindowsJob {
 }
 
 func lr6JobOpen(job *WindowsJob) bool {
-	job.mu.Lock()
-	defer job.mu.Unlock()
-	return job.open
+	return job.Open()
 }
 
 func TestLocalRuntimeSupervisorReapsOwnedJobEvenAfterRouterExit(t *testing.T) {

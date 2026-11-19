@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -35,7 +36,7 @@ var (
 	spawnFilterOrder = []string{"all", "running", "failed", "leaf"}
 	spawnSortKeys    = map[string]string{"depthFirst": "hubs.agents.sort.depthFirst", "toolsDesc": "hubs.agents.sort.toolsDesc", "durationDesc": "hubs.agents.sort.durationDesc", "status": "hubs.agents.sort.status"}
 	spawnFilterKeys  = map[string]string{"all": "hubs.agents.filter.all", "running": "hubs.agents.filter.running", "failed": "hubs.agents.filter.failed", "leaf": "hubs.agents.filter.leaf"}
-	spawnStatusKeys  = map[string]string{"completed": "hubs.agents.status.completed", "error": "hubs.agents.status.error", "failed": "hubs.agents.status.failed", "interrupted": "hubs.agents.status.interrupted", "queued": "hubs.agents.status.queued", "running": "hubs.agents.status.running", "timeout": "hubs.agents.status.timeout"}
+	spawnStatusKeys  = map[string]string{"completed": "hubs.agents.status.completed", "error": "hubs.agents.status.error", "failed": "hubs.agents.status.failed", "interrupted": "hubs.agents.status.interrupted", "queued": "hubs.agents.status.queued", "running": "hubs.agents.status.running", "stalled": "hubs.agents.status.stalled", "timeout": "hubs.agents.status.timeout", "unknown": "hubs.agents.status.unknown"}
 	spawnStatusRank  = map[string]int{"error": 0, "failed": 0, "interrupted": 1, "timeout": 1, "running": 2, "queued": 3, "completed": 4}
 )
 
@@ -57,6 +58,7 @@ func registerSpawnTreeKeys(km *keys.Map) {
 	km.Register(keys.Action{ID: "tui.agents.dock", Context: tuiContext, Label: "agents dock", Doc: "fold or unfold the dock of working agents and background processes", Default: []string{"f7", "ctrl+r"}})
 	km.Register(keys.Action{ID: "tui.spawntree.back", Context: spawnTreeContext, Label: "back", Doc: "step back from a node to the tree, or close the spawn tree", Default: []string{"esc"}})
 	km.Register(keys.Action{ID: "tui.spawntrees.load", Context: spawnTreesContext, Label: "load", Doc: "replay the saved spawn tree", Default: []string{"enter"}})
+	registerProcessKeys(km)
 }
 
 // Counts rolled up over the subtree of a node
@@ -258,24 +260,27 @@ func fmtSpawnTokens(n float64) string {
 	case math.IsNaN(n) || math.IsInf(n, 0) || n <= 0:
 		return "0"
 	case n < 1000:
-		return jsString(jsRound(n))
+		return spawnNumber(jsRound(n))
 	case n < 10_000:
 		return jsToFixed(n/1000, 1) + "k"
 	}
-	return jsString(jsRound(n/1000)) + "k"
+	return spawnNumber(jsRound(n/1000)) + "k"
 }
+
+// Text of a number without a needless fraction
+func spawnNumber(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
 
 // Seconds as 42s, 3m or 3m 5s
 func fmtSpawnDuration(seconds float64) string {
 	if seconds < 60 {
-		return jsString(math.Max(0, jsRound(seconds))) + "s"
+		return spawnNumber(math.Max(0, jsRound(seconds))) + "s"
 	}
 	m := math.Floor(seconds / 60)
 	s := jsRound(seconds - m*60)
 	if s == 0 {
-		return jsString(m) + "m"
+		return spawnNumber(m) + "m"
 	}
-	return jsString(m) + "m " + jsString(s) + "s"
+	return spawnNumber(m) + "m " + spawnNumber(s) + "s"
 }
 
 // Elapsed label of a span, empty for a negative one
@@ -360,7 +365,7 @@ func agentStatusGlyph(status string, t theme) (string, string) {
 		return "⊘", t.Color.Warn
 	case "failed":
 		return "✗", t.Color.Error
-	case "timeout":
+	case "timeout", "stalled":
 		return "⌛", t.Color.Warn
 	case "error":
 		return "⚠", t.Color.Error
@@ -487,12 +492,12 @@ func (a *app) openSpawnTree(historyIndex int, diff *spawnDiffPair) tea.Cmd {
 // Reads the delegation caps, an answer dropped when a pause or a newer read landed first
 func (c *spawnTreeCard) fetchDelegation() tea.Cmd {
 	before := c.a.store.delegation.UpdatedAt
-	return gatewayCall(c.a.gw, "delegation.status", map[string]any{}, func(v any, err error) tea.Cmd {
+	return call(c.a.gw, tuigateway.DelegationStatus, tuigateway.ProfileParams{}, func(r *tuigateway.DelegationStatusResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
 			c.flash = tr("hubs.list.errorLine", rpcErrorMessage(err))
 		case c.a.store.delegation.UpdatedAt == before:
-			c.a.store.applyDelegationStatus(asRPCResult(v))
+			c.a.store.applyDelegationStatus(*r)
 		}
 		return nil
 	})
@@ -587,8 +592,8 @@ func (c *spawnTreeCard) pollTail(gen int) tea.Cmd {
 		return asyncDoneMsg{run: func() tea.Cmd { return c.pollTail(gen) }}
 	})
 	v := c.view()
-	sid := c.a.store.ui.Sid
-	if v.selected == nil || sid == "" || v.replay() || c.tailPending {
+	sid := c.tailSession(v)
+	if v.selected == nil || sid == "" || c.tailPending {
 		return next
 	}
 	id := v.selected.item.ID
@@ -596,27 +601,34 @@ func (c *spawnTreeCard) pollTail(gen int) tea.Cmd {
 		c.tailID, c.tail = id, tr("hubs.agentControls.loadingTranscript")
 	}
 	c.tailPending = true
-	fetch := gatewayCall(c.a.gw, "subagent.tail", map[string]any{"session_id": sid, "subagent_id": id}, func(raw any, err error) tea.Cmd {
+	fetch := call(c.a.gw, tuigateway.SubagentTail, tuigateway.SubagentIDParams{SessionID: sid, SubagentID: id}, func(r *tuigateway.SubagentTailResult, err error) tea.Cmd {
 		c.tailPending = false
 		if gen != c.tailGen || id != c.tailID {
 			return nil
 		}
-		r := asRPCResult(raw)
 		switch {
 		case err != nil:
 			c.tail = tr("hubs.agentControls.transcriptRefreshFailed")
-		case truthyJS(r["available"]):
+		case r.Available:
 			prefix := ""
-			if truthyJS(r["truncated"]) {
+			if r.Truncated {
 				prefix = tr("hubs.agentControls.truncatedPrefix") + "\n"
 			}
-			c.tail = prefix + paramStr(r["text"])
+			c.tail = prefix + r.Text
 		default:
-			c.tail = tr("hubs.agentControls.transcriptUnavailable")
+			c.tail = tr("hubs.agentControls.transcriptNone")
 		}
 		return nil
 	})
 	return tea.Batch(fetch, next)
+}
+
+// Session whose agents the transcript is read from, a finished tree's own session or the one in view
+func (c *spawnTreeCard) tailSession(v spawnView) string {
+	if v.replay() && v.snapshot.SessionID != "" {
+		return v.snapshot.SessionID
+	}
+	return c.a.store.ui.Sid
 }
 
 func (c *spawnTreeCard) Title() string       { return tr("hubs.agents.title.spawnTree") }
@@ -824,20 +836,18 @@ func (c *spawnTreeCard) guardLive(v spawnView, action func() tea.Cmd) tea.Cmd {
 }
 
 // Interrupt request of one agent of the session
-func (c *spawnTreeCard) interrupt(id string, then func(r map[string]any, err error) tea.Cmd) tea.Cmd {
-	return gatewayCall(c.a.gw, "subagent.interrupt", map[string]any{"session_id": c.a.store.ui.Sid, "subagent_id": id}, func(v any, err error) tea.Cmd {
-		return then(asRPCResult(v), err)
-	})
+func (c *spawnTreeCard) interrupt(id string, then func(r *tuigateway.SubagentInterruptResult, err error) tea.Cmd) tea.Cmd {
+	return call(c.a.gw, tuigateway.SubagentInterrupt, tuigateway.SubagentIDParams{SessionID: c.a.store.ui.Sid, SubagentID: id}, then)
 }
 
 // Stops one agent and says whether it was still running
 func (c *spawnTreeCard) killOne(v spawnView, id string) tea.Cmd {
 	return c.guardLive(v, func() tea.Cmd {
-		return c.interrupt(id, func(r map[string]any, err error) tea.Cmd {
+		return c.interrupt(id, func(r *tuigateway.SubagentInterruptResult, err error) tea.Cmd {
 			switch {
 			case err != nil:
 				c.flash = tr("hubs.agents.flash.killFailed", id)
-			case truthyJS(r["found"]):
+			case r.Found:
 				c.flash = tr("hubs.agents.flash.killing", id)
 			default:
 				c.flash = tr("hubs.agents.flash.notFound", id)
@@ -853,7 +863,7 @@ func (c *spawnTreeCard) killSubtree(v spawnView, node *spawnNode) tea.Cmd {
 		ids := append([]string{node.item.ID}, spawnDescendantIDs(node)...)
 		cmds := make([]tea.Cmd, len(ids))
 		for i, id := range ids {
-			cmds[i] = c.interrupt(id, func(_ map[string]any, err error) tea.Cmd {
+			cmds[i] = c.interrupt(id, func(_ *tuigateway.SubagentInterruptResult, err error) tea.Cmd {
 				if err != nil {
 					c.flash = tr("hubs.agents.flash.killFailed", id)
 				}
@@ -872,14 +882,14 @@ func (c *spawnTreeCard) killSubtree(v spawnView, node *spawnNode) tea.Cmd {
 // Pauses or resumes the spawning of new agents
 func (c *spawnTreeCard) togglePause(v spawnView) tea.Cmd {
 	return c.guardLive(v, func() tea.Cmd {
-		return gatewayCall(c.a.gw, "delegation.pause", map[string]any{"paused": !c.a.store.delegation.Paused}, func(raw any, err error) tea.Cmd {
+		params := tuigateway.DelegationPauseParams{Paused: ptr(!c.a.store.delegation.Paused)}
+		return call(c.a.gw, tuigateway.DelegationPause, params, func(r *tuigateway.DelegationPauseResult, err error) tea.Cmd {
 			if err != nil {
 				c.flash = tr("hubs.agents.flash.pauseFailed")
 				return nil
 			}
-			r := asRPCResult(raw)
-			c.a.store.applyDelegationStatus(map[string]any{"paused": r["paused"]})
-			if truthyJS(r["paused"]) {
+			c.a.store.applyDelegationPause(r.Paused)
+			if r.Paused {
 				c.flash = tr("hubs.agents.flash.spawningPaused")
 			} else {
 				c.flash = tr("hubs.agents.flash.spawningResumed")
@@ -954,12 +964,13 @@ func (c *spawnTreeCard) sendSteer() tea.Cmd {
 		return nil
 	}
 	c.steerPending = true
-	return gatewayCall(c.a.gw, "subagent.steer", map[string]any{"session_id": c.a.store.ui.Sid, "subagent_id": sel.item.ID, "text": text}, func(raw any, err error) tea.Cmd {
+	params := tuigateway.SubagentSteerParams{SessionID: c.a.store.ui.Sid, SubagentID: sel.item.ID, Text: text}
+	return call(c.a.gw, tuigateway.SubagentSteer, params, func(r *tuigateway.SubagentSteerResult, err error) tea.Cmd {
 		c.steerPending = false
 		switch {
 		case err != nil:
 			c.steerNote = tr("hubs.agentControls.notQueuedError", rpcErrorMessage(err))
-		case asRPCResult(raw)["status"] == "queued":
+		case r.Status == "queued":
 			c.steerNote = tr("hubs.agentControls.queued")
 			c.steer, c.steerAt = nil, 0
 		default:
@@ -1011,7 +1022,7 @@ func (c *spawnTreeCard) View(w, h int) string {
 		for _, line := range strings.Split(ansi.Wrap(tr("hubs.agents.empty"), max(w, 8), ""), "\n") {
 			body = append(body, spawnInk(line, t.Color.Muted, false, ""))
 		}
-		body = append(body, c.processLines(w)...)
+		body = append(append(body, c.failedLines(w)...), c.processLines(w)...)
 	case c.mode == "list":
 		body = c.listLines(v, w, bodyH)
 	default:
@@ -1049,7 +1060,7 @@ func (c *spawnTreeCard) headerLine(v spawnView, w int) string {
 	if d.MaxSpawnDepth != nil && *d.MaxSpawnDepth != 0 {
 		children := "?"
 		if d.MaxConcurrentChildren != nil {
-			children = jsString(*d.MaxConcurrentChildren)
+			children = spawnNumber(*d.MaxConcurrentChildren)
 		}
 		meta = append(meta, tr("hubs.agents.caps", *d.MaxSpawnDepth, children))
 	}
@@ -1127,7 +1138,7 @@ func (c *spawnTreeCard) listLines(v spawnView, w, bodyH int) []string {
 	if termH >= 32 {
 		gantt = c.ganttLines(v.rows, w, min(4, len(v.rows)))
 	}
-	procs := c.processLines(w)
+	procs := append(c.failedLines(w), c.processLines(w)...)
 	rowsH := max(1, bodyH-len(gantt)-len(procs))
 	start := max(0, min(max(0, len(v.rows)-rowsH), c.cursor-rowsH/2))
 	peak := spawnPeakHotness(v.tree)
@@ -1215,7 +1226,7 @@ func (c *spawnTreeCard) ganttLines(flat []*spawnNode, cols, maxRows int) []strin
 		case pos == 0:
 			label = "0"
 		case secs >= 1:
-			label = jsString(jsRound(secs)) + "s"
+			label = spawnNumber(jsRound(secs)) + "s"
 		}
 		for j, r := range []rune(label) {
 			if pos+j < barW {
@@ -1305,6 +1316,37 @@ func (c *spawnTreeCard) rowLine(n *spawnNode, index int, active bool, peak float
 		line += ink(strings.Repeat(" ", max(0, w-ansi.StringWidth(left))), fg)
 	}
 	return line
+}
+
+// Failed delegations of the session under the tree, each with its status, finish time and reason
+func (c *spawnTreeCard) failedLines(w int) []string {
+	failed := c.a.store.failedDelegations()
+	if len(failed) == 0 {
+		return nil
+	}
+	t := c.a.store.ui.Theme
+	lines := []string{"", spawnInk(truncateEnd(tr("hubs.agents.failedDelegations", len(failed)), w), t.Color.Error, true, "")}
+	for _, d := range failed {
+		status := failedDelegationStatus(d)
+		glyph, tone := agentStatusGlyph(status, t)
+		goal := d.Goal
+		if goal == "" {
+			goal = tr("hubs.agents.subagentFallback")
+		}
+		meta := agentStatusLabel(status)
+		if d.CompletedAt != nil {
+			meta += " · " + time.UnixMilli(int64(*d.CompletedAt*1000)).In(clockLocation()).Format("15:04:05")
+		}
+		head := spawnInk(" "+glyph, tone, false, "") + spawnInk(" "+compactPreview(goal, max(8, w-ansi.StringWidth(meta)-8)), t.Color.Text, false, "") + spawnInk("  "+meta, t.Color.Muted, false, "")
+		lines = append(lines, ansi.Truncate(head, w, "…"))
+		if reason := strings.TrimSpace(val(d.Error)); reason != "" {
+			wrapped := strings.Split(ansi.Wrap(reason, max(8, w-4), ""), "\n")
+			for _, line := range wrapped[:min(3, len(wrapped))] {
+				lines = append(lines, spawnInk("   "+line, t.Color.Error, false, ""))
+			}
+		}
+	}
+	return lines
 }
 
 // Background processes of the session under the tree, running ones with their time
@@ -1531,7 +1573,7 @@ func (c *spawnTreeCard) paneLines(v spawnView, w, bodyH, top int) []string {
 	var lines []string
 	sections := map[int]string{}
 	switch {
-	case v.selected != nil && c.mode == "tail" && c.a.store.ui.Sid != "" && !v.replay():
+	case v.selected != nil && c.mode == "tail" && c.tailSession(v) != "":
 		text := c.tail
 		if c.tailID != v.selected.item.ID {
 			text = tr("hubs.agentControls.loadingTranscript")
@@ -1608,10 +1650,10 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 		field(tr("hubs.agents.detail.elapsed"), elapsed)
 	}
 	if it.Iteration != nil {
-		field(tr("hubs.agents.detail.iteration"), jsString(*it.Iteration))
+		field(tr("hubs.agents.detail.iteration"), spawnNumber(*it.Iteration))
 	}
 	if orZero(it.APICalls) != 0 {
-		field(tr("hubs.agents.detail.apiCalls"), jsString(*it.APICalls))
+		field(tr("hubs.agents.detail.apiCalls"), spawnNumber(*it.APICalls))
 	}
 	section := func(id, title string, count int, counted bool) bool {
 		open := c.sectionOpen(id)
@@ -1752,7 +1794,7 @@ func (c *spawnTreeCard) diffView(w, h int) string {
 		}
 		lines = append(lines, render.Fit(l, paneW, c.a.uiTheme())+"  "+r)
 	}
-	round := func(n float64) string { return jsString(jsRound(n)) }
+	round := func(n float64) string { return spawnNumber(jsRound(n)) }
 	tokens := func(x spawnAggregate) float64 { return x.inputTokens + x.outputTokens }
 	lines = append(lines, "", "", spawnInk(tr("hubs.agents.diff.delta"), t.Color.Accent, true, ""))
 	for _, metric := range []string{
@@ -1793,13 +1835,12 @@ func (c *spawnTreeCard) diffPane(label string, snap spawnSnapshot, totals spawnA
 }
 
 // Saved spawn trees of the session newest first, enter replaying the one under the cursor
-func (a *app) openSavedSpawnTrees(entries []any) tea.Cmd {
+func (a *app) openSavedSpawnTrees(entries []tuigateway.SpawnTreeEntry) tea.Cmd {
 	type savedTree struct{ when, count, label, path string }
 	rows := make([]savedTree, 0, len(entries))
-	for _, raw := range entries {
-		e, _ := raw.(map[string]any)
-		row := savedTree{when: "?", count: jsTemplate(e, "count"), label: paramStr(e["label"]), path: paramStr(e["path"])}
-		if finished, isNum := e["finished_at"].(float64); isNum && finished != 0 {
+	for _, e := range entries {
+		row := savedTree{when: "?", count: strconv.FormatInt(e.Count, 10), label: e.Label, path: e.Path}
+		if finished := val(e.FinishedAt); finished != 0 {
 			row.when = time.UnixMilli(int64(finished * 1000)).In(clockLocation()).Format("2006-01-02 15:04:05")
 		}
 		if row.label == "" {
@@ -1821,7 +1862,7 @@ func (a *app) openSavedSpawnTrees(entries []any) tea.Cmd {
 		Empty: func() string { return tr("slashCmd.ops.replay.noneOnDisk") },
 		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 			"tui.spawntrees.load": func(l *cards.List, i int) tea.Cmd {
-				return tea.Batch(wm.RequestDismissOf(l), a.loadSpawnTree(rows[i].path, a.events.rpc))
+				return tea.Batch(wm.RequestDismissOf(l), a.loadSpawnTree(rows[i].path, a.events.rpc, a.sys))
 			},
 		},
 	})
@@ -1829,16 +1870,16 @@ func (a *app) openSavedSpawnTrees(entries []any) tea.Cmd {
 }
 
 // Loads a saved spawn tree into the history and replays it, an empty snapshot refused
-func (a *app) loadSpawnTree(path string, call func(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd) tea.Cmd {
-	return call("spawn_tree.load", map[string]any{"path": path}, func(r map[string]any) tea.Cmd {
+func (a *app) loadSpawnTree(path string, via rpcVia, sys func(string)) tea.Cmd {
+	return ask(via, sys, tuigateway.SpawnTreeLoad, tuigateway.SpawnTreeLoadParams{Path: path}, func(r *tuigateway.SpawnTreeLoadResult) tea.Cmd {
 		if r == nil {
 			return nil
 		}
-		if subagents, _ := r["subagents"].([]any); len(subagents) == 0 {
+		if len(r.Subagents) == 0 {
 			a.sys(tr("slashCmd.ops.replay.snapshotEmpty"))
 			return nil
 		}
-		a.store.pushDiskSnapshot(r, path)
+		a.store.pushDiskSnapshot(*r, path)
 		return a.openSpawnTree(1, nil)
 	})
 }

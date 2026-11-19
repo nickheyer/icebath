@@ -539,7 +539,7 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 			return &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: " + strings.Join(missing, ", ")}
 		}
 		if !unbounded && len(args) > max {
-			return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(args[max:], " ")}
+			return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + strings.Join(args[max:], " ")}
 		}
 		return positionalValueError(cmd, specs, args)
 	}
@@ -613,11 +613,17 @@ func (c *CLI) unknownCommand(cmd *cobra.Command, value string) error {
 	if install == "" {
 		moved = provider.MovedCommandHint(ctx, prog, value, "")
 	}
+	owner := ""
+	if install == "" && moved == "" && prog == "icebath" {
+		owner = pluginCommandOwnerLine(value)
+	}
 	switch {
 	case install != "":
 		lines = append(lines, fmt.Sprintf("The '%s' memory plugin is not installed. Install it with: %s", value, install))
 	case moved != "":
 		lines = append(lines, moved)
+	case owner != "":
+		lines = append(lines, owner)
 	case len(close) > 0:
 		lines = append(lines, "Did you mean: "+strings.Join(close, ", ")+"?")
 	}
@@ -701,6 +707,9 @@ func (c *CLI) dispatch(path string, cmd *cobra.Command, args []string) error {
 	h, ok := c.handlers[path]
 	if !ok {
 		return &UnboundCLIError{Path: path}
+	}
+	if err := tierFlagRefusal(path, cmd); err != nil {
+		return err
 	}
 	return h(cmd, args)
 }

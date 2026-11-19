@@ -298,7 +298,7 @@ func (c *streamingCall) maybeDisableStreaming(err error) {
 	}
 	lower := strings.ToLower(err.Error())
 	unsupported := strings.Contains(lower, "stream") && strings.Contains(lower, "not supported")
-	if strings.Contains(lower, "unexpected event order") && !unsupported {
+	if IsStreamEventOrderError(err) && !unsupported {
 		if c.agent.APIMode() != string(ModeAnthropicMessages) || c.agent.Provider() == "bedrock" {
 			return
 		}

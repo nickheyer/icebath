@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Openrouter agent with status output suppressed and thirty iterations of budget
@@ -51,7 +53,7 @@ func TestInterpreterShutdownCopySubstitutesTheRealSessionId(t *testing.T) {
 	a := chatCopyAgent(t)
 	a.sessionID = "20260914_abc"
 	messages := []*state.Message{}
-	v, err := a.handleOuterLoopError(context.Background(), &summaryRuntimeError{msg: "cannot schedule new futures after interpreter shutdown"}, 0, 1, &messages, nil, "unknown", false, nil)
+	v, err := a.handleOuterLoopError(context.Background(), fmt.Errorf("submit: %w", tools.ErrPoolShutdown), 0, 1, &messages, nil, "unknown", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

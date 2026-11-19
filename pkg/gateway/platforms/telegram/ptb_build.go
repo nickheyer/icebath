@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -35,6 +36,21 @@ func fallbackIPsFromExtra(extra map[string]any) []string {
 	return ParseFallbackIPEnv(strings.Join(parts, ","))
 }
 
+// Hosts of a custom Bot API server named by base_url and base_file_url, none for the public Telegram API
+func customAPIHosts(extra map[string]any) []string {
+	var hosts []string
+	for _, key := range []string{"base_url", "base_file_url"} {
+		raw := pystr.Strip(pyrepr.Str(extra[key]))
+		if extra[key] == nil || raw == "" {
+			continue
+		}
+		if u, err := url.Parse(strings.ReplaceAll(raw, "{token}", "token")); err == nil && u.Hostname() != "" && !slices.Contains(hosts, u.Hostname()) {
+			hosts = append(hosts, u.Hostname())
+		}
+	}
+	return hosts
+}
+
 // Builds the general and getUpdates request pair over fallback IPs, an explicit proxy or direct DNS
 func buildPTBRequests(ctx context.Context, name string, extra map[string]any, lifecycle *pollingLifecycle) (*ptbRequest, *ptbRequest, error) {
 	poolSize := int(config.EnvInt("ICEBATH_TELEGRAM_HTTP_POOL_SIZE", 512))
@@ -55,7 +71,8 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	if !disableFallback {
 		fallbackIPs = fallbackIPsFromExtra(extra)
 	}
-	if len(fallbackIPs) == 0 && !disableFallback {
+	customHosts := customAPIHosts(extra)
+	if len(fallbackIPs) == 0 && !disableFallback && len(customHosts) == 0 {
 		zero := 0.0
 		discoveryTimeout := envFloatClamped("ICEBATH_TELEGRAM_FALLBACK_DISCOVERY_TIMEOUT", 5.0, &zero, nil)
 		pkgLog().Warn(fmt.Sprintf("[%s] Discovering Telegram API fallback IPs via DNS-over-HTTPS…", name))
@@ -74,7 +91,11 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	if raw := extra["proxy_url"]; raw != nil {
 		configured = pyrepr.Str(raw)
 	}
-	proxyURL, err := gateway.ResolveProxyURL(ctx, "TELEGRAM_PROXY", append([]string{"api.telegram.org"}, fallbackIPs...), configured)
+	targets := append([]string{"api.telegram.org"}, fallbackIPs...)
+	if len(customHosts) > 0 {
+		targets = customHosts
+	}
+	proxyURL, err := gateway.ResolveProxyURL(ctx, "TELEGRAM_PROXY", targets, configured)
 	if err != nil {
 		return nil, nil, err
 	}

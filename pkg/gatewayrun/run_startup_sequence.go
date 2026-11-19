@@ -278,6 +278,7 @@ func (r *GatewayRunner) startFinishWiring(ctx context.Context, connected int) er
 				logSuppressed(slog.LevelWarn, fmt.Errorf("%v", rec), "Pending-message recovery failed: %s")
 			}
 		}()
+		r.requeueStoreOutageMessages(ctx)
 		_, err := gateway.RecoverGatewayPending(ctx, r.sessionStore, r.config)
 		logSuppressed(slog.LevelWarn, err, "Pending-message recovery failed: %s")
 	}()
@@ -288,7 +289,6 @@ func (r *GatewayRunner) startFinishWiring(ctx context.Context, connected int) er
 	if _, err := recoverGatewayNativeSessions(ctx, r); err != nil {
 		return err
 	}
-	r.sendSessionDBWarningNotifications(ctx)
 	if cronStoreNotices != nil {
 		cronStoreNotices(ctx, r, r.gatewayLoop)
 	}
@@ -333,6 +333,7 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 		{"handoff_watcher", func(c context.Context) error { return r.handoffWatcher(c, 2.0, 30.0) }},
 		{"async_delegation_watcher", func(c context.Context) error { return r.asyncDelegationWatcher(c, 2.0) }},
 		{"loop_wakeup_watcher", func(c context.Context) error { return r.loopWakeupWatcher(c, 15.0) }},
+		{"held_transcript_watcher", func(c context.Context) error { return r.heldTranscriptWatcher(c, 10.0) }},
 		{"profile_reconcile_watcher", func(c context.Context) error { return r.profileReconcileWatcher(c, profileRescanIntervalSecs) }},
 	}
 	for _, w := range post {

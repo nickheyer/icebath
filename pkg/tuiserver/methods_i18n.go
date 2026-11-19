@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const i18nErr = 5400
@@ -61,9 +62,6 @@ func i18nCatalog(ctx context.Context, rid any, params map[string]any) (resp map[
 	if resolved == "" {
 		resolved = "en"
 	}
-	messages := map[string]any{}
-	for key, value := range i18n.SurfaceCatalog(ctx, resolved, surface) {
-		messages[key] = value
-	}
-	return ok(rid, map[string]any{"lang": resolved, "surface": surface, "messages": messages})
+	messages := i18n.SurfaceCatalog(ctx, resolved, surface)
+	return ok(rid, tuigateway.Plain(tuigateway.I18nCatalogResult{Lang: resolved, Surface: tuigateway.LocaleSurface(surface), Messages: messages}))
 }

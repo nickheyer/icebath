@@ -45,7 +45,7 @@ var (
 	homeImportOnce      sync.Once
 	dbMu                sync.Mutex
 	sharedDB            *state.DB
-	dbError             string
+	dbError             error
 	servedProfileMu     sync.Mutex
 	servedProfileHomes  = map[string]bool{}
 )
@@ -72,20 +72,34 @@ func launchHome() string {
 // state.db of the launch profile
 func launchStateDBPath() string { return filepath.Join(launchHome(), "state.db") }
 
-// Shared launch session store opened on first use, nil with the error recorded when it cannot open
-func getDB(ctx context.Context) *state.DB {
+// Shared launch session store opened on first use, else the open failure described for the user
+func getDB(ctx context.Context) (*state.DB, error) {
 	dbMu.Lock()
 	defer dbMu.Unlock()
 	if sharedDB == nil {
-		db, err := state.Acquire(ctx, launchStateDBPath())
+		path := launchStateDBPath()
+		db, err := state.Acquire(ctx, path)
 		if err != nil {
-			dbError = err.Error()
-			pkgLog().Warn(fmt.Sprintf("TUI session store unavailable — continuing without state.db features: %s", err))
-			return nil
+			dbError = err
+			return nil, storeUnavailable(ctx, path, err)
 		}
-		sharedDB, dbError = db, ""
+		sharedDB, dbError = db, nil
 	}
-	return sharedDB
+	return sharedDB, nil
+}
+
+// Session store that would not open, shared with the messaging gateway so both name the cause alike
+type StoreUnavailableError = state.StoreUnavailableError
+
+// Open failure of the store at path described with the storage failure gloss, details and remedy
+func storeUnavailable(ctx context.Context, path string, cause error) *StoreUnavailableError {
+	return state.NewStoreUnavailableError(ctx, path, cause)
+}
+
+// Opens the launch session store before a gateway serves, the described failure stopping the start
+func OpenLaunchStore(ctx context.Context) error {
+	_, err := getDB(ctx)
+	return err
 }
 
 // Effective user config of the active profile without the defaults merge
@@ -587,14 +601,43 @@ func resolveLax(p string) string {
 	return abs
 }
 
-// Session storage unavailable error with the user facing gloss, action and raw cause details
+// Session storage unavailable error of the launch store with the user facing gloss, action and raw cause details
 func dbUnavailableError(ctx context.Context, rid any, code int) map[string]any {
 	dbMu.Lock()
 	cause := dbError
 	dbMu.Unlock()
+	return storeUnavailableReply(ctx, rid, code, cause)
+}
+
+// Session storage unavailable error for cause with the user facing gloss, action and raw cause details
+func storeUnavailableReply(ctx context.Context, rid any, code int, cause error) map[string]any {
 	failure := state.DescribeStorageFailure(ctx, cause)
 	return rpcErr(rid, code, fmt.Sprintf("Session storage is unavailable: %s. %s", failure.Gloss, failure.Action),
 		map[string]any{"code": failure.Code, "cause": failure.Cause, "details": state.StorageFailureDetails(cause, 200)})
+}
+
+// Underlying open failure of a store error, the error itself for any other failure
+func storeCause(err error) error {
+	var unavailable *StoreUnavailableError
+	if errors.As(err, &unavailable) {
+		return unavailable.Cause
+	}
+	return err
+}
+
+// Storage error reply for a store that would not open or a query it failed, naming the cause
+func storeErrorReply(ctx context.Context, rid any, code int, err error) map[string]any {
+	return storeUnavailableReply(ctx, rid, code, storeCause(err))
+}
+
+// Storage error reply for a store that would not open, any other failure raised to the dispatcher
+func storeFailure(ctx context.Context, rid any, code int, err error) map[string]any {
+	var unavailable *StoreUnavailableError
+	if errors.As(err, &unavailable) {
+		return storeUnavailableReply(ctx, rid, code, unavailable.Cause)
+	}
+	panicIf(err)
+	return nil
 }
 
 // Model and provider a live session runs, from its pending switch, agent or composer pick, else the profile default

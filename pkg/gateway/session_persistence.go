@@ -74,7 +74,8 @@ const sessionsJSONReadme = "LEGACY MIRROR of the gateway routing index (the prim
 
 // True for the test isolation guard that must stay loud and is never cached
 func isLiveSystemGuard(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "live-system guard")
+	var guard *state.LiveSystemGuardError
+	return errors.As(err, &guard)
 }
 
 // Publishes a committed retirement by dropping every entry naming the ids
@@ -187,9 +188,6 @@ func (s *SessionStore) openSessionDBForActiveScope(ctx context.Context, dbPath s
 	handle, err := s.dbHandleCache.Get(ctx, path, func() (any, error) {
 		db, err := acquireSessionDB(ctx, path)
 		if err != nil {
-			if !isLiveSystemGuard(err) {
-				fmt.Printf("[gateway] Warning: SQLite session store unavailable, falling back to JSONL: %v\n", err)
-			}
 			return nil, err
 		}
 		return db, nil
@@ -307,6 +305,36 @@ func (s *SessionStore) dbForKey(ctx context.Context, sessionKey string) SessionS
 		return nil
 	}
 	return db
+}
+
+// Session database holding the key's rows, the reason a missing one is missing as a described store error
+func (s *SessionStore) dbForKeyOrFailure(ctx context.Context, sessionKey string) (SessionStoreDB, error) {
+	if db, ok := s.pinned(); ok {
+		return db, nil
+	}
+	if db := s.dbForKey(ctx, sessionKey); db != nil {
+		return db, nil
+	}
+	path := state.ResolveDefaultDBPath(ctx)
+	if profile := s.namedProfileForKey(sessionKey); profile != "" {
+		home := s.profileHomeForKey(sessionKey)
+		if home == "" {
+			return nil, fmt.Errorf("profile %q owning session key %q has no home on this host", profile, sessionKey)
+		}
+		path = filepath.Join(home, "state.db")
+	} else if s.routingHome != "" && s.multiplexProfiles() {
+		path = filepath.Join(s.routingHome, "state.db")
+	}
+	return nil, s.storeFailure(ctx, path)
+}
+
+// Described failure of the store at path, its recorded open error or the open another caller has in flight
+func (s *SessionStore) storeFailure(ctx context.Context, path string) error {
+	cause := s.dbHandleCache.LastFailure(path)
+	if cause == nil {
+		cause = fmt.Errorf("another caller is still opening %s", path)
+	}
+	return state.NewStoreUnavailableError(ctx, path, cause)
 }
 
 // Routing key owning the session id from the index or a pre published hint, read without the lock
@@ -602,7 +630,11 @@ func (s *SessionStore) pruneStaleSessionsLocked(ctx context.Context) {
 		if end, _ := row.Get("end_reason"); end == nil {
 			continue
 		}
-		prune, replacement := s.staleEntryVerdict(ctx, key, entry, row)
+		prune, replacement, err := s.staleEntryVerdict(ctx, key, entry, row)
+		if err != nil {
+			pkgLog().Warn(fmt.Sprintf("gateway.session: stale-entry pruning skipped due to DB error: %v", err))
+			return
+		}
 		if prune {
 			stale = append(stale, key)
 		} else if replacement != nil {
@@ -620,44 +652,52 @@ func (s *SessionStore) pruneStaleSessionsLocked(ctx context.Context) {
 	}
 }
 
-// Verdict for an entry whose row ended, prune, a replacement entry, or keep as is
-func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry *SessionEntry, row *pyjson.Object) (bool, *SessionEntry) {
+// Verdict for an entry whose row ended, prune, a replacement entry, or keep as is, a store read failure returned
+func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry *SessionEntry, row *pyjson.Object) (bool, *SessionEntry, error) {
 	endReason, _ := row.Get("end_reason")
-	if target := s.localReceiptTarget(ctx, entry); target != "" {
+	target, err := s.localReceiptTarget(ctx, entry)
+	if err != nil {
+		return false, nil, err
+	}
+	if target != "" {
 		if target == entry.SessionID {
-			return false, nil
+			return false, nil, nil
 		}
 		repointed := *entry
 		repointed.SessionID = target
 		pkgLog().Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to its local receipt target %s",
 			key, entry.SessionID, pyReprValue(endReason), target))
-		return false, &repointed
+		return false, &repointed, nil
 	}
 	var recoveredEntry *SessionEntry
 	if entry.Origin != nil {
-		var err error
 		recoveredEntry, err = s.recoverSessionFromDB(ctx, key, entry.Origin, sessionNow(), true)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("gateway.session: recovery lookup failed for stale sessions.json entry %q -> %s: %v", key, entry.SessionID, err))
-			return false, nil
+			return false, nil, err
 		}
 	}
 	if recoveredEntry != nil && recoveredEntry.SessionID != entry.SessionID {
 		pkgLog().Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to recovered %s",
 			key, entry.SessionID, pyReprValue(endReason), recoveredEntry.SessionID))
-		if entry.PromptPin != nil && entry.PromptPin.Len() > 0 && s.compressionTipForSessionID(ctx, entry.SessionID) == recoveredEntry.SessionID {
-			recoveredEntry.PromptPin = entry.PromptPin
+		if entry.PromptPin != nil && entry.PromptPin.Len() > 0 {
+			tip, err := s.compressionTipForSessionID(ctx, entry.SessionID)
+			if err != nil {
+				return false, nil, err
+			}
+			if tip == recoveredEntry.SessionID {
+				recoveredEntry.PromptPin = entry.PromptPin
+			}
 		}
-		return false, recoveredEntry
+		return false, recoveredEntry, nil
 	}
 	if recoveredEntry != nil {
 		pkgLog().Info(fmt.Sprintf("gateway.session: reopened ended session %s for sessions.json entry %q (end_reason=%s); keeping route",
 			entry.SessionID, key, pyReprValue(endReason)))
-		return false, nil
+		return false, nil, nil
 	}
 	pkgLog().Warn(fmt.Sprintf("gateway.session: pruning stale sessions.json entry %q -> %s (end_reason=%s); left by a crashed gateway",
 		key, entry.SessionID, pyReprValue(endReason)))
-	return true, nil
+	return true, nil, nil
 }
 
 // Serializable snapshot of the index, lock held

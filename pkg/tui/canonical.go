@@ -81,25 +81,6 @@ func canonicalRequest(method string, original map[string]any, contract *tuigatew
 	return method, params, nil
 }
 
-// Value JavaScript treats as true
-func truthyJS(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case float64:
-		return t != 0 && t == t
-	case int:
-		return t != 0
-	case int64:
-		return t != 0
-	}
-	return true
-}
-
 // Copy of a map with extra keys laid over it
 func withKeys(base map[string]any, kv ...any) map[string]any {
 	out := make(map[string]any, len(base)+len(kv)/2)
@@ -162,29 +143,6 @@ func localCreationOptions(env func(string) string) (tuigateway.CanonicalCreatePa
 		*f.into = truthy(env(f.env))
 	}
 	return options, nil
-}
-
-// Number of a string as JavaScript Number parses it, false for NaN
-func jsNumber(raw string) (float64, bool) {
-	s := strings.TrimFunc(raw, isJSSpace)
-	if s == "" {
-		return 0, true
-	}
-	if len(s) > 2 && s[0] == '0' {
-		base := map[byte]int{'x': 16, 'X': 16, 'o': 8, 'O': 8, 'b': 2, 'B': 2}[s[1]]
-		if base != 0 {
-			n, err := strconv.ParseUint(s[2:], base, 64)
-			return float64(n), err == nil
-		}
-	}
-	if s == "Infinity" || s == "+Infinity" || s == "-Infinity" {
-		return 0, false
-	}
-	if strings.Trim(s, "0123456789.eE+-") != "" {
-		return 0, false
-	}
-	n, err := strconv.ParseFloat(s, 64)
-	return n, err == nil
 }
 
 // Client environment of the launcher, only a JSON object of strings

@@ -408,7 +408,7 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 				return readmitOr(p.settleCorrection(item, r.Status, true, false, focused))
 			}), nil
 		case canonical:
-			params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, ClarifyBatch: p.gw.clarifyBatch()}
+			params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, Interrupted: speech.takeInterrupted(), ClarifyBatch: p.gw.clarifyBatch()}
 			if item != nil {
 				params.InputID, params.Queued = &item.SubmissionID, item.Queued == nil || *item.Queued
 			}
@@ -441,7 +441,7 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 			}
 			return nil
 		}), nil
-		}
+	}
 	direct := func(displayText, submitText string) tea.Cmd {
 		cmd, err := startSubmit(displayText, submitText, showUserMessage)
 		if err != nil {
@@ -484,13 +484,12 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 		}
 		return direct(text, p.deps.expand(text))
 	}
-	return gatewayCall(p.gw, "input.detect_drop", map[string]any{"session_id": sid, "text": text}, func(v any, err error) tea.Cmd {
-		r := asRPCResult(v)
+	return call(p.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{SessionID: sid, Text: text}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
 		var cmd tea.Cmd
-		if err == nil && truthyJS(r["matched"]) {
+		if err == nil && r.Matched {
 			dropped := text
-			if truthyJS(r["text"]) {
-				dropped = jsValueString(r["text"])
+			if r.Text != "" {
+				dropped = r.Text
 			}
 			cmd, err = startSubmit(dropped, p.deps.expand(dropped), showUserMessage)
 		} else if err == nil {

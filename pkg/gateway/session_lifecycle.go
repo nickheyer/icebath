@@ -87,75 +87,84 @@ func AutoContinueFreshnessWindow() float64 {
 	return v
 }
 
-// True when the row is ended or gone in its owning store, false with no store or on a read error
+// True only when the owning store proves the row ended or gone, the eviction checks acting on proof alone
 func (s *SessionStore) isSessionEndedInDB(ctx context.Context, sessionID, sessionKey string) bool {
+	if sessionKey == "" {
+		sessionKey = s.ownerKeyForSessionID(sessionID)
+	}
+	ended, err := s.sessionEndedInDB(ctx, sessionID, sessionKey)
+	return err == nil && ended
+}
+
+// Whether the row is ended or gone in the store owning the key, a store that cannot answer returned as the error
+func (s *SessionStore) sessionEndedInDB(ctx context.Context, sessionID, sessionKey string) (bool, error) {
 	s.mu.Lock()
 	pending := s.rowsPending[sessionID]
 	s.mu.Unlock()
-	if pending {
-		return false
+	if pending || sessionID == "" {
+		return false, nil
 	}
-	var db SessionStoreDB
-	if sessionKey != "" {
-		db = s.dbForKey(ctx, sessionKey)
-	} else {
-		db = s.dbForSessionID(ctx, sessionID)
-	}
-	if db == nil || sessionID == "" {
-		return false
+	db, err := s.dbForKeyOrFailure(ctx, sessionKey)
+	if err != nil || db == nil {
+		return false, err
 	}
 	row, err := db.GetSession(ctx, sessionID)
 	if err != nil {
-		return false
+		return false, err
 	}
 	if row == nil {
-		return true
+		return true, nil
 	}
 	end, ok := row.Get("end_reason")
-	return ok && end != nil
+	return ok && end != nil, nil
 }
 
-// Physical target the local receipt names for the entry's local route, empty otherwise
-func (s *SessionStore) localReceiptTarget(ctx context.Context, entry *SessionEntry) string {
+// Physical target the local receipt names for the entry's local route, empty otherwise, a failed store read returned
+func (s *SessionStore) localReceiptTarget(ctx context.Context, entry *SessionEntry) (string, error) {
 	if entry == nil || entry.Origin == nil || entry.Origin.Platform != PlatformLocal {
-		return ""
+		return "", nil
 	}
-	db := s.dbForKey(ctx, entry.SessionKey)
-	if db == nil {
-		return ""
+	db, err := s.dbForKeyOrFailure(ctx, entry.SessionKey)
+	if err != nil || db == nil {
+		return "", err
 	}
 	receipt, err := db.LocalReceipt(ctx, entry.Origin.ChatID)
 	if err != nil || receipt == nil {
-		return ""
+		return "", err
 	}
 	if route, _ := receipt.Get("route"); route != entry.SessionKey {
-		return ""
+		return "", nil
 	}
 	inner, _ := receipt.Get("entry")
 	obj, ok := inner.(*pyjson.Object)
 	if !ok {
-		return ""
+		return "", nil
 	}
 	sid, ok := obj.Get("session_id")
 	if !ok {
-		return ""
+		return "", nil
 	}
-	return pyFloatStr(sid)
+	return pyFloatStr(sid), nil
 }
 
-// True when the API binding receipt names this entry's route
-func (s *SessionStore) apiBound(ctx context.Context, entry *SessionEntry) bool {
+// True when the API binding receipt names this entry's route, a failed store read returned
+func (s *SessionStore) apiBound(ctx context.Context, entry *SessionEntry) (bool, error) {
 	if entry == nil || entry.Origin == nil || entry.Origin.Platform != PlatformAPIServer {
-		return false
+		return false, nil
 	}
-	db := s.dbForKey(ctx, entry.SessionKey)
-	if db == nil {
-		return false
+	db, err := s.dbForKeyOrFailure(ctx, entry.SessionKey)
+	if err != nil || db == nil {
+		return false, err
 	}
 	saved, ok, err := db.GetMeta(ctx, state.LocalAPIBindingPrefix+entry.Origin.ChatID)
 	if err != nil || !ok {
-		return false
+		return false, err
 	}
+	return apiBindingNamesRoute(saved, entry.SessionKey), nil
+}
+
+// Whether a saved API binding receipt names the route, false for a receipt of another shape
+func apiBindingNamesRoute(saved, sessionKey string) bool {
 	parsed, err := pyjson.Loads(saved)
 	if err != nil {
 		return false
@@ -170,7 +179,7 @@ func (s *SessionStore) apiBound(ctx context.Context, entry *SessionEntry) bool {
 		return false
 	}
 	key, _ := obj.Get("session_key")
-	return key == entry.SessionKey
+	return key == sessionKey
 }
 
 // Reset reason for the route, only an explicit suspension replaces a conversation

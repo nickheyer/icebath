@@ -11,7 +11,6 @@ import (
 	"math"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +35,26 @@ const (
 )
 
 // RuntimeError is the RuntimeError the adapter api request raises with the biz_code in its message
-type RuntimeError struct{ Msg string }
+type RuntimeError struct {
+	Msg string
+	// Business code of a QQ Bot API reply, zero when the failure carries none
+	BizCode int64
+}
+
+// Business code of a QQ Bot API error reply, err_code before code, zero when absent
+func bizCodeOf(reply map[string]any) int64 {
+	for _, key := range []string{"err_code", "code"} {
+		switch v := reply[key].(type) {
+		case int64:
+			return v
+		case int:
+			return int64(v)
+		case float64:
+			return int64(v)
+		}
+	}
+	return 0
+}
 
 func (e *RuntimeError) Error() string { return e.Msg }
 
@@ -294,7 +312,7 @@ func (u *ChunkedUploader) prepare(ctx context.Context, job *uploadJob, fileType 
 	body.Set("md5_10m", hashes["md5_10m"])
 	raw, err := u.post(ctx, job, "upload_prepare", body)
 	if err != nil {
-		if isRuntimeError(err) && strings.Contains(err.Error(), strconv.Itoa(bizCodeDailyLimit)) {
+		if rt := (*RuntimeError)(nil); errors.As(err, &rt) && rt.BizCode == bizCodeDailyLimit {
 			return prepareResult{}, NewUploadDailyLimitExceededError(fileName, job.fileSize, err.Error())
 		}
 		return prepareResult{}, err
@@ -349,7 +367,7 @@ func (u *ChunkedUploader) withRetries(ctx context.Context, attempt func() (any, 
 			}
 		}
 	}
-	return nil, &RuntimeError{fmt.Sprintf("%s failed after %d attempts: %v", failureLabel, maxRetries+1, lastErr)}
+	return nil, &RuntimeError{Msg: fmt.Sprintf("%s failed after %d attempts: %v", failureLabel, maxRetries+1, lastErr)}
 }
 
 // PUT with the asyncio.wait_for timeout, whose TimeoutError renders as empty text
@@ -387,7 +405,7 @@ func (u *ChunkedUploader) putToPresignedURL(ctx context.Context, url string, dat
 			return nil, nil
 		}
 		preview := []rune(resp.Text)
-		return nil, &RuntimeError{fmt.Sprintf("COS PUT returned %d: %s", resp.StatusCode, string(preview[:min(200, len(preview))]))}
+		return nil, &RuntimeError{Msg: fmt.Sprintf("COS PUT returned %d: %s", resp.StatusCode, string(preview[:min(200, len(preview))]))}
 	}
 	_, err := u.withRetries(ctx, attempt, partUploadMaxRetries, 1.0,
 		fmt.Sprintf("PUT part %d/%d", partIndex, totalParts), fmt.Sprintf("Part %d/%d upload", partIndex, totalParts))
@@ -407,12 +425,12 @@ func (u *ChunkedUploader) partFinishWithRetry(ctx context.Context, job *uploadJo
 		if err == nil {
 			return nil
 		}
-		if !isRuntimeError(err) || !strings.Contains(err.Error(), strconv.Itoa(bizCodePartRetryable)) {
+		if rt := (*RuntimeError)(nil); !errors.As(err, &rt) || rt.BizCode != bizCodePartRetryable {
 			return err
 		}
 		elapsed := time.Since(start).Seconds()
 		if elapsed >= job.retryTimeout {
-			return &RuntimeError{fmt.Sprintf("upload_part_finish persistent retry timed out after %ss (%d retries): %v",
+			return &RuntimeError{Msg: fmt.Sprintf("upload_part_finish persistent retry timed out after %ss (%d retries): %v",
 				strconv.FormatFloat(job.retryTimeout, 'f', 0, 64), attempt, err)}
 		}
 		attempt++

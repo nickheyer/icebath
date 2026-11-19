@@ -72,6 +72,57 @@ func applyPendingReasoning(ctx context.Context, a *SessionAuthority, ref Session
 	pkgLog().Warn(fmt.Sprintf("Reasoning command on %s not committed: %s", ref.SessionID, reason))
 }
 
+// Model route a one turn switch replaced, with the principal that switched and whether its turn already ran
+type onceRestore struct {
+	principal string
+	payload   *pyjson.Object
+	ran       bool
+}
+
+// Marks a restore being committed so the selection guard leaves a return to the model already in use alone
+type onceRestoreKey struct{}
+
+// Puts back the model a one turn switch replaced once that turn ran, kept for the next boundary while the session is busy
+func applyOnceRestore(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession) {
+	a.mu.Lock()
+	restore := live.OnceRestore
+	if restore != nil && !restore.ran {
+		restore.ran = true
+		restore = nil
+	} else {
+		live.OnceRestore = nil
+	}
+	a.mu.Unlock()
+	if restore == nil {
+		return
+	}
+	err := func() error {
+		row, err := a.DB.GetSession(ctx, ref.SessionID)
+		if err != nil {
+			return err
+		}
+		params, err := fencedMutation(row, ref.SessionID, "once-restore:"+uuidHex(), "model", restore.payload)
+		if err != nil {
+			return err
+		}
+		_, err = writeMutation(context.WithValue(ctx, onceRestoreKey{}, true), a, ref, params, nil, restore.principal, nil, nil)
+		return err
+	}()
+	if err == nil {
+		return
+	}
+	var refusal *state.RuntimeStoreError
+	if state.IsMutationGuardRefusal(err) || (errors.As(err, &refusal) && (refusal.Reason == "session_busy" || refusal.Reason == "unknown_execution")) {
+		a.mu.Lock()
+		if live.OnceRestore == nil {
+			live.OnceRestore = restore
+		}
+		a.mu.Unlock()
+		return
+	}
+	pkgLog().Error(fmt.Sprintf("One turn model switch on %s could not be put back: %s", ref.SessionID, pyExceptionRepr(err)))
+}
+
 // Authority and live session owning the local session a source belongs to
 func localAuthorityLive(runner any, source *SessionSource) (*SessionAuthority, *LiveSession) {
 	if source == nil || source.Platform != PlatformLocal {

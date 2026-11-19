@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tools/anydoc"
 )
 
 // Read size guard in characters, a model agnostic proxy for tokens, configurable as file_read_max_chars
@@ -594,11 +595,89 @@ func fileToolError(message string, extra ...any) string {
 	return dictJSON(out)
 }
 
-// Renders an extractable document as paginated text, handled false to fall through to the normal read
+// Renders a document its name marks as paginated text, handled false to fall through to the normal read
 func readExtractedDocument(ctx context.Context, env *Env, path, resolved string, offset, limit int, taskID string) (string, bool, error) {
 	if !IsExtractableDocument(resolved) {
 		return "", false, nil
 	}
+	return renderDocument(ctx, env, path, resolved, offset, limit, taskID, false)
+}
+
+// Bytes per row of the hex view of a binary file
+const hexRowBytes = 16
+
+// Binary file as a hex view of 16 byte rows with their printable characters, offset and limit counting rows
+func readBinaryHex(ctx context.Context, env *Env, handle *fileOpsHandle, resolved string, offset, limit int) string {
+	r := handle.forCall(ctx).readFileRange(resolved, int64(offset-1)*hexRowBytes, limit*hexRowBytes)
+	if r == nil {
+		return fileToolError("Failed to read binary file: " + resolved)
+	}
+	if r.Error != "" {
+		return dictJSON(toDict(r))
+	}
+	data, err := base64.StdEncoding.DecodeString(r.Base64Content)
+	if err != nil {
+		return fileToolError("Backend returned invalid binary data for: " + resolved)
+	}
+	var b strings.Builder
+	base := int64(offset-1) * hexRowBytes
+	for i := 0; i < len(data); i += hexRowBytes {
+		row := data[i:min(i+hexRowBytes, len(data))]
+		fmt.Fprintf(&b, "%08x: ", base+int64(i))
+		for j := 0; j < hexRowBytes; j++ {
+			if j < len(row) {
+				fmt.Fprintf(&b, "%02x", row[j])
+			} else {
+				b.WriteString("  ")
+			}
+			if j%2 == 1 {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteByte(' ')
+		for _, c := range row {
+			if c >= 0x20 && c < 0x7f {
+				b.WriteByte(c)
+			} else {
+				b.WriteByte('.')
+			}
+		}
+		b.WriteByte('\n')
+	}
+	content := strings.TrimRight(b.String(), "\n")
+	totalRows := int((r.FileSize + hexRowBytes - 1) / hexRowBytes)
+	endRow := offset + limit - 1
+	result := newDict()
+	result.Set("content", content)
+	result.Set("total_lines", totalRows)
+	result.Set("file_size", r.FileSize)
+	result.Set("truncated", totalRows > endRow)
+	result.Set("hex_view", true)
+	if kind := IdentifyBinaryBytes(data); offset == 1 && kind != "" {
+		result.Set("binary_type", kind)
+	}
+	if totalRows > endRow {
+		result.Set("hint", fmt.Sprintf("Use offset=%d to continue reading (showing rows %d-%d of %d, %d bytes per row)", endRow+1, offset, endRow, totalRows, hexRowBytes))
+	}
+	if maxChars := maxReadChars(env); utf8Len(content) > maxChars {
+		applyCharBudget(result, content, offset, totalRows, maxChars)
+	}
+	if rendered := dictString(result, "content"); rendered != "" {
+		result.Set("content", redactFileText(env, rendered, isSecretFileArg(env, resolved)))
+	}
+	return dictJSON(result)
+}
+
+// Renders a binary file whose leading bytes carry a document signature, handled false for any other binary
+func readSignedDocument(ctx context.Context, env *Env, handle *fileOpsHandle, path, resolved string, offset, limit int, taskID string) (string, bool, error) {
+	if probe := handle.forCall(ctx).readFile(resolved, 1, 1); probe == nil || !probe.DocumentSignature {
+		return "", false, nil
+	}
+	return renderDocument(ctx, env, path, resolved, offset, limit, taskID, true)
+}
+
+// Document read as paginated text, byContent reading a file whose bytes rather than its name mark it a document
+func renderDocument(ctx context.Context, env *Env, path, resolved string, offset, limit int, taskID string, byContent bool) (string, bool, error) {
 	handle, err := getFileOps(env, taskID)
 	if err != nil {
 		return "", false, err
@@ -606,6 +685,9 @@ func readExtractedDocument(ctx context.Context, env *Env, path, resolved string,
 	binary := handle.forCall(ctx).readFileBytes(resolved, maxDocumentBytes)
 	var extracted string
 	var extractErr error
+	if byContent && (binary.Error != "" || !binary.IsBinary) {
+		return "", false, nil
+	}
 	if binary.Error != "" || !binary.IsBinary {
 		msg := binary.Error
 		if msg == "" {
@@ -615,6 +697,9 @@ func readExtractedDocument(ctx context.Context, env *Env, path, resolved string,
 	} else if data, decodeErr := base64.StdEncoding.Strict().DecodeString(binary.Base64Content); decodeErr != nil {
 		extractErr = decodeErr
 	} else if extracted, err = ExtractDocumentBytes(ctx, env, data, resolved); err != nil {
+		if errors.Is(err, anydoc.ErrNotDocument) {
+			return "", false, nil
+		}
 		var ee *ExtractionError
 		if !errors.As(err, &ee) {
 			return "", false, err
@@ -624,9 +709,12 @@ func readExtractedDocument(ctx context.Context, env *Env, path, resolved string,
 	if extractErr != nil {
 		envLog(env).Debug("document extraction failed", "path", path, "error", extractErr)
 		docExt := strings.ToLower(pathSuffix(resolved))
-		binaryDoc := nativeDocumentExtensions[docExt] || (extractableExtensions[docExt] && docExt != ".ipynb")
+		binaryDoc := byContent || nativeDocumentExtensions[docExt] || (extractableExtensions[docExt] && docExt != ".ipynb")
+		if docExt == "" {
+			docExt = "no extension"
+		}
 		var ee *ExtractionError
-		if binaryDoc && errors.As(extractErr, &ee) && !ee.Unsupported {
+		if binaryDoc && errors.As(extractErr, &ee) {
 			return fileToolError(fmt.Sprintf("Cannot read '%s' (%s): document extraction failed — %s. Use terminal utilities to inspect or convert the file.",
 				path, docExt, ee.Error())), true, nil
 		}
@@ -853,8 +941,15 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 		return extracted, nil
 	}
 	if hasBinaryExtension(resolved) {
-		return fileToolError(fmt.Sprintf("Cannot read binary file '%s' (%s). Use vision_analyze for images, or terminal to inspect binary files.",
-			path, strings.ToLower(pathSuffix(resolved)))), nil
+		if extracted, handled, err := readSignedDocument(ctx, env, handle, path, resolved, offset, limit, taskID); err != nil {
+			return "", err
+		} else if handled {
+			return extracted, nil
+		}
+		if isImagePath(resolved) {
+			return fileToolError(fmt.Sprintf("'%s' is an image (%s), view it with vision_analyze.", path, strings.ToLower(pathSuffix(resolved)))), nil
+		}
+		return readBinaryHex(ctx, env, handle, resolved, offset, limit), nil
 	}
 	if cached, ok := checkNotFoundCache("read", resolved, taskID); ok {
 		return cached, nil
@@ -879,6 +974,16 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 		target = resolved
 	}
 	result := handle.forCall(ctx).readFile(target, offset, limit)
+	if result != nil && result.DocumentSignature {
+		if extracted, handled, err := renderDocument(ctx, env, path, resolved, offset, limit, taskID, true); err != nil {
+			return "", err
+		} else if handled {
+			return extracted, nil
+		}
+	}
+	if result != nil && result.IsBinary && !result.IsImage {
+		return readBinaryHex(ctx, env, handle, resolved, offset, limit), nil
+	}
 	dict := toDict(result)
 	errText := dictString(dict, "error")
 	if result != nil && result.NotFound {
@@ -1601,7 +1706,7 @@ func searchToolErr(ctx context.Context, env *Env, a searchArgs, taskID string) (
 // File tools only require terminal backend availability
 func checkFileRequirements(env *Env) bool { return CheckTerminalRequirements(env) }
 
-const readFileDescription = "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Documents auto-extract to readable text: .ipynb, Office (.docx/.xlsx/.pptx and legacy .doc/.ppt/.xls), PDF (text layer), OpenDocument, RTF, EPUB, SQLite (.db/.sqlite: schema, row counts, first rows). Cannot read images/binary — use vision_analyze for images."
+const readFileDescription = "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Documents auto-extract to readable text, recognized by their content whatever their file name: .ipynb, Office (.docx/.xlsx/.pptx and legacy .doc/.ppt/.xls), PDF (text layer), OpenDocument, RTF, EPUB, SQLite (.db/.sqlite: schema, row counts, first rows). Other binary files read as a hex view of 16 byte rows, offset and limit counting rows. Use vision_analyze for images."
 
 var readFileSchema = Dict(
 	"name", "read_file",
@@ -1895,9 +2000,9 @@ func handleSearchFiles(ctx context.Context, call *Call) string {
 	return searchTool(ctx, call.Env, a, callTaskID(call))
 }
 
-// One word capability upgrade of the read_file description when hosted OCR has a trusted route
+// One word capability upgrade of the read_file description when hosted or local OCR reads scanned pages
 func readFileSchemaOverrides(env *Env) *pyjson.Object {
-	if HostedOCRAvailable(env) {
+	if HostedOCRAvailable(env) || localOCRTools() {
 		return Dict("description", strings.Replace(readFileDescription, "PDF (text layer)", "PDF (scanned or text)", 1))
 	}
 	return nil

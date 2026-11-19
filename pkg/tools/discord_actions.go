@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -19,11 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// Discord API failure with its HTTP status and body
-func newDiscordAPIError(status int, body string) *DiscordAPIError {
-	return &DiscordAPIError{Status: status, Body: body}
-}
 
 // Bot token of the active profile secret scope, empty when unset
 func discordBotToken(env *Env) string { return secretValue(env, "DISCORD_BOT_TOKEN") }
@@ -885,6 +882,8 @@ func discordRunAction(ctx context.Context, env *Env, action string, core bool, t
 	envLog(env).Error(fmt.Sprintf("Unexpected error in %s action '%s'", toolLabel, action), "error", err)
 	return toolErrorJSON(fmt.Sprintf("Unexpected error: %s", err), nil)
 }
+
+func init() { registerDiscordTools() }
 
 // Registers discord, the participation trio, and discord_admin, server management, with their filtered schemas
 func registerDiscordTools() {

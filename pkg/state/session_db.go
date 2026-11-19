@@ -298,6 +298,10 @@ func pathlibExists(path string) bool {
 // Writable open with preflight, zero byte quarantine, connect, schema, one malformed schema repair and generation stamp
 func (d *SessionDB) openWriter(ctx context.Context) error {
 	if _, err := home.Mkdir(ctx, filepath.Dir(d.path)); err != nil {
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			return &StateDBDirError{Dir: filepath.Dir(d.path), Err: err}
+		}
 		return err
 	}
 	err := d.openWriterGuarded(ctx)

@@ -40,6 +40,9 @@ type Def struct {
 // Localized slash description from the catalog, the English field when no catalog carries the key
 func (d *Def) Describe(ctx context.Context) string {
 	key := "slash." + d.Name + ".description"
+	if alt, ok := slashTierDescriptionKey(d.Name); ok {
+		key = "slash." + d.Name + "." + alt
+	}
 	if value := i18n.T(ctx, key, "", nil); value != key {
 		return value
 	}

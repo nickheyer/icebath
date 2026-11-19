@@ -146,9 +146,9 @@ func lr3FailedSetupCase(t *testing.T, failure string) {
 	var jobs []*WindowsJob
 	var children []*exec.Cmd
 	var handles []windows.Handle
-	realAPI, realNew, realAssign, realResume := windowsJobAPI, newWindowsJob, assignWindowsJob, resumeProcessFn
+	realNew, realAssign, realResume := newWindowsJob, assignWindowsJob, resumeProcessFn
 	t.Cleanup(func() {
-		windowsJobAPI, newWindowsJob, assignWindowsJob, resumeProcessFn = realAPI, realNew, realAssign, realResume
+		newWindowsJob, assignWindowsJob, resumeProcessFn = realNew, realAssign, realResume
 		for _, c := range children {
 			_ = c.Process.Kill()
 		}
@@ -156,21 +156,14 @@ func lr3FailedSetupCase(t *testing.T, failure string) {
 			_ = j.Close()
 		}
 	})
-	if failure == "configure" {
-		windowsJobAPI.set = func(job windows.Handle, class uint32, info uintptr, size uint32) error {
-			handles = append(handles, job)
-			return errors.New("injected cancellation configuring job")
-		}
-		windowsJobAPI.close = func(h windows.Handle) error {
-			jobs = append(jobs, &WindowsJob{handle: h})
-			return realAPI.close(h)
-		}
-	}
 	newWindowsJob = func() (*WindowsJob, error) {
 		job, err := realNew()
 		if job != nil {
 			jobs = append(jobs, job)
-			handles = append(handles, job.handle)
+			handles = append(handles, job.Handle())
+		}
+		if err == nil && failure == "configure" {
+			return nil, errors.Join(errors.New("injected cancellation configuring job"), job.Close())
 		}
 		return job, err
 	}
@@ -180,18 +173,18 @@ func lr3FailedSetupCase(t *testing.T, failure string) {
 			t.Error("child ran before assignment")
 		}
 		var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-		if err := windows.QueryInformationJobObject(job.handle, jobExtendedLimitCls, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits)), nil); err != nil {
+		if err := windows.QueryInformationJobObject(job.Handle(), windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&limits)), uint32(unsafe.Sizeof(limits)), nil); err != nil {
 			t.Errorf("query job: %v", err)
 		}
 		flags := limits.BasicLimitInformation.LimitFlags
 		if flags&0x2000 == 0 || flags&(0x800|0x1000) != 0 {
 			t.Errorf("job limit flags %#x", flags)
 		}
-		if inherit, ok := lr3HandleFlags(job.handle); !ok || inherit&1 != 0 {
+		if inherit, ok := lr3HandleFlags(job.Handle()); !ok || inherit&1 != 0 {
 			t.Errorf("job handle inheritable or invalid: %#x %v", inherit, ok)
 		}
 		if failure == "assign" {
-			return windowsJobAPI.assign(job.handle, 0)
+			return windows.AssignProcessToJobObject(job.Handle(), 0)
 		}
 		return realAssign(job, cmd)
 	}
@@ -209,7 +202,7 @@ func lr3FailedSetupCase(t *testing.T, failure string) {
 	if lr3Exists(marker)() {
 		t.Fatal("child executed")
 	}
-	if len(jobs) == 0 || jobs[0].open {
+	if len(jobs) == 0 || jobs[0].Open() {
 		t.Fatal("job handle not released")
 	}
 	for _, c := range children {

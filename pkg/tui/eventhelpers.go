@@ -189,50 +189,16 @@ func usageOf(u *tuigateway.Usage) *tuigateway.Usage {
 	return u
 }
 
-// String of a JSON value as JavaScript renders it, arrays joined by commas
-func jsValueString(v any) string {
-	switch t := v.(type) {
-	case []any:
-		parts := make([]string, len(t))
-		for i, item := range t {
-			if item != nil {
-				parts[i] = jsValueString(item)
-			}
-		}
-		return strings.Join(parts, ",")
-	case map[string]any:
-		return "[object Object]"
-	}
-	return jsString(v)
-}
-
-// Field as a JavaScript template literal renders it, undefined when absent
-func jsTemplate(m map[string]any, k string) string {
-	v, has := m[k]
-	if !has {
-		return "undefined"
-	}
-	return jsValueString(v)
-}
-
 // Answer of a multi select question as its comma joined items, other answers as typed
 func clarifyAnswerText(answer string, multiSelect bool) string {
 	if !multiSelect {
 		return answer
 	}
-	var parsed any
-	if json.Unmarshal([]byte(answer), &parsed) != nil {
+	var items []string
+	if json.Unmarshal([]byte(answer), &items) != nil {
 		return answer
 	}
-	items, isList := parsed.([]any)
-	if !isList {
-		return answer
-	}
-	parts := make([]string, len(items))
-	for i, item := range items {
-		parts[i] = jsValueString(item)
-	}
-	return strings.Join(parts, ", ")
+	return strings.Join(items, ", ")
 }
 
 // Transcript block of an unanswered clarify, each question with its locked answer and why it ended
@@ -261,33 +227,4 @@ func topLevelSubagents(items []subagentProgress) []subagentProgress {
 		}
 	}
 	return out
-}
-
-// Number of a JSON value as JavaScript Number converts it, NaN when it has none
-func jsNumberOf(v any) float64 {
-	switch t := v.(type) {
-	case float64:
-		return t
-	case bool:
-		if t {
-			return 1
-		}
-		return 0
-	case string:
-		if f, ok := jsNumber(t); ok {
-			return f
-		}
-	case nil:
-		return 0
-	}
-	return math.NaN()
-}
-
-// Whether two decoded JSON values are equal under JavaScript ===, compound values never
-func jsStrictEqual(a, b any) bool {
-	switch a.(type) {
-	case nil, bool, float64, string:
-		return a == b
-	}
-	return false
 }

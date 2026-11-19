@@ -29,10 +29,10 @@ var pluginManifestHost *PluginManifestHost
 // Installs the plugin manifest surface that declarations, admission and fit checks read
 func SetPluginManifestHost(host *PluginManifestHost) { pluginManifestHost = host }
 
-// Installed plugin manifest surface, the ImportError Python raises when its plugin modules are absent
+// Installed plugin manifest surface, an invariant error when pkg/plugins never ran its init in this process
 func manifestHost() (*PluginManifestHost, error) {
 	if pluginManifestHost == nil {
-		return nil, &PyError{Class: "ImportError", Message: "cannot import name 'plugins_manifest' from 'icebath' (pkg/plugins is not linked into this binary)"}
+		return nil, errors.New("plugin manifest host unset: pkg/plugins installs it at init and every icebath build links pkg/plugins")
 	}
 	return pluginManifestHost, nil
 }

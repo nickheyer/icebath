@@ -126,8 +126,11 @@ func apOptionHelp(cmd *cobra.Command, a apAction) (string, bool) {
 
 // Attaches the help text a table action renders, flag help coming from the cobra flag usage
 func apResolve(cmd *cobra.Command, a apAction) apItem {
-	if a.Kind == 's' && !cmd.HasParent() {
-		a = apDropTierChoices(a)
+	if a.Kind == 's' {
+		a = apDropTierChoices(apPath(cmd), a)
+	}
+	if a.Kind == 'f' && cliFlagTierHidden(cmd, a.Opts) {
+		a.Suppress = true
 	}
 	it := apItem{apAction: a}
 	switch a.Kind {

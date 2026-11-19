@@ -30,7 +30,7 @@ type sideAgentParent interface {
 var _ sideAgentParent = (*agent.AIAgent)(nil)
 
 // Construction options of a detached side agent on the parent agent's route, persisting into the parent's store
-func backgroundAgentKwargs(ctx context.Context, parent sideAgentParent, taskID string) agent.AIAgentOptions {
+func backgroundAgentKwargs(ctx context.Context, parent sideAgentParent, taskID string) (agent.AIAgentOptions, error) {
 	cfg := loadCfg(ctx)
 	fallback := parent.FallbackChain()
 	if fallback == nil {
@@ -64,7 +64,11 @@ func backgroundAgentKwargs(ctx context.Context, parent sideAgentParent, taskID s
 	var store agent.SessionStore
 	if parentStore := parent.SessionStore(); parentStore != nil && !isNilStore(parentStore) {
 		store = parentStore
-	} else if db := getDB(ctx); db != nil {
+	} else {
+		db, err := getDB(ctx)
+		if err != nil {
+			return agent.AIAgentOptions{}, err
+		}
 		store = db
 	}
 	return agent.AIAgentOptions{BaseURL: parent.BaseURL(), APIKey: parent.APIKey(), Provider: parent.Provider(),
@@ -74,7 +78,7 @@ func backgroundAgentKwargs(ctx context.Context, parent sideAgentParent, taskID s
 		OpenRouterMinCodingScore: routing.MinCodingScore, Model: model, MaxIterations: new(cfgMaxTurns(cfg, 25)),
 		EnabledToolsets: enabled, DisabledToolsets: disabled, QuietMode: true, VerboseLogging: false,
 		ProviderRequireParameters: routing.RequireParameters, SessionID: taskID, ReasoningConfig: reasoning, ServiceTier: tier,
-		RequestOverrides: overrides, Platform: "tui", SessionDB: store, FallbackModel: fallback, SideAgent: true}
+		RequestOverrides: overrides, Platform: "tui", SessionDB: store, FallbackModel: fallback, SideAgent: true}, nil
 }
 
 // Whether a session store interface holds a nil pointer

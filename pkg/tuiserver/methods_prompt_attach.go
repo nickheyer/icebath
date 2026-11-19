@@ -10,13 +10,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/filedrop"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Clipboard image helpers set by the binary
 var (
-	SaveClipboardImage func(dest string) bool
-	HasClipboardImage  func() bool
+	SaveClipboardImage    func(dest string) bool
+	HasClipboardImage     func() bool
+	ClipboardImageBlocker func() (missing string, noDesktop bool)
 )
 
 var promptAttachRegistry = &handlerRegistry{}
@@ -31,15 +33,33 @@ func init() {
 }
 
 // Attached reply after queuing an image with its count and image meta
-func attachedImageResult(session *tuihost.Session, imagePath string, extra map[string]any) map[string]any {
-	out := map[string]any{"attached": true, "path": imagePath, "count": len(stringList(session.Get("attached_images")))}
-	for k, v := range extra {
-		out[k] = v
+func attachedImageResult(session *tuihost.Session, imagePath string) tuigateway.AttachedImageResult {
+	count := int64(len(stringList(session.Get("attached_images"))))
+	name, width, height, tokens := imageSize(imagePath)
+	return tuigateway.AttachedImageResult{Attached: true, Path: imagePath, Count: &count, Name: name, Width: width, Height: height, TokenEstimate: tokens}
+}
+
+// File name of an image with its pixel size and token estimate, the size nil when it does not decode
+func imageSize(path string) (name string, width, height, tokens *int64) {
+	meta := imageMeta(path)
+	name, _ = meta["name"].(string)
+	if w, decoded := meta["width"].(int); decoded {
+		h, _ := meta["height"].(int)
+		t, _ := meta["token_estimate"].(int)
+		return name, ptrInt64(w), ptrInt64(h), ptrInt64(t)
 	}
-	for k, v := range imageMeta(imagePath) {
-		out[k] = v
-	}
-	return out
+	return name, nil, nil, nil
+}
+
+// Pointer to an int64 of an int
+func ptrInt64(n int) *int64 {
+	v := int64(n)
+	return &v
+}
+
+// Answer of an image method
+func imageAnswer(rid any, result tuigateway.AttachedImageResult) map[string]any {
+	return ok(rid, tuigateway.Plain(result))
 }
 
 // Saves the clipboard image into the session images dir and queues it
@@ -58,13 +78,19 @@ func clipboardPaste(ctx context.Context, rid any, params map[string]any) map[str
 	if !SaveClipboardImage(imgPath) {
 		session.Set("image_counter", max(0, intOr(session.Get("image_counter"))-1))
 		message := "No image found in clipboard"
-		if HasClipboardImage() {
-			message = "Clipboard has image but extraction failed"
+		missing, noDesktop := ClipboardImageBlocker()
+		switch {
+		case missing != "":
+			message = "pasting an image needs " + missing + " on this desktop; install it, or attach the file with /image <path>"
+		case noDesktop:
+			message = "no desktop clipboard is reachable from this gateway; attach the image with /image <path> or drop the file into the prompt"
+		case HasClipboardImage():
+			message = "the clipboard holds an image that could not be written as PNG; copy it again or attach the file with /image <path>"
 		}
-		return ok(rid, map[string]any{"attached": false, "message": message})
+		return imageAnswer(rid, tuigateway.AttachedImageResult{Message: message})
 	}
 	session.Set("attached_images", append(stringList(session.Get("attached_images")), imgPath))
-	return ok(rid, attachedImageResult(session, imgPath, nil))
+	return imageAnswer(rid, attachedImageResult(session, imgPath))
 }
 
 // Attaches a host image named by a path, a dropped path or a quoted token
@@ -96,7 +122,9 @@ func imageAttach(ctx context.Context, rid any, params map[string]any) map[string
 	if text == "" {
 		text = "[User attached image: " + pypath.Name(imagePath) + "]"
 	}
-	return ok(rid, attachedImageResult(session, imagePath, map[string]any{"remainder": remainder, "text": text}))
+	result := attachedImageResult(session, imagePath)
+	result.Remainder, result.Text = &remainder, text
+	return imageAnswer(rid, result)
 }
 
 // Attaches an image sent as base64 bytes by a remote client
@@ -136,8 +164,10 @@ func imageAttachBytes(ctx context.Context, rid any, params map[string]any) map[s
 	if err != nil {
 		return rpcErr(rid, 5027, "write failed: "+err.Error(), nil)
 	}
-	return ok(rid, attachedImageResult(session, imgPath, map[string]any{"remainder": "",
-		"text": "[User attached image: " + pypath.Name(imgPath) + "]", "bytes": len(imgBytes)}))
+	result := attachedImageResult(session, imgPath)
+	empty, size := "", int64(len(imgBytes))
+	result.Remainder, result.Text, result.Bytes = &empty, "[User attached image: "+pypath.Name(imgPath)+"]", &size
+	return imageAnswer(rid, result)
 }
 
 // Removes one queued image by path
@@ -158,7 +188,7 @@ func imageDetach(ctx context.Context, rid any, params map[string]any) map[string
 		}
 	}
 	session.Set("attached_images", kept)
-	return ok(rid, map[string]any{"detached": len(kept) != len(images), "count": len(kept)})
+	return ok(rid, tuigateway.Plain(tuigateway.ImageDetachResult{Detached: len(kept) != len(images), Count: int64(len(kept))}))
 }
 
 // Detects a dropped path in typed text, queuing an image or describing a file
@@ -173,7 +203,7 @@ func inputDetectDrop(ctx context.Context, rid any, params map[string]any) map[st
 	}
 	dropped := filedrop.DetectFileDrop(text)
 	if dropped == nil {
-		return ok(rid, map[string]any{"matched": false})
+		return ok(rid, tuigateway.Plain(tuigateway.InputDetectDropResult{}))
 	}
 	if dropped.IsImage {
 		session.Set("attached_images", append(stringList(session.Get("attached_images")), dropped.Path))
@@ -181,16 +211,14 @@ func inputDetectDrop(ctx context.Context, rid any, params map[string]any) map[st
 		if shown == "" {
 			shown = "[User attached image: " + pypath.Name(dropped.Path) + "]"
 		}
-		result := map[string]any{"matched": true, "is_image": true, "path": dropped.Path,
-			"count": len(stringList(session.Get("attached_images"))), "text": shown}
-		for k, v := range imageMeta(dropped.Path) {
-			result[k] = v
-		}
-		return ok(rid, result)
+		count := int64(len(stringList(session.Get("attached_images"))))
+		name, width, height, tokens := imageSize(dropped.Path)
+		return ok(rid, tuigateway.Plain(tuigateway.InputDetectDropResult{Matched: true, IsImage: true, Path: dropped.Path, Count: &count, Text: shown,
+			Name: name, Width: width, Height: height, TokenEstimate: tokens}))
 	}
 	shown := "[User attached file: " + dropped.Path + "]"
 	if dropped.Remainder != "" {
 		shown += "\n" + dropped.Remainder
 	}
-	return ok(rid, map[string]any{"matched": true, "is_image": false, "path": dropped.Path, "name": pypath.Name(dropped.Path), "text": shown})
+	return ok(rid, tuigateway.Plain(tuigateway.InputDetectDropResult{Matched: true, Path: dropped.Path, Name: pypath.Name(dropped.Path), Text: shown}))
 }

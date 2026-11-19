@@ -16,9 +16,9 @@ import (
 // The websocket client is compiled into this build
 var websocketsAvailable = true
 
-// AttributeError of a value that is not text
-func notText(v any) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
+// AttributeError of a field that is not text, naming the field
+func notText(v any, field string) error {
+	return &pyErr{"AttributeError", fmt.Sprintf("%s must be text, got %s", field, errchain.Kind(v))}
 }
 
 // TypeError of using a list or dict where a single value is needed, nil for every other value
@@ -46,7 +46,7 @@ func strMethod(v any, field string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &pyErr{"AttributeError", fmt.Sprintf("%s must be text, got %s", field, errchain.Kind(v))}
+	return "", notText(v, field)
 }
 
 // Items a for loop over a value visits, the TypeError of a value that is not iterable
@@ -95,23 +95,23 @@ func jsonLoads(v any) (any, error) {
 	return nil, &pyErr{"TypeError", fmt.Sprintf("expected JSON text, got %s", errchain.Kind(v))}
 }
 
-// Text of a protobuf string field, empty for a falsy value and the AttributeError encoding any other value raises
-func protoText(v any) (string, error) {
+// Text of a protobuf string field, empty for a falsy value and the AttributeError naming the field for any other value
+func protoText(v any, field string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
 	if !pyrepr.Truthy(v) {
 		return "", nil
 	}
-	return "", notText(v)
+	return "", notText(v, field)
 }
 
-// Text of a protobuf string field that is always written, the AttributeError encoding any other value raises
-func encodeText(v any) (string, error) {
+// Text of a protobuf string field that is always written, the AttributeError naming the field for any other value
+func encodeText(v any, field string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", notText(v)
+	return "", notText(v, field)
 }
 
 // Whether the path names an existing regular file

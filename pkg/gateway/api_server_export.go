@@ -48,8 +48,8 @@ func APISSEFrame(data any, event string, ensureASCII bool, id *int) ([]byte, err
 func APINormalizeChatContent(content any) string { return apiNormalizeChatContent(content) }
 
 // Multimodal content normalized for the agent, a coded error for a malformed part
-func APINormalizeMultimodalContent(content any) (any, error) {
-	return apiNormalizeMultimodalContent(content)
+func APINormalizeMultimodalContent(ctx context.Context, content any) (any, error) {
+	return apiNormalizeMultimodalContent(ctx, content)
 }
 
 // Whether content carries text or media worth a turn

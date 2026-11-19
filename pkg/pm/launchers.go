@@ -300,6 +300,15 @@ func StageLauncher(ctx context.Context, name, root, outDir string) (string, erro
 	return stageLauncher(ctx, name, root, outDir)
 }
 
+// LauncherBinary exports launcherBinary
+func LauncherBinary(target string) string { return launcherBinary(target) }
+
+// OwnsLauncher exports ownsLauncher
+func OwnsLauncher(target, root string) bool { return ownsLauncher(target, root) }
+
+// ExposeOnPathDisabled exports exposeOnPathDisabled
+func ExposeOnPathDisabled(ctx context.Context) (bool, error) { return exposeOnPathDisabled(ctx) }
+
 // Removes copies an earlier publication renamed aside
 func collectRetired(exe string) {
 	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), globEscape(filepath.Base(exe))+"*.deleteme"))

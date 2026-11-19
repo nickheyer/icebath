@@ -1,12 +1,9 @@
 package botdesktop
 
-import (
-	"errors"
-	"os"
-)
+import "os"
 
-// Error of importing fcntl, the module Windows lacks
-func flockAvailable() error { return errors.New("No module named 'fcntl'") }
+// Refuses the install claim, the screen runs on Linux hosts only
+func flockAvailable() error { return errUnsupported }
 
-// Never reached on Windows, the fcntl import error ends the claim first
-func flockExclusiveNonBlocking(f *os.File) error { return flockAvailable() }
+// Refuses the same way for a caller that skipped the availability check
+func flockExclusiveNonBlocking(f *os.File) error { return errUnsupported }

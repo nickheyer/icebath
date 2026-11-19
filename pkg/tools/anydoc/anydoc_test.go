@@ -57,20 +57,18 @@ func TestDocxDetectedFromContent(t *testing.T) {
 
 func TestUnrecognizedContent(t *testing.T) {
 	_, err := ToMarkdownBytes(context.Background(), []byte("just some text"), "")
-	var ce *ConvertError
-	if !errors.As(err, &ce) || ce.Kind != "UnsupportedError" {
-		t.Fatalf("want UnsupportedError, got %v", err)
+	if !errors.Is(err, ErrNotDocument) {
+		t.Fatalf("want ErrNotDocument, got %v", err)
 	}
-	if ce.Message != "unsupported input: unrecognized file content: name the format explicitly" {
-		t.Fatalf("unexpected message %q", ce.Message)
+	if err.Error() != "not a document anydoc reads" {
+		t.Fatalf("unexpected message %q", err.Error())
 	}
 }
 
 func TestUnknownNamedFormat(t *testing.T) {
 	_, err := ToMarkdownBytes(context.Background(), []byte("x"), ".foo")
-	var ce *ConvertError
-	if !errors.As(err, &ce) || ce.Kind != "UnsupportedError" || ce.Message != "unsupported input: unrecognized format: foo" {
-		t.Fatalf("want UnsupportedError, got %v", err)
+	if !errors.Is(err, ErrNotDocument) || err.Error() != "not a document anydoc reads: no parser for the format foo" {
+		t.Fatalf("want ErrNotDocument, got %v", err)
 	}
 }
 
@@ -97,8 +95,7 @@ func TestPathExtensionNamesSignaturelessFormat(t *testing.T) {
 
 func TestPathUnrecognized(t *testing.T) {
 	_, err := ToMarkdown(context.Background(), []byte("plain"), "/data/notes.txt")
-	var ce *ConvertError
-	if !errors.As(err, &ce) || ce.Message != "unsupported input: unrecognized file content and extension: /data/notes.txt" {
+	if !errors.Is(err, ErrNotDocument) || err.Error() != "/data/notes.txt is not a document anydoc reads" {
 		t.Fatalf("got %v", err)
 	}
 }

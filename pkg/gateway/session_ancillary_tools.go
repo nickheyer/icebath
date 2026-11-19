@@ -111,6 +111,9 @@ func applyToolsChange(ctx context.Context, action, platform string, targets []st
 		case strings.Contains(name, ":"):
 			mcpTargets = append(mcpTargets, name)
 		case !valid[name]:
+			if line, refused := tools.ToolsetTierRefusal(name); refused {
+				return out, refuseText("names", line)
+			}
 			out.unknown = append(out.unknown, name)
 			unknown[name] = true
 		case !tools.ToolsetAllowedForPlatform(name, platform):

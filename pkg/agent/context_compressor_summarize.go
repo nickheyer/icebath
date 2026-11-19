@@ -87,6 +87,9 @@ If no outstanding task exists, write "None."]`,
 
 // Summary token budget scaled with content size under the window share
 func (c *ContextCompressor) computeSummaryBudget(turns []map[string]any) int {
+	if c.aggressive {
+		return minSummaryTokens
+	}
 	budget := int(float64(estimateRowsRough(c.ctx, turns)) * summaryRatio)
 	return max(minSummaryTokens, min(budget, c.maxSummaryTokensValue()))
 }
@@ -630,13 +633,13 @@ func (c *ContextCompressor) callSummaryLLM(ctx context.Context, prompt string, p
 	}
 	where := "(provider=" + providerShown + " model=" + model + ")"
 	if pystr.Strip(content) == "" {
-		return "", &summaryRuntimeError{"Context compression LLM returned empty content " + where}
+		return "", &summaryRuntimeError{msg: "Context compression LLM returned empty content " + where, reply: summaryReplyEmpty}
 	}
 	if isRefusalResponse(response, content) {
-		return "", &summaryRuntimeError{"Context compression LLM returned refusal content " + where}
+		return "", &summaryRuntimeError{msg: "Context compression LLM returned refusal content " + where, reply: summaryReplyRefusal}
 	}
 	if responseFinishReason(response) == "length" {
-		return "", &summaryRuntimeError{"Context compression summary was truncated (" + truncatedSummaryMarker + "): generation hit the output token cap and the summary is incomplete " + where}
+		return "", &summaryRuntimeError{msg: "Context compression summary was truncated (" + truncatedSummaryMarker + "): generation hit the output token cap and the summary is incomplete " + where, reply: summaryReplyTruncated}
 	}
 	return content, nil
 }
@@ -826,7 +829,8 @@ func (c *ContextCompressor) onSummaryFailure(ctx context.Context, err error, tur
 	if staleErr := raiseIfStaleAttempt(ctx, c); staleErr != nil {
 		return nil, staleErr
 	}
-	if isPyRuntimeError(err) && strings.Contains(strings.ToLower(err.Error()), "no llm provider configured") {
+	var unavailable *provider.AuxiliaryClientUnavailable
+	if errors.As(err, &unavailable) && unavailable.NoProvider {
 		msg := "no auxiliary LLM provider configured"
 		c.recordCompressionFailureCooldown(summaryFailureCooldownSeconds, &msg)
 		c.lastSummaryError = &msg

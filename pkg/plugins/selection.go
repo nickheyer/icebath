@@ -95,6 +95,9 @@ func unknownPluginMessage(name string, downloadedOnly bool) string {
 	if downloadedOnly {
 		scope = " This command only works on downloaded plugins; bundled ones can only be enabled or disabled."
 	}
+	if line, absent := bundledTierRefusal(name); absent {
+		return "[red]" + line + "[/red]"
+	}
 	if moved := movedPluginHint(name); moved != "" {
 		return fmt.Sprintf("[red]No plugin named '%s'.[/red] %s", name, moved)
 	}
@@ -335,6 +338,9 @@ func CmdEnable(ctx context.Context, name string, allowToolOverride *bool, out io
 	}
 	if err := refuseLegacyRelay(key); err != nil {
 		return err
+	}
+	if line, absent := catalogTierRefusal(filepath.Base(key)); absent {
+		return fail(console, line)
 	}
 	if source != "bundled" {
 		parts := strings.Split(key, "/")

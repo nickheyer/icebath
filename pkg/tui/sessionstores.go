@@ -21,22 +21,18 @@ type delegationState struct {
 	UpdatedAt             *float64
 }
 
-// Merges a delegation.status answer, fields of the wrong type left as they were
-func (s *tuiStore) applyDelegationStatus(r map[string]any) {
-	if r == nil {
-		return
-	}
+// Takes the caps and the spawn pause of a delegation.status answer
+func (s *tuiStore) applyDelegationStatus(r tuigateway.DelegationStatusResult) {
+	depth, children := float64(r.MaxSpawnDepth), float64(r.MaxConcurrentChildren)
+	s.delegation.MaxSpawnDepth, s.delegation.MaxConcurrentChildren = &depth, &children
+	s.applyDelegationPause(r.Paused)
+}
+
+// Takes the spawn pause a delegation answer reports
+func (s *tuiStore) applyDelegationPause(paused bool) {
 	now := s.nowMillis()
 	s.delegation.UpdatedAt = &now
-	if n, isNum := r["max_spawn_depth"].(float64); isNum {
-		s.delegation.MaxSpawnDepth = &n
-	}
-	if n, isNum := r["max_concurrent_children"].(float64); isNum {
-		s.delegation.MaxConcurrentChildren = &n
-	}
-	if b, isBool := r["paused"].(bool); isBool {
-		s.delegation.Paused = b
-	}
+	s.delegation.Paused = paused
 }
 
 // Reaction beat the pet shows until its deadline

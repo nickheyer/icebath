@@ -189,7 +189,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 		return false, err
 	}
 	_ = os.Chmod(handoffDir, 0o700)
-	if err := writeWorkerPayload(payloadPath, job, s.home, multiplexActive); err != nil {
+	if err := writeWorkerPayloadWith(payloadPath, job, s.home, multiplexActive, workerExtraPrompt(ctx)); err != nil {
 		return false, err
 	}
 	scoped := s.installFireSecretScope(ctx)
@@ -267,11 +267,39 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 
 // Writes the handoff payload exclusively with owner only access, removing it when the write fails
 func writeWorkerPayload(path string, job *Job, profileHome string, multiplexActive bool) error {
+	return writeWorkerPayloadWith(path, job, profileHome, multiplexActive, nil)
+}
+
+// Context key of the per fire prompt a run hands to its restart safe worker
+type workerExtraPromptKey struct{}
+
+// Context carrying the per fire prompt into the worker handoff, unchanged when there is none
+func withWorkerExtraPrompt(ctx context.Context, extra *string) context.Context {
+	if extra == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, workerExtraPromptKey{}, *extra)
+}
+
+// Per fire prompt the context carries, nil when the fire has none
+func workerExtraPrompt(ctx context.Context) *string {
+	if extra, ok := ctx.Value(workerExtraPromptKey{}).(string); ok {
+		return &extra
+	}
+	return nil
+}
+
+// Worker payload with the claimed job, its home, the multiplex flag and the per fire prompt when set
+func writeWorkerPayloadWith(path string, job *Job, profileHome string, multiplexActive bool, extra *string) error {
 	wire, err := claimedJobToWire(job)
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(map[string]any{"job": wire, "profile_home": profileHome, "multiplex_active": multiplexActive})
+	payload := map[string]any{"job": wire, "profile_home": profileHome, "multiplex_active": multiplexActive}
+	if extra != nil {
+		payload["extra_prompt"] = *extra
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -412,7 +440,7 @@ func (s *Store) waitForExternalCronWorkerBody(ctx context.Context, proc workerPr
 
 // Adopts the gateway dispatched execution, publishes the ready acknowledgement atomically, then runs the job once
 func runExternalWorkerPayload(ctx context.Context, payloadPath, ackPath string) bool {
-	job, profileHome, multiplexActive, executionID, err := loadWorkerPayload(payloadPath)
+	job, profileHome, multiplexActive, executionID, extra, err := loadWorkerPayload(payloadPath)
 	_ = os.Remove(payloadPath)
 	if err != nil {
 		pkgLog().Error(fmt.Sprintf("Cron external worker could not load payload %s: %s", payloadPath, err))
@@ -452,7 +480,7 @@ func runExternalWorkerPayload(ctx context.Context, payloadPath, ackPath string) 
 			_ = os.Unsetenv(externalWorkerEnv)
 		}
 	}()
-	completed, err := runOneJobSeam(ctx, s, job, runOneJobOptions{})
+	completed, err := runOneJobSeam(ctx, s, job, runOneJobOptions{ExtraPrompt: extra})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cron external worker run of execution %s raised: %s\n", executionID, err)
 		return false
@@ -461,39 +489,43 @@ func runExternalWorkerPayload(ctx context.Context, payloadPath, ackPath string) 
 	return completed
 }
 
-// Job, resolved profile home, multiplex flag and execution id of a handoff payload file
-func loadWorkerPayload(path string) (*Job, string, bool, string, error) {
+// Job, resolved profile home, multiplex flag, execution id and per fire prompt of a handoff payload file
+func loadWorkerPayload(path string) (*Job, string, bool, string, *string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", false, "", err
+		return nil, "", false, "", nil, err
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &payload); err != nil {
-		return nil, "", false, "", err
+		return nil, "", false, "", nil, err
 	}
 	wire, ok := payload["job"].(map[string]any)
 	if !ok {
-		return nil, "", false, "", errors.New("the cron worker payload has no job")
+		return nil, "", false, "", nil, errors.New("the cron worker payload has no job")
 	}
 	homeValue, ok := payload["profile_home"]
 	if !ok {
-		return nil, "", false, "", errors.New("the cron worker payload has no profile_home")
+		return nil, "", false, "", nil, errors.New("the cron worker payload has no profile_home")
 	}
 	execValue, ok := wire["execution_id"]
 	if !ok {
-		return nil, "", false, "", errors.New("the cron worker payload has no execution_id")
+		return nil, "", false, "", nil, errors.New("the cron worker payload has no execution_id")
 	}
 	job, err := claimedJobFromWire(wire)
 	if err != nil {
-		return nil, "", false, "", err
+		return nil, "", false, "", nil, err
 	}
 	profileHome, err := pypath.Realpath(pyrepr.Str(homeValue), pypath.Lax)
 	if err != nil {
-		return nil, "", false, "", err
+		return nil, "", false, "", nil, err
 	}
 	executionID := pyrepr.Str(execValue)
 	job.ExecutionID = &executionID
-	return job, profileHome, pyTruthy(payload["multiplex_active"]), executionID, nil
+	var extra *string
+	if text, ok := payload["extra_prompt"].(string); ok {
+		extra = &text
+	}
+	return job, profileHome, pyTruthy(payload["multiplex_active"]), executionID, extra, nil
 }
 
 // Writes the acknowledgement to a temp sibling and renames it so readers see it absent or whole

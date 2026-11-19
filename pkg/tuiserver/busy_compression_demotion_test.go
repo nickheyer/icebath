@@ -300,8 +300,8 @@ func TestSubmitDuringManualCompressIsQueuedAndReplyPersists(t *testing.T) {
 	if _, err := compressLiveWithFeedback(ctx, "sid", session, a, "", true); !errors.As(err, &busy) {
 		t.Fatalf("slash compress while busy %v", err)
 	}
-	if got, err := compressLiveWithFeedback(ctx, "sid", session, a, "--aggressive", true); err != nil || got != agent.AggressiveUnsupported {
-		t.Fatalf("aggressive %q %v", got, err)
+	if _, err := compressLiveWithFeedback(ctx, "sid", session, a, "--aggressive", true); !errors.As(err, &busy) {
+		t.Fatalf("aggressive compress while busy %v", err)
 	}
 	resp := handleBusySubmit(ctx, "r2", "sid", session, "question", "ws-1", false, nil, "")
 	close(gate)

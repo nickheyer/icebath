@@ -47,11 +47,14 @@ type sessionDBPin struct {
 
 // Attributes the constructor and the runtime init of the runner assign
 type runnerCoreState struct {
-	config             *gateway.GatewayConfig
-	adapters           *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
-	sessionDBInitError *string
-	profileAdapters    *pydict.Dict[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]
-	profileConfigs     *pydict.Dict[string, *gateway.GatewayConfig]
+	config   *gateway.GatewayConfig
+	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	// Store outage met while running and already reported to the home channels, nil while the store works
+	sessionStoreOutage   *storeOutage
+	sessionStoreOutageMu sync.Mutex
+	storeHeld            storeHeldQueue
+	profileAdapters      *pydict.Dict[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]
+	profileConfigs       *pydict.Dict[string, *gateway.GatewayConfig]
 
 	prefillMessages              []any
 	reasoningConfig              map[string]any
@@ -151,6 +154,7 @@ type runnerCoreState struct {
 	voiceMode                       *pydict.Dict[string, string]
 	recentVoiceTranscripts          map[[4]any][]voiceTranscriptSeen
 	backgroundTasks                 map[*gatewayTask]struct{}
+	releaseWriters                  homeWriters
 	gatewayStartedAt                float64
 	loopHeartbeatTask               *gatewayTask
 	loopFloorTimerHandle            *gateway.LoopFloorTimerHandle

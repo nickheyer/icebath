@@ -519,10 +519,17 @@ func (a *SlackAdapter) react(ctx context.Context, channel, timestamp, emoji, tea
 	return true
 }
 
-// Adds a reaction to a message
+// Adds an emoji reaction to a message, a unicode emoji sent under its Slack name
 func (a *SlackAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
-	a.react(ctx, chatID, messageID, emoji, "", false)
-	return nil
+	name, ok := gateway.ReactionShortcode(emoji)
+	if !ok {
+		return fmt.Errorf("%s has no Slack emoji name, pass a name such as thumbsup", emoji)
+	}
+	if a.currentApp() == nil {
+		return errors.New("the Slack app is not connected")
+	}
+	_, err := a.getClient(chatID, "").call(ctx, "reactions.add", map[string]any{"channel": chatID, "timestamp": messageID, "name": name})
+	return err
 }
 
 // Removes the in progress reaction from a message

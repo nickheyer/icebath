@@ -48,7 +48,7 @@ func NewPreparedMutations() *PreparedMutations {
 // Refusals that end a retained mutation, every other failure keeping its tuple for a retry
 var mutationTerminalRefusals = map[string]bool{"invalid_params": true, "revision_conflict": true, "stale_generation": true,
 	"session_busy": true, "unknown_execution": true, "permission_denied": true,
-	"model_resolution_failed": true, "nothing_to_compress": true, "unsupported_compress_options": true}
+	"model_resolution_failed": true, "nothing_to_compress": true}
 
 // Operations that carry no generation fence
 var mutationMetadata = map[string]bool{"rename": true}
@@ -188,13 +188,13 @@ func confirmationTitle(refusal map[string]any) string {
 	return "Model Selection Warning"
 }
 
-// Structured compress payload from the raw /compress arguments, aggressive refused before the owner sees it
+// Structured compress payload from the raw /compress arguments
 func compressPayload(arg string) (*pyjson.Object, error) {
 	request := agent.ParseCompressArgs(arg)
-	if request.Aggressive {
-		return nil, &gateway.GatewayClientError{Msg: agent.AggressiveUnsupported}
-	}
 	payload := pyjson.NewObject()
+	if request.Aggressive {
+		payload.Set("aggressive", true)
+	}
 	if request.FocusTopic != nil && *request.FocusTopic != "" {
 		payload.Set("focus", *request.FocusTopic)
 	}
@@ -208,30 +208,38 @@ func compressPayload(arg string) (*pyjson.Object, error) {
 	return payload, nil
 }
 
-// Operation and payload of a /branch, /model or /compress line
+// Operation and payload of a /model or /compress line, no operation for a /model that only asks for the current model
 func slashMutation(command, arg string) (string, *pyjson.Object, error) {
 	name := strings.TrimLeft(command, "/")
 	switch name {
 	case "model":
-		parsed := provider.ParseModelFlagsDetailed(arg)
-		if parsed.IsGlobal || parsed.IsOnce || parsed.ForceRefresh || parsed.ModelInput == "" {
-			return "", nil, &gateway.GatewayClientError{Msg: "unsupported_model_options"}
+		request := provider.ParseModelSwitchArgs(arg)
+		if len(request.Errors) > 0 {
+			return "", nil, &gateway.GatewayClientError{Msg: request.ErrorMessages()[0], ExitStatus: 2}
 		}
-		payload := pyjson.ObjectOf("model", parsed.ModelInput)
-		if parsed.ExplicitProvider != "" {
-			payload.Set("provider", parsed.ExplicitProvider)
+		payload := pyjson.NewObject()
+		for _, field := range [][2]string{{"model", request.Target}, {"provider", request.ExplicitProvider}, {"reasoning", request.ReasoningEffort}} {
+			if field[1] != "" {
+				payload.Set(field[0], field[1])
+			}
+		}
+		for _, flag := range []struct {
+			name string
+			set  bool
+		}{{"refresh", request.ForceRefresh}, {"once", request.IsOnce}, {"persist", request.IsGlobal}} {
+			if flag.set {
+				payload.Set(flag.name, true)
+			}
+		}
+		_, named := payload.Get("model")
+		_, picked := payload.Get("provider")
+		if !named && !picked && !request.ForceRefresh {
+			return "", nil, nil
 		}
 		return name, payload, nil
-	case "compress":
-		payload, err := compressPayload(arg)
-		return name, payload, err
-	case "branch":
-		if arg != "" {
-			return name, pyjson.ObjectOf("title", arg), nil
-		}
-		return name, pyjson.NewObject(), nil
 	}
-	return "", nil, &gateway.GatewayClientError{Msg: "unsupported_command"}
+	payload, err := compressPayload(arg)
+	return "compress", payload, err
 }
 
 // Fresh random request id as 32 lowercase hex digits

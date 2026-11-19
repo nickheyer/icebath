@@ -752,6 +752,9 @@ var WorktreeCronStore struct {
 
 // Whether an enabled non terminal cron job runs inside the tree or is bound to a local chat of a session there
 func cronBoundToTree(worktreePath string, chats map[string]bool) bool {
+	if WorktreeCronStore.JobsFile == nil || WorktreeCronStore.ParseJobs == nil || WorktreeCronStore.JobActive == nil {
+		return false
+	}
 	jobsFile := WorktreeCronStore.JobsFile()
 	if _, err := os.Stat(jobsFile); err != nil {
 		if os.IsNotExist(err) {

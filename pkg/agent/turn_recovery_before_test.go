@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -31,7 +32,7 @@ func (e *statusHeaderErr) ResponseHeaders() http.Header { return e.headers }
 func (e *statusHeaderErr) PyTypeName() string           { return "APIStatusError" }
 
 func asciiCodecErr() error {
-	return &pyClassErr{"UnicodeEncodeError", "'ascii' codec can't encode character '\\u2615' in position 0: ordinal not in range"}
+	return &pycodecs.UnicodeEncodeError{Codec: "ascii", Char: '\u2615', Start: 0, End: 1, Reason: "ordinal not in range(128)"}
 }
 
 func rowsOf(dicts ...map[string]any) (out []*state.Message) {
@@ -436,7 +437,7 @@ func TestBedrockEventOrderFallsBackToConverseOnce(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, _ := quietAgent()
 	a.provider, a.apiMode, a.client, a.clientKwargs = "bedrock", "anthropic_messages", struct{}{}, map[string]any{"k": 1}
-	err := &pyClassErr{"RuntimeError", `Unexpected event order, got content_block_start before "message_start"`}
+	err := &provider.StreamEventOrderError{Type: "content_block_start"}
 	s := &LoopState{APIKwargs: map[string]any{}}
 	if retry, rerr := recoverBeforeClassification(t.Context(), a, s, err); rerr != nil || !retry {
 		t.Fatalf("retry %v err %v", retry, rerr)

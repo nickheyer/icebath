@@ -161,7 +161,6 @@ gateway:
     not_enough: "Nie genoeg gesprek om saam te pers nie (ten minste 4 boodskappe nodig)."
     no_provider: "Geen verskaffer opgestel nie -- kan nie saampers nie."
     nothing_to_do: "Niks om saam te pers nie (die transkripsie is steeds heeltemal beskermde konteks)."
-    aggressive_unsupported: "--aggressive word nie ondersteun nie; gebruik '/compress here [N]' om net onlangse uitruilings te behou, of /undo om beurte te verwyder."
     focus_line: "Fokus: \"{topic}\""
     summary_failed: "⚠️ Opsomming kon nie gegenereer word nie ({error}). {count} historiese boodskap(pe) is verwyder en met 'n plekhouer vervang; vroeëre konteks kan nie meer herstel word nie. Oorweeg om jou auxiliary.compression-modelopstelling na te gaan."
     aborted: "⚠️ Kompressie gestaak ({error}). Geen boodskappe is laat val nie — die gesprek is onveranderd. Voer /compress uit om weer te probeer, /reset vir 'n skoon sessie, of kyk na jou auxiliary.compression-modelkonfigurasie."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ Die KI-modeldiens het aanhou misluk. Gebruik /retry om weer te probeer, of /model om modelle te wissel. Besonderhede is in die gateway-log (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ Sessie-opslag was tydelik onbeskikbaar, so hierdie beurt is gestop om jou gesprekgeskiedenis te beskerm. Kontroleer asseblief die beskikbare skyfspasie en stuur dan jou boodskap weer."
     session_storage_unavailable: "⚠️ Sessie-opslag was tydelik onbeskikbaar, so hierdie beurt is gestop om jou gesprekgeskiedenis te beskerm. Jou boodskap behoort reeds gestoor te wees — stuur dit asseblief oor 'n oomblik weer."
+    session_storage_held: "⚠️ Sessie-opslag is nou nie beskikbaar nie ({cause}), dus is jou boodskap op hou. Dit word bewaar en hier beantwoord sodra die opslag weer werk; jy hoef dit nie weer te stuur nie."
     generic_failed: "⚠️ Iets het verkeerd geloop en ek kon hierdie antwoord nie voltooi nie. Gebruik /retry om weer te probeer, of /new om 'n vars gesprek te begin. Tegniese besonderhede is in die gateway-log (`icebath logs`)."
     interrupted_before_start: "⚠️ Jou boodskap is onderbreek voordat verwerking begin het (waarskynlik deur 'n onlangse /stop). Stuur dit asseblief weer."
     processing_incomplete: "verwerking onvolledig"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ Sessie-databasis-korrupsie opgespoor. Boodskappe word moontlik nie bewaar nie. Herstelopsies:\n1. Voer `icebath {profile_arg}doctor --fix` uit\n2. Stop die gateway en herstel dan met:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (as dit herstelbaar rapporteer) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — herstel neem eers 'n momentopname van die beskadigde lêer; voer NIE `sqlite3 ... \".recover\"` teen die lewendige state.db uit nie, 'n kwesbare sqlite3 CLI kan dit verder korrupteer\n3. Herstel vanaf 'n rugsteun in {backups_dir}/\nVoer `icebath {profile_arg}doctor` uit vir gesuiwerde diagnostiek."
     db_fts_corrupt: "⚠️ Sessie-databasis het 'n korrupsiefout gerapporteer wat beperk is tot die soekindeks (FTS5); die boodskaptabelle is nie beskadig nie. Boodskappe word moontlik nie bewaar totdat dit herstel is nie: voer `icebath {profile_arg}doctor --fix` uit en herbegin dan die gateway. Voer nie herstelgereedskap uit of herstel 'n rugsteun nie tensy `icebath {profile_arg}doctor` skade bevestig."
     db_then_restart: "{action} Dan `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ Sessie-databasis onbeskikbaar — boodskappe word moontlik nie gestoor nie en /resume sal leeg wees. Oorsaak: {cause}. {action}"
+    db_unavailable: "⚠️ Sessie-databasis nie beskikbaar nie — nuwe boodskappe word aangehou en beantwoord sodra dit weer werk. Oorsaak: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ Cron-winkel {store} is nie skryfbaar nie ({error}) sedert {since}. Geskeduleerde take word oorgeslaan totdat dit weer skryfwerk aanvaar. Regstelling: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "Ander / tik antwoord"
       header: "Vraag"
       question: "❓ {question}"
+      submit_button: "Stuur"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ Wag vir {user} om 'n antwoord te tik…"
+      pick_one: "Kies ten minste een opsie en druk dan Stuur."
+    approval:
+
+      resolved_once: "✅ Een keer toegelaat deur {user}"
+      resolved_session: "✅ Vir hierdie sessie toegelaat deur {user}"
+      resolved_always: "✅ Altyd toegelaat deur {user}"
+      resolved_deny: "❌ Geweier deur {user}"
+    confirm:
+
+      default_title: "Bevestig"
+      approve_once: "Keur een keer goed"
+      always_approve: "Keur altyd goed"
+      cancel: "Kanselleer"
+      decided_once: "✅ Een keer goedgekeur deur {user}"
+      decided_always: "🔒 Altyd goedgekeur deur {user}"
+      decided_cancel: "❌ Gekanselleer deur {user}"
     typing:
 
       thinking: "Icebath dink…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "Vertak die huidige sessie (nuwe draad op Discord/Telegram/Slack/Matrix; --here bly hier)"
+    core_description: "Vertak die huidige sessie (--here bly hier)"
   worktree:
 
     description: "Wys, lys, skep of snoei geïsoleerde git-werkbome"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "Platform '{platform}' is nie in die gateway opgestel/geaktiveer nie."
       no_home_channel: "Geen tuiste-kanaal vir {platform} opgestel nie."
       set_home_hint: "Stel eers een met /sethome in die bestemmingsgeselsie."
+      enable_platform_hint: "Stel dit op met icebath gateway setup en herbegin dan die gateway met icebath gateway restart."
       session_row_failed: "Kon nie sessie-ry in state.db verseker nie: {error}"
       picked_up: "Gateway het dit opgetel; dra oor..."
       complete: "↻ Oordrag voltooi. Die sessie is nou aktief op {platform}."

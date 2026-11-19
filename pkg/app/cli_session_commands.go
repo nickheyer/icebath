@@ -658,12 +658,6 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		raw = parts[1]
 	}
 	request := agent.ParseCompressArgs(raw)
-	if request.Aggressive {
-		printLines("(._.) " + agent.AggressiveUnsupported)
-		if !request.Preview {
-			return
-		}
-	}
 	if request.Preview {
 		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agentRef()), c.conversationHistory, request)
 		if err != nil {

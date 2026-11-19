@@ -8,11 +8,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // One builtin registry command as the palette catalog reads it
@@ -39,47 +39,56 @@ var catalogExtras = [][3]string{
 
 // Accumulated pairs, canonical names, ordered categories and plugin commands of the catalog
 type commandCatalogAcc struct {
-	pairs          []any
-	canon          *pyjson.Object
-	catMap         *pyjson.Object
-	pluginCommands *pyjson.Object
+	pairs          [][2]string
+	canon          map[string]string
+	categories     []tuigateway.CommandCategory
+	pluginCommands map[string]string
+	chatCommands   map[string]string
 }
 
 // Adds one listed command to the pairs, its category and the canonical map
 func (cat *commandCatalogAcc) add(key, desc, category string) {
-	cat.canon.Set(strings.ToLower(key), key)
-	cat.pairs = append(cat.pairs, []any{key, desc})
-	cat.appendCategory(category, []any{key, desc})
+	cat.canon[strings.ToLower(key)] = key
+	cat.pairs = append(cat.pairs, [2]string{key, desc})
+	group := cat.category(category)
+	group.Pairs = append(group.Pairs, [2]string{key, desc})
 }
 
-// Category rows, created empty at first sight in insertion order
-func (cat *commandCatalogAcc) category(name string) []any {
-	rows, ok := cat.catMap.Get(name)
-	if !ok {
-		cat.catMap.Set(name, []any{})
-		return []any{}
+// Category of a name, created empty at first sight in insertion order
+func (cat *commandCatalogAcc) category(name string) *tuigateway.CommandCategory {
+	for i := range cat.categories {
+		if cat.categories[i].Name == name {
+			return &cat.categories[i]
+		}
 	}
-	return rows.([]any)
+	cat.categories = append(cat.categories, tuigateway.CommandCategory{Name: name, Pairs: [][2]string{}})
+	return &cat.categories[len(cat.categories)-1]
 }
 
-// Appends one row to a category
-func (cat *commandCatalogAcc) appendCategory(name string, row []any) {
-	cat.catMap.Set(name, append(cat.category(name), row))
+// Whether a lower cased command key already has a canonical name
+func (cat *commandCatalogAcc) claimed(key string) bool {
+	_, found := cat.canon[strings.ToLower(key)]
+	return found
 }
 
 // Registry commands with their aliases canonicalized, then the TUI extras the registry does not claim
 func catalogRegistry(cat *commandCatalogAcc, rows []CatalogCommand) {
 	for _, cmd := range rows {
+		if cmd.GatewayOnly {
+			for _, name := range append([]string{cmd.Name}, cmd.Aliases...) {
+				cat.chatCommands[strings.ToLower(name)] = cmd.Description
+			}
+		}
 		if catalogHidden[cmd.Name] || cmd.GatewayOnly {
 			continue
 		}
 		cat.add("/"+cmd.Name, cmd.Description, cmd.Category)
 		for _, alias := range cmd.Aliases {
-			cat.canon.Set(strings.ToLower("/"+alias), "/"+cmd.Name)
+			cat.canon[strings.ToLower("/"+alias)] = "/" + cmd.Name
 		}
 	}
 	for _, extra := range catalogExtras {
-		if _, claimed := cat.canon.Get(strings.ToLower(extra[0])); !claimed {
+		if !cat.claimed(extra[0]) {
 			cat.add(extra[0], extra[1], extra[2])
 		}
 	}
@@ -156,27 +165,27 @@ func catalogPluginCommands(ctx context.Context, cat *commandCatalogAcc) map[stri
 		if desc == "" {
 			desc = "Plugin command"
 		}
-		cat.pluginCommands.Set(pname, desc)
-		if _, claimed := cat.canon.Get(strings.ToLower(key)); claimed {
+		cat.pluginCommands[pname] = desc
+		if cat.claimed(key) {
 			continue
 		}
 		cat.add(key, desc, "Plugin commands")
 	}
 	for _, cmd := range registered {
 		key := "/" + cmd.Name
-		if _, claimed := cat.canon.Get(strings.ToLower(key)); claimed {
+		if cat.claimed(key) {
 			continue
 		}
 		cat.add(key, cmd.Description, "Plugin commands")
 		for _, alias := range cmd.Aliases {
-			cat.canon.Set(strings.ToLower("/"+alias), key)
+			cat.canon[strings.ToLower("/"+alias)] = key
 		}
 	}
 	return registeredSubs
 }
 
 // Skill pairs with their usage and origin, returning the built in name collision notice of skills
-func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut *pyjson.Object) (string, error) {
+func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut map[string]tuigateway.SkillCatalogEntry) (string, error) {
 	usage, originOf := skillUsageLookup(ctx)
 	scope := skills.NewScope(home.Dir(ctx), nil)
 	cwd, err := tools.ResolveAgentCwd(tools.ToolEnvFrom(ctx))
@@ -199,12 +208,12 @@ func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut *pyjso
 		if !hasDesc {
 			desc = "Skill"
 		}
-		cat.pairs = append(cat.pairs, []any{k, pyrepr.Str(desc)})
+		cat.pairs = append(cat.pairs, [2]string{k, pyrepr.Str(desc)})
 		name := strings.TrimLeft(k, "/")
 		if raw := info["name"]; pyrepr.Truthy(raw) {
 			name = pyrepr.Str(raw)
 		}
-		skillsOut.Set(k, pyjson.ObjectOf("usage", usage(name), "origin", originOf(name)))
+		skillsOut[k] = tuigateway.SkillCatalogEntry{Usage: usage(name).Int64(), Origin: originOf(name)}
 	}
 	var names []string
 	for _, s := range scope.FindAllSkills(false) {
@@ -221,17 +230,17 @@ func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut *pyjso
 }
 
 // Registry backed slash metadata by category, each discovery source degrading into the warning on failure
-func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Context, error)) (map[string]any, error) {
-	cat := &commandCatalogAcc{canon: pyjson.NewObject(), catMap: pyjson.NewObject(), pluginCommands: pyjson.NewObject(), pairs: []any{}}
+func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Context, error)) (tuigateway.CommandsCatalogResult, error) {
+	cat := &commandCatalogAcc{canon: map[string]string{}, pluginCommands: map[string]string{}, chatCommands: map[string]string{}, pairs: [][2]string{}}
 	rows, subcommands := CatalogRegistry(ctx)
 	catalogRegistry(cat, rows)
 	warning, pluginError := "", ""
-	skillsOut := pyjson.NewObject()
+	skillsOut := map[string]tuigateway.SkillCatalogEntry{}
 	scoped := ctx
 	if scope != nil {
 		var err error
 		if scoped, err = scope(ctx); err != nil {
-			return nil, err
+			return tuigateway.CommandsCatalogResult{}, err
 		}
 	}
 	if err := catalogQuickCommands(scoped, cat); err != nil {
@@ -253,52 +262,28 @@ func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Co
 	} else if warning == "" {
 		warning = note
 	}
-	sub := pyjson.NewObject()
-	for _, row := range rows {
-		if values, ok := subcommands["/"+row.Name]; ok {
-			sub.Set("/"+row.Name, stringItems(values))
+	sub := map[string][]string{}
+	for key, values := range subcommands {
+		sub[key] = values
+	}
+	for key, values := range pluginSubcommands {
+		if _, done := sub[key]; !done {
+			sub[key] = values
 		}
 	}
-	var rest []string
-	for key := range subcommands {
-		if _, done := sub.Get(key); !done {
-			rest = append(rest, key)
-		}
+	if cat.categories == nil {
+		cat.categories = []tuigateway.CommandCategory{}
 	}
-	sort.Strings(rest)
-	for _, key := range rest {
-		sub.Set(key, stringItems(subcommands[key]))
-	}
-	var plugged []string
-	for key := range pluginSubcommands {
-		if _, done := sub.Get(key); !done {
-			plugged = append(plugged, key)
-		}
-	}
-	sort.Strings(plugged)
-	for _, key := range plugged {
-		sub.Set(key, stringItems(pluginSubcommands[key]))
-	}
-	categories := make([]any, 0, cat.catMap.Len())
-	for _, name := range cat.catMap.Keys {
-		pairs, _ := cat.catMap.Get(name)
-		categories = append(categories, pyjson.ObjectOf("name", name, "pairs", pairs))
-	}
-	return map[string]any{"pairs": cat.pairs, "sub": sub, "canon": cat.canon,
-		"categories": categories, "skills": skillsOut, "skill_count": skillsOut.Len(), "warning": warning,
-		"plugin_discovery_error": pluginError, "plugin_commands": cat.pluginCommands}, nil
+	return tuigateway.CommandsCatalogResult{Pairs: cat.pairs, Sub: sub, Canon: cat.canon, Categories: cat.categories, Skills: skillsOut,
+		SkillCount: int64(len(skillsOut)), Warning: warning, PluginDiscoveryError: pluginError, PluginCommands: cat.pluginCommands,
+		ChatCommands: cat.chatCommands}, nil
 }
 
-// Strings as a JSON list
-func stringItems(values []string) []any {
-	out := make([]any, len(values))
-	for i, v := range values {
-		out[i] = v
+// Slash popup rows for the text, skills and bundles read inside the scope of the calling session, for both routes
+func SlashCompletions(ctx context.Context, text string, scope func(context.Context) (context.Context, error)) (tuigateway.CompleteSlashResult, error) {
+	raw, err := slashCompletions(ctx, text, scope)
+	if err != nil {
+		return tuigateway.CompleteSlashResult{}, err
 	}
-	return out
-}
-
-// Slash popup items for the text, skills and bundles read inside the scope of the calling session
-func SlashCompletions(ctx context.Context, text string, scope func(context.Context) (context.Context, error)) (map[string]any, error) {
-	return slashCompletions(ctx, text, scope)
+	return typedRow[tuigateway.CompleteSlashResult]("complete.slash", raw), nil
 }

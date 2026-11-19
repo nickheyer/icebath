@@ -25,6 +25,7 @@ var policyHandlers = map[string]policyHandler{
 	"workspace":   workspaceInTransaction,
 	"editor_mcp":  editorMCPInTransaction,
 	"edit_policy": editPolicyInTransaction,
+	"launch":      launchInTransaction,
 }
 
 // Distinct ids in first seen order, the list of a Python set of session ids
@@ -273,36 +274,8 @@ func reasoningInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 	if err != nil {
 		return nil, nil, err
 	}
-	key := DeferredPickPrefix + sessionID
-	pending, ok, err := fetchScalar(ctx, conn, "SELECT value FROM state_meta WHERE key=?", key)
-	if err != nil {
+	if err := dropDeferredReasoning(ctx, conn, sessionID); err != nil {
 		return nil, nil, err
-	}
-	if ok {
-		pick, err := loadsStoredObject(pending)
-		if err != nil {
-			return nil, nil, err
-		}
-		pick.Pop("reasoning")
-		if inner, has := pick.Get("payload"); has {
-			innerObj, isObj := inner.(*pyjson.Object)
-			if !isObj {
-				return nil, nil, &stateTypedError{"AttributeError", fmt.Sprintf("the stored reasoning is %s, expected a mapping", errchain.Kind(inner))}
-			}
-			innerObj.Pop("reasoning")
-		}
-		if _, has := pick.Get("application_id"); has {
-			text, err := runtimeJSON(pick)
-			if err != nil {
-				return nil, nil, err
-			}
-			_, err = conn.ExecContext(ctx, "UPDATE state_meta SET value=? WHERE key=?", text, key)
-			if err != nil {
-				return nil, nil, err
-			}
-		} else if _, err := conn.ExecContext(ctx, "DELETE FROM state_meta WHERE key=?", key); err != nil {
-			return nil, nil, err
-		}
 	}
 	effort, err := receiptItem(payload, "effort")
 	if err != nil {
@@ -312,6 +285,64 @@ func reasoningInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 	result.Set("effort", effort)
 	result.Set("execution_generation", generation)
 	return distinctSessionIDs(sessionID, snapshotTarget(snapshot)), result, nil
+}
+
+// Strips the reasoning of a deferred model pick, the pick dropped when nothing else of it remains
+func dropDeferredReasoning(ctx context.Context, conn SQLiteConn, sessionID string) error {
+	key := DeferredPickPrefix + sessionID
+	pending, ok, err := fetchScalar(ctx, conn, "SELECT value FROM state_meta WHERE key=?", key)
+	if err != nil || !ok {
+		return err
+	}
+	pick, err := loadsStoredObject(pending)
+	if err != nil {
+		return err
+	}
+	pick.Pop("reasoning")
+	if inner, has := pick.Get("payload"); has {
+		innerObj, isObj := inner.(*pyjson.Object)
+		if !isObj {
+			return &stateTypedError{"AttributeError", fmt.Sprintf("the stored reasoning is %s, expected a mapping", errchain.Kind(inner))}
+		}
+		innerObj.Pop("reasoning")
+	}
+	if _, has := pick.Get("application_id"); has {
+		text, err := runtimeJSON(pick)
+		if err != nil {
+			return err
+		}
+		_, err = conn.ExecContext(ctx, "UPDATE state_meta SET value=? WHERE key=?", text, key)
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "DELETE FROM state_meta WHERE key=?", key)
+	return err
+}
+
+// Commits a resume's relaunched policy, moving the conversation rows when the cwd changed
+func launchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+	var affected []string
+	var result *pyjson.Object
+	var err error
+	if _, moved := payload.Get("cwd"); moved {
+		if affected, result, err = workspaceInTransaction(d, ctx, conn, sessionID, payload, prepared); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		snapshot, generation, err := d.commitPolicy(ctx, conn, sessionID, prepared)
+		if err != nil {
+			return nil, nil, err
+		}
+		affected, result = distinctSessionIDs(sessionID, snapshotTarget(snapshot)), pyjson.NewObject()
+		result.Set("execution_generation", generation)
+	}
+	if effort, has := payload.Get("reasoning"); has {
+		if err := dropDeferredReasoning(ctx, conn, sessionID); err != nil {
+			return nil, nil, err
+		}
+		result.Set("effort", effort)
+	}
+	result.Set("relaunched", stringsToAny(payload.Keys))
+	return affected, result, nil
 }
 
 // Moves the policy cwd and every row of the conversation to the new workspace, replacing git identity

@@ -49,7 +49,7 @@ func NewGatewayRunner(ctx context.Context, config *gateway.GatewayConfig) (*Gate
 func (r *GatewayRunner) initGatewayRunner(ctx context.Context) error {
 	provider.SetMultiplexActive(r.multiplexing())
 	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
-	r.sessionDBInitError = nil
+	r.sessionStoreOutage = nil
 	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
 	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
 	r.warnIfDockerMediaDeliveryIsRisky(ctx)
@@ -58,7 +58,9 @@ func (r *GatewayRunner) initGatewayRunner(ctx context.Context) error {
 	r.initSessionStore(ctx)
 	r.initLifecycleState()
 	r.initRuntimeCaches(ctx)
-	r.initSessionDB(ctx)
+	if err := r.initSessionDB(ctx); err != nil {
+		return err
+	}
 	return r.initRegistriesAndClocks(ctx)
 }
 

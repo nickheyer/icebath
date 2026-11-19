@@ -41,7 +41,7 @@ func mcpAddPositionals(cmd *cobra.Command, args []string, remainder bool) (strin
 		return "", nil, &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: name"}
 	}
 	if len(positionals) > 1 {
-		return "", nil, &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(positionals[1:], " ")}
+		return "", nil, &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + strings.Join(positionals[1:], " ")}
 	}
 	return positionals[0], rest, nil
 }

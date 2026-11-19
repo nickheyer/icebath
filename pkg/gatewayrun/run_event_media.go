@@ -82,7 +82,6 @@ func buildDocumentContextNote(displayName, agentPath, mtype string, contentInlin
 	}
 	return fmt.Sprintf("[The user sent a document: '%s'. It is saved at: %s. "+
 		"Its text is not inlined here (it's a binary format such as PDF or DOCX). "+
-		"To read it, extract the document's text yourself — for example with the "+
-		"terminal tool or the ocr-and-documents skill — before answering, instead "+
+		"read_file renders it as text: read it before answering, instead "+
 		"of asking the user to paste the contents.]", displayName, agentPath)
 }

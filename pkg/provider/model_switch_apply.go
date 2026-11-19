@@ -211,20 +211,18 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 		{Key: "default", Value: result.NewModel}, {Key: "provider", Value: result.TargetProvider},
 		{Key: "base_url", Value: orNil(result.BaseURL)}, {Key: "api_mode", Value: orNil(result.APIMode)},
 	}
-	if _, pinned := modelCfg["context_length"]; pinned {
-		if selectionClearsContextPinFn(pyStrOrEmpty(pyOr(modelCfg["default"], modelCfg["model"])), result.NewModel,
-			pyStrOrEmpty(modelCfg["base_url"]), result.BaseURL, pyStrOrEmpty(modelCfg["provider"]), result.TargetProvider) {
-			updates = append(updates, config.KeyValue{Key: "context_length"})
-		}
-	}
-	target := strings.ToLower(pyStripSpace(result.TargetProvider))
-	routeChanged := SelectionRouteChanged(modelCfg, result)
 	var stale []string
-	if !strings.HasPrefix(target, "custom") || routeChanged {
-		stale = []string{"api_key", "api"}
+	if _, legacyName := modelCfg["model"]; legacyName {
+		stale = append(stale, "model")
 	}
-	if routeChanged {
-		stale = append(stale, "key_env", "api_key_env")
+	_, pinned := modelCfg["context_length"]
+	_, vision := modelCfg["supports_vision"]
+	if (pinned || vision) && selectionClearsContextPinFn(pyStrOrEmpty(pyOr(modelCfg["default"], modelCfg["model"])), result.NewModel,
+		pyStrOrEmpty(modelCfg["base_url"]), result.BaseURL, pyStrOrEmpty(modelCfg["provider"]), result.TargetProvider) {
+		stale = append(stale, "context_length", "supports_vision")
+	}
+	if SelectionRouteChanged(modelCfg, result) {
+		stale = append(stale, "api_key", "api", "key_env", "api_key_env")
 	}
 	for _, key := range stale {
 		if _, held := modelCfg[key]; held {
@@ -236,10 +234,15 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 
 // SelectionRouteChanged reports whether the provider or endpoint differs between a model section and the switch target
 func SelectionRouteChanged(modelCfg map[string]any, result ModelSwitchResult) bool {
-	if strings.ToLower(pyStripSpace(pyStrOrEmpty(pyOr(modelCfg["provider"], "")))) != strings.ToLower(pyStripSpace(result.TargetProvider)) {
+	heldProvider := strings.ToLower(pyStripSpace(pyStrOrEmpty(pyOr(modelCfg["provider"], ""))))
+	if heldProvider != strings.ToLower(pyStripSpace(result.TargetProvider)) {
 		return true
 	}
-	return NormalizeRouteBaseURL(pyStrOrEmpty(modelCfg["base_url"])) != NormalizeRouteBaseURL(result.BaseURL)
+	heldRoute, newRoute := NormalizeRouteBaseURL(pyStrOrEmpty(modelCfg["base_url"])), NormalizeRouteBaseURL(result.BaseURL)
+	if heldRoute == "" && newRoute != "" && heldProvider != "" {
+		return !providerDefaultRoutes(NormalizeProvider(heldProvider))[newRoute]
+	}
+	return heldRoute != newRoute
 }
 
 // ApplyModelSelection returns the model section with the selection applied, cleared keys removed or masked with null

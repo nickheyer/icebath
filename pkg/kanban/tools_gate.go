@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"sort"
@@ -682,12 +683,27 @@ func parseBoolArg(k *kanbanCall, name string) (bool, error) {
 	return parsed, nil
 }
 
-// Python int of an optional argument, nil when it is absent
+// Whole number of an optional argument, nil when it is absent, a plain refusal for any other value
 func optIntArg(value any) (*big.Int, error) {
 	if value == nil {
 		return nil, nil
 	}
-	return pyint.Of(value)
+	n, err := pyint.Of(value)
+	if err != nil {
+		return nil, &ValueError{wholeNumberRefusal(value)}
+	}
+	return n, nil
+}
+
+// Sentence refusing a value no whole number reads from
+func wholeNumberRefusal(value any) string {
+	if f, isFloat := value.(float64); isFloat && math.IsInf(f, 0) {
+		return "infinity is not a whole number"
+	}
+	if _, isText := value.(string); isText || errchain.Kind(value) == "a number" {
+		return errchain.Show(value) + " is not a whole number"
+	}
+	return "expected a whole number, got " + errchain.Kind(value)
 }
 
 var (

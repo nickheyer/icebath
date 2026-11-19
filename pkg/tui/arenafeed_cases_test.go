@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tui
 
 import (
@@ -11,11 +13,11 @@ import (
 // Newest turn the arena journal holds for the session in view
 func arenaTurn(t *testing.T, a *app) *arena.Snapshot {
 	t.Helper()
-	ids := a.arena.journal.Sprints(a.store.ui.Sid)
+	ids := a.arena.(*arenaFeed).journal.Sprints(a.store.ui.Sid)
 	if len(ids) == 0 {
 		t.Fatal("the journal holds no turn of the session")
 	}
-	snap, _, _ := a.arena.journal.View(ids[len(ids)-1], time.Time{})
+	snap, _, _ := a.arena.(*arenaFeed).journal.View(ids[len(ids)-1], time.Time{})
 	return snap
 }
 
@@ -90,8 +92,8 @@ func TestArenaCommandOpensTheCard(t *testing.T) {
 	if card == nil || ws.Zoomed() != card || a.wm.Focused() != card {
 		t.Fatalf("arena card %v zoomed %v focused %v", card, ws.Zoomed(), a.wm.Focused())
 	}
-	if card.Title() != "ARENA" || a.arena.cfg.Arena.World != "den" || a.arena.cfg.Arena.FPS != 5 || a.arena.cfgErr != nil {
-		t.Fatalf("title %q config %+v error %v", card.Title(), a.arena.cfg.Arena, a.arena.cfgErr)
+	if card.Title() != "ARENA" || a.arena.(*arenaFeed).cfg.Arena.World != "den" || a.arena.(*arenaFeed).cfg.Arena.FPS != 5 || a.arena.(*arenaFeed).cfgErr != nil {
+		t.Fatalf("title %q config %+v error %v", card.Title(), a.arena.(*arenaFeed).cfg.Arena, a.arena.(*arenaFeed).cfgErr)
 	}
 	drain(a, a.dispatchSubmission("/arena"))
 	if again, _ := a.wm.Find(arena.Name); again != card || ws.Zoomed() != card {
@@ -99,8 +101,8 @@ func TestArenaCommandOpensTheCard(t *testing.T) {
 	}
 	a.store.ui.Arena = map[string]any{"world": "moon"}
 	a.Update(struct{}{})
-	if a.arena.cfgErr == nil || a.arena.cfg.Arena.World != "blackwall" {
-		t.Fatalf("unknown world parsed as %q with error %v", a.arena.cfg.Arena.World, a.arena.cfgErr)
+	if a.arena.(*arenaFeed).cfgErr == nil || a.arena.(*arenaFeed).cfg.Arena.World != "blackwall" {
+		t.Fatalf("unknown world parsed as %q with error %v", a.arena.(*arenaFeed).cfg.Arena.World, a.arena.(*arenaFeed).cfgErr)
 	}
 	drain(a, a.wm.Close(card))
 	if a.wm.Has(arena.Name) {

@@ -43,11 +43,11 @@ func TestServePluginSDKBindsLikeAPythonSignature(t *testing.T) {
 		t.Fatal(got)
 	}
 	_, err = ServePluginSDK(ctx, h, "chat_catalog_ids", []any{1}, map[string]any{"items": 2})
-	if got := sdkTypeErrorText(t, err); got != "chat_catalog_ids() got multiple values for argument 'items'" {
+	if got := sdkTypeErrorText(t, err); got != "chat_catalog_ids got the items argument both by position and by name" {
 		t.Fatal(got)
 	}
 	_, err = ServePluginSDK(ctx, h, "provider_media.save_url", []any{"image", "http://127.0.0.1/x"}, map[string]any{"prefix": "p"})
-	want := "save_url() missing 8 required keyword-only arguments: 'timeout', 'max_bytes', 'chunk_size', 'content_types', 'url_extensions', 'default_extension', 'label', and 'empty_error'"
+	want := "save_url needs the named arguments timeout, max_bytes, chunk_size, content_types, url_extensions, default_extension, label, and empty_error"
 	if got := sdkTypeErrorText(t, err); got != want {
 		t.Fatal(got)
 	}

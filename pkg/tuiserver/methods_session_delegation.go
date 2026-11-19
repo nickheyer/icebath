@@ -11,11 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 func init() {
@@ -26,13 +26,7 @@ var sessionDelegationRegistry = &handlerRegistry{}
 
 func registerSessionDelegationHandlers() {
 	sessionDelegationRegistry.method("delegation.status", delegationStatus)
-	sessionDelegationRegistry.method("delegation.pause", func(ctx context.Context, rid any, params map[string]any) map[string]any {
-		var paused any = true
-		if value, present := params["paused"]; present {
-			paused = value
-		}
-		return ok(rid, map[string]any{"paused": agent.SetSpawnPaused(truthy(paused))})
-	})
+	sessionDelegationRegistry.method("delegation.pause", delegationPause)
 	sessionDelegationRegistry.method("subagent.steer", subagentSteer)
 	sessionDelegationRegistry.method("spawn_tree.save", spawnTreeSave)
 	sessionDelegationRegistry.method("spawn_tree.list", spawnTreeList)
@@ -40,63 +34,71 @@ func registerSessionDelegationHandlers() {
 	sessionDelegationRegistry.install()
 }
 
+// Value a typed optional field holds, the zero value when absent
+func deref[T any](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
+}
+
 // Live delegated children, the spawn pause and the depth and concurrency limits
 func delegationStatus(ctx context.Context, rid any, params map[string]any) map[string]any {
-	return ok(rid, map[string]any{"active": agent.ListActiveSubagents(), "paused": agent.IsSpawnPaused(),
-		"max_spawn_depth": tools.MaxSpawnDepth(ctx), "max_concurrent_children": tools.MaxConcurrentChildren(ctx)})
+	result := tuigateway.DelegationStatusResult{Active: []tuigateway.ActiveSubagent{}, Paused: agent.IsSpawnPaused(),
+		MaxSpawnDepth: int64(tools.MaxSpawnDepth(ctx)), MaxConcurrentChildren: int64(tools.MaxConcurrentChildren(ctx))}
+	for _, record := range agent.ListActiveSubagents() {
+		result.Active = append(result.Active, typedRow[tuigateway.ActiveSubagent]("delegation.status", record))
+	}
+	return ok(rid, tuigateway.Plain(result))
+}
+
+// Blocks or unblocks new spawns, a pause when the flag is absent
+func delegationPause(ctx context.Context, rid any, params map[string]any) map[string]any {
+	request, err := tuigateway.DelegationPause.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	paused := request.Paused == nil || *request.Paused
+	return ok(rid, tuigateway.Plain(tuigateway.DelegationPauseResult{Paused: agent.SetSpawnPaused(paused)}))
 }
 
 // Queues steering text into a live delegated child owned by the caller's session
 func subagentSteer(ctx context.Context, rid any, params map[string]any) map[string]any {
-	subagentID := strParam(params, "subagent_id", "")
-	if subagentID == "" {
+	request, err := tuigateway.SubagentSteer.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	if request.SubagentID == "" {
 		return rpcErr(rid, 4000, "subagent_id required", nil)
 	}
-	var raw any = ""
-	if truthy(params["text"]) {
-		raw = params["text"]
-	}
-	textValue, isStr := raw.(string)
-	if !isStr {
-		panic(fmt.Errorf("the steering text must be text, got %s", errchain.Kind(raw)))
-	}
-	text := strings.TrimSpace(textValue)
+	text := strings.TrimSpace(request.Text)
 	if text == "" {
 		return rpcErr(rid, 4002, "text is required", nil)
 	}
 	if _, errResp := sessNowait(ctx, params, rid); errResp != nil {
 		return errResp
 	}
-	ownerID := strParam(params, "session_id", "")
+	ownerID := request.SessionID
 	transport, owner := currentSessionSteerAuthority(ctx, ownerID)
-	queued := transport != nil && owner != nil && agent.SteerSubagent(subagentID, text, &ownerID, transport, owner)
-	status := "rejected"
+	queued := transport != nil && owner != nil && agent.SteerSubagent(request.SubagentID, text, &ownerID, transport, owner)
+	status := tuigateway.SteerStatus("rejected")
 	if queued {
 		status = "queued"
 	}
-	return ok(rid, map[string]any{"status": status, "subagent_id": subagentID, "text": text})
+	return ok(rid, tuigateway.Plain(tuigateway.SubagentSteerResult{Status: status, SubagentID: request.SubagentID, Text: text}))
 }
 
-// Writes a finished spawn tree snapshot under the session directory and indexes it
+// Writes a finished spawn tree snapshot under the session directory, a file saved again keeping its one index entry
 func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[string]any {
-	sessionID := strParam(params, "session_id", "")
-	var subagents []any
-	if truthy(params["subagents"]) {
-		list, isList := params["subagents"].([]any)
-		if !isList {
-			return rpcErr(rid, 4000, "subagents list required", nil)
-		}
-		subagents = list
-	}
-	if len(subagents) == 0 {
+	request, err := tuigateway.SpawnTreeSave.Params(params)
+	if err != nil || len(request.Subagents) == 0 {
 		return rpcErr(rid, 4000, "subagents list required", nil)
 	}
-	startedAt, label := params["started_at"], strOr(params["label"])
+	sessionID := deref(request.SessionID)
 	finishedAt := float64(time.Now().UnixNano()) / 1e9
-	if truthy(params["finished_at"]) {
-		parsed, err := pyint.Float(params["finished_at"])
-		panicIf(err)
-		finishedAt = parsed
+	if request.FinishedAt != nil && *request.FinishedAt != 0 {
+		finishedAt = *request.FinishedAt
 	}
 	dirName := sessionID
 	if dirName == "" {
@@ -106,19 +108,19 @@ func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[stri
 	stamp := time.Unix(0, int64(finishedAt*1e9)).UTC().Format("20060102T150405")
 	path := filepath.Join(d, stamp+".json")
 	var started any
-	if truthy(startedAt) {
-		parsed, err := pyint.Float(startedAt)
-		panicIf(err)
-		started = parsed
+	if request.StartedAt != nil && *request.StartedAt != 0 {
+		started = *request.StartedAt
 	}
-	meta := [][2]any{{"session_id", sessionID}, {"started_at", started}, {"finished_at", finishedAt}, {"label", label}}
+	meta := [][2]any{{"session_id", sessionID}, {"started_at", started}, {"finished_at", finishedAt}, {"label", deref(request.Label)}}
 	snapshot := pyjson.NewObject()
 	for _, kv := range meta {
 		snapshot.Set(kv[0].(string), kv[1])
 	}
-	snapshot.Set("subagents", subagents)
+	snapshot.Set("subagents", tuigateway.Plain(request.Subagents))
 	encoded, err := pyjson.Dumps(snapshot, pyjson.EnsureASCII(false))
 	panicIf(err)
+	_, statErr := os.Stat(path)
+	listed := statErr == nil
 	if err := os.WriteFile(path, []byte(encoded), 0o644); err != nil {
 		return rpcErr(rid, 5000, "spawn_tree.save failed: "+pypath.OSErrorText(err), nil)
 	}
@@ -127,9 +129,11 @@ func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[stri
 	for _, kv := range meta {
 		entry.Set(kv[0].(string), kv[1])
 	}
-	entry.Set("count", len(subagents))
-	appendSpawnTreeIndexObject(d, entry)
-	return ok(rid, map[string]any{"path": path, "session_id": sessionID})
+	entry.Set("count", len(request.Subagents))
+	if !listed {
+		appendSpawnTreeIndexObject(d, entry)
+	}
+	return ok(rid, tuigateway.Plain(tuigateway.SpawnTreeSaveResult{Path: path, SessionID: sessionID}))
 }
 
 // Appends an ordered entry line to the session index
@@ -188,9 +192,13 @@ func legacySpawnTreeEntry(p, sessionDirName string) map[string]any {
 
 // Saved spawn trees of the session or every session, newest first
 func spawnTreeList(ctx context.Context, rid any, params map[string]any) map[string]any {
-	sessionID := strParam(params, "session_id", "")
+	request, err := tuigateway.SpawnTreeList.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	sessionID := deref(request.SessionID)
 	var roots []string
-	if truthy(params["cross_session"]) {
+	if request.CrossSession {
 		root := spawnTreesRoot()
 		children, err := os.ReadDir(root)
 		panicIf(err)
@@ -205,7 +213,7 @@ func spawnTreeList(ctx context.Context, rid any, params map[string]any) map[stri
 		}
 		roots = []string{spawnTreeSessionDir(sessionID)}
 	}
-	entries := []map[string]any{}
+	entries := []tuigateway.SpawnTreeEntry{}
 	for _, d := range roots {
 		if indexed := readSpawnTreeIndex(d); len(indexed) > 0 {
 			for _, item := range indexed {
@@ -215,7 +223,7 @@ func spawnTreeList(ctx context.Context, rid any, params map[string]any) map[stri
 				}
 				if p := entry["path"]; truthy(p) {
 					if _, err := os.Stat(pyrepr.Str(p)); err == nil {
-						entries = append(entries, entry)
+						entries = append(entries, typedRow[tuigateway.SpawnTreeEntry]("spawn_tree.list", entry))
 					}
 				}
 			}
@@ -227,44 +235,31 @@ func spawnTreeList(ctx context.Context, rid any, params map[string]any) map[stri
 				continue
 			}
 			if entry := legacySpawnTreeEntry(p, filepath.Base(d)); entry != nil {
-				entries = append(entries, entry)
+				entries = append(entries, typedRow[tuigateway.SpawnTreeEntry]("spawn_tree.list", entry))
 			}
 		}
 	}
-	finishedOf := func(entry map[string]any) float64 {
-		if value := entry["finished_at"]; truthy(value) {
-			if f, err := pyint.Float(value); err == nil {
-				return f
-			}
-		}
-		return 0
-	}
-	sort.SliceStable(entries, func(i, j int) bool { return finishedOf(entries[i]) > finishedOf(entries[j]) })
+	sort.SliceStable(entries, func(i, j int) bool { return deref(entries[i].FinishedAt) > deref(entries[j].FinishedAt) })
 	limit := int64(50)
-	if truthy(params["limit"]) {
-		n, err := pyint.Int64(params["limit"])
-		panicIf(err)
-		limit = n
+	if request.Limit != nil && *request.Limit != 0 {
+		limit = *request.Limit
 	}
 	if limit < 0 {
-		limit = int64(len(entries)) + limit
-		if limit < 0 {
-			limit = 0
-		}
+		limit = max(int64(len(entries))+limit, 0)
 	}
 	if limit < int64(len(entries)) {
 		entries = entries[:limit]
 	}
-	return ok(rid, map[string]any{"entries": entries})
+	return ok(rid, tuigateway.Plain(tuigateway.SpawnTreeListResult{Entries: entries}))
 }
 
 // Loads a saved spawn tree snapshot that lies under the spawn trees root
 func spawnTreeLoad(ctx context.Context, rid any, params map[string]any) map[string]any {
-	rawPath := strParam(params, "path", "")
-	if rawPath == "" {
+	request, err := tuigateway.SpawnTreeLoad.Params(params)
+	if err != nil || request.Path == "" {
 		return rpcErr(rid, 4000, "path required", nil)
 	}
-	resolved, err := pypath.Realpath(rawPath, pypath.Lax)
+	resolved, err := pypath.Realpath(request.Path, pypath.Lax)
 	if err != nil {
 		return rpcErr(rid, 4030, "path outside spawn-trees root: "+err.Error(), nil)
 	}
@@ -280,13 +275,9 @@ func spawnTreeLoad(ctx context.Context, rid any, params map[string]any) map[stri
 	if err != nil {
 		return rpcErr(rid, 5000, "spawn_tree.load failed: "+pypath.OSErrorText(err), nil)
 	}
-	decoded, err := pyjson.Loads(string(data))
-	if err != nil {
+	var snapshot tuigateway.SpawnTreeLoadResult
+	if err := tuigateway.Strict(data, &snapshot); err != nil {
 		return rpcErr(rid, 5000, "spawn_tree.load failed: "+err.Error(), nil)
 	}
-	payload, isDict := pyjson.Plain(decoded).(map[string]any)
-	if !isDict {
-		return rpcErr(rid, 5000, "spawn_tree.load failed: snapshot is not a JSON object", nil)
-	}
-	return ok(rid, payload)
+	return ok(rid, tuigateway.Plain(snapshot))
 }

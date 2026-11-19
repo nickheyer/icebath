@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,7 +21,6 @@ import (
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
-	"github.com/nickheyer/icebath/pkg/vxl/arena"
 )
 
 const (
@@ -69,8 +69,11 @@ type app struct {
 	git     *gitBranchTracker
 	battery *batteryPoller
 	resize  *resizeCoalescer
-	arena   *arenaFeed
+	arena   arenaView
 	post    func(tea.Msg)
+	// Terminal graphics the pet and the arena draw through, probed on their first use
+	graphics       *gfx.Terminal
+	graphicsProbed bool
 
 	history       []msg
 	lastUserMsg   string
@@ -117,7 +120,7 @@ type app struct {
 	boot               tea.Cmd
 	dialogs            dialogState
 	widgets            *widgetHost
-	pet                *petView
+	pet                petCard
 	stash              *promptStash
 	spawnSections      map[string]bool
 	agentDockCollapsed bool
@@ -156,14 +159,18 @@ func tuiKeymap() *keys.Map {
 		{ID: "tui.scroll.line.down", Context: tuiContext, Label: "line down", Doc: "scroll the transcript down a line", Default: []string{"shift+down"}, Quiet: true},
 		{ID: "tui.newline", Context: tuiContext, Label: "newline", Doc: "break the line in the prompt", Default: []string{"shift+enter", "ctrl+j", "alt+enter"}, Quiet: true},
 	} {
-		km.Register(a)
+		if keyLinked(a.ID) {
+			km.Register(a)
+		}
 	}
 	registerListKeys(km)
 	registerRoomKeys(km)
 	registerSpawnTreeKeys(km)
 	registerJourneyKeys(km)
 	registerStashKeys(km)
-	arena.RegisterKeys(km)
+	for _, register := range tierKeys {
+		register(km)
+	}
 	return km
 }
 
@@ -179,7 +186,8 @@ func newApp(ctx context.Context, host Host) *app {
 	a.prompts = &promptSubmitter{store: store, turn: turn, gw: gw, deps: a}
 	a.queue = newComposerQueue(store, gw, a.uncaught)
 	a.config = newConfigSync(store, turn, gw, a)
-	a.arena = newArenaFeed(a)
+	a.graphics = gfx.New()
+	a.arena = arenaViewFor(a)
 	a.syncTheme()
 	a.widgets = newWidgetHost(a)
 	a.localCommands = append(append(append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...), a.wmCommands()...), a.recoveryCommands()...)
@@ -189,8 +197,11 @@ func newApp(ctx context.Context, host Host) *app {
 	a.localCommands = append(a.localCommands, a.roomsCommands()...)
 	a.localCommands = append(a.localCommands, a.terminalCommands()...)
 	a.localCommands = append(a.localCommands, a.screenCommands()...)
-	a.localCommands = append(append(a.localCommands, a.petCommands()...), a.hatchCommands()...)
-	a.pet = newPetView(a)
+	for _, commands := range tierCommands {
+		a.localCommands = append(a.localCommands, commands(a)...)
+	}
+	a.localCommands = slices.DeleteFunc(a.localCommands, func(c slashCommand) bool { return !localCommandLinked(c.name) })
+	a.pet = petCardFor(a)
 	a.card = newSessionCard(a)
 	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(bootMotion()))
 	_, open := a.wm.AddWorkspace("session", a.card)
@@ -272,15 +283,15 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch m := m.(type) {
 	case uv.KittyGraphicsEvent, uv.CellSizeEvent, uv.PixelSizeEvent, uv.PrimaryDeviceAttributesEvent, uv.UnknownCsiEvent:
-		a.arena.terminal(m)
+		a.terminalGraphics(m)
 	case tea.FocusMsg, tea.BlurMsg:
 		a.arena.focus(m)
 		_, cmd = a.wm.Update(m)
 	case tea.WindowSizeMsg:
-		a.arena.terminal(m)
+		a.terminalGraphics(m)
 		_, cmd = a.wm.Update(m)
-		if a.arena.probed {
-			cmd = tea.Batch(cmd, a.arena.graphics.Measure())
+		if a.graphicsProbed {
+			cmd = tea.Batch(cmd, a.graphics.Measure())
 		}
 		if _, reflow := a.resize.schedule(); reflow != nil {
 			cmd = tea.Batch(cmd, reflow)
@@ -333,7 +344,7 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		if ev, isEvent := m.(gatewayEventMsg); isEvent {
 			a.arena.observe(ev)
 			petCmd = a.pet.observe(ev)
-			if ev.Type == "sessions.changed" && a.switcherReload != nil {
+			if ev.Type == tuigateway.SessionsChangedEvent.Name() && a.switcherReload != nil {
 				petCmd = tea.Batch(petCmd, a.switcherReload())
 			}
 		}
@@ -406,9 +417,7 @@ func (a *app) afterUpdate() tea.Cmd {
 		a.syncTheme()
 		a.wm.SetTheme(a.toolkit)
 		a.card.composer.SetTheme(a.toolkit)
-		if a.arena.card != nil {
-			a.arena.card.Retheme(a.toolkit)
-		}
+		a.arena.retheme(a.toolkit)
 		a.card.view.invalidate()
 	}
 	cmds = append(cmds, a.battery.sync(a.store, a.gw), a.syncDialogs(), a.drainQueue(), a.armDockClock(), a.pet.follow())
@@ -461,19 +470,19 @@ func (a *app) refreshRosters() tea.Cmd {
 	if sid == "" || (a.store.ui.GatewayConnected != nil && !*a.store.ui.GatewayConnected) {
 		return nil
 	}
-	quiet := func(method string, apply func(map[string]any)) tea.Cmd {
-		return gatewayCall(a.gw, method, map[string]any{"session_id": sid}, func(v any, err error) tea.Cmd {
-			if r := asRPCResult(v); err == nil && r != nil && a.store.ui.Sid == sid {
-				apply(r)
+	params := tuigateway.SessionIDParams{SessionID: sid}
+	return tea.Batch(
+		call(a.gw, tuigateway.SubagentList, params, func(r *tuigateway.SubagentListResult, err error) tea.Cmd {
+			if err == nil && a.store.ui.Sid == sid {
+				a.store.applyAgentSnapshot(sid, *r)
 			}
 			return nil
-		})
-	}
-	return tea.Batch(
-		quiet("subagent.list", func(r map[string]any) { a.store.applyAgentSnapshot(sid, r) }),
-		quiet("process.list", func(r map[string]any) {
-			processes, _ := r["processes"].([]any)
-			a.store.applyProcessSnapshot(sid, processes)
+		}),
+		call(a.gw, tuigateway.ProcessList, params, func(r *tuigateway.ProcessListResult, err error) tea.Cmd {
+			if err == nil && a.store.ui.Sid == sid {
+				a.store.applyProcessSnapshot(sid, r.Processes)
+			}
+			return nil
 		}),
 		requestSessions(a.gw, true, sid, func(sessions []listedSession, err error) tea.Cmd {
 			if err != nil {
@@ -622,7 +631,7 @@ func (a *app) setCatalog(c *slashCatalog) {
 }
 
 func (a *app) setVoiceEnabled(on bool)            { a.voiceEnabled = on }
-func (a *app) setVoiceRecording(on bool)          { a.voiceRecording = on }
+func (a *app) setVoiceRecording(on bool)          { a.voiceRecording = on; speech.recording.Store(on) }
 func (a *app) setVoiceProcessing(on bool)         { a.voiceProcessing = on }
 func (a *app) setVoiceRecordKey(k voiceRecordKey) { a.voiceKey = k }
 func (a *app) setBellOnComplete(on bool)          { a.bellComplete = on }
@@ -728,34 +737,24 @@ func (a *app) shellExec(command string, destination submissionDestination, item 
 	focused := func() bool { return a.store.isCurrentDestination(destination) }
 	a.appendMessage(msg{Role: "user", Text: "!" + command})
 	a.store.markSubmitting()
-	return gatewayCall(a.gw, "shell.exec", map[string]any{"command": command, "session_id": destination.Sid}, func(v any, err error) tea.Cmd {
-		r := asRPCResult(v)
+	return call(a.gw, tuigateway.CanonicalShellExec, tuigateway.CanonicalShellExecParams{Command: command, SessionID: destination.Sid}, func(r *tuigateway.ShellExecResult, err error) tea.Cmd {
 		if item != nil {
-			item.settle(err == nil && r != nil)
+			item.settle(err == nil)
 		}
 		if !focused() {
 			return nil
 		}
 		a.store.ui.Busy, a.store.ui.Status = false, tr("status.ready")
-		switch {
-		case err != nil:
+		if err != nil {
 			a.sys("error: " + describeShellExecError(err))
-		case r == nil:
-			a.sys("error: " + misfitText(tr("session.common.invalidResponse", "shell.exec")))
-		default:
-			var parts []string
-			for _, k := range []string{"stdout", "stderr"} {
-				if s, _ := r[k].(string); s != "" {
-					parts = append(parts, s)
-				}
-			}
-			out := trimJS(strings.Join(parts, "\n"))
-			if out != "" {
-				a.sys(out)
-			}
-			if code, _ := r["code"].(float64); code != 0 || out == "" {
-				a.sys(fmt.Sprintf("exit %d", int(code)))
-			}
+			return nil
+		}
+		out := trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
+		if out != "" {
+			a.sys(out)
+		}
+		if r.Code != 0 || out == "" {
+			a.sys(fmt.Sprintf("exit %d", r.Code))
 		}
 		return nil
 	})

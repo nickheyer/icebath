@@ -332,6 +332,7 @@ func (r *GatewayRunner) stopReleaseRuntimeState(ctx context.Context, sc *stopCon
 	r.pendingApprovals().Clear()
 	r.activeSessionLeases().Clear()
 	r.busyAckTS().Clear()
+	r.settleHomeWrites()
 	r.shutdownEvent.Set()
 	if _, err := stopKillToolSubprocessesOffLoop(ctx, "final-cleanup"); err != nil {
 		return err
@@ -346,6 +347,18 @@ func (r *GatewayRunner) stopReleaseRuntimeState(ctx context.Context, sc *stopCon
 
 // Quiesces the executor, then closes the session databases only when no worker can still write
 func (r *GatewayRunner) stopQuiesceAndCloseSessionDBs(ctx context.Context, timeout float64, sc *stopContext) {
+	if r.sessionStore != nil {
+		quietStep("Held transcript flush error", func() (struct{}, error) {
+			written, _ := r.sessionStore.ReplayHeldTranscripts(ctx)
+			spooled := r.sessionStore.SpoolHeldTranscripts(ctx)
+			messages := r.spoolStoreHeldEvents(ctx)
+			if written > 0 || spooled > 0 || messages > 0 {
+				pkgLog().Info(fmt.Sprintf("Shutdown phase: wrote %d held transcript row(s), spooled %d and %d held message(s) for the next start",
+					written, spooled, messages))
+			}
+			return struct{}{}, nil
+		})
+	}
 	budget := max(0.0, min(executorQuiesceTimeout, gateway.ResolveShutdownWatchdogDelay(timeout, nil)-sc.elapsed()-1.0))
 	if live := r.shutdownExecutor(budget); live != 0 {
 		pkgLog().Warn(fmt.Sprintf("Shutdown phase: %d executor worker(s) still running after a %.2fs quiesce — skipping the "+

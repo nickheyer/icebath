@@ -21,6 +21,9 @@ type TTSStream interface {
 // Opens the streaming TTS of a voice turn from the env's TTS config, set by the plugins tier and nil in a build without it
 var OpenTTSStream func(ctx context.Context, env *tools.Env, adapter PlatformAdapter, chatID string, metadata map[string]any) (TTSStream, error)
 
+// Opens the voice turn of a local session whose voice mode is on, spoken by the window that plays it, set by the extras tier
+var OpenLocalVoiceTurn func(ctx context.Context, source *SessionSource) TTSStream
+
 // Drain task of one consumer with its completion channel
 type STTSDrainTask struct {
 	done chan struct{}

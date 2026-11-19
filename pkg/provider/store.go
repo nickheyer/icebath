@@ -171,12 +171,21 @@ func (l *storeLock) release() {
 
 // LockTimeoutError reports an auth store lock that could not be taken in time
 type LockTimeoutError struct {
+	// Lock waited for, the auth store lock when empty
+	Lock     string
 	LockPath string
 	Hint     string
 }
 
+// Lead of the auth store lock timeout, read back from failure details by the TUI server
+const AuthLockTimeoutLead = "Timed out waiting for auth store lock"
+
 func (e *LockTimeoutError) Error() string {
-	msg := "Timed out waiting for auth store lock (" + e.LockPath + ")"
+	lead := AuthLockTimeoutLead
+	if e.Lock != "" {
+		lead = "Timed out waiting for " + e.Lock
+	}
+	msg := lead + " (" + e.LockPath + ")"
 	if e.Hint != "" {
 		return msg + "; " + e.Hint
 	}

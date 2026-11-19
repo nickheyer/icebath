@@ -161,7 +161,6 @@ gateway:
     not_enough: "압축할 대화가 충분하지 않습니다 (최소 4개의 메시지가 필요합니다)."
     no_provider: "구성된 제공자가 없습니다 -- 압축할 수 없습니다."
     nothing_to_do: "아직 압축할 내용이 없습니다 (대화 내용이 모두 보호된 컨텍스트입니다)."
-    aggressive_unsupported: "--aggressive는 지원되지 않습니다. '/compress here [N]'으로 최근 대화만 유지하거나 /undo로 턴을 삭제하세요."
     focus_line: "초점: \"{topic}\""
     summary_failed: "⚠️ 요약 생성에 실패했습니다 ({error}). 과거 메시지 {count}개가 제거되어 자리표시자로 대체되었으며, 이전 컨텍스트는 더 이상 복구할 수 없습니다. auxiliary.compression 모델 설정을 확인해 보세요."
     aborted: "⚠️ 압축이 중단되었습니다 ({error}). 메시지가 삭제되지 않았으며 대화는 그대로 유지됩니다. 다시 시도하려면 /compress를 실행하거나, 새 세션을 시작하려면 /reset을 사용하거나, auxiliary.compression 모델 설정을 확인하세요."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ AI 모델 서비스가 계속 실패했어요. /retry로 다시 시도하거나, /model로 모델을 바꾸세요. 자세한 내용은 게이트웨이 로그(`icebath logs`)에 있어요."
     session_storage_unavailable_disk: "⚠️ 세션 저장소를 일시적으로 사용할 수 없어서 대화 기록을 보호하기 위해 이 턴을 중단했어요. 디스크 여유 공간을 확인한 뒤 메시지를 다시 보내 주세요."
     session_storage_unavailable: "⚠️ 세션 저장소를 일시적으로 사용할 수 없어서 대화 기록을 보호하기 위해 이 턴을 중단했어요. 메시지는 이미 저장되어 있을 거예요 — 잠시 후 다시 보내 주세요."
+    session_storage_held: "⚠️ 세션 저장소를 지금 사용할 수 없어({cause}) 메시지가 보류되었습니다. 메시지는 보관되며 저장소가 다시 작동하면 여기에서 답변합니다. 다시 보낼 필요는 없습니다."
     generic_failed: "⚠️ 문제가 발생해서 이 응답을 끝내지 못했어요. /retry로 다시 시도하거나, /new로 새 대화를 시작하세요. 기술적인 세부 정보는 게이트웨이 로그(`icebath logs`)에 있어요."
     interrupted_before_start: "⚠️ 처리가 시작되기 전에 메시지가 중단되었어요 (아마 최근의 /stop 때문일 거예요). 다시 보내 주세요."
     processing_incomplete: "처리 미완료"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ 세션 데이터베이스 손상이 감지되었어요. 메시지가 저장되지 않을 수 있어요. 복구 방법:\n1. `icebath {profile_arg}doctor --fix` 실행\n2. 게이트웨이를 중지한 뒤 다음으로 복구:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (복구 가능하다고 나오면) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — 복구는 먼저 손상된 파일의 스냅샷을 만들어요. 실행 중인 state.db에 `sqlite3 ... \\\".recover\\\"`를 실행하지 마세요. 취약한 sqlite3 CLI가 손상을 더 키울 수 있어요\n3. {backups_dir}/의 백업에서 복원\n정리된 진단 정보는 `icebath {profile_arg}doctor`로 확인하세요."
     db_fts_corrupt: "⚠️ 세션 데이터베이스가 검색 인덱스(FTS5)에 한정된 손상 오류를 보고했어요. 메시지 테이블은 손상되지 않았어요. 수리될 때까지 메시지가 저장되지 않을 수 있어요: `icebath {profile_arg}doctor --fix`를 실행한 뒤 게이트웨이를 재시작하세요. `icebath {profile_arg}doctor`가 손상을 확인하지 않는 한 복구 도구를 실행하거나 백업을 복원하지 마세요."
     db_then_restart: "{action} 그런 다음 `icebath {profile_arg}gateway restart`를 실행하세요."
-    db_unavailable: "⚠️ 세션 데이터베이스를 사용할 수 없어요 — 메시지가 저장되지 않을 수 있고 /resume이 비어 있을 거예요. 원인: {cause}. {action}"
+    db_unavailable: "⚠️ 세션 데이터베이스를 사용할 수 없습니다 — 새 메시지는 보류되며 다시 작동하면 답변됩니다. 원인: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ cron 저장소 {store}에 {since}부터 쓸 수 없습니다 ({error}). 다시 쓸 수 있을 때까지 예약된 작업을 건너뜁니다. 해결: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "기타 / 직접 입력"
       header: "질문"
       question: "❓ {question}"
+      submit_button: "보내기"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ {user} 님이 답변을 입력하기를 기다리는 중…"
+      pick_one: "옵션을 하나 이상 선택한 다음 보내기를 누르세요."
+    approval:
+
+      resolved_once: "✅ {user} 님이 한 번 허용함"
+      resolved_session: "✅ {user} 님이 이 세션 동안 허용함"
+      resolved_always: "✅ {user} 님이 항상 허용함"
+      resolved_deny: "❌ {user} 님이 거부함"
+    confirm:
+
+      default_title: "확인"
+      approve_once: "한 번 승인"
+      always_approve: "항상 승인"
+      cancel: "취소"
+      decided_once: "✅ {user} 님이 한 번 승인함"
+      decided_always: "🔒 {user} 님이 항상 승인함"
+      decided_cancel: "❌ {user} 님이 취소함"
     typing:
 
       thinking: "Icebath가 생각하고 있어요…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "현재 세션 분기 (Discord/Telegram/Slack/Matrix에서는 새 스레드; --here는 여기서 유지)"
+    core_description: "현재 세션 분기 (--here는 여기서 유지)"
   worktree:
 
     description: "격리된 git 워크트리 표시, 목록, 생성 또는 정리"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "플랫폼 '{platform}'이(가) 게이트웨이에 설정/활성화되어 있지 않아요."
       no_home_channel: "{platform}에 설정된 홈 채널이 없어요."
       set_home_hint: "먼저 대상 채팅에서 /sethome으로 홈 채널을 설정하세요."
+      enable_platform_hint: "icebath gateway setup으로 설정한 다음 icebath gateway restart로 게이트웨이를 다시 시작하세요."
       session_row_failed: "state.db에 세션 행을 준비할 수 없어요: {error}"
       picked_up: "게이트웨이가 가져갔어요; 이전하는 중..."
       complete: "↻ 핸드오프 완료. 이제 세션이 {platform}에서 활성화됐어요."

@@ -161,7 +161,6 @@ gateway:
     not_enough: "Níl go leor comhrá le dlúthú (teastaíonn 4 theachtaireacht ar a laghad)."
     no_provider: "Níl aon soláthraí cumraithe — ní féidir dlúthú."
     nothing_to_do: "Níl aon rud le dlúthú fós (tá an traschríbhinn fós uile mar chomhthéacs cosanta)."
-    aggressive_unsupported: "Ní thacaítear le --aggressive; úsáid '/compress here [N]' chun na malartuithe is déanaí amháin a choinneáil, nó /undo chun sealanna a scriosadh."
     focus_line: "Fócas: \"{topic}\""
     summary_failed: "⚠️ Theip ar ghiniúint achoimre ({error}). Baineadh {count} teachtaireacht stairiúil agus cuireadh ionadaí ina n-áit; níl an comhthéacs roimhe seo in-aisghabhála a thuilleadh. Smaoinigh ar an gcumraíocht auxiliary.compression a sheiceáil."
     aborted: "⚠️ Cuireadh deireadh leis an dlúthú ({error}). Níor baineadh aon teachtaireacht — tá an comhrá gan athrú. Rith /compress chun é a thriail arís, /reset le haghaidh seisiún glan, nó seiceáil do chumraíocht samhla auxiliary.compression."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ Lean seirbhís na samhla AI ag teip. Úsáid /retry le triail eile a bhaint as, nó /model chun samhail eile a roghnú. Tá na sonraí i log an gateway (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ Ní raibh stóráil na seisiún ar fáil go sealadach, mar sin stopadh an seal seo chun stair do chomhrá a chosaint. Seiceáil an spás diosca atá ar fáil le do thoil, ansin seol do theachtaireacht arís."
     session_storage_unavailable: "⚠️ Ní raibh stóráil na seisiún ar fáil go sealadach, mar sin stopadh an seal seo chun stair do chomhrá a chosaint. Ba chóir go bhfuil do theachtaireacht sábháilte cheana — seol í arís i gceann nóiméid le do thoil."
+    session_storage_held: "⚠️ Níl stóráil seisiún ar fáil faoi láthair ({cause}), mar sin tá do theachtaireacht ar fionraí. Coinneofar í agus tabharfar freagra uirthi anseo a luaithe a oibreoidh an stóráil arís; ní gá í a sheoladh arís."
     generic_failed: "⚠️ Chuaigh rud éigin amú agus níorbh fhéidir liom an freagra seo a chríochnú. Úsáid /retry le triail eile a bhaint as, nó /new chun comhrá úr a thosú. Tá na sonraí teicniúla i log an gateway (`icebath logs`)."
     interrupted_before_start: "⚠️ Cuireadh isteach ar do theachtaireacht roimh thosú na próiseála (is dócha le /stop le déanaí). Seol í arís le do thoil."
     processing_incomplete: "próiseáil neamhiomlán"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ Braitheadh truailliú i mbunachar sonraí na seisiún. Seans nach sábhálfar teachtaireachtaí. Roghanna athshlánaithe:\n1. Rith `icebath {profile_arg}doctor --fix`\n2. Stop an gateway, ansin athshlánaigh le:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (má thuairiscíonn sé gur féidir é a athshlánú) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — glacann an t-athshlánú roghchóip den chomhad damáistithe ar dtús; NÁ rith `sqlite3 ... \".recover\"` i gcoinne an state.db bheo, is féidir le CLI sqlite3 leochaileach é a thruailliú níos mó\n3. Athchóirigh ó chúltaca i {backups_dir}/\nRith `icebath {profile_arg}doctor` le haghaidh diagnóisic sláintithe."
     db_fts_corrupt: "⚠️ Thuairiscigh bunachar sonraí na seisiún earráid truaillithe atá teoranta don innéacs cuardaigh (FTS5); níl damáiste ar na táblaí teachtaireachtaí. Seans nach sábhálfar teachtaireachtaí go dtí go ndeiseofar é: rith `icebath {profile_arg}doctor --fix`, ansin atosaigh an gateway. Ná rith uirlisí athshlánaithe agus ná hathchóirigh cúltaca mura ndearbhaíonn `icebath {profile_arg}doctor` damáiste."
     db_then_restart: "{action} Ansin `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ Níl bunachar sonraí na seisiún ar fáil — seans nach sábhálfar teachtaireachtaí agus beidh /resume folamh. Cúis: {cause}. {action}"
+    db_unavailable: "⚠️ Níl bunachar sonraí na seisiún ar fáil — coinnítear teachtaireachtaí nua agus tabharfar freagra orthu a luaithe a oibreoidh sé arís. Cúis: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ Níl stór cron {store} inscríofa ({error}) ó {since}. Táthar ag scipeáil jabanna sceidealaithe go dtí go nglacann sé le scríobh arís. Réiteach: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "Eile / clóscríobh freagra"
       header: "Ceist"
       question: "❓ {question}"
+      submit_button: "Seol"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ Ag fanacht go gclóscríobhfaidh {user} freagra…"
+      pick_one: "Roghnaigh rogha amháin ar a laghad, ansin brúigh Seol."
+    approval:
+
+      resolved_once: "✅ Ceadaithe uair amháin ag {user}"
+      resolved_session: "✅ Ceadaithe don seisiún seo ag {user}"
+      resolved_always: "✅ Ceadaithe i gcónaí ag {user}"
+      resolved_deny: "❌ Diúltaithe ag {user}"
+    confirm:
+
+      default_title: "Deimhnigh"
+      approve_once: "Ceadaigh uair amháin"
+      always_approve: "Ceadaigh i gcónaí"
+      cancel: "Cealaigh"
+      decided_once: "✅ Ceadaithe uair amháin ag {user}"
+      decided_always: "🔒 Ceadaithe i gcónaí ag {user}"
+      decided_cancel: "❌ Cealaithe ag {user}"
     typing:
 
       thinking: "Tá Icebath ag smaoineamh…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "Brainseáil an seisiún reatha (snáithe nua ar Discord/Telegram/Slack/Matrix; fanann --here anseo)"
+    core_description: "Brainseáil an seisiún reatha (fanann --here anseo)"
   worktree:
 
     description: "Taispeáin, liostáil, cruthaigh, nó bearr worktrees git scoite"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "Níl an t-ardán '{platform}' cumraithe/cumasaithe sa gateway."
       no_home_channel: "Níl aon chainéal baile cumraithe do {platform}."
       set_home_hint: "Socraigh ceann le /sethome ar an gcomhrá sprice ar dtús."
+      enable_platform_hint: "Socraigh é le icebath gateway setup, ansin atosaigh an geata le icebath gateway restart."
       session_row_failed: "Níorbh fhéidir ró an tseisiúin a chinntiú in state.db: {error}"
       picked_up: "Phioc an gateway suas é; ag aistriú..."
       complete: "↻ Tabhairt ar láimh críochnaithe. Tá an seisiún gníomhach ar {platform} anois."

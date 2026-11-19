@@ -232,10 +232,8 @@ func resumeLiveUnpersisted(r *resumeCtx, liveSID string, live *tuihost.Session) 
 // Adopts a lineage stranded in the default store into this profile's store, exact id only
 func resumeAdoptStranded(r *resumeCtx) {
 	if failure := catchPanic(func() {
-		defaultDB := getDB(r.ctx)
-		if defaultDB == nil {
-			return
-		}
+		defaultDB, err := getDB(r.ctx)
+		panicIf(err)
 		donor, err := defaultDB.GetSession(r.ctx, r.target)
 		panicIf(err)
 		if donor == nil || donor.Len() == 0 || truthy(donor.GetOr("archived", nil)) {
@@ -626,16 +624,15 @@ func sessionResume(ctx context.Context, rid any, params map[string]any) map[stri
 	}
 	r := newResumeCtx(ctx, rid, params, target)
 	db, owns, err := profileSessionDB(ctx, r.profileHome)
-	panicIf(err)
+	if err != nil {
+		return storeFailure(ctx, rid, 5000, err)
+	}
 	r.db, r.ownsDB = db, owns
 	defer func() {
 		if r.ownsDB && r.db != nil {
 			suppress(func() { _ = r.db.Close() })
 		}
 	}()
-	if r.db == nil {
-		return dbUnavailableError(ctx, rid, 5000)
-	}
 	if resp := resumeLocate(r); resp != nil {
 		return resp
 	}

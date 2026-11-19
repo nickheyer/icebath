@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -14,7 +17,7 @@ import (
 func feishuCommentOp(keys []string, missingMsg, label, method, uri string, queries func(map[string]any) []larkQuery,
 	body func(map[string]any, []string) any, flagSuccess bool) Handler {
 	return func(ctx context.Context, call *Call) string {
-		client := FeishuClient(ctx)
+		client := feishuclient.From(ctx)
 		args := pythonCallArgs(call)
 		values := make([]string, len(keys))
 		for i, k := range keys {

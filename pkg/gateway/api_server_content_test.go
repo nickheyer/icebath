@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -12,7 +13,7 @@ func TestNoneReturnsEmptyString(t *testing.T) {
 	if got := apiNormalizeChatContent(nil); got != "" {
 		t.Fatalf("chat %q", got)
 	}
-	if got, err := apiNormalizeMultimodalContent(nil); err != nil || got != "" {
+	if got, err := apiNormalizeMultimodalContent(context.Background(), nil); err != nil || got != "" {
 		t.Fatalf("multimodal %v %v", got, err)
 	}
 }
@@ -48,19 +49,19 @@ func TestEmptyTextPartsFiltered(t *testing.T) {
 }
 
 func TestStringPassthrough(t *testing.T) {
-	if got, err := apiNormalizeMultimodalContent("hello"); err != nil || got != "hello" {
+	if got, err := apiNormalizeMultimodalContent(context.Background(), "hello"); err != nil || got != "hello" {
 		t.Fatalf("%v %v", got, err)
 	}
 }
 
 func TestTextOnlyListCollapsesToString(t *testing.T) {
-	if got, err := apiNormalizeMultimodalContent([]any{textPart("text", "hi"), textPart("text", "there")}); err != nil || got != "hi\nthere" {
+	if got, err := apiNormalizeMultimodalContent(context.Background(), []any{textPart("text", "hi"), textPart("text", "there")}); err != nil || got != "hi\nthere" {
 		t.Fatalf("%v %v", got, err)
 	}
 }
 
 func TestResponsesInputTextCanonicalized(t *testing.T) {
-	if got, err := apiNormalizeMultimodalContent([]any{textPart("input_text", "hello")}); err != nil || got != "hello" {
+	if got, err := apiNormalizeMultimodalContent(context.Background(), []any{textPart("input_text", "hello")}); err != nil || got != "hello" {
 		t.Fatalf("%v %v", got, err)
 	}
 }

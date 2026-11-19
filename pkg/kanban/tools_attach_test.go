@@ -165,15 +165,15 @@ func TestDownloadURLWithCapRedirectFailures(t *testing.T) {
 		{"/empty", "redirect without Location header from " + srv.URL + "/empty", true},
 		{"/loop", "too many redirects fetching " + srv.URL + "/loop", true},
 		{"/private", "URL blocked by SSRF protection (private/internal address): http://169.254.169.254/latest/meta-data", true},
-		{"/nolocation", "Redirect response '307 Temporary Redirect' for url '" + srv.URL + "/nolocation'", false},
-		{"/gone", "Client error '404 Not Found' for url '" + srv.URL + "/gone'", false},
+		{"/nolocation", "the server answered 307 Temporary Redirect without a Location header", false},
+		{"/gone", "the server answered 404 Not Found", false},
 	} {
 		_, _, err := downloadURLWithCap(ctx, nil, srv.URL+c.path, 1024)
 		if err == nil || !strings.HasPrefix(err.Error(), c.want) || isValueError(err) != c.value {
 			t.Fatalf("%s: %v (value error %v)", c.path, err, err != nil && isValueError(err))
 		}
 	}
-	if _, _, err := downloadURLWithCap(ctx, nil, "ftp://example.com/x", 1024); err == nil || err.Error() != "unsupported URL scheme 'ftp'; only http/https are allowed" {
+	if _, _, err := downloadURLWithCap(ctx, nil, "ftp://example.com/x", 1024); err == nil || err.Error() != "unsupported URL scheme ftp; only http/https are allowed" {
 		t.Fatal(err)
 	}
 }
@@ -218,7 +218,7 @@ func TestAttachURLReportsDownloadFailures(t *testing.T) {
 		t.Fatal(loop)
 	}
 	gone := runKanbanTool(t, "kanban_attach_url", `{"url": "`+srv.URL+`/gone"}`)
-	if !strings.HasPrefix(errText(gone), "kanban_attach_url: failed to fetch "+srv.URL+"/gone: Client error '404 Not Found'") {
+	if !strings.HasPrefix(errText(gone), "kanban_attach_url: failed to fetch "+srv.URL+"/gone: the server answered 404 Not Found") {
 		t.Fatal(gone)
 	}
 }
@@ -234,7 +234,7 @@ func TestAttachStoresInlineBytesAndRejectsBadBase64(t *testing.T) {
 		t.Fatal(atts)
 	}
 	bad := runKanbanTool(t, "kanban_attach", `{"filename": "x.bin", "content_base64": "not base64!"}`)
-	if !strings.HasPrefix(errText(bad), "content_base64 is not valid base64: ") {
+	if errText(bad) != "content_base64 is not valid base64" {
 		t.Fatal(bad)
 	}
 	missing := runKanbanTool(t, "kanban_attach", `{"filename": "  ", "content_base64": "aGVsbG8="}`)

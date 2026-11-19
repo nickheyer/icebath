@@ -2,7 +2,6 @@ package gatewaycli
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 
@@ -20,19 +19,12 @@ import (
 var (
 	// Creation flags that ride session.create as launch policy
 	chatPolicyFields = []string{"model", "provider", "reasoning", "toolsets", "max_turns", "base_url", "ignore_rules", "api_key",
-		"yolo", "safe_mode", "ignore_user_config", "skills", "checkpoints", "accept_hooks", "pass_session_id"}
+		"yolo", "safe_mode", "ignore_user_config", "skills", "checkpoints", "accept_hooks", "pass_session_id", "run_budget", "verbose"}
 	// Environment equivalents of creation flags, taking effect only by riding this session's create
 	envLaunchFlagNames = [][2]string{{"yolo", "ICEBATH_YOLO_MODE"}, {"ignore_rules", "ICEBATH_IGNORE_RULES"},
 		{"safe_mode", "ICEBATH_SAFE_MODE"}, {"ignore_user_config", "ICEBATH_IGNORE_USER_CONFIG"},
 		{"accept_hooks", "ICEBATH_ACCEPT_HOOKS"}}
-	// Refused resume flag as the user typed it and the slash command that changes it after resuming
-	resumeFlagHints = map[string][2]string{"model": {"-m/--model", "/model"}, "provider": {"--provider", "/model"},
-		"base_url": {"--base-url", "/model"}, "reasoning": {"--reasoning", "/reasoning"},
-		"yolo": {"--yolo", "/yolo"}, "toolsets": {"-t/--toolsets", ""},
-		"skills": {"-s/--skills", ""}, "verbose": {"-v/--verbose", ""}, "cwd": {"--in", ""}}
 )
-
-const resumePolicyMismatch = "Resume retains gateway session policy; creation overrides are unsupported on resume."
 
 // Creation flags set truthy in this shell's environment, in declaration order
 func EnvLaunchFlags() *pyjson.Object {
@@ -77,37 +69,6 @@ func ClientEnvPolicy(ctx context.Context, parameters []any) (map[string]any, err
 		}
 	}
 	return map[string]any{}, nil
-}
-
-// Resume refusal naming each flag that differs from the frozen launch and the way forward
-func ResumePolicyError(keys []string) *gateway.GatewayClientError {
-	var flags, switches []string
-	seenFlag, seenSwitch := map[string]bool{}, map[string]bool{}
-	for _, key := range keys {
-		hint, ok := resumeFlagHints[key]
-		if !ok {
-			hint = [2]string{"--" + strings.ReplaceAll(key, "_", "-"), ""}
-		}
-		if !seenFlag[hint[0]] {
-			seenFlag[hint[0]] = true
-			flags = append(flags, hint[0])
-		}
-		if hint[1] != "" && !seenSwitch[hint[1]] {
-			seenSwitch[hint[1]] = true
-			switches = append(switches, hint[1])
-		}
-	}
-	one := len(keys) == 1
-	them, differ := "them", "differ"
-	if one {
-		them, differ = "it", "differs"
-	}
-	after := fmt.Sprintf(", or start a new session to use %s", them)
-	if len(switches) > 0 {
-		after = fmt.Sprintf(" and use %s after resuming to switch", strings.Join(switches, " or "))
-	}
-	return &gateway.GatewayClientError{Msg: fmt.Sprintf("%s %s %s from this session's launch: resume without %s%s.",
-		resumePolicyMismatch, strings.Join(flags, ", "), differ, them, after)}
 }
 
 // Namespace value with string lists widened so they compare with decoded JSON
@@ -178,18 +139,20 @@ func RequestedPolicy(args map[string]any) *pyjson.Object {
 	return policy
 }
 
-// Refuses resume flags that would change the frozen route, the same flags again being fine
-func CheckResumePolicy(ctx context.Context, args map[string]any, snapshot any) error {
+// Launch flags of a resume that differ from the session's frozen launch, the payload of its launch mutation
+func ResumeOverrides(ctx context.Context, args map[string]any, snapshot any) (map[string]any, error) {
 	requested := RequestedPolicy(args)
+	requested.Delete("source")
 	if pyrepr.Truthy(args["in_dir"]) {
 		resolved, err := pypath.Resolve(pypath.Expanduser(pyrepr.Str(args["in_dir"])))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		requested.Set("cwd", resolved)
 	}
+	overrides := map[string]any{}
 	if requested.Len() == 0 {
-		return nil
+		return overrides, nil
 	}
 	var info map[string]any
 	if snap, ok := pyjson.AsObject(snapshot); ok {
@@ -202,10 +165,12 @@ func CheckResumePolicy(ctx context.Context, args map[string]any, snapshot any) e
 	if cwd, ok := info["cwd"]; ok {
 		frozen["cwd"] = cwd
 	}
+	compared := map[string]any{}
 	if model, ok := requested.Get("model"); ok {
+		compared["model"] = model
 		_, hasRequested := frozen["model_requested"]
 		if pyjson.Equal(model, frozen["model_requested"]) {
-			requested.Set("model", frozen["model"])
+			compared["model"] = frozen["model"]
 		} else if !pyjson.Equal(model, frozen["model"]) && !hasRequested {
 			flags := map[string]any{}
 			for _, key := range []string{"model", "provider", "base_url", "api_key"} {
@@ -215,26 +180,26 @@ func CheckResumePolicy(ctx context.Context, args map[string]any, snapshot any) e
 			}
 			cfg, err := config.LoadUserEffective(home.ConfigPath(home.Dir(ctx)), os.LookupEnv)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if cfg == nil {
 				cfg = map[string]any{}
 			}
 			route, err := gateway.ResolveLaunchRoute(ctx, flags, cfg)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			requested.Set("model", route["model"])
+			compared["model"] = route["model"]
 		}
 	}
-	var differs []string
 	for _, key := range requested.Keys {
-		if key != "api_key" && !pyjson.Equal(frozen[key], requested.Vals[key]) {
-			differs = append(differs, key)
+		value, ok := compared[key]
+		if !ok {
+			value = requested.Vals[key]
+		}
+		if key != "api_key" && !pyjson.Equal(frozen[key], value) {
+			overrides[key] = requested.Vals[key]
 		}
 	}
-	if len(differs) > 0 {
-		return ResumePolicyError(differs)
-	}
-	return nil
+	return overrides, nil
 }

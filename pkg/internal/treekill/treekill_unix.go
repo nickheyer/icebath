@@ -3,7 +3,6 @@
 package treekill
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -27,9 +26,6 @@ type Proc struct {
 	PID   int
 	Birth float64
 }
-
-// ErrProcessGone reports a recorded process that exited or whose pid now names another process
-var ErrProcessGone = errors.New("no such process")
 
 // ReadParentMap lists every pid with its parent in ascending pid order like the psutil parent map
 func ReadParentMap() []Parent {

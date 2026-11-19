@@ -18,7 +18,7 @@ func projectsHome(t *testing.T) (string, string) {
 	t.Setenv("ICEBATH_HOME", dir)
 	dbMu.Lock()
 	savedDB, savedErr := sharedDB, dbError
-	sharedDB, dbError = nil, ""
+	sharedDB, dbError = nil, nil
 	dbMu.Unlock()
 	restore := tools.SwapGitProbeRunner(func(cwd string, _ ...string) string {
 		d := cwd

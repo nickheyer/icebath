@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -251,7 +250,7 @@ func TestReleaseUnheldMediaIgnoresForeignAndRejectsMalformedReferences(t *testin
 	}
 	intPath := pyjson.NewObject()
 	intPath.Set("path", 7)
-	if _, err := releaseUnheldMedia(ctx, db, []any{intPath}, true); err == nil || !strings.Contains(err.Error(), "not 'int'") {
+	if _, err := releaseUnheldMedia(ctx, db, []any{intPath}, true); err == nil || err.Error() != "a media path is a number, expected text" {
 		t.Fatalf("int path error %v", err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -99,5 +100,9 @@ func skillsReload(ctx context.Context, rid any, params map[string]any, _ *tuihos
 		total = n
 	}
 	lines = append(lines, fmt.Sprintf("%d skill(s) available", total))
-	return ok(rid, map[string]any{"output": strings.Join(lines, "\n"), "result": result}), nil
+	var diff tuigateway.SkillsReloadDiff
+	if err := tuigateway.Loose(result, &diff); err != nil {
+		return nil, err
+	}
+	return ok(rid, tuigateway.Plain(tuigateway.SkillsReloadResult{Output: strings.Join(lines, "\n"), Result: diff})), nil
 }

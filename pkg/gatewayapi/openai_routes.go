@@ -107,7 +107,7 @@ func iterStreamItems(ctx context.Context, q *streamQueue, task *agentTask, respo
 }
 
 // Chat messages as the system prompt, the conversation messages and a 400 for malformed content
-func parseChatMessages(messages []any) (*string, []*pyjson.Object, *gateway.WebResponse) {
+func parseChatMessages(ctx context.Context, messages []any) (*string, []*pyjson.Object, *gateway.WebResponse) {
 	var systemPrompt *string
 	conversation := []*pyjson.Object{}
 	for idx, raw := range messages {
@@ -127,7 +127,7 @@ func parseChatMessages(messages []any) (*string, []*pyjson.Object, *gateway.WebR
 				systemPrompt = &joined
 			}
 		case "user", "assistant":
-			content, err := gateway.APINormalizeMultimodalContent(rawContent)
+			content, err := gateway.APINormalizeMultimodalContent(ctx, rawContent)
 			if err != nil {
 				return nil, nil, multimodalValidationError(err, fmt.Sprintf("messages[%d].content", idx))
 			}
@@ -138,7 +138,7 @@ func parseChatMessages(messages []any) (*string, []*pyjson.Object, *gateway.WebR
 }
 
 // Responses input as messages, a 400 for a malformed input
-func parseResponsesInput(rawInput any) ([]*pyjson.Object, *gateway.WebResponse) {
+func parseResponsesInput(ctx context.Context, rawInput any) ([]*pyjson.Object, *gateway.WebResponse) {
 	messages := []*pyjson.Object{}
 	switch v := rawInput.(type) {
 	case string:
@@ -152,7 +152,7 @@ func parseResponsesInput(rawInput any) ([]*pyjson.Object, *gateway.WebResponse) 
 				if isReasoningInputItem(it) {
 					continue
 				}
-				content, err := gateway.APINormalizeMultimodalContent(it.GetOr("content", ""))
+				content, err := gateway.APINormalizeMultimodalContent(ctx, it.GetOr("content", ""))
 				if err != nil {
 					return nil, multimodalValidationError(err, fmt.Sprintf("input[%d].content", idx))
 				}
@@ -166,7 +166,7 @@ func parseResponsesInput(rawInput any) ([]*pyjson.Object, *gateway.WebResponse) 
 }
 
 // Explicit responses conversation history, a 400 for a malformed entry
-func parseConversationHistory(rawHistory any) ([]any, *gateway.WebResponse) {
+func parseConversationHistory(ctx context.Context, rawHistory any) ([]any, *gateway.WebResponse) {
 	list, ok := rawHistory.([]any)
 	if !ok {
 		return nil, errorResponse("'conversation_history' must be an array of message objects", http.StatusBadRequest, errOpts{})
@@ -186,7 +186,7 @@ func parseConversationHistory(rawHistory any) ([]any, *gateway.WebResponse) {
 			return nil, errorResponse(fmt.Sprintf("conversation_history[%d] must have 'role' and 'content' fields", i), http.StatusBadRequest, errOpts{})
 		}
 		raw, _ := obj.Get("content")
-		content, err := gateway.APINormalizeMultimodalContent(raw)
+		content, err := gateway.APINormalizeMultimodalContent(ctx, raw)
 		if err != nil {
 			return nil, multimodalValidationError(err, fmt.Sprintf("conversation_history[%d].content", i))
 		}
@@ -314,7 +314,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 		return invalidRequest("Missing or invalid 'messages' field"), nil
 	}
 	stream := gateway.APICoerceRequestBool(body.GetOr("stream", nil), false)
-	systemPrompt, conversation, msgErr := parseChatMessages(messages)
+	systemPrompt, conversation, msgErr := parseChatMessages(ctx, messages)
 	if msgErr != nil {
 		return msgErr, nil
 	}

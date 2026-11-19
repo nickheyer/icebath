@@ -47,6 +47,9 @@ func startNewSession(cmd *exec.Cmd) {
 	cmd.SysProcAttr.Setsid = true
 }
 
+// Starts cmd, the session flag set before the start already makes it a tree leader
+func startCommand(cmd *exec.Cmd) error { return cmd.Start() }
+
 // Process group of a pid
 func processGroupOf(pid int) (int, error) {
 	return syscall.Getpgid(pid)

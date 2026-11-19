@@ -309,7 +309,7 @@ func collectInstallShape(ctx context.Context, plan *UpdatePlan) {
 		if managed != "" {
 			plan.InstallMethod = managed
 		}
-		plan.UpdatableInPlace = (method == "git" || method == "unknown") && managed == ""
+		plan.UpdatableInPlace = (method == "git" || method == "unknown" || config.IsReleaseBinaryInstallMethod(method)) && managed == ""
 		inventoryProbe("Image provenance probe", func() error {
 			if provenance := inventoryReadImageProvenance(); provenance != nil {
 				plan.UpdatableInPlace = false

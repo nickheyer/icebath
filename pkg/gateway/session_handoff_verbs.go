@@ -56,7 +56,7 @@ func handoffDestination(ctx context.Context, platformName string) (*HomeChannel,
 			}
 		}
 		if !fronted {
-			return nil, handoffRefusal(ctx, "invalid_params", "platform_not_enabled", kwargs)
+			return nil, handoffRefusal(ctx, "invalid_params", "platform_not_enabled", kwargs, "enable_platform_hint")
 		}
 	}
 	home := cfg.GetHomeChannel(platform)

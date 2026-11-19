@@ -139,9 +139,9 @@ func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 		}
 	}
 	if dir := bundledOverrideDir(); dir != "" {
-		scanLevel(dir, "bundled", listingBundledSkip, "", 0, bundled)
+		scanLevel(dir, "bundled", skipAbsentTiers(listingBundledSkip), "", 0, bundled)
 	} else {
-		scanCompiledLevel(plugintree.Compiled(), ".", listingBundledSkip, "", 0, bundled)
+		scanCompiledLevel(plugintree.Compiled(), ".", skipAbsentTiers(listingBundledSkip), "", 0, bundled)
 	}
 	sort.SliceStable(bundled.order, func(i, j int) bool { return bundledKeyLess(bundled.order[i], bundled.order[j]) })
 	seen := &entrySet{byKey: map[string]PluginEntry{}}

@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package tools
 
 import (
@@ -270,14 +272,6 @@ type inlineCitation struct {
 	Title      any `json:"title"`
 	StartIndex any `json:"start_index"`
 	EndIndex   any `json:"end_index"`
-}
-
-// Value at a key, the default when the key is absent
-func getOr(m map[string]any, key string, def any) any {
-	if v, ok := m[key]; ok {
-		return v
-	}
-	return def
 }
 
 // url_citation annotations of every message content
@@ -655,6 +649,8 @@ func handleXSearch(ctx context.Context, call *Call) string {
 	return xSearchTool(ctx, call.Env, argS(a, "query"), a["allowed_x_handles"], a["excluded_x_handles"],
 		argS(a, "from_date"), argS(a, "to_date"), truthy(a["enable_image_understanding"]), truthy(a["enable_video_understanding"]))
 }
+
+func init() { registerXSearchTool() }
 
 // Registers x_search into the x_search toolset
 func registerXSearchTool() {

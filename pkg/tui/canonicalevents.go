@@ -78,14 +78,6 @@ func (s *tuiStore) openCanonicalClarify(ev gatewayEventMsg, sink promptSink) {
 	sink.ringPromptBell()
 }
 
-// Text of an optional payload value, the fallback when absent or null
-func stringOr(v any, fallback string) string {
-	if v == nil {
-		return fallback
-	}
-	return jsString(v)
-}
-
 // Opens the shared approval card of the owner's prompt
 func (s *tuiStore) openCanonicalApproval(ev gatewayEventMsg, sink promptSink) {
 	prompt, err := tuigateway.ApprovalRequestEvent.Payload(ev.Payload)
@@ -101,7 +93,7 @@ func (s *tuiStore) openCanonicalApproval(ev gatewayEventMsg, sink promptSink) {
 	if prompt.Description == nil {
 		description = "dangerous command"
 	}
-	s.overlay.Approval = &approvalReq{AllowPermanent: true, Choices: prompt.Choices, Command: val(prompt.Command), Description: description, RequestID: shared.PromptID, Shared: shared}
+	s.overlay.Approval = &approvalReq{AllowPermanent: true, Choices: prompt.Choices, Command: val(prompt.Command), Description: description, OpenURL: val(prompt.OpenURL), RequestID: shared.PromptID, Shared: shared}
 	sink.setStatus("approval needed")
 	sink.ringPromptBell()
 }

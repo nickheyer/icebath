@@ -77,6 +77,8 @@ type ContextCompressor struct {
 	quietMode                      bool
 	maxTokens                      *int
 	abortOnSummaryFailure          bool
+	// Set for one manual run that keeps the smallest tail and summary the compressor allows
+	aggressive bool
 
 	microCompactEnabled               bool
 	microCompactCursor                int

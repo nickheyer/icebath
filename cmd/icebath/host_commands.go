@@ -47,7 +47,6 @@ func bindHostCommands(cli *commands.CLI) {
 		"pairing":       pairingGroup,
 		"pause":         pauseGroup,
 		"peer":          peerGroup,
-		"pets":          petsGroup,
 		"project":       projectGroup,
 		"prompt-size":   promptSizeGroup,
 		"proxy":         proxyGroup,
@@ -246,12 +245,6 @@ func peerGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 		}
 	}
 	return gateway.PeerCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
-}
-
-func petsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	ns["pets_command"] = nilWhenEmpty(secondWord(path))
-	return app.PetsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
 func projectGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

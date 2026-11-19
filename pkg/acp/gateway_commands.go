@@ -338,6 +338,14 @@ func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 			return "", err
 		}
 	}
+	if operation == "" {
+		info, err := a.rpc(ctx, link, "session.info", map[string]any{"session_id": sessionID})
+		if err != nil {
+			return "", err
+		}
+		plain, _ := pyjson.Plain(info).(map[string]any)
+		return modelText("Current model", plain), nil
+	}
 	var confirm MutationConfirm
 	if operation == "model" {
 		confirm = a.confirmer(sessionID)
@@ -368,6 +376,9 @@ func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 		switch operation {
 		case "model":
 			reply = modelText("Model switched to", result)
+			if payload.GetOr("once", nil) == true {
+				reply = modelText("Model switched for the next turn to", result)
+			}
 		case "compress":
 			if reply = summaryText(result); reply == "" {
 				reply = "Context compressed."
@@ -403,6 +414,9 @@ var unchangedReplies = map[string]func(ctx context.Context, result map[string]an
 			lines[i] = pyStr(line)
 		}
 		return strings.Join(lines, "\n"), nil
+	},
+	"refreshed": func(ctx context.Context, result map[string]any) (string, error) {
+		return modelText("Model catalogs refreshed. Current model", result), nil
 	},
 	"noop": func(ctx context.Context, result map[string]any) (string, error) {
 		if text := summaryText(result); text != "" {

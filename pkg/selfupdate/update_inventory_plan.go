@@ -16,12 +16,15 @@ import (
 func printUpdatePlan(w io.Writer, plan *UpdatePlan) {
 	fmt.Fprintln(w, "Update plan:")
 	install := "  Install: " + plan.InstallMethod
-	if pyrepr.Truthy(plan.ExpectedVersion) {
+	switch {
+	case pyrepr.Truthy(plan.ExpectedVersion) && pyrepr.Str(plan.ExpectedVersion) != "unknown":
 		install += " (v" + pyrepr.Str(plan.ExpectedVersion)
 		if pyrepr.Truthy(plan.ExpectedSHA) {
 			install += " @ " + clip(pyrepr.Str(plan.ExpectedSHA), 8)
 		}
 		install += ")"
+	case pyrepr.Truthy(plan.ExpectedSHA):
+		install += " (commit " + clip(pyrepr.Str(plan.ExpectedSHA), 8) + ")"
 	}
 	fmt.Fprintln(w, install)
 	if !plan.UpdatableInPlace {

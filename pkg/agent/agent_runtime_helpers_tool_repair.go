@@ -103,11 +103,17 @@ func (a *AIAgent) deferredToolNames() map[string]bool {
 
 // Tool result for a call naming no offered tool, saying why when the name means a registered tool
 func (a *AIAgent) invalidToolContent(toolName string) (string, bool) {
+	if _, refused := tools.ToolTierRefusal(toolName); refused {
+		return tools.InvalidToolNameErrorContent(toolName, a.validToolNames), false
+	}
 	target, offered := a.resolveToolName(toolName)
 	if target == "" || offered {
 		return tools.InvalidToolNameErrorContent(toolName, a.validToolNames), false
 	}
 	reason := tools.UnofferedToolReason(a.toolContext(), a.env, target, a.deferredToolNames(), a.enabledToolsets, a.disabledToolsets)
+	if a.ToolDrops()[target] {
+		reason = fmt.Sprintf("'%s' is not one of this agent's tools: this agent runs without it by design. The tool was NOT invoked, continue without it.", target)
+	}
 	if reason == "" {
 		return tools.InvalidToolNameErrorContent(toolName, a.validToolNames), false
 	}

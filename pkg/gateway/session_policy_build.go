@@ -74,11 +74,11 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 	}
 	sort.Strings(unknown)
 	label, isStr := source.(string)
-	if _, surface := Surfaces[label]; len(unknown) > 0 || !isStr || !surface {
+	if len(unknown) > 0 || !isStr || SourceSurface(label) == "" {
 		if len(unknown) > 0 {
 			return nil, refuseText("params."+unknown[0], "unknown create field")
 		}
-		return nil, refuseText("source", "not a surface: "+pyrepr.Repr(source))
+		return nil, refuseText("source", sourceRefusal(source))
 	}
 	for _, name := range BypassFields {
 		if v, ok := params[name]; ok {
@@ -235,7 +235,7 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 	if err != nil {
 		return nil, err
 	}
-	return &LocalSessionPolicy{Source: label, Platform: Surfaces[label], Cwd: cwd, Model: model, Toolsets: toolsets,
+	return &LocalSessionPolicy{Source: label, Platform: SourceSurface(label), Cwd: cwd, Model: model, Toolsets: toolsets,
 		ConfigJSON: configJSON, RequestJSON: requestJSON, TerminalJSON: terminalJSON, SafeMode: safeMode,
 		IgnoreUserConfig: ignoreUserConfig, CodingPosture: codingPosture, ClientEnvJSON: clientEnv,
 		ClientEnvRemote: clientEnv != nil && !opts.ClientLocal, ClientEnvRulesJSON: rulesJSON,
@@ -500,6 +500,9 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 		for _, item := range explicit {
 			name, isS := item.(string)
 			if !isS || !known(name) {
+				if line, refused := tools.ToolsetTierRefusal(name); isS && refused {
+					return nil, refuseText("toolsets", line)
+				}
 				return nil, refuseText("toolsets", "unknown or invalid toolset name: "+pyrepr.Repr(item))
 			}
 			server := name
@@ -585,7 +588,7 @@ func inCodingWorkspace(ctx context.Context, cfg map[string]any, source, cwd stri
 			inFocus = false
 		}
 	}()
-	return tools.InFocusWorkspace(&tools.Env{Home: home.Dir(ctx), Config: config.Tree(cfg)}, Surfaces[source], cwd)
+	return tools.InFocusWorkspace(&tools.Env{Home: home.Dir(ctx), Config: config.Tree(cfg)}, SourceSurface(source), cwd)
 }
 
 // Validated skill identifiers of a create request, refused on a bypass launch that never reads the profile
@@ -642,7 +645,7 @@ func renderLaunchSkills(ctx context.Context, params map[string]any, sessionID st
 
 // Next turn toolsets, the profile selection for a following session without an explicit pick
 func (p *LocalSessionPolicy) currentToolsets(ctx context.Context, cfg map[string]any) ([]string, error) {
-	_, surface := Surfaces[p.Source]
+	surface := SourceSurface(p.Source) != ""
 	_, picked := policyObject(p.RequestJSON)["toolsets"]
 	if !p.FollowsProfile() || !surface || p.EditorMCPJSON != nil || picked {
 		return p.Toolsets, nil

@@ -19,14 +19,14 @@ func TestScenarioSkillsManageOverTheTUIGateway(t *testing.T) {
 	if _, isDict := Dig(call(map[string]any{}), "result", "skills").(map[string]any); !isDict {
 		s.Failf("list answered no skills mapping")
 	}
-	s.HasJSON(call(map[string]any{"action": "bogus"}), `{"error": {"code": 4017, "message": "unknown skills action: bogus"}}`)
-	s.HasJSON(call(map[string]any{"action": []any{"list"}}), `{"error": {"code": 5024, "message": "the skills action must be text, got a list"}}`)
-	s.HasJSON(call(map[string]any{"action": "search", "query": 7}), `{"error": {"code": 5024, "message": "the search query must be text, got a number"}}`)
+	s.HasJSON(call(map[string]any{"action": "bogus"}), `{"error": {"code": 4000, "message": "invalid params for skills.manage: action: wants one of list, search, install, browse, inspect, got \"bogus\""}}`)
+	s.HasJSON(call(map[string]any{"action": []any{"list"}}), `{"error": {"code": 4000, "message": "invalid params for skills.manage: action: wants text, got a list"}}`)
+	s.HasJSON(call(map[string]any{"action": "search", "query": 7}), `{"error": {"code": 4000, "message": "invalid params for skills.manage: query: wants text, got the number 7"}}`)
 	s.HasJSON(call(map[string]any{"action": "install", "query": nil}), `{"error": {"code": 5024, "message": "the skill to install must be text, got nothing"}}`)
-	s.HasJSON(call(map[string]any{"action": "inspect", "query": 3}), `{"error": {"code": 5024, "message": "the skill to inspect must be text, got a number"}}`)
-	s.HasJSON(call(map[string]any{"action": "browse", "page": "abc"}), `{"error": {"code": 5024, "message": "the page must be a whole number, got abc"}}`)
-	s.HasJSON(call(map[string]any{"action": "browse", "query": 2}), `{"error": {"code": 5024, "message": "the browse query must be text, got a number"}}`)
-	s.HasJSON(call(map[string]any{"action": "profile-less", "profile": "ghost"}), `{"error": {"code": 4064, "message": "profile 'ghost' not found"}}`)
+	s.HasJSON(call(map[string]any{"action": "inspect", "query": 3}), `{"error": {"code": 4000, "message": "invalid params for skills.manage: query: wants text, got the number 3"}}`)
+	s.HasJSON(call(map[string]any{"action": "browse", "page": "abc"}), `{"error": {"code": 4000, "message": "invalid params for skills.manage: page: wants a whole number, got text \"abc\""}}`)
+	s.HasJSON(call(map[string]any{"action": "browse", "query": 2}), `{"error": {"code": 4000, "message": "invalid params for skills.manage: query: wants text, got the number 2"}}`)
+	s.HasJSON(call(map[string]any{"action": "list", "profile": "ghost"}), `{"error": {"code": 4064, "message": "profile 'ghost' not found"}}`)
 
 	s.HasJSON(call(map[string]any{"action": "inspect", "query": "official/security/1password"}),
 		`{"result": {"info": {"name": "1password", "source": "official", "identifier": "official/security/1password"}}}`)
@@ -42,7 +42,7 @@ func TestScenarioSkillsManageOverTheTUIGateway(t *testing.T) {
 	}
 	missing := call(map[string]any{"action": "install", "query": "official/security/no-such-skill"})
 	s.HasJSON(missing, `{"error": {"code": 5031, "data": {"installed": false, "name": "official/security/no-such-skill"}}}`)
-	if log, _ := Dig(missing, "error", "data", "log").(string); !strings.Contains(log, "[bold red]Error:[/] Could not download 'official/security/no-such-skill'.") {
+	if log, _ := Dig(missing, "error", "data", "log").(string); !strings.Contains(log, "Error: Could not download 'official/security/no-such-skill'.") || strings.Contains(log, "[bold") {
 		s.Failf("the failed install log lacks the download error\n%v", missing)
 	}
 	s.HasJSON(call(map[string]any{"action": "list"}), `{"result": {"skills": {}}}`)

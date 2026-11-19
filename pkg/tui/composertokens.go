@@ -3,6 +3,8 @@ package tui
 import (
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Collapsed paste or attached image the composer shows as a label in the draft
@@ -15,21 +17,10 @@ type composerToken struct {
 	Index int
 }
 
-// Typed reply of command.dispatch, one of alias, exec, plugin, prefill, send or skill
-type commandDispatch struct {
-	Type    string
-	Target  string
-	Output  *string
-	Message *string
-	Notice  *string
-	Display *string
-	Name    string
-}
-
 // Gateway completion request the composer sends for its draft
 type completionRequest struct {
-	Method      string
-	Params      map[string]any
+	Slash       *tuigateway.CompleteSlashParams
+	Path        *tuigateway.CompletePathParams
 	ReplaceFrom int
 	SkillsOnly  bool
 }
@@ -146,43 +137,6 @@ func parseSlashCommand(command string) (name, arg string) {
 	return strings.ToLower(m[1]), strings.TrimFunc(m[2], isJSSpace)
 }
 
-func optionalString(row map[string]any, key string) *string {
-	if s, isStr := row[key].(string); isStr {
-		return &s
-	}
-	return nil
-}
-
-// Reply of command.dispatch read by its type, nil for any reply missing a required field
-func parseCommandDispatch(raw any) *commandDispatch {
-	row, isObject := raw.(map[string]any)
-	if !isObject || row == nil {
-		return nil
-	}
-	typ, _ := row["type"].(string)
-	switch typ {
-	case "alias":
-		if target, isStr := row["target"].(string); isStr {
-			return &commandDispatch{Type: "alias", Target: target}
-		}
-	case "exec", "plugin":
-		return &commandDispatch{Type: typ, Output: optionalString(row, "output")}
-	case "prefill":
-		if message := optionalString(row, "message"); message != nil {
-			return &commandDispatch{Type: "prefill", Message: message, Notice: optionalString(row, "notice")}
-		}
-	case "send":
-		if message := optionalString(row, "message"); message != nil {
-			return &commandDispatch{Type: "send", Display: optionalString(row, "display"), Message: message, Notice: optionalString(row, "notice")}
-		}
-	case "skill":
-		if name, isStr := row["name"].(string); isStr {
-			return &commandDispatch{Type: "skill", Display: optionalString(row, "display"), Message: optionalString(row, "message"), Name: name}
-		}
-	}
-	return nil
-}
-
 // Model argument scoped to the session, the scope flags replaced by one trailing session flag
 func sessionScopedModelArg(value string) string {
 	var kept []string
@@ -241,22 +195,27 @@ func (s *tuiStore) completionRequestForInput(input string) (completionRequest, b
 		return completionRequest{}, false
 	}
 	if query, start, inline := inlineSlashTrigger(input); inline {
-		return completionRequest{Method: "complete.slash", Params: map[string]any{"text": "/" + query}, ReplaceFrom: start + 1, SkillsOnly: true}, true
+		return completionRequest{Slash: &tuigateway.CompleteSlashParams{Text: ptr("/" + query)}, ReplaceFrom: start + 1, SkillsOnly: true}, true
 	}
 	if isSlash {
-		return completionRequest{Method: "complete.slash", Params: map[string]any{"text": input}, ReplaceFrom: 1}, true
+		return completionRequest{Slash: &tuigateway.CompleteSlashParams{Text: &input}, ReplaceFrom: 1}, true
 	}
 	if pathWord == "" {
 		return completionRequest{}, false
 	}
-	params := map[string]any{"word": pathWord}
+	return completionRequest{Path: s.pathCompletionParams(pathWord), ReplaceFrom: unitLen(input) - unitLen(pathWord)}, true
+}
+
+// Path completion params of a word, rooted at the session in view and its folder when known
+func (s *tuiStore) pathCompletionParams(word string) *tuigateway.CompletePathParams {
+	params := &tuigateway.CompletePathParams{Word: &word}
 	if cwd := s.sessionCwd(); cwd != "" {
-		params["cwd"] = cwd
+		params.Cwd = &cwd
 	}
 	if s.ui.Sid != "" {
-		params["session_id"] = s.ui.Sid
+		params.SessionID = ptr(s.ui.Sid)
 	}
-	return completionRequest{Method: "complete.path", Params: params, ReplaceFrom: unitLen(input) - unitLen(pathWord)}, true
+	return params
 }
 
 // Whether the process runs inside an SSH session

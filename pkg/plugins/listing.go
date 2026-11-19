@@ -186,6 +186,9 @@ func cmdShow(ctx context.Context, name string, console *Console) error {
 		return err
 	}
 	if match == nil {
+		if line, absent := bundledTierRefusal(name); absent {
+			return fail(console, "[red]"+line+"[/red]")
+		}
 		console.Print(fmt.Sprintf("[red]Plugin '%s' not found.[/red]", name))
 		return fail(console, "[dim]List installed plugins:[/dim] icebath plugins list")
 	}

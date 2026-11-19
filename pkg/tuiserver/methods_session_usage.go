@@ -53,7 +53,7 @@ func handoffRequest(ctx context.Context, rid any, params map[string]any, session
 		return rpcErr(rid, 5021, "could not load gateway config: "+failureText(failure), nil)
 	}
 	if platformConfig := config.Platforms[platform]; platformConfig == nil || !platformConfig.Enabled {
-		return rpcErr(rid, 4025, fmt.Sprintf("platform '%s' is not configured/enabled in the gateway", platformName), nil)
+		return rpcErr(rid, 4025, fmt.Sprintf("platform '%s' is not configured/enabled in the gateway; set it up with icebath gateway setup, then restart the gateway with icebath gateway restart", platformName), nil)
 	}
 	homeChannel := config.GetHomeChannel(platform)
 	if homeChannel == nil || homeChannel.ChatID == "" {

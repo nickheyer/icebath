@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,6 +32,17 @@ func (a *MatrixAdapter) sendReaction(ctx context.Context, roomID, eventID, emoji
 	}
 	pkgLog().Debug(fmt.Sprintf("Matrix: sent reaction %s to %s", emoji, eventID))
 	return string(resp.EventID)
+}
+
+// Adds an emoji reaction as an m.reaction annotation of the event
+func (a *MatrixAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	client := a.currentClient()
+	if client == nil {
+		return errors.New("the Matrix client is not connected")
+	}
+	content := map[string]any{"m.relates_to": map[string]any{"rel_type": "m.annotation", "event_id": messageID, "key": emoji}}
+	_, err := client.SendMessageEvent(ctx, id.RoomID(chatID), event.EventReaction, content)
+	return err
 }
 
 // Redacts a reaction event

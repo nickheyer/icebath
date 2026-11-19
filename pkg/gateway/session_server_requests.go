@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -235,7 +236,7 @@ func askServerRequest(events *SessionEvents, sessionID, method string, params *p
 		}
 	}
 	if err := tuihost.CheckRequestParams(method, framed); err != nil {
-		tuihost.ReportMisfit("params of request", method, err)
+		tuigateway.ReportMisfit("params of request", method, err)
 	}
 	pending := &pendingServerRequest{done: make(chan struct{}), sessionID: sessionID, events: events, method: method,
 		params: framed, locked: pyjson.NewObject()}

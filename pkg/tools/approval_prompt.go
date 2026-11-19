@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
 // Inputs of the interactive dangerous command prompt
@@ -570,12 +571,19 @@ func rememberedConsent(env *Env, sessionKey, choice, rememberKey, unresolved str
 	return consent(choice, unresolved)
 }
 
-// ElicitationOptions tunes one MCP elicitation consent request
+// ElicitationOptions tunes one MCP elicitation consent request, URL naming the link an accept opens
 type ElicitationOptions struct {
 	Timeout     time.Duration
 	Surface     string
 	Title       string
 	RememberKey string
+	URL         string
+}
+
+// Opens a consented elicitation link in the local browser, swapped by tests
+var openElicitationURL = func(link string) bool {
+	opened, err := pywebbrowser.Open(link, 2)
+	return err == nil && opened
 }
 
 // RequestElicitationConsent routes an MCP elicitation to the surface owning the session and returns accept, decline, or cancel
@@ -599,9 +607,13 @@ func RequestElicitationConsent(ctx context.Context, env *Env, message, descripti
 			log.Warn("Elicitation requested in gateway session but no notify_cb is registered — failing closed", "session", sessionKey)
 			return "decline"
 		}
-		decision := awaitGatewayDecision(ctx, env, sessionKey, notify, map[string]any{"command": message, "description": description,
+		approval := map[string]any{"command": message, "description": description,
 			"pattern_key": "mcp_elicitation", "pattern_keys": []string{"mcp_elicitation"},
-			"allow_session": scoped, "allow_permanent": scoped}, o.Surface)
+			"allow_session": scoped, "allow_permanent": scoped}
+		if o.URL != "" {
+			approval["open_url"] = o.URL
+		}
+		decision := awaitGatewayDecision(ctx, env, sessionKey, notify, approval, o.Surface)
 		if decision.NotifyFailed {
 			return "decline"
 		}
@@ -622,7 +634,15 @@ func RequestElicitationConsent(ctx context.Context, env *Env, message, descripti
 	post := copyMap(hookPayload)
 	post["choice"] = choice.value
 	fireApprovalHook(ctx, env, "post_approval_response", post)
-	return rememberedConsent(env, sessionKey, choice.value, o.RememberKey, "cancel")
+	answer := rememberedConsent(env, sessionKey, choice.value, o.RememberKey, "cancel")
+	if answer == "accept" && o.URL != "" {
+		if openElicitationURL(o.URL) {
+			log.Info("Opened the consented elicitation link in the browser", "surface", o.Surface)
+		} else {
+			log.Warn("No browser took the consented elicitation link, the user opens it from the prompt", "surface", o.Surface)
+		}
+	}
+	return answer
 }
 
 var approvalNonASCIIRe = regexp.MustCompile("[^\x20-\x7e\t\n]+")

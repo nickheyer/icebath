@@ -3,6 +3,7 @@ package kanban
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 
@@ -80,6 +81,9 @@ func RunSlash(ctx context.Context, rest string) (string, error) {
 	}
 	if len(tokens) == 0 || tokens[0] == "help" || tokens[0] == "--help" || tokens[0] == "-h" || tokens[0] == "?" {
 		return SlashKanbanHelp, nil
+	}
+	if ParseSlash == nil {
+		return "", errors.New("the kanban slash parser is unset, pkg/app binds it at init in every build that links kanban")
 	}
 	p := ParseSlash(tokens)
 	if !p.Parsed {

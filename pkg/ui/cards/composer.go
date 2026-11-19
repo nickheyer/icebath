@@ -38,8 +38,9 @@ type attachment struct {
 	Data  []byte
 }
 
-// Candidates the app offers for the prompt, the highlighted one and the offset they replace from
+// Candidates the app offers for one prompt text, the highlighted one and the offset they replace from
 type completion struct {
+	value   string
 	items   []string
 	descs   []string
 	texts   []string
@@ -280,25 +281,33 @@ func (c *Composer) Attachments() []string {
 	return out
 }
 
+// Popup of the candidates offered for exactly the text typed now, a list of an older text closed
+func (c *Composer) live() *completion {
+	if c.comp != nil && c.comp.value != c.ta.Value() {
+		c.comp = nil
+	}
+	return c.comp
+}
+
 // Candidates shown in the popup, nil when it is closed
 func (c *Composer) Completions() []string {
-	if c.comp == nil {
+	if c.live() == nil {
 		return nil
 	}
 	return append([]string(nil), c.comp.items...)
 }
 
-// Reports whether the completion popup is open
-func (c *Composer) Completing() bool { return c.comp != nil }
+// Reports whether the completion popup is open for the text typed now
+func (c *Composer) Completing() bool { return c.live() != nil }
 
-// Shows the app's candidates for the prompt as it stands, the first one highlighted, none closing the popup
-func (c *Composer) Offer(offers []Offer, replace int) {
-	if len(offers) == 0 || c.ta.Value() == c.quiet {
+// Shows the candidates the app found for a prompt text, the first one highlighted, none or a text no longer typed closing the popup
+func (c *Composer) Offer(value string, offers []Offer, replace int) {
+	if len(offers) == 0 || value != c.ta.Value() || value == c.quiet {
 		c.comp = nil
 		return
 	}
 	c.quiet = ""
-	comp := &completion{replace: replace}
+	comp := &completion{value: value, replace: replace}
 	for _, o := range offers {
 		label := o.Display
 		if label == "" {
@@ -314,7 +323,7 @@ func (c *Composer) Offer(offers []Offer, replace int) {
 // Rows the composer wants, two at least, growing with the wrapped text, the question waiting and the completion popup
 func (c *Composer) Height() int {
 	rows := max(c.ta.Height(), minInputRows)
-	if c.comp != nil {
+	if c.live() != nil {
 		rows += min(len(c.comp.items), popupRows)
 	}
 	if c.ask != nil {
@@ -372,7 +381,7 @@ func (c *Composer) Action(id string) tea.Cmd {
 	if cmd, ok := c.questionAction(id); ok {
 		return cmd
 	}
-	if c.comp != nil {
+	if c.live() != nil {
 		switch id {
 		case "complete.next":
 			c.comp.idx = (c.comp.idx + 1) % len(c.comp.items)
@@ -777,7 +786,7 @@ func (c *Composer) Click(x, y int) (tea.Cmd, bool) {
 
 // Completion rows shown above the input
 func (c *Composer) popup(w int) []string {
-	if c.comp == nil {
+	if c.live() == nil {
 		return nil
 	}
 	t := c.theme
@@ -813,7 +822,7 @@ func (c *Composer) Cursor() *tea.Cursor {
 		return nil
 	}
 	cur.Y -= c.cut
-	if c.comp != nil {
+	if c.live() != nil {
 		cur.Y += min(len(c.comp.items), popupRows)
 	}
 	if c.ask != nil {

@@ -145,7 +145,20 @@ func (e *StaleHeldHistory) PyRuntimeError() {}
 // Marks an error raised as a RuntimeError or a subclass of it
 type PyRuntimeError interface{ PyRuntimeError() }
 
-type summaryRuntimeError struct{ msg string }
+type summaryRuntimeError struct {
+	msg string
+	// Way the summary reply was unusable, zero for other failures
+	reply summaryReply
+}
+
+// Way a summary reply was unusable
+type summaryReply int
+
+const (
+	summaryReplyEmpty summaryReply = iota + 1
+	summaryReplyRefusal
+	summaryReplyTruncated
+)
 
 func (e *summaryRuntimeError) Error() string   { return e.msg }
 func (e *summaryRuntimeError) PyRuntimeError() {}
@@ -567,16 +580,22 @@ func containsAny(s string, markers ...string) bool {
 func classifySummaryFailure(err error) summaryFailureKind {
 	status := provider.ExcStatusCode(err)
 	text := pystr.Lower(err.Error())
-	stall := isPyTimeoutError(err) && strings.Contains(err.Error(), provider.CodexStreamStallMarker)
+	stall := isPyTimeoutError(err) && provider.IsStreamStall(err)
+	var summaryErr *summaryRuntimeError
+	reply := summaryReply(0)
+	if errors.As(err, &summaryErr) {
+		reply = summaryErr.reply
+	}
+	var auxErr *provider.AuxRuntimeError
+	auxFault := errors.As(err, &auxErr) && auxErr.Fault != 0
 	return summaryFailureKind{
 		ModelNotFound:   status == 404 || status == 503 || containsAny(text, "model_not_found", "does not exist", "no available channel"),
 		Timeout:         stall || status == 408 || status == 429 || status == 502 || status == 504 || containsAny(text, "timeout", "timed out"),
 		JSONDecode:      isJSONDecodeError(err) || strings.Contains(text, "expecting value"),
 		StreamingClosed: provider.AuxIsConnectionError(err) && !stall,
-		EmptyContent: isPyRuntimeError(err) && containsAny(text, "empty content", "refusal content", "llm returned none response",
-			"llm returned invalid response"),
-		Truncated:  isPyRuntimeError(err) && strings.Contains(text, truncatedSummaryMarker),
-		Overloaded: provider.ClassifyError(provider.ClassifyInput{Err: err}).Reason == provider.ReasonOverloaded || containsAny(text, "overloaded", "at capacity", "over capacity"),
+		EmptyContent:    reply == summaryReplyEmpty || reply == summaryReplyRefusal || auxFault,
+		Truncated:       reply == summaryReplyTruncated,
+		Overloaded:      provider.ClassifyError(provider.ClassifyInput{Err: err}).Reason == provider.ReasonOverloaded || containsAny(text, "overloaded", "at capacity", "over capacity"),
 	}
 }
 

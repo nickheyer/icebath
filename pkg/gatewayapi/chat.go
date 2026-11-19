@@ -45,7 +45,7 @@ func (a *APIServerAdapter) prepareSessionChat(ctx context.Context, request *gate
 	if errResp != nil {
 		return nil, errResp, nil
 	}
-	userMessage, errResp := sessionChatUserMessage(body, "message")
+	userMessage, errResp := sessionChatUserMessage(ctx, body, "message")
 	if errResp != nil {
 		return nil, errResp, nil
 	}

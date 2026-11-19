@@ -326,7 +326,9 @@ func SetupWorktreeFor(ctx context.Context, repoRoot string, syncBase bool, name 
 	} else {
 		envLog(nil).Debug(fmt.Sprintf("Worktree locked: %s (pid=%d)", wtPath, ownerPid))
 	}
-	WorktreeRecordRepo(ctx, repoRoot)
+	if WorktreeRecordRepo != nil {
+		WorktreeRecordRepo(ctx, repoRoot)
+	}
 	if retainDB != nil {
 		RecordTUIWorktree(ctx, map[string]string{"path": wtPath, "branch": branchName, "repo_root": repoRoot})
 	}

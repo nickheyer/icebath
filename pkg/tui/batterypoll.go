@@ -1,15 +1,14 @@
 package tui
 
 import (
-	"math"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const batteryPollInterval = 30 * time.Second
-
-var batteryCategories = map[string]bool{"bad": true, "critical": true, "dim": true, "good": true, "warn": true}
 
 // Battery reading the status rule shows, its category, percent and charger state when known
 type batteryInfo struct {
@@ -30,20 +29,14 @@ type batteryPoller struct {
 type batteryPollMsg struct{ gen int }
 
 // Battery info of a system.battery answer, nil for a missing answer
-func toBatteryInfo(r map[string]any) *batteryInfo {
+func toBatteryInfo(r *tuigateway.SystemBatteryResult) *batteryInfo {
 	if r == nil {
 		return nil
 	}
-	info := &batteryInfo{Available: truthyJS(r["available"]), Category: "dim"}
-	if c, isStr := r["category"].(string); isStr && batteryCategories[c] {
-		info.Category = c
-	}
-	if p, isNum := r["percent"].(float64); isNum && !math.IsInf(p, 0) && !math.IsNaN(p) {
-		n := int(math.Max(0, math.Min(100, jsRound(p))))
+	info := &batteryInfo{Available: r.Available, Category: string(r.Category), Plugged: r.Plugged}
+	if r.Percent != nil {
+		n := int(max(0, min(100, *r.Percent)))
 		info.Percent = &n
-	}
-	if plugged, isBool := r["plugged"].(bool); isBool {
-		info.Plugged = &plugged
 	}
 	return info
 }
@@ -70,9 +63,9 @@ func (b *batteryPoller) interval() tea.Cmd {
 // One system.battery request whose answer lands while the generation is current, failures ignored
 func (b *batteryPoller) poll(store *tuiStore, gw turnGateway) tea.Cmd {
 	gen := b.gen
-	return gatewayCall(gw, "system.battery", map[string]any{}, func(v any, err error) tea.Cmd {
+	return call(gw, tuigateway.SystemBattery, tuigateway.ProfileParams{}, func(r *tuigateway.SystemBatteryResult, err error) tea.Cmd {
 		if err == nil && gen == b.gen {
-			store.ui.BatteryStatus = toBatteryInfo(asRPCResult(v))
+			store.ui.BatteryStatus = toBatteryInfo(r)
 		}
 		return nil
 	})

@@ -36,6 +36,12 @@ type pyKeyValue struct {
 // A JSON object that keeps insertion order like a Python dict
 type pyObject []pyKeyValue
 
+// Object on the wire in its insertion order, the encoding every JSON consumer of a stored row reads
+func (o pyObject) MarshalJSON() ([]byte, error) {
+	text, err := pyDumps(o, pyJSON{itemSep: ",", keySep: ":"})
+	return []byte(text), err
+}
+
 var errPyJSONNaN = errors.New("Out of range float values are not JSON compliant")
 
 // Encodes a value the way Python's json.dumps does under the given options

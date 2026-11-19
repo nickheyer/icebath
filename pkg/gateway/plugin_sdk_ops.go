@@ -34,7 +34,7 @@ var pluginSDKOps = map[string]pluginSDKOp{
 func ServePluginSDK(ctx context.Context, h, op string, args []any, kwargs map[string]any) (any, error) {
 	run, ok := pluginSDKOps[op]
 	if !ok {
-		return nil, &plugins.HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown plugin SDK call %s", pyrepr.Repr(op))}
+		return nil, &plugins.HostBuiltinError{Type: "ValueError", Message: "unknown plugin SDK call " + op}
 	}
 	return run(ctx, h, args, kwargs)
 }
@@ -66,7 +66,7 @@ func sdkNameList(names []string) string {
 	return strings.Join(quoted[:len(quoted)-1], ", ") + ", and " + quoted[len(quoted)-1]
 }
 
-// Binds positional and keyword arguments to a signature with the TypeError wording CPython raises
+// Binds positional and named arguments to a signature, refusing a misfit in plain words
 func bindSDKSignature(fn string, params []sdkParam, args []any, kwargs map[string]any) (map[string]any, error) {
 	var positional []sdkParam
 	required := 0

@@ -161,7 +161,6 @@ gateway:
     not_enough: "Conversazione insufficiente da comprimere (servono almeno 4 messaggi)."
     no_provider: "Nessun provider configurato — impossibile comprimere."
     nothing_to_do: "Niente da comprimere per ora (la trascrizione è ancora tutta contesto protetto)."
-    aggressive_unsupported: "--aggressive non è supportato; usa '/compress here [N]' per conservare solo gli scambi recenti, oppure /undo per rimuovere i turni."
     focus_line: "Focus: \"{topic}\""
     summary_failed: "⚠️ Generazione del riepilogo non riuscita ({error}). {count} messaggio/i storico/i sono stati rimossi e sostituiti con un segnaposto; il contesto precedente non è più recuperabile. Considera di controllare la configurazione del modello auxiliary.compression."
     aborted: "⚠️ Compressione interrotta ({error}). Nessun messaggio è stato eliminato — la conversazione è invariata. Esegui /compress per riprovare, /reset per una nuova sessione, o controlla la configurazione del modello auxiliary.compression."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ Il servizio del modello AI ha continuato a fallire. Usa /retry per riprovare, oppure /model per cambiare modello. I dettagli sono nel log del gateway (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ L'archiviazione della sessione era temporaneamente non disponibile, quindi questo turno è stato interrotto per proteggere la cronologia della conversazione. Controlla lo spazio disponibile sul disco, poi invia di nuovo il messaggio."
     session_storage_unavailable: "⚠️ L'archiviazione della sessione era temporaneamente non disponibile, quindi questo turno è stato interrotto per proteggere la cronologia della conversazione. Il tuo messaggio dovrebbe essere già salvato — invialo di nuovo tra un momento."
+    session_storage_held: "⚠️ L'archivio delle sessioni non è disponibile al momento ({cause}), quindi il tuo messaggio è in attesa. Viene conservato e riceverà risposta qui non appena l'archivio tornerà a funzionare; non serve inviarlo di nuovo."
     generic_failed: "⚠️ Qualcosa è andato storto e non sono riuscito a completare questa risposta. Usa /retry per riprovare, oppure /new per iniziare una nuova conversazione. I dettagli tecnici sono nel log del gateway (`icebath logs`)."
     interrupted_before_start: "⚠️ Il tuo messaggio è stato interrotto prima dell'inizio dell'elaborazione (probabilmente da un /stop recente). Invialo di nuovo."
     processing_incomplete: "elaborazione incompleta"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ Rilevata corruzione del database delle sessioni. I messaggi potrebbero non essere salvati. Opzioni di ripristino:\n1. Esegui `icebath {profile_arg}doctor --fix`\n2. Ferma il gateway, poi ripristina con:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (se segnala che è recuperabile) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — il ripristino crea prima uno snapshot del file danneggiato; NON eseguire `sqlite3 ... \".recover\"` sullo state.db attivo, una CLI sqlite3 vulnerabile può corromperlo ulteriormente\n3. Ripristina da un backup in {backups_dir}/\nEsegui `icebath {profile_arg}doctor` per una diagnostica sanificata."
     db_fts_corrupt: "⚠️ Il database delle sessioni ha segnalato un errore di corruzione limitato all'indice di ricerca (FTS5); le tabelle dei messaggi non sono danneggiate. I messaggi potrebbero non essere salvati finché non viene riparato: esegui `icebath {profile_arg}doctor --fix`, poi riavvia il gateway. Non eseguire strumenti di ripristino né ripristinare un backup a meno che `icebath {profile_arg}doctor` non confermi il danno."
     db_then_restart: "{action} Poi `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ Database delle sessioni non disponibile — i messaggi potrebbero non essere salvati e /resume sarà vuoto. Causa: {cause}. {action}"
+    db_unavailable: "⚠️ Database delle sessioni non disponibile — i nuovi messaggi restano in attesa e riceveranno risposta non appena tornerà a funzionare. Causa: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ L'archivio cron {store} non è scrivibile ({error}) dal {since}. I job pianificati vengono saltati finché non accetta di nuovo scritture. Soluzione: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "Altro / digita la risposta"
       header: "Domanda"
       question: "❓ {question}"
+      submit_button: "Invia"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ In attesa che {user} scriva una risposta…"
+      pick_one: "Scegli almeno un'opzione, poi premi Invia."
+    approval:
+
+      resolved_once: "✅ Consentito una volta da {user}"
+      resolved_session: "✅ Consentito per questa sessione da {user}"
+      resolved_always: "✅ Sempre consentito da {user}"
+      resolved_deny: "❌ Negato da {user}"
+    confirm:
+
+      default_title: "Conferma"
+      approve_once: "Approva una volta"
+      always_approve: "Approva sempre"
+      cancel: "Annulla"
+      decided_once: "✅ Approvato una volta da {user}"
+      decided_always: "🔒 Approvato sempre da {user}"
+      decided_cancel: "❌ Annullato da {user}"
     typing:
 
       thinking: "Icebath sta ragionando…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "Crea un ramo della sessione attuale (nuovo thread su Discord/Telegram/Slack/Matrix; --here resta qui)"
+    core_description: "Crea un ramo della sessione attuale (--here resta qui)"
   worktree:
 
     description: "Mostra, elenca, crea o elimina worktree git isolati"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "La piattaforma '{platform}' non è configurata/attiva nel gateway."
       no_home_channel: "Nessun canale principale configurato per {platform}."
       set_home_hint: "Impostane uno prima con /sethome nella chat di destinazione."
+      enable_platform_hint: "Configurala con icebath gateway setup, poi riavvia il gateway con icebath gateway restart."
       session_row_failed: "Impossibile garantire la riga di sessione in state.db: {error}"
       picked_up: "Il gateway l'ha preso in carico; trasferimento in corso..."
       complete: "↻ Trasferimento completato. La sessione è ora attiva su {platform}."

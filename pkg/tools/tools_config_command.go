@@ -131,6 +131,9 @@ func CmdTools(ctx context.Context, env *Env, ns map[string]any, w io.Writer) (in
 	case "post-setup":
 		return s.RunPostSetupCommand(ns), nil
 	}
+	if pyTruthy(ns["summary"]) {
+		return 0, s.ToolsCommand(ns, false, nil)
+	}
 	if !s.Con.StdinIsTTY() {
 		fmt.Fprintln(toolsCommandStderr, "Error: 'icebath tools' requires an interactive terminal.\n"+
 			"It cannot be run through a pipe or non-interactive subprocess.\n"+

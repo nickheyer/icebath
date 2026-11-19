@@ -126,7 +126,7 @@ func transferDBToAgent(ctx context.Context, a *agent.AIAgent, db *state.DB) (tra
 	if a == nil || db == nil || a.SessionDB() != db {
 		return false
 	}
-	if db == getDB(ctx) {
+	if launch, err := getDB(ctx); err == nil && db == launch {
 		pkgLog().Warn("Refused transfer of the shared launch SessionDB to a session agent — the caller's owns_db gate should have prevented this.")
 		return false
 	}
@@ -227,14 +227,15 @@ func scheduleMCPLateRefresh(ctx context.Context, sid string, a *agent.AIAgent) {
 func hydrateSessionCwd(ctx context.Context, sid, key string, sessionDB *state.DB, profileHome string) {
 	db, ownsDB := sessionDB, false
 	if db == nil && profileHome == "" {
-		db = getDB(ctx)
+		launch, err := getDB(ctx)
+		panicIf(err)
+		db = launch
 	} else if db == nil {
 		opened, err := openProfileSessionDB(ctx, profileHome)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("profile session store unavailable for %s — skipping cwd hydration instead of touching the launch state.db", profileHome), "error", err)
-		} else {
-			db, ownsDB = opened, true
+			panic(storeUnavailable(ctx, filepath.Join(profileHome, "state.db"), err))
 		}
+		db, ownsDB = opened, true
 	}
 	defer func() {
 		if ownsDB && db != nil {

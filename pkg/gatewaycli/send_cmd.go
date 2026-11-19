@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -381,6 +382,9 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 			list[i] = mention
 		}
 		toolArgs["mentions"] = list
+	}
+	if SendMessageTool == nil {
+		return sendFailureExit, errors.New(linktier.Missing("icebath send", linktier.Plugins))
 	}
 	result, err := SendMessageTool(ctx, toolArgs)
 	if err != nil {

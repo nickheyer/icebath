@@ -3,10 +3,10 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/vxl/arena"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Markers of rows the compaction wrote, never the target of an undo
@@ -227,28 +227,19 @@ func writeSessionExport(payload *tuigateway.SessionExportResult, filename, cwd s
 
 // Runs a command through the gateway's own command worker and shows what it printed
 func (r *slashRun) viaWorker(title, empty string) tea.Cmd {
-	return r.rpc("slash.exec", map[string]any{"command": strings.TrimPrefix(r.cmd, "/"), "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-		body, _ := res["output"].(string)
+	return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: strings.TrimPrefix(r.cmd, "/"), SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
+		if res == nil {
+			return nil
+		}
+		body := res.Output
 		if body == "" {
 			body = empty
 		}
-		if warning, _ := res["warning"].(string); warning != "" {
-			body = tr("slashCmd.ops.slashWorker.warning", warning) + "\n" + body
+		if res.Warning != "" {
+			body = tr("slashCmd.ops.slashWorker.warning", res.Warning) + "\n" + body
 		}
 		return r.a.showOutput(body, title)
 	})
-}
-
-// Strings of a list answer field
-func stringList(v any) []string {
-	list, _ := v.([]any)
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		if s, isStr := item.(string); isStr {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // Transcript, clipboard, queue and session history commands
@@ -547,18 +538,16 @@ func (a *app) transcriptCommands() []slashCommand {
 			mode := strings.ToLower(trimJS(r.arg))
 			if mode == "status" || mode == "show" {
 				state := onOff(a.store.ui.Battery)
-				return gatewayCall(a.gw, "system.battery", map[string]any{}, func(v any, err error) tea.Cmd {
-					res := asRPCResult(v)
-					percent, hasPercent := res["percent"].(float64)
+				return call(a.gw, tuigateway.SystemBattery, tuigateway.ProfileParams{}, func(res *tuigateway.SystemBatteryResult, err error) tea.Cmd {
 					switch {
 					case err != nil:
 						r.sys(tr("slashCmd.core.battery.state", state))
-					case truthyJS(res["available"]) && hasPercent:
+					case res.Available && res.Percent != nil:
 						mark := "🔋"
-						if truthyJS(res["plugged"]) {
+						if val(res.Plugged) {
 							mark = "⚡"
 						}
-						r.sys(tr("slashCmd.core.battery.statusLive", state, mark, jsString(percent)))
+						r.sys(tr("slashCmd.core.battery.statusLive", state, mark, strconv.FormatInt(*res.Percent, 10)))
 					default:
 						r.sys(tr("slashCmd.core.battery.statusNoBattery", state))
 					}
@@ -740,17 +729,16 @@ func (a *app) opsCommands() []slashCommand {
 			if a.gw.canonical() && a.store.ui.Busy && r.sid != "" {
 				interrupt = a.interruptTurn()
 			}
-			params := map[string]any{}
-			if r.sid != "" {
-				params["session_id"] = r.sid
-			}
-			return tea.Batch(interrupt, r.rpc("process.stop", params, func(res map[string]any) tea.Cmd {
-				killed, _ := res["killed"].(float64)
+			params := tuigateway.ProcessStopParams{SessionID: optionalText(r.sid)}
+			return tea.Batch(interrupt, ask(r.rpc, r.sys, tuigateway.ProcessStop, params, func(res *tuigateway.ProcessStopResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
 				key := "slashCmd.ops.stop.stoppedOther"
-				if killed == 1 {
+				if res.Killed == 1 {
 					key = "slashCmd.ops.stop.stoppedOne"
 				}
-				r.sys(tr(key, jsString(killed)))
+				r.sys(tr(key, strconv.FormatInt(res.Killed, 10)))
 				return nil
 			}))
 		}},
@@ -783,17 +771,19 @@ func (a *app) opsCommands() []slashCommand {
 			})
 		}},
 		{name: "reload", help: "read the .env of the home again into the running gateway", run: func(r *slashRun) tea.Cmd {
-			params := map[string]any{}
-			if a.gw.canonical() && r.sid != "" {
-				params["session_id"] = r.sid
+			params := tuigateway.ReloadEnvParams{}
+			if a.gw.canonical() {
+				params.SessionID = r.sid
 			}
-			return r.rpc("reload.env", params, func(res map[string]any) tea.Cmd {
-				n, _ := res["updated"].(float64)
+			return ask(r.rpc, r.sys, tuigateway.ReloadEnv, params, func(res *tuigateway.ReloadEnvResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
 				key := "slashCmd.ops.reloadEnv.reloadedOther"
-				if n == 1 {
+				if res.Updated == 1 {
 					key = "slashCmd.ops.reloadEnv.reloadedOne"
 				}
-				r.sys(tr(key, jsString(n)))
+				r.sys(tr(key, res.Updated))
 				return nil
 			})
 		}},
@@ -809,33 +799,36 @@ func (a *app) opsCommands() []slashCommand {
 					r.sys(tr("slashCmd.ops.browser.usage"))
 					return nil
 				}
-				params := map[string]any{"action": action, "session_id": nilIfEmpty(r.sid)}
+				params := tuigateway.BrowserManageParams{Action: tuigateway.BrowserAction(action), SessionID: r.sid}
 				if action == "connect" {
 					url := "http://127.0.0.1:9222"
 					if len(words) > 1 {
 						url = strings.Join(words[1:], " ")
 					}
-					params["url"] = url
+					params.URL = &url
 					r.sys(tr("slashCmd.ops.browser.checking", url))
 				}
-				return r.rpc("browser.manage", params, func(res map[string]any) tea.Cmd {
+				return ask(r.rpc, r.sys, tuigateway.BrowserManage, params, func(res *tuigateway.BrowserManageResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
 					if r.sid == "" {
-						for _, message := range stringList(res["messages"]) {
+						for _, message := range res.Messages {
 							r.sys(message)
 						}
 					}
-					url, _ := res["url"].(string)
+					url := res.URL
 					if url == "" {
 						url = tr("slashCmd.ops.browser.urlUnavailable")
 					}
 					switch {
-					case action == "status" && truthyJS(res["connected"]):
+					case action == "status" && res.Connected:
 						r.sys(tr("slashCmd.ops.browser.connected", url))
 					case action == "status":
 						r.sys(tr("slashCmd.ops.browser.notConnected"))
 					case action == "disconnect":
 						r.sys(tr("slashCmd.ops.browser.disconnected"))
-					case truthyJS(res["connected"]):
+					case res.Connected:
 						r.sys(tr("slashCmd.ops.browser.connectedLive"))
 						r.sys(tr("slashCmd.ops.browser.endpoint", url))
 						r.sys(tr("slashCmd.ops.browser.nextCallUsesEndpoint"))
@@ -855,23 +848,23 @@ func (a *app) opsCommands() []slashCommand {
 			}
 			switch strings.ToLower(first) {
 			case "", "list", "ls":
-				return r.rpc("rollback.list", map[string]any{"session_id": r.sid}, func(res map[string]any) tea.Cmd {
-					if !truthyJS(res["enabled"]) {
+				return ask(r.rpc, r.sys, tuigateway.RollbackList, tuigateway.RollbackListParams{SessionID: r.sid}, func(res *tuigateway.RollbackListResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					if !res.Enabled {
 						r.sys(tr("slashCmd.ops.rollback.notEnabled"))
 						return nil
 					}
-					checkpoints, _ := res["checkpoints"].([]any)
-					if len(checkpoints) == 0 {
+					if len(res.Checkpoints) == 0 {
 						r.sys(tr("slashCmd.ops.rollback.noneFound"))
 						return nil
 					}
-					rows := make([][2]string, 0, len(checkpoints))
-					for i, raw := range checkpoints {
-						c, _ := raw.(map[string]any)
-						hash, _ := c["hash"].(string)
+					rows := make([][2]string, 0, len(res.Checkpoints))
+					for i, c := range res.Checkpoints {
 						var meta []string
-						for _, k := range []string{"timestamp", "message"} {
-							if s, _ := c[k].(string); s != "" {
+						for _, s := range []string{c.Timestamp, c.Message} {
+							if s != "" {
 								meta = append(meta, s)
 							}
 						}
@@ -879,7 +872,7 @@ func (a *app) opsCommands() []slashCommand {
 						if detail == "" {
 							detail = tr("slashCmd.ops.rollback.noMetadata")
 						}
-						rows = append(rows, [2]string{fmt.Sprintf("%d. %s", i+1, hash[:min(len(hash), 10)]), detail})
+						rows = append(rows, [2]string{fmt.Sprintf("%d. %s", i+1, c.Hash[:min(len(c.Hash), 10)]), detail})
 					}
 					a.panel(tr("slashCmd.ops.rollback.listTitle"), []panelSection{{Rows: rows}})
 					return nil
@@ -889,12 +882,15 @@ func (a *app) opsCommands() []slashCommand {
 					r.sys(tr("slashCmd.ops.rollback.usageDiff"))
 					return nil
 				}
-				return r.rpc("rollback.diff", map[string]any{"hash": words[1], "session_id": r.sid}, func(res map[string]any) tea.Cmd {
-					body, _ := res["rendered"].(string)
-					if body == "" {
-						body, _ = res["diff"].(string)
+				return ask(r.rpc, r.sys, tuigateway.RollbackDiff, tuigateway.RollbackDiffParams{Hash: words[1], SessionID: r.sid}, func(res *tuigateway.RollbackDiffResult) tea.Cmd {
+					if res == nil {
+						return nil
 					}
-					stat, _ := res["stat"].(string)
+					body := res.Rendered
+					if body == "" {
+						body = res.Diff
+					}
+					stat := res.Stat
 					if body = trimJS(body); body == "" && stat == "" {
 						r.sys(tr("slashCmd.ops.rollback.noChanges"))
 						return nil
@@ -918,23 +914,16 @@ func (a *app) opsCommands() []slashCommand {
 				files = append(files, w)
 			}
 			filePath := strings.Join(files, " ")
-			params := map[string]any{"hash": first, "session_id": r.sid}
-			if filePath != "" {
-				params["file_path"] = filePath
-			} else if all {
-				params["all"] = true
+			params := tuigateway.RollbackRestoreParams{Hash: first, SessionID: r.sid, FilePath: filePath}
+			if filePath == "" && all {
+				params.All = ptr(true)
 			}
-			return r.rpc("rollback.restore", params, func(res map[string]any) tea.Cmd {
-				text := func(keys ...string) string {
-					for _, k := range keys {
-						if s, _ := res[k].(string); s != "" {
-							return s
-						}
-					}
-					return ""
+			return ask(r.rpc, r.sys, tuigateway.RollbackRestore, params, func(res *tuigateway.RollbackRestoreResult) tea.Cmd {
+				if res == nil {
+					return nil
 				}
-				if !truthyJS(res["success"]) {
-					reason := text("error", "message")
+				if !res.Success {
+					reason := res.Error
 					if reason == "" {
 						reason = tr("slashCmd.ops.rollback.unknownError")
 					}
@@ -945,33 +934,38 @@ func (a *app) opsCommands() []slashCommand {
 				if target == "" {
 					target = tr("slashCmd.ops.rollback.workspaceTarget")
 				}
-				detail := text("reason", "message", "restored_to")
+				detail := res.Reason
+				if detail == "" {
+					detail = res.RestoredTo
+				}
 				if detail == "" {
 					detail = tr("slashCmd.ops.rollback.restoredDetail")
 				}
 				r.sys(tr("slashCmd.ops.rollback.restored", target, detail))
-				for _, pair := range [][2]string{{"keptUserEdits", "skipped_user_edits"}, {"keptOversize", "skipped_oversize"}, {"failedDeletes", "failed_deletes"}} {
-					if paths := stringList(res[pair[1]]); len(paths) > 0 {
-						summary := strings.Join(paths[:min(len(paths), 5)], ", ")
-						if len(paths) > 5 {
-							summary += tr("slashCmd.ops.rollback.morePaths", len(paths)-5)
+				for _, kept := range []struct {
+					key   string
+					paths []string
+				}{{"keptUserEdits", res.SkippedUserEdits}, {"keptOversize", res.SkippedOversize}, {"failedDeletes", res.FailedDeletes}} {
+					if len(kept.paths) > 0 {
+						summary := strings.Join(kept.paths[:min(len(kept.paths), 5)], ", ")
+						if len(kept.paths) > 5 {
+							summary += tr("slashCmd.ops.rollback.morePaths", len(kept.paths)-5)
 						}
-						r.sys(tr("slashCmd.ops.rollback."+pair[0], summary))
+						r.sys(tr("slashCmd.ops.rollback."+kept.key, summary))
 					}
 				}
-				if removed, _ := res["history_removed"].(float64); removed > 0 {
+				if res.HistoryRemoved != nil && *res.HistoryRemoved > 0 {
 					a.setHistoryItems(dropLastExchange)
 				}
 				return nil
 			})
 		}},
 		{name: "reload-skills", aliases: []string{"reload_skills"}, help: "scan installed skills again in the live gateway", run: func(r *slashRun) tea.Cmd {
-			params := map[string]any{}
-			if r.sid != "" {
-				params["session_id"] = r.sid
-			}
-			return r.rpc("skills.reload", params, func(res map[string]any) tea.Cmd {
-				out, _ := res["output"].(string)
+			return ask(r.rpc, r.sys, tuigateway.SkillsReload, tuigateway.SkillsReloadParams{SessionID: r.sid}, func(res *tuigateway.SkillsReloadResult) tea.Cmd {
+				if res == nil {
+					return nil
+				}
+				out := res.Output
 				if out == "" {
 					out = tr("slashCmd.ops.reloadSkills.reloaded")
 				}
@@ -987,18 +981,25 @@ func (a *app) opsCommands() []slashCommand {
 				}
 				sub, query, _ := strings.Cut(text, " ")
 				query = trimJS(query)
+				manage := func(params tuigateway.SkillsManageParams, then func(res *tuigateway.SkillsManageResult) tea.Cmd) tea.Cmd {
+					return ask(r.rpc, r.sys, tuigateway.SkillsManage, params, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						if res == nil {
+							return nil
+						}
+						return then(res)
+					})
+				}
 				switch sub {
 				case "list":
-					return r.rpc("skills.manage", map[string]any{"action": "list"}, func(res map[string]any) tea.Cmd {
-						skills, _ := res["skills"].(map[string]any)
-						if len(skills) == 0 {
+					return manage(tuigateway.SkillsManageParams{Action: "list"}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						if len(res.Skills) == 0 {
 							r.sys(tr("userMessages.skills.noneInstalled"))
 							return nil
 						}
 						var sections []panelSection
-						for _, category := range sortedKeys(skills) {
+						for _, category := range slices.Sorted(maps.Keys(res.Skills)) {
 							title := category
-							sections = append(sections, panelSection{Items: stringList(skills[category]), Title: &title})
+							sections = append(sections, panelSection{Items: res.Skills[category], Title: &title})
 						}
 						a.panel(tr("slashCmd.ops.skills.listTitle"), sections)
 						return nil
@@ -1008,17 +1009,17 @@ func (a *app) opsCommands() []slashCommand {
 						r.sys(tr("slashCmd.ops.skills.usageInspect"))
 						return nil
 					}
-					return r.rpc("skills.manage", map[string]any{"action": "inspect", "query": query}, func(res map[string]any) tea.Cmd {
-						info, _ := res["info"].(map[string]any)
-						name, _ := info["name"].(string)
-						if name == "" {
+					return manage(tuigateway.SkillsManageParams{Action: "inspect", Query: query}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						info := tuigateway.SkillInspectInfo{}
+						if res.Info != nil {
+							info = *res.Info
+						}
+						if info.Name == "" {
 							r.sys(tr("slashCmd.ops.skills.unknownSkill", query))
 							return nil
 						}
-						category, _ := info["category"].(string)
-						path, _ := info["path"].(string)
-						sections := []panelSection{{Rows: [][2]string{{tr("slashCmd.ops.skills.rowName"), name}, {tr("slashCmd.ops.skills.rowCategory"), category}, {tr("slashCmd.ops.skills.rowPath"), path}}}}
-						if description, _ := info["description"].(string); description != "" {
+						sections := []panelSection{{Rows: [][2]string{{tr("slashCmd.ops.skills.rowName"), info.Name}, {tr("slashCmd.ops.skills.rowCategory"), info.Category}, {tr("slashCmd.ops.skills.rowPath"), info.Path}}}}
+						if description := info.Description; description != "" {
 							sections = append(sections, panelSection{Text: &description})
 						}
 						a.panel(tr("slashCmd.ops.skills.inspectTitle"), sections)
@@ -1029,18 +1030,14 @@ func (a *app) opsCommands() []slashCommand {
 						r.sys(tr("slashCmd.ops.skills.usageSearch"))
 						return nil
 					}
-					return r.rpc("skills.manage", map[string]any{"action": "search", "query": query}, func(res map[string]any) tea.Cmd {
-						results, _ := res["results"].([]any)
-						if len(results) == 0 {
+					return manage(tuigateway.SkillsManageParams{Action: "search", Query: query}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						if len(res.Results) == 0 {
 							r.sys(tr("slashCmd.ops.skills.noResults", query))
 							return nil
 						}
-						rows := make([][2]string, 0, len(results))
-						for _, raw := range results {
-							s, _ := raw.(map[string]any)
-							name, _ := s["name"].(string)
-							description, _ := s["description"].(string)
-							rows = append(rows, [2]string{name, description})
+						rows := make([][2]string, 0, len(res.Results))
+						for _, hit := range res.Results {
+							rows = append(rows, [2]string{hit.Name, hit.Description})
 						}
 						a.panel(tr("slashCmd.ops.skills.searchTitle", query), []panelSection{{Rows: rows}})
 						return nil
@@ -1051,12 +1048,12 @@ func (a *app) opsCommands() []slashCommand {
 						return nil
 					}
 					r.sys(tr("slashCmd.ops.skills.installing", query))
-					return r.rpc("skills.manage", map[string]any{"action": "install", "query": query}, func(res map[string]any) tea.Cmd {
-						if !truthyJS(res["installed"]) {
+					return manage(tuigateway.SkillsManageParams{Action: "install", Query: query}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						if !res.Installed {
 							r.sys(tr("slashCmd.ops.skills.installFailed"))
 							return nil
 						}
-						name, _ := res["name"].(string)
+						name := res.Name
 						if name == "" {
 							name = query
 						}
@@ -1074,38 +1071,33 @@ func (a *app) opsCommands() []slashCommand {
 						pageNum = n
 					}
 					r.sys(tr("slashCmd.ops.skills.fetching"))
-					return r.rpc("skills.manage", map[string]any{"action": "browse", "page": pageNum}, func(res map[string]any) tea.Cmd {
-						items, _ := res["items"].([]any)
-						total, _ := res["total"].(float64)
-						if len(items) == 0 {
-							if total > 0 {
-								r.sys(tr("slashCmd.ops.skills.noneOnPageWithTotal", strconv.Itoa(pageNum), jsString(total)))
+					return manage(tuigateway.SkillsManageParams{Action: "browse", Page: int64(pageNum)}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
+						total := strconv.FormatInt(res.Total, 10)
+						if len(res.Items) == 0 {
+							if res.Total > 0 {
+								r.sys(tr("slashCmd.ops.skills.noneOnPageWithTotal", strconv.Itoa(pageNum), total))
 							} else {
 								r.sys(tr("slashCmd.ops.skills.noneOnPage", strconv.Itoa(pageNum)))
 							}
 							return nil
 						}
-						rows := make([][2]string, 0, len(items))
-						for _, raw := range items {
-							s, _ := raw.(map[string]any)
-							name, _ := s["name"].(string)
-							if trust, _ := s["trust"].(string); trust != "" {
-								name += " · " + trust
+						rows := make([][2]string, 0, len(res.Items))
+						for _, item := range res.Items {
+							name := item.Name
+							if item.Trust != "" {
+								name += " · " + item.Trust
 							}
-							description, _ := s["description"].(string)
-							rows = append(rows, [2]string{name, previewOfN(description, 160)})
+							rows = append(rows, [2]string{name, previewOfN(item.Description, 160)})
 						}
-						page, _ := res["page"].(float64)
-						pages, _ := res["total_pages"].(float64)
 						var footer []string
-						if page > 0 && pages > 0 {
-							footer = append(footer, tr("slashCmd.ops.skills.pageOf", jsString(page), jsString(pages)))
+						if res.Page > 0 && res.TotalPages > 0 {
+							footer = append(footer, tr("slashCmd.ops.skills.pageOf", strconv.FormatInt(res.Page, 10), strconv.FormatInt(res.TotalPages, 10)))
 						}
-						if total > 0 {
-							footer = append(footer, tr("slashCmd.ops.skills.skillsTotal", jsString(total)))
+						if res.Total > 0 {
+							footer = append(footer, tr("slashCmd.ops.skills.skillsTotal", total))
 						}
-						if page > 0 && page < pages {
-							footer = append(footer, tr("slashCmd.ops.skills.browseMore", jsString(page+1)))
+						if res.Page > 0 && res.Page < res.TotalPages {
+							footer = append(footer, tr("slashCmd.ops.skills.browseMore", strconv.FormatInt(res.Page+1, 10)))
 						}
 						sections := []panelSection{{Rows: rows}}
 						if len(footer) > 0 {
@@ -1128,9 +1120,6 @@ func (a *app) opsCommands() []slashCommand {
 			}
 			return r.viaWorker(tr("slashCmd.ops.slashWorker.pluginsTitle"), tr("slashCmd.ops.slashWorker.pluginsNoOutput"))
 		}},
-		{name: arena.Name, help: "watch the agents of the session work on a voxel platform, with their tickets, log and replay", run: func(r *slashRun) tea.Cmd {
-			return a.openArena()
-		}},
 	}
 }
 
@@ -1140,14 +1129,4 @@ func previewOfN(text string, n int) string {
 		return text
 	}
 	return string([]rune(text)[:n])
-}
-
-// Keys of an object in order
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

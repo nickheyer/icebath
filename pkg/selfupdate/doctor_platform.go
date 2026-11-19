@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,7 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -47,7 +48,6 @@ var (
 	doctorResolveJournalMode   = state.ResolveJournalMode
 	doctorForeignHolders       = state.ForeignStateDBHolders
 	doctorDescribeHolderPID    = state.DescribeHolderPID
-	doctorSelectedVenvDir      = func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, pm.RepoRoot()) }
 	doctorPackages             = []doctorPackage{
 		{Name: "PortAudio (voice mode audio)"}, {Name: "Opus (Discord voice playback)"}, {Name: "FFmpeg (audio conversion)"},
 		{Name: "Porcupine (wake word)"}, {Name: "sherpa-onnx (wake word)"}, {Name: "openWakeWord (wake word)"},
@@ -77,8 +77,8 @@ var doctorDefaultTLSContext = func() error {
 	return nil
 }
 
-// Repair instruction for a broken runtime that respects who owns the installation
-func doctorPythonRepairHint(ctx context.Context, d *Doctor) (string, error) {
+// Reinstall instruction that respects who owns the installation, the setup script for a checkout
+func doctorReinstallHint(ctx context.Context, d *Doctor) (string, error) {
 	method, err := doctorDetectInstallMethod(ctx, d.Home, d.ProjectRoot)
 	if err != nil {
 		return "", err
@@ -93,7 +93,11 @@ func doctorPythonRepairHint(ctx context.Context, d *Doctor) (string, error) {
 		}
 		return hint, nil
 	}
-	return "Run `icebath pm repair`, then restart Icebath", nil
+	if method == install.MethodGit || install.IsSourceCheckout(d.ProjectRoot) {
+		commands := install.CheckoutUpdateCommands()
+		return "Run `" + commands[len(commands)-1] + "` in " + d.ProjectRoot + " to build and publish the icebath command", nil
+	}
+	return "Reinstall with `" + install.InstallerCommand() + "`", nil
 }
 
 // Install command of a system package for Termux, macOS or a Debian family host
@@ -418,12 +422,8 @@ func doctorCheckCertificatesRows(ctx context.Context, d *Doctor, shouldFix bool,
 			"OpenSSL default trust paths are in use; certificates trusted only by the OS store (a corporate root) will not verify")
 	}
 	if err := doctorDefaultTLSContext(); err != nil {
-		hint, hintErr := doctorPythonRepairHint(ctx, d)
-		if hintErr != nil {
-			return hintErr
-		}
 		doctorFailAndIssue(d.W, "TLS default SSL context cannot be constructed", err.Error(),
-			hint+"; if TLS still fails, repair Python through the installation owner.", issues)
+			"SSL_CERT_FILE ("+os.Getenv("SSL_CERT_FILE")+") holds no readable certificate: point it at a PEM CA bundle, or unset it to use the system trust store", issues)
 		return nil
 	}
 	if platformStore {
@@ -510,25 +510,11 @@ func checkSecurityAdvisories(ctx context.Context, d *Doctor, shouldFix bool) (*F
 	})
 }
 
-// Provisioned runtime venv of PM, empty when nothing is staged or PM cannot say
-var doctorStagedVenvDir = func(ctx context.Context) (staged string) {
-	defer func() {
-		if recover() != nil {
-			staged = ""
-		}
-	}()
-	venvDir, err := doctorSelectedVenvDir(ctx)
-	if err != nil || venvDir == "" {
-		return ""
-	}
-	if info, err := os.Stat(filepath.Join(venvDir, "pyvenv.cfg")); err != nil || !info.Mode().IsRegular() {
-		return ""
-	}
-	return venvDir
-}
+// Row of the tool runtime the package manager staged, set by its tier and nil in a build without it
+var doctorStagedRuntimeRow func(ctx context.Context, d *Doctor)
 
-// Reports the Go runtime, the linked SQLite, the staged runtime venv, the macOS TCC anchor and Full Disk Access
-func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
+// Reports the Go runtime, the linked SQLite, the staged tool runtime, the macOS TCC anchor and Full Disk Access
+func checkRuntime(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		doctorCheckOK(d.W, "Go "+hostinfo.GoVersion(), "")
 		if err := doctorWarnOnError(d.W, "SQLite version probe failed: {e}", "", nil, func() error {
@@ -550,8 +536,8 @@ func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Fi
 		}); err != nil {
 			return err
 		}
-		if staged := doctorStagedVenvDir(ctx); staged != "" {
-			doctorCheckOK(d.W, "Runtime venv staged ("+staged+")", "(this process runs outside it)")
+		if doctorStagedRuntimeRow != nil {
+			doctorStagedRuntimeRow(ctx, d)
 		}
 		if doctorTCCAnchorCheck != nil {
 			if err := doctorTCCAnchorCheck(ctx, d, shouldFix); err != nil {
@@ -572,13 +558,21 @@ func checkCertificates(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 	})
 }
 
-// Reports each optional capability's library, program or runtime package and whether Matrix encryption is compiled in
-func checkRequiredPackages(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
+// Reports each linked optional capability's library or program and Matrix encryption, no section when the build links none
+func checkOptionalCapabilities(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
+		titled := false
+		section := func() {
+			if !titled {
+				doctorSection(d.W, "Optional Capabilities")
+				titled = true
+			}
+		}
 		for _, p := range doctorPackages {
 			if p.Present == nil {
 				continue
 			}
+			section()
 			if p.Present(ctx) {
 				doctorCheckOK(d.W, p.Name, "(optional)")
 			} else {
@@ -586,6 +580,7 @@ func checkRequiredPackages(ctx context.Context, d *Doctor, shouldFix bool) (*Fin
 			}
 		}
 		if doctorMatrixE2EE != nil {
+			section()
 			if builtIn, command := doctorMatrixE2EE(); builtIn {
 				doctorCheckOK(d.W, "Matrix E2EE (goolm)", "(optional)")
 			} else {
@@ -682,12 +677,6 @@ func checkGatewaySupervision(ctx context.Context, d *Doctor, shouldFix bool) (*F
 	})
 }
 
-// Reports whether a path is a symbolic link
-func doctorIsSymlink(path string) bool {
-	info, err := os.Lstat(path)
-	return err == nil && info.Mode()&fs.ModeSymlink != 0
-}
-
 // Reports whether a PM failure is one the checks report as a row, lookup and type errors still propagating
 func doctorPMErrorReported(err error) bool {
 	var unknown *pm.UnknownPackageError
@@ -704,155 +693,237 @@ func doctorPMErrorReported(err error) bool {
 	return true
 }
 
-// Checks the install owned command link and repairs an owned or missing one with fix
+// Checks the icebath command on PATH and the commands the installer publishes, republishing owned or missing ones with fix
 func checkCommandInstallation(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
-		if doctorSysPlatform == "windows" {
-			return nil
-		}
 		w := d.W
 		doctorSection(w, "Command Installation")
 		method, err := doctorDetectInstallMethod(ctx, d.Home, d.ProjectRoot)
 		if err != nil {
 			return err
 		}
-		if config.IsNixInstallMethod(method) || method == "docker" || config.IsPackageManagerInstallMethod(method) {
+		mechanism, _ := pm.ReadInstallStamp(d.ProjectRoot).Get("updateMechanism")
+		if config.IsNixInstallMethod(method) || method == "docker" || config.IsPackageManagerInstallMethod(method) || mechanism == "external" {
 			if command := doctorWhich("icebath"); command != "" {
 				doctorCheckOK(w, "Icebath command managed by "+method+" ("+command+")", "")
 				return nil
 			}
 			doctorCheckWarn(w, "Icebath command not on PATH ("+method+"-managed)", "")
-			hint, err := doctorPythonRepairHint(ctx, d)
+			hint, err := doctorReinstallHint(ctx, d)
 			if err != nil {
 				return err
 			}
 			f.ManualIssues = append(f.ManualIssues, hint)
 			return nil
 		}
-		selected, err := pm.SelectedVenv(ctx, d.ProjectRoot)
-		if err != nil {
-			if !doctorPMErrorReported(err) {
-				return err
-			}
-			doctorCheckFail(w, "Cannot resolve selected dependencies", err.Error())
-			hint, err := doctorPythonRepairHint(ctx, d)
-			if err != nil {
-				return err
-			}
-			f.ManualIssues = append(f.ManualIssues, hint)
-			return nil
-		}
-		base, err := pm.BaseVenv(d.ProjectRoot)
-		if err != nil {
-			return err
-		}
-		storePython, err := pm.ResolveStorePython(ctx, d.ProjectRoot)
-		if err != nil {
-			return err
-		}
-		binary, err := os.Stat(filepath.Join(d.ProjectRoot, "icebath"))
-		pmLauncher := selected != base || storePython != "" || (err == nil && binary.Mode().IsRegular())
-		venvBin := filepath.Join(selected, "bin", "icebath")
-		if pmLauncher {
-			venvBin = filepath.Join(d.ProjectRoot, "icebath")
-		}
-		if info, err := os.Stat(venvBin); err != nil || !info.Mode().IsRegular() {
-			doctorCheckWarn(w, "Icebath entry point not found", "("+venvBin+")")
-			f.ManualIssues = append(f.ManualIssues, "Repair or reinstall the Icebath launcher through the installation owner")
-			return nil
-		}
-		doctorCheckOK(w, "Icebath entry point exists ("+venvBin+")", "")
-		prefix := os.Getenv("PREFIX")
-		termux := prefix != "" && (os.Getenv("TERMUX_VERSION") != "" || strings.Contains(prefix, "com.termux/files/usr"))
-		var linkDir, display string
-		if termux {
-			linkDir, display = filepath.Join(prefix, "bin"), "$PREFIX/bin"
-		} else {
-			userHome, err := doctorUserHomeDir()
-			if err != nil {
-				return err
-			}
-			linkDir, display = filepath.Join(userHome, ".local", "bin"), "~/.local/bin"
-		}
-		link := filepath.Join(linkDir, "icebath")
-		verb := ""
+		running := doctorRunningBinary()
+		binary := pm.ResolveInstallBinary(d.ProjectRoot)
 		switch {
-		case doctorIsSymlink(link):
-			target, err := pypath.Resolve(link)
-			if err != nil {
-				return err
-			}
-			expected, err := pypath.Resolve(venvBin)
-			if err != nil {
-				return err
-			}
-			if target == expected {
-				doctorCheckOK(w, display+"/icebath → correct target", "")
-				return nil
-			}
-			doctorCheckWarn(w, display+"/icebath points to wrong target", "(→ "+target+", expected → "+expected+")")
-			owned := false
-			for _, name := range []string{"venv", ".venv"} {
-				ownedTarget, err := pypath.Resolve(filepath.Join(d.ProjectRoot, name, "bin", "icebath"))
-				if err != nil {
-					return err
-				}
-				owned = owned || target == ownedTarget
-			}
-			if !owned {
-				f.ManualIssues = append(f.ManualIssues, "Review "+display+"/icebath manually; its target is user-managed and was not changed")
-				return nil
-			}
-			if !shouldFix {
-				f.Issues = append(f.Issues, "Broken symlink at "+display+"/icebath — run 'icebath doctor --fix'")
-				return nil
-			}
-			verb = "Fixed"
-		case doctorPlatformPathExists(link):
-			doctorCheckOK(w, display+"/icebath exists (non-symlink)", "")
-			return nil
+		case binary == "" && install.IsSourceCheckout(d.ProjectRoot):
+			doctorCheckInfo(w, "Source checkout "+d.ProjectRoot+" holds no built icebath binary, this process runs "+running)
+		case binary == "":
+			doctorCheckInfo(w, "This process runs "+running+", outside an install tree")
+		case doctorSameFile(binary, running):
+			doctorCheckOK(w, "Install binary "+binary, "(this process)")
 		default:
-			doctorCheckFail(w, display+"/icebath not found", "(icebath command may not work outside the venv)")
-			if !shouldFix {
-				f.Issues = append(f.Issues, "Missing "+display+"/icebath symlink — run 'icebath doctor --fix'")
-				return nil
-			}
-			if err := pyfs.Makedirs(linkDir, 0o777, true); err != nil {
+			doctorCheckOK(w, "Install binary "+binary, "(this process runs "+running+")")
+		}
+		binDir, display, err := doctorUserBinDir()
+		if err != nil {
+			return err
+		}
+		if binary != "" {
+			if err := doctorCheckPublishedCommands(ctx, d, binary, binDir, display, shouldFix, f); err != nil {
 				return err
 			}
-			verb = "Created"
 		}
-		if pmLauncher {
-			staged, err := pm.StageLauncher(ctx, "icebath", d.ProjectRoot, linkDir)
+		return doctorCheckCommandOnPath(ctx, d, binary, running, binDir, display, f)
+	})
+}
+
+// Binary this process runs with symlinks resolved
+func doctorRunningBinary() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		return resolved
+	}
+	return exe
+}
+
+// Reports two paths naming one existing file
+func doctorSameFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
+}
+
+// Reports a file a launcher publication writes, a shebang script or a cmd wrapper
+func doctorIsWrapper(path string) bool {
+	if strings.EqualFold(filepath.Ext(path), ".cmd") {
+		return true
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	head := make([]byte, 2)
+	n, _ := io.ReadFull(file, head)
+	return n == 2 && string(head) == "#!"
+}
+
+// Binary a command finally runs through links and published wrappers, the first missing hop when the chain breaks
+func doctorLaunchedBinary(command string) string {
+	path := command
+	for hops := 0; hops < 8; hops++ {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return path
+		}
+		if !doctorIsWrapper(resolved) {
+			return resolved
+		}
+		next := pm.LauncherBinary(resolved)
+		if next == "" || next == resolved {
+			return resolved
+		}
+		path = next
+	}
+	return path
+}
+
+// User bin the installer publishes commands into and its display form, the home bin on Windows
+func doctorUserBinDir() (string, string, error) {
+	if doctorSysPlatform == "windows" {
+		dir := filepath.Join(home.Root(), "bin")
+		return dir, dir, nil
+	}
+	userHome, err := doctorUserHomeDir()
+	if err != nil {
+		return "", "", err
+	}
+	return filepath.Join(userHome, ".local", "bin"), "~/.local/bin", nil
+}
+
+// Command file the installer writes in the user bin for one command name
+func doctorPublishedCommandFile(name string) string {
+	if doctorSysPlatform == "windows" {
+		return name + ".cmd"
+	}
+	return name
+}
+
+// Rows of the icebath and icebath-acp commands in the user bin, republished with fix when missing or pointing elsewhere
+func doctorCheckPublishedCommands(ctx context.Context, d *Doctor, binary, binDir, display string, shouldFix bool, f *Finding) error {
+	w := d.W
+	disabled, err := pm.ExposeOnPathDisabled(ctx)
+	if err != nil {
+		return err
+	}
+	if disabled {
+		doctorCheckInfo(w, "cli.expose_on_path is false, no command is published in "+display)
+		return nil
+	}
+	repair := []string{}
+	for _, name := range pm.WindowsBinLaunchers() {
+		file := doctorPublishedCommandFile(name)
+		path, shown := filepath.Join(binDir, file), display+"/"+file
+		if doctorSysPlatform == "windows" {
+			shown = path
+		}
+		if _, err := os.Lstat(path); err != nil {
+			doctorCheckFail(w, shown+" not found", "")
+			repair = append(repair, shown)
+			continue
+		}
+		runs := doctorLaunchedBinary(path)
+		switch {
+		case doctorSameFile(runs, binary):
+			doctorCheckOK(w, shown+" → "+binary, "")
+		case pm.OwnsLauncher(path, d.ProjectRoot):
+			detail := "(→ " + runs + ", expected → " + binary + ")"
+			if !doctorPlatformPathExists(runs) {
+				detail = "(→ " + runs + ", which does not exist)"
+			}
+			doctorCheckWarn(w, shown+" points to wrong target", detail)
+			repair = append(repair, shown)
+		default:
+			doctorCheckWarn(w, shown+" runs "+runs, "(user-managed, not changed)")
+			f.ManualIssues = append(f.ManualIssues, "Review "+shown+" manually; it runs "+runs+" instead of "+binary)
+		}
+	}
+	if len(repair) == 0 {
+		return nil
+	}
+	if !shouldFix {
+		f.Issues = append(f.Issues, "Publish "+strings.Join(repair, ", ")+" — run 'icebath doctor --fix'")
+		return nil
+	}
+	result, err := pm.ExposeCLI(ctx, d.ProjectRoot, true)
+	if err != nil {
+		return err
+	}
+	switch {
+	case !result.OK:
+		doctorCheckFail(w, "Could not publish "+strings.Join(repair, ", "), "("+result.Error+")")
+		hint, err := doctorReinstallHint(ctx, d)
+		if err != nil {
+			return err
+		}
+		f.ManualIssues = append(f.ManualIssues, hint)
+	case result.Skipped != "":
+		doctorCheckWarn(w, "Commands not published in "+display, "("+result.Skipped+")")
+		f.ManualIssues = append(f.ManualIssues, "Publish "+strings.Join(repair, ", ")+" from the install that owns "+display)
+	default:
+		doctorCheckOK(w, "Published "+strings.Join(repair, ", "), "")
+		f.Fixed++
+	}
+	return nil
+}
+
+// Row of the icebath command a shell finds on PATH and the binary it runs
+func doctorCheckCommandOnPath(ctx context.Context, d *Doctor, binary, running, binDir, display string, f *Finding) error {
+	w := d.W
+	command := doctorWhich("icebath")
+	if command == "" {
+		doctorCheckWarn(w, "icebath is not on PATH", "")
+		_, err := os.Lstat(filepath.Join(binDir, doctorPublishedCommandFile("icebath")))
+		switch {
+		case binary == "":
+			hint, err := doctorReinstallHint(ctx, d)
 			if err != nil {
 				return err
 			}
-			if staged == "" {
-				doctorCheckFail(w, "Could not publish Icebath launcher", "")
-				f.ManualIssues = append(f.ManualIssues, "Repair the PM store interpreter through the installation owner, then rerun 'icebath doctor --fix'")
-				return nil
-			}
-			doctorCheckOK(w, verb+" PM launcher: "+display+"/icebath", "")
-		} else {
-			if doctorIsSymlink(link) {
-				if err := os.Remove(link); err != nil {
-					return err
-				}
-			}
-			if err := os.Symlink(venvBin, link); err != nil {
-				return err
-			}
-			doctorCheckOK(w, verb+" symlink: "+display+"/icebath → "+venvBin, "")
-		}
-		f.Fixed++
-		onPath := false
-		for _, entry := range strings.Split(os.Getenv("PATH"), string(os.PathListSeparator)) {
-			onPath = onPath || entry == linkDir
-		}
-		if verb == "Created" && !onPath {
-			doctorCheckWarn(w, display+" is not on your PATH", "(add it to your shell config: export PATH=\"$HOME/.local/bin:$PATH\")")
-			f.ManualIssues = append(f.ManualIssues, "Add "+display+" to your PATH")
+			f.ManualIssues = append(f.ManualIssues, hint)
+		case err != nil:
+		case doctorSysPlatform == "windows":
+			f.ManualIssues = append(f.ManualIssues, "Add "+binDir+" to your User PATH, then open a new console")
+		default:
+			f.ManualIssues = append(f.ManualIssues, "Add "+display+" to your PATH (export PATH=\"$HOME/.local/bin:$PATH\" in your shell config)")
 		}
 		return nil
-	})
+	}
+	want := binary
+	if want == "" {
+		want = running
+	}
+	runs := doctorLaunchedBinary(command)
+	switch {
+	case doctorSameFile(runs, want):
+		doctorCheckOK(w, "icebath on PATH runs "+runs, "("+command+")")
+	case binary == "":
+		doctorCheckInfo(w, "icebath on PATH ("+command+") runs "+runs+", not this process")
+	default:
+		doctorCheckWarn(w, "icebath on PATH runs another binary", "("+command+" → "+runs+", expected "+binary+")")
+		if !doctorSameFile(filepath.Dir(command), binDir) {
+			f.ManualIssues = append(f.ManualIssues, "Put "+display+" ahead of "+filepath.Dir(command)+" on PATH, or remove "+command)
+		}
+	}
+	return nil
 }

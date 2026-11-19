@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -341,7 +342,7 @@ func (c *AuthorityConnection) ping(params map[string]any) (map[string]any, error
 	if len(params) > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	return map[string]any{"pong": true}, nil
+	return tuigateway.Plain(tuigateway.PingResult{Pong: true}).(map[string]any), nil
 }
 
 // Binds a native or host owner connection that may create sessions as a legacy transport of the authority

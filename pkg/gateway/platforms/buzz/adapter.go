@@ -755,6 +755,18 @@ func (a *BuzzAdapter) SendTyping(ctx context.Context, chatID string, metadata ma
 	return nil
 }
 
+// Adds an emoji reaction to a message
+func (a *BuzzAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	ok, err := a.SendReaction(ctx, chatID, messageID, emoji)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("Buzz refused the reaction")
+	}
+	return nil
+}
+
 // Adds a reaction through the CLI, a failure logged and reported false
 func (a *BuzzAdapter) SendReaction(ctx context.Context, chatID, messageID, emoji string) (bool, error) {
 	if a.cliPath == "" || emoji == "" || messageID == "" {

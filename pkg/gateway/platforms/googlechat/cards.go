@@ -163,6 +163,37 @@ func textWidget(widget map[string]any) (*pyjson.Object, error) {
 	return obj("textParagraph", obj("text", FormatMessage(text))), nil
 }
 
+var cardHTMLEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// Card text shown as written, escaped for the card HTML subset with line breaks kept
+func escapeCardText(text string) string {
+	return strings.ReplaceAll(cardHTMLEscaper.Replace(text), "\n", "<br>")
+}
+
+func plainTextWidget(widget map[string]any) (*pyjson.Object, error) {
+	text, err := requiredStr(widget, "text", "widget")
+	if err != nil {
+		return nil, err
+	}
+	return obj("textParagraph", obj("text", escapeCardText(text))), nil
+}
+
+func markdownTextWidget(widget map[string]any) (*pyjson.Object, error) {
+	text, err := requiredStr(widget, "text", "widget")
+	if err != nil {
+		return nil, err
+	}
+	return obj("textParagraph", obj("text", text, "textSyntax", "MARKDOWN")), nil
+}
+
+func codeBlockWidget(widget map[string]any) (*pyjson.Object, error) {
+	text, err := requiredStr(widget, "text", "widget")
+	if err != nil {
+		return nil, err
+	}
+	return obj("textParagraph", obj("text", "<pre><code>"+cardHTMLEscaper.Replace(text)+"</code></pre>")), nil
+}
+
 func decoratedTextWidget(widget map[string]any) (*pyjson.Object, error) {
 	text, err := requiredStr(widget, "text", "widget")
 	if err != nil {
@@ -247,6 +278,9 @@ func selectionWidget(widget map[string]any) (*pyjson.Object, error) {
 var widgetRenderers = map[string]func(map[string]any) (*pyjson.Object, error){
 	"text":            textWidget,
 	"text_paragraph":  textWidget,
+	"plain_text":      plainTextWidget,
+	"markdown_text":   markdownTextWidget,
+	"code_block":      codeBlockWidget,
 	"decorated_text":  decoratedTextWidget,
 	"buttons":         buttonsWidget,
 	"button_list":     buttonsWidget,

@@ -1,13 +1,16 @@
 package state
 
 import (
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"strings"
 	"sync"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"modernc.org/libc"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -68,9 +71,62 @@ type SQLiteError struct {
 	Msg     string
 	Code    int
 	HasCode bool
+	// The row's own value cannot be stored so no retry writes it
+	UnbindableValue bool
 }
 
 func (e *SQLiteError) Error() string { return e.Msg }
+
+// Rejects a parameter value SQLite has no storage class for
+func unbindableParam(position int, v any) *SQLiteError {
+	return &SQLiteError{Class: SQLiteProgrammingError, UnbindableValue: true,
+		Msg: fmt.Sprintf("SQL parameter %d is %s, which SQLite cannot store", position, errchain.Kind(v))}
+}
+
+// Rejects an integer parameter past the signed 64 bit range of a SQLite INTEGER
+func oversizedParam(position int) *SQLiteError {
+	return &SQLiteError{Class: SQLiteProgrammingError, UnbindableValue: true,
+		Msg: fmt.Sprintf("SQL parameter %d is a number too large for a SQLite INTEGER", position)}
+}
+
+// Rejects an integer past the signed 64 bit range where no parameter position applies
+func oversizedInteger(n *big.Int) *SQLiteError {
+	return &SQLiteError{Class: SQLiteProgrammingError, UnbindableValue: true,
+		Msg: fmt.Sprintf("the number %s is too large for a SQLite INTEGER", n)}
+}
+
+// Rejects a row whose value could not be encoded for its column
+func unstorableValue(cause error) error {
+	var typed *SQLiteError
+	if errors.As(cause, &typed) {
+		return cause
+	}
+	return &SQLiteError{Class: SQLiteProgrammingError, UnbindableValue: true,
+		Msg: "the message holds a value that cannot be stored: " + cause.Error()}
+}
+
+// Driver values of caller supplied parameters, a typed rejection for one SQLite cannot store
+func bindParams(params []any) ([]any, error) {
+	out := make([]any, len(params))
+	for i, v := range params {
+		if n, ok := v.(*big.Int); ok {
+			if !n.IsInt64() {
+				return nil, oversizedParam(i + 1)
+			}
+			out[i] = n.Int64()
+			continue
+		}
+		bound, err := driver.DefaultParameterConverter.ConvertValue(v)
+		if err != nil {
+			if errchain.Kind(v) == "a number" {
+				return nil, oversizedParam(i + 1)
+			}
+			return nil, unbindableParam(i+1, v)
+		}
+		out[i] = bound
+	}
+	return out, nil
+}
 
 // Class CPython's sqlite3 module raises for a result code
 func classForCode(code int) SQLiteClass {
@@ -335,6 +391,28 @@ type StateDBReplacedError struct{ Msg string }
 
 func (e *StateDBReplacedError) Error() string { return e.Msg }
 
+// Refuses a store whose schema version a newer icebath wrote, before anything rewrites it
+type StateDBNewerSchemaError struct {
+	Path   string
+	Stored int64
+}
+
+func (e *StateDBNewerSchemaError) Error() string {
+	return fmt.Sprintf("%s has schema version %d, newer than version %d this icebath build knows", e.Path, e.Stored, SchemaVersion)
+}
+
+// Reports a folder for the store that could not be created, the cause wrapped
+type StateDBDirError struct {
+	Dir string
+	Err error
+}
+
+func (e *StateDBDirError) Error() string {
+	return fmt.Sprintf("cannot create the folder %s for the session database: %s", e.Dir, errText(e.Err))
+}
+
+func (e *StateDBDirError) Unwrap() error { return e.Err }
+
 // Reports a retired WAL generation that could not be captured durably, nothing having been mutated
 type RetiredGenerationCaptureError struct{ Msg string }
 
@@ -404,7 +482,13 @@ func persistenceCauseByType(err error) (string, bool) {
 	var deletedWal *DeletedWalGenerationError
 	var replaced *StateDBReplacedError
 	var corrupt *StateDBCorruptError
+	var newer *StateDBNewerSchemaError
+	var dir *StateDBDirError
 	switch {
+	case errors.As(err, &newer):
+		return "newer_schema", true
+	case errors.As(err, &dir):
+		return "store_dir", true
 	case errors.As(err, &leaseLost):
 		return "turn_lease", true
 	case errors.As(err, &closed):

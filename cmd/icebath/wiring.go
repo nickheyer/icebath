@@ -38,6 +38,8 @@ var (
 
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
 func installProcessWiring() {
+	tools.DropUnlinkedToolsets()
+	commands.ApplySlashTierTexts()
 	installSlashRegistryWiring()
 	installAgentImportWiring()
 	registerCommandArgv()
@@ -115,7 +117,7 @@ func installProcessWiring() {
 	}
 	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
 	gatewaycli.SealedSteward = selfupdate.SealedSteward
-	tui.ClipboardImage = app.SaveClipboardImage
+	tui.ClipboardImage, tui.ClipboardImageBlocker = app.SaveClipboardImage, app.ClipboardImageBlocker
 	tui.PluginWidgets = pluginWidgets
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
 	gatewayrun.ServeSessionSocket = serveSessionSocket
@@ -197,6 +199,7 @@ func installProcessWiring() {
 	commands.LoadCLIConfig = app.LoadCLIConfig
 	tools.TerminalOutputTransformHook = terminalOutputTransform
 	tuiserver.SaveClipboardImage, tuiserver.HasClipboardImage = app.SaveClipboardImage, app.HasClipboardImage
+	tuiserver.ClipboardImageBlocker = app.ClipboardImageBlocker
 	state.MessagingPlatformLabels = gateway.MessagingPlatformLabels
 	state.MessagingPlatformSource = gateway.IsMessagingPlatformSource
 	state.SameOwner = gateway.SameOwner

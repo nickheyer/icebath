@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -648,7 +649,42 @@ func (a *SignalAdapter) sendReactionRPC(ctx context.Context, chatID string, para
 
 // Unreact call of the send_message tool, refused with the keyword TypeError the author and timestamp signature raises
 func (a *SignalAdapter) RemoveReaction(ctx context.Context, chatID, messageID string) (any, error) {
-	return nil, &pyErr{"TypeError", "SignalAdapter.remove_reaction() got an unexpected keyword argument 'message_id'"}
+	author, stamp, err := signalReactionTarget(chatID, messageID)
+	if err != nil {
+		return false, err
+	}
+	return a.removeReaction(ctx, chatID, author, stamp)
+}
+
+// Adds an emoji reaction to the message its timestamp names
+func (a *SignalAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	author, stamp, err := signalReactionTarget(chatID, messageID)
+	if err != nil {
+		return err
+	}
+	ok, err := a.sendReaction(ctx, chatID, emoji, author, stamp)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("signal-cli refused the reaction")
+	}
+	return nil
+}
+
+// Author and millisecond timestamp of a message id, the author given as author:timestamp or the peer of a direct chat
+func signalReactionTarget(chatID, messageID string) (string, int64, error) {
+	author, stamp := chatID, messageID
+	if i := strings.LastIndex(messageID, ":"); i > 0 {
+		author, stamp = messageID[:i], messageID[i+1:]
+	} else if strings.HasPrefix(chatID, "group:") {
+		return "", 0, fmt.Errorf("a Signal group message is named by its author and timestamp, pass the message id as <author>:%s", messageID)
+	}
+	ts, err := strconv.ParseInt(stamp, 10, 64)
+	if err != nil {
+		return "", 0, fmt.Errorf("a Signal message id is the millisecond timestamp of the message, got %s", stamp)
+	}
+	return author, ts, nil
 }
 
 // Reacts to the message identified by its author and millisecond timestamp

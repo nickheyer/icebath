@@ -75,11 +75,10 @@ func sessionWorkspaceMove(ctx context.Context, rid any, params map[string]any) m
 	branch, root := tuihost.Branch(targetCwd), tuihost.CommonRepoRoot(targetCwd)
 	if resp := func() map[string]any {
 		db, release, err := profileDB(ctx, params, true)
-		panicIf(err)
-		defer release()
-		if db == nil {
-			return dbUnavailableError(ctx, rid, 5007)
+		if err != nil {
+			return storeFailure(ctx, rid, 5007, err)
 		}
+		defer release()
 		row, err := db.GetSession(ctx, target)
 		panicIf(err)
 		if row == nil || row.Len() == 0 {

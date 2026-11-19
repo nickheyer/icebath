@@ -60,7 +60,7 @@ func TestScenarioPluginsManageHub(t *testing.T) {
 		s.HasJSON(call(map[string]any{"action": action}), `{"error": {"code": 4019, "message": "`+message+`"}}`)
 	}
 	s.HasJSON(call(map[string]any{"action": "remove", "name": "ghost"}), `{"error": {"code": 5026}}`)
-	s.HasJSON(call(map[string]any{"action": "bogus"}), `{"error": {"code": 4017, "message": "unknown plugins action: bogus"}}`)
+	s.HasJSON(call(map[string]any{"action": "bogus"}), `{"error": {"code": 4000, "message": "invalid params for plugins.manage: action: wants one of list, toggle, install, inspect, update, remove, settings, presence, got \"bogus\""}}`)
 
 	p.CloseInput()
 	p.Wait().Exit(0)

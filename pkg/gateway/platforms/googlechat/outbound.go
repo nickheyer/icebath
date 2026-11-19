@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Text body with the thread name when replying into a thread
@@ -266,11 +268,14 @@ func (a *GoogleChatAdapter) VerifyHTTPEventRequest(ctx context.Context, authHead
 	return true, "", nil
 }
 
-// Dispatches one HTTP callback event, answering retryably when its route is parked
+// Dispatches one HTTP callback event, a card click answered in the reply, a message retried when its route is parked
 func (a *GoogleChatAdapter) DispatchHTTPEvent(ctx context.Context, payload *pyjson.Object) (any, error) {
 	envelope, ok := pyjson.Plain(payload).(map[string]any)
 	if !ok {
 		return map[string]any{}, nil
+	}
+	if click, ok := parseCardClick(envelope); ok {
+		return pyjson.Ordered(a.handleCardClick(ctx, click, true)), nil
 	}
 	msg, env, ok := a.prepareInbound(envelope, "", false)
 	if !ok {
@@ -490,39 +495,45 @@ func (a *GoogleChatAdapter) sendCard(ctx context.Context, chatID string, card an
 	return res
 }
 
-// Clarify prompt with choices as card buttons, the base text prompt when there are none or the card fails
+// Clarify prompt with choices as card buttons, checkboxes and a send button when several may be picked
 func (a *GoogleChatAdapter) SendClarify(ctx context.Context, chatID, question string, choices []string, clarifyID, sessionKey string, metadata map[string]any) (gateway.SendResult, error) {
 	if len(choices) == 0 {
 		return a.BasePlatformAdapter.SendClarify(ctx, chatID, question, choices, clarifyID, sessionKey, metadata)
 	}
-	button := func(text, choice string) any {
-		return map[string]any{"text": text, "action": "icebath_clarify", "parameters": map[string]any{"clarify_id": clarifyID, "choice": choice}}
+	params := func(choice string) map[string]string {
+		return map[string]string{clickKindParam: clickClarify, "clarify_id": clarifyID, "choice": choice}
 	}
-	var buttons []any
-	for _, choice := range choices {
-		text := pystr.Strip(choice)
-		if text == "" {
-			continue
-		}
-		label := text
+	label := func(text string) string {
 		if utf8.RuneCountInString(text) > 80 {
-			label = pystr.Slice(text, 0, 77) + "..."
+			return pystr.Slice(text, 0, 77) + "..."
 		}
-		buttons = append(buttons, button(label, text))
+		return text
 	}
-	buttons = append(buttons, button(tr(ctx, "clarify.other_button", nil), "__other__"))
-	card, err := CardSpecToCardsV2(map[string]any{"card_id": "clarify-" + clarifyID,
-		"header": map[string]any{"title": tr(ctx, "clarify.header", nil)},
-		"sections": []any{map[string]any{"widgets": []any{
-			map[string]any{"type": "text", "text": tr(ctx, "clarify.question", map[string]any{"question": question})},
-			map[string]any{"type": "buttons", "buttons": buttons}}}}})
-	if err == nil {
-		if res := a.sendCard(ctx, chatID, card, metadata); res.Success {
-			a.mu.Lock()
-			a.clarifyState[clarifyID] = sessionKey
-			a.mu.Unlock()
-			return res, nil
+	widgets := []any{markdownParagraph(tr(ctx, "clarify.question", map[string]any{"question": question}))}
+	var buttons []any
+	if entry := tools.GetPendingClarify(clarifyID); entry != nil && entry.MultiSelect {
+		var items []any
+		for idx, choice := range choices {
+			if text := pystr.Strip(choice); text != "" {
+				items = append(items, map[string]any{"text": label(text), "value": strconv.Itoa(idx), "selected": false})
+			}
 		}
+		widgets = append(widgets, map[string]any{"type": "selection", "name": clarifyChoicesInput, "label": tr(ctx, "clarify.header", nil), "items": items})
+		buttons = append(buttons, a.cardButton(tr(ctx, "clarify.submit_button", nil), params("")))
+	} else {
+		for idx, choice := range choices {
+			if text := pystr.Strip(choice); text != "" {
+				buttons = append(buttons, a.cardButton(label(text), params(strconv.Itoa(idx))))
+			}
+		}
+	}
+	buttons = append(buttons, a.cardButton(tr(ctx, "clarify.other_button", nil), params(clarifyOtherChoice)))
+	card, err := promptCard("clarify-"+clarifyID, tr(ctx, "clarify.header", nil), append(widgets, buttonRow(buttons)))
+	if err != nil {
+		return gateway.SendResult{}, err
+	}
+	if res := a.sendCard(ctx, chatID, card, metadata); res.Success {
+		return res, nil
 	}
 	return a.BasePlatformAdapter.SendClarify(ctx, chatID, question, choices, clarifyID, sessionKey, metadata)
 }

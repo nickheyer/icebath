@@ -84,14 +84,12 @@ func newSessionLifecycle(store *tuiStore, turn *turnController, gw sessionGatewa
 // Gateway request that prints its own failure and hands nil to then
 func (l *sessionLifecycle) rpc(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd {
 	return gatewayCall(l.gw, method, params, func(v any, err error) tea.Cmd {
-		var result map[string]any
+		result, isObject := v.(map[string]any)
 		switch {
 		case err != nil:
 			l.view.sys("error: " + rpcErrorMessage(err))
-		case asRPCResult(v) == nil:
+		case !isObject:
 			l.view.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
-		default:
-			result = asRPCResult(v)
 		}
 		if then == nil {
 			return nil

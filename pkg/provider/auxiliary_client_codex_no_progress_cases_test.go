@@ -259,7 +259,7 @@ func auxCompressionRetryGate(t *testing.T, primaryErr error, second map[string]a
 }
 
 func TestCompressionRetryGateNoProgressTimeoutRetriesSameProvider(t *testing.T) {
-	err := &AuxTimeoutError{Message: "Codex auxiliary Responses stream produced no output within 60.0s (no-progress timeout, 60.2s elapsed)"}
+	err := &AuxTimeoutError{Message: "Codex auxiliary Responses stream produced no output within 60.0s (no-progress timeout, 60.2s elapsed)", Kind: AuxTimeoutNoOutput}
 	result, primary, payment := auxCompressionRetryGate(t, err, auxAssistantResponse("gpt-5.6-sol", "retried"))
 	if got := auxActualContent(t, result); got != "retried" {
 		t.Fatalf("content %q", got)
@@ -270,7 +270,7 @@ func TestCompressionRetryGateNoProgressTimeoutRetriesSameProvider(t *testing.T) 
 }
 
 func TestCompressionRetryGateStalledTimeoutSkipsSameProviderRetry(t *testing.T) {
-	err := &AuxTimeoutError{Message: "Codex auxiliary Responses stream stalled: no new output for 60.0s (247.3s elapsed)"}
+	err := &AuxTimeoutError{Message: "Codex auxiliary Responses stream stalled: no new output for 60.0s (247.3s elapsed)", Kind: AuxTimeoutStalled}
 	result, primary, payment := auxCompressionRetryGate(t, err, nil)
 	if got := auxActualContent(t, result); got != "fallback" {
 		t.Fatalf("content %q", got)

@@ -367,7 +367,7 @@ func TestRequestReviewRejectsUnknownReviewerWithoutMutation(t *testing.T) {
 	beforeEvents := boardEvents(t, tid)
 	t.Setenv("ICEBATH_KANBAN_RUN_ID", strconv.FormatInt(*before.CurrentRunID, 10))
 	out := runKanbanTool(t, "kanban_request_review", `{"summary": "Ready for review.", "reviewer": "reviewer"}`)
-	if e := errText(out); !strings.Contains(e, "'reviewer'") || !strings.Contains(e, "verifier") {
+	if e := errText(out); !strings.Contains(e, "reviewer profile reviewer is not installed") || !strings.Contains(e, "verifier") {
 		t.Fatal(out)
 	}
 	after := boardTask(t, tid)

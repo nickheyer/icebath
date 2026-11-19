@@ -103,7 +103,8 @@ func (r *GatewayRunner) EvictCachedAgentAtBoundary(route string) {
 
 // Runs a release on its own goroutine inside the profile that owns the session key
 func (r *GatewayRunner) spawnReleaseThread(ctx context.Context, target func(context.Context), sessionKey string) {
-	go r.runReleaseInProfileScope(context.WithoutCancel(ctx), target, sessionKey)
+	detached := context.WithoutCancel(ctx)
+	r.releaseWriters.Go(func() { r.runReleaseInProfileScope(detached, target, sessionKey) })
 }
 
 // Calls target under the profile owning the session key, entered unless the current scope already is the owner's
@@ -258,7 +259,8 @@ func (r *GatewayRunner) sweepAgentCacheUnderPressure(ctx context.Context) int {
 	}
 	pkgLog().Warn(fmt.Sprintf("Agent cache pressure: anon RSS %dMB over budget %dMB — evicting %d LRU session(s): %s",
 		*rssMB, *bounds.MemoryHighMB, len(plan), strings.Join(keys, ", ")))
-	go r.releasePressureBatch(context.WithoutCancel(ctx), plan)
+	detached := context.WithoutCancel(ctx)
+	r.releaseWriters.Go(func() { r.releasePressureBatch(detached, plan) })
 	return len(plan)
 }
 

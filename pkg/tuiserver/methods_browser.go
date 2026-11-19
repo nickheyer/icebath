@@ -12,13 +12,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/browser"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // URL schemes a browser CDP endpoint may use
@@ -34,20 +33,18 @@ func browserEnv(ctx context.Context) *tools.Env {
 
 // Status, connect or disconnect of the profile's live browser CDP endpoint
 func browserManage(ctx context.Context, rid any, params map[string]any) map[string]any {
-	action, present := params["action"]
-	if !present {
-		action = "status"
+	p, err := tuigateway.BrowserManage.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4015, err.Error(), nil)
 	}
-	switch action {
-	case "status":
+	switch p.Action {
+	case "", "status":
 		url := resolveBrowserCDPURL(ctx)
-		return ok(rid, map[string]any{"connected": url != "", "url": url})
+		return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{Connected: url != "", URL: url}))
 	case "disconnect":
 		return browserDisconnect(ctx, rid)
-	case "connect":
-		return browserConnect(ctx, rid, params)
 	}
-	return rpcErr(rid, 4015, fmt.Sprintf("unknown action: %s", pyrepr.Str(action)), nil)
+	return browserConnect(ctx, rid, p)
 }
 
 // Configured browser CDP override with no network I/O
@@ -91,7 +88,7 @@ func cdpHTTPReachable(parsed pyurl.URL, timeout time.Duration) bool {
 }
 
 // Discovers or launches the default local debug browser, announcing every step, empty when none answers
-func connectLocalDefault(ctx context.Context, port int, system string, announce func(message, level string)) string {
+func connectLocalDefault(ctx context.Context, port int, system string, announce func(message string, level tuigateway.BrowserProgressLevel)) string {
 	discovered := browser.DiscoverLocalCDPURL(ctx, port, 2*time.Second)
 	if discovered != "" {
 		announce("Chromium-family browser is already listening at "+discovered, "info")
@@ -140,25 +137,21 @@ func reapProfileBrowsers(ctx context.Context) error {
 }
 
 // Validates, reaches or launches and then publishes the profile's live CDP endpoint
-func browserConnect(ctx context.Context, rid any, params map[string]any) (response map[string]any) {
-	rawURL, present := params["url"]
-	if present && rawURL != nil {
-		if _, isText := rawURL.(string); !isText {
-			return rpcErr(rid, 4015, fmt.Sprintf("browser url must be text, got %s", errchain.Kind(rawURL)), nil)
-		}
+func browserConnect(ctx context.Context, rid any, p tuigateway.BrowserManageParams) (response map[string]any) {
+	url := ""
+	if p.URL != nil {
+		url = strings.TrimSpace(*p.URL)
 	}
-	text, _ := rawURL.(string)
-	url := strings.TrimSpace(text)
 	if url == "" {
 		url = browser.DefaultBrowserCDPURL
 	}
-	sid := relayString(params["session_id"])
+	sid := p.SessionID
 	system := pyplatform.System()
-	messages := []any{}
-	announce := func(message, level string) {
+	messages := []string{}
+	announce := func(message string, level tuigateway.BrowserProgressLevel) {
 		messages = append(messages, message)
 		if sid != "" {
-			emitEvent(ctx, "browser.progress", sid, map[string]any{"message": message, "level": level})
+			emitEvent(ctx, tuigateway.BrowserProgressEvent.Name(), sid, tuigateway.BrowserProgressEvent.Wire(tuigateway.BrowserProgressPayload{Message: message, Level: level}))
 		}
 	}
 	target := url
@@ -212,7 +205,7 @@ func browserConnect(ctx context.Context, rid any, params map[string]any) (respon
 	case isDefaultLocalCDP(parsed):
 		discovered := connectLocalDefault(ctx, port, system, announce)
 		if discovered == "" {
-			return ok(rid, map[string]any{"connected": false, "url": url, "messages": messages})
+			return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{URL: url, Messages: messages}))
 		}
 		url = discovered
 		if parsed, err = pyurl.Parse(url); err != nil {
@@ -234,11 +227,7 @@ func browserConnect(ctx context.Context, rid any, params map[string]any) (respon
 	if err := reapProfileBrowsers(ctx); err != nil {
 		panic(err)
 	}
-	result := map[string]any{"connected": true, "url": normalized}
-	if len(messages) > 0 {
-		result["messages"] = messages
-	}
-	return ok(rid, result)
+	return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{Connected: true, URL: normalized, Messages: messages}))
 }
 
 // Drops the profile's live CDP endpoint between two reaps, a failed reap swallowed
@@ -253,5 +242,5 @@ func browserDisconnect(ctx context.Context, rid any) map[string]any {
 	reap()
 	browser.SetLiveCDPOverride(home.Key(home.Dir(ctx)), "")
 	reap()
-	return ok(rid, map[string]any{"connected": false})
+	return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{}))
 }

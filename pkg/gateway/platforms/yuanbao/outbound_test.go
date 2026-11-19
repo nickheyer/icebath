@@ -299,7 +299,7 @@ func TestFileSendsUploadToCOSAndDispatchTheMediaBody(t *testing.T) {
 		t.Fatalf("direct send %v %v", direct, err)
 	}
 	backend.setCredentials(credentials(nil))
-	if result, err := adapter.SendDocument(ctx, "direct:alice", document, "", "", "", nil, nil); err != nil || result.Success || result.Error != "'region'" {
+	if result, err := adapter.SendDocument(ctx, "direct:alice", document, "", "", "", nil, nil); err != nil || result.Success || result.Error != "the upload credential reply has no region" {
 		t.Fatalf("credentials without a region: %+v %v", result, err)
 	}
 }

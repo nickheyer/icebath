@@ -10,7 +10,11 @@ import (
 )
 
 // AuxiliaryClientUnavailable reports that no auxiliary client could be built for the task
-type AuxiliaryClientUnavailable struct{ Message string }
+type AuxiliaryClientUnavailable struct {
+	Message string
+	// No provider is configured at all, as opposed to one lacking credentials
+	NoProvider bool
+}
 
 func (e *AuxiliaryClientUnavailable) Error() string { return e.Message }
 

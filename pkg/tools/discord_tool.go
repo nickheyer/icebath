@@ -42,6 +42,11 @@ func (e *DiscordAPIError) Error() string {
 	return fmt.Sprintf("Discord API error %d: %s", e.Status, e.Body)
 }
 
+// Discord API failure with its HTTP status and body
+func newDiscordAPIError(status int, body string) *DiscordAPIError {
+	return &DiscordAPIError{Status: status, Body: body}
+}
+
 // ValueError of a Discord request, a header value http.client refuses or a body that is not JSON
 type DiscordValueError struct{ Msg string }
 

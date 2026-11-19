@@ -561,7 +561,7 @@ func TestFileToolsReadNotFoundCachedAndSkipsRetry(t *testing.T) {
 	env, ws := newFileToolTestEnv(t)
 	p := filepath.Join(ws, "does-not-exist-neg-1.txt")
 	ops := &scriptedFileOps{readFileFn: func(string, int, int) *ReadResult {
-		return &ReadResult{Error: "File not found: " + p, SimilarFiles: []string{}}
+		return &ReadResult{Error: "File not found: " + p, NotFound: true, SimilarFiles: []string{}}
 	}}
 	installScriptedFileOps(t, env, ops, nil)
 	tid := "neg-cache-read-1"
@@ -582,7 +582,7 @@ func TestFileToolsReadNotFoundCacheIsolatedPerTask(t *testing.T) {
 	env, ws := newFileToolTestEnv(t)
 	p := filepath.Join(ws, "does-not-exist-neg-2.txt")
 	ops := &scriptedFileOps{readFileFn: func(string, int, int) *ReadResult {
-		return &ReadResult{Error: "File not found: " + p, SimilarFiles: []string{}}
+		return &ReadResult{Error: "File not found: " + p, NotFound: true, SimilarFiles: []string{}}
 	}}
 	installScriptedFileOps(t, env, ops, nil)
 	readFileTool(context.Background(), env, p, nil, nil, "neg-cache-iso-A")
@@ -617,7 +617,7 @@ func TestFileToolsReadNotFoundCachesNamespaced(t *testing.T) {
 	env, ws := newFileToolTestEnv(t)
 	p := filepath.Join(ws, "does-not-exist-namespace-4")
 	ops := &scriptedFileOps{
-		readFileFn: func(string, int, int) *ReadResult { return &ReadResult{Error: "File not found: " + p} },
+		readFileFn: func(string, int, int) *ReadResult { return &ReadResult{Error: "File not found: " + p, NotFound: true} },
 		searchFn: func(pattern, path, target, fileGlob string, limit, offset int, outputMode string, context int, order string) *SearchResult {
 			return &SearchResult{Error: "Path not found: " + p}
 		},
@@ -639,7 +639,7 @@ func TestFileToolsReadWriteInvalidatesReadNegativeCache(t *testing.T) {
 		readFileFn: func(string, int, int) *ReadResult {
 			reads++
 			if reads == 1 {
-				return &ReadResult{Error: "File not found: " + p}
+				return &ReadResult{Error: "File not found: " + p, NotFound: true}
 			}
 			return &ReadResult{Content: "after write", TotalLines: 1}
 		},
@@ -826,6 +826,7 @@ func TestFileToolsReadRegularFileUnaffectedByFifoGuard(t *testing.T) {
 
 func TestFileToolsReadSchemaHostedOCRGateStates(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
+	t.Setenv("PATH", t.TempDir())
 	base := readFileSchema.Vals["description"].(string)
 	upgraded := strings.Replace(base, "PDF (text layer)", "PDF (scanned or text)", 1)
 	check := func(state string, want bool) {

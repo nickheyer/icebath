@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -24,14 +26,13 @@ func init() {
 // Checkpoints of the session working directory with their reason as the message
 func rollbackList(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
 	return withCheckpoints(ctx, session, func(mgr *tools.CheckpointManager, cwd string) map[string]any {
-		if !mgr.Enabled {
-			return ok(rid, map[string]any{"enabled": false, "checkpoints": []any{}})
+		result := tuigateway.RollbackListResult{Enabled: mgr.Enabled, Checkpoints: []tuigateway.RollbackCheckpoint{}}
+		if mgr.Enabled {
+			for _, c := range mgr.ListCheckpoints(cwd) {
+				result.Checkpoints = append(result.Checkpoints, tuigateway.RollbackCheckpoint{Hash: c.Hash, Timestamp: c.Timestamp, Message: c.Reason})
+			}
 		}
-		rows := []map[string]any{}
-		for _, c := range mgr.ListCheckpoints(cwd) {
-			rows = append(rows, map[string]any{"hash": c.Hash, "timestamp": c.Timestamp, "message": c.Reason})
-		}
-		return ok(rid, map[string]any{"enabled": true, "checkpoints": rows})
+		return ok(rid, tuigateway.Plain(result))
 	}), nil
 }
 
@@ -49,32 +50,28 @@ func containerCheckpointRefusal(ctx context.Context, session *tuihost.Session, m
 
 // Restores a checkpoint, a whole tree restore also rewinding the session history to before its last user turn
 func rollbackRestore(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
-	target, present := params["hash"]
-	if !present {
-		target = ""
+	p, err := tuigateway.RollbackRestore.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
-	filePath := strOr(params["file_path"])
-	if !truthy(target) {
+	if p.Hash == "" {
 		return rpcErr(rid, 4014, "hash required", nil), nil
 	}
-	if all, has := params["all"]; has && all != nil {
-		if _, isBool := all.(bool); !isBool {
-			return rpcErr(rid, 4001, "invalid_params", map[string]any{"reason": "invalid_params", "field": "all",
-				"detail": "must be a boolean"}), nil
-		}
-	}
-	if filePath == "" && truthy(session.Get("running")) {
+	if p.FilePath == "" && truthy(session.Get("running")) {
 		return rpcErr(rid, 4009, busyMessage("rollback restore", truthy(session.Get("_manual_compress_active"))), nil), nil
 	}
-	result := withCheckpoints(ctx, session, func(mgr *tools.CheckpointManager, cwd string) map[string]any {
+	result := withCheckpoints(ctx, session, func(mgr *tools.CheckpointManager, cwd string) tuigateway.RollbackRestoreResult {
 		if reason := containerCheckpointRefusal(ctx, session, mgr, cwd); reason != "" {
-			return map[string]any{"success": false, "error": reason}
+			return tuigateway.RollbackRestoreResult{Error: reason}
 		}
-		hash, err := resolveCheckpointHash(mgr, cwd, target)
+		hash, err := resolveCheckpointHash(mgr, cwd, p.Hash)
+		if err != nil {
+			return tuigateway.RollbackRestoreResult{Error: err.Error()}
+		}
+		res, err := gateway.RestoreOutcome(mgr.Restore(cwd, hash, p.FilePath, p.FilePath == "" && (p.All == nil || !*p.All)))
 		panicIf(err)
-		res := mgr.Restore(cwd, hash, filePath, filePath == "" && params["all"] != true)
-		if truthy(res["success"]) && filePath == "" {
-			removed := 0
+		if res.Success && p.FilePath == "" {
+			removed := int64(0)
 			func() {
 				unlock := lockHistory(session)
 				defer unlock()
@@ -83,51 +80,50 @@ func rollbackRestore(ctx context.Context, rid any, params map[string]any, sessio
 					if err != nil {
 						panic(fmt.Errorf("checkpoint restored, but session history rewind failed: %s", errorMessage(err)))
 					}
-					removed = count
+					removed = int64(count)
 				}
 			}()
-			res["history_removed"] = removed
+			res.HistoryRemoved = &removed
 		}
 		return res
 	})
-	return ok(rid, result), nil
+	return ok(rid, tuigateway.Plain(result)), nil
 }
 
 // Diff of a checkpoint against the working tree cut to 4000 characters with its rendered copy when one renders
 func rollbackDiff(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
-	target, present := params["hash"]
-	if !present {
-		target = ""
+	p, err := tuigateway.RollbackDiff.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
-	if !truthy(target) {
+	if p.Hash == "" {
 		return rpcErr(rid, 4014, "hash required", nil), nil
 	}
 	return withCheckpoints(ctx, session, func(mgr *tools.CheckpointManager, cwd string) map[string]any {
 		if reason := containerCheckpointRefusal(ctx, session, mgr, cwd); reason != "" {
 			return rpcErr(rid, 5022, reason, nil)
 		}
-		hash, err := resolveCheckpointHash(mgr, cwd, target)
-		panicIf(err)
+		hash, err := resolveCheckpointHash(mgr, cwd, p.Hash)
+		if err != nil {
+			return rpcErr(rid, 4014, err.Error(), nil)
+		}
 		r := mgr.Diff(cwd, hash)
-		diff, has := r["diff"]
-		if !has {
-			diff = ""
+		payload := tuigateway.RollbackDiffResult{}
+		if diff, has := r["diff"]; has {
+			payload.Diff = pystr.Slice(pyrepr.Str(diff), 0, 4000)
 		}
-		raw := pystr.Slice(pyrepr.Str(diff), 0, 4000)
-		stat, has := r["stat"]
-		if !has {
-			stat = ""
+		if stat, has := r["stat"]; has {
+			payload.Stat = pyrepr.Str(stat)
 		}
-		payload := map[string]any{"stat": stat, "diff": raw}
 		cols, has := session.Lookup("cols")
 		if !has {
 			cols = 80
 		}
 		width, err := pyint.Int64(cols)
 		panicIf(err)
-		if rendered, found := renderDiff(raw, int(min(width, math.MaxInt32))); found && rendered != "" {
-			payload["rendered"] = rendered
+		if rendered, found := renderDiff(payload.Diff, int(min(width, math.MaxInt32))); found {
+			payload.Rendered = rendered
 		}
-		return ok(rid, payload)
+		return ok(rid, tuigateway.Plain(payload))
 	}), nil
 }

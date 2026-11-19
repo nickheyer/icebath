@@ -220,6 +220,10 @@ func resolveExplicitToolsets(ctx context.Context, explicit []string, validate fu
 		case mcpDisabled[name]:
 			disabled = append(disabled, name)
 		default:
+			if line, refused := tools.ToolsetTierRefusal(name); refused {
+				tuiNotice("[tui] ignoring ICEBATH_TUI_TOOLSETS entry " + name + ", " + line)
+				continue
+			}
 			unknown = append(unknown, name)
 		}
 	}
@@ -580,10 +584,12 @@ func liveSessionAgentDB(ctx context.Context, session *tuihost.Session) (*agent.A
 	}
 	db := a.SessionDB()
 	if db == nil {
-		db = getDB(ctx)
-	}
-	if db == nil {
-		return nil, "", nil, false
+		launch, err := getDB(ctx)
+		if err != nil {
+			pkgLog().Warn(fmt.Sprintf("failed to open the session store for %s: %s", sessionKey, err))
+			return nil, "", nil, false
+		}
+		db = launch
 	}
 	return a, sessionKey, db, true
 }

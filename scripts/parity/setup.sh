@@ -4,6 +4,8 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$HERE/../.." && pwd)
 ROOT=$1; PORT=$2; BASE=${PARITY_BASE:-/tmp/ib-audit}
 [ -n "$ROOT" ] && [ -n "$PORT" ] || { echo "usage: setup.sh <lane-dir> <port>"; exit 2; }
+case "$ROOT" in /*) ;; *) echo "setup.sh: the lane dir must be an absolute path, got $ROOT" >&2; exit 2 ;; esac
+case "$ROOT/" in "$REPO"/*) echo "setup.sh: the lane dir must be outside the repo, got $ROOT" >&2; exit 2 ;; esac
 mkdir -p "$BASE" "$ROOT/scripts" "$ROOT/bin" "$ROOT/cap/battery" "$ROOT/dumps" "$ROOT/gotmp" "$ROOT/work/victim" "$ROOT/ref-home" "$ROOT/ib-home" "$ROOT/uh-ref" "$ROOT/uh-ib"
 if [ ! -x "$BASE/ref-venv/bin/python" ]; then
   python3 -m venv "$BASE/ref-venv"

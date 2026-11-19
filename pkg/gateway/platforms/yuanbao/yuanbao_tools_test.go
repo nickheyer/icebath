@@ -122,7 +122,7 @@ func TestGroupInfoAndMemberTools(t *testing.T) {
 		t.Fatalf("bots %s", got)
 	}
 	if got := compact(t, callTool(t, "yb_query_group_info", map[string]any{"group_code": int64(7)})); got !=
-		`{"success": false, "error": "expected text, got a number"}` {
+		`{"success": false, "error": "the group code must be text, got a number"}` {
 		t.Fatalf("group code of the wrong type %s", got)
 	}
 }

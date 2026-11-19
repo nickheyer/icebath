@@ -59,6 +59,7 @@ type AIAgent struct {
 	dbFlushScanPrefix                any
 	streamedAssistantTextParts       []string
 	relayPendingTurnID               string
+	stopPrewarm                      func()
 	cacheScope                       *provider.CacheScopeAgent
 	inheritedCacheScope              string
 	promptCacheForkTag               string

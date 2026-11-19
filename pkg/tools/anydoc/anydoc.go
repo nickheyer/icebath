@@ -33,10 +33,19 @@ type ConvertError struct {
 	PageCount int
 }
 
-func (e *ConvertError) Error() string { return e.Kind + ": " + e.Message }
+func (e *ConvertError) Error() string { return e.Message }
 
 // NeedsOCR reports whether the conversion failed because the document has no text layer
 func (e *ConvertError) NeedsOCR() bool { return e.Kind == "NeedsOcrError" }
+
+// PDF that yielded no text on any page, the one failure the crate reports under that variant once a format is known
+func (e *ConvertError) NoTextLayer() bool { return e.Kind == "UnsupportedError" }
+
+// Document locked by a password the conversion was not given
+func (e *ConvertError) Encrypted() bool { return e.Kind == "EncryptedError" }
+
+// Bytes that neither their content nor the given name mark as a document anydoc reads
+var ErrNotDocument = errors.New("not a document anydoc reads")
 
 // Extensions lists the formats the converter accepts, without dots
 var Extensions = []string{"doc", "docx", "docm", "odt", "pdf", "ppt", "pps", "pot", "pptx", "pptm", "ppsx", "ppsm", "rtf", "epub", "xlsx", "xlsm", "xlsb", "xls", "ods", "odp", "csv"}
@@ -77,8 +86,8 @@ func compile(ctx context.Context) error {
 func ToMarkdown(ctx context.Context, data []byte, path string) (string, error) {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
 	out, err := convert(ctx, data, ext, true)
-	if errors.Is(err, errNoFormat) {
-		return "", &ConvertError{Kind: "UnsupportedError", Message: "unsupported input: unrecognized file content and extension: " + path}
+	if errors.Is(err, ErrNotDocument) {
+		return "", fmt.Errorf("%s is %w", path, ErrNotDocument)
 	}
 	return out, err
 }
@@ -87,16 +96,11 @@ func ToMarkdown(ctx context.Context, data []byte, path string) (string, error) {
 func ToMarkdownBytes(ctx context.Context, data []byte, format string) (string, error) {
 	format = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
 	out, err := convert(ctx, data, format, false)
-	if errors.Is(err, errNoFormat) {
-		if format != "" {
-			return "", &ConvertError{Kind: "UnsupportedError", Message: "unsupported input: unrecognized format: " + format}
-		}
-		return "", &ConvertError{Kind: "UnsupportedError", Message: "unsupported input: unrecognized file content: name the format explicitly"}
+	if errors.Is(err, ErrNotDocument) && format != "" {
+		return "", fmt.Errorf("%w: no parser for the format %s", ErrNotDocument, format)
 	}
 	return out, err
 }
-
-var errNoFormat = errors.New("no format resolved")
 
 // Runs one conversion in a fresh module instance
 func convert(ctx context.Context, data []byte, ext string, extIsFallback bool) (string, error) {
@@ -158,7 +162,7 @@ func convert(ctx context.Context, data []byte, ext string, extIsFallback bool) (
 	case statusOK:
 		return out, nil
 	case statusNoFormat:
-		return "", errNoFormat
+		return "", ErrNotDocument
 	case statusError:
 		return "", parseError(out)
 	}

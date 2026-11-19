@@ -1,12 +1,12 @@
 package tui
 
 import (
-	"maps"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -39,7 +39,7 @@ func (a *app) syncCompletion() tea.Cmd {
 	if a.completionBlocked() {
 		if !c.blocked {
 			c.blocked, c.asked = true, ""
-			a.card.composer.Offer(nil, 0)
+			a.card.composer.Offer("", nil, 0)
 		}
 		return nil
 	}
@@ -51,7 +51,7 @@ func (a *app) syncCompletion() tea.Cmd {
 	c.asked = value
 	req, ok := a.store.completionRequestForInput(value)
 	if !ok {
-		a.card.composer.Offer(nil, 0)
+		a.card.composer.Offer(value, nil, 0)
 		return nil
 	}
 	return tea.Tick(completionDebounce, func(time.Time) tea.Msg { return completionDueMsg{value: value, req: req} })
@@ -62,40 +62,43 @@ func (a *app) askCompletion(m completionDueMsg) tea.Cmd {
 	if a.completion.asked != m.value {
 		return nil
 	}
-	slash := m.req.Method == "complete.slash"
-	params := maps.Clone(m.req.Params)
-	if sid := a.store.ui.Sid; slash && sid != "" {
-		params["session_id"] = sid
+	if m.req.Path != nil {
+		return call(a.gw, tuigateway.CompletePath, *m.req.Path, func(r *tuigateway.CompletionItemsResult, err error) tea.Cmd {
+			if a.completion.asked != m.value {
+				return nil
+			}
+			if err != nil {
+				a.card.composer.Offer(m.value, unavailableOffer(err), m.req.ReplaceFrom)
+				return nil
+			}
+			a.card.composer.Offer(m.value, offersOf(r.Items, false), m.req.ReplaceFrom)
+			return nil
+		})
 	}
-	return gatewayCall(a.gw, m.req.Method, params, func(raw any, err error) tea.Cmd {
+	params := *m.req.Slash
+	if sid := a.store.ui.Sid; sid != "" {
+		params.SessionID = &sid
+	}
+	return call(a.gw, tuigateway.CompleteSlash, params, func(r *tuigateway.CompleteSlashResult, err error) tea.Cmd {
 		if a.completion.asked != m.value {
 			return nil
 		}
 		if err != nil {
-			a.card.composer.Offer(unavailableOffer(err), m.req.ReplaceFrom)
+			a.card.composer.Offer(m.value, unavailableOffer(err), m.req.ReplaceFrom)
 			return nil
 		}
-		r := asRPCResult(raw)
-		items, _ := r["items"].([]any)
-		var offers []cards.Offer
-		for _, raw := range items {
-			item, _ := raw.(map[string]any)
-			if item == nil || (slash && m.req.SkillsOnly && item["kind"] != "skill") {
-				continue
-			}
-			offers = append(offers, cards.Offer{Text: stringOr(item["text"], ""), Display: stringOr(item["display"], ""), Meta: stringOr(item["meta"], "")})
-		}
-		if !slash || m.req.SkillsOnly {
-			a.card.composer.Offer(offers, m.req.ReplaceFrom)
+		offers := offersOf(r.Items, m.req.SkillsOnly)
+		if m.req.SkillsOnly {
+			a.card.composer.Offer(m.value, offers, m.req.ReplaceFrom)
 			return nil
 		}
 		replace := 1
-		if n, isNum := r["replace_from"].(float64); isNum {
-			replace = int(n)
+		if r.ReplaceFrom != nil {
+			replace = int(*r.ReplaceFrom)
 		}
 		show := func(shown []cards.Offer, at int) tea.Cmd {
 			if a.completion.asked == m.value {
-				a.card.composer.Offer(shown, at)
+				a.card.composer.Offer(m.value, shown, at)
 			}
 			return nil
 		}

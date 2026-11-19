@@ -355,7 +355,7 @@ func TestOrchestratorToolsReportPythonErrorsForWrongTypedArguments(t *testing.T)
 		{"kanban_list", `{"limit": 201}`, "limit must be <= 200"},
 		{"kanban_list", `{"status": ["ready"]}`, "kanban_list: expected text, got a list"},
 		{"kanban_list", `{"status": 5}`, "kanban_list: status must be one of " + statuses},
-		{"kanban_list", `{"assignee": 5}`, "kanban_list: profile name must be a string, got int: 5"},
+		{"kanban_list", `{"assignee": 5}`, "kanban_list: profile name must be text, got a number: 5"},
 		{"kanban_list", `{"tenant": [1]}`, "kanban_list: SQL parameter 1 is a list, which SQLite cannot store"},
 		{"kanban_list", `{"assignee": "a", "status": "ready", "tenant": {}}`, "kanban_list: SQL parameter 3 is a mapping, which SQLite cannot store"},
 		{"kanban_create", `{"title": "t", "assignee": []}`, "assignee is required — name the profile that should execute this task (the dispatcher will only spawn tasks with an assignee)"},

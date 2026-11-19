@@ -202,7 +202,7 @@ func TestServerRequestWaitsForAWsClientThatAdvertised(t *testing.T) {
 	silentWSSession(t, "ws-new", peer)
 	response := handleRequest(tuihost.BindTransport(ctx, peer), map[string]any{"id": 1, "method": "client.capabilities",
 		"params": map[string]any{"server_requests": true}})
-	if methods, _ := resultOf(t, response)["server_requests"].([]string); !slices.Contains(methods, "clarify") {
+	if methods, _ := resultOf(t, response)["server_requests"].([]any); !slices.Contains(methods, any("clarify")) {
 		t.Fatalf("capabilities %v", response)
 	}
 	box := make(chan *pyjson.Object, 1)

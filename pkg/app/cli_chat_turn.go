@@ -204,7 +204,7 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 
 // Stops the thinking sound, sends the TTS end sentinel and cuts playback only after an abnormal exit
 func (c *CLI) chatReleaseTurnAudio(turn *chatTurn) {
-	if turn.thinkingStarted {
+	if turn.thinkingStarted && stopThinkingSound != nil {
 		func() {
 			defer func() { _ = recover() }()
 			stopThinkingSound()
@@ -308,7 +308,7 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 	c.voiceLock.Lock()
 	voiceMode, continuous, voiceTTS := c.voiceMode, c.voiceContinuous, c.voiceTTS
 	c.voiceLock.Unlock()
-	if voiceMode && continuous {
+	if voiceMode && continuous && voiceFullDuplexListener != nil {
 		c.voiceLock.Lock()
 		c.voiceLastTTSText = ""
 		c.voiceLock.Unlock()
@@ -321,7 +321,7 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 					pkgLog().Debug("streaming TTS arm check failed", "error", r)
 				}
 			}()
-			turn.useStreamingTTS = checkTTSRequirements != nil && checkTTSRequirements(c.ctx)
+			turn.useStreamingTTS = checkTTSRequirements != nil && streamTTSToSpeaker != nil && checkTTSRequirements(c.ctx)
 		}()
 	}
 	if turn.useStreamingTTS {
@@ -785,7 +785,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 	c.voiceLock.Lock()
 	voiceTTS := c.voiceTTS
 	c.voiceLock.Unlock()
-	if voiceTTS && response != "" && !turn.useStreamingTTS {
+	if voiceTTS && response != "" && !turn.useStreamingTTS && voiceSpeakResponseAsync != nil {
 		voiceSpeakResponseAsync(c, response)
 	}
 	if pyrepr.Truthy(interruptPayloadValue(pendingMessage)) {

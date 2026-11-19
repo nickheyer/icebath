@@ -15,8 +15,24 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Inbound message of any platform through auth, commands, the running agent fast path and a claimed agent turn
+// Inbound message of any platform, a user message whose turn the session store refused held until it takes writes again
 func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.MessageEvent) (any, error) {
+	if held := r.holdDuringStoreOutage(ctx, event); held != nil {
+		return *held, nil
+	}
+	reply, err := r.handleMessageTurn(ctx, event)
+	if err != nil {
+		if held := r.holdForStoreOutage(ctx, event, err); held != nil {
+			return *held, nil
+		}
+	}
+	r.settleStoreOutageCopy(event)
+	return reply, err
+}
+
+// Inbound message of any platform through auth, commands, the running agent fast path and a claimed agent turn
+func (r *GatewayRunner) handleMessageTurn(ctx context.Context, event *gateway.MessageEvent) (any, error) {
+	defer settleTurnEndWrites()
 	ctx, admitted, err := r.hmAdmitEvent(ctx, event)
 	if err != nil || admitted == nil {
 		return nil, err

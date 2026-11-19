@@ -21,10 +21,10 @@ func TestSpawnTreeListSurvivesNonDictSnapshot(t *testing.T) {
 	if envelope["error"] != nil {
 		t.Fatalf("envelope %v", envelope)
 	}
-	entries := envelope["result"].(map[string]any)["entries"].([]map[string]any)
+	entries := envelope["result"].(map[string]any)["entries"].([]any)
 	labels := map[any]bool{}
 	for _, entry := range entries {
-		labels[entry["label"]] = true
+		labels[entry.(map[string]any)["label"]] = true
 	}
 	if !labels["ok"] || len(entries) != 2 {
 		t.Fatalf("entries %v", entries)

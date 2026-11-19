@@ -159,8 +159,8 @@ func TestSessionYoloToggleSurvivesABackendRestart(t *testing.T) {
 	session := tuihost.NewSession(map[string]any{"agent": NewSyntheticHeavyAgent("row-a", "test-model"), "session_key": "row-a"})
 	tuihost.SetSessionRecord("sid", session)
 	handleRequest(ctx, map[string]any{"id": "1", "method": "config.set", "params": map[string]any{"session_id": "sid", "key": "yolo"}})
-	if !ensureSessionDBRow(ctx, session) {
-		t.Fatal("row not persisted")
+	if err := ensureSessionDBRow(ctx, session); err != nil {
+		t.Fatal("row not persisted", err)
 	}
 	row, err := db.GetSession(ctx, "row-a")
 	if err != nil || !state.SessionYoloEnabled(objectMap(row)) {

@@ -236,19 +236,19 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 	if err != nil {
 		return false, err
 	}
-	uid, err := encodeText(uidValue)
+	uid, err := encodeText(uidValue, "the bot id")
 	if err != nil {
 		return false, err
 	}
-	source, err := encodeText(pyrepr.Or(tokenData["source"], "bot"))
+	source, err := encodeText(pyrepr.Or(tokenData["source"], "bot"), "the token source")
 	if err != nil {
 		return false, err
 	}
-	token, err := encodeText(dictGetOr(tokenData, "token", ""))
+	token, err := encodeText(dictGetOr(tokenData, "token", ""), "the sign token")
 	if err != nil {
 		return false, err
 	}
-	routeEnv, err := protoText(pyrepr.Or(adapter.routeEnv, dictGetOr(tokenData, "route_env", "")))
+	routeEnv, err := protoText(pyrepr.Or(adapter.routeEnv, dictGetOr(tokenData, "route_env", "")), "the route env")
 	if err != nil {
 		return false, err
 	}

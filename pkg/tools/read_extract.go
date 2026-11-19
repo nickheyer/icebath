@@ -50,12 +50,8 @@ const (
 	nsPkgRel            = "http://schemas.openxmlformats.org/package/2006/relationships"
 )
 
-// ExtractionError reports a supported looking document that cannot be rendered as text
-type ExtractionError struct {
-	Msg string
-	// Unsupported marks a file type no extractor reads
-	Unsupported bool
-}
+// Document whose bytes could not be rendered as text
+type ExtractionError struct{ Msg string }
 
 func (e *ExtractionError) Error() string { return e.Msg }
 
@@ -63,9 +59,19 @@ func extractionErr(format string, args ...any) error {
 	return &ExtractionError{Msg: fmt.Sprintf(format, args...)}
 }
 
-// Refusal of a file type no extractor reads
-func unsupportedDocument(p string) error {
-	return &ExtractionError{Msg: "Unsupported document type: " + pyReprStr(p), Unsupported: true}
+// Leading bytes of an OLE2 compound file, the container of doc, xls and ppt
+var oleMagic = []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+
+// Whether bytes open with the SQLite database header
+func isSQLiteBytes(data []byte) bool { return bytes.HasPrefix(data, []byte("SQLite format 3\x00")) }
+
+// Whether the first kilobyte holds a PDF header, where readers look for it
+func pdfBytes(data []byte) bool { return bytes.Contains(data[:min(len(data), 1024)], []byte("%PDF-")) }
+
+// Whether leading bytes carry the signature of a format the document extractor reads
+func documentSignature(sample []byte) bool {
+	return bytes.HasPrefix(sample, oleMagic) || bytes.HasPrefix(sample, []byte("PK\x03\x04")) ||
+		bytes.HasPrefix(sample, []byte(`{\rtf`)) || isSQLiteBytes(sample) || pdfBytes(sample)
 }
 
 // Final path component suffix with pathlib rules, empty for dotfiles and trailing dots
@@ -126,29 +132,40 @@ var inHouseExtractors = map[string]func(p string) (string, error){
 	".sqlite3": extractSqlite,
 }
 
-// ExtractDocumentText renders a document file on the host as text
+// Renders a document file on the host as text, its content naming the format before its extension
 func ExtractDocumentText(ctx context.Context, env *Env, p string) (string, error) {
-	ext := documentExtension(p)
-	if fn, ok := inHouseExtractors[ext]; ok {
+	if fn, ok := inHouseExtractors[strings.ToLower(pathSuffix(p))]; ok {
 		return fn(p)
 	}
-	if nativeDocumentExtensions[ext] {
-		return extractNativeDocument(ctx, env, p)
+	fi, err := os.Stat(p)
+	if err != nil {
+		return "", &ExtractionError{Msg: err.Error()}
 	}
-	return "", unsupportedDocument(p)
+	if err := checkDocumentSize(fi.Size(), maxNativeDocBytes); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", &ExtractionError{Msg: err.Error()}
+	}
+	if isSQLiteBytes(data) {
+		return extractSqlite(p)
+	}
+	return convertDocument(ctx, env, data, p, func() string { return pdfCoverageNote(ctx, p, "") })
 }
 
-// ExtractDocumentBytes renders a document already fetched across a file backend boundary
+// Renders bytes fetched across a file backend boundary, the content naming the format before the extension
 func ExtractDocumentBytes(ctx context.Context, env *Env, data []byte, p string) (string, error) {
 	if err := checkDocumentSize(int64(len(data)), maxDocumentBytes); err != nil {
 		return "", err
 	}
-	ext := documentExtension(p)
-	if nativeDocumentExtensions[ext] {
-		return extractNativeDocumentBytes(ctx, env, data, p)
+	ext := strings.ToLower(pathSuffix(p))
+	inHouse, ok := inHouseExtractors[ext]
+	if !ok && isSQLiteBytes(data) {
+		inHouse, ok, ext = extractSqlite, true, ".sqlite"
 	}
-	if !extractableExtensions[ext] {
-		return "", unsupportedDocument(p)
+	if !ok {
+		return convertDocument(ctx, env, data, p, func() string { return pdfCoverageNoteFromBytes(ctx, data, p) })
 	}
 	tmp, cleanup, err := tempDocumentCopy(data, ext)
 	if err != nil {
@@ -158,7 +175,27 @@ func ExtractDocumentBytes(ctx context.Context, env *Env, data []byte, p string) 
 	if ext == ".ipynb" {
 		return extractNotebook(tmp, p)
 	}
-	return inHouseExtractors[ext](tmp)
+	return inHouse(tmp)
+}
+
+// Converts document bytes through anydoc, a PDF with pages lacking a text layer going to hosted OCR or the recovery warning
+func convertDocument(ctx context.Context, env *Env, data []byte, p string, pdfNote func() string) (string, error) {
+	text, err := anydoc.ToMarkdown(ctx, data, p)
+	var ce *anydoc.ConvertError
+	switch {
+	case errors.As(err, &ce) && ce.NeedsOCR():
+		return ocrScannedPDF(ctx, env, p, data, ce.Pages), nil
+	case errors.As(err, &ce) && ce.NoTextLayer():
+		return ocrScannedPDF(ctx, env, p, data, nil), nil
+	case errors.Is(err, anydoc.ErrNotDocument):
+		return "", err
+	case errors.As(err, &ce) && ce.Encrypted():
+		return "", &ExtractionError{Msg: "the document is password protected, decrypt it with its password " +
+			"(a PDF through qpdf --password=PASSWORD --decrypt in.pdf out.pdf, an Office file by saving it without a password) and read the decrypted copy"}
+	case err != nil:
+		return "", &ExtractionError{Msg: err.Error()}
+	}
+	return finalizeNativeText(text, pdfBytes(data), pdfNote)
 }
 
 // Raw secret from the env layer and process environment
@@ -187,22 +224,25 @@ func HostedOCRAvailable(env *Env) bool {
 	return enabled
 }
 
-// Needs OCR result naming the scanned pages and how to recover them
-func needsOCRWarning(p string, pages []int, hostedError string) string {
-	pageList := "unknown"
+// Needs OCR result naming the scanned pages, every page when none are named, why OCR did not run and how to recover them
+func needsOCRWarning(p string, pages []int, hostedError, localError string) string {
+	lead := "[NEEDS OCR: no page of this PDF has a text layer — its content is MISSING below. "
 	if len(pages) > 0 {
 		parts := make([]string, len(pages))
 		for i, n := range pages {
 			parts[i] = strconv.Itoa(n)
 		}
-		pageList = strings.Join(parts, ", ")
+		lead = "[NEEDS OCR: pages " + strings.Join(parts, ", ") + " of this PDF are scanned images " +
+			"with no text layer — their content is MISSING below. "
 	}
 	hosted := ""
 	if hostedError != "" {
 		hosted = "Hosted OCR was attempted and failed (" + hostedError + "). "
 	}
-	return "[NEEDS OCR: pages " + pageList + " of this PDF are scanned images " +
-		"with no text layer — their content is MISSING below. " + hosted +
+	if localError != "" {
+		hosted += "Local OCR could not run (" + localError + "). "
+	}
+	return lead + hosted +
 		"If the missing pages matter: render just those pages with " +
 		"`pdftoppm -jpeg -r 150 -f <first> -l <last> " + shQuote(p) + " $TMPDIR/page` " +
 		"and inspect via vision_analyze, or check whether an OCR skill is " +
@@ -210,18 +250,18 @@ func needsOCRWarning(p string, pages []int, hostedError string) string {
 }
 
 // Normalizes converter output and prepends the coverage note for PDFs
-func finalizeNativeText(text, p string, pdfNote func() string) (string, error) {
+func finalizeNativeText(text string, pdf bool, pdfNote func() string) (string, error) {
 	if pyStrip(text) == "" {
 		return "", extractionErr("Document contains no extractable text")
 	}
 	note := ""
-	if strings.ToLower(pathSuffix(p)) == ".pdf" {
+	if pdf {
 		note = pdfNote()
 	}
 	return note + strings.TrimRight(text, "\n") + "\n", nil
 }
 
-// Hosted OCR for a scanned PDF when a route exists, else the recovery warning
+// Text of a PDF whose pages lack a text layer through hosted OCR when configured, then local OCR, else the recovery warning
 func ocrScannedPDF(ctx context.Context, env *Env, p string, data []byte, pages []int) string {
 	enabled, apiKey := hostedOCRConfig(env)
 	hostedError := ""
@@ -232,7 +272,138 @@ func ocrScannedPDF(ctx context.Context, env *Env, p string, data []byte, pages [
 		}
 		hostedError = "hosted PDF parsing failed: " + err.Error()
 	}
-	return needsOCRWarning(p, pages, hostedError)
+	text, err := localPDFOCR(ctx, data, pages)
+	if err == nil {
+		return text
+	}
+	return needsOCRWarning(p, pages, hostedError, err.Error())
+}
+
+// Whether pdftoppm, pdftotext and tesseract are on PATH for local OCR
+func localOCRTools() bool {
+	for _, name := range []string{"pdftoppm", "pdftotext", "tesseract"} {
+		if _, err := exec.LookPath(name); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+const (
+	ocrRenderDPI     = "300"
+	ocrRenderTimeout = 60 * time.Second
+	ocrReadTimeout   = 120 * time.Second
+)
+
+// Every page of a PDF as text, the listed pages or all when none are listed read by tesseract and the rest by pdftotext
+func localPDFOCR(ctx context.Context, data []byte, pages []int) (string, error) {
+	bins := map[string]string{}
+	var missing []string
+	for _, name := range []string{"pdftoppm", "pdftotext", "tesseract"} {
+		if bin, err := exec.LookPath(name); err == nil {
+			bins[name] = bin
+		} else {
+			missing = append(missing, name)
+		}
+	}
+	switch len(missing) {
+	case 0:
+	case 1:
+		return "", fmt.Errorf("%s is not on PATH, install poppler and tesseract", missing[0])
+	default:
+		return "", fmt.Errorf("%s and %s are not on PATH, install poppler and tesseract", strings.Join(missing[:len(missing)-1], ", "), missing[len(missing)-1])
+	}
+	langs, err := tesseractLanguages(ctx, bins["tesseract"])
+	if err != nil {
+		return "", err
+	}
+	dir, err := os.MkdirTemp("", "icebath-ocr-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	pdf := filepath.Join(dir, "document.pdf")
+	if err := os.WriteFile(pdf, data, 0o600); err != nil {
+		return "", err
+	}
+	texts := pdfPageTexts(ctx, pdf)
+	if len(texts) == 0 {
+		return "", errors.New("pdftotext could not list the pages of the PDF")
+	}
+	scanned := make(map[int]bool, len(pages))
+	for _, n := range pages {
+		scanned[n] = true
+	}
+	var read []string
+	var b strings.Builder
+	for i, text := range texts {
+		n := i + 1
+		if len(pages) == 0 || scanned[n] {
+			ocr, err := tesseractPage(ctx, bins, langs, pdf, dir, n)
+			if err != nil {
+				return "", err
+			}
+			text = ocr
+			read = append(read, strconv.Itoa(n))
+		}
+		fmt.Fprintf(&b, "## Page %d\n\n%s\n\n", n, strings.TrimSpace(text))
+	}
+	return "[OCR: pages " + strings.Join(read, ", ") + " of this PDF have no text layer and were read by tesseract, " +
+		"so their text may hold recognition errors]\n" + strings.TrimRight(b.String(), "\n") + "\n", nil
+}
+
+// Languages tesseract reads with, English when installed else every installed language but script detection
+func tesseractLanguages(ctx context.Context, bin string) (string, error) {
+	lctx, cancel := context.WithTimeout(ctx, ocrRenderTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(lctx, bin, "--list-langs").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("tesseract could not list its languages: %s", commandFailure(err, out))
+	}
+	var langs []string
+	for _, line := range strings.Split(decodeUTF8Replace(out), "\n") {
+		lang := strings.TrimSpace(line)
+		if lang == "" || strings.ContainsAny(lang, " :") || lang == "osd" {
+			continue
+		}
+		if lang == "eng" {
+			return "eng", nil
+		}
+		langs = append(langs, lang)
+	}
+	if len(langs) == 0 {
+		return "", errors.New("tesseract has no language data, install a tesseract language pack such as eng")
+	}
+	return strings.Join(langs, "+"), nil
+}
+
+// Text of one PDF page rendered by pdftoppm and read by tesseract
+func tesseractPage(ctx context.Context, bins map[string]string, langs, pdf, dir string, n int) (string, error) {
+	page := strconv.Itoa(n)
+	img := filepath.Join(dir, "page"+page)
+	rctx, cancelRender := context.WithTimeout(ctx, ocrRenderTimeout)
+	defer cancelRender()
+	if out, err := exec.CommandContext(rctx, bins["pdftoppm"], "-r", ocrRenderDPI, "-png", "-f", page, "-l", page, "-singlefile", pdf, img).CombinedOutput(); err != nil {
+		return "", fmt.Errorf("pdftoppm could not render page %d: %s", n, commandFailure(err, out))
+	}
+	tctx, cancelRead := context.WithTimeout(ctx, ocrReadTimeout)
+	defer cancelRead()
+	cmd := exec.CommandContext(tctx, bins["tesseract"], img+".png", "stdout", "-l", langs)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("tesseract could not read page %d: %s", n, commandFailure(err, stderr.Bytes()))
+	}
+	return decodeUTF8Replace(stdout.Bytes()), nil
+}
+
+// Last line a failed command wrote, else its exit status
+func commandFailure(err error, output []byte) string {
+	lines := strings.Split(strings.TrimSpace(decodeUTF8Replace(output)), "\n")
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "" {
+		return last
+	}
+	return err.Error()
 }
 
 // Firecrawl Parse request timeout
@@ -333,49 +504,6 @@ func parseHostedPDF(ctx context.Context, env *Env, data []byte, filename, apiKey
 
 // Python truthiness of a decoded value, empty containers and zero numbers false like bool()
 func pyTruthy(v any) bool { return pyrepr.Truthy(v) }
-
-// Converts a host document through anydoc, sending scanned PDFs to hosted OCR when allowed
-func extractNativeDocument(ctx context.Context, env *Env, p string) (string, error) {
-	fi, err := os.Stat(p)
-	if err != nil {
-		return "", &ExtractionError{Msg: err.Error()}
-	}
-	if err := checkDocumentSize(fi.Size(), maxNativeDocBytes); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return "", &ExtractionError{Msg: err.Error()}
-	}
-	text, err := anydoc.ToMarkdown(ctx, data, p)
-	var ce *anydoc.ConvertError
-	if errors.As(err, &ce) {
-		if ce.NeedsOCR() {
-			return ocrScannedPDF(ctx, env, p, data, ce.Pages), nil
-		}
-		return "", &ExtractionError{Msg: ce.Error()}
-	}
-	if err != nil {
-		return "", &ExtractionError{Msg: err.Error()}
-	}
-	return finalizeNativeText(text, p, func() string { return pdfCoverageNote(ctx, p, "") })
-}
-
-// Converts backend document bytes through anydoc with content detection only
-func extractNativeDocumentBytes(ctx context.Context, env *Env, data []byte, p string) (string, error) {
-	if err := checkDocumentSize(int64(len(data)), maxNativeDocBytes); err != nil {
-		return "", err
-	}
-	text, err := anydoc.ToMarkdownBytes(ctx, data, "")
-	var ce *anydoc.ConvertError
-	if errors.As(err, &ce) {
-		return "", &ExtractionError{Msg: ce.Error()}
-	}
-	if err != nil {
-		return "", &ExtractionError{Msg: err.Error()}
-	}
-	return finalizeNativeText(text, p, func() string { return pdfCoverageNoteFromBytes(ctx, data, p) })
-}
 
 const (
 	pdfEmptyPageChars        = 20

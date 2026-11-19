@@ -27,6 +27,7 @@ type fileOperations interface {
 	readFile(path string, offset, limit int) *ReadResult
 	ReadFileRaw(path string) *ReadResult
 	readFileBytes(path string, maxBytes int) *ReadResult
+	readFileRange(path string, start int64, length int) *ReadResult
 	WriteFile(path, content string, preContent *string) *WriteResult
 	patchReplace(path, oldString, newString string, replaceAll bool) *PatchResult
 	patchV4A(patchContent string) *PatchResult

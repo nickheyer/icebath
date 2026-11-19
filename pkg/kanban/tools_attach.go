@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -21,6 +24,30 @@ import (
 )
 
 const maxAttachURLRedirects = 5
+
+// Longest wait for any phase of one download hop
+const attachHopTimeout = 30 * time.Second
+
+// Plain reason a download hop failed, from the timeout, the name lookup or the connection
+func fetchFailureText(err error) string {
+	var timeout *pyhttpx.TimeoutError
+	if errors.As(err, &timeout) {
+		return fmt.Sprintf("the server sent nothing for %d seconds", int(attachHopTimeout.Seconds()))
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return "the host name " + dns.Name + " does not resolve"
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno.Error()
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		return ue.Err.Error()
+	}
+	return err.Error()
+}
 
 // Client the attachment download sends each hop with, redirects returned to the caller
 var attachHTTPClient = func() *http.Client { return pyhttpx.PlainClient(false) }
@@ -99,13 +126,13 @@ func downloadURLWithCap(ctx context.Context, env *tools.Env, rawURL string, maxB
 func fetchAttachmentHop(ctx context.Context, currentURL string, maxBytes int64) ([]byte, *string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, currentURL, nil)
 	if err != nil {
-		return nil, nil, "", &RuntimeError{pyhttpx.ErrorText(err)}
+		return nil, nil, "", &RuntimeError{fetchFailureText(err)}
 	}
 	req.Header.Set("User-Agent", "icebath-kanban/attach")
 	req.Header.Set("Accept", "*/*")
-	resp, err := pyhttpx.Stream(attachHTTPClient(), req, 30*time.Second)
+	resp, err := pyhttpx.Stream(attachHTTPClient(), req, attachHopTimeout)
 	if err != nil {
-		return nil, nil, "", &RuntimeError{pyhttpx.ErrorText(err)}
+		return nil, nil, "", &RuntimeError{fetchFailureText(err)}
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
@@ -123,7 +150,15 @@ func fetchAttachmentHop(ctx context.Context, currentURL string, maxBytes int64) 
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, nil, "", &RuntimeError{resp.StatusErrorText(currentURL)}
+		status := resp.Status
+		if status == "" {
+			status = fmt.Sprintf("%d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		}
+		answer := "the server answered " + status
+		if resp.StatusCode >= 300 && resp.StatusCode <= 399 {
+			answer += " without a Location header"
+		}
+		return nil, nil, "", &RuntimeError{answer}
 	}
 	var contentType *string
 	if first, _, _ := strings.Cut(strings.Join(resp.Header.Values("Content-Type"), ", "), ";"); pystr.Strip(first) != "" {
@@ -144,7 +179,7 @@ func fetchAttachmentHop(ctx context.Context, currentURL string, maxBytes int64) 
 			break
 		}
 		if err != nil {
-			return nil, nil, "", &RuntimeError{pyhttpx.ErrorText(err)}
+			return nil, nil, "", &RuntimeError{fetchFailureText(err)}
 		}
 	}
 	if data == nil {

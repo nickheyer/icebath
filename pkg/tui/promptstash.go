@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 )
 
@@ -151,7 +152,7 @@ func (a *app) restoreDraft(text string, attached []any) tea.Cmd {
 	if sid := a.store.ui.Sid; !a.gw.canonical() && sid != "" {
 		for _, t := range restored {
 			if t.Kind == "image" && t.Path != "" {
-				cmds = append(cmds, a.events.rpc("image.attach", map[string]any{"path": t.Path, "session_id": sid}, nil))
+				cmds = append(cmds, ask(a.events.rpc, a.sys, tuigateway.ImageAttach, tuigateway.ImageAttachParams{Path: t.Path, SessionID: sid}, done))
 			}
 		}
 	}

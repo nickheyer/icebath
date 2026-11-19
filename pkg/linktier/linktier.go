@@ -1,7 +1,10 @@
 // Package linktier records which tiers of icebath the link files of this binary named
 package linktier
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // Tiers a binary is linked from, the core always present
 const (
@@ -69,4 +72,28 @@ func Missing(display, tier string) string {
 		return line
 	}
 	return display + " is in the " + buildName(tier) + " of icebath, this binary was built without it"
+}
+
+// Tiers this binary links in build order, every tier when no link file named one
+func LinkedTiers() []string {
+	var out []string
+	for _, tier := range []string{Core, Plugins, Extras} {
+		if Linked(tier) {
+			out = append(out, tier)
+		}
+	}
+	return out
+}
+
+// Line naming the build this binary is and the tiers it links, printed by the version output and the doctor
+func BuildLine() string {
+	return "Build: " + ThisBuild() + " (" + strings.Join(LinkedTiers(), ", ") + ")"
+}
+
+// Slash commands outside the core and the tier that carries each
+var SlashTiers = map[string]string{
+	"voice": Extras, "wake": Extras, "pet": Extras, "hatch": Extras, "cron": Extras,
+	"blueprint": Extras, "suggestions": Extras, "kanban": Extras, "browser": Extras,
+	"update": Extras, "arena": Extras,
+	"handoff": Plugins, "platforms": Plugins, "egress": Plugins, "topic": Plugins,
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -63,8 +64,8 @@ func newRPCWorkerPool(max int) *rpcWorkerPool {
 	return p
 }
 
-// Error of a submit after shutdown, the RuntimeError of the executor
-var errPoolShutdown = errors.New("cannot schedule new futures after shutdown")
+// Error of a submit after shutdown, the shared pool shutdown value
+var errPoolShutdown = tools.ErrPoolShutdown
 
 // Queues fn, starting a worker when none idles and the cap allows, onDone running when it ends or is cancelled
 func (p *rpcWorkerPool) Submit(fn func(), onDone func()) error {
@@ -186,28 +187,14 @@ func handleRequest(ctx context.Context, req any) map[string]any {
 	}
 	fn := lookupMethod(method)
 	if fn == nil {
-		return rpcErr(rid, -32601, tuihost.UnknownMethodMessage(method), nil)
+		return rpcErr(rid, -32601, tuigateway.UnknownMethodMessage(method), nil)
 	}
 	if typed := tuigateway.Lookup(tuigateway.KindMethod, method); typed != nil {
 		return handleTyped(ctx, typed, fn, rid, method, params)
 	}
-	contract := tuihost.Methods[method]
-	if contract != nil {
-		validated, problem := tuihost.ValidateParams(contract, params)
-		if problem != "" {
-			return rpcErr(rid, 4000, problem, nil)
-		}
-		params, _ = validated.(map[string]any)
-	}
 	response, outage := callHandler(context.WithValue(ctx, currentRPCMethodKey{}, method), fn, rid, params)
 	if outage != nil {
 		return outage
-	}
-	if contract != nil && response != nil {
-		if result, isDict := response["result"].(map[string]any); isDict {
-			tuihost.CheckParamsAccepted(contract, params)
-			tuihost.CheckResult(contract, result)
-		}
 	}
 	return response
 }
@@ -223,7 +210,7 @@ func handleTyped(ctx context.Context, typed *tuigateway.Entry, fn Handler, rid a
 	}
 	if result, answered := response["result"]; answered && response["error"] == nil {
 		if err := typed.CheckResult(result); err != nil {
-			tuihost.ReportMisfit("result of", method, err)
+			tuigateway.ReportMisfit("result of", method, err)
 		}
 	}
 	return response

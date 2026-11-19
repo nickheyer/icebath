@@ -418,7 +418,7 @@ func restoreEpochSource(ctx context.Context, src, dst string, publish func(prepa
 		return publish(src)
 	}
 	if !floor.IsInt64() {
-		return false, &pyValueError{"OverflowError", "Python int too large to convert to SQLite INTEGER"}
+		return false, &pyValueError{"OverflowError", "the restore epoch of the destination state.db is beyond the 64-bit integer range SQLite holds"}
 	}
 	work, err := os.MkdirTemp(pypath.PathParent(dst), ".restore-epoch-*")
 	if err != nil {

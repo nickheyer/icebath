@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -14,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -237,17 +239,40 @@ func orderLike(template, v any) any {
 	return v
 }
 
-// The platforms.webhook config mapping, empty when unconfigured or unreadable
+// The platforms.webhook config mapping with the WEBHOOK_ENABLED, WEBHOOK_PORT and WEBHOOK_SECRET layer the gateway applies
 func WebhookConfig(ctx context.Context, h string) map[string]any {
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
+	lookup := config.NewSecrets(h).Lookup()
+	tree, err := config.Load(h, lookup)
 	if err != nil {
 		return map[string]any{}
 	}
 	platforms, _ := map[string]any(tree)["platforms"].(map[string]any)
-	if wh, ok := platforms["webhook"].(map[string]any); ok {
-		return wh
+	wh, configured := platforms["webhook"].(map[string]any)
+	raw, _ := lookup("WEBHOOK_ENABLED")
+	enabled, _ := pystr.BoolToken(raw)
+	if !configured && !enabled {
+		return map[string]any{}
 	}
-	return map[string]any{}
+	if !configured {
+		wh = map[string]any{}
+	}
+	if enabled {
+		wh["enabled"] = true
+	}
+	extra, ok := wh["extra"].(map[string]any)
+	if !ok {
+		extra = map[string]any{}
+	}
+	if port, ok := lookup("WEBHOOK_PORT"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(port)); err == nil {
+			extra["port"] = n
+		}
+	}
+	if secret, ok := lookup("WEBHOOK_SECRET"); ok && secret != "" {
+		extra["secret"] = secret
+	}
+	wh["extra"] = extra
+	return wh
 }
 
 // Whether the webhook platform is enabled in the home config

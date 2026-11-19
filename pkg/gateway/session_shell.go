@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Seconds one captured shell command may run
@@ -84,7 +85,11 @@ func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if _, _, dangerous := tools.DetectDangerousCommand(command); dangerous {
 		return nil, runtimeRefusal("dangerous_command")
 	}
-	return forwardOffThread(ctx, func() (map[string]any, error) { return runShellCommand(ctx, command, policy.Cwd) })
+	result, err := forwardOffThread(ctx, func() (tuigateway.ShellExecResult, error) { return runShellCommand(ctx, command, policy.Cwd) })
+	if err != nil {
+		return nil, err
+	}
+	return tuigateway.Plain(result), nil
 }
 
 // Python text mode newline translation of captured output
@@ -102,23 +107,23 @@ func lastRunes(text string, n int) string {
 }
 
 // Runs the command through the platform shell with the scoped profile's scrubbed env, its redacted output tails returned
-func runShellCommand(ctx context.Context, command, cwd string) (map[string]any, error) {
+func runShellCommand(ctx context.Context, command, cwd string) (tuigateway.ShellExecResult, error) {
 	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
-		return nil, runtimeRefusal("cwd_unavailable")
+		return tuigateway.ShellExecResult{}, runtimeRefusal("cwd_unavailable")
 	}
 	env, err := tools.BuildSubprocessEnvOrdered(ctx, tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)), tools.SubprocessEnvOptions{
 		InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if err != nil {
-		return nil, err
+		return tuigateway.ShellExecResult{}, err
 	}
 	cmd, err := pysubprocess.ShellCommand(command)
 	if err != nil {
-		return nil, runtimeRefusal("command_failed")
+		return tuigateway.ShellExecResult{}, runtimeRefusal("command_failed")
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = cwd, env.Environ(), nil, &stdout, &stderr
 	if err := cmd.Start(); err != nil {
-		return nil, runtimeRefusal("command_failed")
+		return tuigateway.ShellExecResult{}, runtimeRefusal("command_failed")
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -130,13 +135,13 @@ func runShellCommand(ctx context.Context, command, cwd string) (map[string]any, 
 	case <-timer.C:
 		_ = cmd.Process.Kill()
 		<-done
-		return nil, runtimeRefusal("command_timeout")
+		return tuigateway.ShellExecResult{}, runtimeRefusal("command_timeout")
 	}
 	code := 0
 	if waitErr != nil {
 		exitErr, ok := waitErr.(*exec.ExitError)
 		if !ok {
-			return nil, runtimeRefusal("command_failed")
+			return tuigateway.ShellExecResult{}, runtimeRefusal("command_failed")
 		}
 		code = pysubprocess.Returncode(exitErr)
 	}
@@ -144,5 +149,5 @@ func runShellCommand(ctx context.Context, command, cwd string) (map[string]any, 
 		text := universalNewlines(pystr.DecodeUTF8Replace(raw))
 		return lastRunes(tools.RedactSensitiveTextWith(nil, text, tools.RedactOptions{Force: true, URLCredentials: true}), n)
 	}
-	return map[string]any{"stdout": redact(stdout.Bytes(), 4000), "stderr": redact(stderr.Bytes(), 2000), "code": code}, nil
+	return tuigateway.ShellExecResult{Stdout: redact(stdout.Bytes(), 4000), Stderr: redact(stderr.Bytes(), 2000), Code: int64(code)}, nil
 }

@@ -67,14 +67,13 @@ func (r *GatewayRunner) prewarmProfileStores(ctx context.Context, homes []profil
 	wg.Wait()
 }
 
-// One registry reference to the launch state.db so the store open in the constructor is a hit, nil on failure
-func pinLaunchStore(ctx context.Context) *state.DB {
+// One registry reference to the launch state.db held through the constructor, a store that will not open stopping the start
+func pinLaunchStore(ctx context.Context) (*state.DB, error) {
 	db, err := state.Acquire(ctx, "")
 	if err != nil {
-		pkgLog().Debug("launch state.db prewarm failed; the store open reports it", "error", err)
-		return nil
+		return nil, state.NewStoreUnavailableError(ctx, state.ResolveDefaultDBPath(ctx), err)
 	}
-	return db
+	return db, nil
 }
 
 // Drops the launch store reference pinLaunchStore took

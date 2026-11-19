@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -94,9 +94,9 @@ func repairTransportCredentials(a *AIAgent) bool {
 
 // Surrogate strip first, then the ASCII only request fallback under a non UTF-8 locale, true when a retry can help
 func recoverUnicodeEncodeError(a *AIAgent, apiError error, messages []*state.Message, apiMessages []any, apiKwargs map[string]any, activeSystemPrompt *string) bool {
-	errStr := pystr.Lower(apiError.Error())
-	isASCIICodec := strings.Contains(errStr, "'ascii'") || strings.Contains(errStr, "ascii")
-	isSurrogateError := strings.Contains(errStr, "surrogate") || (strings.Contains(errStr, "'utf-8'") && !isASCIICodec)
+	var codecErr *pycodecs.UnicodeEncodeError
+	isASCIICodec := errors.As(apiError, &codecErr) && codecErr.Codec == "ascii"
+	isSurrogateError := !isASCIICodec
 	surrogatesFound := sanitizeMessageRowsSurrogates(messages)
 	if apiMessages != nil {
 		surrogatesFound = state.SanitizeMessagesSurrogates(apiMessages) || surrogatesFound
@@ -208,7 +208,7 @@ func recoverBeforeClassification(ctx context.Context, a *AIAgent, s *LoopState, 
 		}
 	}
 
-	if errIsPyClass(apiError, runtimeErrorClasses...) && strings.Contains(pystr.Lower(apiError.Error()), "unexpected event order") &&
+	if errIsPyClass(apiError, runtimeErrorClasses...) && provider.IsStreamEventOrderError(apiError) &&
 		a.provider == "bedrock" && a.apiMode == "anthropic_messages" && !a.bedrockConverseFallbackAttempted {
 		a.bedrockConverseFallbackAttempted = true
 		a.apiMode = "bedrock_converse"

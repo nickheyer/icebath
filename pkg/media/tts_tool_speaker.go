@@ -185,8 +185,19 @@ func writeWaveFile(f io.WriteSeeker, chunks iter.Seq[[]byte], sampleRate int) er
 	return err
 }
 
-// Writes PCM chunks to a temp WAV file and plays it with the system player
-func playViaTempfile(chunks iter.Seq[[]byte], stop Event, sampleRate int) {
+// Where synthesized speech goes, a player for finished audio files and whether PCM may stream to the local device
+type speechOutput struct {
+	play   func(path string) bool
+	device func() bool
+}
+
+// The local speaker, PortAudio when usable and the system players for files
+func localSpeaker() speechOutput {
+	return speechOutput{play: func(path string) bool { return speakerPlayAudioFile(path) }, device: func() bool { return speakerDeviceUsable() }}
+}
+
+// Writes PCM chunks to a temp WAV file and hands it to the player
+func playViaTempfile(chunks iter.Seq[[]byte], stop Event, sampleRate int, play func(path string) bool) {
 	var tmp speakerTempFile
 	tmpPath := ""
 	err := pluginCall(func() error {
@@ -201,7 +212,7 @@ func playViaTempfile(chunks iter.Seq[[]byte], stop Event, sampleRate int) {
 		if err := tmp.Close(); err != nil {
 			return err
 		}
-		speakerPlayAudioFile(tmpPath)
+		play(tmpPath)
 		return nil
 	})
 	if err != nil {
@@ -289,14 +300,15 @@ type syncSentenceJob struct {
 // Overlaps per sentence synthesis with playback for providers without a chunked API
 type syncSentencePipeline struct {
 	ctx        context.Context
+	play       func(path string) bool
 	stop       Event
 	queue      chan *syncSentenceJob
 	lastSynth  chan struct{}
 	playerDone chan struct{}
 }
 
-func newSyncSentencePipeline(ctx context.Context, stop Event, lookahead int) *syncSentencePipeline {
-	p := &syncSentencePipeline{ctx: ctx, stop: stop, queue: make(chan *syncSentenceJob, max(1, lookahead))}
+func newSyncSentencePipeline(ctx context.Context, stop Event, lookahead int, play func(path string) bool) *syncSentencePipeline {
+	p := &syncSentencePipeline{ctx: ctx, play: play, stop: stop, queue: make(chan *syncSentenceJob, max(1, lookahead))}
 	p.playerDone = startThread(p.drain)
 	return p
 }
@@ -367,7 +379,7 @@ func (p *syncSentencePipeline) drain() {
 		if err := pluginCall(func() error {
 			tmpPath = <-job.result
 			if tmpPath != "" && !p.stop.IsSet() && isNonEmptyFile(tmpPath) {
-				speakerPlayAudioFile(tmpPath)
+				p.play(tmpPath)
 			}
 			return nil
 		}); err != nil {
@@ -411,6 +423,7 @@ func (q *sentenceQueue) get() chan pcmItem {
 // Prefetches each sentence of a chunked streamer and plays the sentences in order through one worker
 type streamerPlayback struct {
 	ctx             context.Context
+	play            func(path string) bool
 	streamer        StreamingTTSProvider
 	stop            Event
 	mu              sync.Mutex
@@ -426,7 +439,12 @@ type streamerPlayback struct {
 }
 
 func newStreamerPlayback(ctx context.Context, streamer StreamingTTSProvider, stop Event) *streamerPlayback {
-	p := &streamerPlayback{ctx: ctx, streamer: streamer, stop: stop, useDevice: speakerDeviceUsable(),
+	return newStreamerPlaybackTo(ctx, streamer, stop, localSpeaker())
+}
+
+// Streamer playback into an output, PCM written to PortAudio only when the output allows the device
+func newStreamerPlaybackTo(ctx context.Context, streamer StreamingTTSProvider, stop Event, out speechOutput) *streamerPlayback {
+	p := &streamerPlayback{ctx: ctx, play: out.play, streamer: streamer, stop: stop, useDevice: out.device(),
 		audioQueue: &sentenceQueue{wake: make(chan struct{}, 1)}, prefetchSem: make(chan struct{}, speakerPrefetchLimit)}
 	p.workerDone = startThread(p.playbackWorker)
 	return p
@@ -550,7 +568,7 @@ func (*queueFullError) PyTypeName() string { return "Full" }
 
 func (p *streamerPlayback) playSentenceViaTempfile(q chan pcmItem) {
 	chunks := drainChunks(q)
-	playViaTempfile(slices.Values(chunks), p.stop, p.streamer.SampleRate())
+	playViaTempfile(slices.Values(chunks), p.stop, p.streamer.SampleRate(), p.play)
 }
 
 // Feeds queued sentences to play in order until the end entry, skipping them once stopped
@@ -615,7 +633,7 @@ func (p *streamerPlayback) playSentenceViaStream(q chan pcmItem) {
 		}
 	}
 	if !p.ensureOutputStream() {
-		playViaTempfile(slices.Values(slices.Collect(chunks)), p.stop, p.streamer.SampleRate())
+		playViaTempfile(slices.Values(slices.Collect(chunks)), p.stop, p.streamer.SampleRate(), p.play)
 		return
 	}
 	for aligned := range alignInt16Chunks(chunks, p.stop, false) {
@@ -658,6 +676,16 @@ func (p *streamerPlayback) finish() {
 
 // Cuts queued text deltas into sentences and speaks each one as soon as it completes
 func StreamTTSToSpeaker(ctx context.Context, textQueue TextQueue, stopEvent, ttsDoneEvent Event, displayCallback func(string), provider string) {
+	streamTTS(ctx, textQueue, stopEvent, ttsDoneEvent, displayCallback, provider, localSpeaker())
+}
+
+// Cuts queued text deltas into sentences and hands each sentence's audio file to deliver in order, the file removed after
+func StreamTTSToFiles(ctx context.Context, textQueue TextQueue, stopEvent, ttsDoneEvent Event, provider string, deliver func(path string) bool) {
+	streamTTS(ctx, textQueue, stopEvent, ttsDoneEvent, nil, provider, speechOutput{play: deliver, device: func() bool { return false }})
+}
+
+// Sentence pipeline of queued text deltas into an output, per sentence files or chunked PCM
+func streamTTS(ctx context.Context, textQueue TextQueue, stopEvent, ttsDoneEvent Event, displayCallback func(string), provider string, out speechOutput) {
 	ttsDoneEvent.Clear()
 	var syncPipeline *syncSentencePipeline
 	var playback *streamerPlayback
@@ -681,7 +709,7 @@ func StreamTTSToSpeaker(ctx context.Context, textQueue TextQueue, stopEvent, tts
 		}
 		streamMaxLen := 0
 		if streamer == nil {
-			syncPipeline = newSyncSentencePipeline(ctx, stopEvent, 2)
+			syncPipeline = newSyncSentencePipeline(ctx, stopEvent, 2, out.play)
 		} else {
 			_ = pluginCall(func() error {
 				name := provider
@@ -691,7 +719,7 @@ func StreamTTSToSpeaker(ctx context.Context, textQueue TextQueue, stopEvent, tts
 				streamMaxLen = resolveMaxTextLength(name, ttsConfig)
 				return nil
 			})
-			playback = newStreamerPlayback(ctx, streamer, stopEvent)
+			playback = newStreamerPlaybackTo(ctx, streamer, stopEvent, out)
 		}
 		chunker := SentenceChunkerFromConfig(ttsConfig)
 		var spokenSentences []string

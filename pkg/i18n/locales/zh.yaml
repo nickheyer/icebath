@@ -161,7 +161,6 @@ gateway:
     not_enough: "对话内容不足，无法压缩（至少需要 4 条消息）。"
     no_provider: "未配置提供方 — 无法压缩。"
     nothing_to_do: "暂无可压缩内容（对话记录仍全部为受保护上下文）。"
-    aggressive_unsupported: "不支持 --aggressive；请使用 '/compress here [N]' 只保留最近的对话，或使用 /undo 删除回合。"
     focus_line: "聚焦：\"{topic}\""
     summary_failed: "⚠️ 摘要生成失败（{error}）。{count} 条历史消息已被移除并替换为占位符；之前的上下文已无法恢复。建议检查 auxiliary.compression 模型配置。"
     aborted: "⚠️ 压缩已中止 ({error})。未删除任何消息 — 对话保持不变。运行 /compress 重试，运行 /reset 开始新会话，或检查你的 auxiliary.compression 模型配置。"
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ AI 模型服务持续失败。使用 /retry 重试，或用 /model 切换模型。详情见网关日志（`icebath logs`）。"
     session_storage_unavailable_disk: "⚠️ 会话存储暂时不可用，为保护你的对话历史，本回合已停止。请检查可用磁盘空间，然后重新发送消息。"
     session_storage_unavailable: "⚠️ 会话存储暂时不可用，为保护你的对话历史，本回合已停止。你的消息应已保存——请稍后重新发送。"
+    session_storage_held: "⚠️ 会话存储当前不可用（{cause}），因此你的消息已暂缓处理。消息已保留，存储恢复正常后会在此回复；无需重新发送。"
     generic_failed: "⚠️ 出了点问题，我无法完成这条回复。使用 /retry 重试，或用 /new 开始新对话。技术细节见网关日志（`icebath logs`）。"
     interrupted_before_start: "⚠️ 你的消息在开始处理前被中断（可能是最近的 /stop 所致）。请重新发送。"
     processing_incomplete: "处理未完成"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ 检测到会话数据库损坏。消息可能无法持久化。恢复方案：\n1. 运行 `icebath {profile_arg}doctor --fix`\n2. 停止网关，然后执行恢复：\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   （若报告可恢复）icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   ——恢复会先对损坏文件做快照；切勿对正在使用的 state.db 运行 `sqlite3 ... \\\".recover\\\"`，有漏洞的 sqlite3 CLI 可能使其进一步损坏\n3. 从 {backups_dir}/ 中的备份恢复\n运行 `icebath {profile_arg}doctor` 获取脱敏诊断信息。"
     db_fts_corrupt: "⚠️ 会话数据库报告了仅限于搜索索引（FTS5）的损坏错误；消息表未受损。修复前消息可能无法持久化：请运行 `icebath {profile_arg}doctor --fix`，然后重启网关。除非 `icebath {profile_arg}doctor` 确认存在损坏，否则不要运行恢复工具或还原备份。"
     db_then_restart: "{action} 然后执行 `icebath {profile_arg}gateway restart`。"
-    db_unavailable: "⚠️ 会话数据库不可用——消息可能无法保存，/resume 将为空。原因：{cause}。{action}"
+    db_unavailable: "⚠️ 会话数据库不可用 — 新消息将暂缓处理，待其恢复正常后再回复。原因：{cause}。{action}"
   cron_store:
 
     unwritable: "⚠️ Cron 存储 {store} 自 {since} 起无法写入（{error}）。在恢复可写之前，计划任务将被跳过。修复方法：{fix}。"
@@ -1557,6 +1557,25 @@ platform:
       other_button: "其他 / 输入答案"
       header: "问题"
       question: "❓ {question}"
+      submit_button: "发送"
+      resolved: "✅ {user}：{choice}"
+      awaiting: "✏️ 正在等待 {user} 输入回答…"
+      pick_one: "请至少选择一个选项，然后点击发送。"
+    approval:
+
+      resolved_once: "✅ {user} 允许一次"
+      resolved_session: "✅ {user} 在本会话中允许"
+      resolved_always: "✅ {user} 始终允许"
+      resolved_deny: "❌ {user} 已拒绝"
+    confirm:
+
+      default_title: "确认"
+      approve_once: "批准一次"
+      always_approve: "始终批准"
+      cancel: "取消"
+      decided_once: "✅ {user} 已批准一次"
+      decided_always: "🔒 {user} 已始终批准"
+      decided_cancel: "❌ {user} 已取消"
     typing:
 
       thinking: "Icebath 正在思考…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "从当前会话分支（在 Discord/Telegram/Slack/Matrix 上新建话题；--here 留在当前位置）"
+    core_description: "从当前会话分支（--here 留在当前位置）"
   worktree:
 
     description: "显示、列出、创建或清理隔离的 git worktree"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "平台 '{platform}' 未在网关中配置/启用。"
       no_home_channel: "{platform} 未配置主频道。"
       set_home_hint: "请先在目标聊天中用 /sethome 设置一个。"
+      enable_platform_hint: "请用 icebath gateway setup 设置，然后用 icebath gateway restart 重新启动网关。"
       session_row_failed: "无法在 state.db 中确保会话记录：{error}"
       picked_up: "网关已接管；正在转移..."
       complete: "↻ 移交完成。会话现已在 {platform} 上激活。"

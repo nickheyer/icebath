@@ -8,9 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/nickheyer/icebath/pkg/internal/treekill"
 )
 
 // Windows reports no hard link count through FileInfo
@@ -46,16 +47,30 @@ func currentUID() string {
 	return "?"
 }
 
-// Starts the child in a new process group without a console window
+// Marks the child as the leader of a new process tree without a console window, startCommand gives it its own job
 func startNewSession(cmd *exec.Cmd) {
 	hideConsoleWindow(cmd)
 	cmd.SysProcAttr.CreationFlags |= windows.CREATE_NEW_PROCESS_GROUP
 }
 
-// Windows has no process groups to query
-func processGroupOf(pid int) (int, error) {
-	return pid, nil
+// Starts cmd, a new tree leader inside a fresh tracked job it enters before running a single instruction
+func startCommand(cmd *exec.Cmd) error {
+	if cmd.SysProcAttr == nil || cmd.SysProcAttr.CreationFlags&windows.CREATE_NEW_PROCESS_GROUP == 0 {
+		return cmd.Start()
+	}
+	job, err := treekill.NewJob(0)
+	if err != nil {
+		return err
+	}
+	if err := treekill.StartInJob(cmd, job); err != nil {
+		return errors.Join(err, job.Close())
+	}
+	treekill.Track(cmd.Process.Pid, job)
+	return nil
 }
+
+// Leader of the tracked tree holding pid
+func processGroupOf(pid int) (int, error) { return treekill.LeaderOf(pid) }
 
 // Creation time of a process in centiseconds since the epoch
 func processStartTime(pid int) (int64, bool) {
@@ -74,16 +89,17 @@ func processStartTime(pid int) (int64, bool) {
 // Start time fingerprint of a live process
 func ProcessStartTime(pid int) (int64, bool) { return processStartTime(pid) }
 
-// Terminates a pid through taskkill with the start time identity guard
-func terminatePid(pid int, force bool, expectedStart string) error {
-	if force {
-		if expectedStart == "" {
-			return fmt.Errorf("refusing to force-kill PID %d without a process start-time guard", pid)
-		}
-		current, ok := processStartTime(pid)
-		if !ok {
-			return fmt.Errorf("refusing to force-kill PID %d; process start time is unavailable", pid)
-		}
+// Ends the tree pid leads, its whole job when it is tracked, else every descendant once the start time still matches
+func terminateTree(pid int, expectedStart string) error {
+	err := treekill.TerminateTree(pid, killedExitCode)
+	if !errors.Is(err, treekill.ErrProcessGone) {
+		return err
+	}
+	current, ok := processStartTime(pid)
+	if !ok {
+		return errNoSuchProcess
+	}
+	if expectedStart != "" {
 		expected, err := strconv.ParseInt(expectedStart, 10, 64)
 		if err != nil {
 			return fmt.Errorf("refusing to force-kill PID %d; malformed start time", pid)
@@ -92,42 +108,24 @@ func terminatePid(pid int, force bool, expectedStart string) error {
 			return fmt.Errorf("refusing to force-kill PID %d; process identity changed", pid)
 		}
 	}
-	args := []string{"/PID", strconv.Itoa(pid), "/T"}
-	if force {
-		args = append(args, "/F")
-	}
-	cmd := exec.Command("taskkill", args...)
-	hideConsoleWindow(cmd)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			details := strings.TrimSpace(string(out))
-			if details == "" {
-				details = fmt.Sprintf("taskkill failed for PID %d", pid)
-			}
-			return errors.New(details)
-		}
-		return err
+	if !treekill.KillProcessTree(pid, 0) {
+		return fmt.Errorf("could not end the process tree of PID %d", pid)
 	}
 	return nil
 }
 
-// Identity checked forced tree kill, falling back to a plain kill
+// Ends the command's whole tree, its process alone when the tree cannot be ended, then reaps it
 func killLocalProcessTree(p *ExecProcess) error {
-	start, ok := processStartTime(p.Pid())
-	expected := ""
-	if ok {
-		expected = strconv.FormatInt(start, 10)
-	}
-	if err := terminatePid(p.Pid(), true, expected); err != nil {
+	if err := terminateTree(p.Pid(), p.pgidStart); err != nil && !errors.Is(err, errNoSuchProcess) {
 		p.Kill()
 	}
 	p.Wait(2)
 	return nil
 }
 
-// Windows tree kills are already forced
+// Ends the command's whole tree with no wait for a host that exits next
 func forceKillLocalProcessTree(p *ExecProcess) {
-	killLocalProcessTree(p)
+	if err := terminateTree(p.Pid(), p.pgidStart); err != nil && !errors.Is(err, errNoSuchProcess) {
+		p.Kill()
+	}
 }

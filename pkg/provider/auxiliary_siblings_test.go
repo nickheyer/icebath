@@ -93,7 +93,7 @@ func TestAuxErrorShapesReadStatusAndInvalidResponse(t *testing.T) {
 	if auxExcHTTPStatus(errors.New("x")) != 0 {
 		t.Fatal("plain error carries no status")
 	}
-	invalid := &AuxRuntimeError{Message: "Auxiliary title: LLM returned invalid response (no choices[0].message)"}
+	invalid := &AuxRuntimeError{Message: "Auxiliary title: LLM returned invalid response (no choices[0].message)", Fault: AuxReplyMalformed}
 	if !auxIsInvalidAuxResponseError(invalid) || auxIsInvalidAuxResponseError(errors.New(invalid.Message)) {
 		t.Fatal("invalid response detection")
 	}

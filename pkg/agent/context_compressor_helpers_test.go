@@ -218,11 +218,11 @@ func TestSummaryRefusalAndFailureClassification(t *testing.T) {
 	if isSummaryRefusal("I cannot open the file, so the checkpoint below is partial") != true {
 		t.Fatal("checkpoint refusal not detected")
 	}
-	k := classifySummaryFailure(&summaryRuntimeError{"Summary LLM returned empty content"})
+	k := classifySummaryFailure(&summaryRuntimeError{msg: "Summary LLM returned empty content", reply: summaryReplyEmpty})
 	if !k.EmptyContent || k.FallbackReason() != "returned empty content" {
 		t.Fatalf("empty content kind %+v", k)
 	}
-	if k := classifySummaryFailure(&summaryRuntimeError{"summary truncated: finish_reason=length"}); !k.Truncated {
+	if k := classifySummaryFailure(&summaryRuntimeError{msg: "summary truncated: finish_reason=length", reply: summaryReplyTruncated}); !k.Truncated {
 		t.Fatalf("truncated kind %+v", k)
 	}
 	if (summaryFailureKind{}).FallbackReason() != "failed" {

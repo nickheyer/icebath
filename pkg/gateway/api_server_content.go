@@ -1,12 +1,24 @@
 package gateway
 
 import (
+	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"net/url"
+	"path/filepath"
 	"strings"
+	"time"
+	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -18,6 +30,8 @@ const (
 	apiMaxContentListSize = 1_000
 	// Messages a Responses request keeps when it asks for automatic truncation
 	APIResponsesAutoTruncationHistoryLimit = 100
+	// Bytes a file input fetched by file_url may carry, the document reader's ceiling
+	apiMaxFileURLBytes = 50 * 1024 * 1024
 )
 
 var (
@@ -126,8 +140,154 @@ func apiNormalizeImagePart(part *pyjson.Object) (*pyjson.Object, error) {
 	return pyjson.ObjectOf("type", "image_url", "image_url", imageURL), nil
 }
 
+// Coded ValueError of a malformed file part
+func apiFileInputError(code, msg string) error {
+	return &PyError{Kind: "ValueError", Msg: code + ":" + msg}
+}
+
+// Bytes and media type of a file_data value, a data: URL or bare base64
+func apiDecodeFileData(raw string) ([]byte, string, error) {
+	text := strings.TrimSpace(raw)
+	mediaType := ""
+	if strings.HasPrefix(strings.ToLower(text), "data:") {
+		header, payload, found := strings.Cut(text[len("data:"):], ",")
+		if !found {
+			return nil, "", apiFileInputError("invalid_file_data", "file_data data: URLs need a comma before the payload.")
+		}
+		params := strings.Split(header, ";")
+		mediaType = strings.ToLower(strings.TrimSpace(params[0]))
+		isBase64 := false
+		for _, p := range params[1:] {
+			if strings.EqualFold(strings.TrimSpace(p), "base64") {
+				isBase64 = true
+			}
+		}
+		if !isBase64 {
+			decoded, err := url.PathUnescape(payload)
+			if err != nil {
+				return nil, "", apiFileInputError("invalid_file_data", "file_data is a data: URL whose payload does not percent-decode.")
+			}
+			return []byte(decoded), mediaType, nil
+		}
+		text = payload
+	}
+	compact := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+			return -1
+		}
+		return r
+	}, text)
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if data, err := enc.DecodeString(compact); err == nil {
+			return data, mediaType, nil
+		}
+	}
+	return nil, "", apiFileInputError("invalid_file_data", "file_data must be a data: URL or base64 text.")
+}
+
+// Bytes and media type of a file_url, fetched through the SSRF guarded client within the size ceiling
+func apiFetchFileURL(ctx context.Context, raw string) ([]byte, string, error) {
+	lowered := strings.ToLower(strings.TrimSpace(raw))
+	if !strings.HasPrefix(lowered, "http://") && !strings.HasPrefix(lowered, "https://") {
+		return nil, "", apiFileInputError("invalid_file_url", "file_url must be an http(s) URL.")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(raw), nil)
+	if err != nil {
+		return nil, "", apiFileInputError("invalid_file_url", "file_url is not a valid URL: "+err.Error())
+	}
+	resp, err := tools.NewSSRFSafeClient(nil, 60*time.Second, true).Do(req)
+	if err != nil {
+		return nil, "", apiFileInputError("file_url_unreachable", "file_url could not be fetched: "+err.Error())
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", apiFileInputError("file_url_unreachable", fmt.Sprintf("file_url answered HTTP %d.", resp.StatusCode))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, apiMaxFileURLBytes+1))
+	if err != nil {
+		return nil, "", apiFileInputError("file_url_unreachable", "file_url stopped mid download: "+err.Error())
+	}
+	if len(data) > apiMaxFileURLBytes {
+		return nil, "", apiFileInputError("file_too_large", fmt.Sprintf("file_url is larger than %d MB.", apiMaxFileURLBytes>>20))
+	}
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return data, strings.ToLower(mediaType), nil
+}
+
+// Text of an uploaded file, UTF-8 text taken as is and every other document through the document reader
+func apiFileText(ctx context.Context, data []byte, name, mediaType string) (string, error) {
+	if !tools.IsExtractableDocument(name) && utf8.Valid(data) && (strings.HasPrefix(mediaType, "text/") || mediaType == "application/json" ||
+		strings.HasPrefix(http.DetectContentType(data), "text/")) {
+		return string(data), nil
+	}
+	return tools.ExtractDocumentBytes(ctx, nil, data, name)
+}
+
+// One file part read into a text part naming where its bytes are kept, an image file becoming a vision part
+func apiNormalizeFilePart(ctx context.Context, part *pyjson.Object) (*pyjson.Object, error) {
+	fields := part
+	if inner, ok := part.GetOr("file", nil).(*pyjson.Object); ok {
+		fields = inner
+	}
+	field := func(key string) string {
+		if v, ok := fields.GetOr(key, nil).(string); ok {
+			return strings.TrimSpace(v)
+		}
+		return ""
+	}
+	var data []byte
+	var mediaType string
+	var err error
+	switch {
+	case field("file_data") != "":
+		data, mediaType, err = apiDecodeFileData(field("file_data"))
+	case field("file_url") != "":
+		data, mediaType, err = apiFetchFileURL(ctx, field("file_url"))
+	case field("file_id") != "":
+		return nil, apiFileInputError("invalid_content_part", "file_id names a Files API upload, and this server keeps no Files API store. "+
+			"Send the file inline as file_data (a data: URL or base64) or as file_url.")
+	default:
+		return nil, apiFileInputError("invalid_content_part", "File parts need file_data (a data: URL or base64) or file_url.")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, apiFileInputError("invalid_file_data", "The file is empty.")
+	}
+	if mediaType == "" || mediaType == "application/octet-stream" {
+		mediaType, _, _ = mime.ParseMediaType(http.DetectContentType(data))
+	}
+	name := filepath.Base(field("filename"))
+	if name == "." || name == "/" || name == "" {
+		name = "document"
+		if exts, _ := mime.ExtensionsByType(mediaType); len(exts) > 0 {
+			name += exts[0]
+		}
+	}
+	if strings.HasPrefix(mediaType, "image/") {
+		return pyjson.ObjectOf("type", "image_url", "image_url", pyjson.ObjectOf("url",
+			"data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))), nil
+	}
+	saved, err := mediacache.CacheDocumentFromBytes(ctx, home.Dir(ctx), data, name)
+	if err != nil {
+		return nil, err
+	}
+	text, readErr := apiFileText(ctx, data, name, mediaType)
+	if readErr != nil {
+		return pyjson.ObjectOf("type", "text", "text", fmt.Sprintf("[The user sent a document: '%s'. It is saved at: %s. "+
+			"Its text could not be read here (%s); read the saved file with read_file before answering.]", name, saved, readErr)), nil
+	}
+	note := fmt.Sprintf("[The user sent a document: '%s'. It is saved at: %s. Its text follows.]\n", name, saved)
+	body := apiCapText(text)
+	if runeLen(body) < runeLen(text) {
+		body += "\n[The text continues past this point; read the saved file with read_file for the rest.]"
+	}
+	return pyjson.ObjectOf("type", "text", "text", note+body), nil
+}
+
 // Validated multimodal content, a plain string when text only, else canonical text and image_url parts
-func apiNormalizeMultimodalContent(content any) (any, error) {
+func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error) {
 	switch v := content.(type) {
 	case nil:
 		return "", nil
@@ -159,11 +319,14 @@ func apiNormalizeMultimodalContent(content any) (any, error) {
 				}
 				normalized = append(normalized, image)
 			case apiFilePartTypes[partType]:
-				return nil, &PyError{Kind: "ValueError", Msg: "unsupported_content_type:Inline image inputs are supported, " +
-					"but uploaded files and document inputs are not supported on this endpoint."}
+				file, err := apiNormalizeFilePart(ctx, part)
+				if err != nil {
+					return nil, err
+				}
+				normalized = append(normalized, file)
 			default:
 				return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("unsupported_content_type:Unsupported content part type %s. "+
-					"Only text and image_url/input_image parts are supported.", pyrepr.Repr(part.GetOr("type", nil)))}
+					"Content parts are text/input_text, image_url/input_image and file/input_file.", pyrepr.Repr(part.GetOr("type", nil)))}
 			}
 		}
 		if len(normalized) == 0 {
@@ -194,7 +357,7 @@ func apiNormalizeMultimodalContent(content any) (any, error) {
 	return apiNormalizeChatContent(content), nil
 }
 
-// Whether content carries any text or image attachment, empty turns being rejected
+// Whether content carries any text, image or file attachment, empty turns being rejected
 func apiContentHasVisiblePayload(content any) bool {
 	switch v := content.(type) {
 	case string:
@@ -207,7 +370,7 @@ func apiContentHasVisiblePayload(content any) bool {
 			}
 			partType := apiPartType(part)
 			text := part.GetOr("text", nil)
-			if apiImagePartTypes[partType] || (apiTextPartTypes[partType] && pyrepr.Truthy(text) && pystr.Strip(pyrepr.Str(text)) != "") {
+			if apiImagePartTypes[partType] || apiFilePartTypes[partType] || (apiTextPartTypes[partType] && pyrepr.Truthy(text) && pystr.Strip(pyrepr.Str(text)) != "") {
 				return true
 			}
 		}

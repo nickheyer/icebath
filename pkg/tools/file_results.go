@@ -4,20 +4,22 @@ import "github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 // ReadResult is one file read with the key order and omission rules the model reads
 type ReadResult struct {
-	Content        string   `json:"content"`
-	TotalLines     int      `json:"total_lines"`
-	FileSize       int64    `json:"file_size"`
-	Truncated      bool     `json:"truncated"`
-	TruncatedLines *bool    `json:"truncated_lines,omitempty"`
-	Hint           string   `json:"hint,omitempty"`
-	IsBinary       bool     `json:"is_binary"`
-	IsImage        bool     `json:"is_image"`
-	Base64Content  string   `json:"base64_content,omitempty"`
-	MimeType       string   `json:"mime_type,omitempty"`
-	Dimensions     string   `json:"dimensions,omitempty"`
-	Error          string   `json:"error,omitempty"`
-	NotFound       bool     `json:"not_found"`
-	SimilarFiles   []string `json:"similar_files,omitempty"`
+	Content        string `json:"content"`
+	TotalLines     int    `json:"total_lines"`
+	FileSize       int64  `json:"file_size"`
+	Truncated      bool   `json:"truncated"`
+	TruncatedLines *bool  `json:"truncated_lines,omitempty"`
+	Hint           string `json:"hint,omitempty"`
+	IsBinary       bool   `json:"is_binary"`
+	IsImage        bool   `json:"is_image"`
+	Base64Content  string `json:"base64_content,omitempty"`
+	MimeType       string `json:"mime_type,omitempty"`
+	Dimensions     string `json:"dimensions,omitempty"`
+	Error          string `json:"error,omitempty"`
+	NotFound       bool   `json:"not_found"`
+	// Leading bytes of a binary file carry a document signature, read through the document extractor
+	DocumentSignature bool     `json:"-"`
+	SimilarFiles      []string `json:"similar_files,omitempty"`
 	// Sha256 of the exact on disk bytes a raw read decoded, nil when unknown
 	ContentSha256 *string `json:"-"`
 }

@@ -174,6 +174,7 @@ type GatewayChatView struct {
 	mu sync.Mutex
 
 	usageFile       string
+	attachments     []any
 	client          gatewayChatPeer
 	sessionID       string
 	generation      any
@@ -727,6 +728,9 @@ func (v *GatewayChatView) submit(ctx context.Context, text string) (map[string]a
 	v.mutations.Retire(v.sessionID, nil)
 	sid, gaps := v.sessionID, v.gaps
 	params := map[string]any{"session_id": v.sessionID, "input_id": uuidHex(), "text": text}
+	if len(v.attachments) > 0 {
+		params["attachments"], v.attachments = v.attachments, nil
+	}
 	if v.finite {
 		params["finite"] = true
 		if v.unattended {
@@ -898,7 +902,7 @@ func (v *GatewayChatView) Run(ctx context.Context, query string) (int, error) {
 		v.await(func() { <-rendered })
 	}()
 	var receipt map[string]any
-	if query != "" {
+	if query != "" || len(v.attachments) > 0 {
 		var err error
 		if receipt, err = v.submit(ctx, query); err != nil {
 			return 0, err

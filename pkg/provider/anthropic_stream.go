@@ -81,15 +81,21 @@ func (e *anthToolJSONError) Error() string {
 	return fmt.Sprintf("expected value at line 1 column 1: tool_use %q input is not valid JSON (%s)", e.Name, e.Detail)
 }
 
-// Event that arrived before message_start, the order the SDK refuses to accumulate
-type anthEventOrderError struct{ Type string }
+// Event that arrived before message_start, the order the stream accumulator refuses
+type StreamEventOrderError struct{ Type string }
 
-func (e *anthEventOrderError) Error() string {
+func (e *StreamEventOrderError) Error() string {
 	return fmt.Sprintf("Unexpected event order, got %s before \"message_start\"", e.Type)
 }
 
 // Python exception class the SDK raises for an out of order stream event
-func (e *anthEventOrderError) PyTypeName() string { return "RuntimeError" }
+func (e *StreamEventOrderError) PyTypeName() string { return "RuntimeError" }
+
+// Whether a stream failed because an event arrived before message_start
+func IsStreamEventOrderError(err error) bool {
+	var e *StreamEventOrderError
+	return errors.As(err, &e)
+}
 
 // Rebuilds an Anthropic Message from stream events
 type anthAccumulator struct {
@@ -322,7 +328,7 @@ func (s *anthStreamState) emit(ev StreamEvent) error {
 func (s *anthStreamState) handleEvent(ev *anthEvent) (bool, error) {
 	s.sawEvent = true
 	if !s.acc.started && ev.Type != "message_start" && ev.Type != "error" {
-		return true, &anthEventOrderError{Type: ev.Type}
+		return true, &StreamEventOrderError{Type: ev.Type}
 	}
 	switch ev.Type {
 	case "error":

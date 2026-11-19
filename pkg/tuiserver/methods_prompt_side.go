@@ -92,7 +92,10 @@ func promptBackground(ctx context.Context, rid any, params map[string]any) map[s
 		if parentAgent == nil {
 			return "", errors.New("the session has no agent to run the background prompt with")
 		}
-		opts := backgroundAgentKwargs(ctx, parentAgent, taskID)
+		opts, err := backgroundAgentKwargs(ctx, parentAgent, taskID)
+		if err != nil {
+			return "", err
+		}
 		store, release, err := sideAgentSessionDB(ctx, opts.SessionDB)
 		if err != nil {
 			return "", err

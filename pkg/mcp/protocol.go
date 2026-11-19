@@ -328,6 +328,7 @@ const (
 	methodSamplingCreateMessage = "sampling/createMessage"
 	methodElicitationCreate     = "elicitation/create"
 	methodRootsList             = "roots/list"
+	methodElicitationComplete   = "notifications/elicitation/complete"
 )
 
 // MCP logging levels in RFC 5424 order mapped onto slog levels

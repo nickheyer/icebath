@@ -1070,6 +1070,9 @@ func ensure(ctx context.Context, name string, opts EnsureOptions) (*Runner, erro
 		if op != nil {
 			op.Close()
 		}
+		if installSyncVenv == nil {
+			return nil, managerAbsent()
+		}
 		if err := installSyncVenv(ctx, SyncVenvOptions{Explicit: opts.Explicit}); err != nil {
 			return nil, err
 		}

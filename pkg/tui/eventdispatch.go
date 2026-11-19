@@ -150,9 +150,17 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.statusUpdate(update)
 		}
 	case "notification.show":
-		h.showGatewayNotice(p)
+		if show, ok := eventPayload(h, tuigateway.NotificationShowEvent, p); ok {
+			h.showGatewayNotice(show)
+		}
 	case "notification.clear":
-		h.turn.clearNotice(paramStr(p["key"]))
+		if clear, ok := eventPayload(h, tuigateway.NotificationClearEvent, p); ok {
+			h.turn.clearNotice(clear.Key)
+		}
+	case "notice":
+		if note, ok := eventPayload(h, tuigateway.NoticeEvent, p); ok && note.Message != "" {
+			h.app.sys(note.Message)
+		}
 	case "gateway.stderr":
 		if stderr, ok := ev.Local.(gatewayStderr); ok && stderrLooksLikeProblem(stderr.Line) {
 			h.turn.pushActivity(stderrProblemActivity(stderr.Line), "warn", "")
@@ -162,8 +170,10 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.setStatus(backendReconnecting(redial.Attempt, &redial.DelayMs))
 		}
 	case "browser.progress":
-		if message := strings.TrimFunc(stringOr(p["message"], ""), isJSSpace); message != "" {
-			h.app.sys(message)
+		if progress, ok := eventPayload(h, tuigateway.BrowserProgressEvent, p); ok {
+			if message := strings.TrimFunc(progress.Message, isJSSpace); message != "" {
+				h.app.sys(message)
+			}
 		}
 	case "voice.transcript":
 		if transcript, ok := eventPayload(h, tuigateway.VoiceTranscriptEvent, p); ok {
@@ -172,6 +182,16 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case "voice.interrupted":
 		h.setStatus(tr("gatewayMsg.status.voiceInterrupted"))
 		h.turn.restoreStatusAfter(statusNoteHold)
+		if h.gw.canonical() {
+			speech.latch()
+			if h.store.ui.Busy {
+				h.queue(h.app.interruptTurn())
+			}
+		}
+	case tuigateway.VoiceSpeechEvent.Name():
+		if spoken, ok := eventPayload(h, tuigateway.VoiceSpeechEvent, p); ok {
+			speech.handle(h.gw, spoken)
+		}
 	case "session.resume_progress":
 		h.resumeProgress(sid, p)
 	case "session.reclaimed":
@@ -285,69 +305,13 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		if summary, ok := eventPayload(h, tuigateway.ReviewSummaryEvent, p); ok && strings.TrimFunc(summary.Text, isJSSpace) != "" {
 			h.app.sys(strings.TrimFunc(summary.Text, isJSSpace))
 		}
-	case "subagent.spawn_requested", "subagent.start":
+	case "subagent.spawn_requested", "subagent.start", "subagent.thinking", "subagent.progress", "subagent.tool", "subagent.complete":
 		if p == nil {
 			return
 		}
-		status := "queued"
-		if ev.Type == "subagent.start" {
-			status = "running"
+		if sub, ok := eventPayload(h, subagentEvents[ev.Type], p); ok {
+			h.applySubagentEvent(ev.Type, sub)
 		}
-		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
-			if !isTerminalStatus(base.Status) {
-				next.Status = status
-			}
-		}, true)
-		h.maybeNudgeAgents()
-		if ev.Type == "subagent.spawn_requested" {
-			h.refreshDelegationStatus(h.store.delegation.MaxSpawnDepth == nil)
-		}
-	case "subagent.thinking", "subagent.progress":
-		if p == nil {
-			return
-		}
-		text := strings.TrimFunc(stringOr(p["text"], ""), isJSSpace)
-		if text == "" {
-			return
-		}
-		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
-			next.Status = keepTerminalElseRunning(base.Status)
-			if ev.Type == "subagent.thinking" {
-				next.Thinking = pushUnique(base.Thinking, text, thinkingTailSize)
-			} else {
-				next.Notes = pushUnique(base.Notes, text, notesTailSize)
-			}
-		}, false)
-	case "subagent.tool":
-		if p == nil {
-			return
-		}
-		preview := p["tool_preview"]
-		if preview == nil {
-			preview = p["text"]
-		}
-		line := formatToolCall(stringOr(p["tool_name"], "delegate_task"), stringOr(preview, ""))
-		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
-			next.Status = keepTerminalElseRunning(base.Status)
-			next.Tools = pushUnique(base.Tools, line, toolsTailSize)
-		}, false)
-	case "subagent.complete":
-		if p == nil {
-			return
-		}
-		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
-			next.DurationSeconds = base.DurationSeconds
-			if d := optionalNumber(p, "duration_seconds"); d != nil {
-				next.DurationSeconds = d
-			}
-			next.Status = normalizeSubagentStatus(p["status"], "completed")
-			next.Summary = base.Summary
-			if truthyJS(p["summary"]) {
-				next.Summary = jsValueString(p["summary"])
-			} else if truthyJS(p["text"]) {
-				next.Summary = jsValueString(p["text"])
-			}
-		}, false)
 	case "message.delta":
 		if delta, ok := eventPayload(h, tuigateway.MessageDeltaEvent, p); ok {
 			h.turn.recordMessageDelta(val(delta.Text))
@@ -437,12 +401,12 @@ func (h *eventHandler) toolComplete(p tuigateway.ToolCompletePayload) {
 		inlineDiff = strings.TrimFunc(strippedText(p.InlineDiff), isJSSpace)
 	}
 	resultText := strippedText(p.ResultText)
-	duration, labels := p.DurationS, toolLabelsOf(p.Labels)
+	duration, labels, verdict := p.DurationS, toolLabelsOf(p.Labels), verdictOf(p.IsError, p.Refused, p.Error)
 	if inlineDiff != "" {
-		h.turn.recordInlineDiffToolComplete(inlineDiff, p.ToolID, p.Name, duration, resultText, labels)
+		h.turn.recordInlineDiffToolComplete(inlineDiff, p.ToolID, p.Name, duration, resultText, labels, verdict)
 		return
 	}
-	h.turn.recordToolComplete(p.ToolID, p.Name, val(p.Summary), duration, p.Todos, resultText, labels)
+	h.turn.recordToolComplete(p.ToolID, p.Name, val(p.Summary), duration, p.Todos, resultText, labels, verdict)
 }
 
 // Progress line of a running call, the server's message with the percent done when it reports a total
@@ -489,7 +453,7 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 	h.store.noteCanonicalCompletion(ev.SessionID, val(p.AdmissionID))
 	done := h.turn.recordMessageComplete(p)
 	if len(done.FinishedSubagents) > 0 {
-		h.queue(h.persistSpawnTree(done.FinishedSubagents, done.SessionID))
+		h.queue(h.persistSpawnTree(h.store.spawnHistory[0]))
 	}
 	if reply := done.InterruptedReply; reply != nil && reply.From == nil {
 		h.app.appendMessage(msg{Role: "assistant", Text: reply.To})
@@ -628,6 +592,68 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 		}
 		return next
 	})
+}
+
+// Subagent events by wire name
+var subagentEvents = map[string]tuigateway.Event[tuigateway.SubagentEventPayload]{
+	tuigateway.SubagentSpawnRequestedEvent.Name(): tuigateway.SubagentSpawnRequestedEvent, tuigateway.SubagentStartEvent.Name(): tuigateway.SubagentStartEvent,
+	tuigateway.SubagentThinkingEvent.Name(): tuigateway.SubagentThinkingEvent, tuigateway.SubagentProgressEvent.Name(): tuigateway.SubagentProgressEvent,
+	tuigateway.SubagentToolEvent.Name(): tuigateway.SubagentToolEvent, tuigateway.SubagentCompleteEvent.Name(): tuigateway.SubagentCompleteEvent,
+}
+
+// Moves one subagent of the turn by its lifecycle event
+func (h *eventHandler) applySubagentEvent(kind string, p tuigateway.SubagentEventPayload) {
+	switch kind {
+	case "subagent.spawn_requested", "subagent.start":
+		status := "queued"
+		if kind == "subagent.start" {
+			status = "running"
+		}
+		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
+			if !isTerminalStatus(base.Status) {
+				next.Status = status
+			}
+		}, true)
+		h.maybeNudgeAgents()
+		if kind == "subagent.spawn_requested" {
+			h.refreshDelegationStatus(h.store.delegation.MaxSpawnDepth == nil)
+		}
+	case "subagent.thinking", "subagent.progress":
+		text := strings.TrimFunc(val(p.Text), isJSSpace)
+		if text == "" {
+			return
+		}
+		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
+			next.Status = keepTerminalElseRunning(base.Status)
+			if kind == "subagent.thinking" {
+				next.Thinking = pushUnique(base.Thinking, text, thinkingTailSize)
+			} else {
+				next.Notes = pushUnique(base.Notes, text, notesTailSize)
+			}
+		}, false)
+	case "subagent.tool":
+		preview := val(p.ToolPreview)
+		if p.ToolPreview == nil {
+			preview = val(p.Text)
+		}
+		line := formatToolCall(firstText(val(p.ToolName), "delegate_task"), preview)
+		h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
+			next.Status = keepTerminalElseRunning(base.Status)
+			next.Tools = pushUnique(base.Tools, line, toolsTailSize)
+		}, false)
+	case "subagent.complete":
+		finished := h.turn.upsertSubagent(p, func(base subagentProgress, next *subagentProgress) {
+			next.DurationSeconds = base.DurationSeconds
+			if p.DurationSeconds != nil {
+				next.DurationSeconds = p.DurationSeconds
+			}
+			next.Status = normalizeSubagentStatus(string(val(p.Status)), "completed")
+			next.Summary = firstText(val(p.Summary), firstText(val(p.Text), base.Summary))
+		}, false)
+		if finished >= 0 {
+			h.queue(h.persistSpawnTree(h.store.spawnHistory[finished]))
+		}
+	}
 }
 
 // Typed payload of an event, a misfit printed as an invalid response naming the field

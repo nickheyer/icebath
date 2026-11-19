@@ -161,7 +161,6 @@ gateway:
     not_enough: "لا توجد محادثة كافية للضغط (يلزم 4 رسائل على الأقل)."
     no_provider: "لا يوجد مزوّد مُهيّأ -- لا يمكن الضغط."
     nothing_to_do: "لا شيء للضغط بعد (النص كله لا يزال سياقًا محميًا)."
-    aggressive_unsupported: "الخيار --aggressive غير مدعوم؛ استخدم '/compress here [N]' للإبقاء على أحدث التبادلات فقط، أو /undo لإسقاط الأدوار."
     focus_line: "التركيز: \"{topic}\""
     summary_failed: "⚠️ فشل توليد الملخّص ({error}). أُزيلت {count} رسالة تاريخية واستُبدلت بعنصر نائب؛ لم يعد السياق الأقدم قابلًا للاسترجاع. فكّر في مراجعة إعداد نموذج auxiliary.compression."
     aborted: "⚠️ أُلغي الضغط ({error}). لم تُسقط أي رسائل — المحادثة كما هي. شغّل /compress للمحاولة مجددًا، أو /reset لجلسة نظيفة، أو راجع إعداد نموذج auxiliary.compression."
@@ -733,6 +732,7 @@ gateway:
     provider_kept_failing: "⚠️ استمرّ فشل خدمة نموذج الذكاء الاصطناعي. استخدم /retry لإعادة المحاولة، أو /model لتبديل النموذج. التفاصيل في سجل البوّابة (`icebath logs`)."
     session_storage_unavailable_disk: "⚠️ كان تخزين الجلسة غير متاح مؤقتًا، فأُوقف هذا الدور لحماية سجل محادثتك. يُرجى التحقق من مساحة القرص المتاحة، ثم إرسال رسالتك مجددًا."
     session_storage_unavailable: "⚠️ كان تخزين الجلسة غير متاح مؤقتًا، فأُوقف هذا الدور لحماية سجل محادثتك. من المفترض أن رسالتك محفوظة بالفعل — يُرجى إرسالها مجددًا بعد لحظات."
+    session_storage_held: "⚠️ تخزين الجلسة غير متاح حاليًا ({cause})، لذا رسالتك معلّقة. سيتم الاحتفاظ بها والرد عليها هنا بمجرد أن يعمل التخزين مجددًا؛ لا داعي لإرسالها مرة أخرى."
     generic_failed: "⚠️ حدث خطأ ما ولم أستطع إكمال هذا الرد. استخدم /retry لإعادة المحاولة، أو /new لبدء محادثة جديدة. التفاصيل التقنية في سجل البوّابة (`icebath logs`)."
     interrupted_before_start: "⚠️ قُطعت رسالتك قبل بدء معالجتها (غالبًا بسبب /stop حديث). يُرجى إرسالها مجددًا."
     processing_incomplete: "المعالجة غير مكتملة"
@@ -934,7 +934,7 @@ gateway:
     db_corrupt: "⚠️ رُصد تلف في قاعدة بيانات الجلسات. قد لا تُحفظ الرسائل. خيارات الاستعادة:\n1. شغّل `icebath {profile_arg}doctor --fix`\n2. أوقف البوّابة، ثم استعد بـ:\n   icebath {profile_arg}sessions recover --source {db_path} --inspect-only\n   (إذا أفاد بإمكانية الاستعادة) icebath {profile_arg}sessions recover --source {db_path} --output recovered-state.db\n   — تأخذ الاستعادة لقطة من الملف المتضرر أولًا؛ لا تشغّل `sqlite3 ... \".recover\"` على state.db الحي، فقد يزيد sqlite3 CLI المعرّض للثغرات من تلفه\n3. استعد من نسخة احتياطية في {backups_dir}/\nشغّل `icebath {profile_arg}doctor` للحصول على تشخيصات منقّحة."
     db_fts_corrupt: "⚠️ أفادت قاعدة بيانات الجلسات بخطأ تلف محصور في فهرس البحث (FTS5)؛ جداول الرسائل غير متضررة. قد لا تُحفظ الرسائل حتى إصلاحه: شغّل `icebath {profile_arg}doctor --fix` ثم أعد تشغيل البوّابة. لا تشغّل أدوات الاستعادة ولا تستعد نسخة احتياطية إلا إذا أكّد `icebath {profile_arg}doctor` وجود تلف."
     db_then_restart: "{action} ثم `icebath {profile_arg}gateway restart`."
-    db_unavailable: "⚠️ قاعدة بيانات الجلسات غير متاحة — قد لا تُحفظ الرسائل وسيكون /resume فارغًا. السبب: {cause}. {action}"
+    db_unavailable: "⚠️ قاعدة بيانات الجلسات غير متاحة — تُحتجز الرسائل الجديدة ويُرد عليها بمجرد أن تعمل مجددًا. السبب: {cause}. {action}"
   cron_store:
 
     unwritable: "⚠️ مخزن cron ‏{store} غير قابل للكتابة ({error}) منذ {since}. يتم تخطي المهام المجدولة حتى يقبل الكتابة مجددًا. الحل: {fix}."
@@ -1557,6 +1557,25 @@ platform:
       other_button: "غير ذلك / اكتب إجابة"
       header: "سؤال"
       question: "❓ {question}"
+      submit_button: "إرسال"
+      resolved: "✅ {user}: {choice}"
+      awaiting: "✏️ في انتظار أن يكتب {user} إجابة…"
+      pick_one: "اختر خيارًا واحدًا على الأقل ثم اضغط إرسال."
+    approval:
+
+      resolved_once: "✅ سمح به {user} مرة واحدة"
+      resolved_session: "✅ سمح به {user} لهذه الجلسة"
+      resolved_always: "✅ سمح به {user} دائمًا"
+      resolved_deny: "❌ رفضه {user}"
+    confirm:
+
+      default_title: "تأكيد"
+      approve_once: "موافقة مرة واحدة"
+      always_approve: "موافقة دائمًا"
+      cancel: "إلغاء"
+      decided_once: "✅ وافق {user} مرة واحدة"
+      decided_always: "🔒 وافق {user} دائمًا"
+      decided_cancel: "❌ ألغاه {user}"
     typing:
 
       thinking: "Icebath يفكّر…"
@@ -1732,6 +1751,7 @@ slash:
   branch:
 
     description: "تفريع الجلسة الحالية (سلسلة جديدة على Discord/Telegram/Slack/Matrix؛ --here يبقيها هنا)"
+    core_description: "تفريع الجلسة الحالية (--here يبقيها هنا)"
   worktree:
 
     description: "عرض أو سرد أو إنشاء أو تنظيف git worktrees معزولة"
@@ -2641,6 +2661,7 @@ cli:
       platform_not_enabled: "المنصة '{platform}' غير مُعدّة/مفعّلة في البوّابة."
       no_home_channel: "لم تُضبط قناة رئيسية لـ {platform}."
       set_home_hint: "اضبط واحدة أولًا عبر /sethome في محادثة الوجهة."
+      enable_platform_hint: "اضبطها عبر icebath gateway setup، ثم أعد تشغيل البوابة عبر icebath gateway restart."
       session_row_failed: "تعذّر التأكد من صف الجلسة في state.db: {error}"
       picked_up: "التقطتها البوّابة؛ جارٍ النقل..."
       complete: "↻ اكتمل التسليم. الجلسة نشطة الآن على {platform}."

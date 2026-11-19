@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -104,30 +105,10 @@ func (systemClock) Now() time.Time { return time.Now() }
 
 func (systemClock) AfterFunc(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 
-// Parsed leading integer of an env value as JavaScript parseInt reads it, ok false for NaN
-func jsParseInt(raw string) (int, bool) {
-	s := strings.TrimLeftFunc(raw, isJSSpace)
-	sign := 1
-	if s != "" && (s[0] == '+' || s[0] == '-') {
-		if s[0] == '-' {
-			sign = -1
-		}
-		s = s[1:]
-	}
-	n, digits := 0, 0
-	for digits < len(s) && s[digits] >= '0' && s[digits] <= '9' {
-		if n < math.MaxInt32 {
-			n = n*10 + int(s[digits]-'0')
-		}
-		digits++
-	}
-	return sign * n, digits > 0
-}
-
-// Milliseconds of an env value with its floor, the fallback for NaN or zero
+// Milliseconds of an env value, a whole number with an optional ms unit, with its floor and the fallback when unset, zero or malformed
 func envMillis(name string, fallback, floor int) time.Duration {
-	ms, ok := jsParseInt(os.Getenv(name))
-	if !ok || ms == 0 {
+	ms, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(os.Getenv(name)), "ms"))
+	if err != nil || ms == 0 {
 		ms = fallback
 	}
 	return time.Duration(max(floor, ms)) * time.Millisecond
@@ -251,18 +232,18 @@ type gatewayClient struct {
 	localGeneration int
 	recoveries      []time.Time
 
-	isCanonical     bool
-	contract        *tuigateway.SessionCreateDescriptor
-	describedSkin   map[string]any
+	isCanonical   bool
+	contract      *tuigateway.SessionCreateDescriptor
+	describedSkin map[string]any
 	// Go build ID and contract version the owner's runtime.describe reported
 	describedBuild    string
 	describedContract int64
-	capabilities    []string
-	describing      *describeFlight
-	hold            *attachHold
-	unsettled       *unsettledCreate
-	countsDeclines  bool
-	clarifyBatchAck bool
+	capabilities      []string
+	describing        *describeFlight
+	hold              *attachHold
+	unsettled         *unsettledCreate
+	countsDeclines    bool
+	clarifyBatchAck   bool
 
 	heartbeatToken *int
 	heartbeatStop  func() bool
@@ -455,29 +436,28 @@ func (c *gatewayClient) describeThenReadyLocked(conn *gatewayConn, payload map[s
 	c.describing = nil
 	c.capabilities = nil
 	go func() {
-		err := c.describeRuntime(context.Background())
+		err := c.describeRuntime(context.Background(), conn)
 		c.locked(func() {
+			if c.conn != conn {
+				return
+			}
 			if err == nil {
 				ready := withKeys(payload, "build", c.describedBuild, "contract", c.describedContract)
 				if _, has := payload["skin"]; !has && c.describedSkin != nil {
 					ready = withKeys(ready, "skin", c.describedSkin)
 				}
-				if c.conn == conn {
-					c.publishLocked(gatewayEventMsg{Type: "gateway.ready", Payload: ready})
-				}
+				c.publishLocked(gatewayEventMsg{Type: "gateway.ready", Payload: ready})
 				return
 			}
 			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Local: gatewayStartTimeout{StderrTail: jsErrorText(err)}})
-			if c.conn == conn {
-				c.closeGatewaySocketLocked()
-				c.handleTransportExitLocked(1, jsErrorText(err))
-			}
+			c.closeGatewaySocketLocked()
+			c.handleTransportExitLocked(1, jsErrorText(err))
 		})
 	}()
 }
 
-// Reads the owner's session.create contract, capabilities and skin once per socket, a failure not cached
-func (c *gatewayClient) describeRuntime(ctx context.Context) error {
+// Reads the owner's contract, capabilities and skin once, on the given socket so a closed one never redials early
+func (c *gatewayClient) describeRuntime(ctx context.Context, conn *gatewayConn) error {
 	c.mu.Lock()
 	flight := c.describing
 	owner := flight == nil
@@ -487,7 +467,13 @@ func (c *gatewayClient) describeRuntime(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 	if owner {
-		value, err := c.requestOverWebSocket(context.Background(), tuigateway.CanonicalRuntimeDescribe.Name(), wireParams(tuigateway.RuntimeDescribeParams{}), 0)
+		var value any
+		var err error
+		if conn != nil {
+			value, err = c.call(context.Background(), conn, tuigateway.CanonicalRuntimeDescribe.Name(), wireParams(tuigateway.RuntimeDescribeParams{}), 0)
+		} else {
+			value, err = c.requestOverWebSocket(context.Background(), tuigateway.CanonicalRuntimeDescribe.Name(), wireParams(tuigateway.RuntimeDescribeParams{}), 0)
+		}
 		var description tuigateway.RuntimeDescribeResult
 		if err == nil {
 			description, err = tuigateway.CanonicalRuntimeDescribe.Result(value)
@@ -929,15 +915,18 @@ func (c *gatewayClient) route(conn *gatewayConn, frame map[string]any) {
 // Tells the backend once per ready that this client answers server requests, recording what it counts
 func (c *gatewayClient) advertiseCapabilitiesLocked(conn *gatewayConn) {
 	go func() {
-		value, err := c.call(context.Background(), conn, "client.capabilities", map[string]any{"server_requests": true}, 0)
+		value, err := c.call(context.Background(), conn, tuigateway.ClientCapabilities.Name(), wireParams(tuigateway.ClientCapabilitiesParams{ServerRequests: true}), 0)
 		if err != nil {
 			return
 		}
-		result, _ := value.(map[string]any)
+		result, err := tuigateway.ClientCapabilities.Result(value)
+		if err != nil {
+			c.recordLog("[protocol] " + misfitText(tr("session.common.invalidResponse", tuigateway.ClientCapabilities.Name())) + " " + err.Error())
+			return
+		}
 		c.mu.Lock()
 		if c.conn == conn {
-			c.countsDeclines = result["declines_not_shown"] == true
-			c.clarifyBatchAck = result["canonical_clarify_batch"] == true
+			c.countsDeclines, c.clarifyBatchAck = result.DeclinesNotShown, result.CanonicalClarifyBatch
 		}
 		c.mu.Unlock()
 	}()
@@ -1245,7 +1234,7 @@ func (c *gatewayClient) requestCanonical(ctx context.Context, method string, par
 	contract := c.contract
 	c.mu.Unlock()
 	if method == "session.create" && contract == nil {
-		if err := c.describeRuntime(ctx); err != nil {
+		if err := c.describeRuntime(ctx, nil); err != nil {
 			return nil, err
 		}
 		c.mu.Lock()

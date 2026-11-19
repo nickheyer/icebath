@@ -68,7 +68,7 @@ func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 			if row.Name != nil {
 				name = *row.Name
 			}
-			pending = append(pending, buildToolTrailLine(name, val(row.Context), false, "", nil))
+			pending = append(pending, buildToolTrailLine(name, val(row.Context), verdictOf(row.IsError, row.Refused, row.Error), "", nil))
 			continue
 		}
 		text := val(row.Text)

@@ -106,7 +106,7 @@ func rpcErrorMessage(err error) string {
 }
 
 // Trail rows of a finished call, one per label with the verbose blocks on the last
-func toolTrailLines(done *activeTool, name string, labels []toolLabel, summary, resultText string, took *float64) []string {
+func toolTrailLines(done *activeTool, name string, labels []toolLabel, summary, resultText string, took *float64, v toolVerdict) []string {
 	var heads []string
 	for _, label := range labels {
 		heads = append(heads, formatToolLabel(label))
@@ -124,7 +124,7 @@ func toolTrailLines(done *activeTool, name string, labels []toolLabel, summary, 
 	for i, head := range heads {
 		switch {
 		case i < len(heads)-1:
-			out[i] = toolTrailLine(head, false, "", nil)
+			out[i] = toolTrailLine(head, toolVerdict{}, "", nil)
 		case verbose:
 			args := ""
 			if done != nil {
@@ -134,9 +134,9 @@ func toolTrailLines(done *activeTool, name string, labels []toolLabel, summary, 
 			if result == "" {
 				result = summary
 			}
-			out[i] = verboseToolTrailLine(head, false, took, args, result)
+			out[i] = verboseToolTrailLine(head, v, took, args, result)
 		default:
-			out[i] = toolTrailLine(head, false, summary, took)
+			out[i] = toolTrailLine(head, v, summary, took)
 		}
 	}
 	return out
@@ -821,29 +821,29 @@ func (c *turnController) recordReasoningDelta(text string, force bool) {
 }
 
 // Finishes a tool call into trail rows, merged into the last shelf segment when one holds them
-func (c *turnController) recordToolComplete(toolID, fallbackName, summary string, duration *float64, todos []tuigateway.TodoItem, resultText string, labels []toolLabel) {
+func (c *turnController) recordToolComplete(toolID, fallbackName, summary string, duration *float64, todos []tuigateway.TodoItem, resultText string, labels []toolLabel, v toolVerdict) {
 	if c.interrupted {
 		return
 	}
 	c.recordTodos(todos)
-	lines := c.completeTool(toolID, fallbackName, summary, duration, resultText, labels)
+	lines := c.completeTool(toolID, fallbackName, summary, duration, resultText, labels, v)
 	c.pendingSegmentTools = append(slices.Clone(c.pendingSegmentTools), lines...)
 	c.flushPendingToolsIntoLastSegment()
 	c.publishToolState()
 }
 
 // Finishes an editing tool call into an inline diff segment carrying its trail rows
-func (c *turnController) recordInlineDiffToolComplete(diffText, toolID, fallbackName string, duration *float64, resultText string, labels []toolLabel) {
+func (c *turnController) recordInlineDiffToolComplete(diffText, toolID, fallbackName string, duration *float64, resultText string, labels []toolLabel, v toolVerdict) {
 	if c.interrupted {
 		return
 	}
 	c.flushStreamingSegment()
-	c.pushInlineDiffSegment(diffText, c.completeTool(toolID, fallbackName, "", duration, resultText, labels))
+	c.pushInlineDiffSegment(diffText, c.completeTool(toolID, fallbackName, "", duration, resultText, labels, v))
 	c.publishToolState()
 }
 
-// Removes a call from the active set and returns its trail rows, never marked as errors
-func (c *turnController) completeTool(toolID, fallbackName, summary string, duration *float64, resultText string, eventLabels []toolLabel) []string {
+// Removes a call from the active set and returns its trail rows marked with the verdict
+func (c *turnController) completeTool(toolID, fallbackName, summary string, duration *float64, resultText string, eventLabels []toolLabel, v toolVerdict) []string {
 	var done *activeTool
 	if i := slices.IndexFunc(c.activeTools, func(t activeTool) bool { return t.ID == toolID }); i >= 0 {
 		found := c.activeTools[i]
@@ -865,7 +865,7 @@ func (c *turnController) completeTool(toolID, fallbackName, summary string, dura
 		elapsed := float64(c.store.now().Sub(done.StartedAt).Milliseconds()) / 1000
 		took = &elapsed
 	}
-	lines := toolTrailLines(done, name, labels, summary, resultText, took)
+	lines := toolTrailLines(done, name, labels, summary, resultText, took, v)
 	c.activeTools = slices.DeleteFunc(slices.Clone(c.activeTools), func(t activeTool) bool { return t.ID == toolID })
 	next := slices.DeleteFunc(slices.Clone(c.turnTools), func(item string) bool { return sameToolTrailGroup(label, item) })
 	if len(c.activeTools) == 0 {
@@ -980,119 +980,85 @@ func (c *turnController) startMessage() {
 	t.Activity, t.Outcome, t.StreamPendingTools, t.StreamSegments, t.Subagents, t.ToolTokens, t.Tools, t.TurnTrail = nil, "", nil, nil, nil, 0, nil, nil
 }
 
-// Optional number of a payload field, nil when absent or null
-func payloadNumber(p map[string]any, k string) *float64 {
-	if v, isNum := p[k].(float64); isNum {
-		return &v
-	}
-	return nil
-}
-
-// Optional string list of a payload field, nil when absent or null
-func payloadStrings(p map[string]any, k string) []string {
-	list, isList := p[k].([]any)
-	if !isList {
-		return nil
-	}
-	out := []string{}
-	for _, item := range list {
-		out = append(out, jsString(item))
-	}
-	return out
-}
-
-// Creates or updates a subagent from its event, keeping spawn order and dropping late events when asked
-func (c *turnController) upsertSubagent(p map[string]any, patch func(base subagentProgress, next *subagentProgress), createIfMissing bool) {
-	goal, _ := p["goal"].(string)
-	id, _ := p["subagent_id"].(string)
-	if id == "" {
-		label := goal
-		if label == "" {
-			label = "subagent"
-		}
-		id = "sa:" + jsString(p["task_index"]) + ":" + label
-	}
+// Creates or updates a subagent from its event, a child of a finished tree patched there with that tree's index returned
+func (c *turnController) upsertSubagent(p tuigateway.SubagentEventPayload, patch func(base subagentProgress, next *subagentProgress), createIfMissing bool) int {
+	id := subagentKey(p)
 	subagents := c.store.turn.Subagents
 	at := slices.IndexFunc(subagents, func(s subagentProgress) bool { return s.ID == id })
-	if at < 0 && !createIfMissing {
-		return
+	snap, inSnap := -1, -1
+	if at < 0 {
+		snap, inSnap = c.store.finishedTreeAgent(id)
 	}
-	str := func(k string) (string, bool) {
-		v, isStr := p[k].(string)
-		return v, isStr
-	}
-	intOf := func(k string) (int, bool) {
-		v, isNum := p[k].(float64)
-		return int(v), isNum
+	if at < 0 && snap < 0 && !createIfMissing {
+		return -1
 	}
 	var base subagentProgress
-	if at >= 0 {
+	switch {
+	case at >= 0:
 		base = subagents[at]
-	} else {
+	case snap >= 0:
+		base = c.store.spawnHistory[snap].Subagents[inSnap]
+	default:
 		started := c.store.nowMillis()
-		base = subagentProgress{Goal: goal, ID: id, Notes: []string{}, StartedAt: &started, Status: "running", TaskCount: 1, Thinking: []string{}, Tools: []string{}, Toolsets: payloadStrings(p, "toolsets")}
-		base.DelegationID, _ = str("delegation_id")
-		base.Depth, _ = intOf("depth")
-		base.Index, _ = intOf("task_index")
-		base.Model, _ = str("model")
-		base.ParentID, _ = str("parent_id")
-		if n, has := intOf("task_count"); has {
-			base.TaskCount = n
-		}
-		base.ToolCount, _ = intOf("tool_count")
+		base = subagentProgress{Goal: p.Goal, ID: id, Notes: []string{}, StartedAt: &started, Status: "running", TaskCount: 1, Thinking: []string{}, Tools: []string{}, Toolsets: p.Toolsets,
+			DelegationID: val(p.DelegationID), Depth: int(val(p.Depth)), Index: int(p.TaskIndex), Model: val(p.Model), ParentID: val(p.ParentID), ToolCount: int(val(p.ToolCount))}
 	}
 	next := base
-	if tail, isList := p["output_tail"].([]any); isList {
-		next.OutputTail = []subagentOutput{}
-		for _, item := range tail {
-			entry, _ := item.(map[string]any)
-			preview, tool := "", "tool"
-			if v, has := entry["preview"]; has && v != nil {
-				preview = jsString(v)
-			}
-			if v, has := entry["tool"]; has && v != nil {
-				tool = jsString(v)
-			}
-			next.OutputTail = append(next.OutputTail, subagentOutput{IsError: truthyJS(entry["is_error"]), Preview: preview, Tool: tool})
+	if p.OutputTail != nil {
+		next.OutputTail = make([]subagentOutput, len(p.OutputTail))
+		for i, entry := range p.OutputTail {
+			next.OutputTail[i] = subagentOutput{IsError: entry.IsError, Preview: entry.Preview, Tool: firstText(entry.Tool, "tool")}
 		}
 	}
-	for k, dst := range map[string]**float64{"api_calls": &next.APICalls, "cost_usd": &next.CostUSD, "input_tokens": &next.InputTokens, "output_tokens": &next.OutputTokens, "reasoning_tokens": &next.ReasoningTokens} {
-		if v := payloadNumber(p, k); v != nil {
-			*dst = v
+	for src, dst := range map[*int64]**float64{p.APICalls: &next.APICalls, p.InputTokens: &next.InputTokens, p.OutputTokens: &next.OutputTokens, p.ReasoningTokens: &next.ReasoningTokens} {
+		if src != nil {
+			n := float64(*src)
+			*dst = &n
 		}
 	}
-	if v, isStr := str("delegation_id"); isStr {
-		next.DelegationID = v
+	if p.CostUSD != nil {
+		next.CostUSD = p.CostUSD
 	}
-	if v, has := intOf("depth"); has {
-		next.Depth = v
+	if p.DelegationID != nil {
+		next.DelegationID = *p.DelegationID
 	}
-	if v := payloadStrings(p, "files_read"); v != nil {
-		next.FilesRead = v
+	if p.Depth != nil {
+		next.Depth = int(*p.Depth)
 	}
-	if v := payloadStrings(p, "files_written"); v != nil {
-		next.FilesWritten = v
+	if p.FilesRead != nil {
+		next.FilesRead = p.FilesRead
 	}
-	if goal != "" {
-		next.Goal = goal
+	if p.FilesWritten != nil {
+		next.FilesWritten = p.FilesWritten
 	}
-	if v, isStr := str("model"); isStr {
-		next.Model = v
+	if p.Goal != "" {
+		next.Goal = p.Goal
 	}
-	if v, isStr := str("parent_id"); isStr {
-		next.ParentID = v
+	if p.Model != nil {
+		next.Model = *p.Model
 	}
-	if v, has := intOf("task_count"); has {
-		next.TaskCount = v
+	if p.ParentID != nil {
+		next.ParentID = *p.ParentID
 	}
-	if v, has := intOf("tool_count"); has {
-		next.ToolCount = v
+	if p.TaskCount != 0 {
+		next.TaskCount = int(p.TaskCount)
 	}
-	if v := payloadStrings(p, "toolsets"); v != nil {
-		next.Toolsets = v
+	if p.ToolCount != nil {
+		next.ToolCount = int(*p.ToolCount)
+	}
+	if p.Toolsets != nil {
+		next.Toolsets = p.Toolsets
 	}
 	if patch != nil {
 		patch(base, &next)
+	}
+	if snap >= 0 {
+		history := slices.Clone(c.store.spawnHistory)
+		agents := slices.Clone(history[snap].Subagents)
+		agents[inSnap] = next
+		history[snap].Subagents = agents
+		c.store.spawnHistory = history
+		return snap
 	}
 	if at >= 0 {
 		subagents = slices.Clone(subagents)
@@ -1107,4 +1073,5 @@ func (c *turnController) upsertSubagent(p map[string]any, patch func(base subage
 		})
 	}
 	c.store.turn.Subagents = subagents
+	return -1
 }

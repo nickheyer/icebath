@@ -650,6 +650,19 @@ func (a *WhatsAppCloudAdapter) postMessageResult(ctx context.Context, payload an
 	return gateway.SendResult{Success: true, MessageID: id}, nil
 }
 
+// Adds an emoji reaction to a message as a Cloud API reaction message
+func (a *WhatsAppCloudAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	result, err := a.postMessageResult(ctx, outboundPayload(chatID, "reaction", pyjson.ObjectOf("message_id", messageID, "emoji", emoji), nil),
+		postLogs{fail: "[whatsapp_cloud] reaction send failed", reject: "[whatsapp_cloud] reaction rejected (status=%d): %s"})
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		return errors.New(pyrepr.Str(result.Error))
+	}
+	return nil
+}
+
 // Common messages envelope quoting replyTo when one is given
 func outboundPayload(chatID, kind string, block, replyTo any) *pyjson.Object {
 	payload := pyjson.ObjectOf("messaging_product", "whatsapp", "recipient_type", "individual", "to", chatID, "type", kind, kind, block)

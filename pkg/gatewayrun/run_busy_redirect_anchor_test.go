@@ -315,10 +315,13 @@ func TestBusyFoldsAndReanchorsWhileTheTurnReadsItsReplyAnchors(t *testing.T) {
 	tc.sessionKey, tc.eventMessageID, tc.inboundMessageID, tc.replyExpected = key, strp("A"), strp("A"), &notExpected
 	r.withSessionState(key, func(s *SessionState) { s.turn.agent, s.turn.event, s.turn.ctx = running, opening, tc })
 	incoming := []*gateway.MessageEvent{anchorEvent("What day is tomorrow?", "B", &expected), anchorEvent("And the humidity?", "C", &expected)}
-	stop, finished := make(chan struct{}), make(chan struct{})
+	stop, finished, reanchored := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(finished)
 		for i := 0; ; i++ {
+			if i == 1 {
+				close(reanchored)
+			}
 			select {
 			case <-stop:
 				return
@@ -340,6 +343,7 @@ func TestBusyFoldsAndReanchorsWhileTheTurnReadsItsReplyAnchors(t *testing.T) {
 			t.Fatalf("turn context anchor %q inbound %q expected %v %v", optText(ctxAnchor), optText(ctxInbound), replyExpected, ctxExpected)
 		}
 	}
+	<-reanchored
 	close(stop)
 	<-finished
 	if got := gateway.ReplyAnchorForEvent(opening); optText(got) != "B" && optText(got) != "C" {

@@ -140,6 +140,9 @@ func configureSessionTools(ctx context.Context, rid any, params map[string]any, 
 		case valid[name]:
 			toolsetTargets = append(toolsetTargets, name)
 		default:
+			if line, refused := tools.ToolsetTierRefusal(name); refused {
+				return rpcErr(rid, 4015, line, nil), nil
+			}
 			unknown = append(unknown, name)
 			unknownSet[name] = true
 		}

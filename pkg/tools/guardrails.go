@@ -2011,6 +2011,9 @@ func InvalidToolNameErrorContent(name string, validToolNames map[string]bool) st
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	if line, refused := ToolTierRefusal(name); refused {
+		return fmt.Sprintf("Tool call rejected: %s. Available tools: %s", line, strings.Join(names, ", "))
+	}
 	return fmt.Sprintf("Tool '%s' does not exist. Available tools: %s", name, strings.Join(names, ", "))
 }
 

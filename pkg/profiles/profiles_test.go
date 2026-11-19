@@ -63,7 +63,7 @@ func TestNormalizeProfileNameNonStringNameRejected(t *testing.T) {
 			t.Fatalf("%v accepted: %v", v, err)
 		}
 	}
-	if _, err := NormalizeProfileNameValue(0); err == nil || err.Error() != "profile name must be a string, got int: 0" {
+	if _, err := NormalizeProfileNameValue(0); err == nil || err.Error() != "profile name must be text, got a number: 0" {
 		t.Fatalf("message %v", err)
 	}
 }

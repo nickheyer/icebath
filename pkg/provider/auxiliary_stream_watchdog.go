@@ -19,7 +19,21 @@ var auxAwakeSeconds = func() float64 { return tools.AwakeSeconds() }
 type AuxTimeoutError struct {
 	Message string
 	Err     error
+	// What ran out of time, zero for a full budget or deadline timeout
+	Kind AuxTimeoutKind
+	// Raised by the chat stream watchdog
+	Watchdog bool
 }
+
+// What ran out of time in an auxiliary stream
+type AuxTimeoutKind int
+
+const (
+	// The stream produced no output within its first output window
+	AuxTimeoutNoOutput AuxTimeoutKind = iota + 1
+	// Output stopped after the stream had started
+	AuxTimeoutStalled
+)
 
 func (e *AuxTimeoutError) Error() string { return e.Message }
 func (e *AuxTimeoutError) Unwrap() error { return e.Err }
@@ -156,9 +170,9 @@ func (w *ChatStreamWatchdog) TimeoutError() *AuxTimeoutError {
 		if w.hasFirstToken {
 			first = w.FirstTokenWindow
 		}
-		return &AuxTimeoutError{Message: fmt.Sprintf("Auxiliary chat stream produced no output within %.1fs (no-progress timeout, %.1fs elapsed)", first, elapsed)}
+		return &AuxTimeoutError{Message: fmt.Sprintf("Auxiliary chat stream produced no output within %.1fs (no-progress timeout, %.1fs elapsed)", first, elapsed), Kind: AuxTimeoutNoOutput, Watchdog: true}
 	}
-	return &AuxTimeoutError{Message: fmt.Sprintf("Auxiliary chat stream stalled: no new output for %.1fs (%.1fs elapsed, timed out)", w.Window, elapsed)}
+	return &AuxTimeoutError{Message: fmt.Sprintf("Auxiliary chat stream stalled: no new output for %.1fs (%.1fs elapsed, timed out)", w.Window, elapsed), Kind: AuxTimeoutStalled, Watchdog: true}
 }
 
 // Inter chunk and first token windows for a streamed attempt, both capped at the request timeout

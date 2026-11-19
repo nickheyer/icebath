@@ -525,7 +525,7 @@ func (s *shellFileOps) readBinaryFile(path string, offset, limit int, fileSize i
 	if r := s.tryReadUTF16(path, offset, limit, fileSize); r != nil {
 		return r
 	}
-	return &ReadResult{IsBinary: true, FileSize: fileSize, Error: describeBinaryFile(sampleBytes, fileSize)}
+	return &ReadResult{IsBinary: true, FileSize: fileSize, Error: describeBinaryFile(sampleBytes, fileSize), DocumentSignature: documentSignature(sampleBytes)}
 }
 
 // One probe per question read used for images, binary extensions and unparseable compound replies
@@ -804,6 +804,32 @@ func (s *shellFileOps) readFileBytes(path string, maxBytes int) *ReadResult {
 			Error: "File is too large (" + commaInt(int(fileSize)) + " bytes, limit is " + commaInt(maxBytes) + ")"}
 	}
 	encoded := s.exec("base64 < "+s.escapeShellArg(path, true), "", 0)
+	if encoded.ExitCode != 0 {
+		return &ReadResult{Error: "Failed to read binary file: " + encoded.Stdout}
+	}
+	compact := strings.Join(pyFields(stripTerminalFenceLeaks(encoded.Stdout)), "")
+	if !pyB64Valid(compact) {
+		return &ReadResult{Error: "Backend returned invalid binary data for: " + path}
+	}
+	return &ReadResult{Base64Content: compact, FileSize: fileSize, IsBinary: true}
+}
+
+// Bytes of one range of a file, start counted from zero, base64 encoded like readFileBytes
+func (s *shellFileOps) readFileRange(path string, start int64, length int) *ReadResult {
+	path = s.expandPath(path)
+	fileSize, status := s.probeRegularFile(path)
+	switch status {
+	case "missing":
+		return &ReadResult{Error: fileNotFoundLead + path, NotFound: true}
+	case "not_regular":
+		return notRegularError(path)
+	case "ok":
+	case "bad_size":
+		return &ReadResult{Error: "Could not determine file size: " + path}
+	default:
+		return envUnavailableError(path, status)
+	}
+	encoded := s.exec("tail -c +"+strconv.FormatInt(start+1, 10)+" "+s.escapeShellArg(path, true)+" | head -c "+strconv.Itoa(length)+" | base64", "", 0)
 	if encoded.ExitCode != 0 {
 		return &ReadResult{Error: "Failed to read binary file: " + encoded.Stdout}
 	}

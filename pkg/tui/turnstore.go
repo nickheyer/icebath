@@ -223,6 +223,19 @@ func (s *tuiStore) resetTurnState() { s.turn = turnState{} }
 // Milliseconds since the epoch of the store clock
 func (s *tuiStore) nowMillis() float64 { return float64(s.now().UnixMilli()) }
 
+// Finished tree of the session in view holding an agent and its place there, minus ones when none does
+func (s *tuiStore) finishedTreeAgent(id string) (int, int) {
+	for k, snap := range s.spawnHistory {
+		if snap.SessionID != s.ui.Sid {
+			continue
+		}
+		if i := slices.IndexFunc(snap.Subagents, func(sa subagentProgress) bool { return sa.ID == id }); i >= 0 {
+			return k, i
+		}
+	}
+	return -1, -1
+}
+
 // Commits a finished fan out to the history, the newest ten kept, an empty one dropped
 func (s *tuiStore) pushSnapshot(subagents []subagentProgress, sessionID string, startedAt *float64) {
 	if len(subagents) == 0 {
@@ -277,106 +290,66 @@ func summarizeSpawnLabel(subagents []subagentProgress) string {
 var knownSubagentStatuses = []string{"completed", "error", "failed", "interrupted", "queued", "running", "timeout"}
 
 // Status lowered and checked against the known set, the fallback otherwise
-func normalizeSubagentStatus(status any, fallback string) string {
-	s, isStr := status.(string)
-	if !isStr {
-		return fallback
-	}
-	if lowered := strings.ToLower(s); slices.Contains(knownSubagentStatuses, lowered) {
+func normalizeSubagentStatus(status, fallback string) string {
+	if lowered := strings.ToLower(status); slices.Contains(knownSubagentStatuses, lowered) {
 		return lowered
 	}
 	return fallback
 }
 
 // Commits a spawn tree loaded from disk to the history, seconds on disk as milliseconds here
-func (s *tuiStore) pushDiskSnapshot(r map[string]any, path string) {
-	raw, _ := r["subagents"].([]any)
-	normalised := make([]subagentProgress, 0, len(raw))
-	for _, item := range raw {
+func (s *tuiStore) pushDiskSnapshot(r tuigateway.SpawnTreeLoadResult, path string) {
+	normalised := make([]subagentProgress, 0, len(r.Subagents))
+	for _, item := range r.Subagents {
 		normalised = append(normalised, normaliseSubagent(item))
 	}
 	if len(normalised) == 0 {
 		return
 	}
 	nowSeconds := s.nowMillis() / 1000
-	seconds := func(keys ...string) float64 {
-		for _, k := range keys {
-			if v, has := r[k]; has && v != nil {
-				return jsNumberOf(v)
-			}
-		}
-		return nowSeconds
+	finished := nowSeconds
+	if r.FinishedAt != nil {
+		finished = *r.FinishedAt
 	}
-	label, _ := r["label"].(string)
+	started := finished
+	if r.StartedAt != nil {
+		started = *r.StartedAt
+	}
+	label := val(r.Label)
 	if label == "" {
 		label = strconv.Itoa(len(normalised)) + " subagents"
 	}
-	sessionID, _ := r["session_id"].(string)
-	snap := spawnSnapshot{FinishedAt: seconds("finished_at") * 1000, FromDisk: true, ID: "disk-" + path, Label: label, Path: path,
-		SessionID: sessionID, StartedAt: seconds("started_at", "finished_at") * 1000, Subagents: normalised}
+	snap := spawnSnapshot{FinishedAt: finished * 1000, FromDisk: true, ID: "disk-" + path, Label: label, Path: path,
+		SessionID: val(r.SessionID), StartedAt: started * 1000, Subagents: normalised}
 	s.spawnHistory = append([]spawnSnapshot{snap}, s.spawnHistory...)[:min(len(s.spawnHistory)+1, spawnHistoryLimit)]
 }
 
-// Subagent of a stored spawn tree, every field checked for its type
-func normaliseSubagent(raw any) subagentProgress {
-	o, _ := raw.(map[string]any)
-	str := func(k string) (string, bool) { v, isStr := o[k].(string); return v, isStr }
-	num := func(k string) *float64 {
-		if v, isNum := o[k].(float64); isNum {
-			return &v
-		}
-		return nil
-	}
-	intOr := func(k string, fallback int) int {
-		if v, isNum := o[k].(float64); isNum {
-			return int(v)
-		}
-		return fallback
-	}
-	strs := func(k string) []string {
-		list, isList := o[k].([]any)
-		if !isList {
-			return nil
-		}
-		out := []string{}
-		for _, item := range list {
-			if s, isStr := item.(string); isStr {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	sa := subagentProgress{APICalls: num("apiCalls"), CostUSD: num("costUsd"), Depth: intOr("depth", 0), DurationSeconds: num("durationSeconds"),
-		FilesRead: strs("filesRead"), FilesWritten: strs("filesWritten"), Index: intOr("index", 0), InputTokens: num("inputTokens"),
-		Iteration: num("iteration"), OutputTokens: num("outputTokens"), ReasoningTokens: num("reasoningTokens"), StartedAt: num("startedAt"),
-		Status: normalizeSubagentStatus(o["status"], "completed"), TaskCount: intOr("taskCount", 1), ToolCount: intOr("toolCount", 0),
-		Notes: strs("notes"), Thinking: strs("thinking"), Tools: strs("tools"), Toolsets: strs("toolsets")}
+// Subagent of a stored spawn tree, a blank goal, id or task count given its default
+func normaliseSubagent(o tuigateway.SpawnTreeSubagent) subagentProgress {
+	sa := subagentProgress{APICalls: o.APICalls, CostUSD: o.CostUSD, Depth: int(o.Depth), DurationSeconds: o.DurationSeconds,
+		FilesRead: o.FilesRead, FilesWritten: o.FilesWritten, Index: int(o.Index), InputTokens: o.InputTokens,
+		Iteration: o.Iteration, OutputTokens: o.OutputTokens, ReasoningTokens: o.ReasoningTokens, StartedAt: o.StartedAt,
+		Status: normalizeSubagentStatus(string(o.Status), "completed"), TaskCount: int(o.TaskCount), ToolCount: int(o.ToolCount),
+		Notes: o.Notes, Thinking: o.Thinking, Tools: o.Tools, Toolsets: o.Toolsets, Goal: o.Goal, ID: o.ID, Model: o.Model,
+		ParentID: val(o.ParentID), Summary: o.Summary}
 	for _, list := range []*[]string{&sa.Notes, &sa.Thinking, &sa.Tools} {
 		if *list == nil {
 			*list = []string{}
 		}
 	}
-	if sa.Goal, _ = str("goal"); sa.Goal == "" {
-		if _, isStr := str("goal"); !isStr {
-			sa.Goal = "subagent"
-		}
+	if sa.Goal == "" {
+		sa.Goal = "subagent"
 	}
-	if id, isStr := str("id"); isStr {
-		sa.ID = id
-	} else {
+	if sa.ID == "" {
 		sa.ID = "sa-" + randomBase36(6)
 	}
-	sa.Model, _ = str("model")
-	sa.ParentID, _ = str("parentId")
-	sa.Summary, _ = str("summary")
-	if tail, isList := o["outputTail"].([]any); isList {
-		sa.OutputTail = []subagentOutput{}
-		for _, item := range tail {
-			entry, _ := item.(map[string]any)
-			isErr, _ := entry["isError"].(bool)
-			preview, _ := entry["preview"].(string)
-			tool, _ := entry["tool"].(string)
-			sa.OutputTail = append(sa.OutputTail, subagentOutput{IsError: isErr, Preview: preview, Tool: tool})
+	if sa.TaskCount == 0 {
+		sa.TaskCount = 1
+	}
+	if o.OutputTail != nil {
+		sa.OutputTail = make([]subagentOutput, len(o.OutputTail))
+		for i, entry := range o.OutputTail {
+			sa.OutputTail[i] = subagentOutput{IsError: entry.IsError, Preview: entry.Preview, Tool: entry.Tool}
 		}
 	}
 	return sa

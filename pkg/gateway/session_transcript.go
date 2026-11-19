@@ -32,24 +32,26 @@ func (e *TranscriptReadError) Unwrap() error { return e.Cause }
 // Lock serializing the drain boundaries of the pending transcript queue
 func (s *SessionStore) transcriptDrainLock() *sync.Mutex { return &s.transcriptDrainMu }
 
-// Latest compression continuation of the session, the id itself without a store or on a failed lookup
-func (s *SessionStore) compressionTipForSessionID(ctx context.Context, sessionID string) string {
+// Latest compression continuation of the session, the id itself when it has none, a store that cannot answer returned
+func (s *SessionStore) compressionTipForSessionID(ctx context.Context, sessionID string) (string, error) {
 	if sessionID == "" {
-		return sessionID
+		return sessionID, nil
 	}
-	db := s.dbForSessionID(ctx, sessionID)
+	db, err := s.dbForKeyOrFailure(ctx, s.ownerKeyForSessionID(sessionID))
+	if err != nil {
+		return "", err
+	}
 	if db == nil {
-		return sessionID
+		return sessionID, nil
 	}
 	tip, err := db.GetCompressionTip(ctx, sessionID)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Compression-tip lookup failed for session %s: %v", sessionID, err))
-		return sessionID
+		return "", err
 	}
 	if tip == "" {
-		return sessionID
+		return sessionID, nil
 	}
-	return tip
+	return tip, nil
 }
 
 // Rewrites the entry onto its compression continuation when the mapping is stale, lock held
@@ -106,24 +108,22 @@ func (s *SessionStore) followReroutes(sessionID string) string {
 
 // Every message of the session's canonical transcript, a failed read raising TranscriptReadError
 func (s *SessionStore) LoadTranscript(ctx context.Context, sessionID string) ([]any, error) {
-	if s.dbForSessionID(ctx, sessionID) == nil {
+	if db, pinned := s.pinned(); pinned && db == nil {
 		return []any{}, nil
 	}
 	sessionID = s.followReroutes(sessionID)
-	if db := s.dbForSessionID(ctx, sessionID); db != nil {
-		if tip, err := db.GetCompressionTip(ctx, sessionID); err == nil && tip != "" {
-			sessionID = tip
+	messages, err := func() ([]map[string]any, error) {
+		tip, err := s.compressionTipForSessionID(ctx, sessionID)
+		if err != nil {
+			return nil, err
 		}
-	}
-	var (
-		messages []map[string]any
-		err      error
-	)
-	if db := s.dbForSessionID(ctx, sessionID); db != nil {
-		messages, err = db.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{RepairAlternation: true})
-	} else {
-		err = fmt.Errorf("no session store is open to load the transcript")
-	}
+		sessionID = tip
+		db, err := s.dbForKeyOrFailure(ctx, s.ownerKeyForSessionID(sessionID))
+		if err != nil {
+			return nil, err
+		}
+		return db.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{RepairAlternation: true})
+	}()
 	if err != nil {
 		pkgLog().Error(fmt.Sprintf("Transcript read failed for session %s; refusing to treat the conversation as empty: %v", sessionID, err))
 		return nil, &TranscriptReadError{SessionID: sessionID, Cause: err}
@@ -294,17 +294,25 @@ func (s *SessionStore) enqueueTranscriptMessage(ctx context.Context, sessionID s
 	pending.items = append(pending.items, &queuedTranscript{message: maps.Clone(message)})
 	if len(pending.items) > transcriptMaxPendingPerSession {
 		oldest := pending.items[0]
-		pending.items = pending.items[1:]
 		if spoolPath := spoolDropped(ctx, sessionID, oldest.message); spoolPath != "" {
+			pending.items = pending.items[1:]
 			lazyMap(&s.spooledDropSessions)[sessionID] = true
 			pkgLog().Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); spooled oldest "+
 				"message to %s for replay after DB recovery", sessionID, transcriptMaxPendingPerSession, spoolPath))
 		} else {
-			pkgLog().Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); dropping oldest "+
-				"message to make room (on-disk spool unavailable)", sessionID, transcriptMaxPendingPerSession))
+			pkgLog().Warn(fmt.Sprintf("Session DB transcript pending queue for %s is past its cap of %d and the pending_messages "+
+				"spool refused the oldest message; keeping all %d in memory until the store or the spool takes them",
+				sessionID, transcriptMaxPendingPerSession, len(pending.items)))
 		}
 	}
 	return pending
+}
+
+// Hands the cause of rows that stopped reaching the store to the owner's hook
+func (s *SessionStore) reportStoreFailure(err error) {
+	if s.StoreFailed != nil {
+		s.StoreFailed(err)
+	}
 }
 
 // Python class name of a replaced or quarantined handle refusal
@@ -316,28 +324,85 @@ func stateRefusalName(err error) string {
 	return "StateDbCorruptError"
 }
 
-// Stops SQLite writes on a refused handle and diverts the backlog to the spool and the JSONL fallback
+// Moves the backlog of a session whose handle refuses writes to the spool, rows the spool refuses staying queued
 func (s *SessionStore) divertTranscriptAfterDBReplaced(ctx context.Context, sessionID, queueSessionID string, exc error) {
-	pkgLog().Error(fmt.Sprintf("Session DB refused further writes on this handle for %s (%s); stopping SQLite writes "+
-		"and diverting pending transcripts to the on-disk fallback: %v", sessionID, stateRefusalName(exc), exc))
+	pkgLog().Error(fmt.Sprintf("Session DB refused further writes on this handle for %s (%s); moving pending transcripts "+
+		"to the pending_messages spool, written to the store once it is repaired: %v", sessionID, stateRefusalName(exc), exc))
+	s.reportStoreFailure(exc)
+	s.spoolStalledBacklog(ctx, sessionID, queueSessionID)
+}
+
+// Spools every queued row before shutdown, a row the spool refuses written to sessions/<id>.jsonl as the last copy
+func (s *SessionStore) SpoolHeldTranscripts(ctx context.Context) int {
 	s.transcriptRetryMu.Lock()
-	remaining := []any{}
-	if q := s.dirtyTranscripts[queueSessionID]; q != nil {
-		for _, item := range q.items {
-			remaining = append(remaining, item.message)
-		}
-	}
-	delete(s.dirtyTranscripts, queueSessionID)
-	delete(s.transcriptAppendFailures, sessionID)
+	queued := slices.Sorted(maps.Keys(s.dirtyTranscripts))
 	s.transcriptRetryMu.Unlock()
-	for _, dropped := range remaining {
-		if spoolDropped(ctx, sessionID, dropped.(map[string]any)) == "" {
-			pkgLog().Warn(fmt.Sprintf("pending fallback failed for replaced state.db transcript on %s", sessionID))
+	spooled := 0
+	for _, sessionID := range queued {
+		spooled += s.spoolStalledBacklog(ctx, sessionID, sessionID)
+		s.transcriptRetryMu.Lock()
+		var refused []any
+		if q := s.dirtyTranscripts[sessionID]; q != nil {
+			for _, item := range q.items {
+				refused = append(refused, item.message)
+			}
+		}
+		delete(s.dirtyTranscripts, sessionID)
+		s.transcriptRetryMu.Unlock()
+		if len(refused) == 0 {
+			continue
+		}
+		path, err := state.DivertSessionTranscriptJSONL(ctx, sessionID, refused)
+		if err != nil {
+			pkgLog().Error(fmt.Sprintf("Neither the store, the pending_messages spool nor sessions/%s.jsonl took %d transcript row(s) of %s at shutdown: %v",
+				sessionID, len(refused), sessionID, err))
+			continue
+		}
+		pkgLog().Error(fmt.Sprintf("The pending_messages spool refused %d transcript row(s) of %s at shutdown; they are kept in %s",
+			len(refused), sessionID, path))
+	}
+	return spooled
+}
+
+// Writes every spooled and queued row of every waiting session in order, returning rows written and sessions still waiting
+func (s *SessionStore) ReplayHeldTranscripts(ctx context.Context) (int, int) {
+	drain := s.transcriptDrainLock()
+	drain.Lock()
+	defer drain.Unlock()
+	s.transcriptRetryMu.Lock()
+	held := map[string]*transcriptQueue{}
+	for sid := range s.spooledDropSessions {
+		held[sid] = nil
+	}
+	for sid, q := range s.dirtyTranscripts {
+		if len(q.items) > 0 {
+			held[sid] = q
 		}
 	}
-	if _, err := state.DivertSessionTranscriptJSONL(ctx, sessionID, remaining); err != nil {
-		pkgLog().Warn(fmt.Sprintf("JSONL divert failed for replaced state.db transcript on %s: %v", sessionID, err))
+	s.transcriptRetryMu.Unlock()
+	written := 0
+	for _, sid := range slices.Sorted(maps.Keys(held)) {
+		var count int
+		var err error
+		if q := held[sid]; q != nil {
+			count, err = s.flushTranscriptQueue(ctx, sid, q)
+		} else {
+			count, err = s.drainSpooledDrops(ctx, sid)
+		}
+		written += count
+		if err != nil {
+			pkgLog().Debug(fmt.Sprintf("Held transcript rows of %s are still waiting: %v", sid, err))
+		}
 	}
+	s.transcriptRetryMu.Lock()
+	defer s.transcriptRetryMu.Unlock()
+	waiting := len(s.spooledDropSessions)
+	for sid, q := range s.dirtyTranscripts {
+		if !s.spooledDropSessions[sid] && len(q.items) > 0 {
+			waiting++
+		}
+	}
+	return written, waiting
 }
 
 // Transitive compression tip of the session when it is a different still live row, else empty
@@ -404,8 +469,21 @@ func (s *SessionStore) publishTranscriptReroute(ctx context.Context, sessionID, 
 func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, sessionID string, message map[string]any) error {
 	s.transcriptRetryMu.Lock()
 	pending := s.enqueueTranscriptMessage(ctx, sessionID, message)
+	s.transcriptRetryMu.Unlock()
+	_, err := s.flushTranscriptQueue(ctx, sessionID, pending)
+	return err
+}
+
+// Writes the session's spooled backlog then its queue in order, returning rows written and an error the caller must see
+func (s *SessionStore) flushTranscriptQueue(ctx context.Context, sessionID string, pending *transcriptQueue) (int, error) {
+	s.transcriptRetryMu.Lock()
+	if len(pending.items) == 0 {
+		s.transcriptRetryMu.Unlock()
+		return 0, nil
+	}
 	msg := pending.items[0]
 	s.transcriptRetryMu.Unlock()
+	written := 0
 	queueSessionID := sessionID
 	ackHead := func() bool {
 		if len(pending.items) > 0 && pending.items[0] == msg {
@@ -419,12 +497,14 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 		return false
 	}
 	for {
-		spoolErr := s.drainSpooledDrops(ctx, sessionID)
+		replayed, spoolErr := s.drainSpooledDrops(ctx, sessionID)
+		written += replayed
 		exc := spoolErr
 		if exc == nil {
 			exc = s.appendTranscriptMessage(ctx, sessionID, msg.message)
 		}
 		if exc == nil {
+			written++
 			s.transcriptRetryMu.Lock()
 			queueEmpty := ackHead()
 			if !queueEmpty {
@@ -432,7 +512,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 			}
 			s.transcriptRetryMu.Unlock()
 			if queueEmpty {
-				return nil
+				return written, nil
 			}
 			continue
 		}
@@ -440,14 +520,14 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 		var corrupt *state.StateDBCorruptError
 		if errors.As(exc, &replaced) || errors.As(exc, &corrupt) {
 			s.divertTranscriptAfterDBReplaced(ctx, sessionID, queueSessionID, exc)
-			return nil
+			return written, nil
 		}
 		var closed *state.CompressionSessionClosedError
 		if errors.As(exc, &closed) {
 			ownerKey := s.ownerKeyForSessionID(sessionID)
 			childID, err := s.liveCompressionChild(ctx, sessionID)
 			if err != nil {
-				return err
+				return written, err
 			}
 			if childID == "" {
 				s.transcriptRetryMu.Lock()
@@ -455,7 +535,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 				s.transcriptRetryMu.Unlock()
 				pkgLog().Error(fmt.Sprintf("Session DB transcript append rejected for compression-ended %s with "+
 					"no unique live child; not retrying", sessionID))
-				return nil
+				return written, nil
 			}
 			if ownerKey != "" {
 				s.mu.Lock()
@@ -465,15 +545,16 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 			if rerouteErr := s.appendTranscriptMessage(ctx, childID, msg.message); rerouteErr != nil {
 				exc = rerouteErr
 			} else {
+				written++
 				s.transcriptRetryMu.Lock()
 				pending = s.migrateTranscriptQueueToChild(sessionID, queueSessionID, childID, pending, msg)
 				queueSessionID = childID
 				s.transcriptRetryMu.Unlock()
 				if err := s.publishTranscriptReroute(ctx, sessionID, childID); err != nil {
-					return err
+					return written, err
 				}
 				if len(pending.items) == 0 {
-					return nil
+					return written, nil
 				}
 				msg = pending.items[0]
 				sessionID = childID
@@ -483,7 +564,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 		if isFTSCorruptionError(exc) {
 			rebuilt, err := s.rebuildFTSOnce(ctx)
 			if err != nil {
-				return err
+				return written, err
 			}
 			if rebuilt {
 				if spoolErr != nil {
@@ -492,6 +573,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 				if retryErr := s.appendTranscriptMessage(ctx, sessionID, msg.message); retryErr != nil {
 					exc = retryErr
 				} else {
+					written++
 					s.transcriptRetryMu.Lock()
 					queueEmpty := ackHead()
 					if !queueEmpty {
@@ -499,7 +581,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 					}
 					s.transcriptRetryMu.Unlock()
 					if queueEmpty {
-						return nil
+						return written, nil
 					}
 					continue
 				}
@@ -509,16 +591,23 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 		failures := s.transcriptAppendFailures[sessionID] + 1
 		s.transcriptAppendFailures[sessionID] = failures
 		s.transcriptRetryMu.Unlock()
-		if failures >= transcriptAppendFailureEscalationThreshold {
+		switch {
+		case failures >= transcriptAppendFailureEscalationThreshold:
 			spooled := s.spoolStalledBacklog(ctx, sessionID, queueSessionID)
-			pkgLog().Error(fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, "+
-				"pending=%d, spooled_to_disk=%d); session is stalled and needs operator "+
-				"attention: %v", sessionID, failures, s.queueLen(pending), spooled, exc))
-		} else {
+			message := fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, pending=%d, spooled_to_disk=%d); "+
+				"the rows wait in the pending_messages spool and are written once the store takes them: %v",
+				sessionID, failures, s.queueLen(pending), spooled, exc)
+			if failures == transcriptAppendFailureEscalationThreshold {
+				pkgLog().Error(message)
+				s.reportStoreFailure(exc)
+			} else {
+				pkgLog().Debug(message)
+			}
+		default:
 			pkgLog().Warn(fmt.Sprintf("Session DB transcript append failed for %s (failure_count=%d, pending=%d); "+
 				"will retry: %v", sessionID, failures, s.queueLen(pending), exc))
 		}
-		return nil
+		return written, nil
 	}
 }
 
@@ -559,14 +648,14 @@ func (s *SessionStore) spoolStalledBacklog(ctx context.Context, sessionID, queue
 	return spooled
 }
 
-// Replays the session's spooled drops first, returning the replay failure while some stay on disk
-func (s *SessionStore) drainSpooledDrops(ctx context.Context, sessionID string) error {
+// Replays the session's spooled drops first, returning rows replayed and the replay failure while some stay on disk
+func (s *SessionStore) drainSpooledDrops(ctx context.Context, sessionID string) (int, error) {
 	s.transcriptRetryMu.Lock()
 	marked := s.spooledDropSessions[sessionID]
 	knownFailing := s.transcriptAppendFailures[sessionID] != 0
 	s.transcriptRetryMu.Unlock()
 	if !marked {
-		return nil
+		return 0, nil
 	}
 	var failures []error
 	replay := func(message map[string]any) error {
@@ -576,26 +665,29 @@ func (s *SessionStore) drainSpooledDrops(ctx context.Context, sessionID string) 
 		}
 		return nil
 	}
-	_, remaining, err := DrainTranscriptSpool(ctx, sessionID, replay, knownFailing)
+	replayed, remaining, err := DrainTranscriptSpool(ctx, sessionID, replay, knownFailing)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to drain transcript spool for %s: %v", sessionID, err))
-		return nil
+		return replayed, nil
 	}
 	if remaining == 0 {
 		s.transcriptRetryMu.Lock()
 		delete(s.spooledDropSessions, sessionID)
 		s.transcriptRetryMu.Unlock()
-		return nil
+		return replayed, nil
 	}
 	if len(failures) > 0 {
-		return failures[len(failures)-1]
+		return replayed, failures[len(failures)-1]
 	}
-	return fmt.Errorf("older spooled transcript rows for %s still pending", sessionID)
+	return replayed, fmt.Errorf("older spooled transcript rows for %s still pending", sessionID)
 }
 
-// Writes one transcript row into the owning store, a profile without a home deferring the write
+// Writes one transcript row into the owning store, a store that cannot take it returned with its cause
 func (s *SessionStore) appendTranscriptMessage(ctx context.Context, sessionID string, message map[string]any) error {
-	db := s.dbForSessionID(ctx, sessionID)
+	db, err := s.dbForKeyOrFailure(ctx, s.ownerKeyForSessionID(sessionID))
+	if err != nil {
+		return err
+	}
 	if db == nil {
 		return fmt.Errorf("no owning session store for %s; deferring transcript write", sessionID)
 	}
@@ -603,7 +695,7 @@ func (s *SessionStore) appendTranscriptMessage(ctx context.Context, sessionID st
 	if !ok {
 		return missingStoreMethod(db, "append_message")
 	}
-	_, err := appender.AppendMessage(ctx, sessionID, transcriptAppendKwargs(sessionID, message, nil), state.AppendGuards{})
+	_, err = appender.AppendMessage(ctx, sessionID, transcriptAppendKwargs(sessionID, message, nil), state.AppendGuards{})
 	return err
 }
 
@@ -680,7 +772,12 @@ func (s *SessionStore) HasPlatformMessageID(ctx context.Context, sessionID, plat
 
 // Role of the newest live conversation row on the route reads follow, empty when none or unreadable
 func (s *SessionStore) TranscriptTailRole(ctx context.Context, sessionID string) string {
-	sessionID = s.compressionTipForSessionID(ctx, s.followReroutes(sessionID))
+	tip, err := s.compressionTipForSessionID(ctx, s.followReroutes(sessionID))
+	if err != nil {
+		pkgLog().Debug(fmt.Sprintf("transcript tail lookup failed for %s: %v", sessionID, err))
+		return ""
+	}
+	sessionID = tip
 	db := s.dbForSessionID(ctx, sessionID)
 	if db == nil {
 		return ""

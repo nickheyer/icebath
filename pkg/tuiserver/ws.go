@@ -776,7 +776,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 		readyPayload["session_authority"] = true
 	}
 	readyOK := c.transport.WriteAsync(pyjson.ObjectOf("jsonrpc", "2.0", "method", "event",
-		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", tuihost.SealPayload("gateway.ready", readyPayload))))
+		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", tuigateway.SealPayload("gateway.ready", readyPayload))))
 	if readyOK {
 		wsEnsureSkinWatcher(c.ctx)
 		wsEnsureLeaseWatcher()
@@ -897,6 +897,7 @@ func (c *wsConnection) teardown() error {
 				}
 			}()
 			wsReleaseWakeForTransport(c.transport)
+			releaseVoiceForTransport(c.transport)
 		}()
 		func() {
 			defer func() {

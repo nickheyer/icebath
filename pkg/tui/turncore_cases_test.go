@@ -77,10 +77,10 @@ func TestTurnControllerRecordTodosPreservesTheParentField(t *testing.T) {
 func TestSpawnHistoryStoreStatusNormalization(t *testing.T) {
 	t.Run("keeps timeout/error statuses from disk snapshots", func(t *testing.T) {
 		s := newTUIStore()
-		s.pushDiskSnapshot(map[string]any{"finished_at": float64(1_700_000_001), "label": "status test", "session_id": "sess-1", "started_at": float64(1_700_000_000),
-			"subagents": []any{
-				map[string]any{"goal": "timeout child", "id": "sa-timeout", "index": float64(0), "status": "timeout"},
-				map[string]any{"goal": "error child", "id": "sa-error", "index": float64(1), "status": "error"},
+		s.pushDiskSnapshot(tuigateway.SpawnTreeLoadResult{FinishedAt: ptr(float64(1_700_000_001)), Label: ptr("status test"), SessionID: ptr("sess-1"), StartedAt: ptr(float64(1_700_000_000)),
+			Subagents: []tuigateway.SpawnTreeSubagent{
+				{Goal: "timeout child", ID: "sa-timeout", Index: 0, Status: "timeout"},
+				{Goal: "error child", ID: "sa-error", Index: 1, Status: "error"},
 			}}, "/tmp/snap-timeout-error.json")
 		var statuses []string
 		for _, sa := range s.spawnHistory[0].Subagents {
@@ -92,8 +92,8 @@ func TestSpawnHistoryStoreStatusNormalization(t *testing.T) {
 	})
 	t.Run("falls back unknown disk statuses to completed", func(t *testing.T) {
 		s := newTUIStore()
-		s.pushDiskSnapshot(map[string]any{"finished_at": float64(1_700_000_011), "label": "unknown status test", "session_id": "sess-2", "started_at": float64(1_700_000_010),
-			"subagents": []any{map[string]any{"goal": "mystery child", "id": "sa-unknown", "index": float64(0), "status": "mystery_status"}}}, "/tmp/snap-unknown.json")
+		s.pushDiskSnapshot(tuigateway.SpawnTreeLoadResult{FinishedAt: ptr(float64(1_700_000_011)), Label: ptr("unknown status test"), SessionID: ptr("sess-2"), StartedAt: ptr(float64(1_700_000_010)),
+			Subagents: []tuigateway.SpawnTreeSubagent{{Goal: "mystery child", ID: "sa-unknown", Index: 0, Status: "mystery_status"}}}, "/tmp/snap-unknown.json")
 		if got := s.spawnHistory[0].Subagents[0].Status; got != "completed" {
 			t.Fatalf("status %q", got)
 		}
@@ -163,7 +163,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 			t.Fatalf("tools %#v", c.store.turn.Tools)
 		}
 		took := 0.94
-		c.recordToolComplete("t1", "", "", &took, nil, "", nil)
+		c.recordToolComplete("t1", "", "", &took, nil, "", nil, toolVerdict{})
 		if !reflect.DeepEqual(c.store.turn.StreamPendingTools, []string{`Read File("main.go") (0.9s) ✓`}) || !reflect.DeepEqual(c.store.turn.TurnTrail, []string{analyzingToolOutput}) {
 			t.Fatalf("pending %#v trail %#v", c.store.turn.StreamPendingTools, c.store.turn.TurnTrail)
 		}
@@ -240,10 +240,10 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		c := stillController()
 		c.store.ui.Sid = "s1"
 		c.startMessage()
-		c.upsertSubagent(map[string]any{"subagent_id": "b", "goal": "second", "task_index": float64(1), "depth": float64(0)}, nil, true)
-		c.upsertSubagent(map[string]any{"subagent_id": "a", "goal": "first", "task_index": float64(0), "depth": float64(0)}, nil, true)
-		c.upsertSubagent(map[string]any{"subagent_id": "a", "tool_count": float64(3)}, func(_ subagentProgress, next *subagentProgress) { next.Status = "completed" }, true)
-		c.upsertSubagent(map[string]any{"subagent_id": "late"}, nil, false)
+		c.upsertSubagent(tuigateway.SubagentEventPayload{SubagentID: ptr("b"), Goal: "second", TaskIndex: 1, Depth: ptr(int64(0))}, nil, true)
+		c.upsertSubagent(tuigateway.SubagentEventPayload{SubagentID: ptr("a"), Goal: "first", TaskIndex: 0, Depth: ptr(int64(0))}, nil, true)
+		c.upsertSubagent(tuigateway.SubagentEventPayload{SubagentID: ptr("a"), ToolCount: ptr(int64(3))}, func(_ subagentProgress, next *subagentProgress) { next.Status = "completed" }, true)
+		c.upsertSubagent(tuigateway.SubagentEventPayload{SubagentID: ptr("late")}, nil, false)
 		got := c.store.turn.Subagents
 		if len(got) != 2 || got[0].ID != "a" || got[0].ToolCount != 3 || got[0].Status != "completed" || got[1].ID != "b" {
 			t.Fatalf("subagents %#v", got)

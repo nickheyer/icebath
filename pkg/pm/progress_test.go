@@ -118,10 +118,10 @@ func TestProgressCalledProcessErrorMatchesPython(t *testing.T) {
 	if got := (&CalledProcessError{Argv: []string{"a", "b"}, Code: 2}).Error(); got != "a b exited with status 2" {
 		t.Fatalf("exit message %q", got)
 	}
-	if got := (&CalledProcessError{Argv: []string{"a", "b"}, Code: -9}).Error(); got != "Command '['a', 'b']' died with <Signals.SIGKILL: 9>." && runtime.GOOS != "windows" {
+	if got := (&CalledProcessError{Argv: []string{"a", "b"}, Code: -9}).Error(); got != "a b was killed by SIGKILL (signal 9)" && runtime.GOOS != "windows" {
 		t.Fatalf("signal message %q", got)
 	}
-	if got := (&CalledProcessError{Argv: []string{"a"}, Code: -40}).Error(); got != "Command '['a']' died with unknown signal 40." {
+	if got := (&CalledProcessError{Argv: []string{"a"}, Code: -40}).Error(); got != "a was killed by unknown signal 40" {
 		t.Fatalf("unknown signal message %q", got)
 	}
 	t.Setenv("ICEBATH_VERBOSE", "0")

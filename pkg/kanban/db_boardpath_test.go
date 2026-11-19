@@ -205,7 +205,7 @@ func TestNormalizeReasoningEffortAndSkills(t *testing.T) {
 		t.Fatal(v, err)
 	}
 	bogus := "turbo"
-	if _, err := NormalizeReasoningEffort(&bogus); err == nil || !strings.HasPrefix(err.Error(), "reasoning_effort must be one of none, ") || !strings.HasSuffix(err.Error(), ", got 'turbo'") {
+	if _, err := NormalizeReasoningEffort(&bogus); err == nil || !strings.HasPrefix(err.Error(), "reasoning_effort must be one of none, ") || !strings.HasSuffix(err.Error(), ", got turbo") {
 		t.Fatal(err)
 	}
 	if got, err := normalizeTaskSkills([]string{" a ", "", "a", "b"}); err != nil || strings.Join(got, ",") != "a,b" {

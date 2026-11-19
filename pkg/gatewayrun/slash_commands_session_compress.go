@@ -78,7 +78,7 @@ func manualCompressionReplyLines(ctx context.Context, summary *agent.ManualCompr
 }
 
 // What a manual compress would remove, with no agent and no writes
-func compressPreviewReply(ctx context.Context, history []map[string]any, partial bool, keepLast int, focusTopic *string, aggNote string) string {
+func compressPreviewReply(ctx context.Context, history []map[string]any, partial bool, keepLast int, focusTopic *string) string {
 	var pvMsgs []map[string]any
 	for _, m := range history {
 		role := m["role"]
@@ -88,12 +88,9 @@ func compressPreviewReply(ctx context.Context, history []map[string]any, partial
 	}
 	report := provider.SummarizeCompressPreview(pvMsgs, partial, keepLast, focusTopic, agent.SessionCompressAgent{}.RequestTokens(ctx, pvMsgs, "", nil))
 	reportLines, _ := report["lines"].([]string)
-	lines := make([]string, 0, len(reportLines)+1)
+	lines := make([]string, 0, len(reportLines))
 	for _, line := range reportLines {
 		lines = append(lines, "🗜️ "+line)
-	}
-	if aggNote != "" {
-		lines = append(lines, aggNote)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -154,15 +151,8 @@ func (r *GatewayRunner) handleCompressCommandInner(ctx context.Context, event *g
 		return i18n.T(ctx, "gateway.compress.not_enough", "", nil), nil
 	}
 	request := agent.ParseCompressArgs(event.GetCommandArgs())
-	aggNote := ""
-	if request.Aggressive {
-		aggNote = i18n.T(ctx, "gateway.compress.aggressive_unsupported", "", nil)
-	}
-	if request.Aggressive && !request.Preview {
-		return aggNote, nil
-	}
 	if request.Preview {
-		return compressPreviewReply(ctx, history, request.Partial, request.KeepLast, request.FocusTopic, aggNote), nil
+		return compressPreviewReply(ctx, history, request.Partial, request.KeepLast, request.FocusTopic), nil
 	}
 	reply, err := r.runManualCompression(ctx, source, entry, history, request)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -25,7 +26,7 @@ var doctorProviderEnvHints = []string{
 	"KIMI_CN_API_KEY", "GMI_API_KEY", "FIREWORKS_API_KEY", "ACTUAL_API_KEY", "ACTUAL_BASE_URL", "MINIMAX_API_KEY",
 	"MINIMAX_CN_API_KEY", "KILOCODE_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "HF_TOKEN",
 	"AI_GATEWAY_API_KEY", "OPENCODE_ZEN_API_KEY", "OPENCODE_GO_API_KEY", "COMMANDCODE_API_KEY", "XIAOMI_API_KEY",
-	"TOKENHUB_API_KEY", "TOKENPLAN_API_KEY",
+	"TOKENHUB_API_KEY", "TOKENPLAN_API_KEY", "ICEBATH_CUSTOM_",
 }
 
 // Prints the refresh free OAuth status rows of Codex, MiniMax and xAI
@@ -166,8 +167,8 @@ type doctorCheckEntry struct {
 // Ordered doctor walk, an empty title meaning the check prints its own header or none, tiers adding theirs at init
 var doctorChecks = []doctorCheckEntry{
 	{"Security Advisories", checkSecurityAdvisories}, {"MCP Server Security", checkMCPSecurity},
-	{"Python Environment", checkPythonEnvironment}, {"SSL / CA Certificates", checkCertificates},
-	{"Required Packages", checkRequiredPackages},
+	{"Runtime and SQLite", checkRuntime}, {"SSL / CA Certificates", checkCertificates},
+	{"", checkOptionalCapabilities},
 	{"Configuration Files", checkEnvFile},
 	{"", checkConfigFile}, {"", checkConfigDrift},
 	{"xAI Model Retirement (May 15, 2026)", checkXAIRetirement},
@@ -213,6 +214,7 @@ func runDoctor(ctx context.Context, d *Doctor, ns map[string]any, checks []docto
 	} {
 		fmt.Fprintln(w, c.Color(line, cliui.Cyan))
 	}
+	fmt.Fprintln(w, linktier.BuildLine())
 	total := &Finding{}
 	held := provider.WithLeftCoreInstallsHeld(ctx)
 	for _, entry := range checks {

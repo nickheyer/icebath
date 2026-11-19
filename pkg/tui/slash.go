@@ -1,8 +1,9 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"sort"
@@ -10,8 +11,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -62,8 +66,8 @@ func (r *slashRun) rpc(method string, params map[string]any, then func(map[strin
 			r.fail(err)
 			return nil
 		}
-		result := asRPCResult(v)
-		if result == nil {
+		result, isObject := v.(map[string]any)
+		if !isObject {
 			r.a.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
 			return nil
 		}
@@ -89,7 +93,7 @@ func (r *slashRun) ran() tea.Cmd {
 		return nil
 	}
 	r.observed = true
-	return gatewayCall(r.a.gw, "command.observe", map[string]any{"arg": r.arg, "name": r.name, "session_id": r.sid}, func(_ any, err error) tea.Cmd {
+	return call(r.a.gw, tuigateway.CommandObserve, tuigateway.CommandObserveParams{Arg: r.arg, Name: r.name, SessionID: r.sid}, func(_ *tuigateway.CommandObserveResult, err error) tea.Cmd {
 		var refusal *rpcError
 		if err != nil && ((errors.As(err, &refusal) && refusal.HasCode && refusal.Code == jsonRPCMethodNotFound) || strings.Contains(rpcErrorMessage(err), "unknown_method")) {
 			r.a.observeUnsupported = true
@@ -145,6 +149,10 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 	if arg != "" {
 		argTail = " " + arg
 	}
+	if line, absent := linktier.Refusal("/"+strings.ToLower(name), linktier.SlashTiers[strings.ToLower(name)]); absent {
+		a.sys(line)
+		return nil
+	}
 	if found := a.findSlashCommand(name); found != nil {
 		return found.run(run)
 	}
@@ -194,21 +202,20 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			}
 		}
 	}
-	exec := gatewayCall(a.gw, "slash.exec", map[string]any{"command": strings.TrimPrefix(cmd, "/"), "session_id": nilIfEmpty(run.sid)}, func(v any, err error) tea.Cmd {
+	exec := call(a.gw, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: strings.TrimPrefix(cmd, "/"), SessionID: run.sid}, func(r *tuigateway.SlashExecResult, err error) tea.Cmd {
 		if run.stale() {
 			return nil
 		}
 		if err == nil {
-			if parseCommandDispatch(v) != nil {
-				return a.handleDispatch(run, v, true)
+			if directive, isDirective := r.Directive(); isDirective {
+				return a.handleDispatch(run, directive, true)
 			}
-			r := asRPCResult(v)
-			body, _ := r["output"].(string)
+			body := r.Output
 			if body == "" {
 				body = "/" + name + ": no output"
 			}
-			if warning, _ := r["warning"].(string); warning != "" {
-				body = "warning: " + warning + "\n" + body
+			if r.Warning != "" {
+				body = "warning: " + r.Warning + "\n" + body
 			}
 			return a.showOutput(body, name)
 		}
@@ -220,7 +227,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			a.sys("error: " + describeSlashExecError(name, err))
 			return nil
 		}
-		return gatewayCall(a.gw, "command.dispatch", map[string]any{"arg": arg, "name": name, "session_id": nilIfEmpty(run.sid)}, func(raw any, err error) tea.Cmd {
+		return call(a.gw, tuigateway.CommandDispatch, tuigateway.CommandDispatchParams{Arg: arg, Name: name, SessionID: run.sid}, func(d *tuigateway.CommandDispatchResult, err error) tea.Cmd {
 			if run.stale() {
 				return nil
 			}
@@ -228,24 +235,17 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 				run.fail(err)
 				return nil
 			}
-			return a.handleDispatch(run, raw, false)
+			return a.handleDispatch(run, *d, false)
 		})
 	})
 	return exec
 }
 
 // Carries out what the gateway decided a command is, output, an alias, a skill or message to send, or a prefill
-func (a *app) handleDispatch(run *slashRun, raw any, fromExec bool) tea.Cmd {
-	d := parseCommandDispatch(raw)
-	if d == nil {
-		a.sys("error: " + misfitText(tr("session.common.invalidResponse", "command.dispatch")))
+func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, fromExec bool) tea.Cmd {
+	if d.Type == "" || d.Type == "alias" && d.Target == "" || d.Type == "skill" && d.Name == "" {
+		a.sys("error: " + misfitText(tr("session.common.invalidResponse", tuigateway.CommandDispatch.Name())))
 		return nil
-	}
-	text := func(p *string) string {
-		if p == nil {
-			return ""
-		}
-		return *p
 	}
 	sendDispatch := func(display, message string) tea.Cmd {
 		shown := trimJS(display)
@@ -258,7 +258,7 @@ func (a *app) handleDispatch(run *slashRun, raw any, fromExec bool) tea.Cmd {
 	}
 	switch d.Type {
 	case "exec", "plugin":
-		if out := text(d.Output); fromExec && out != "" {
+		if out := d.Output; fromExec && out != "" {
 			return a.showOutput(out, run.name)
 		} else if out != "" {
 			a.sys(out)
@@ -272,25 +272,25 @@ func (a *app) handleDispatch(run *slashRun, raw any, fromExec bool) tea.Cmd {
 		}
 		return a.slash("/"+d.Target+argTail, run.submission, false)
 	case "skill":
-		if trimJS(text(d.Message)) == "" {
+		if trimJS(d.Message) == "" {
 			a.sys("/" + run.name + ": skill payload missing message")
 			return nil
 		}
-		return sendDispatch(text(d.Display), text(d.Message))
+		return sendDispatch(d.Display, d.Message)
 	case "send":
-		if notice := trimJS(text(d.Notice)); notice != "" {
-			a.sys(text(d.Notice))
+		if notice := trimJS(d.Notice); notice != "" {
+			a.sys(d.Notice)
 		}
-		if trimJS(text(d.Message)) == "" {
+		if trimJS(d.Message) == "" {
 			a.sys("/" + run.name + ": empty message")
 			return nil
 		}
-		return sendDispatch(text(d.Display), text(d.Message))
+		return sendDispatch(d.Display, d.Message)
 	case "prefill":
-		if notice := trimJS(text(d.Notice)); notice != "" {
-			a.sys(text(d.Notice))
+		if notice := trimJS(d.Notice); notice != "" {
+			a.sys(d.Notice)
 		}
-		if message := text(d.Message); message != "" {
+		if message := d.Message; message != "" {
 			return a.card.composer.SetValue(message)
 		}
 	}
@@ -413,7 +413,7 @@ func (a *app) coreCommands() []slashCommand {
 					sections = append(sections, panelSection{Rows: cat.Pairs, Title: &title})
 				}
 				if a.catalog.SkillCount > 0 {
-					text := tr("slashCmd.core.help.skillCommandsAvailable", jsString(float64(a.catalog.SkillCount)))
+					text := tr("slashCmd.core.help.skillCommandsAvailable", a.catalog.SkillCount)
 					sections = append(sections, panelSection{Text: &text})
 				}
 			}
@@ -500,9 +500,11 @@ func (a *app) coreCommands() []slashCommand {
 				return a.page(out, tr("slashCmd.core.status.pageTitle"))
 			}
 			if a.gw.canonical() {
-				return r.rpc("slash.exec", map[string]any{"command": "status", "session_id": r.sid}, func(res map[string]any) tea.Cmd {
-					out, _ := res["output"].(string)
-					return show(out)
+				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: "status", SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					return show(res.Output)
 				})
 			}
 			return ask(r.rpc, a.sys, tuigateway.SessionStatus, tuigateway.SessionStatusParams{SessionID: r.sid}, func(res *tuigateway.SessionStatusResult) tea.Cmd {
@@ -540,8 +542,11 @@ func (a *app) coreCommands() []slashCommand {
 		}},
 		{name: "config", help: "show the presentation settings the gateway serves for this profile", run: func(r *slashRun) tea.Cmd {
 			if !a.gw.canonical() {
-				return r.rpc("slash.exec", map[string]any{"command": strings.TrimPrefix(r.cmd, "/"), "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-					out, _ := res["output"].(string)
+				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: strings.TrimPrefix(r.cmd, "/"), SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					out := res.Output
 					if out == "" {
 						out = "{}"
 					}
@@ -585,9 +590,21 @@ func configLines(value map[string]any, indent string) []string {
 			lines = append(lines, configLines(nested, indent+"  ")...)
 			continue
 		}
-		lines = append(lines, indent+k+": "+jsString(value[k]))
+		lines = append(lines, indent+k+": "+configValueText(value[k]))
 	}
 	return lines
+}
+
+// Text of one config value, text as it is and every other value as its JSON
+func configValueText(v any) string {
+	if text, isText := v.(string); isText {
+		return text
+	}
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(encoded)
 }
 
 // Asks the app to quit with a status after a command printed its last line
@@ -595,6 +612,11 @@ type dieMsg struct{ code int }
 
 // Refusal of a command the gateway does not run, a name no catalog knows told apart with the closest known names
 func (a *app) slashRefusal(name string, err error) string {
+	if a.catalog != nil {
+		if desc, chat := a.catalog.Chat[strings.ToLower(name)]; chat {
+			return tr("slash.chatCommand", name, desc)
+		}
+	}
 	known := a.knownCommandNames()
 	if slices.Contains(known, strings.ToLower(name)) {
 		return describeSlashExecError(name, err)

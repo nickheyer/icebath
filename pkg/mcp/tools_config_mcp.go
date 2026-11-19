@@ -419,7 +419,11 @@ func ToolsDisableEnableCommand(ctx context.Context, ui TerminalUI, action, platf
 	rejected := map[string]bool{}
 	for _, name := range toolsetTargets {
 		if !validToolsets[name] {
-			printError(ui, fmt.Sprintf("Unknown toolset '%s'", name))
+			if line, refused := tools.ToolsetTierRefusal(name); refused {
+				printError(ui, line)
+			} else {
+				printError(ui, fmt.Sprintf("Unknown toolset '%s'", name))
+			}
 			rejected[name] = true
 		}
 	}

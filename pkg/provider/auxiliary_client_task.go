@@ -682,7 +682,7 @@ func auxValidateLLMResponse(ctx context.Context, response any, task, provider, b
 		label = "call"
 	}
 	if response == nil {
-		return nil, &AuxRuntimeError{Message: fmt.Sprintf("Auxiliary %s: LLM returned None response", label)}
+		return nil, &AuxRuntimeError{Message: fmt.Sprintf("Auxiliary %s: LLM returned None response", label), Fault: AuxReplyMissing}
 	}
 	response, err := auxUnwrapDataEnvelope(response, task)
 	if err != nil {
@@ -702,6 +702,7 @@ func auxValidateLLMResponse(ctx context.Context, response any, task, provider, b
 				Message: fmt.Sprintf("Auxiliary %s: LLM returned invalid response (type=%s): %s. Expected object with .choices[0].message — check provider "+
 					"adapter or custom endpoint compatibility.", label, pyrepr.TypeName(response), pyrepr.Repr(string(text))),
 				ProviderError: auxEmbeddedProviderError(response),
+				Fault:         AuxReplyMalformed,
 			}
 			auxNoteRelayAuxiliaryError(ctx, invalid)
 			return nil, invalid

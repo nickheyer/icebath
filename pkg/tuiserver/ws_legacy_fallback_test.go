@@ -79,7 +79,7 @@ func wsLegacyHomes(t *testing.T) (launch, bee string) {
 	prevHome := wsTestSwapLaunchHome(launch)
 	dbMu.Lock()
 	prevDB, prevErr := sharedDB, dbError
-	sharedDB, dbError = nil, ""
+	sharedDB, dbError = nil, nil
 	dbMu.Unlock()
 	t.Cleanup(func() {
 		wsTestSwapLaunchHome(prevHome)

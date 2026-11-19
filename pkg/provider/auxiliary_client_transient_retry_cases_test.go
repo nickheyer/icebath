@@ -112,7 +112,7 @@ func TestTransientTransportRetryVisionSkipsSameProviderRetryOnTimeoutAsync(t *te
 
 func TestTransientTransportRetryNoProgressTimeoutStillRetriesSameProviderAsync(t *testing.T) {
 	primary := auxScriptedCallClient("https://chatgpt.com/backend-api/codex", "k",
-		&AuxTimeoutError{Message: "Codex auxiliary Responses stream produced no output within 60.0s (no-progress timeout, 60.2s elapsed)"},
+		&AuxTimeoutError{Message: "Codex auxiliary Responses stream produced no output within 60.0s (no-progress timeout, 60.2s elapsed)", Kind: AuxTimeoutNoOutput},
 		map[string]any{"retried": true})
 	ctx := auxTransientPatches(t, primary)
 	auxFixedVisionClient(t, primary)

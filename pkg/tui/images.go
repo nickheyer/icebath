@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -17,6 +18,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const maxImageBytes = 20 * 1024 * 1024
@@ -215,11 +218,16 @@ func stageImageFile(raw, base string, remote bool, gw turnGateway, destination s
 	}
 	name := filepath.Base(path)
 	if remote {
-		result, err := gw.request(context.Background(), "image.attach_bytes", map[string]any{"session_id": destination.Sid, "filename": uuid.NewString() + ext, "content_base64": base64.StdEncoding.EncodeToString(data)}, 0)
+		upload := tuigateway.ImageAttachBytesParams{SessionID: destination.Sid, Filename: uuid.NewString() + ext, ContentBase64: base64.StdEncoding.EncodeToString(data)}
+		raw, err := gw.request(context.Background(), tuigateway.CanonicalImageAttachBytes.Name(), wireParams(upload), 0)
 		if err != nil {
 			return nil, err
 		}
-		owned, _ := asRPCResult(result)["path"].(string)
+		attached, err := tuigateway.CanonicalImageAttachBytes.Result(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", tuigateway.CanonicalImageAttachBytes.Name())), err)
+		}
+		owned := attached.Path
 		if owned == "" {
 			return nil, errors.New(tr("canonical.images.noOwnerPath"))
 		}

@@ -1200,20 +1200,22 @@ func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, 
 	})
 }
 
-// Reports whether an auxiliary vision client resolves explicitly or through the auto chain, a resolver crash panicking into the registry
+// Reports whether an auxiliary vision client resolves explicitly or through the auto chain, a probe failure logged and reading false
 func checkVideoRequirements(env *Env) bool {
 	if env == nil || env.AuxClient() == nil {
 		return false
 	}
 	r, ok := env.AuxClient().(AuxTaskResolver)
 	if !ok {
-		panic(fmt.Errorf("auxiliary client %T does not implement tools.AuxTaskResolver, the vision gate cannot probe it", env.AuxClient()))
+		envLog(env).Error("Video analysis is off: the auxiliary client cannot probe the vision task", "client", fmt.Sprintf("%T", env.AuxClient()))
+		return false
 	}
-	ctx := WithEnvHome(context.Background(), env)
+	ctx := visionCtx(context.Background(), env)
 	for _, provider := range []string{"", "auto"} {
 		resolved, err := r.ResolvesVision(ctx, provider)
 		if err != nil {
-			panic(err)
+			envLog(env).Error("Video analysis is off: resolving the vision task failed", "provider", provider, "error", err)
+			return false
 		}
 		if resolved {
 			return true

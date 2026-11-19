@@ -538,12 +538,21 @@ func TestExplicitFlagsOnResumeAreCheckedAgainstTheFrozenRoute(t *testing.T) {
 	frozenLaunch(client, map[string]any{"model": "m-frozen", "model_requested": "m-alias", "max_turns": 5, "run_budget": 60.0})
 	for _, launch := range []map[string]any{{"max_turns": 1}, {"model": "m-other"}, {"checkpoints": true}, {"run_budget": 30},
 		{"verbose": true}, {"skills": []any{"arxiv"}}} {
-		_, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, storeCLI("local-old", true), launch)
-		wantClientError(t, err, "Resume retains gateway session policy")
+		if _, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, storeCLI("local-old", true), launch); err != nil {
+			t.Fatalf("launch %v: %v", launch, err)
+		}
+		sent := client.lastOf(t, "session.mutate")
+		payload, _ := sent["payload"].(map[string]any)
+		for key, value := range launch {
+			if sent["operation"] != "launch" || len(payload) != 1 || (!pyjson.Equal(payload[key], value) && pyFloatOf(payload[key]) != pyFloatOf(value)) {
+				t.Fatalf("launch %v relaunched with %v", launch, sent)
+			}
+		}
 	}
+	relaunches := len(client.of("session.mutate"))
 	for _, launch := range []map[string]any{{}, {"max_turns": 5, "model": "m-alias", "run_budget": 60, "toolsets": []any{"web"}}} {
 		sid, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, storeCLI("local-old", true), launch)
-		if err != nil || sid != "local-old" {
+		if err != nil || sid != "local-old" || len(client.of("session.mutate")) != relaunches {
 			t.Fatalf("launch %v: %q %v", launch, sid, err)
 		}
 	}
@@ -555,8 +564,14 @@ func TestExplicitToolsetsOnResumeAreCheckedAgainstTheFrozenRoute(t *testing.T) {
 	frozenLaunch(client, map[string]any{"toolsets": []any{"file"}})
 	host := storeCLI("local-old", true)
 	host.TypedToolsets = []any{"web"}
-	_, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"toolsets": []any{"web"}})
-	wantClientError(t, err, "Resume retains gateway session policy")
+	if _, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"toolsets": []any{"web"}}); err != nil {
+		t.Fatal(err)
+	}
+	sent := client.lastOf(t, "session.mutate")
+	if payload, _ := sent["payload"].(map[string]any); sent["operation"] != "launch" || !pyjson.Equal(payload["toolsets"], []any{"web"}) || len(payload) != 1 {
+		t.Fatalf("toolsets relaunched with %v", sent)
+	}
+	relaunches := len(client.of("session.mutate"))
 	host.TypedToolsets = []any{"file"}
 	if sid, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"toolsets": []any{"file"}}); err != nil || sid != "local-old" {
 		t.Fatal(sid, err)
@@ -565,30 +580,42 @@ func TestExplicitToolsetsOnResumeAreCheckedAgainstTheFrozenRoute(t *testing.T) {
 	if sid, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"toolsets": []any{"web"}}); err != nil || sid != "local-old" {
 		t.Fatal(sid, err)
 	}
+	if len(client.of("session.mutate")) != relaunches {
+		t.Fatal("the frozen toolsets again or no typed toolsets must not relaunch")
+	}
 }
 
-func TestResumeRefusalNamesTheClashingFlagAndTheWayForward(t *testing.T) {
+func TestResumeRelaunchesTheClashingFlags(t *testing.T) {
 	ctx := context.Background()
 	db, client := storeFixture(t)
 	frozenLaunch(client, map[string]any{"model": "m-frozen", "max_turns": 5})
 	host := storeCLI("local-old", true)
-	_, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"model": "m-other"})
-	wantClientError(t, err, "Resume retains gateway session policy")
-	if !strings.Contains(err.Error(), "-m/--model differs") || !strings.Contains(err.Error(), "use /model after resuming") {
-		t.Fatalf("refusal %q", err.Error())
+	for _, launch := range []map[string]any{{"model": "m-other"}, {"max_turns": 1}, {"run_budget": 30}} {
+		if _, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, launch); err != nil {
+			t.Fatal(err)
+		}
+		sent := client.lastOf(t, "session.mutate")
+		payload, _ := sent["payload"].(map[string]any)
+		if sent["operation"] != "launch" || len(payload) != 1 {
+			t.Fatalf("launch %v sent %v", launch, sent)
+		}
+		for key, value := range launch {
+			if !pyjson.Equal(payload[key], value) && !(key == "run_budget" && payload[key] == 30.0) {
+				t.Fatalf("launch %v payload %v", launch, payload)
+			}
+		}
 	}
-	_, err = NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"max_turns": 1})
-	wantClientError(t, err, "--max-turns differs")
-	if !strings.Contains(err.Error(), "start a new session") {
-		t.Fatalf("refusal %q", err.Error())
+	calls := len(client.of("session.mutate"))
+	if _, err := NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"model": "m-frozen", "max_turns": 5}); err != nil {
+		t.Fatal(err)
 	}
-	_, err = NewGatewaySessionStore(db.Connection).OpenSession(ctx, host, map[string]any{"run_budget": 30})
-	wantClientError(t, err, "--run-budget differs")
-	err = CheckResumePolicy(ctx, map[string]any{"provider": "anthropic"},
+	if len(client.of("session.mutate")) != calls {
+		t.Fatal("the frozen flags again must not relaunch")
+	}
+	overrides, err := ResumeOverrides(ctx, map[string]any{"provider": "anthropic"},
 		map[string]any{"info": map[string]any{"launch_request": map[string]any{"provider": "openrouter"}}})
-	wantClientError(t, err, "--provider differs")
-	if !strings.Contains(err.Error(), "use /model after resuming") {
-		t.Fatalf("refusal %q", err.Error())
+	if err != nil || len(overrides) != 1 || overrides["provider"] != "anthropic" {
+		t.Fatalf("overrides %v %v", overrides, err)
 	}
 }
 

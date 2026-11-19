@@ -14,7 +14,69 @@ const CompactedTargetDetail = "compacted: target user message was summarized whe
 
 var metadataFields = map[string]string{"title": "str", "archived": "bool", "hidden": "bool", "pinned": "bool", "unread": "bool"}
 
-var compressFields = map[string]string{"focus": "str", "preview": "bool", "partial": "bool", "keep_last": "int"}
+var compressFields = map[string]string{"focus": "str", "preview": "bool", "partial": "bool", "keep_last": "int", "aggressive": "bool"}
+
+// Flags of a model switch, persisting it to the profile, keeping it for one turn or refreshing the catalogs first
+var modelSwitchFlags = map[string]bool{"persist": true, "once": true, "refresh": true}
+
+// Launch flags a resume may lay over a session's frozen policy, each with the JSON type it arrives as
+var LaunchFields = map[string]string{"model": "str", "provider": "str", "base_url": "str", "reasoning": "str", "cwd": "str",
+	"toolsets": "list", "skills": "list", "max_turns": "turns", "run_budget": "number", "ignore_rules": "bool", "yolo": "bool",
+	"checkpoints": "bool", "accept_hooks": "bool", "pass_session_id": "bool", "verbose": "bool", "safe_mode": "bool",
+	"ignore_user_config": "bool"}
+
+// Whether a launch override value has the type its field takes
+func validLaunchValue(value any, kind string) bool {
+	switch kind {
+	case "str":
+		return nonBlankStr(value)
+	case "bool":
+		_, ok := value.(bool)
+		return ok
+	case "list":
+		items, ok := value.([]any)
+		if !ok || len(items) == 0 {
+			return false
+		}
+		for _, item := range items {
+			if !nonBlankStr(item) {
+				return false
+			}
+		}
+		return true
+	case "turns":
+		_, isInt := exactInt(value)
+		return isInt || nonBlankStr(value)
+	case "number":
+		if _, isBool := value.(bool); isBool {
+			return false
+		}
+		switch value.(type) {
+		case float64, int64, int:
+			return true
+		}
+		_, isInt := exactInt(value)
+		return isInt
+	}
+	return false
+}
+
+// Whether a launch payload names only launch fields, each of its type, and at least one
+func validLaunchPayload(payload *pyjson.Object) bool {
+	if payload.Len() == 0 {
+		return false
+	}
+	for _, key := range payload.Keys {
+		kind, known := LaunchFields[key]
+		if !known || !validLaunchValue(rowGet(payload, key), kind) {
+			return false
+		}
+	}
+	if effort, has := payload.Get("reasoning"); has && config.ParseReasoningEffort(effort) == nil {
+		return false
+	}
+	return true
+}
 
 // Whether the value has exactly the Python type the field table names, bool never counting as int
 func exactPyType(value any, kind string) bool {
@@ -70,12 +132,17 @@ func ValidateAction(operation any, payloadValue any) error {
 		return runtimeRefusal("invalid_params")
 	}
 	keys := payloadKeys(payload)
-	if op == "model" && keys["model"] && keysWithin(keys, "model", "provider", "confirm", "reasoning") {
-		allText := true
+	if op == "model" && (keys["model"] || keys["provider"] || keys["refresh"]) &&
+		keysWithin(keys, "model", "provider", "confirm", "reasoning", "persist", "once", "refresh") {
+		valid := true
 		for _, key := range payload.Keys {
-			allText = allText && nonBlankStr(rowGet(payload, key))
+			if modelSwitchFlags[key] {
+				valid = valid && rowGet(payload, key) == true
+			} else {
+				valid = valid && nonBlankStr(rowGet(payload, key))
+			}
 		}
-		if allText && (!keys["reasoning"] || config.ParseReasoningEffort(rowGet(payload, "reasoning")) != nil) {
+		if valid && (!keys["reasoning"] || config.ParseReasoningEffort(rowGet(payload, "reasoning")) != nil) {
 			return nil
 		}
 	}
@@ -92,6 +159,9 @@ func ValidateAction(operation any, payloadValue any) error {
 		}
 	}
 	if op == "workspace" && keysExactly(keys, "cwd") && nonBlankStr(rowGet(payload, "cwd")) {
+		return nil
+	}
+	if op == "launch" && validLaunchPayload(payload) {
 		return nil
 	}
 	if op == "editor_mcp" && keysExactly(keys, "mcp_servers") && validEditorFingerprint(payload) {
@@ -188,7 +258,7 @@ func (d *SessionDB) applyAction(ctx context.Context, conn SQLiteConn, sessionID,
 	switch operation {
 	case "compress":
 		return compressInTransaction(d, ctx, conn, sessionID, payload, prepared)
-	case "model", "reasoning", "workspace", "editor_mcp", "edit_policy":
+	case "model", "reasoning", "workspace", "editor_mcp", "edit_policy", "launch":
 		return policyHandlers[operation](d, ctx, conn, sessionID, payload, prepared)
 	case "branch":
 		return branchInTransaction(d, ctx, conn, sessionID, payload, prepared)

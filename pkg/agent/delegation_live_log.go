@@ -427,7 +427,7 @@ func liveDelegationSuffix() string {
 func createLiveTranscripts(ctx context.Context, taskList []map[string]any, taskContext, model, providerName any, liveHome string) (string, []delegationLiveWriter, []string) {
 	n := len(taskList)
 	root := liveTranscriptRoot(ctx, liveHome)
-	pruneStaleLiveDirs(liveRetentionDays, root)
+	pruneStaleLiveDirs(ctx, liveRetentionDays, root)
 	delegID := "deleg_" + liveDelegationSuffix()
 	writers := make([]delegationLiveWriter, n)
 	var paths []string
@@ -583,8 +583,20 @@ func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveH
 	})
 }
 
-// Removes delegation dirs older than the retention window under the root and counts them
-func pruneStaleLiveDirs(maxAgeDays int, root string) int {
+// Session store of the delegating parent a pruning pass asks which logs stored children still name
+type liveTranscriptStoreKey struct{}
+
+// Context carrying the parent's session store for the pruning of its live root
+func withLiveTranscriptStore(ctx context.Context, store SessionStore) context.Context {
+	if store == nil || nilValue(store) {
+		return ctx
+	}
+	return context.WithValue(ctx, liveTranscriptStoreKey{}, store)
+}
+
+// Removes delegation dirs older than the retention window that no stored child session names and counts them
+func pruneStaleLiveDirs(ctx context.Context, maxAgeDays int, root string) int {
+	store := ctx.Value(liveTranscriptStoreKey{})
 	removed := 0
 	liveBestEffort("pruning", func() error {
 		if root == "" {
@@ -602,6 +614,9 @@ func pruneStaleLiveDirs(maxAgeDays int, root string) int {
 			child := filepath.Join(root, e.Name())
 			st, err := os.Stat(child)
 			if err != nil || !st.IsDir() || !st.ModTime().Before(cutoff) {
+				continue
+			}
+			if kept, err := tools.LiveTranscriptDirReferenced(ctx, store, child); err != nil || kept {
 				continue
 			}
 			if lst, err := os.Lstat(child); err == nil && lst.Mode()&os.ModeSymlink == 0 {

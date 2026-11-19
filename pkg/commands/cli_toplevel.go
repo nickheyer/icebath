@@ -61,7 +61,7 @@ func pluginCommandInstallHint(ctx context.Context, prog, value string) string {
 func subcommandChoices(cmd *cobra.Command) []string {
 	var names []string
 	for _, sub := range cmd.Commands() {
-		if strings.HasPrefix(sub.Name(), "__") || (!cmd.HasParent() && cliTierHidden(sub.Name())) {
+		if strings.HasPrefix(sub.Name(), "__") || cliTierHidden(apPath(sub)) {
 			continue
 		}
 		names = append(names, sub.Name())

@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -201,7 +202,11 @@ var doctorWebCapabilityRows = func(ctx context.Context, d *Doctor) (rows []docto
 	}{{"web search", doctorActiveSearchProvider}, {"web extract", doctorActiveExtractProvider}} {
 		provider := doctorWebProvider(capability.getter, env)
 		if provider == nil {
-			rows = append(rows, doctorWebRow{"warn", capability.label, "(no provider selected or registered)"})
+			detail := "(no provider selected or registered)"
+			if line, refused := linktier.Refusal("each bundled web backend", linktier.Plugins); refused {
+				detail = "(no provider registered, " + line + ")"
+			}
+			rows = append(rows, doctorWebRow{"warn", capability.label, detail})
 			continue
 		}
 		name := provider.Name()
@@ -260,6 +265,19 @@ var doctorEnabledCLIToolsets = func(ctx context.Context, d *Doctor) (enabled map
 
 var doctorToolsetSetupHints = map[string]string{
 	"image_gen": "(image generation unavailable — check the provider selection and its key or SDK with 'icebath tools')",
+	"video_gen": "(video generation unavailable — check the provider selection and its key with 'icebath tools')",
+}
+
+// Row detail of a toolset that waits on a capable model or a messaging platform rather than a key
+var doctorToolsetNeedHints = map[string]string{
+	"vision":          "(no configured model reads images — pick one with /model, or set the vision task in /setup aux)",
+	"video":           "(no configured model reads video — pick one with /model, or set the video or vision task in /setup aux)",
+	"feishu_doc":      "(needs the Feishu / Lark app, FEISHU_APP_ID and FEISHU_APP_SECRET — set it up in /setup gateway)",
+	"feishu_drive":    "(needs the Feishu / Lark app, FEISHU_APP_ID and FEISHU_APP_SECRET — set it up in /setup gateway)",
+	"a2a":             "(needs the A2A platform turned on — set it up in /setup gateway)",
+	"icebath-yuanbao": "(needs the Yuanbao platform — set it up in /setup gateway)",
+	"browser-cdp":     "(needs a browser to attach to — run /browser connect, or set browser.cdp_url or BROWSER_CDP_URL)",
+	"computer_use":    "(needs the cua-driver program — run: icebath computer-use install)",
 }
 
 // True when a toolset is unavailable for want of a key or a named setup step
@@ -718,6 +736,9 @@ func checkToolAvailability(ctx context.Context, d *Doctor, shouldFix bool) (*Fin
 			detail := "(missing " + strings.Join(envVars, ", ") + ")"
 			if len(envVars) == 0 {
 				hint, hinted := doctorToolsetSetupHints[item.Name]
+				if !hinted {
+					hint, hinted = doctorToolsetNeedHints[item.Name]
+				}
 				if !hinted {
 					hint = "(system dependency not met)"
 				}

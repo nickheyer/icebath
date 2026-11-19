@@ -144,8 +144,11 @@ func endVoiceChat(ctx context.Context, stopLoop, stopTTS bool) {
 func voiceEndSessionChat(ctx context.Context, sessionID string, stopLoop, stopTTS bool) {
 	if !setSessionVoiceOff(sessionID) {
 		endVoiceChat(ctx, stopLoop, stopTTS)
-	} else if stopTTS {
-		suppress(func() { ttsStreamStop(false) })
+		return
+	}
+	sessionTTSLease(ctx, sessionID, nil, false)
+	if stopTTS {
+		cutSessionSpeech(sessionID, false)
 	}
 }
 
@@ -281,7 +284,8 @@ func fullDuplexListener(ctx context.Context) {
 		fdListenerMu.Unlock()
 	}()
 	shouldStop := func() bool {
-		return !voiceModeEnabled() || !(anySessionRunning() || fdTTSPending() || media.IsAudioOutputActive())
+		direct := voiceModeEnabled() && (anySessionRunning() || fdTTSPending() || media.IsAudioOutputActive())
+		return !direct && !sessionVoiceLive()
 	}
 	tripped := &pythread.Event{}
 	mult, graceMS := fdBargeParams(voiceCfgDict(ctx))
@@ -351,6 +355,7 @@ func fdTrip(ctx context.Context, phase string) {
 	}
 	fdListenerMu.Unlock()
 	media.StopPlayback()
+	sharedCut := cutAllSessionSpeech()
 	if phase != "playback" {
 		if failure := catchPanic(func() {
 			for _, s := range runningSessions() {
@@ -362,7 +367,9 @@ func fdTrip(ctx context.Context, phase string) {
 			pkgLog().Debug(fmt.Sprintf("voice interjection interrupt failed: %s", panicMessage(failure)))
 		}
 	}
-	voiceEmit(ctx, "voice.interrupted", nil)
+	if !sharedCut {
+		voiceEmit(ctx, "voice.interrupted", nil)
+	}
 }
 
 // Emits the captured interjection, a bare stop phrase also ending the voice chat

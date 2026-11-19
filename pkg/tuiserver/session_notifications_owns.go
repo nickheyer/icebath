@@ -19,7 +19,11 @@ func notifGatewayOwnsHeartbeat(ctx context.Context, session *tuihost.Session, se
 	db, release := sessionDB(ctx, session)
 	defer release()
 	seen := map[*state.DB]bool{}
-	for _, store := range []*state.DB{db, getDB(ctx)} {
+	launch, err := getDB(ctx)
+	if err != nil {
+		return false
+	}
+	for _, store := range []*state.DB{db, launch} {
 		if store == nil || seen[store] {
 			continue
 		}

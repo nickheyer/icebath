@@ -63,8 +63,8 @@ func TestSubmitRowSessionTarget(t *testing.T) {
 		}
 		session.Set("running", true)
 		startInflightTurn(session, "earlier turn", "", nil)
-		if !ensureSessionDBRow(ctx, session) {
-			t.Fatal("parent row not ensured")
+		if err := ensureSessionDBRow(ctx, session); err != nil {
+			t.Fatal("parent row not ensured", err)
 		}
 		a := submitRowFlushAgent(t, db, key)
 		session.Set("agent", a)

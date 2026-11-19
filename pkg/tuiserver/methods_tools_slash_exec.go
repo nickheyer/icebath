@@ -8,12 +8,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -25,7 +25,7 @@ var pendingInputCommands = map[string]bool{"retry": true, "queue": true, "q": tr
 var workerBlockedCommands = map[string]bool{"snapshot": true, "snap": true}
 
 // Error text of a skill command the slash worker refused before processing it
-const skillWorkerRefused = "skill command refused before process: /"
+const SkillWorkerRefusedLead = "skill command refused before process: /"
 
 // Slash worker surface slash.exec drives
 type slashCommandRunner interface {
@@ -76,7 +76,7 @@ func resultType(resp map[string]any) bool {
 
 // Whether a worker failure is its pre process refusal of a skill command
 func workerRefusedSkill(err error) bool {
-	return strings.Contains(err.Error(), skillWorkerRefused)
+	return strings.Contains(err.Error(), SkillWorkerRefusedLead)
 }
 
 // Whether a base is a registry built in the slash worker may still run
@@ -144,7 +144,7 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 		if live == "" {
 			live = "(no output)"
 		}
-		return ok(rid, map[string]any{"output": live})
+		return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Output: live}))
 	}
 	if workerBlockedCommands[base] && isSnapshotRestore(arg) {
 		return rpcErr(rid, 4018, "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore", nil)
@@ -180,12 +180,12 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 				output = out
 			})
 			if failure != nil {
-				return ok(rid, map[string]any{"output": "Plugin command error: " + panicMessage(failure)})
+				return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Output: "Plugin command error: " + panicMessage(failure)}))
 			}
 			if output == "" {
 				output = "(no output)"
 			}
-			return ok(rid, map[string]any{"output": output})
+			return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Output: output}))
 		}
 	}
 	worker, err := sessionSlashWorker(ctx, sid, session)
@@ -209,44 +209,45 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 	}
 	if popper, hasSeed := worker.(slashSeedPopper); hasSeed {
 		if seed := popper.popSeed(); seed != "" {
-			return ok(rid, map[string]any{"type": "send", "message": seed})
+			return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Type: "send", Message: seed}))
 		}
 	}
 	if output == "" {
 		output = "(no output)"
 	}
-	payload := map[string]any{"output": output}
-	if warning := mirrorSlashSideEffects(ctx, sid, session, cmd); warning != "" {
-		payload["warning"] = warning
-	}
+	payload := tuigateway.SlashExecResult{Output: output, Warning: mirrorSlashSideEffects(ctx, sid, session, cmd)}
 	if sessionControlSlashes[base] {
 		publishSessionControlSnapshot(ctx, sid, session, false, false)
 	}
-	return ok(rid, payload)
+	return ok(rid, tuigateway.Plain(payload))
 }
 
-// Runs a user typed shell command with a sanitized env, refusing hardline and dangerous commands
+// Runs a user typed shell command with a sanitized env in the named session's cwd and profile, refusing hardline and dangerous commands
 func shellExec(ctx context.Context, rid any, params map[string]any) map[string]any {
-	raw, present := params["command"]
-	if !present {
-		raw = ""
+	p, err := tuigateway.ShellExec.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
 	}
-	if !truthy(raw) {
+	if pystr.Strip(p.Command) == "" {
 		return rpcErr(rid, 4004, "empty command", nil)
 	}
-	cmd, isText := raw.(string)
-	if !isText {
-		panic(fmt.Errorf("the command must be text, got %s", errchain.Kind(raw)))
-	}
-	if hardline, desc := tools.DetectHardlineCommand(cmd); hardline {
+	if hardline, desc := tools.DetectHardlineCommand(p.Command); hardline {
 		return rpcErr(rid, 4005, fmt.Sprintf("blocked (hardline): %s. Use the agent for dangerous commands.", desc), nil)
 	}
-	if _, desc, dangerous := tools.DetectDangerousCommand(cmd); dangerous {
+	if _, desc, dangerous := tools.DetectDangerousCommand(p.Command); dangerous {
 		return rpcErr(rid, 4005, fmt.Sprintf("blocked: %s. Use the agent for dangerous commands.", desc), nil)
 	}
-	env, err := tools.BuildSubprocessEnv(ctx, tools.ToolEnvFrom(ctx), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
+	scoped, dir := ctx, ""
+	if p.SessionID != "" {
+		session, errResp := sessNowait(ctx, params, rid)
+		if errResp != nil {
+			return errResp
+		}
+		scoped, dir = sessionProfileRuntimeScope(ctx, session, true), sessionCwd(ctx, session)
+	}
+	env, err := tools.BuildSubprocessEnv(scoped, tools.ToolEnvFrom(scoped), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
 	panicIf(err)
-	res, stdout, stderr, err := captureShellRun(ctx, cmd, env, 30)
+	res, stdout, stderr, err := captureShellRun(scoped, p.Command, env, dir, 30)
 	var expired *pysubprocess.TimeoutExpired
 	if errors.As(err, &expired) {
 		return rpcErr(rid, 5002, "command timed out (30s)", nil)
@@ -257,6 +258,6 @@ func shellExec(ctx context.Context, rid any, params map[string]any) map[string]a
 	redact := func(text string) string {
 		return memory.RedactSensitiveText(text, memory.RedactOptions{RedactURLCredentials: true})
 	}
-	return ok(rid, map[string]any{"stdout": pystr.Slice(redact(stdout), -4000, math.MaxInt),
-		"stderr": pystr.Slice(redact(stderr), -2000, math.MaxInt), "code": res.Returncode})
+	return ok(rid, tuigateway.Plain(tuigateway.ShellExecResult{Stdout: pystr.Slice(redact(stdout), -4000, math.MaxInt),
+		Stderr: pystr.Slice(redact(stderr), -2000, math.MaxInt), Code: int64(res.Returncode)}))
 }

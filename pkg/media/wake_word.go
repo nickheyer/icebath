@@ -336,15 +336,18 @@ func EnrolledProfilePhrases(ctx context.Context) []WakeProfilePhrase {
 	var out []WakeProfilePhrase
 	names, err := wakeListProfileNames(ctx)
 	if err != nil {
+		pkgLog().Warn("wake word: profile routing listens for this profile only, the profile list failed: " + err.Error())
 		return nil
 	}
 	for _, name := range names {
 		dir, err := profiles.GetProfileDir(name)
 		if err != nil {
+			pkgLog().Warn("wake word: profile " + name + " left out of routing: " + err.Error())
 			continue
 		}
 		raw, err := config.ReadUserConfigRaw(ctx, filepath.Join(dir, "config.yaml"))
 		if err != nil {
+			pkgLog().Warn("wake word: profile " + name + " left out of routing: " + err.Error())
 			continue
 		}
 		wc := raw["wake_word"]

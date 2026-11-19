@@ -237,7 +237,7 @@ func (p *Ripgrep) FetchURL(version, target string) (string, error) {
 	return fmt.Sprintf("https://github.com/BurntSushi/ripgrep/releases/download/%s/ripgrep-%s-%s.%s", version, version, triple, ext), nil
 }
 
-// Computer use driver child environment, set by the binary, an error where Python's cua_driver_child_env raises
+// Computer use driver child environment, set by the extras tier and nil in a build without computer use
 var CuaDriverChildEnv func() (map[string]string, error)
 
 // CuaDriver is the computer use driver, shipped by default wherever upstream builds it
@@ -297,8 +297,10 @@ func (p *CuaDriver) Stage(store *Store, staged, version, target string) error {
 
 // The probe is a first run, so it never mints telemetry state
 func (p *CuaDriver) ProbeEnv() (map[string]string, error) {
-	if env, err := CuaDriverChildEnv(); err == nil {
-		return env, nil
+	if CuaDriverChildEnv != nil {
+		if env, err := CuaDriverChildEnv(); err == nil {
+			return env, nil
+		}
 	}
 	env := environMap()
 	env["CUA_DRIVER_RS_TELEMETRY_ENABLED"], env["CUA_TELEMETRY_ENABLED"], env["CUA_TELEMETRY"], env["DO_NOT_TRACK"] = "false", "false", "0", "1"

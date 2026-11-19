@@ -93,10 +93,10 @@ func buildStickerMap() *pyjson.Object {
 	return m
 }
 
-// Missing key error a sticker dict lookup raises, naming the key
-type KeyError struct{ Key string }
+// Missing key error of a sticker or upload credential lookup, naming what lacks which key
+type KeyError struct{ Of, Key string }
 
-func (e *KeyError) Error() string { return "the sticker has no " + e.Key }
+func (e *KeyError) Error() string { return "the " + e.Of + " has no " + e.Key }
 
 func stickers() []*pyjson.Object {
 	out := make([]*pyjson.Object, 0, StickerMap.Len())
@@ -347,7 +347,7 @@ func BuildStickerMsgBody(sticker *pyjson.Object) ([]any, error) {
 			return v, nil
 		}
 		if def == nil {
-			return nil, &KeyError{Key: key}
+			return nil, &KeyError{Of: "sticker", Key: key}
 		}
 		return def, nil
 	}

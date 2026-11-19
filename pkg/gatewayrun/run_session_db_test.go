@@ -222,8 +222,6 @@ func TestSessionStoreAndRunnerReopenAfterFailedConstruction(t *testing.T) {
 	r.sessionDBHandlesLock = &sync.Mutex{}
 	r.sessionDBHandleCache = gateway.NewRecoverableHandleCacheWith(gateway.RecoverableHandleCacheOptions{
 		Handles: r.sessionDBHandles, Lock: r.sessionDBHandlesLock, Clock: func() float64 { return now }, InitialRetryDelay: &delay})
-	initErr := "temporary open failure"
-	r.sessionDBInitError = &initErr
 	ctx := context.Background()
 	if r.sessionDB(ctx) != nil {
 		t.Fatal("failed open served a handle")
@@ -240,7 +238,4 @@ func TestSessionStoreAndRunnerReopenAfterFailedConstruction(t *testing.T) {
 		t.Fatal("did not reopen after the backoff")
 	}
 	defer r.closeAllSessionDBHandles()
-	if r.sessionDBInitError != nil {
-		t.Fatalf("init error kept %q", *r.sessionDBInitError)
-	}
 }

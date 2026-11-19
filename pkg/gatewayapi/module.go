@@ -386,7 +386,7 @@ func clearTurnProcessOwnership(a *agent.AIAgent) {
 }
 
 // Normalized session chat message or input, a 400 when missing or malformed
-func sessionChatUserMessage(body *pyjson.Object, param string) (any, *gateway.WebResponse) {
+func sessionChatUserMessage(ctx context.Context, body *pyjson.Object, param string) (any, *gateway.WebResponse) {
 	userMessage := body.GetOr("message", nil)
 	if !pyrepr.Truthy(userMessage) {
 		userMessage = body.GetOr("input", nil)
@@ -394,7 +394,7 @@ func sessionChatUserMessage(body *pyjson.Object, param string) (any, *gateway.We
 	if !gateway.APIContentHasVisiblePayload(userMessage) {
 		return nil, errorResponse("Missing 'message' field", http.StatusBadRequest, errOpts{Code: "missing_message"})
 	}
-	normalized, err := gateway.APINormalizeMultimodalContent(userMessage)
+	normalized, err := gateway.APINormalizeMultimodalContent(ctx, userMessage)
 	if err != nil {
 		return nil, multimodalValidationError(err, param)
 	}

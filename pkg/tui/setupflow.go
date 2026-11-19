@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -28,14 +29,14 @@ func setupSections() []setupSection {
 	sections = append(sections, toolsSetupSection())
 	for _, hosted := range []setupSection{
 		{key: "gateway", title: tr("setupFlow.gateway.title"), detail: tr("setupFlow.gateway.detail")},
-		{key: "quick", title: tr("setupFlow.quick.title"), detail: tr("setupFlow.quick.detail")},
+		{key: "quick", title: tr("setupFlow.quick.title"), detail: quickSetupDetail()},
 		{key: "blank", title: tr("setupFlow.blank.title"), detail: tr("setupFlow.blank.detail")},
 		{key: "import", title: tr("setupFlow.import.title"), detail: tr("setupFlow.import.detail")},
 	} {
 		hosted.open = func(a *app) tea.Cmd { return a.openHostedFlow(hosted.key, "") }
 		sections = append(sections, hosted)
 	}
-	return sections
+	return slices.DeleteFunc(sections, func(s setupSection) bool { _, absent := setupSectionRefusal(s.key); return absent })
 }
 
 // Opens the named section, the model section at a named provider, the menu of every section when none is named
@@ -45,6 +46,10 @@ func (a *app) openSetup(section string) tea.Cmd {
 		return a.openHostedModel(entry)
 	}
 	sections := setupSections()
+	if line, absent := setupSectionRefusal(section); absent {
+		a.sys(line)
+		return nil
+	}
 	if section != "" {
 		keys := make([]string, len(sections))
 		for i, s := range sections {

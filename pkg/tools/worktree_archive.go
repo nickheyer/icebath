@@ -781,7 +781,9 @@ func RestoreArchive(ctx context.Context, repoRoot, name, target string) (*Restor
 	if _, err := archiveRun([]string{"update-index", "-q", "--refresh"}, dest, wenv, 0, nil); err != nil {
 		return nil, err
 	}
-	WorktreeRecordRepo(ctx, repoRoot)
+	if WorktreeRecordRepo != nil {
+		WorktreeRecordRepo(ctx, repoRoot)
+	}
 	skipped, _ := arc.Meta.Get("skipped_untracked")
 	if !pyTruthy(skipped) {
 		skipped = []any{}

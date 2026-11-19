@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Registry command a typed name resolves to, with the busy policy and mid run variant key of its definition
@@ -382,7 +383,7 @@ func runRunnerCommand(ctx context.Context, a *SessionAuthority, runner localComm
 }
 
 // Skill directive of a local session's skill slash command, stacked skills included
-func skillDirective(ctx context.Context, name, arg, route string) (*pyjson.Object, error) {
+func skillDirective(ctx context.Context, name, arg, route string) (*tuigateway.CommandDispatchResult, error) {
 	scope := skills.NewScope(home.Dir(ctx), nil)
 	cwd, err := tools.ResolveAgentCwd(tools.ToolEnvFrom(ctx))
 	if err != nil {
@@ -426,20 +427,26 @@ func skillDirective(ctx context.Context, name, arg, route string) (*pyjson.Objec
 }
 
 // Skill directive the client submits as its next turn, noting any skills that were missing
-func skillTurnDirective(ctx context.Context, name, message string, missing []string) *pyjson.Object {
-	var display any
+func skillTurnDirective(ctx context.Context, name, message string, missing []string) *tuigateway.CommandDispatchResult {
+	out := &tuigateway.CommandDispatchResult{Type: "skill", Name: name, Message: message}
 	if described, ok := skills.DescribeSkillInvocation(message, " "); ok {
-		display = described
+		out.Display = described
 	}
-	out := pyjson.ObjectOf("type", "skill", "name", name, "message", message, "display", display)
 	if len(missing) > 0 {
-		out.Set("notice", i18n.T(ctx, "cli.skills.skipped_missing", "", map[string]any{"names": strings.Join(missing, ", ")}))
+		out.Notice = i18n.T(ctx, "cli.skills.skipped_missing", "", map[string]any{"names": strings.Join(missing, ", ")})
 	}
 	return out
 }
 
+// Exec directive of a gateway read's reply
+func readDirective(reply map[string]any) *tuigateway.CommandDispatchResult {
+	typ, _ := reply["type"].(string)
+	output, _ := reply["output"].(string)
+	return &tuigateway.CommandDispatchResult{Type: tuigateway.DispatchType(typ), Output: output}
+}
+
 // Bound command reply of a local session, its built turn as a skill directive when idle, its busy policy otherwise
-func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, bound RegistryCommand, arg string, before func(context.Context) error) (*pyjson.Object, error) {
+func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, bound RegistryCommand, arg string, before func(context.Context) error) (*tuigateway.CommandDispatchResult, error) {
 	handle, err := a.handle(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -456,7 +463,7 @@ func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef,
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("type", "exec", "output", joinNonEmpty(append(append([]string{}, sink.Notices...), commandText(output))...)), nil
+		return &tuigateway.CommandDispatchResult{Type: "exec", Output: joinNonEmpty(append(append([]string{}, sink.Notices...), commandText(output))...)}, nil
 	}
 	if err := before(ctx); err != nil {
 		return nil, err
@@ -469,7 +476,7 @@ func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef,
 }
 
 // Main's TUI text for a TUI session's status or context read, nil for any other read
-func tuiReadCommand(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, name, arg string, before func(context.Context) error) (*pyjson.Object, error) {
+func tuiReadCommand(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, name, arg string, before func(context.Context) error) (*tuigateway.CommandDispatchResult, error) {
 	live, err := liveSession(a, ref.SessionID)
 	if err != nil {
 		return nil, err
@@ -497,7 +504,7 @@ func tuiReadCommand(ctx context.Context, a *SessionAuthority, actor Principal, r
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("type", reply["type"], "output", reply["output"]), nil
+	return readDirective(reply), nil
 }
 
 const preCommandPendingLimit = 32
@@ -623,7 +630,7 @@ func observeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("queued", done != nil), nil
+	return tuigateway.Plain(tuigateway.CommandObserveResult{Queued: done != nil}), nil
 }
 
 // Plugin choice asker bound to the clarify request on the session's attached viewers
@@ -690,7 +697,7 @@ func joinNonEmpty(parts ...string) string {
 }
 
 // Slash exec or command dispatch run by the gateway for a local session, a directive the client submits for a turn
-func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, dispatch bool) (*pyjson.Object, error) {
+func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, dispatch bool) (*tuigateway.CommandDispatchResult, error) {
 	a, actor := c.authority, c.actor
 	if err := a.Authorize(ctx, actor, ref, "session:read"); err != nil {
 		return nil, err
@@ -804,7 +811,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("type", "exec", "output", commandText(output)), nil
+		return &tuigateway.CommandDispatchResult{Type: "exec", Output: commandText(output)}, nil
 	}
 	if isBound {
 		inWorkspace, err := workspace()
@@ -825,14 +832,14 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("type", reply["type"], "output", reply["output"]), nil
+		return readDirective(reply), nil
 	}
 	if sessionOwnerCommands[canonical] {
 		reply, err := runCron(ctx, a, arg)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("type", reply["type"], "output", reply["output"]), nil
+		return readDirective(reply), nil
 	}
 	runner, ok := a.Runner.(localCommandRunner)
 	if !ok {
@@ -917,23 +924,27 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		if sink.Display != nil && *sink.Display != "" {
 			display = *sink.Display
 		}
-		out := pyjson.ObjectOf("type", "send", "message", *prompt, "display", display)
-		if notice != "" {
-			out.Set("notice", notice)
-		}
-		return out, nil
+		return &tuigateway.CommandDispatchResult{Type: "send", Message: *prompt, Display: display, Notice: notice}, nil
 	}
-	return pyjson.ObjectOf("type", "exec", "output", joinNonEmpty(append(append([]string{}, sink.Notices...), commandText(output))...)), nil
+	return &tuigateway.CommandDispatchResult{Type: "exec", Output: joinNonEmpty(append(append([]string{}, sink.Notices...), commandText(output))...)}, nil
 }
 
 // Slash exec verb
 func (c *AuthorityConnection) slashExec(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return executeCommand(ctx, c, ref, params, false)
+	directive, err := executeCommand(ctx, c, ref, params, false)
+	if err != nil || directive == nil {
+		return nil, err
+	}
+	return tuigateway.Plain(directive.SlashResult()), nil
 }
 
 // Command dispatch verb
 func (c *AuthorityConnection) commandDispatch(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return executeCommand(ctx, c, ref, params, true)
+	directive, err := executeCommand(ctx, c, ref, params, true)
+	if err != nil || directive == nil {
+		return nil, err
+	}
+	return tuigateway.Plain(directive), nil
 }
 
 // Command observe verb

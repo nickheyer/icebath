@@ -178,7 +178,7 @@ func unknownBackendError(envType string) error {
 	for _, n := range names {
 		quoted = append(quoted, "'"+n+"'")
 	}
-	return fmt.Errorf("Unknown environment type: %s. Use %s", envType, strings.Join(quoted, ", "))
+	return fmt.Errorf("Unknown environment type: %s. Use %s as terminal.backend, or pick one in /setup terminal", envType, strings.Join(quoted, ", "))
 }
 
 // Backend that shapes its own container config, docker applying the session scoped lifecycle
@@ -213,7 +213,7 @@ func createEnvironment(ctx context.Context, env *Env, envType, image, cwd string
 		host, _ := sshConfig["host"].(string)
 		user, _ := sshConfig["user"].(string)
 		if host == "" || user == "" {
-			return nil, fmt.Errorf("SSH environment requires ssh_host and ssh_user to be configured")
+			return nil, fmt.Errorf("SSH environment requires a host and a user (TERMINAL_SSH_HOST, TERMINAL_SSH_USER): set them in /setup terminal")
 		}
 		for k, v := range sshConfig {
 			cc["ssh_"+k] = v
@@ -251,17 +251,18 @@ func checkRequirements(env *Env, envType string, cfg map[string]any) bool {
 		if line, refused := TerminalBackendRefusal(envType); refused {
 			return rejectBackend(env, line)
 		}
-		return rejectBackend(env, fmt.Sprintf("Unknown TERMINAL_ENV '%s'. Use one of: %s, or a plugin-registered backend",
+		return rejectBackend(env, fmt.Sprintf("Unknown TERMINAL_ENV '%s' (terminal.backend). Use one of: %s, or a plugin-registered backend, picked in /setup terminal",
 			envType, linkedBuiltinBackendList()))
 	}
 	if err := provider.CheckRequirements(env, cfg); err != nil {
 		if builtinBackends[envType] {
 			return rejectBackend(env, err.Error())
 		}
+		remedy := "; `icebath doctor` lists its checks, /setup terminal picks another backend"
 		if errors.Is(err, ErrBackendRequirementsNotMet) {
-			return rejectBackend(env, fmt.Sprintf("the '%s' plugin backend reported its requirements are not met", envType))
+			return rejectBackend(env, fmt.Sprintf("the '%s' plugin backend reported its requirements are not met%s", envType, remedy))
 		}
-		return rejectBackend(env, fmt.Sprintf("the '%s' plugin backend reported its requirements are not met: %s", envType, err.Error()))
+		return rejectBackend(env, fmt.Sprintf("the '%s' plugin backend reported its requirements are not met: %s%s", envType, err.Error(), remedy))
 	}
 	return true
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -195,6 +196,11 @@ func claimLaunchHome(ctx context.Context) (string, error) {
 func (e *stdioEntry) main() int {
 	defer panicHook()
 	h, err := claimLaunchHome(e.ctx)
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) && pathErr.Op == "mkdir" {
+		entryLogExit("refused: " + storeUnavailable(e.ctx, launchStateDBPath(), &state.StateDBDirError{Dir: pathErr.Path, Err: err}).Error())
+		return 1
+	}
 	if err != nil {
 		recordCrash("unhandled exception", err, nil)
 		fmt.Fprintln(os.Stderr, err)
@@ -208,6 +214,10 @@ func (e *stdioEntry) main() int {
 	e.home = h
 	e.mu.Unlock()
 	defer e.releaseHome()
+	if err := OpenLaunchStore(e.ctx); err != nil {
+		entryLogExit("refused: " + err.Error())
+		return 1
+	}
 	if err := e.serve(); err != nil {
 		recordCrash("unhandled exception", err, nil)
 		fmt.Fprintln(os.Stderr, err)
@@ -261,7 +271,7 @@ func (e *stdioEntry) serve() error {
 	}
 	entryEnsureMCPDiscovery(ctx)
 	ready := pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", pyjson.ObjectOf("type", "gateway.ready",
-		"payload", tuihost.SealPayload("gateway.ready", map[string]any{"skin": entryResolveSkin(ctx), "change_events": true,
+		"payload", tuigateway.SealPayload("gateway.ready", map[string]any{"skin": entryResolveSkin(ctx), "change_events": true,
 			"replay_epoch": tuihost.ReplayEpoch(), "build": tuigateway.BuildID(), "contract": int64(tuigateway.ContractVersion)})))
 	if !e.writeOrExit(ready, "startup write failed (broken stdout pipe before first event)") {
 		return nil

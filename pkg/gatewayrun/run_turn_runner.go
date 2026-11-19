@@ -25,8 +25,8 @@ const transcriptLagEscalationTurns = 3
 
 // Exact card destination refusals kept for older adapters without destination preflight
 var cardDestinationRefusals = map[string]bool{
-	"No Slack thread target":                                                      true,
-	"slack task_card requires a thread anchor":                                    true,
+	"No Slack thread target":                   true,
+	"slack task_card requires a thread anchor": true,
 	"slack task_card requires a thread anchor (Slack streams are thread replies)": true,
 }
 

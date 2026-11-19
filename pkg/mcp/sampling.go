@@ -628,7 +628,7 @@ var elicitationOuterGrace = 5 * time.Second
 // Consent router the elicitation handler asks, swapped by tests
 var elicitationConsent = tools.RequestElicitationConsent
 
-// Answers elicitation/create for one server through the approval surface, declining URL mode and failing closed
+// Answers elicitation/create for one server through the approval surface, failing closed
 type elicitationHandler struct {
 	serverName  string
 	env         *tools.Env
@@ -637,6 +637,7 @@ type elicitationHandler struct {
 
 	mu      sync.Mutex
 	metrics map[string]int
+	pending map[string]chan struct{}
 }
 
 // Elicitor for one server, the consent reaching the in flight call's session when one is captured
@@ -645,11 +646,14 @@ func newElicitationHandler(name string, env *tools.Env, cfg map[string]any, call
 		callContext = func() context.Context { return nil }
 	}
 	return &elicitationHandler{serverName: name, env: env, timeout: safeFloat(cfgOr(cfg, "timeout", 300), 300, 1),
-		callContext: callContext, metrics: map[string]int{"requests": 0, "accepted": 0, "declined": 0, "errors": 0}}
+		callContext: callContext, metrics: map[string]int{"requests": 0, "accepted": 0, "declined": 0, "errors": 0},
+		pending: map[string]chan struct{}{}}
 }
 
-// Form mode elicitation capability, URL mode is never advertised
-func (h *elicitationHandler) Capabilities() map[string]any { return map[string]any{} }
+// Form and URL mode elicitation capability
+func (h *elicitationHandler) Capabilities() map[string]any {
+	return map[string]any{"form": map[string]any{}, "url": map[string]any{}}
+}
 
 // Copy of the request, accepted, declined and error counters
 func (h *elicitationHandler) Metrics() map[string]any {
@@ -662,25 +666,33 @@ func (h *elicitationHandler) Metrics() map[string]any {
 	return out
 }
 
-// Counts the metric and returns the action, accept carrying empty content
-func (h *elicitationHandler) result(action, metric string) *ElicitResult {
+// Counts one metric
+func (h *elicitationHandler) count(metric string) {
 	h.mu.Lock()
 	h.metrics[metric]++
 	h.mu.Unlock()
-	if action == "accept" {
-		return &ElicitResult{Action: action, Content: map[string]any{}}
+}
+
+// Metric an elicitation answer counts under
+func answerMetric(answer string) string {
+	switch answer {
+	case "accept":
+		return "accepted"
+	case "decline":
+		return "declined"
 	}
-	return &ElicitResult{Action: action}
+	return "errors"
 }
 
 // Asks the session owning the in flight call, else the server's own surface, for consent
 func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (*ElicitResult, *RPCError) {
-	h.mu.Lock()
-	h.metrics["requests"]++
-	h.mu.Unlock()
+	h.count("requests")
 	if params.Mode == "url" {
-		pkgLog().Info(fmt.Sprintf("MCP server '%s' requested URL-mode elicitation; declining (URL-mode elicitation not implemented)", h.serverName))
-		return h.result("decline", "declined"), nil
+		return h.elicitURL(ctx, params)
+	}
+	if params.Mode != "" && params.Mode != "form" {
+		h.count("errors")
+		return nil, &RPCError{Code: CodeInvalidParams, Message: fmt.Sprintf("Invalid params: elicitation mode %q is neither form nor url", params.Mode)}
 	}
 	message := params.Message
 	if message == "" {
@@ -691,7 +703,25 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 		schema = map[string]any{}
 	}
 	pkgLog().Info(fmt.Sprintf("MCP server '%s' elicitation request: %s", h.serverName, truncateRunes(sanitizeError(message), 200)))
+	if props, _ := schema["properties"].(map[string]any); len(props) > 0 {
+		fields, rpcErr := formFieldsOf(schema, params.RawRequestedSchema)
+		if rpcErr != nil {
+			h.count("errors")
+			return nil, rpcErr
+		}
+		return h.elicitForm(ctx, message, fields)
+	}
 	description := formatElicitationSchemaSummary(schema, params.RawRequestedSchema, h.serverName)
+	answer, metric := h.ask(ctx, message, description, tools.ElicitationOptions{})
+	h.count(metric)
+	if answer == "accept" {
+		return &ElicitResult{Action: answer, Content: map[string]any{}}, nil
+	}
+	return &ElicitResult{Action: answer}, nil
+}
+
+// Context and environment of the in flight call that owns the request, the handler's own when none is captured
+func (h *elicitationHandler) callEnv(ctx context.Context) (context.Context, *tools.Env) {
 	base, env := ctx, h.env
 	if captured := h.callContext(); captured != nil {
 		base = context.WithoutCancel(captured)
@@ -699,6 +729,12 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 			env = e
 		}
 	}
+	return base, env
+}
+
+// Consent answer and its metric, a failure or timeout answering decline or cancel under errors
+func (h *elicitationHandler) ask(ctx context.Context, message, description string, o tools.ElicitationOptions) (string, string) {
+	base, env := h.callEnv(ctx)
 	consentCtx, cancel := context.WithCancel(base)
 	defer cancel()
 	type outcome struct {
@@ -707,14 +743,15 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 	}
 	done := make(chan outcome, 1)
 	consent := elicitationConsent
+	o.Timeout = time.Duration(int(h.timeout)) * time.Second
+	o.Surface = "mcp-elicitation/" + h.serverName
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				done <- outcome{err: r}
 			}
 		}()
-		done <- outcome{answer: consent(consentCtx, env, message, description, tools.ElicitationOptions{
-			Timeout: time.Duration(int(h.timeout)) * time.Second, Surface: "mcp-elicitation/" + h.serverName})}
+		done <- outcome{answer: consent(consentCtx, env, message, description, o)}
 	}()
 	timer := time.NewTimer(time.Duration(h.timeout*float64(time.Second)) + elicitationOuterGrace)
 	defer timer.Stop()
@@ -722,20 +759,18 @@ func (h *elicitationHandler) Elicit(ctx context.Context, params *ElicitParams) (
 	case o := <-done:
 		if o.err != nil {
 			pkgLog().Error(fmt.Sprintf("MCP server '%s' elicitation failed: %v", h.serverName, o.err))
-			return h.result("decline", "errors"), nil
+			return "decline", "errors"
 		}
 		switch o.answer {
-		case "accept":
-			return h.result("accept", "accepted"), nil
-		case "cancel":
-			return h.result("cancel", "errors"), nil
+		case "accept", "cancel":
+			return o.answer, answerMetric(o.answer)
 		}
-		return h.result("decline", "declined"), nil
+		return "decline", "declined"
 	case <-timer.C:
 		pkgLog().Warn(fmt.Sprintf("MCP server '%s' elicitation timed out after %ds", h.serverName, int(h.timeout)))
-		return h.result("cancel", "errors"), nil
+		return "cancel", "errors"
 	case <-ctx.Done():
 		pkgLog().Warn(fmt.Sprintf("MCP server '%s' elicitation timed out after %ds", h.serverName, int(h.timeout)))
-		return h.result("cancel", "errors"), nil
+		return "cancel", "errors"
 	}
 }

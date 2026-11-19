@@ -145,9 +145,9 @@ func (a *app) sessionCommands() []slashCommand {
 				if !a.gw.canonical() {
 					return nil
 				}
-				return r.rpc("slash.exec", map[string]any{"command": "personality", "session_id": nilIfEmpty(r.sid)}, func(res map[string]any) tea.Cmd {
-					if out, _ := res["output"].(string); out != "" {
-						r.sys(out)
+				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: "personality", SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
+					if res != nil && res.Output != "" {
+						r.sys(res.Output)
 					}
 					return nil
 				})

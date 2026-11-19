@@ -242,7 +242,7 @@ func TestAuxIsAuthErrorAndSameProviderRetrySkip(t *testing.T) {
 	if !auxShouldSkipSameProviderRetry("compression", timeout) || auxShouldSkipSameProviderRetry("web_extract", timeout) || auxShouldSkipSameProviderRetry("", timeout) {
 		t.Fatal("only critical path tasks skip")
 	}
-	if auxShouldSkipSameProviderRetry("vision", errors.New("no-progress timeout after 30s (timed out)")) || auxShouldSkipSameProviderRetry("vision", errors.New("Connection refused")) {
+	if auxShouldSkipSameProviderRetry("vision", &AuxTimeoutError{Message: "no-progress timeout after 30s (timed out)", Kind: AuxTimeoutNoOutput}) || auxShouldSkipSameProviderRetry("vision", errors.New("Connection refused")) {
 		t.Fatal("fast first token fails and connection drops keep the retry")
 	}
 }

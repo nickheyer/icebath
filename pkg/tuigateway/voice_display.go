@@ -9,9 +9,11 @@ type VoiceToggleAction string
 
 func (VoiceToggleAction) Values() []string { return []string{"status", "on", "off", "tts"} }
 
+// Voice action of the session named, or of the serving process when none is named
 type VoiceToggleParams struct {
-	Action  VoiceToggleAction `json:"action,omitzero"`
-	Profile *string           `json:"profile,omitzero"`
+	Action    VoiceToggleAction `json:"action,omitzero"`
+	SessionID string            `json:"session_id,omitzero"`
+	Profile   *string           `json:"profile,omitzero"`
 }
 
 // Voice mode state, the requirements probe on status and the spoken stop hint on on
@@ -60,6 +62,23 @@ type VoicePartialPayload struct {
 // Recorder state, idle, listening, transcribing and the others the recorder names
 type VoiceStatusPayload struct {
 	State string `json:"state"`
+}
+
+type VoiceSpeechKind string
+
+func (VoiceSpeechKind) Values() []string { return []string{"audio", "think", "quiet", "stop"} }
+
+// Speech of a session for the window that plays it, a clip queued after the others, thinking blips on or off, or a cut
+type VoiceSpeechPayload struct {
+	Kind   VoiceSpeechKind `json:"kind"`
+	Audio  string          `json:"audio,omitzero"`
+	Format string          `json:"format,omitzero"`
+}
+
+// Whether the window that plays speech has a clip sounding
+type VoicePlaybackParams struct {
+	Playing bool    `json:"playing"`
+	Profile *string `json:"profile,omitzero"`
 }
 
 type WakeStartParams struct {
@@ -174,6 +193,9 @@ var VoiceToggle = NewMethod[VoiceToggleParams, VoiceToggleResult]("voice.toggle"
 // Starts or stops a push to talk capture, the text arriving as voice.transcript
 var VoiceRecord = NewMethod[VoiceRecordParams, VoiceRecordResult]("voice.record")
 
+// Tells the gateway the window's speech started or stopped sounding, so barge in listens past the last clip
+var VoicePlayback = NewMethod[VoicePlaybackParams, NoPayload]("voice.playback")
+
 // Arms the wake word listener for the calling surface
 var WakeStart = NewMethod[WakeStartParams, WakeStartResult]("wake.start")
 
@@ -197,6 +219,9 @@ var VoicePartialEvent = NewEvent[VoicePartialPayload]("voice.partial")
 
 // A voice capture produced text or ended on a stop phrase or the silence limit
 var VoiceTranscriptEvent = NewEvent[VoiceTranscriptPayload]("voice.transcript")
+
+// Spoken reply audio and thinking blips of a session, sent only to the window that plays them
+var VoiceSpeechEvent = NewEvent[VoiceSpeechPayload]("voice.speech")
 
 // A wake phrase fired
 var WakeDetectedEvent = NewEvent[WakeDetectedPayload]("wake.detected")

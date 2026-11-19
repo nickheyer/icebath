@@ -11,12 +11,12 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -822,11 +822,11 @@ var CommentAgentRunner func(ctx context.Context, prompt string, hooks CommentAge
 // Runs the comment agent with the lark client injected for the feishu tools, empty on failure
 func runCommentAgent(ctx context.Context, prompt string, client larkAPI, sessionKey string) string {
 	pkgLog().Info("[Feishu-Comment] _run_comment_agent: injecting lark client into tool thread-locals")
-	var turnClient tools.FeishuAPI
+	var turnClient feishuclient.API
 	if client != nil {
 		turnClient = client
 	}
-	ctx = tools.WithFeishuClient(ctx, turnClient)
+	ctx = feishuclient.With(ctx, turnClient)
 	var history []map[string]any
 	hooks := CommentAgentHooks{
 		OnRuntime: func(rt CommentAgentRuntime) []map[string]any {
@@ -842,6 +842,10 @@ func runCommentAgent(ctx context.Context, prompt string, client larkAPI, session
 		OnRun: func() {
 			pkgLog().Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: calling run_conversation (prompt=%d chars, history=%d)", pystr.Len(prompt), len(history)))
 		},
+	}
+	if CommentAgentRunner == nil {
+		pkgLog().Error("[Feishu-Comment] _run_comment_agent: the comment agent runner is unset, cmd/icebath binds it in every build that links feishu")
+		return ""
 	}
 	run, err := CommentAgentRunner(ctx, prompt, hooks)
 	if err != nil {

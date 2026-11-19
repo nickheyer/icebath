@@ -240,9 +240,9 @@ func TestOnlyErrorsAboutTheRowsOwnValuesAreRejections(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{errors.New("Error binding parameter 4: type 'dict' is not supported"), true},
-		{errors.New("Error binding parameter 3 - probably unsupported type"), true},
-		{&PyError{Kind: "OverflowError", Msg: "Python int too large to convert to SQLite INTEGER"}, true},
+		{&state.SQLiteError{Class: state.SQLiteProgrammingError, Msg: "SQL parameter 4 is a mapping, which SQLite cannot store", UnbindableValue: true}, true},
+		{fmt.Errorf("append: %w", &state.SQLiteError{Class: state.SQLiteProgrammingError, Msg: "SQL parameter 3 is a list, which SQLite cannot store", UnbindableValue: true}), true},
+		{&state.SQLiteError{Class: state.SQLiteProgrammingError, Msg: "SQL parameter 9 is a number too large for a SQLite INTEGER", UnbindableValue: true}, true},
 		{errors.New("no more rows available"), false},
 		{errors.New("database is locked"), false},
 		{errors.New("FOREIGN KEY constraint failed"), false},
@@ -546,7 +546,7 @@ func TestARowTheDatabaseRejectsIsQuarantinedNotRetried(t *testing.T) {
 	dir := useFlushDir(t)
 	db := &sequenceAppender{fn: func(fields map[string]any) error {
 		if content, _ := fields["content"].(string); strings.HasPrefix(content, "poison") {
-			return &state.SQLiteError{Class: state.SQLiteInterfaceError, Msg: "Error binding parameter 3: unsupported type"}
+			return &state.SQLiteError{Class: state.SQLiteProgrammingError, Msg: "SQL parameter 3 is a list, which SQLite cannot store", UnbindableValue: true}
 		}
 		return nil
 	}}

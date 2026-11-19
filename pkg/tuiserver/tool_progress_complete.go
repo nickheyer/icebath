@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Emits tool.complete with the prepared preview, summary and todo snapshot, then repaints changed automation state
+// Emits tool.complete with the verdict, prepared preview, summary and todo snapshot, then repaints changed automation state
 func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[string]any, result string) {
 	session := tuihost.SessionRecord(sid)
 	var metadata map[string]any
@@ -52,7 +52,14 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 			payload["duration_s"] = elapsed
 		}
 	}
-	failed, _ := tools.DetectToolFailure(ctx, name, result)
+	failed, refused, reason := tools.ToolOutcome(ctx, name, result)
+	payload["is_error"] = failed
+	if refused {
+		payload["refused"] = true
+	}
+	if failed && reason != "" {
+		payload["error"] = reason
+	}
 	payload["result"] = gateway.BoundedToolResult(result, failed)
 	if summary := toolSummary(name, result, durationS); summary != "" {
 		payload["summary"] = summary

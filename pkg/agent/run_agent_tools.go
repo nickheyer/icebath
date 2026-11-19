@@ -351,6 +351,9 @@ func (a *AIAgent) GuardrailBlockResult(d tools.ToolGuardrailDecision) string {
 // Runs the assistant tool calls through the segment planner and appends their results, a dispatch error skipping the trim
 func (a *AIAgent) executeToolCalls(ctx context.Context, assistantMessage *state.Message, messages *[]*state.Message, effectiveTaskID string) error {
 	toolCalls := assistantMessage.ToolCalls
+	if cb := a.clarifySurface(); cb != nil {
+		ctx = tools.WithClarifyCallback(ctx, cb)
+	}
 	a.executingTools = true
 	err := func() error {
 		prevCtx := a.toolCallCtx

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 )
 
 // Literal keywords hold instance data rather than schemas
@@ -378,7 +379,28 @@ func DeferredDirectCallReason(name string) string {
 // DisabledToolReason answers a call of a tool whose toolset is switched off in this session
 func DisabledToolReason(name, toolset string) string {
 	return fmt.Sprintf("'%s' is disabled in this session: its toolset '%s' is switched off. The tool was NOT invoked. ", name, toolset) +
-		"Don't retry it — continue without it, or tell the user the task needs that toolset enabled."
+		fmt.Sprintf("Don't retry it. If the task needs it, ask the user to turn the toolset on with /tools enable %s, otherwise continue without it.", toolset)
+}
+
+// SetupNeededReason answers a call of a selected tool whose requirements are not met, naming what the user sets up
+func SetupNeededReason(def *Def) string {
+	text := fmt.Sprintf("'%s' needs setup before it can run (toolset '%s'). The tool was NOT invoked. ", def.Name, def.Toolset)
+	if line, refused := linktier.Refusal("each bundled web backend", webBackendTools[def.Name]); refused {
+		return text + "Ask the user to install a web search plugin with icebath plugins install, " + line + "."
+	}
+	if len(def.RequiresEnv) > 0 {
+		return text + fmt.Sprintf("Ask the user to set %s, with /setup in the icebath TUI or in the profile's .env file, then retry.", strings.Join(def.RequiresEnv, ", "))
+	}
+	return text + "Ask the user to set it up with /setup in the icebath TUI, then retry."
+}
+
+// Whether a tool's own availability check fails in this environment
+func requirementsUnmet(ctx context.Context, env *Env, def *Def) bool {
+	if def.Check == nil {
+		return false
+	}
+	s := newSearchScope(ctx, env)
+	return !s.reg.checkCached(s.ctx, env, def.Check)
 }
 
 // Toolset switching a registered non MCP tool off under the session selection, empty when the selection keeps it
@@ -409,17 +431,23 @@ func UnofferedToolReason(ctx context.Context, env *Env, name string, deferred ma
 	if def == nil {
 		return ""
 	}
+	if reason := OutOfScopeReason(ctx, env, name); reason != "" {
+		return reason
+	}
 	if toolset := switchedOffToolset(ctx, env, def, enabled, disabled); toolset != "" {
 		return DisabledToolReason(name, toolset)
 	}
-	if reason := OutOfScopeReason(ctx, env, name); reason != "" {
-		return reason
+	if requirementsUnmet(ctx, env, def) {
+		return SetupNeededReason(def)
 	}
 	return UnavailableInSessionReason(name)
 }
 
-// SessionScopeBlockReason blocks a tool_call naming a tool outside the session scope, naming a switched off toolset
+// SessionScopeBlockReason blocks a tool_call naming a tool outside the session scope, a TUI only tool before a switched off toolset
 func SessionScopeBlockReason(ctx context.Context, env *Env, name string, enabled, disabled []string) string {
+	if reason := OutOfScopeReason(ctx, env, name); reason != "" {
+		return reason
+	}
 	if def := newSearchScope(ctx, env).entry(name); def != nil {
 		if toolset := switchedOffToolset(ctx, env, def, enabled, disabled); toolset != "" {
 			return DisabledToolReason(name, toolset)

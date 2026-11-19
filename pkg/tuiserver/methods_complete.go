@@ -26,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -71,8 +72,12 @@ func catch(failCode int, body func(ctx context.Context, rid any, params map[stri
 
 // Saves pasted text under the profile pastes dir and answers the line standing in for it
 func pasteCollapse(ctx context.Context, rid any, params map[string]any) map[string]any {
-	text, _ := params["text"].(string)
-	if !truthy(params["text"]) {
+	request, err := tuigateway.PasteCollapse.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
+	}
+	text := request.Text
+	if text == "" {
 		return rpcErr(rid, 4004, "empty paste", nil)
 	}
 	pasteMu.Lock()
@@ -93,21 +98,16 @@ func pasteCollapse(ctx context.Context, rid any, params map[string]any) map[stri
 		panic(err)
 	}
 	placeholder := fmt.Sprintf("[Pasted text #%d: %d lines → %s]", counter, lineCount, pasteFile)
-	return ok(rid, map[string]any{"placeholder": placeholder, "path": pasteFile, "lines": lineCount})
+	return ok(rid, tuigateway.Plain(tuigateway.PasteCollapseResult{Placeholder: placeholder, Path: pasteFile, Lines: int64(lineCount)}))
 }
 
 // Profile mention completions for a bare word, the primary profile offered as icebath when no profile claims it
-func profileMentionItems(ctx context.Context, prefix string) (out []map[string]any) {
-	defer func() {
-		if recover() != nil {
-			out = []map[string]any{}
-		}
-	}()
+func profileMentionItems(ctx context.Context, prefix string) ([]map[string]any, error) {
 	profiles, err := manage.ListProfiles(ctx, true)
 	if err != nil {
-		return []map[string]any{}
+		return nil, err
 	}
-	out = []map[string]any{}
+	out := []map[string]any{}
 	seen := map[string]bool{}
 	for _, p := range profiles {
 		name := pystr.Strip(p.Name)
@@ -126,29 +126,24 @@ func profileMentionItems(ctx context.Context, prefix string) (out []map[string]a
 	if strings.HasPrefix("icebath", strings.ToLower(prefix)) && !seen["icebath"] {
 		out = append(out, completionItem("@icebath", "agent profile (primary)"))
 	}
-	return out
+	return out, nil
 }
 
-// Autocomplete of the plugin reference provider owning the prefix, nil when none owns it or it fails
-func pluginReferenceItems(ctx context.Context, pfx, qval string) (out []map[string]any) {
-	defer func() {
-		if recover() != nil {
-			out = nil
-		}
-	}()
+// Autocomplete of the plugin reference provider owning the prefix, owned false when no provider claims it
+func pluginReferenceItems(ctx context.Context, pfx, qval string) ([]map[string]any, bool, error) {
 	prov, owned := agent.GetContextReferenceProviders()[pfx]
 	if !owned || prov == nil {
-		return nil
+		return nil, false, nil
 	}
 	found, err := prov.Autocomplete(ctx, qval, 20)
 	if err != nil {
-		return nil
+		return nil, true, fmt.Errorf("the @%s: reference provider did not answer: %w", pfx, err)
 	}
-	out = []map[string]any{}
+	out := []map[string]any{}
 	for _, it := range found {
 		out = append(out, map[string]any{"text": "@" + pfx + ":" + it.Text, "display": it.Display, "meta": it.Meta})
 	}
-	return out
+	return out, true, nil
 }
 
 // One fuzzy basename hit with its rank
@@ -217,29 +212,30 @@ func boolOrder(a, b bool) int {
 }
 
 // Completions for a bare at sign, the directive hints, agent profiles and plugin reference prefixes
-func atRootItems(ctx context.Context) []map[string]any {
+func atRootItems(ctx context.Context) ([]map[string]any, error) {
 	items := []map[string]any{}
 	for _, h := range atDirectiveHints {
 		items = append(items, completionItem(h[0], h[1]))
 	}
-	items = append(items, profileMentionItems(ctx, "")...)
-	func() {
-		defer func() { recover() }()
-		providers := agent.GetContextReferenceProviders()
-		keys := make([]string, 0, len(providers))
-		for pfx := range providers {
-			keys = append(keys, pfx)
+	profileItems, err := profileMentionItems(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	items = append(items, profileItems...)
+	providers := agent.GetContextReferenceProviders()
+	keys := make([]string, 0, len(providers))
+	for pfx := range providers {
+		keys = append(keys, pfx)
+	}
+	slices.Sort(keys)
+	for _, pfx := range keys {
+		desc := providers[pfx].Description()
+		if desc == "" {
+			desc = "plugin: " + pfx
 		}
-		slices.Sort(keys)
-		for _, pfx := range keys {
-			desc := providers[pfx].Description()
-			if desc == "" {
-				desc = "plugin: " + pfx
-			}
-			items = append(items, completionItem("@"+pfx+":", desc))
-		}
-	}()
-	return items
+		items = append(items, completionItem("@"+pfx+":", desc))
+	}
+	return items, nil
 }
 
 // One directory entry name with whether it is a directory
@@ -248,34 +244,25 @@ type dirEntry struct {
 	isDir bool
 }
 
-// Entries of one directory inside the non local terminal backend of the session, none when it is unreachable
-func backendDirEntries(ctx context.Context, searchDir, sessionKey string) (entries []dirEntry) {
-	result, failed := func() (result map[string]any, failed bool) {
-		defer func() {
-			if recover() != nil {
-				failed = true
-			}
-		}()
-		timeout := 3
-		command := "sh -c " + pyshlex.Quote(backendListingCode) + " sh " + pyshlex.Quote(searchDir)
-		raw := terminalTool(ctx, tools.EnvForProfileHome(ctx, tools.ToolEnvFrom(ctx), home.Dir(ctx)),
-			tools.TerminalRequest{Command: command, TaskID: sessionKey, Timeout: &timeout, Force: true})
-		decoded, err := pyjson.Loads(raw)
-		if err != nil {
-			return nil, true
-		}
-		parsed, isDict := pyjson.Plain(decoded).(map[string]any)
-		if !isDict {
-			return nil, true
-		}
-		return parsed, false
-	}()
-	if failed {
-		return nil
+// Entries of one directory inside the non local terminal backend of the session, the backend's failure when it cannot list
+func backendDirEntries(ctx context.Context, searchDir, sessionKey string) (entries []dirEntry, err error) {
+	timeout := 3
+	command := "sh -c " + pyshlex.Quote(backendListingCode) + " sh " + pyshlex.Quote(searchDir)
+	raw := terminalTool(ctx, tools.EnvForProfileHome(ctx, tools.ToolEnvFrom(ctx), home.Dir(ctx)),
+		tools.TerminalRequest{Command: command, TaskID: sessionKey, Timeout: &timeout, Force: true})
+	decoded, err := pyjson.Loads(raw)
+	if err != nil {
+		return nil, fmt.Errorf("the terminal backend answered a listing that is not JSON: %w", err)
 	}
-	exitCode, hasExit := result["exit_code"]
-	if pyrepr.Truthy(result["error"]) || (hasExit && exitCode != nil && !pyrepr.Equal(exitCode, 0)) {
-		return nil
+	result, isDict := pyjson.Plain(decoded).(map[string]any)
+	if !isDict {
+		return nil, fmt.Errorf("the terminal backend answered a listing that is %s, not an object", errchain.Kind(pyjson.Plain(decoded)))
+	}
+	if pyrepr.Truthy(result["error"]) {
+		return nil, fmt.Errorf("the terminal backend could not list %s: %s", searchDir, pyrepr.Str(result["error"]))
+	}
+	if exitCode, hasExit := result["exit_code"]; hasExit && exitCode != nil && !pyrepr.Equal(exitCode, 0) {
+		return nil, fmt.Errorf("listing %s in the terminal backend exited %s: %s", searchDir, pyrepr.Str(exitCode), pyrepr.Str(result["output"]))
 	}
 	output := ""
 	if pyrepr.Truthy(result["output"]) {
@@ -290,7 +277,7 @@ func backendDirEntries(ctx context.Context, searchDir, sessionKey string) (entri
 	slices.SortFunc(entries, func(a, b dirEntry) int {
 		return cmp.Or(strings.Compare(a.name, b.name), boolOrder(a.isDir, b.isDir))
 	})
-	return entries
+	return entries, nil
 }
 
 // Path functions of the host or of POSIX, the dialect a listing speaks
@@ -348,7 +335,11 @@ func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string
 			entries = append(entries, dirEntry{entry.Name(), isDir(filepath.Join(searchDir, entry.Name()))})
 		}
 	} else {
-		entries = backendDirEntries(ctx, searchDir, sessionKey)
+		listed, err := backendDirEntries(ctx, searchDir, sessionKey)
+		if err != nil {
+			return nil, err
+		}
+		entries = listed
 	}
 	for _, entry := range entries {
 		if match != "" && !strings.HasPrefix(strings.ToLower(entry.name), strings.ToLower(match)) {
@@ -411,17 +402,20 @@ func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string
 
 // Path completions of the composer word resolved against the session folder or its backend cwd
 func completePath(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	rawWord, present := params["word"]
-	if !present || !pyrepr.Truthy(rawWord) {
-		return ok(rid, map[string]any{"items": []any{}}), nil
+	request, err := tuigateway.CompletePath.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
-	word, isStr := rawWord.(string)
-	if !isStr {
-		return nil, fmt.Errorf("the word to complete must be text, got %s", errchain.Kind(rawWord))
+	word := deref(request.Word)
+	if word == "" {
+		return ok(rid, tuigateway.Plain(tuigateway.CompletionItemsResult{Items: []tuigateway.CompletionItem{}})), nil
 	}
-	session := tuihost.SessionRecord(strOr(params["session_id"]))
+	session := tuihost.SessionRecord(deref(request.SessionID))
 	local := effectiveTerminalBackend(ctx) == "local"
-	clientCwd := params["cwd"]
+	var clientCwd any
+	if request.Cwd != nil {
+		clientCwd = *request.Cwd
+	}
 	if session != nil && pyrepr.Equal(clientCwd, session.Get("cwd")) && isRemoteLaunchCwd(ctx, session) {
 		clientCwd = nil
 	}
@@ -444,11 +438,20 @@ func completePath(ctx context.Context, rid any, params map[string]any) (map[stri
 	if session != nil {
 		sessionKey = strOr(session.Get("session_key"))
 	}
-	items, err := pathCompletionItems(ctx, word, root, sessionKey, local)
+	items, err := PathCompletionItems(ctx, word, root, sessionKey, local)
 	if err != nil {
 		return nil, err
 	}
-	return ok(rid, map[string]any{"items": anyItems(items)}), nil
+	return ok(rid, tuigateway.Plain(tuigateway.CompletionItemsResult{Items: items})), nil
+}
+
+// Typed rows of the item maps a completion builder produced, a misfit reported against the method
+func completionRows(method string, items []map[string]any) []tuigateway.CompletionItem {
+	out := make([]tuigateway.CompletionItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, typedRow[tuigateway.CompletionItem](method, item))
+	}
+	return out
 }
 
 // Items of complete.path for the word resolved against root
@@ -459,13 +462,14 @@ func pathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 		query = word[1:]
 	}
 	if isContext && query == "" {
-		return atRootItems(ctx), nil
+		return atRootItems(ctx)
 	}
 	if isContext && strings.Contains(query, ":") {
 		pfx, qval, _ := strings.Cut(query, ":")
 		if !builtinAtPrefixes[pfx] {
-			if pluginItems := pluginReferenceItems(ctx, pfx, qval); pluginItems != nil {
-				return pluginItems, nil
+			pluginItems, owned, err := pluginReferenceItems(ctx, pfx, qval)
+			if owned || err != nil {
+				return pluginItems, err
 			}
 		}
 	}
@@ -488,31 +492,31 @@ func pathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 		items = listed
 	}
 	if bareWord && prefixTag == "" {
-		items = append(profileMentionItems(ctx, pathPart), items...)
+		profileItems, err := profileMentionItems(ctx, pathPart)
+		if err != nil {
+			return nil, err
+		}
+		items = append(profileItems, items...)
 	}
 	return items, nil
 }
 
 // Slash popup completions bound to the calling session's profile and workspace, or a draft's named profile
 func completeSlash(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	session := tuihost.SessionRecord(strOr(params["session_id"]))
+	request, err := tuigateway.CompleteSlash.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil), nil
+	}
+	session := tuihost.SessionRecord(deref(request.SessionID))
 	cwd, err := completionCwd(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	text := ""
-	if raw, present := params["text"]; present {
-		if s, isStr := raw.(string); isStr {
-			text = s
-		} else {
-			return nil, fmt.Errorf("the slash command text must be text, got %s", errchain.Kind(raw))
-		}
-	}
-	result, err := slashCompletions(ctx, text, sessionHomeScope(session, cwd, strOr(params["profile"])))
+	result, err := SlashCompletions(ctx, deref(request.Text), sessionHomeScope(session, cwd, deref(request.Profile)))
 	if err != nil {
 		return nil, err
 	}
-	return ok(rid, result), nil
+	return ok(rid, tuigateway.Plain(result)), nil
 }
 
 // Live agent of the session the params name, nil when none

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,21 +170,20 @@ func TestSessionMostRecentReturnsNullWhenOnlyUnknownRows(t *testing.T) {
 	}
 }
 
-// test_tui_gateway_server.py test_session_most_recent_folds_db_exception_into_null_result
-func TestSessionMostRecentFoldsDBExceptionIntoNullResult(t *testing.T) {
+// A store whose listing query fails answers the error with its cause, never a missing session
+func TestSessionMostRecentAnswersAFailingQueryWithItsCause(t *testing.T) {
 	db := listingDB(t)
 	seedCounted(t, db, "tui-1", "tui", 1)
 	reaperExec(t, db, "ALTER TABLE sessions RENAME TO sessions_locked_away")
 	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "session.most_recent", "params": map[string]any{}})
-	if _, failed := resp["error"]; failed {
-		t.Fatalf("error %v", resp)
-	}
-	if resp["result"].(map[string]any)["session_id"] != nil {
-		t.Fatalf("result %v", resp)
+	failure, _ := resp["error"].(map[string]any)
+	data, _ := failure["data"].(map[string]any)
+	if details, _ := data["details"].(string); data["cause"] == nil || !strings.Contains(details, "no such table") {
+		t.Fatalf("most_recent %v", resp)
 	}
 }
 
-// test_tui_gateway_server.py test_session_most_recent_handles_db_unavailable
+// A home whose folder cannot be created answers the store error with its cause
 func TestSessionMostRecentHandlesDBUnavailable(t *testing.T) {
 	blocked := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
@@ -191,7 +191,10 @@ func TestSessionMostRecentHandlesDBUnavailable(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", blocked)
 	useSharedDB(t, nil)
-	if result := mostRecent(t); result["session_id"] != nil {
-		t.Fatalf("result %v", result)
+	resp := handleRequest(context.Background(), map[string]any{"id": "1", "method": "session.most_recent", "params": map[string]any{}})
+	failure, _ := resp["error"].(map[string]any)
+	data, _ := failure["data"].(map[string]any)
+	if data["cause"] != "store_dir" {
+		t.Fatalf("most_recent %v", resp)
 	}
 }

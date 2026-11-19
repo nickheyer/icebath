@@ -329,7 +329,8 @@ func (r *GatewayRunner) restoreTelegramTopicSession(ctx context.Context, event *
 	}
 	if err := db.BindTelegramTopic(ctx, state.TelegramTopicBinding{ChatID: source.ChatID, ThreadID: strOrNone(source.ThreadID),
 		UserID: strOrNone(source.UserID), SessionKey: sessionKey, SessionID: sessionID, ManagedMode: "restored", ProfileName: topicProfile}); err != nil {
-		if isValueError(err) && strings.Contains(pyrepr.ExceptionMessage(err), "already linked") {
+		var linked *state.TopicAlreadyLinkedError
+		if errors.As(err, &linked) {
 			return alreadyLinked, nil
 		}
 		return "", err

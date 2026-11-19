@@ -63,7 +63,7 @@ func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *p
 		if !ok {
 			return nil, notDictErr(data)
 		}
-		return nil, runtimeError(fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(getOr(dict, "message", data))))
+		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(getOr(dict, "message", data))), BizCode: bizCodeOf(dict)}
 	}
 	return data, nil
 }
@@ -559,6 +559,24 @@ func (a *QQAdapter) GetChatInfo(ctx context.Context, chatID string) (map[string]
 func isURL(source string) bool {
 	parsed, err := pyurl.Parse(source)
 	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https")
+}
+
+// Adds an emoji reaction to a guild channel message, unicode emoji as type 2 and a numeric QQ system emoji id as type 1
+func (a *QQAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
+	if kind := a.guessChatType(chatID); kind != "guild" {
+		return fmt.Errorf("QQ bots react only to guild channel messages, %s is a %s chat", chatID, kind)
+	}
+	key := strings.ReplaceAll(strings.TrimSpace(emoji), "\ufe0f", "")
+	var path string
+	if runes := []rune(key); len(runes) == 1 && runes[0] > 127 {
+		path = fmt.Sprintf("/channels/%s/messages/%s/reactions/2/%d", chatID, messageID, runes[0])
+	} else if key != "" && strings.Trim(key, "0123456789") == "" {
+		path = fmt.Sprintf("/channels/%s/messages/%s/reactions/1/%s", chatID, messageID, key)
+	} else {
+		return fmt.Errorf("QQ reactions take one emoji or a numeric QQ system emoji id, got %s", emoji)
+	}
+	_, err := a.apiRequest(ctx, http.MethodPut, path, nil, DefaultAPITimeout)
+	return err
 }
 
 // QQ chat kind recorded from inbound traffic, c2c when the chat was never seen

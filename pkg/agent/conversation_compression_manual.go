@@ -8,10 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// AggressiveUnsupported is the refusal every surface prints for /compress --aggressive
-const AggressiveUnsupported = "--aggressive is not supported; use '/compress here [N]' to keep only recent exchanges, " +
-	"or /undo to drop turns."
-
 // MinCompressMessages is the shortest history a manual compression runs on
 const MinCompressMessages = 4
 
@@ -40,14 +36,27 @@ type CompressResult struct {
 // Removed is how many messages the compression took out of the history
 func (r CompressResult) Removed() int { return len(r.BeforeMessages) - len(r.AfterMessages) }
 
-// Parses /compress flags anywhere, then the boundary aware and focus positional forms
+// Parses /compress flags anywhere, then the boundary aware and focus positional forms, aggressive keeping only the last exchange
 func ParseCompressArgs(rawArgs string) CompressRequest {
 	rest, preview, aggressive := provider.ExtractCompressFlags(pystr.Strip(rawArgs))
 	partial, keepLast, focus := provider.ParsePartialCompressArgs(rest)
 	if focus != nil && *focus == "" {
 		focus = nil
 	}
+	if aggressive && !partial {
+		partial, keepLast = true, 1
+	}
 	return CompressRequest{Preview: preview, Aggressive: aggressive, Partial: partial, KeepLast: keepLast, FocusTopic: focus}
+}
+
+// Puts the built in compressor in its aggressive mode for one run, the returned func restoring it
+func aggressiveCompression(engine ContextEngine, on bool) func() {
+	c, ok := engine.(*ContextCompressor)
+	if !ok || c == nil || !on {
+		return func() {}
+	}
+	c.aggressive = true
+	return func() { c.aggressive = false }
 }
 
 // Transcript plus system prompt plus tool schema token estimate of a request built from messages
@@ -143,7 +152,9 @@ func CompressNow(ctx context.Context, a *AIAgent, history []map[string]any, requ
 	if len(tailRows) > 0 {
 		opts.VerbatimTail = tailRows
 	}
+	restore := aggressiveCompression(a.contextCompressor, request.Aggressive)
 	compressed, _, err := a.compressContext(ctx, head, o.SystemMessage, opts)
+	restore()
 	if err != nil {
 		finalizeContextEngineCompressionNotification(a, false)
 		return CompressResult{}, err

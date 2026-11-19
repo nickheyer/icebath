@@ -116,30 +116,58 @@ func (p *pendingInputs) migrate(previous submissionDestination, successorSid, su
 }
 
 // Destination as the journal stores it, an empty session or stored id as null
-func destinationJSON(d *submissionDestination) any {
+type journalDestination struct {
+	Sid         *string `json:"sid"`
+	StoredSid   *string `json:"storedSid"`
+	Profile     string  `json:"profile"`
+	ProfileHome string  `json:"profileHome"`
+	OwnerHome   string  `json:"ownerHome,omitempty"`
+}
+
+// Image a journaled input carries
+type journalAttachment struct {
+	Path string `json:"path"`
+	Mime string `json:"mime"`
+}
+
+// One queued input as its journal file stores it
+type journalRecord struct {
+	SubmissionID        string              `json:"submissionId"`
+	Destination         *journalDestination `json:"destination"`
+	OwnerDestination    *journalDestination `json:"ownerDestination"`
+	Display             *string             `json:"display"`
+	Text                *string             `json:"text"`
+	Attempted           bool                `json:"attempted"`
+	PreparedText        *string             `json:"preparedText,omitempty"`
+	Attachments         []journalAttachment `json:"attachments,omitempty"`
+	ControlMethod       string              `json:"controlMethod,omitempty"`
+	ExecutionGeneration *int64              `json:"executionGeneration,omitempty"`
+	LegacyAttempted     *bool               `json:"legacyAttempted,omitempty"`
+	CreatedAt           *float64            `json:"createdAt,omitempty"`
+	Queued              *bool               `json:"queued,omitempty"`
+}
+
+// Journal form of a destination, nil for none
+func destinationJSON(d *submissionDestination) *journalDestination {
 	if d == nil {
 		return nil
 	}
-	out := map[string]any{"sid": nil, "storedSid": nil, "profile": d.Profile, "profileHome": d.ProfileHome}
+	out := &journalDestination{Profile: d.Profile, ProfileHome: d.ProfileHome, OwnerHome: d.OwnerHome}
 	if d.Sid != "" {
-		out["sid"] = d.Sid
+		out.Sid = &d.Sid
 	}
 	if d.StoredSid != "" {
-		out["storedSid"] = d.StoredSid
-	}
-	if d.OwnerHome != "" {
-		out["ownerHome"] = d.OwnerHome
+		out.StoredSid = &d.StoredSid
 	}
 	return out
 }
 
 // Destination of a journal record, nil when the record holds none
-func destinationOf(v any) *submissionDestination {
-	m, isObj := v.(map[string]any)
-	if !isObj {
+func destinationOf(j *journalDestination) *submissionDestination {
+	if j == nil {
 		return nil
 	}
-	return &submissionDestination{Sid: paramStr(m["sid"]), StoredSid: paramStr(m["storedSid"]), Profile: paramStr(m["profile"]), ProfileHome: paramStr(m["profileHome"]), OwnerHome: paramStr(m["ownerHome"])}
+	return &submissionDestination{Sid: val(j.Sid), StoredSid: val(j.StoredSid), Profile: j.Profile, ProfileHome: j.ProfileHome, OwnerHome: j.OwnerHome}
 }
 
 // Flushes a directory entry change to disk outside Windows
@@ -175,31 +203,15 @@ func (p *pendingInputs) save(item queueItem) error {
 	if item.InFlight || item.Failed {
 		destination = item.Destination
 	}
-	record := map[string]any{"submissionId": item.SubmissionID, "destination": destinationJSON(destination), "ownerDestination": destinationJSON(&owner), "display": item.Display, "text": item.Text, "attempted": item.InFlight || item.Failed}
-	if item.PreparedText != nil {
-		record["preparedText"] = *item.PreparedText
-	}
+	record := journalRecord{SubmissionID: item.SubmissionID, Destination: destinationJSON(destination), OwnerDestination: destinationJSON(&owner),
+		Display: &item.Display, Text: &item.Text, Attempted: item.InFlight || item.Failed, PreparedText: item.PreparedText,
+		ControlMethod: item.ControlMethod, ExecutionGeneration: item.ExecutionGeneration, LegacyAttempted: item.LegacyAttempted,
+		CreatedAt: item.CreatedAt, Queued: item.Queued}
 	if item.Attachments != nil {
-		list := make([]map[string]any, len(item.Attachments))
+		record.Attachments = make([]journalAttachment, len(item.Attachments))
 		for i, a := range item.Attachments {
-			list[i] = map[string]any{"path": a.Path, "mime": a.Mime}
+			record.Attachments[i] = journalAttachment{Path: a.Path, Mime: a.Mime}
 		}
-		record["attachments"] = list
-	}
-	if item.ControlMethod != "" {
-		record["controlMethod"] = item.ControlMethod
-	}
-	if item.ExecutionGeneration != nil {
-		record["executionGeneration"] = *item.ExecutionGeneration
-	}
-	if item.LegacyAttempted != nil {
-		record["legacyAttempted"] = *item.LegacyAttempted
-	}
-	if item.CreatedAt != nil {
-		record["createdAt"] = *item.CreatedAt
-	}
-	if item.Queued != nil {
-		record["queued"] = *item.Queued
 	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -275,18 +287,16 @@ func (p *pendingInputs) load(destination submissionDestination, durableResume bo
 			}
 			return nil, err
 		}
-		var record map[string]any
+		var record journalRecord
 		if err := json.Unmarshal(data, &record); err != nil {
 			return nil, err
 		}
-		text, textOK := record["text"].(string)
-		display, displayOK := record["display"].(string)
-		if jsTemplate(record, "submissionId")+".json" != name || !textOK || !displayOK {
+		if record.SubmissionID == "" || record.SubmissionID+".json" != name || record.Text == nil || record.Display == nil {
 			return nil, errors.New(tr("canonical.queue.invalidRecord", name))
 		}
-		owner := destinationOf(record["ownerDestination"])
-		if record["ownerDestination"] == nil {
-			owner = destinationOf(record["destination"])
+		owner := destinationOf(record.OwnerDestination)
+		if record.OwnerDestination == nil {
+			owner = destinationOf(record.Destination)
 		}
 		if owner == nil {
 			owner = &submissionDestination{}
@@ -298,26 +308,15 @@ func (p *pendingInputs) load(destination submissionDestination, durableResume bo
 		if !sameSession || owner.ProfileHome != destination.ProfileHome || owner.Profile != destination.Profile {
 			continue
 		}
-		item := queueItem{Display: display, Text: text, SubmissionID: paramStr(record["submissionId"]), Destination: destinationOf(record["destination"]), OwnerDestination: destinationOf(record["ownerDestination"]), Failed: truthyJS(record["attempted"]), ControlMethod: paramStr(record["controlMethod"])}
-		if v, isStr := record["preparedText"].(string); isStr {
-			item.PreparedText = &v
-		}
-		if list, isList := record["attachments"].([]any); isList {
+		item := queueItem{Display: *record.Display, Text: *record.Text, SubmissionID: record.SubmissionID, Destination: destinationOf(record.Destination),
+			OwnerDestination: destinationOf(record.OwnerDestination), Failed: record.Attempted, ControlMethod: record.ControlMethod,
+			PreparedText: record.PreparedText, CreatedAt: record.CreatedAt, ExecutionGeneration: record.ExecutionGeneration,
+			LegacyAttempted: record.LegacyAttempted, Queued: record.Queued}
+		if record.Attachments != nil {
 			item.Attachments = []imageAttachment{}
-			for _, raw := range list {
-				a, _ := raw.(map[string]any)
-				item.Attachments = append(item.Attachments, imageAttachment{Path: paramStr(a["path"]), Mime: paramStr(a["mime"])})
+			for _, a := range record.Attachments {
+				item.Attachments = append(item.Attachments, imageAttachment{Path: a.Path, Mime: a.Mime})
 			}
-		}
-		item.CreatedAt = optionalNumber(record, "createdAt")
-		if generation := optionalNumber(record, "executionGeneration"); generation != nil {
-			item.ExecutionGeneration = ptr(int64(*generation))
-		}
-		if v, isBool := record["legacyAttempted"].(bool); isBool {
-			item.LegacyAttempted = &v
-		}
-		if v, isBool := record["queued"].(bool); isBool {
-			item.Queued = &v
 		}
 		items = append(items, item)
 	}

@@ -81,7 +81,7 @@ func memberNick(member map[string]any, def any) any {
 
 // Members of a group through the running adapter, a tool failure when the query fails
 func groupMembers(ctx context.Context, adapter *YuanbaoAdapter, groupCode any) ([]any, error) {
-	code, err := encodeText(groupCode)
+	code, err := encodeText(groupCode, "the group code")
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func getGroupInfo(ctx context.Context, call *tools.Call) (*pyjson.Object, error)
 	if err != nil {
 		return nil, err
 	}
-	code, err := encodeText(groupCode)
+	code, err := encodeText(groupCode, "the group code")
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +337,7 @@ func sendSticker(ctx context.Context, call *tools.Call) (*pyjson.Object, error) 
 	if sticker == nil {
 		return nil, ybFail("Sticker not found: " + errchain.Show(raw) + ". Use search_sticker first to discover available stickers.")
 	}
-	replyTo, err := protoText(toolArg(call, "reply_to", ""))
+	replyTo, err := protoText(toolArg(call, "reply_to", ""), "reply_to")
 	if err != nil {
 		return nil, err
 	}

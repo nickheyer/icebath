@@ -161,11 +161,7 @@ func handleList(k *kanbanCall) (string, error) {
 	if raw := k.get("limit"); raw != nil {
 		n, err := pyint.Of(raw)
 		if err != nil {
-			var pe *pyint.Error
-			if errors.As(err, &pe) && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-				return kanbanToolError("limit must be an integer"), nil
-			}
-			return "", err
+			return kanbanToolError("limit must be an integer"), nil
 		}
 		switch {
 		case n.Sign() < 1:

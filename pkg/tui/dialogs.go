@@ -776,18 +776,26 @@ func (a *app) answerApproval(req *approvalReq, choice string) tea.Cmd {
 		}
 		a.store.ui.Status = "running…"
 	}
+	openLink := func() tea.Cmd {
+		if choice == "deny" || req.OpenURL == "" || openExternalURL(req.OpenURL) {
+			return nil
+		}
+		a.sys(req.OpenURL)
+		return wm.Notify(tr("mcp.notice.browserDidNotOpen"), wm.Warn)
+	}
 	if req.Shared != nil {
 		params := tuigateway.CanonicalApprovalParams{SessionID: req.Shared.SessionID, ExecutionGeneration: req.Shared.ExecutionGeneration, PromptID: req.Shared.PromptID, Choice: tuigateway.ApprovalChoice(choice)}
 		return ask(a.events.rpc, a.sys, tuigateway.CanonicalApprovalRespond, params, func(r *tuigateway.PromptResponseResult) tea.Cmd {
 			if r != nil {
 				settle()
+				return openLink()
 			}
 			return nil
 		})
 	}
 	a.store.respondToServerRequest(req.RequestID, tuigateway.ApprovalAnswer{Choice: tuigateway.ApprovalChoice(choice)})
 	settle()
-	return nil
+	return openLink()
 }
 
 // Settles a clarify batch in the transcript, one trail row and the questions with their answers
@@ -810,7 +818,7 @@ func (a *app) settleClarify(req *clarifyReq, answers map[string]string) {
 		}
 		rows[i] = q.Question + " → " + answer
 	}
-	a.appendMessage(msg{Kind: "trail", Role: "system", Tools: []string{buildToolTrailLine("clarify", countNoun(len(req.Questions), "question"), false, "", nil)}})
+	a.appendMessage(msg{Kind: "trail", Role: "system", Tools: []string{buildToolTrailLine("clarify", countNoun(len(req.Questions), "question"), toolVerdict{}, "", nil)}})
 	a.appendMessage(msg{Role: "user", Text: strings.Join(rows, "\n")})
 	a.store.ui.Status = "running…"
 	if a.store.overlay.Clarify == req {

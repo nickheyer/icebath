@@ -205,6 +205,9 @@ func handleReact(ctx context.Context, args map[string]any, remove bool) (string,
 			call = func() (any, error) { return true, a.AddReaction(ctx, chatID, messageID, emoji) }
 		}
 	}
+	if call == nil && !remove {
+		return toolError(fmt.Sprintf("%s has no message reactions a bot can set.", platformName)), nil
+	}
 	if call == nil {
 		return toolError(fmt.Sprintf("Platform '%s' does not support message reactions.", platformName)), nil
 	}

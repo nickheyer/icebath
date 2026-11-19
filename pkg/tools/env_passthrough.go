@@ -331,6 +331,9 @@ var BoundSecretScope func(ctx context.Context) map[string]string
 // Home the context's bound secret scope was built for, installed by pkg/provider
 var BoundSecretScopeHome func(ctx context.Context) string
 
+// Context bound to the secret scope of a profile home, installed by pkg/provider
+var BindProfileSecretScope func(ctx context.Context, profileHome string) context.Context
+
 // Launch mapping of a body entered before multiplexing began, nil outside one, installed by pkg/provider
 var LaunchBodySecretScope func(ctx context.Context) map[string]string
 

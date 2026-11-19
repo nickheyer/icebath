@@ -580,7 +580,7 @@ func (s *Store) printTickerHealth(w io.Writer, pids []int, restart string) {
 		warn(fmt.Sprintf("⚠ Gateway and cron ticker are running, but no tick has succeeded %s — ticks may be failing.", when))
 		if hasErr && lastError != "" {
 			say(w, color("  Last tick error: "+lastError, cliui.Red))
-			if strings.Contains(lastError, "Permission denied") {
+			if strings.Contains(strings.ToLower(lastError), "permission denied") {
 				say(w, color(cronPermissionHint, cliui.Yellow))
 			} else if isFDExhaustionText(lastError) {
 				say(w, color(cronFDExhaustionHint, cliui.Yellow))

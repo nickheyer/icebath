@@ -100,7 +100,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 	}
 	executionID := *job.ExecutionID
 	if os.Getenv(externalWorkerEnv) != executionID {
-		handedOff, handoffErr := launchExternalCronWorkerSeam(s, ctx, job)
+		handedOff, handoffErr := launchExternalCronWorkerSeam(s, withWorkerExtraPrompt(ctx, o.ExtraPrompt), job)
 		if handoffErr != nil {
 			var postErr *externalWorkerPostHandoffError
 			postHandoff := errors.As(handoffErr, &postErr)

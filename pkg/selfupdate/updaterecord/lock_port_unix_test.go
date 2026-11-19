@@ -12,19 +12,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
 
-// Waits until the child stops itself at its pause point
-func lkWaitStopped(t *testing.T, p *pcProc) {
+// Waits until the child parks itself at its pause point beside the marker, released at cleanup at the latest
+func lkWaitStopped(t *testing.T, p *pcProc, marker string) {
 	t.Helper()
-	var status syscall.WaitStatus
-	if _, err := syscall.Wait4(p.cmd.Process.Pid, &status, syscall.WUNTRACED, nil); err != nil || !status.Stopped() {
-		t.Fatalf("child never stopped %v %v", err, status)
-	}
-	t.Cleanup(func() { _ = p.cmd.Process.Signal(syscall.SIGCONT) })
+	t.Cleanup(func() { lkTouch(marker + ".go") })
+	lkWaitFor(t, marker+".paused", p)
 }
 
 func lkWaitPID(t *testing.T, path string, p *pcProc) int {
@@ -65,10 +61,10 @@ func TestLockAStaleReclaimNeverDeletesAClaimPublishedAfterItsRead(t *testing.T) 
 	path := filepath.Join(tmp, MarkerName)
 	os.WriteFile(path, []byte("0\n0\n"), 0o644)
 	reader := pcStart(t, "lock_stale_reader", path)
-	lkWaitStopped(t, reader)
+	lkWaitStopped(t, reader, path)
 	claimant := pcStart(t, "lock_claimant", path, filepath.Join(tmp, "claimed"))
 	time.Sleep(time.Second)
-	reader.cmd.Process.Signal(syscall.SIGCONT)
+	lkTouch(path + ".go")
 	if _, code := reader.rest(t); code != 0 {
 		t.Fatal(code)
 	}
@@ -87,11 +83,11 @@ func TestLockAReaderReportsTheLiveClaimThatReplacedItsStaleSnapshot(t *testing.T
 	path := filepath.Join(home, MarkerName)
 	lkDeadMarker(t, path)
 	reader := pcStart(t, "lock_reclaim_paused_reader", path, install)
-	lkWaitStopped(t, reader)
+	lkWaitStopped(t, reader, path)
 	claimant := pcStart(t, "lock_claimant", path, filepath.Join(tmp, "claimed"), install)
 	lkWaitFor(t, filepath.Join(tmp, "claimed"), claimant)
 	claim, _ := os.ReadFile(path)
-	reader.cmd.Process.Signal(syscall.SIGCONT)
+	lkTouch(path + ".go")
 	out, code := reader.rest(t)
 	if code != 0 || strings.TrimSpace(out) != "True" {
 		t.Fatalf("the reader reported a live replacement claim as no update %d %q", code, out)

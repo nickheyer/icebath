@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // CLI constructor and runtime preparation of the worker child, the real ones in production
@@ -92,7 +93,7 @@ func refuseSkillSlash(ctx context.Context, command string) (err error) {
 		commands = GetSkillCommands(ctx)
 	}()
 	if _, present := commands["/"+base]; present {
-		return fmt.Errorf("skill command refused before process: /%s", base)
+		return fmt.Errorf("%s%s", tuiserver.SkillWorkerRefusedLead, base)
 	}
 	return nil
 }

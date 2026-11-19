@@ -23,7 +23,7 @@ type PreparedMutations interface {
 	Retire(sessionID string)
 }
 
-// Wiring of the classic gateway client modules that live above this package, assigned by cmd/icebath
+// Wiring of the core gateway client modules, bound by wiring.go init, RunModelSetup by cmd/icebath where the CLI runs
 var (
 	NewPreparedMutations   func() PreparedMutations
 	SlashMutation          func(command, arg string) (string, *pyjson.Object, error)

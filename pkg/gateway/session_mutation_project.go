@@ -14,7 +14,7 @@ import (
 var mutationMetadata = map[string]bool{"rename": true, "archive": true, "sidebar": true}
 
 // Policy operations prepared off the commit and published as a new frozen policy
-var mutationPolicy = map[string]bool{"model": true, "reasoning": true, "workspace": true, "editor_mcp": true, "edit_policy": true}
+var mutationPolicy = map[string]bool{"model": true, "reasoning": true, "workspace": true, "editor_mcp": true, "edit_policy": true, "launch": true}
 
 // Fields of one session.mutate request
 type mutationParams struct {
@@ -98,7 +98,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 		}
 	}
 	if !(mutationPolicy[operation] || operation == "reset" || operation == "compress" || operation == "rewind") || owns {
-		if operation == "workspace" {
+		if _, moved := result.Get("cwd"); operation == "workspace" || (operation == "launch" && moved) {
 			if err := dropSessionTerminal(ctx, a, ref); err != nil {
 				pkgLog().Warn(fmt.Sprintf("Session %s moved without dropping its terminal environment: %s", ref.SessionID, pyExceptionRepr(err)))
 			}
@@ -150,7 +150,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 	}
 	_, effort := result.Get("effort")
-	if operation == "reasoning" || (operation == "model" && effort) {
+	if operation == "reasoning" || ((operation == "model" || operation == "launch") && effort) {
 		live, err := projectedLive(a, ref.SessionID)
 		if err != nil {
 			return err
@@ -162,7 +162,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		runner.SetSessionReasoningOverride(live.Route, nil)
 		live.PendingReasoning = nil
 	}
-	if operation == "model" || operation == "reasoning" || operation == "workspace" || operation == "edit_policy" {
+	if operation == "model" || operation == "reasoning" || operation == "workspace" || operation == "edit_policy" || operation == "launch" {
 		live, err := projectedLive(a, ref.SessionID)
 		if err != nil {
 			return err

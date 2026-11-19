@@ -2359,7 +2359,7 @@ var argparseTree = map[string]*apParser{
 	}},
 	"logs": {Raw: true, Desc: true, Epilog: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'p', Dest: "log_name", Nargs: "?", Help: "Log to view: agent (default), errors, gateway, gui, desktop, update, handoff, or 'list' to show available files"},
+		{Kind: 'p', Dest: "log_name", Nargs: "?", Help: "Log to view: agent (default), errors, gateway, mcp, update, or 'list' to show available files"},
 		{Kind: 'f', Opts: []string{"-n", "--lines"}, Dest: "lines"},
 		{Kind: 'f', Opts: []string{"-f", "--follow"}, Dest: "follow", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--level"}, Dest: "level", Metavar: []string{"LEVEL"}},

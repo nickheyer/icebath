@@ -9,6 +9,7 @@ type approvalReq struct {
 	Choices        []string
 	Command        string
 	Description    string
+	OpenURL        string
 	RequestID      string
 	SmartDenied    bool
 }

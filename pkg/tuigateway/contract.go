@@ -77,6 +77,9 @@ func Entries(kind Kind) []*Entry {
 // Wire names of the top level fields of the result or payload, in declaration order
 func (e *Entry) ResultNames() []string { return fieldNames(e.Result) }
 
+// Wire names of the top level fields of a struct type, in declaration order
+func WireNames[T any]() []string { return fieldNames(typeOf[T]()) }
+
 // Whether the params declare the named key
 func (e *Entry) TakesParam(name string) bool {
 	_, found := wireFields(e.Params)[name]

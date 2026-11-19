@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -340,9 +339,13 @@ func (a *GatewayACPAgent) mutationRPC(link gatewayLink) MutationRPC {
 
 // Answers initialize with the protocol version, agent info, capabilities and auth methods
 func (a *GatewayACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeRequest) (*pyacp.InitializeResponse, error) {
+	info, err := getVersionInfo()
+	if err != nil {
+		return nil, err
+	}
 	return &pyacp.InitializeResponse{
 		ProtocolVersion: pyacp.ProtocolVersion,
-		AgentInfo:       &pyacp.Implementation{Name: "icebath-agent", Version: pm.DunderVersion()},
+		AgentInfo:       &pyacp.Implementation{Name: "icebath-agent", Version: info.BaseVersion},
 		AgentCapabilities: &pyacp.AgentCapabilities{
 			LoadSession:        pyacp.Ptr(true),
 			PromptCapabilities: &pyacp.PromptCapabilities{Image: pyacp.Ptr(true)},

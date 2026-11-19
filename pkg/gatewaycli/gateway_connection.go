@@ -68,7 +68,7 @@ func isClientError(err error) bool {
 // Nil when a refused keyed resume is retried plain, else the error the resume raises
 func resumePlain(exc *gateway.GatewayRPCError, raised error, sessionID string, typed bool) error {
 	if typed && exc.Error() == "admission_conflict" {
-		return &gateway.GatewayClientError{Msg: gateway.ResumeKeyMismatch}
+		return &gateway.GatewayClientError{Msg: gateway.ResumeKeyMismatch, ResumeRefused: true}
 	}
 	if typed || !keyNotTaken[exc.Error()] {
 		return raised

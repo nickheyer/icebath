@@ -137,7 +137,7 @@ var Toolsets = map[string]Toolset{
 		[]string{"computer_use"}),
 	"terminal": ts("Terminal/command execution and process management tools", []string{"terminal", "process_manage"}),
 	"skills":   ts("Access, create, edit, and manage skill documents with specialized instructions and knowledge", []string{"skills_list", "skill_view", "skill_manage"}),
-	"browser": ts("Browser automation: drive a real browser with Python over CDP (navigate, click, type, extract, screenshots), raw CDP, dialogs and vault logins",
+	"browser": ts("Browser automation: icebath drives a real Chromium over CDP (navigate, click, type, extract, screenshots) from page scripts run on your Python, plus raw CDP, dialogs and vault logins",
 		corePrefixed("browser_")),
 	"cronjob":        ts("Cronjob management tool - create, list, update, pause, resume, remove, and trigger scheduled tasks", []string{"cronjob_manage"}),
 	"file":           ts("File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)", []string{"read_file", "write_file", "patch", "search_files"}),
@@ -716,6 +716,10 @@ func (r *Registry) applyToolsetSelection(ctx context.Context, env *Env, tools ma
 			label = verb + " legacy toolset"
 			resolved = LegacyToolsetMap[name]
 		default:
+			if line, refused := ToolsetTierRefusal(name); refused {
+				notices = append(notices, SelectionNotice{Text: line})
+				continue
+			}
 			notices = append(notices, SelectionNotice{Text: "Unknown toolset: " + raw})
 			continue
 		}
@@ -1900,6 +1904,10 @@ func ValidatePlatformToolsetsWith(platformToolsets any, isValid func(string) boo
 			}
 			switch {
 			case !isValid(name) && !IsKnownPlatformBundle(platform, name):
+				if line, refused := ToolsetTierRefusal(name); refused {
+					warnings = append(warnings, fmt.Sprintf("platform '%s' references toolset '%s', %s", platform, name, line))
+					continue
+				}
 				hint := ""
 				if defaultValid {
 					hint = fmt.Sprintf(" — did you mean '%s'?", def)

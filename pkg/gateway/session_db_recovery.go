@@ -22,6 +22,7 @@ type handleUnavailable struct {
 	nextRetryAt float64
 	inFlight    bool
 	err         string
+	cause       error
 }
 
 type handleHealthSource struct{}
@@ -199,6 +200,7 @@ func (c *RecoverableHandleCache) GetWith(ctx context.Context, path string, opene
 		if !stale {
 			unavailable.failures++
 			unavailable.err = pyrepr.ExceptionName(err) + ": " + pyrepr.ExceptionMessage(err)
+			unavailable.cause = err
 			backoff := c.initialRetryDelay * math.Pow(2, float64(min(unavailable.failures-1, 30)))
 			unavailable.nextRetryAt = c.clock() + math.Min(backoff, c.maxRetryDelay)
 			unavailable.inFlight = false
@@ -254,6 +256,17 @@ func (c *RecoverableHandleCache) LastError(path string) string {
 		}
 	}
 	return ""
+}
+
+// Error the latest failed open of the path returned, nil when none is recorded
+func (c *RecoverableHandleCache) LastFailure(path string) error {
+	path = pypath.PathStr(path)
+	c.Lock.Lock()
+	defer c.Lock.Unlock()
+	if u := c.unavailable[path]; u != nil {
+		return u.cause
+	}
+	return nil
 }
 
 // Drains every cached handle under the lock and closes each outside it

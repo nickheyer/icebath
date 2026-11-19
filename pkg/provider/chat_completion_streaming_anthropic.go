@@ -229,7 +229,7 @@ func (s *anthSDKMessageStream) accumulate(event map[string]any) error {
 	typ := asStr(event["type"])
 	if s.snap == nil {
 		if typ != "message_start" {
-			return &anthEventOrderError{Type: typ}
+			return &StreamEventOrderError{Type: typ}
 		}
 		message, _ := event["message"].(map[string]any)
 		s.snap = relayCopyMap(message)

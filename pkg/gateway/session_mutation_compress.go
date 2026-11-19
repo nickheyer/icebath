@@ -26,6 +26,8 @@ type SessionCompressJob struct {
 	SafeMode   bool
 	DB         *state.SessionDB
 	Target     string
+	// Smallest tail and summary the built in compressor allows
+	Aggressive bool
 }
 
 // Agent side of a canonical session compress, its context engines and token estimates
@@ -82,9 +84,13 @@ func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
 		if focus != nil && *focus == "" {
 			focus = nil
 		}
+		if aggressive && !partial {
+			partial, keepLast = true, 1
+		}
 		request = compressRequest{Preview: preview, Aggressive: aggressive, Partial: partial, KeepLast: keepLast, FocusTopic: focus}
 	} else {
-		request = compressRequest{Preview: pyTruthy(payload.GetOr("preview", false)), Partial: pyTruthy(payload.GetOr("partial", false)), KeepLast: 2}
+		request = compressRequest{Preview: pyTruthy(payload.GetOr("preview", false)), Partial: pyTruthy(payload.GetOr("partial", false)), KeepLast: 2,
+			Aggressive: pyTruthy(payload.GetOr("aggressive", false))}
 		if keep, has := payload.Get("keep_last"); has {
 			n, ok := pathIndex(keep)
 			if !ok {
@@ -97,8 +103,8 @@ func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
 			request.FocusTopic = &text
 		}
 	}
-	if request.Aggressive {
-		return request, runtimeRefusal("unsupported_compress_options")
+	if request.Aggressive && !request.Partial {
+		request.Partial, request.KeepLast = true, 1
 	}
 	return request, nil
 }
@@ -205,7 +211,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 		resident = cached.CachedAgentFor(live.Route)
 	}
 	job := SessionCompressJob{Model: model, Runtime: runtime, Config: cfg, Options: options, Resident: resident, Head: head, Tail: tail,
-		Messages: messages, FocusTopic: request.FocusTopic, SafeMode: policy.SafeMode, DB: a.DB, Target: target}
+		Messages: messages, FocusTopic: request.FocusTopic, SafeMode: policy.SafeMode, DB: a.DB, Target: target, Aggressive: request.Aggressive}
 	var compressed []map[string]any
 	var engine any
 	err = policyScope(ctx, policy, a, func(scoped context.Context) error {

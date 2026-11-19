@@ -34,7 +34,7 @@ func (m *ACPMutations) Acknowledge(sessionID, operation string, payload any) {
 // Retires every retained identity of the session
 func (m *ACPMutations) Retire(sessionID string) { m.inner.Retire(sessionID, nil) }
 
-// Operation and payload of a /branch, /model or /compress line
+// Operation and payload of a /model or /compress line, no operation for a /model that only asks for the current model
 func ACPSlashMutation(command, arg string) (string, *pyjson.Object, error) {
 	return slashMutation(command, arg)
 }

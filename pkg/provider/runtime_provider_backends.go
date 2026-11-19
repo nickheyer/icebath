@@ -179,18 +179,21 @@ func (r *resolver) resolveBedrockRuntime(requestedProvider string, modelCfg map[
 	if currentModel == "" {
 		currentModel = strings.TrimSpace(cfgString(modelCfg["default"]))
 	}
-	hasBearer := strings.TrimSpace(os.Getenv("AWS_BEARER_TOKEN_BEDROCK")) != ""
+	bearer := resolveBedrockBearerTokenCtx(r.ctx)
+	hasBearer := bearer != ""
 	rt := r.runtime("bedrock", modeBedrockConverse, "https://bedrock-runtime."+region+".amazonaws.com", "aws-sdk", authSource)
 	rt.Region = region
 	rt.RequestedProvider = requestedProvider
 	if bedrockOpenAIUsesMantle(currentModel) {
-		bearer := resolveBedrockBearerToken()
 		rt.APIMode = ModeCodexResponses
 		rt.BaseURL = bedrockOpenAIBaseURL(region)
 		rt.APIKey = "aws-sdk"
 		if bearer != "" {
 			rt.APIKey = bearer
 			rt.Source = "AWS_BEARER_TOKEN_BEDROCK"
+			if pooledBedrockBearer(r.ctx) == bearer {
+				rt.Source = "pool:bedrock"
+			}
 		}
 		rt.Model = currentModel
 		rt.BedrockOpenAI = true

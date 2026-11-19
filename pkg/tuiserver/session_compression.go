@@ -106,9 +106,6 @@ func compressSessionHistory(ctx context.Context, session *tuihost.Session, focus
 		return 0, getUsage(ctx, a), nil
 	}
 	request := agent.ParseCompressArgs(focusTopic)
-	if request.Aggressive {
-		return 0, nil, &attachmentError{agent.AggressiveUnsupported}
-	}
 	cwd := sessionCwd(ctx, session)
 	scoped, env := setSessionContext(ctx, strOr(session.Get("session_key")), &cwd, "")
 	taskID := strOr(session.Get("session_key"))

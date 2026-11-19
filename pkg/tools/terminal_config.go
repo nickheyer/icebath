@@ -318,12 +318,12 @@ func normHomePath(p string) string { return home.NormHomePath(p) }
 
 // Real OS user home, never the profile home of the session or the child environment
 func realHome(env *Env, child map[string]string) string {
-	return home.RealHome(visionCtx(nil, env), child)
+	return home.RealHome(envHomeCtx(nil, env), child)
 }
 
 // HOME a child process gets under the configured home mode, empty when it keeps its own
 func subprocessHome(env *Env, child map[string]string) string {
-	return home.SubprocessHome(visionCtx(nil, env), child)
+	return home.SubprocessHome(envHomeCtx(nil, env), child)
 }
 
 // HOME a tool subprocess gets under the home mode, empty when it keeps its own
@@ -334,7 +334,7 @@ func runningInContainer() bool { return hostinfo.IsContainer() }
 
 // Applies the subprocess HOME contract and the scratch temp directories to a child environment
 func applySubprocessHomeEnv(env *Env, child map[string]string) {
-	home.ApplySubprocessHomeEnv(visionCtx(nil, env), child)
+	home.ApplySubprocessHomeEnv(envHomeCtx(nil, env), child)
 }
 
 // Default sandbox image every container backend uses unless configured

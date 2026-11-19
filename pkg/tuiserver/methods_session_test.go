@@ -18,7 +18,7 @@ func useSharedDB(t *testing.T, db *state.DB) {
 	t.Helper()
 	dbMu.Lock()
 	savedDB, savedErr := sharedDB, dbError
-	sharedDB, dbError = db, ""
+	sharedDB, dbError = db, nil
 	dbMu.Unlock()
 	t.Cleanup(func() {
 		dbMu.Lock()

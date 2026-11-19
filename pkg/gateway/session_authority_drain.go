@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -237,6 +241,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 		}
 	}
 	if first != nil && platform == PlatformLocal {
+		applyOnceRestore(ctx, a, ref, live)
 		if _, err := restoreLocalSession(ctx, a, ref.SessionID); err != nil {
 			return claimAttempt{}, err
 		}
@@ -372,7 +377,13 @@ func (a *SessionAuthority) StampClaim(ctx context.Context, ref SessionRef, live 
 func (a *SessionAuthority) drainStopping(ctx context.Context, ref SessionRef, live *LiveSession) (bool, error) {
 	current, _ := a.live(ref.SessionID)
 	if a.Runner.Draining() || a.Retiring || current != live {
-		return true, a.pause(ctx, ref, "runtime_draining")
+		err := a.pause(ctx, ref, "runtime_draining")
+		if err != nil && state.IsStoreFailure(err) {
+			pkgLog().Warn(fmt.Sprintf("Session %s stops waiting for session storage; its queued input stays in the store and "+
+				"the pending_messages spool: %v", ref.SessionID, err))
+			return true, nil
+		}
+		return true, err
 	}
 	return false, nil
 }
@@ -432,6 +443,80 @@ func transientClaimFailure(err error) bool {
 		return class == state.SQLiteOperationalError
 	}
 	return pypath.IsOSError(err)
+}
+
+// Tells the operator and the session's chat once per outage that its queued input waits for a store that stopped working
+func (a *SessionAuthority) noteDrainStoreFailure(ctx context.Context, live *LiveSession, err error) {
+	if transientClaimFailure(err) || a.Runner == nil {
+		return
+	}
+	if store := a.Runner.SessionStore(); store != nil {
+		store.reportStoreFailure(err)
+	}
+	if spooled := a.spoolQueuedInputs(ctx, live); spooled > 0 {
+		pkgLog().Warn(fmt.Sprintf("Copied %d queued message(s) of %s to the pending_messages spool while session storage fails; "+
+			"the next start adds each one its store lost", spooled, live.Route))
+	}
+	if live.Source == nil {
+		return
+	}
+	adapter, aerr := a.Runner.AdapterForSource(ctx, live.Source)
+	if aerr != nil || adapter == nil {
+		pkgLog().Warn(fmt.Sprintf("Queued input of %s waits for session storage; no adapter could tell the chat: %v", live.Route, aerr))
+		return
+	}
+	text := i18n.T(ctx, "gateway.errors.session_storage_held", "", map[string]any{"cause": state.DescribeStorageFailure(ctx, err).Gloss})
+	if _, serr := adapter.Send(ctx, live.Source.ChatID, text, "", nil); serr != nil {
+		pkgLog().Warn(fmt.Sprintf("Queued input of %s waits for session storage; telling the chat failed: %v", live.Route, serr))
+	}
+}
+
+// Reason of a spooled message a store outage kept outside the failing store
+const StoreOutageReason = "store_outage"
+
+// Arrival counter ordering the admitted messages kept in memory
+var queuedInputSeq atomic.Int64
+
+// One admitted user message not yet claimed, with the session it queues on and its arrival order
+type queuedInput struct {
+	sessionID string
+	event     *MessageEvent
+	seq       int64
+}
+
+// Copies the session's admitted unclaimed messages to the spool keyed by admission, returning how many were written
+func (a *SessionAuthority) spoolQueuedInputs(ctx context.Context, live *LiveSession) int {
+	a.mu.Lock()
+	var ids []string
+	for id, in := range a.queuedInputs {
+		if in.sessionID != "" && a.Sessions[in.sessionID] == live {
+			ids = append(ids, id)
+		}
+	}
+	inputs := make([]queuedInput, len(ids))
+	for i, id := range ids {
+		inputs[i] = a.queuedInputs[id]
+	}
+	a.mu.Unlock()
+	order := make([]int, len(ids))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(i, j int) bool { return inputs[order[i]].seq < inputs[order[j]].seq })
+	flushDir, err := shutdownFlushDir(ctx)
+	if err != nil {
+		pkgLog().Warn(fmt.Sprintf("Queued messages of %s stay in memory only, the pending_messages spool refused them: %v", live.Route, err))
+		return 0
+	}
+	ts := int64(math.Floor(shutdownFlushNow()))
+	spooled := 0
+	for _, i := range order {
+		if flushValue(ctx, flushDir, "queued", live.Route, inputs[i].event, flushField{"reason", StoreOutageReason},
+			flushField{"ts", ts}, flushField{"seq", inputs[i].seq}, flushField{"admission_id", ids[i]}) {
+			spooled++
+		}
+	}
+	return spooled
 }
 
 // First queued admission id of a session, empty when nothing is queued
@@ -507,8 +592,11 @@ func (a *SessionAuthority) claimWithRetry(ctx context.Context, ref SessionRef, l
 	for {
 		attempt, done, exit, err := a.claimOnce(ctx, ref, live, &conflicted, &refusing)
 		if err != nil {
-			if !transientClaimFailure(err) {
+			if !transientClaimFailure(err) && !state.IsStoreFailure(err) {
 				return claimAttempt{}, false, err
+			}
+			if backoff == 0 {
+				a.noteDrainStoreFailure(ctx, live, err)
 			}
 			stopping, err2 := a.drainStopping(ctx, ref, live)
 			if err2 != nil {
@@ -746,6 +834,9 @@ func drainSessionFIFO(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 			return err
 		}
 		admissionID := rowString(row, "admission_id")
+		a.mu.Lock()
+		delete(a.queuedInputs, admissionID)
+		a.mu.Unlock()
 		response, outcome, err := a.executeClaimed(ctx, ref, live, row)
 		if err == nil && outcome == "settled_unknown" {
 			a.takeDeferredReset(live.Route)

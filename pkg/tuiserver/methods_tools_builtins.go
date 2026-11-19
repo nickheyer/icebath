@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -105,13 +106,13 @@ func cmdQueue(ctx context.Context, rid any, params map[string]any, session *tuih
 	if arg == "" {
 		return rpcErr(rid, 4004, "usage: /queue <prompt>", nil)
 	}
-	return ok(rid, map[string]any{"type": "send", "message": arg})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: arg})
 }
 
 // Built in that submits a prompt built from the argument as a normal turn
 func promptBuiltin(build func(string) string) dispatchStage {
 	return func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
-		return ok(rid, map[string]any{"type": "send", "message": build(arg)})
+		return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: build(arg)})
 	}
 }
 
@@ -135,7 +136,7 @@ func cmdInit(ctx context.Context, rid any, params map[string]any, session *tuiho
 			cwd = sessionCwd(ctx, session)
 		}
 	}
-	return ok(rid, map[string]any{"type": "send", "message": initprompt.BuildInitPromptForCwd(env, cwd, arg, skey)})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: initprompt.BuildInitPromptForCwd(env, cwd, arg, skey)})
 }
 
 // One prompt through the default MoA preset with the prior model restored after the turn
@@ -174,7 +175,7 @@ func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuihos
 				"api_key": "moa-virtual-provider", "api_mode": "chat_completions"})
 		}
 		notice := fmt.Sprintf("MoA one-shot queued with preset %s; previous model will be restored after this turn.", pyrepr.Str(preset))
-		res = ok(rid, map[string]any{"type": "send", "notice": notice, "message": arg})
+		res = directive(rid, tuigateway.CommandDispatchResult{Type: "send", Notice: notice, Message: arg})
 	})
 	if failure != nil {
 		return rpcErr(rid, 5030, "moa unavailable: "+errorMessage(failure), nil)
@@ -253,7 +254,7 @@ func cmdRetry(ctx context.Context, rid any, params map[string]any, session *tuih
 	if refusal != nil {
 		return refusal
 	}
-	return ok(rid, map[string]any{"type": "send", "message": content})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: content})
 }
 
 // Queues a steer on a running agent, or sends the text as the next turn when idle or refused
@@ -266,7 +267,7 @@ func cmdSteer(ctx context.Context, rid any, params map[string]any, session *tuih
 		shown += "..."
 	}
 	if !(session != nil && truthy(session.Get("running"))) {
-		return ok(rid, map[string]any{"type": "send", "message": arg, "notice": "No agent running; sent as next turn: " + shown})
+		return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: arg, Notice: "No agent running; sent as next turn: " + shown})
 	}
 	if a := sessionAgent(session); a != nil {
 		queued := false
@@ -275,7 +276,7 @@ func cmdSteer(ctx context.Context, rid any, params map[string]any, session *tuih
 			return execOut(rid, "⏩ Steer queued — arrives after the next tool call: "+shown)
 		}
 	}
-	return ok(rid, map[string]any{"type": "send", "message": arg})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: arg})
 }
 
 // Goal max turns of the config, twenty when unset, falsy or not an integer
@@ -312,12 +313,12 @@ func cmdGoal(ctx context.Context, rid any, params map[string]any, session *tuiho
 	if result.Prompt == nil || *result.Prompt == "" {
 		return execOut(rid, result.Output)
 	}
-	payload := map[string]any{"type": "send", "notice": result.Output, "message": *result.Prompt}
+	payload := tuigateway.CommandDispatchResult{Type: "send", Notice: result.Output, Message: *result.Prompt}
 	if !result.Kickoff {
-		payload["notice"] = result.Output + "\nContinuing now — taking the next step."
-		payload["display"] = "/goal resume"
+		payload.Notice = result.Output + "\nContinuing now — taking the next step."
+		payload.Display = "/goal resume"
 	}
-	return ok(rid, payload)
+	return directive(rid, payload)
 }
 
 // Runs the loop command on the session's loop manager, noting an active goal that defers its wakeups
@@ -402,7 +403,7 @@ func cmdUndo(ctx context.Context, rid any, params map[string]any, session *tuiho
 		turnWord = "turn"
 	}
 	notice := fmt.Sprintf("↶ Undid %d %s (%d message(s)). Edit and resubmit, or send a new message.", turnsUndone, turnWord, rewoundCount)
-	return ok(rid, map[string]any{"type": "prefill", "message": targetText, "notice": notice})
+	return directive(rid, tuigateway.CommandDispatchResult{Type: "prefill", Message: targetText, Notice: notice})
 }
 
 // Whether a snapshot argument asks to restore

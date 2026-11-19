@@ -34,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -53,7 +54,7 @@ var (
 	webhookGHTokenVars   = []string{"GH_TOKEN", "GITHUB_TOKEN"}
 )
 
-// Cron job runner a cron_job route fires, assigned at startup to the cron package's event entry point
+// Cron job runner a cron_job route fires, bound by the cron package and unset in a build without cron
 var WebhookExecuteJobForEvent func(ctx context.Context, h, jobRef string, extraPrompt *string) (map[string]any, error)
 
 // Durable producer admission, run finalizer and receipt authority lookup of the agent run path
@@ -924,7 +925,7 @@ func (a *WebhookAdapter) fireCronJob(ctx context.Context, jobRef, eventContext, 
 		return
 	}
 	if WebhookExecuteJobForEvent == nil {
-		failed(&PyError{Kind: "ImportError", Msg: "cannot import name 'execute_job_for_event' from 'tools.cronjob_tools'"})
+		failed(errors.New(linktier.Missing("cron", linktier.Extras)))
 		return
 	}
 	result, err := WebhookExecuteJobForEvent(scoped, home.Dir(scoped), jobRef, &eventContext)

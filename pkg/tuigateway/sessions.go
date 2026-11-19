@@ -11,11 +11,11 @@ type TerminalResizeParams struct {
 }
 
 type SpawnTreeLoadResult struct {
-	SessionID  *string          `json:"session_id,omitzero"`
-	StartedAt  *float64         `json:"started_at,omitzero"`
-	FinishedAt *float64         `json:"finished_at,omitzero"`
-	Label      *string          `json:"label,omitzero"`
-	Subagents  []map[string]any `json:"subagents,omitzero"`
+	SessionID  *string             `json:"session_id,omitzero"`
+	StartedAt  *float64            `json:"started_at,omitzero"`
+	FinishedAt *float64            `json:"finished_at,omitzero"`
+	Label      *string             `json:"label,omitzero"`
+	Subagents  []SpawnTreeSubagent `json:"subagents,omitzero"`
 }
 
 type SpawnTreeLoadParams struct {
@@ -49,12 +49,12 @@ type SpawnTreeSaveResult struct {
 }
 
 type SpawnTreeSaveParams struct {
-	Profile    *string          `json:"profile,omitzero"`
-	Subagents  []map[string]any `json:"subagents"`
-	SessionID  *string          `json:"session_id,omitzero"`
-	StartedAt  *float64         `json:"started_at,omitzero"`
-	FinishedAt *float64         `json:"finished_at,omitzero"`
-	Label      *string          `json:"label,omitzero"`
+	Profile    *string             `json:"profile,omitzero"`
+	Subagents  []SpawnTreeSubagent `json:"subagents"`
+	SessionID  *string             `json:"session_id,omitzero"`
+	StartedAt  *float64            `json:"started_at,omitzero"`
+	FinishedAt *float64            `json:"finished_at,omitzero"`
+	Label      *string             `json:"label,omitzero"`
 }
 
 type SessionCompressResult struct {
@@ -88,6 +88,9 @@ type TranscriptMessage struct {
 	Labels          []ToolLabel      `json:"labels,omitzero"`
 	Reasoning       *string          `json:"reasoning,omitzero"`
 	ToolName        *string          `json:"tool_name,omitzero"`
+	IsError         *bool            `json:"is_error,omitzero"`
+	Refused         *bool            `json:"refused,omitzero"`
+	Error           *string          `json:"error,omitzero"`
 	Archived        *bool            `json:"archived,omitzero"`
 	Extra           map[string]any   `json:"-" wire:"extra"`
 }
@@ -694,6 +697,7 @@ type CanonicalPendingPrompt struct {
 	Command             *string                    `json:"command,omitzero"`
 	Description         *string                    `json:"description,omitzero"`
 	Edit                map[string]any             `json:"edit,omitzero"`
+	OpenURL             *string                    `json:"open_url,omitzero"`
 	Question            *string                    `json:"question,omitzero"`
 	MultiSelect         *bool                      `json:"multi_select,omitzero"`
 	TimeoutS            *int64                     `json:"timeout_s,omitzero"`
@@ -749,42 +753,36 @@ type CanonicalResumeParams struct {
 	DisplayProjection bool                         `json:"display_projection,omitzero"`
 }
 
-type CanonicalCreateParamsSource string
-
-func (CanonicalCreateParamsSource) Values() []string {
-	return []string{"cli", "tui", "acp", "tool", "oneshot"}
-}
-
 type CanonicalCreateParams struct {
-	Profile             *string                      `json:"profile,omitzero"`
-	RequestID           *string                      `json:"request_id,omitzero"`
-	Source              *CanonicalCreateParamsSource `json:"source,omitzero"`
-	Cwd                 *string                      `json:"cwd,omitzero"`
-	RowCwd              *string                      `json:"row_cwd,omitzero"`
-	Model               *string                      `json:"model,omitzero"`
-	Provider            *string                      `json:"provider,omitzero"`
-	BaseURL             *string                      `json:"base_url,omitzero"`
-	APIKey              *string                      `json:"api_key,omitzero"`
-	Toolsets            []string                     `json:"toolsets,omitzero"`
-	Reasoning           *string                      `json:"reasoning,omitzero"`
-	MaxTurns            *int64                       `json:"max_turns,omitzero"`
-	IgnoreRules         bool                         `json:"ignore_rules,omitzero"`
-	Yolo                bool                         `json:"yolo,omitzero"`
-	SafeMode            bool                         `json:"safe_mode,omitzero"`
-	IgnoreUserConfig    bool                         `json:"ignore_user_config,omitzero"`
-	Skills              []string                     `json:"skills,omitzero"`
-	Checkpoints         bool                         `json:"checkpoints,omitzero"`
-	AcceptHooks         bool                         `json:"accept_hooks,omitzero"`
-	PassSessionID       bool                         `json:"pass_session_id,omitzero"`
-	Editor              map[string]any               `json:"editor,omitzero"`
-	Title               *string                      `json:"title,omitzero"`
-	Hidden              bool                         `json:"hidden,omitzero"`
-	FollowProfileConfig *bool                        `json:"follow_profile_config,omitzero"`
-	ServiceTier         *string                      `json:"service_tier,omitzero"`
-	CwdExplicit         *bool                        `json:"cwd_explicit,omitzero"`
-	RunBudget           *float64                     `json:"run_budget,omitzero"`
-	Verbose             bool                         `json:"verbose,omitzero"`
-	ClientEnv           map[string]string            `json:"client_env,omitzero"`
+	Profile             *string           `json:"profile,omitzero"`
+	RequestID           *string           `json:"request_id,omitzero"`
+	Source              *string           `json:"source,omitzero"`
+	Cwd                 *string           `json:"cwd,omitzero"`
+	RowCwd              *string           `json:"row_cwd,omitzero"`
+	Model               *string           `json:"model,omitzero"`
+	Provider            *string           `json:"provider,omitzero"`
+	BaseURL             *string           `json:"base_url,omitzero"`
+	APIKey              *string           `json:"api_key,omitzero"`
+	Toolsets            []string          `json:"toolsets,omitzero"`
+	Reasoning           *string           `json:"reasoning,omitzero"`
+	MaxTurns            *int64            `json:"max_turns,omitzero"`
+	IgnoreRules         bool              `json:"ignore_rules,omitzero"`
+	Yolo                bool              `json:"yolo,omitzero"`
+	SafeMode            bool              `json:"safe_mode,omitzero"`
+	IgnoreUserConfig    bool              `json:"ignore_user_config,omitzero"`
+	Skills              []string          `json:"skills,omitzero"`
+	Checkpoints         bool              `json:"checkpoints,omitzero"`
+	AcceptHooks         bool              `json:"accept_hooks,omitzero"`
+	PassSessionID       bool              `json:"pass_session_id,omitzero"`
+	Editor              map[string]any    `json:"editor,omitzero"`
+	Title               *string           `json:"title,omitzero"`
+	Hidden              bool              `json:"hidden,omitzero"`
+	FollowProfileConfig *bool             `json:"follow_profile_config,omitzero"`
+	ServiceTier         *string           `json:"service_tier,omitzero"`
+	CwdExplicit         *bool             `json:"cwd_explicit,omitzero"`
+	RunBudget           *float64          `json:"run_budget,omitzero"`
+	Verbose             bool              `json:"verbose,omitzero"`
+	ClientEnv           map[string]string `json:"client_env,omitzero"`
 }
 
 type RuntimeDescribeResult struct {

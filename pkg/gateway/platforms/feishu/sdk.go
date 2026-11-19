@@ -13,8 +13,8 @@ import (
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Open Platform calls the adapter makes, the lark SDK client in production
@@ -33,7 +33,7 @@ type larkAPI interface {
 	DeleteReaction(ctx context.Context, req *larkim.DeleteMessageReactionReq) (*larkim.DeleteMessageReactionResp, error)
 	GetUser(ctx context.Context, req *larkcontact.GetUserReq) (*larkcontact.GetUserResp, error)
 	GetApplication(ctx context.Context, req *larkapplication.GetApplicationReq) (*larkapplication.GetApplicationResp, error)
-	tools.FeishuAPI
+	feishuclient.API
 	Native() *lark.Client
 }
 

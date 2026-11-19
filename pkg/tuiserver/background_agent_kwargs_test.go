@@ -52,7 +52,7 @@ func TestBackgroundAgentKwargsPreservesFullFallbackChain(t *testing.T) {
 	ctx := backgroundCfgHome(t, "max_turns: 25\n")
 	chain := []map[string]any{{"provider": "openrouter", "model": "openai/gpt-5.5"}, {"provider": "anthropic", "model": "claude-sonnet-4-6"}}
 	parent := fakeBackgroundParent{model: "gpt-5.5", provider: "openai-codex", chain: chain}
-	if got := backgroundAgentKwargs(ctx, parent, "task-id").FallbackModel; !reflect.DeepEqual(got, chain) {
+	if got := backgroundKwargsOf(t, ctx, parent, "task-id").FallbackModel; !reflect.DeepEqual(got, chain) {
 		t.Fatalf("fallback_model %v", got)
 	}
 }
@@ -60,7 +60,7 @@ func TestBackgroundAgentKwargsPreservesFullFallbackChain(t *testing.T) {
 func TestBackgroundAgentKwargsPreservesEmptyFallbackChain(t *testing.T) {
 	ctx := backgroundCfgHome(t, "max_turns: 25\nfallback_providers:\n  - provider: openrouter\n    model: openai/gpt-5.5\n")
 	parent := fakeBackgroundParent{model: "gpt-5.5", provider: "anthropic", chain: []map[string]any{}}
-	if got := backgroundAgentKwargs(ctx, parent, "task-id").FallbackModel; got == nil || len(got) != 0 {
+	if got := backgroundKwargsOf(t, ctx, parent, "task-id").FallbackModel; got == nil || len(got) != 0 {
 		t.Fatalf("fallback_model %v", got)
 	}
 }
@@ -68,7 +68,7 @@ func TestBackgroundAgentKwargsPreservesEmptyFallbackChain(t *testing.T) {
 func TestBackgroundAgentKwargsForwardsAgentDisabledToolsets(t *testing.T) {
 	ctx := backgroundCfgHome(t, "max_turns: 25\n")
 	parent := fakeBackgroundParent{model: "gpt-5.5", provider: "anthropic", chain: []map[string]any{}, disabled: []string{"browser"}}
-	if got := backgroundAgentKwargs(ctx, parent, "task-id").DisabledToolsets; !reflect.DeepEqual(got, []string{"browser"}) {
+	if got := backgroundKwargsOf(t, ctx, parent, "task-id").DisabledToolsets; !reflect.DeepEqual(got, []string{"browser"}) {
 		t.Fatalf("disabled_toolsets %v", got)
 	}
 }
@@ -79,7 +79,7 @@ func TestBackgroundAgentKwargsFallsBackToConfigDisabledToolsets(t *testing.T) {
 	loadDisabledToolsets = func(context.Context) []string { return []string{"browser"} }
 	t.Cleanup(func() { loadDisabledToolsets = saved })
 	parent := fakeBackgroundParent{model: "gpt-5.5", provider: "anthropic", chain: []map[string]any{}}
-	if got := backgroundAgentKwargs(ctx, parent, "task-id").DisabledToolsets; !reflect.DeepEqual(got, []string{"browser"}) {
+	if got := backgroundKwargsOf(t, ctx, parent, "task-id").DisabledToolsets; !reflect.DeepEqual(got, []string{"browser"}) {
 		t.Fatalf("disabled_toolsets %v", got)
 	}
 }
@@ -87,7 +87,7 @@ func TestBackgroundAgentKwargsFallsBackToConfigDisabledToolsets(t *testing.T) {
 func TestBackgroundAgentKwargsReadsNestedMaxTurns(t *testing.T) {
 	ctx := backgroundCfgHome(t, "agent:\n  max_turns: 300\n")
 	parent := fakeBackgroundParent{model: "test-model"}
-	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got == nil || *got != 300 {
+	if got := backgroundKwargsOf(t, ctx, parent, "task_1").MaxIterations; got == nil || *got != 300 {
 		t.Fatalf("max_iterations %v", got)
 	}
 }
@@ -95,7 +95,7 @@ func TestBackgroundAgentKwargsReadsNestedMaxTurns(t *testing.T) {
 func TestBackgroundAgentKwargsFallsBackToRootMaxTurns(t *testing.T) {
 	ctx := backgroundCfgHome(t, "max_turns: 50\n")
 	parent := fakeBackgroundParent{model: "test-model"}
-	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got == nil || *got != 50 {
+	if got := backgroundKwargsOf(t, ctx, parent, "task_1").MaxIterations; got == nil || *got != 50 {
 		t.Fatalf("max_iterations %v", got)
 	}
 }
@@ -103,9 +103,19 @@ func TestBackgroundAgentKwargsFallsBackToRootMaxTurns(t *testing.T) {
 func TestBackgroundAgentKwargsHandlesNullAgentConfig(t *testing.T) {
 	ctx := backgroundCfgHome(t, "agent: null\nmax_turns: 40\n")
 	parent := fakeBackgroundParent{model: "test-model"}
-	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got == nil || *got != 40 {
+	if got := backgroundKwargsOf(t, ctx, parent, "task_1").MaxIterations; got == nil || *got != 40 {
 		t.Fatalf("max_iterations %v", got)
 	}
+}
+
+// Background kwargs of the parent, the case failing on a store that would not open
+func backgroundKwargsOf(t *testing.T, ctx context.Context, parent sideAgentParent, taskID string) agent.AIAgentOptions {
+	t.Helper()
+	opts, err := backgroundAgentKwargs(ctx, parent, taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return opts
 }
 
 // Parent stand in holding a dedicated store, the SimpleNamespace with session db
@@ -124,7 +134,7 @@ func TestBackgroundSideAgentPersistsIntoTheParentAgentStore(t *testing.T) {
 	}
 	t.Cleanup(func() { parentDB.Close() })
 	parent := fakeStoreParent{fakeBackgroundParent{model: "m", provider: "p", chain: []map[string]any{}}, parentDB}
-	if got := backgroundAgentKwargs(ctx, parent, "bg_1").SessionDB; got != agent.SessionStore(parentDB) {
+	if got := backgroundKwargsOf(t, ctx, parent, "bg_1").SessionDB; got != agent.SessionStore(parentDB) {
 		t.Fatalf("session_db %v, want the parent's store", got)
 	}
 }

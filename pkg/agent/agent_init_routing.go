@@ -49,6 +49,35 @@ func (a *AIAgent) finalizeRouting(ctx context.Context, apiMode string) {
 		clear(a.transportCache)
 	}
 	if (a.provider == "openrouter" || a.isOpenRouterURL()) && openrouterPrewarmDone.CompareAndSwap(false, true) {
-		go openrouterPrewarmFn(context.WithoutCancel(ctx))
+		a.startOpenRouterPrewarm(ctx)
+	}
+}
+
+// Fetches the OpenRouter catalog in the background, a prewarm cut short by close leaving the next agent to run it
+func (a *AIAgent) startOpenRouterPrewarm(ctx context.Context) {
+	prewarmCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		openrouterPrewarmFn(prewarmCtx)
+		if prewarmCtx.Err() != nil {
+			openrouterPrewarmDone.Store(false)
+		}
+	}()
+	previous := a.stopPrewarm
+	a.stopPrewarm = func() {
+		if previous != nil {
+			previous()
+		}
+		cancel()
+		<-done
+	}
+}
+
+// Cancels the catalog prewarms the agent started and waits for them so none writes its cache after close
+func (a *AIAgent) joinOpenRouterPrewarm() {
+	if stop := a.stopPrewarm; stop != nil {
+		a.stopPrewarm = nil
+		stop()
 	}
 }

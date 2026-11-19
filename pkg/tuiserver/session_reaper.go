@@ -105,8 +105,12 @@ func orphanReaperEnabled(ctx context.Context) (enabled bool) {
 
 // Ends the tui and subagent rows a dead process left open, sparing every id this process holds
 func sweepOrphanedSessionRows(ctx context.Context) []string {
-	db := reaperDB(ctx)
-	if db == nil || sessionTTLS <= 0 {
+	if sessionTTLS <= 0 {
+		return []string{}
+	}
+	db, err := reaperDB(ctx)
+	if err != nil {
+		pkgLog().Warn(fmt.Sprintf("Orphaned session row sweep failed: %s", err))
 		return []string{}
 	}
 	liveIDs := map[string]bool{}
@@ -182,13 +186,14 @@ func backendIDOfProcess(ctx context.Context) string {
 	return fmt.Sprintf("%s@%s:%d:%s", currentProfileName(ctx), reaperHostname(), os.Getpid(), backendNonce)
 }
 
-// Refreshes the heartbeat row of this backend, nothing when the store is unavailable
+// Refreshes the heartbeat row of this backend, a store that would not open logged
 func refreshHeartbeatRow(ctx context.Context) {
-	db := reaperDB(ctx)
-	if db == nil {
+	db, err := reaperDB(ctx)
+	if err != nil {
+		pkgLog().Warn(fmt.Sprintf("Backend heartbeat refresh failed: %s", err))
 		return
 	}
-	err := db.RegisterBackendHeartbeat(ctx, state.BackendHeartbeat{BackendID: backendIDForThisProcess(ctx), PID: os.Getpid(),
+	err = db.RegisterBackendHeartbeat(ctx, state.BackendHeartbeat{BackendID: backendIDForThisProcess(ctx), PID: os.Getpid(),
 		StartedAt: gatewayStartedAtOnce(), Profile: currentProfileName(ctx), Host: reaperHostname()})
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("backend heartbeat refresh failed: %s", err))
@@ -222,7 +227,7 @@ func startBackendHeartbeatRefresher(ctx context.Context) {
 		func() {
 			defer func() { _ = recover() }()
 			exitCtx := context.Background()
-			if db := reaperDB(exitCtx); db != nil {
+			if db, err := reaperDB(exitCtx); err == nil {
 				_, _ = db.ClearBackendHeartbeat(exitCtx, backendIDForThisProcess(exitCtx))
 			}
 		}()

@@ -599,10 +599,28 @@ func (s *seeder) upsert(source string, payload map[string]any) bool {
 		return false
 	}
 	s.activeSources[source] = true
+	if s.heldByAnotherRow(source, anyString(payload["access_token"])) {
+		return false
+	}
 	payload["source"] = source
 	ingested := upsertEntry(s.entries, s.provider, source, payload, s.env.Scope)
 	s.changed = s.changed || ingested
 	return ingested
+}
+
+// Whether a new seeded row would repeat a token a row of another source already holds, as after auth add
+func (s *seeder) heldByAnotherRow(source, token string) bool {
+	if token == "" {
+		return false
+	}
+	held := false
+	for _, e := range *s.entries {
+		if e.Source == source {
+			return false
+		}
+		held = held || e.AccessToken == token
+	}
+	return held
 }
 
 // Value from the profile .env then the scope, blank when neither defines it

@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -312,5 +314,56 @@ func TestNpmAuditOnlyFindingDoesNotOfferDoctorFix(t *testing.T) {
 	doctorPrintSummary(out, false, &Finding{Issues: []string{"fixable"}})
 	if !strings.Contains(out.String(), "Tip: run 'icebath doctor --fix' to auto-fix what's possible.") {
 		t.Fatalf("out = %q", out.String())
+	}
+}
+
+func TestStagedRuntimeVenvResolvedPathWithoutVenvMarkerIsNotStaged(t *testing.T) {
+	empty := filepath.Join(t.TempDir(), "venv")
+	if err := os.Mkdir(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	toolsSeam(t, &doctorSelectedVenvDir, func(context.Context) (string, error) { return empty, nil })
+	if staged := doctorStagedVenvDir(context.Background()); staged != "" {
+		t.Fatalf("staged = %q", staged)
+	}
+}
+
+func TestStagedRuntimeVenvUnreadablePmDegradesToNone(t *testing.T) {
+	toolsSeam(t, &doctorSelectedVenvDir, func(context.Context) (string, error) { return "", errors.New("pm unavailable") })
+	if staged := doctorStagedVenvDir(context.Background()); staged != "" {
+		t.Fatalf("staged = %q", staged)
+	}
+}
+
+func TestDoctorReportsSelectedImportTreeNotInterpreterPrefix(t *testing.T) {
+	for _, layout := range []string{"legacy", "generation"} {
+		t.Run(layout, func(t *testing.T) {
+			tree := commandInstallTree(t)
+			var selected string
+			if layout == "generation" {
+				selected = commandGeneration(t, tree.project)
+			} else {
+				selected = filepath.Join(tree.project, "venv")
+				writeTestFile(t, filepath.Join(selected, "pyvenv.cfg"), "home = fixture\nversion = 3.11.9\n", 0o644)
+			}
+			site, err := pm.SitePackages(selected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(site, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			toolsSeam(t, &doctorSelectedVenvDir, func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, tree.project) })
+			if _, err := checkRuntime(context.Background(), tree.d, false); err != nil {
+				t.Fatal(err)
+			}
+			text := tree.out.String()
+			if !strings.Contains(text, selected) {
+				t.Fatalf("selected tree is not named:\n%s", text)
+			}
+			if strings.Contains(text, "active in this process") || !strings.Contains(text, "runs outside it") {
+				t.Fatalf("output:\n%s", text)
+			}
+		})
 	}
 }

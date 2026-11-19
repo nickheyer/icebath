@@ -301,7 +301,7 @@ func rewriteKnownBangCommand(ctx context.Context, text string) string {
 		return text
 	}
 	cmdName := pystr.Lower(strings.SplitN(fields[0], "@", 2)[0])
-	if cmdName != "" && !strings.Contains(cmdName, "/") && IsGatewayKnownCommand(ctx, cmdName) {
+	if cmdName != "" && !strings.Contains(cmdName, "/") && IsGatewayKnownCommand != nil && IsGatewayKnownCommand(ctx, cmdName) {
 		return "/" + text[1:]
 	}
 	return text

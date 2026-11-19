@@ -71,10 +71,10 @@ func TestInterpreterShutdownDetection(t *testing.T) {
 			}
 		}
 	}
-	t.Run("test_matches_full_interpreter_shutdown_message", check(&shutdownRuntimeError{"cannot schedule new futures after interpreter shutdown"}, true))
-	t.Run("test_matches_short_shutdown_variant", check(&shutdownRuntimeError{"cannot schedule new futures after shutdown"}, true))
-	t.Run("test_case_insensitive_match", check(&shutdownRuntimeError{"Cannot Schedule New Futures After Interpreter Shutdown"}, true))
-	t.Run("test_does_not_match_unrelated_runtime_error", check(&shutdownRuntimeError{"connection reset by peer"}, false))
+	t.Run("test_matches_full_interpreter_shutdown_message", check(&shutdownRuntimeError{"cannot schedule new futures after interpreter shutdown", tools.ErrPoolShutdown}, true))
+	t.Run("test_matches_short_shutdown_variant", check(&shutdownRuntimeError{"cannot schedule new futures after shutdown", tools.ErrPoolShutdown}, true))
+	t.Run("test_case_insensitive_match", check(&shutdownRuntimeError{"Cannot Schedule New Futures After Interpreter Shutdown", tools.ErrPoolShutdown}, true))
+	t.Run("test_does_not_match_unrelated_runtime_error", check(&shutdownRuntimeError{"connection reset by peer", nil}, false))
 	t.Run("test_does_not_match_non_runtime_error", check(errors.New("cannot schedule new futures"), false))
 	if !isInterpreterShutdownError(fmt.Errorf("submit: %w", tools.ErrPoolShutdown)) {
 		t.Fatal("the pool shutdown error is the RuntimeError the pool raises")

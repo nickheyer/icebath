@@ -120,9 +120,6 @@ func startSupervisorProcess() (supervisorHandle, error) {
 	return s, nil
 }
 
-// Windows only, POSIX children die through the supervisor instead
-func attachSelfToKillOnCloseJob() bool { return false }
-
 // Process facts read from the running kernel
 type osProcessProber struct{}
 

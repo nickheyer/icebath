@@ -1,18 +1,18 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tui
 
 import (
-	"context"
 	"maps"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
-	"github.com/nickheyer/icebath/pkg/ui/gfx"
+	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 	"github.com/nickheyer/icebath/pkg/vxl/arena"
 )
@@ -32,8 +32,6 @@ type arenaFeed struct {
 	a         *app
 	journal   *arena.Journal
 	card      arena.Card
-	graphics  *gfx.Terminal
-	probed    bool
 	turnTools map[string]int
 	agents    map[string]*agentToolLog
 	busy      bool
@@ -45,61 +43,20 @@ type arenaFeed struct {
 	cfgErr    error
 }
 
-// Ordered handoff of messages to the program that never blocks the caller, for senders inside the update loop
-type mailbox struct {
-	mu    sync.Mutex
-	queue []tea.Msg
-	wake  chan struct{}
+// Binds the arena, its keymap context and the /arena command
+func init() {
+	newArenaView = func(a *app) arenaView { return newArenaFeed(a) }
+	tierKeys = append(tierKeys, arena.RegisterKeys)
+	tierCommands = append(tierCommands, func(a *app) []slashCommand {
+		return []slashCommand{{name: arena.Name, help: "watch the agents of the session work on a voxel platform, with their tickets, log and replay", run: func(r *slashRun) tea.Cmd {
+			return a.openArena()
+		}}}
+	})
 }
 
-// Mailbox delivering through send on its own goroutine until the context ends
-func newMailbox(ctx context.Context, send func(tea.Msg)) *mailbox {
-	m := &mailbox{wake: make(chan struct{}, 1)}
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-m.wake:
-			}
-			m.mu.Lock()
-			batch := m.queue
-			m.queue = nil
-			m.mu.Unlock()
-			for _, msg := range batch {
-				send(msg)
-			}
-		}
-	}()
-	return m
-}
-
-// Queues a message behind the ones before it and returns at once
-func (m *mailbox) post(msg tea.Msg) {
-	m.mu.Lock()
-	m.queue = append(m.queue, msg)
-	m.mu.Unlock()
-	select {
-	case m.wake <- struct{}{}:
-	default:
-	}
-}
-
-// Feed of an app with an empty journal and the terminal read from the environment
+// Feed of an app with an empty journal
 func newArenaFeed(a *app) *arenaFeed {
-	return &arenaFeed{a: a, journal: arena.NewJournal(), graphics: gfx.New(), turnTools: map[string]int{}, agents: map[string]*agentToolLog{}, cfg: arena.Default()}
-}
-
-// Id the store gives a subagent of an event payload
-func subagentKey(p map[string]any) string {
-	if id, _ := p["subagent_id"].(string); id != "" {
-		return id
-	}
-	label, _ := p["goal"].(string)
-	if label == "" {
-		label = "subagent"
-	}
-	return "sa:" + jsString(p["task_index"]) + ":" + label
+	return &arenaFeed{a: a, journal: arena.NewJournal(), turnTools: map[string]int{}, agents: map[string]*agentToolLog{}, cfg: arena.Default()}
 }
 
 // Counts the tool starts and the turn endings of a gateway event before the store takes it
@@ -113,14 +70,15 @@ func (f *arenaFeed) observe(ev gatewayEventMsg) {
 	case tuigateway.ToolStartEvent.Name():
 		start, _ := tuigateway.ToolStartEvent.Payload(p)
 		f.turnTools[firstText(start.Name, "tool")]++
-	case "subagent.tool":
-		id := subagentKey(p)
+	case tuigateway.SubagentToolEvent.Name():
+		tool, _ := tuigateway.SubagentToolEvent.Payload(p)
+		id := subagentKey(tool)
 		log := f.agents[id]
 		if log == nil {
 			log = &agentToolLog{counts: map[string]int{}}
 			f.agents[id] = log
 		}
-		name := stringOr(p["tool_name"], "delegate_task")
+		name := firstText(val(tool.ToolName), "delegate_task")
 		log.counts[name]++
 		log.last, log.at = name, f.a.store.now()
 	case "message.complete":
@@ -233,10 +191,10 @@ func (f *arenaFeed) sync() {
 	}
 }
 
-// Takes a terminal answer about graphics, repainting when what the terminal draws changed
-func (f *arenaFeed) terminal(m tea.Msg) {
-	if f.graphics.Update(m) {
-		f.a.wm.Repaint()
+// Repaints an open arena in the session theme
+func (f *arenaFeed) retheme(t uitheme.Theme) {
+	if f.card != nil {
+		f.card.Retheme(t)
 	}
 }
 
@@ -249,15 +207,15 @@ func (f *arenaFeed) focus(m tea.Msg) {
 
 // Opens the arena card zoomed over the stage of the workspace in view, focusing it when it is open already
 func (a *app) openArena() tea.Cmd {
-	f := a.arena
+	f := a.arena.(*arenaFeed)
 	var cmds []tea.Cmd
-	if !f.probed {
-		f.probed = true
-		cmds = append(cmds, f.graphics.Probe())
+	if !a.graphicsProbed {
+		a.graphicsProbed = true
+		cmds = append(cmds, a.graphics.Probe())
 	}
 	f.sync()
 	if f.card == nil || !a.wm.Has(arena.Name) {
-		env := &cards.Env{Theme: a.toolkit, Keys: a.keys, Ctx: a.ctx, WorkDir: a.store.sessionCwd, Graphics: f.graphics, Send: a.post}
+		env := &cards.Env{Theme: a.toolkit, Keys: a.keys, Ctx: a.ctx, WorkDir: a.store.sessionCwd, Graphics: a.graphics, Send: a.post}
 		f.card = arena.New(env, f.journal, f, f.cfg, f.cfgErr)
 	}
 	ws := a.wm.Active()
@@ -265,8 +223,10 @@ func (a *app) openArena() tea.Cmd {
 	if ws != nil && ws.Zoomed() != wm.Card(f.card) {
 		cmds = append(cmds, a.wm.ToggleZoom())
 	}
-	cmds = append(cmds, a.events.rpc("delegation.status", map[string]any{}, func(r map[string]any) tea.Cmd {
-		a.store.applyDelegationStatus(r)
+	cmds = append(cmds, ask(a.events.rpc, a.sys, tuigateway.DelegationStatus, tuigateway.ProfileParams{}, func(r *tuigateway.DelegationStatusResult) tea.Cmd {
+		if r != nil {
+			a.store.applyDelegationStatus(*r)
+		}
 		return nil
 	}))
 	return tea.Batch(cmds...)
@@ -278,11 +238,12 @@ func (f *arenaFeed) Interrupt(s *arena.Snapshot, m arena.Member) tea.Cmd {
 	if m.ID == "" {
 		return a.interruptTurn()
 	}
-	return a.events.rpc("subagent.interrupt", map[string]any{"session_id": a.store.ui.Sid, "subagent_id": m.ID}, func(r map[string]any) tea.Cmd {
+	params := tuigateway.SubagentIDParams{SessionID: a.store.ui.Sid, SubagentID: m.ID}
+	return ask(a.events.rpc, a.sys, tuigateway.SubagentInterrupt, params, func(r *tuigateway.SubagentInterruptResult) tea.Cmd {
 		switch {
 		case r == nil:
 			return nil
-		case !truthyJS(r["found"]):
+		case !r.Found:
 			return wm.Notify(m.Name+" already finished", wm.Info)
 		}
 		return wm.Notify(m.Name+" interrupted", wm.Success)
@@ -298,11 +259,12 @@ func (f *arenaFeed) Steer(s *arena.Snapshot, m arena.Member, text string) tea.Cm
 		}
 		return a.submit(text)
 	}
-	return a.events.rpc("subagent.steer", map[string]any{"session_id": a.store.ui.Sid, "subagent_id": m.ID, "text": text}, func(r map[string]any) tea.Cmd {
+	params := tuigateway.SubagentSteerParams{SessionID: a.store.ui.Sid, SubagentID: m.ID, Text: text}
+	return ask(a.events.rpc, a.sys, tuigateway.SubagentSteer, params, func(r *tuigateway.SubagentSteerResult) tea.Cmd {
 		if r == nil {
 			return nil
 		}
-		if r["status"] == "rejected" {
+		if r.Status == "rejected" {
 			return wm.Notify(m.Name+" took no guidance, it already finished", wm.Warn)
 		}
 		f.journal.Guide(s.Sprint, m.Name, text, a.store.now())
@@ -316,28 +278,26 @@ func (f *arenaFeed) Open(s *arena.Snapshot, m arena.Member) tea.Cmd {
 	if m.ID == "" {
 		return a.wm.Focus(a.card)
 	}
-	return gatewayCall(a.gw, "subagent.tail", map[string]any{"session_id": a.store.ui.Sid, "subagent_id": m.ID}, func(v any, err error) tea.Cmd {
-		r := asRPCResult(v)
-		text, _ := r["text"].(string)
+	return call(a.gw, tuigateway.SubagentTail, tuigateway.SubagentIDParams{SessionID: a.store.ui.Sid, SubagentID: m.ID}, func(r *tuigateway.SubagentTailResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
 			return wm.Notify(rpcErrorMessage(err), wm.Error)
-		case !truthyJS(r["available"]) || text == "":
+		case !r.Available || r.Text == "":
 			return wm.Notify(m.Name+" has written no output yet", wm.Info)
 		}
-		return a.page(text, m.Name+" · "+truncateEnd(m.Task, 40))
+		return a.page(r.Text, m.Name+" · "+truncateEnd(m.Task, 40))
 	})
 }
 
 // Pauses or resumes spawning of new agents
 func (f *arenaFeed) Pause(paused bool) tea.Cmd {
 	a := f.a
-	return a.events.rpc("delegation.pause", map[string]any{"paused": paused}, func(r map[string]any) tea.Cmd {
+	return ask(a.events.rpc, a.sys, tuigateway.DelegationPause, tuigateway.DelegationPauseParams{Paused: &paused}, func(r *tuigateway.DelegationPauseResult) tea.Cmd {
 		if r == nil {
 			return nil
 		}
-		a.store.applyDelegationStatus(map[string]any{"paused": r["paused"]})
-		if truthyJS(r["paused"]) {
+		a.store.applyDelegationPause(r.Paused)
+		if r.Paused {
 			return wm.Notify(tr("slashCmd.ops.agents.paused"), wm.Info)
 		}
 		return wm.Notify(tr("slashCmd.ops.agents.resumed"), wm.Info)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,28 +111,10 @@ func TestDoctorPlatformHintsSqliteUpgradeHintPreservesNixGuidanceAsProse(t *test
 	}
 }
 
-func TestStagedRuntimeVenvResolvedPathWithoutVenvMarkerIsNotStaged(t *testing.T) {
-	empty := filepath.Join(t.TempDir(), "venv")
-	if err := os.Mkdir(empty, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	toolsSeam(t, &doctorSelectedVenvDir, func(context.Context) (string, error) { return empty, nil })
-	if staged := doctorStagedVenvDir(context.Background()); staged != "" {
-		t.Fatalf("staged = %q", staged)
-	}
-}
-
-func TestStagedRuntimeVenvUnreadablePmDegradesToNone(t *testing.T) {
-	toolsSeam(t, &doctorSelectedVenvDir, func(context.Context) (string, error) { return "", errors.New("pm unavailable") })
-	if staged := doctorStagedVenvDir(context.Background()); staged != "" {
-		t.Fatalf("staged = %q", staged)
-	}
-}
-
 func TestStagedRuntimeVenvNothingStagedStatesTheGoRuntimeAlone(t *testing.T) {
 	d, out := toolsDoctor(t)
-	toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
-	f, err := checkPythonEnvironment(context.Background(), d, false)
+	toolsSeam(t, &doctorStagedRuntimeRow, nil)
+	f, err := checkRuntime(context.Background(), d, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,8 +305,8 @@ func TestFixPreservesUserManagedCommands(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if f.Fixed != 0 {
-				t.Fatalf("fixed = %d\n%s", f.Fixed, tree.out.String())
+			if _, err := os.Lstat(filepath.Join(filepath.Dir(tree.command), "icebath-acp")); f.Fixed != 1 || err != nil {
+				t.Fatalf("fixed = %d, icebath-acp %v\n%s", f.Fixed, err, tree.out.String())
 			}
 			if raw, err := os.ReadFile(tree.command); err != nil || string(raw) != body {
 				t.Fatalf("command body = %q, err = %v", raw, err)
@@ -343,46 +324,13 @@ func TestFixPreservesUserManagedCommands(t *testing.T) {
 	}
 }
 
-func TestDoctorReportsSelectedImportTreeNotInterpreterPrefix(t *testing.T) {
-	for _, layout := range []string{"legacy", "generation"} {
-		t.Run(layout, func(t *testing.T) {
-			tree := commandInstallTree(t)
-			var selected string
-			if layout == "generation" {
-				selected = commandGeneration(t, tree.project)
-			} else {
-				selected = filepath.Join(tree.project, "venv")
-				writeTestFile(t, filepath.Join(selected, "pyvenv.cfg"), "home = fixture\nversion = 3.11.9\n", 0o644)
-			}
-			site, err := pm.SitePackages(selected)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.MkdirAll(site, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			toolsSeam(t, &doctorSelectedVenvDir, func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, tree.project) })
-			if _, err := checkPythonEnvironment(context.Background(), tree.d, false); err != nil {
-				t.Fatal(err)
-			}
-			text := tree.out.String()
-			if !strings.Contains(text, selected) {
-				t.Fatalf("selected tree is not named:\n%s", text)
-			}
-			if strings.Contains(text, "active in this process") || !strings.Contains(text, "runs outside it") {
-				t.Fatalf("output:\n%s", text)
-			}
-		})
-	}
-}
-
 func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix only")
 	}
 	for _, tc := range []struct{ method, remedy string }{
-		{"git", "icebath pm repair"}, {"nix", "Nix"}, {"docker", "docker pull"}, {"apt", "pkg install proot-distro"},
-		{"script", "icebath pm repair"}, {"setup-app", "icebath pm repair"}, {"chocolatey", "choco upgrade icebath"},
+		{"git", "setup-icebath.sh"}, {"nix", "Nix"}, {"docker", "docker pull"}, {"apt", "pkg install proot-distro"},
+		{"script", "Reinstall with `curl -fsSL icebath.app | sh`"}, {"setup-app", "Reinstall with `curl -fsSL icebath.app | sh`"}, {"chocolatey", "choco upgrade icebath"},
 		{"pip", "pipx upgrade icebath-cli"}, {"homebrew", "brew upgrade --cask icebath"}, {"scoop", "scoop update icebath"},
 		{"winget", "winget upgrade --id nickheyer.icebath"}, {"dpkg", "sudo apt install --only-upgrade icebath"},
 		{"rpm", "sudo dnf upgrade icebath"}, {"pacman", "paru -Syu icebath-bin"}, {"apk", "apk upgrade icebath"},
@@ -396,7 +344,7 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			hint, err := doctorPythonRepairHint(context.Background(), tree.d)
+			hint, err := doctorReinstallHint(context.Background(), tree.d)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -404,17 +352,13 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 			if !strings.Contains(text, tc.remedy) || strings.Contains(text, "pip install") {
 				t.Fatalf("output:\n%s", text)
 			}
+			if _, err := os.Lstat(tree.command); err == nil {
+				t.Fatalf("command published from a tree without an install binary\n%s", text)
+			}
 			if tc.method == "git" || tc.method == "script" || tc.method == "setup-app" {
-				resolved, err := filepath.EvalSymlinks(tree.command)
-				if !isTestSymlink(tree.command) || err != nil || resolved != entry {
-					t.Fatalf("command does not link the entry: %q %v\n%s", resolved, err, text)
-				}
 				return
 			}
-			if _, err := os.Lstat(tree.command); err == nil {
-				t.Fatal("command created for an externally owned install")
-			}
-			if strings.Contains(text, "icebath pm repair") {
+			if strings.Contains(text, "setup-icebath") || strings.Contains(text, "Reinstall with") {
 				t.Fatalf("output:\n%s", text)
 			}
 		})
@@ -423,9 +367,9 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 
 func TestCheckPythonEnvironmentRaisesNoIssueWithoutAManagedInterpreter(t *testing.T) {
 	d, out := toolsDoctor(t)
-	toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
+	toolsSeam(t, &doctorStagedRuntimeRow, nil)
 	toolsSeam(t, &doctorDetectInstallMethod, func(context.Context, string, string) (string, error) { return "git", nil })
-	f, err := checkPythonEnvironment(context.Background(), d, false)
+	f, err := checkRuntime(context.Background(), d, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,8 +383,8 @@ func TestCheckPythonEnvironmentRaisesNoIssueWithoutAManagedInterpreter(t *testin
 
 func TestCheckPythonEnvironmentStatesTheGoRuntimeVersion(t *testing.T) {
 	d, out := toolsDoctor(t)
-	toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
-	if _, err := checkPythonEnvironment(context.Background(), d, false); err != nil {
+	toolsSeam(t, &doctorStagedRuntimeRow, nil)
+	if _, err := checkRuntime(context.Background(), d, false); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
@@ -455,7 +399,7 @@ func TestRequiredPackagesListsOptionalCapabilitiesWithTheirRows(t *testing.T) {
 		{"Loaded library", func(context.Context) bool { return true }},
 		{"Absent library", func(context.Context) bool { return false }},
 	})
-	f, err := checkRequiredPackages(context.Background(), d, false)
+	f, err := checkOptionalCapabilities(context.Background(), d, false)
 	if err != nil {
 		t.Fatal(err)
 	}

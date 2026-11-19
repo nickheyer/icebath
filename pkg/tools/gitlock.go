@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -75,10 +76,10 @@ var gitlockRemove = os.Remove
 // Git process probe guarding the debris sweeps, swapped by tests
 var checkpointGitProcRunning = gitProcRunning
 
-// Runs one updater git call, panicking when the process wiring never installed the runner
+// Runs one updater git call through the runner the updater binds
 func gitlockRunGit(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
 	if GitlockRunGit == nil {
-		panic("tools.GitlockRunGit is not installed: pkg/selfupdate wires update_custody.run_git at init")
+		return nil, errors.New(linktier.Missing("the updater git runner", linktier.Extras))
 	}
 	if ctx == nil {
 		ctx = context.Background()

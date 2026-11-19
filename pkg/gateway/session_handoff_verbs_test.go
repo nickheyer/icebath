@@ -31,7 +31,7 @@ func TestHandoffVerbsQueuePollAndFailTheSessionRow(t *testing.T) {
 	}
 	for platform, want := range map[string]string{
 		"nosuch":   "Unknown platform 'nosuch'.",
-		"discord":  "Platform 'discord' is not configured/enabled in the gateway.",
+		"discord":  "Platform 'discord' is not configured/enabled in the gateway. Set it up with icebath gateway setup, then restart the gateway with icebath gateway restart.",
 		"telegram": "No home channel configured for telegram. Set one with /sethome on the destination chat first.",
 	} {
 		if platform == "telegram" {
