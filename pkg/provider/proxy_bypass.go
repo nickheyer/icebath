@@ -143,12 +143,6 @@ func IsProxyLoopbackHost(host string) bool {
 	return addr.IsLoopback()
 }
 
-// LoopbackBypassesProxy reports whether an in process dial of the URL must skip proxy detection
-func LoopbackBypassesProxy(rawURL string) bool {
-	host, _, _ := SplitHostPort(rawURL)
-	return IsProxyLoopbackHost(host)
-}
-
 // AddLoopbackNoProxy appends the loopback hosts to both NO_PROXY casings in env keeping operator entries
 func AddLoopbackNoProxy(env map[string]string) map[string]string {
 	for _, key := range []string{"NO_PROXY", "no_proxy"} {

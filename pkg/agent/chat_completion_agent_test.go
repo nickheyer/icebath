@@ -95,13 +95,7 @@ func TestRequestShapeAccessors(t *testing.T) {
 	if pf := a.PrefillMessages(); len(pf) != 1 || pf[0]["content"] != "hi" {
 		t.Fatalf("prefill %v", pf)
 	}
-	if a.CredentialPool() != nil {
-		t.Fatal("nil pool surfaced as a typed nil")
-	}
-	a.ClearCredentialPool()
-	if a.credentialPoolEntryID != "" {
-		t.Fatal("entry id kept after clearing the pool")
-	}
+
 	a.SetActiveCodexStreamRequestToken("tok")
 	if a.ActiveCodexStreamRequestToken() != "tok" {
 		t.Fatal("codex request token lost")

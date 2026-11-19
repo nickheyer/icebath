@@ -16,93 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ReleaseDate is the release date shown beside the version in banners
 const ReleaseDate = "2026.9.24"
 
-var reasoningTags = provider.ThinkTagNames
-
-// Banner version label, swapped by tests that pin the version text
-var bannerVersionLabel = formatBannerVersionLabel
-
-var toolCallTags = []string{"tool_call", "tool_calls", "tool_result", "function_call", "function_calls"}
-
-// Reasoning tag patterns, closed block, unterminated block and orphan closer per tag
-var reasoningTagRes = func() [][3]*regexp.Regexp {
-	out := make([][3]*regexp.Regexp, 0, len(reasoningTags))
-	for _, tag := range reasoningTags {
-		q := regexp.QuoteMeta(tag)
-		out = append(out, [3]*regexp.Regexp{
-			regexp.MustCompile(`(?is)<` + q + `>.*?</` + q + `>\s*`),
-			regexp.MustCompile(`(?is)<` + q + `>.*$`),
-			regexp.MustCompile(`(?i)</` + q + `>\s*`)})
-	}
-	return out
-}()
-
-// Leaked tool call XML block patterns, namespaced tags included
-var toolCallTagRes = func() []*regexp.Regexp {
-	out := make([]*regexp.Regexp, 0, len(toolCallTags))
-	for _, tag := range toolCallTags {
-		out = append(out, regexp.MustCompile(`(?is)<(?:[\w.-]+:)?`+tag+`\b[^>]*>.*?</(?:[\w.-]+:)?`+tag+`>\s*`))
-	}
-	return out
-}()
-
-var namedFunctionCallRe = regexp2.MustCompile(`(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*<function\b[^>]*\bname\s*=[^>]*>(?:(?:(?!</function>).)*)</function>\s*`, regexp2.Singleline|regexp2.IgnoreCase)
-
-// Strips reasoning blocks, closed, unterminated or orphan closed, and leaked tool call XML from display text
-func stripReasoningTags(text string) string {
-	cleaned := text
-	for _, res := range reasoningTagRes {
-		for _, re := range res {
-			cleaned = re.ReplaceAllString(cleaned, "")
-		}
-	}
-	for _, re := range toolCallTagRes {
-		cleaned = re.ReplaceAllString(cleaned, "")
-	}
-	cleaned, _ = namedFunctionCallRe.Replace(cleaned, "", -1, -1)
-	cleaned = provider.StripStrayToolCallClosers(cleaned)
-	cleaned = provider.StripUnterminatedToolCalls(cleaned)
-	return pystr.Strip(cleaned)
-}
-
-// Assistant content as text, text parts of a content list joined by newlines
-func assistantContentAsText(content any) string {
-	switch v := content.(type) {
-	case nil:
-		return ""
-	case string:
-		return v
-	case []any:
-		var parts []string
-		for _, part := range v {
-			m, ok := part.(map[string]any)
-			if !ok || m["type"] != "text" {
-				continue
-			}
-			if text := cliStr(m["text"], ""); text != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.Join(parts, "\n")
-	}
-	return cliStr(content, "")
-}
-
-// Assistant content as the text a copy command takes, reasoning tags stripped
-func assistantCopyText(content any) string {
-	return stripReasoningTags(assistantContentAsText(content))
-}
-
 const accentANSIDefault = "\033[1;38;2;156;199;232m"
-
-const boldANSI = "\033[1m"
 
 const resetANSI = "\033[0m"
 
@@ -289,13 +209,6 @@ func (s *skinAwareANSI) String() string {
 	return *s.cached
 }
 
-// Clears the cache so the next access re reads the skin
-func (s *skinAwareANSI) Reset() {
-	s.mu.Lock()
-	s.cached = nil
-	s.mu.Unlock()
-}
-
 var accentANSI = &skinAwareANSI{skinKey: "response_border", fallbackHex: "#9cc7e8", bold: true}
 
 // The active skin accent color for legacy CLI output lines
@@ -409,46 +322,6 @@ func ptPrintANSI(text string) { fmt.Fprintln(console().Out, text) }
 // Prints ANSI text and a newline straight to the console
 func cprint(text string) { ptPrintANSI(text) }
 
-// Prepends a one shot note to a user message, folded into the first text part of a content list
-func prependNoteToMessage(message any, note string) any {
-	note = pystr.Strip(note)
-	if note == "" {
-		return message
-	}
-	switch m := message.(type) {
-	case string:
-		if m == "" {
-			return note
-		}
-		return note + "\n\n" + m
-	case []any:
-		parts := append([]any(nil), m...)
-		for i, part := range parts {
-			dict, ok := part.(map[string]any)
-			if !ok || dict["type"] != "text" {
-				continue
-			}
-			text := cliStr(dict["text"], "")
-			copied := make(map[string]any, len(dict)+1)
-			for k, v := range dict {
-				copied[k] = v
-			}
-			if text == "" {
-				copied["text"] = note
-			} else {
-				copied["text"] = note + "\n\n" + text
-			}
-			parts[i] = copied
-			return parts
-		}
-		return append([]any{map[string]any{"type": "text", "text": note}}, parts...)
-	}
-	return message
-}
-
-// Prints one line straight to the console without recording it
-func cliVisiblePrint(text string) { fmt.Fprintln(console().Out, text) }
-
 var oscEscapeRe = regexp.MustCompile(`\x1b\][\s\S]*?(?:\x07|\x1b\\)`)
 
 // ChatConsole is the rich console drop in routing rendered ANSI through cprint so colors survive the prompt
@@ -481,78 +354,16 @@ func (c *ChatConsole) emit(render func(*pyrich.Console)) {
 // Prints markup lines through cprint
 func (c *ChatConsole) Print(markup ...string) { c.emit(func(r *pyrich.Console) { r.Print(markup...) }) }
 
-// Prints markup on unwrapped lines through cprint so the terminal reflows them
-func (c *ChatConsole) PrintSoft(markup string) {
-	c.emit(func(r *pyrich.Console) { r.PrintSoft(markup) })
-}
-
-// Prints a renderable through cprint
-func (c *ChatConsole) PrintRenderable(r pyrich.Renderable) {
-	c.emit(func(con *pyrich.Console) { con.PrintRenderable(r) })
-}
-
 // Prints a renderable through cprint with a base style under it and soft wrapping when asked
 func (c *ChatConsole) PrintRenderableWith(r pyrich.Renderable, o pyrich.PrintOptions) (err error) {
 	c.emit(func(con *pyrich.Console) { err = con.PrintRenderableWith(r, o) })
 	return err
 }
 
-// Prints a table through cprint
-func (c *ChatConsole) PrintTable(t *pyrich.Table) {
-	c.emit(func(r *pyrich.Console) { r.PrintTable(t) })
-}
-
 // Prints a panel through cprint
 func (c *ChatConsole) PrintPanel(p pyrich.Panel) { c.emit(func(r *pyrich.Console) { r.PrintPanel(p) }) }
-
-// No op status so slash helpers do not duplicate the busy command indicator
-func (c *ChatConsole) Status(string) func() { return func() {} }
 
 var defaultChatConsole = newChatConsole()
 
 // Prints rich markup through the chat console
 func chatConsolePrint(markup string) { defaultChatConsole.Print(markup) }
-
-// A compact banner that fits the current terminal width
-func buildCompactBanner() string {
-	ctx := context.Background()
-	skin := config.GetActiveSkin(ctx)
-	color := func(key, def string) string {
-		if skin != nil {
-			return skin.GetColor(key, def)
-		}
-		return def
-	}
-	borderColor := color("banner_border", "#3b5169")
-	titleColor := color("banner_title", "#e3122b")
-	dimColor := color("banner_dim", "#6c7f92")
-	tinyLine := "󰆧 ICEBATH"
-	if skin != nil && skin.Name != config.DefaultSkinName {
-		tinyLine = skin.GetBranding("agent_name", "Icebath Agent")
-	}
-	line1 := i18n.T(ctx, "cli.render.banner_tagline", "", map[string]any{"name": tinyLine})
-	var versionLine string
-	if os.Getenv("ICEBATH_FAST_STARTUP_BANNER") == "1" {
-		info, err := updaterecord.GetVersionInfo()
-		if err != nil {
-			info = updaterecord.VersionInfo{BaseVersion: "unknown", DerivedVersion: "unknown", Source: "unknown"}
-		}
-		versionLine = i18n.T(ctx, "cli.render.banner_version", "", map[string]any{"version": info.DerivedVersion, "date": ReleaseDate})
-	} else {
-		versionLine = bannerVersionLabel()
-	}
-	w := min(terminalColumns()-2, 88)
-	if w < 30 {
-		return "\n[" + titleColor + "]" + tinyLine + "[/] [dim " + dimColor + "]- icebath.app[/]\n"
-	}
-	inner := w - 2
-	bar := strings.Repeat("═", w)
-	contentWidth := inner - 2
-	line1 = pystr.Ljust(pystr.Slice(line1, 0, contentWidth), contentWidth)
-	line2 := pystr.Ljust(pystr.Slice(versionLine, 0, contentWidth), contentWidth)
-	border := "[bold " + borderColor + "]"
-	return "\n" + border + "╔" + bar + "╗[/]\n" +
-		border + "║[/] [" + titleColor + "]" + line1 + "[/] " + border + "║[/]\n" +
-		border + "║[/] [dim " + dimColor + "]" + line2 + "[/] " + border + "║[/]\n" +
-		border + "╚" + bar + "╝[/]\n"
-}

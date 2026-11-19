@@ -230,10 +230,7 @@ func TestHostedOpenRouterFlowMintsTheKeyInTheBrowser(t *testing.T) {
 	}))
 	defer server.Close()
 	swapFlowSeam(t, &openrouterAuthKeysURL, server.URL)
-	t.Setenv("DISPLAY", ":0")
-	t.Setenv("BROWSER", "firefox")
-	t.Setenv("SSH_CLIENT", "")
-	t.Setenv("SSH_TTY", "")
+	scriptBrowserEnv(t, map[string]string{"DISPLAY": ":0", "BROWSER": "firefox"})
 	swapFlowSeam(t, &openBrowserFn, func(target string) error {
 		parsed, err := url.Parse(target)
 		if err != nil {

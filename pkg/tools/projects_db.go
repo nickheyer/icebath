@@ -63,10 +63,7 @@ var (
 	projectsInitMu      sync.Mutex
 )
 
-const (
-	projectActiveMetaKey          = "active_id"
-	projectDiscoveryPolicyMetaKey = "repo_discovery_policy"
-)
+const projectActiveMetaKey = "active_id"
 
 var projectOptionalColumns = []string{"board_slug", "primary_path", "icon", "color"}
 
@@ -76,11 +73,6 @@ type ProjectFolder struct {
 	Label     *string
 	IsPrimary bool
 	AddedAt   int64
-}
-
-// JSON row of the folder
-func (f ProjectFolder) AsMap() map[string]any {
-	return map[string]any{"path": f.Path, "label": nilOrString(f.Label), "is_primary": f.IsPrimary, "added_at": f.AddedAt}
 }
 
 // Project is one named workspace with its folders
@@ -98,17 +90,6 @@ type Project struct {
 	Folders     []ProjectFolder
 }
 
-// JSON row of the project with its folders
-func (p *Project) AsMap() map[string]any {
-	folders := make([]any, len(p.Folders))
-	for i, f := range p.Folders {
-		folders[i] = f.AsMap()
-	}
-	return map[string]any{"id": p.ID, "slug": p.Slug, "name": p.Name, "description": nilOrString(p.Description), "icon": nilOrString(p.Icon),
-		"color": nilOrString(p.Color), "board_slug": nilOrString(p.BoardSlug), "primary_path": nilOrString(p.PrimaryPath),
-		"archived": p.Archived, "created_at": p.CreatedAt, "folders": folders}
-}
-
 // PrimaryPathOf is the explicit primary path, else the primary folder, else the first folder
 func (p *Project) PrimaryPathOf() string {
 	if p.PrimaryPath != nil && *p.PrimaryPath != "" {
@@ -123,14 +104,6 @@ func (p *Project) PrimaryPathOf() string {
 		return p.Folders[0].Path
 	}
 	return ""
-}
-
-// JSON value of an optional string
-func nilOrString(s *string) any {
-	if s == nil {
-		return nil
-	}
-	return *s
 }
 
 // Slug candidate derived from a human name
@@ -704,12 +677,6 @@ func (p *ProjectsDB) RestoreProject(projectID string) (bool, error) {
 	return n > 0, err
 }
 
-// DeleteProject hard deletes a project and its folders
-func (p *ProjectsDB) DeleteProject(projectID string) (bool, error) {
-	n, err := p.execRowcount("DELETE FROM projects WHERE id = ?", projectID)
-	return n > 0, err
-}
-
 // Upserts a project_meta row inside a write transaction
 func projectUpsertMetaLocked(x sqlExecutor, key, value string) error {
 	_, err := x.ExecContext(context.Background(), "INSERT INTO project_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value)
@@ -744,102 +711,6 @@ func (p *ProjectsDB) GetActiveID() (string, error) {
 		return "", err
 	}
 	return *v, nil
-}
-
-// GetDiscoveryPolicyKey is the recorded repo discovery policy, nil when unset
-func (p *ProjectsDB) GetDiscoveryPolicyKey() (*string, error) {
-	return p.getMeta(projectDiscoveryPolicyMetaKey)
-}
-
-// Optionally wipes the scan cache then records the policy key inside a write transaction
-func projectClearReposLocked(x sqlExecutor, clear bool, policyKey *string) error {
-	if clear {
-		if _, err := x.ExecContext(context.Background(), "DELETE FROM discovered_repos"); err != nil {
-			return err
-		}
-	}
-	if policyKey != nil {
-		return projectUpsertMetaLocked(x, projectDiscoveryPolicyMetaKey, *policyKey)
-	}
-	return nil
-}
-
-// ReconcileDiscoveredReposPolicy clears cached scan rows when the policy changes and reports whether it did
-func (p *ProjectsDB) ReconcileDiscoveredReposPolicy(policyKey string, preserveUnversioned bool) (bool, error) {
-	current, err := p.GetDiscoveryPolicyKey()
-	if err != nil {
-		return false, err
-	}
-	if current != nil && *current == policyKey {
-		return false, nil
-	}
-	cleared := current != nil || !preserveUnversioned
-	err = p.writeTxn(func(x sqlExecutor) error { return projectClearReposLocked(x, cleared, &policyKey) })
-	return cleared, err
-}
-
-// DiscoveredRepo is one cached repo root with its label
-type DiscoveredRepo struct {
-	Root     string
-	Label    string
-	LastSeen int64
-}
-
-// RecordDiscoveredRepos persists scanned repo roots, replace deleting stale rows first, and returns the row count
-func (p *ProjectsDB) RecordDiscoveredRepos(repos []DiscoveredRepo, replace bool, policyKey *string) (int, error) {
-	now := projectNow()
-	var rows []DiscoveredRepo
-	for _, r := range repos {
-		norm := projectNormalizePath(r.Root)
-		if norm == "" {
-			continue
-		}
-		label := r.Label
-		if label == "" {
-			label = filepath.Base(norm)
-			if label == "" || label == "." || label == string(filepath.Separator) {
-				label = norm
-			}
-		}
-		rows = append(rows, DiscoveredRepo{Root: norm, Label: label, LastSeen: now})
-	}
-	err := p.writeTxn(func(x sqlExecutor) error {
-		ctx := context.Background()
-		if replace {
-			if _, err := x.ExecContext(ctx, "DELETE FROM discovered_repos"); err != nil {
-				return err
-			}
-		}
-		for _, r := range rows {
-			if _, err := x.ExecContext(ctx, "INSERT INTO discovered_repos (root, label, last_seen) VALUES (?, ?, ?) ON CONFLICT(root) DO UPDATE SET label = excluded.label, last_seen = excluded.last_seen", r.Root, r.Label, r.LastSeen); err != nil {
-				return err
-			}
-		}
-		return projectClearReposLocked(x, false, policyKey)
-	})
-	return len(rows), err
-}
-
-// ListDiscoveredRepos returns cached repo roots most recently seen first
-func (p *ProjectsDB) ListDiscoveredRepos() ([]DiscoveredRepo, error) {
-	rows, err := p.db.QueryContext(context.Background(), "SELECT root, label, last_seen FROM discovered_repos ORDER BY last_seen DESC")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []DiscoveredRepo
-	for rows.Next() {
-		var r DiscoveredRepo
-		var label *string
-		if err := rows.Scan(&r.Root, &label, &r.LastSeen); err != nil {
-			return nil, err
-		}
-		if label != nil {
-			r.Label = *label
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
 }
 
 // ProjectForPath returns the innermost project whose folder equals or contains the path

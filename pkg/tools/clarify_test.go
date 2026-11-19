@@ -117,24 +117,6 @@ func TestClarifyResultOutcomeAndNotice(t *testing.T) {
 	}
 }
 
-func TestSettleClarifyBatch(t *testing.T) {
-	locked := map[string]any{"q0": "a"}
-	if got := SettleClarifyBatch(locked, nil, "timed_out"); got["outcome"] != "timed_out" || got["answers"].(map[string]any)["q0"] != "a" {
-		t.Fatal(got)
-	}
-	if got := SettleClarifyBatch(locked, nil, "weird"); got["outcome"] != "cancelled" {
-		t.Fatal(got)
-	}
-	frame := map[string]any{"answers": map[string]any{"q1": "b"}, "outcome": "bogus", "extra": 1}
-	got := SettleClarifyBatch(locked, frame, "")
-	if got["outcome"] != "submitted" || got["extra"] != 1 || got["answers"].(map[string]any)["q0"] != "a" || got["answers"].(map[string]any)["q1"] != "b" {
-		t.Fatal(got)
-	}
-	if got := SettleClarifyBatch(locked, map[string]any{}, ""); got["outcome"] != "cancelled" {
-		t.Fatal(got)
-	}
-}
-
 func TestGatewayClarifyTextCoercion(t *testing.T) {
 	entry := RegisterGatewayClarify("c1", "s1", "Pick", []string{"staging (Recommended)", "prod", "two words"}, false)
 	defer ClearClarifySession("s1")
@@ -186,7 +168,7 @@ func TestGatewayClarifyWaitResolveAndClear(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(20 * time.Millisecond)
-		if !ResolveClarifyTextResponse("sess", "2") {
+		if AttemptClarifyTextResponse("sess", "2") != ClarifyTextResolved {
 			t.Error("resolve failed")
 		}
 	}()

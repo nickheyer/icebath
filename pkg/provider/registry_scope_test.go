@@ -372,8 +372,7 @@ func resolveHintedProvider(t *testing.T) error {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("FAKE_HINTED_KEY", "")
-	_, err := Resolve(context.Background(), config.Tree(map[string]any{}), config.NewSecrets(h), h, &fakeCreds{},
-		Overrides{Provider: "fake-hinted"})
+	_, err := newResolver(context.Background(), config.Tree(map[string]any{}), config.NewSecrets(h), h, &fakeCreds{}).ResolveRuntime("fake-hinted", "", "", nil, "")
 	return err
 }
 

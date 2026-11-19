@@ -2045,23 +2045,6 @@ func (dockerBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	return nil
 }
 
-// Probe reports daemon reachability for the picker
-func (b dockerBackend) Probe() (string, string) {
-	docker := FindDocker(nil)
-	if docker == "" {
-		return "needs_setup", "Docker or Podman is not installed."
-	}
-	res, err := runCapture(context.Background(), []string{docker, "version"}, 5*time.Second, false, nil)
-	if err != nil || res.Code != 0 {
-		runtimeName := DockerRuntimeName(docker)
-		if runtimeName == "Docker" {
-			return "unavailable", "Docker daemon not running; " + DockerRuntimeStartHint(docker)
-		}
-		return "unavailable", runtimeName + " not reachable; " + DockerRuntimeStartHint(docker)
-	}
-	return "ready", DockerRuntimeName(docker) + " at " + docker
-}
-
 // SetupInstructions explains how to make the docker backend usable
 func (dockerBackend) SetupInstructions(env *Env) []string {
 	return []string{

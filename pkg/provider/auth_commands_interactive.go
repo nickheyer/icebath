@@ -40,7 +40,7 @@ func (c *authCLI) interactiveAuth() error {
 
 // Prompts for a provider name with auto complete hints, EOF exiting silently
 func (c *authCLI) pickProvider(prompt string) (string, error) {
-	unlisted := unlistedProviderNames()
+	unlisted := UnlistedProviderNames(c.ctx)
 	known := map[string]bool{}
 	for _, row := range canonicalRegistryRows(c.ctx) {
 		if !unlisted[row.Name] {

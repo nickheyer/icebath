@@ -32,16 +32,7 @@ var (
 	streamOpenTags, streamCloseTags [][]rune
 	streamMaxCloseTagLen            int
 	reasoningParagraphRe            = regexp.MustCompile(`\n` + pyWSClass + `*\n+`)
-	pasteRefRe                      = regexp.MustCompile(`\[Pasted text #\p{Nd}+: \p{Nd}+ lines \x{2192} (.+?)\]`)
 	visionAnalyzeTool               = tools.VisionAnalyzeTool
-	slowCommandStatus               = [][2]string{
-		{"/skills search", "cli.stream.busy_skills_search"}, {"/skills browse", "cli.stream.busy_skills_browse"},
-		{"/skills inspect", "cli.stream.busy_skills_inspect"}, {"/skills install", "cli.stream.busy_skills_install"},
-		{"/skills", "cli.stream.busy_skills"}, {"/browser", "cli.stream.busy_browser"}}
-	slowCommandStatusExact = map[string]string{
-		"/reload-mcp":    "cli.stream.busy_reload_mcp",
-		"/reload-skills": "cli.stream.busy_reload_skills",
-		"/reload_skills": "cli.stream.busy_reload_skills"}
 )
 
 func init() {
@@ -146,7 +137,7 @@ func (c *CLI) flushCreditNotices() {
 	}
 }
 
-// Leaves printed notice lines alone, the REPL holding no persistent slot to wipe
+// Leaves printed notice lines alone, a one shot run holding no persistent slot to wipe
 func (c *CLI) onNoticeClear(key string) {}
 
 // Active reasoning display callback for the current mode, nil when reasoning is hidden
@@ -259,31 +250,6 @@ func (c *CLI) onReasoning(reasoningText string) {
 
 // Clock suffix of a submitted message preview, empty unless timestamps are shown
 func (c *CLI) timestampNow() string { return pydatetime.Strftime(time.Now(), c.timestampFormat) }
-
-// Replaces pasted text markers with their file contents, a marker kept when its file is unreadable
-func (c *CLI) expandPasteReferences(text string) (string, error) {
-	if !strings.Contains(text, "[Pasted text #") {
-		return text, nil
-	}
-	var decodeErr error
-	out := pasteRefRe.ReplaceAllStringFunc(text, func(match string) string {
-		path := pasteRefRe.FindStringSubmatch(match)[1]
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Paste file gone or unreadable, returning placeholder: %s", path))
-			return match
-		}
-		content, err := pystr.DecodeUTF8Sig(raw)
-		if err != nil && decodeErr == nil {
-			decodeErr = err
-		}
-		return content
-	})
-	if decodeErr != nil {
-		return "", decodeErr
-	}
-	return out, nil
-}
 
 // Streams reasoning tokens into the dim block above the response
 func (c *CLI) streamReasoningDelta(text string) {
@@ -699,34 +665,6 @@ func (c *CLI) resetStreamStateLocked() {
 	c.streamBoxLive = false
 }
 
-// User facing status message for a slower slash command
-func (c *CLI) slowCommandStatus(command string) string {
-	cmdLower := pystr.Strip(pystr.Lower(command))
-	if key, ok := slowCommandStatusExact[cmdLower]; ok {
-		return c.t(key, nil)
-	}
-	for _, row := range slowCommandStatus {
-		if strings.HasPrefix(cmdLower, row[0]) {
-			return c.t(row[1], nil)
-		}
-	}
-	return c.t("cli.stream.processing_command", nil)
-}
-
-// Prints the busy status then runs fn with the command marked running
-func (c *CLI) busyCommand(status string, fn func()) {
-	c.uiMu.Lock()
-	c.commandRunning = true
-	c.uiMu.Unlock()
-	defer func() {
-		c.uiMu.Lock()
-		c.commandRunning = false
-		c.uiMu.Unlock()
-	}()
-	cprint("⏳ " + status)
-	fn()
-}
-
 // Describes attached images through the vision model and prepends the descriptions to the user text
 func (c *CLI) preprocessImagesWithVision(text string, images []string, announce bool) string {
 	notify := func(key string) {
@@ -843,7 +781,7 @@ func (c *CLI) onToolGenStart(toolName string) {
 	if what == "" {
 		what = toolName
 	}
-	emoji := tools.GetToolEmoji(c.env, toolName, "⚡")
+	emoji := tools.GetToolEmoji(c.ctx, c.env, toolName, "⚡")
 	if c.modernLayout {
 		c.setSpinnerText(emoji + " " + c.t("cli.modern.preparing", map[string]any{"what": what}))
 		return
@@ -931,7 +869,7 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 	if pl := tools.GetToolPreviewMaxLen(); pl > 0 && pystr.Len(label) > pl {
 		label = pystr.Slice(label, 0, pl-3) + "..."
 	}
-	spinner := tools.ToolRowEmoji(c.env, functionName, functionArgs, "") + " " + label
+	spinner := tools.ToolRowEmoji(c.ctx, c.env, functionName, functionArgs, "") + " " + label
 	if functionArgs == nil {
 		functionArgs = map[string]any{}
 	}
@@ -955,7 +893,6 @@ func (c *CLI) onToolCompletedProgress(functionName string, extra map[string]any,
 	c.streamMu.Lock()
 	c.forgetToolLabel(functionName)
 	c.streamMu.Unlock()
-	c.turnSummaryRecord(functionName, extra["result"], isError)
 	if c.focusViewEnabled {
 		func() {
 			defer func() { _ = recover() }()

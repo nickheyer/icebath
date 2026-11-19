@@ -451,7 +451,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 	suffix := strings.ToLower(pypath.Suffix(path))
 	var interpreter string
 	if suffix == ".sh" || suffix == ".bash" {
-		bash, err := tools.FindBash()
+		bash, err := tools.FindBash(ctx)
 		if err != nil {
 			log.Warn("[webhook] script ignored webhook: " + err.Error())
 			return false, nil, nil

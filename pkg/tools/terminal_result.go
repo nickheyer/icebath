@@ -127,7 +127,7 @@ func applyOutputTransformHook(ctx context.Context, env *Env, command, output str
 	if TerminalOutputTransformHook == nil {
 		return output
 	}
-	callID, _ := loadSessionString(env, "approval.tool_call_id")
+	callID, _ := loadObservabilityID(env, "approval.tool_call_id")
 	results := TerminalOutputTransformHook(ctx, map[string]any{
 		"command": command, "output": output, "returncode": returncode, "task_id": taskID,
 		"env_type": envType, "tool_call_id": callID,

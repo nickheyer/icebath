@@ -163,9 +163,6 @@ func TestPrepareDailyLimitBecomesTypedError(t *testing.T) {
 	if _, err := NewChunkedUploader(api, nil, "T").Upload(context.Background(), "guild", "u", f, 4, "a.bin"); err == nil || err.Error() != "ChunkedUploader: unsupported chat_type 'guild'" {
 		t.Fatalf("err = %v", err)
 	}
-	if got := NewUploadFileTooLargeError("b", 2048, 1024, "").Error(); got != "File 'b' (2.0 KB) exceeds platform limit (1.0 KB)" {
-		t.Fatalf("too large = %s", got)
-	}
 }
 
 func TestApprovalButtonDataParse(t *testing.T) {

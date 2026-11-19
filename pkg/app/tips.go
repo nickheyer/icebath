@@ -10,11 +10,9 @@ import (
 )
 
 const (
-	TipKeyPrefix          = "tips.t"
-	ComposerHintKeyPrefix = "tips.placeholder.p"
-	tipKeyWidth           = 3
-	composerHintKeyWidth  = 2
-	maxTipKeys            = 10000
+	TipKeyPrefix = "tips.t"
+	tipKeyWidth  = 3
+	maxTipKeys   = 10000
 )
 
 var (
@@ -47,23 +45,9 @@ func catalogKeys(ctx context.Context, prefix string, width int) []string {
 // Catalog keys of every startup tip in catalog order
 func tipKeys(ctx context.Context) []string { return catalogKeys(ctx, TipKeyPrefix, tipKeyWidth) }
 
-// Catalog keys of every empty composer example prompt in catalog order
-func composerHintKeys(ctx context.Context) []string {
-	return catalogKeys(ctx, ComposerHintKeyPrefix, composerHintKeyWidth)
-}
-
 // Random tip in the active language, empty when the catalog has none
 func getRandomTip(ctx context.Context) string {
 	keys := tipKeys(ctx)
-	if len(keys) == 0 {
-		return ""
-	}
-	return i18n.T(ctx, keys[rand.IntN(len(keys))], "", nil)
-}
-
-// Rotating task oriented prompt for the empty composer in the active language, empty when the catalog has none
-func getRandomComposerHint(ctx context.Context) string {
-	keys := composerHintKeys(ctx)
 	if len(keys) == 0 {
 		return ""
 	}

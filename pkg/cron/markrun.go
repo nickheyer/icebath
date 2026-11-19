@@ -284,12 +284,6 @@ func (s *Store) advanceNextRuns(ctx context.Context, jobIDs []string) (int, erro
 	return advanced, err
 }
 
-// Advances one recurring job before it runs so a crash cannot re-fire it
-func (s *Store) advanceNextRun(ctx context.Context, jobID string) (bool, error) {
-	n, err := s.advanceNextRuns(home.WithOverride(ctx, s.home), []string{jobID})
-	return n >= 1, err
-}
-
 // Claim attribution id from ICEBATH_MACHINE_ID, else host and pid
 func machineID() string {
 	if explicit := pystr.Strip(os.Getenv("ICEBATH_MACHINE_ID")); explicit != "" {

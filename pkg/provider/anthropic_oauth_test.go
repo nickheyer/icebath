@@ -60,10 +60,8 @@ func anthOAuthNormalizer(t *testing.T, registered ...string) *anthropicClient {
 	for _, n := range registered {
 		known[n] = true
 	}
-	prev := anthRegisteredTool
-	SetRegisteredToolLookup(func(name string) bool { return known[name] })
-	t.Cleanup(func() { anthRegisteredTool = prev })
-	return &anthropicClient{route: Route{Provider: "anthropic", Model: "claude-sonnet-4"}, transport: newAnthDirectTransport(Route{}), oauthWire: true, requestToolNames: map[string]bool{}}
+	return &anthropicClient{route: Route{Provider: "anthropic", Model: "claude-sonnet-4"}, transport: newAnthDirectTransport(Route{}), oauthWire: true, requestToolNames: map[string]bool{},
+		registeredTool: func(name string) bool { return known[name] }}
 }
 
 func anthNormalizedToolName(t *testing.T, c *anthropicClient, wire string) string {

@@ -536,7 +536,7 @@ func (s *Store) loadCredentialPool(rt *provider.Runtime, jobID string) *provider
 		return nil
 	}
 	env := provider.PoolEnv{Store: provider.NewStore(s.home), Secrets: config.NewSecrets(s.home), Config: provider.ConfigLoader(s.home), Log: s.log}
-	pool := provider.LoadPool(env, runtimeProvider)
+	pool := provider.LoadRoutePool(env, runtimeProvider, rt.BaseURL, rt.RequestedProvider)
 	if pool != nil && pool.HasCredentials() {
 		s.log.Info(fmt.Sprintf("Job '%s': loaded credential pool for provider %s with %d entries", jobID, runtimeProvider, len(pool.Entries())))
 		return pool

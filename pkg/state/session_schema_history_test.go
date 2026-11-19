@@ -153,3 +153,12 @@ func TestReachablePhysicalLayoutsAppendUnseenColumnsPerUpgrade(t *testing.T) {
 		t.Fatal("no sessions layouts")
 	}
 }
+
+// Column order the table declares today
+func CurrentDeclaredColumns(table string) ([]string, error) {
+	snapshots, err := DeclaredSnapshots(table)
+	if err != nil {
+		return nil, err
+	}
+	return snapshots[len(snapshots)-1], nil
+}

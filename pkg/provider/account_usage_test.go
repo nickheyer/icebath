@@ -315,7 +315,7 @@ func TestAccountUsageRedeemRetries401WithForcedRefresh(t *testing.T) {
 	codexUsageClearCooldownsFn = func(PoolEnv) { cleared++ }
 	t.Cleanup(func() { codexUsageClearCooldownsFn = prev })
 	res := RedeemCodexResetCredit(context.Background(), "", "", false)
-	if !res.Redeemed() || res.AvailableCount != 1 || res.WindowsReset != 2 || cleared != 1 {
+	if res.Status != "reset" || res.AvailableCount != 1 || res.WindowsReset != 2 || cleared != 1 {
 		t.Fatalf("result %+v cleared %d", res, cleared)
 	}
 	if res.Message != "✅ Reset redeemed — your usage limits have been reset. 1 banked reset remaining." {

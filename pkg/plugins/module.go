@@ -77,6 +77,7 @@ type Services struct {
 	ParseServerLiveness               func(raw any) (ServerLiveness, error)
 	ParseCostPolicy                   func(costs, spendLimit, costUnit any, where string) error
 	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
+	CredentialedProviderRequest       func(ctx context.Context, pluginDir, provider, method, url string, json any, headers map[string]string, timeout time.Duration) (*ProviderRequestAnswer, error)
 }
 
 // MCP configuration, registration and naming the activation path reaches through the wiring

@@ -876,8 +876,11 @@ func AsyncCallLLM(ctx context.Context, kwargs map[string]any) (any, error) {
 	})
 }
 
-// Async call under the async task semaphore with the scoped main runtime bound
+// Async call under the async task semaphore with the scoped main runtime bound, on the process event loop when the context binds none
 func auxAsyncCallLLM(ctx context.Context, req auxCallRequest) (response any, err error) {
+	if auxCurrentEventLoop(ctx) == nil {
+		ctx = WithAuxiliaryEventLoop(ctx, auxProcessEventLoop)
+	}
 	semaphore, err := auxAcquireAsyncAuxSemaphore(ctx, req.Task)
 	if err != nil {
 		return nil, err

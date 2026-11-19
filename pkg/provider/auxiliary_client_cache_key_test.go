@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -228,11 +229,12 @@ func TestPreserveProviderWithBaseURLRegistriesFailIndependently(t *testing.T) {
 }
 
 func TestUnwrapMoaProviderKeepsNonMoa(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	if p, m := auxUnwrapMoaProvider(ctx, "openrouter", "x"); p != "openrouter" || m != "x" {
+	h := t.TempDir()
+	r := newResolver(context.Background(), config.Tree{}, config.NewSecrets(h), h, nil)
+	if p, m := r.unwrapMoaProvider("openrouter", "x"); p != "openrouter" || m != "x" {
 		t.Fatalf("non moa changed %q %q", p, m)
 	}
-	if p, m := auxUnwrapMoaProvider(ctx, "moa", "missing-preset"); p != "moa" || m != "missing-preset" {
+	if p, m := r.unwrapMoaProvider("moa", "missing-preset"); p != "moa" || m != "missing-preset" {
 		t.Fatalf("unresolvable preset changed %q %q", p, m)
 	}
 }

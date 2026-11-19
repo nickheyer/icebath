@@ -259,7 +259,7 @@ func TestLocalEndpointStaleCacheReconciledFromLiveProbe(t *testing.T) {
 func TestGetModelContextLengthLocalFallbackLocalEndpointServerReturnsNoneFallsBackTo2m(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.on("GET", OpenRouterModelsURL, 200, map[string]any{"data": []any{}})
-	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "omnicoder-9b", BaseURL: "http://localhost:11434/v1"}), ContextProbeTiers[0], "fallback")
+	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "omnicoder-9b", BaseURL: "http://localhost:11434/v1"}), DefaultFallbackContext, "fallback")
 }
 
 func TestCachedResultSkipsLocalQuery(t *testing.T) {

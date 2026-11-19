@@ -1908,11 +1908,6 @@ func SandboxTempDir(e Environment) string {
 	return e.TempDir()
 }
 
-// SupportsStreams reports whether the environment can host a long lived stdio stream
-func SupportsStreams(e Environment) bool {
-	return ExecPrefix(e, "", true) != nil
-}
-
 // RemoteArgv is prefix plus a bash -c that exports childEnv and execs argv
 func RemoteArgv(prefix, argv []string, childEnv map[string]string, shellJoined bool) []string {
 	keys := make([]string, 0, len(childEnv))

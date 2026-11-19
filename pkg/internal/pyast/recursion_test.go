@@ -35,39 +35,6 @@ func TestParseRecursionErrorMatchesFrozenCPython(t *testing.T) {
 	}
 }
 
-type recursionRow struct {
-	Name  string   `json:"name"`
-	Mode  string   `json:"mode"`
-	Tmpl  string   `json:"tmpl"`
-	Chain string   `json:"chain"`
-	N     int      `json:"n"`
-	Err   []string `json:"err"`
-}
-
-// Builds the family source whose marked chain repeats its unit n times
-func (r recursionRow) source(n int) string {
-	var chain string
-	switch r.Chain {
-	case "C":
-		chain = "a" + strings.Repeat(" + a", n)
-	case "A":
-		chain = "a" + strings.Repeat(".x", n)
-	case "S":
-		chain = "a" + strings.Repeat("[b]", n)
-	case "K":
-		chain = "a" + strings.Repeat("()", n)
-	case "P":
-		chain = strings.Repeat("[", n) + "b" + strings.Repeat("]", n)
-	case "G":
-		chain = "(b for b in c)" + strings.Repeat(" + a", n)
-	case "T":
-		chain = "tuple(b for b in c)" + strings.Repeat(" + a", n)
-	default:
-		panic("unknown chain " + r.Chain)
-	}
-	return strings.Replace(r.Tmpl, "\x01"+r.Chain+"\x01", chain, 1)
-}
-
 func errorClass(err error) string {
 	switch e := err.(type) {
 	case *LimitError:

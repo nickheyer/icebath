@@ -76,11 +76,6 @@ func WorkerContext(ctx context.Context, updateID *string) func() {
 	}
 }
 
-// Deep copy of the last receipt finalized in this scope
-func LastCompleted(ctx context.Context) map[string]any {
-	return receiptPlain(LastCompletedObject(ctx))
-}
-
 // Insertion ordered deep copy of the last receipt finalized in this scope
 func LastCompletedObject(ctx context.Context) *pyjson.Object {
 	s := scopeOf(ctx)

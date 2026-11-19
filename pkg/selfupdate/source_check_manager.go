@@ -183,10 +183,20 @@ func updateRefuses(ctx context.Context, co sourceCheckout, target, h string) boo
 	return wouldRefuse(ctx, co.root, target, h, git, remote)
 }
 
-// Holds an offered release the updater refuses because it predates the runtime these stores use
+// A release install's downgrade refusal asked read only of the repository its releases come from
+func releaseRefuses(ctx context.Context, root, tag, h string) bool {
+	repo, err := install.ParseRepo(releaseRepository(root))
+	return err == nil && downgradeWouldRefuse(ctx, repo.Owner+"/"+repo.Name, tag, h)
+}
+
+// Holds an offered release the updater refuses because it predates the runtime these stores use, a release install's by its tag
 func holdRefusedRelease(ctx context.Context, result *pyjson.Object, co sourceCheckout, h string) {
+	if !pyTruthy(stampGet(result, "updateAvailable")) {
+		return
+	}
 	target, _ := stampGet(result, "targetSha").(string)
-	if pyTruthy(stampGet(result, "updateAvailable")) && target != "" && updateRefuses(ctx, co, target, h) {
+	tag, _ := stampGet(result, "releaseTag").(string)
+	if (tag != "" && releaseRefuses(ctx, co.root, tag, h)) || (tag == "" && target != "" && updateRefuses(ctx, co, target, h)) {
 		result.Set("updateAvailable", false)
 		result.Set("behind", int64(0))
 		result.Set("held", "downgrade")
@@ -249,7 +259,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	embedded := ""
 	rootPath := opts.InstallRoot
 	if rootPath == "" {
-		embedded = sourceGetenv(ctx, "ICEBATH_REVISION")
+		embedded = os.Getenv("ICEBATH_REVISION")
 		rootPath = checkProjectRoot()
 	}
 	root := resolvedPath(rootPath)
@@ -329,6 +339,9 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	} else if release && opts.InstallRoot == "" {
 		releaseCheckResult(ctx, result, root, channel, opts.Branch)
 		writeCheckCache(ctx, cacheFile, identity, now, result)
+		if pyTruthy(stampGet(result, "channel")) {
+			holdRefusedRelease(ctx, result, co, h)
+		}
 		return result, nil
 	}
 	var target *SourceTarget
@@ -368,6 +381,7 @@ func releaseCheckResult(ctx context.Context, result *pyjson.Object, root, channe
 		return
 	}
 	result.Set("targetSha", nullable(u.plan.Target.Commit))
+	result.Set("releaseTag", u.plan.Target.Tag)
 	switch {
 	case u.plan.Order == install.ReleaseNewer && u.plan.Ahead >= 0:
 		result.Set("behind", int64(u.plan.Ahead))

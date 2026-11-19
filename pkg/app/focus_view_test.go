@@ -2,39 +2,6 @@ package app
 
 import "testing"
 
-func TestToggleStateMachineBareTogglesFromOffToOn(t *testing.T) {
-	action, target := resolveFocusArg("", false)
-	if action != "set" || target == nil || !*target {
-		t.Fatalf("got %s %v", action, target)
-	}
-	action, target = resolveFocusArg("toggle", true)
-	if action != "set" || target == nil || *target {
-		t.Fatalf("toggle from on gave %s %v", action, target)
-	}
-}
-
-func TestToggleStateMachineStatusWordsNeverMutate(t *testing.T) {
-	for _, word := range []string{"status", "show", "?", "STATUS"} {
-		action, target := resolveFocusArg(word, true)
-		if action != "status" || target != nil {
-			t.Fatalf("%q gave %s %v", word, action, target)
-		}
-	}
-}
-
-func TestToggleStateMachineGarbageReportsUsage(t *testing.T) {
-	for _, word := range []string{"sideways", "onn", "--global", "2"} {
-		action, target := resolveFocusArg(word, false)
-		if action != "usage" || target != nil {
-			t.Fatalf("%q gave %s %v", word, action, target)
-		}
-	}
-	action, target := resolveFocusArg("Off", true)
-	if action != "set" || target == nil || *target {
-		t.Fatalf("off word gave %s %v", action, target)
-	}
-}
-
 func TestComposesWithVerboseModesNewModeSkipsConsecutiveRepeatsLikeTheRenderer(t *testing.T) {
 	if wouldDisplayToolLine("new", "terminal", "terminal") {
 		t.Fatal("repeat counted in new mode")
@@ -59,17 +26,8 @@ func TestHiddenCountFormatterZeroAndNegativeProduceNoLine(t *testing.T) {
 	}
 }
 
-func TestFocusStatusAndToggleMessagesNameTheConfiguredMode(t *testing.T) {
-	if focusStatusbarSegment(true) != FocusStatusbarLabel || focusStatusbarSegment(false) != "" {
-		t.Fatal("segment wrong")
-	}
+func TestToolProgressModeNormalization(t *testing.T) {
 	if normalizeToolProgressMode(false, "all") != "off" || normalizeToolProgressMode(true, "all") != "all" || normalizeToolProgressMode("LOG", "all") != "log" || normalizeToolProgressMode("bogus", "new") != "new" || normalizeToolProgressMode(nil, "all") != "all" {
 		t.Fatal("normalize wrong")
-	}
-	if formatFocusStatus(true, "verbose") != "Focus view: ON — only your prompt and the final response.\n  /focus off restores tool progress: VERBOSE" {
-		t.Fatalf("status %q", formatFocusStatus(true, "verbose"))
-	}
-	if formatFocusStatus(false, "new") != "Focus view: OFF — tool progress: NEW" || formatFocusToggleMessage(true, "all") != "Focus view enabled — just your prompt and the final response" || formatFocusToggleMessage(false, "bogus") != "Focus view disabled — tool progress: ALL" {
-		t.Fatal("messages wrong")
 	}
 }

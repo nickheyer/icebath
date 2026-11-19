@@ -349,30 +349,6 @@ func envList(env map[string]string) []string {
 	return out
 }
 
-// RunSecretCLI runs a secret manager helper with a minimal allowlisted env and ANSI scrubbed stderr
-func RunSecretCLI(argv []string, allowEnv []string, extraEnv map[string]string, timeout time.Duration) (CLIResult, error) {
-	keep := append([]string{"PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "TMPDIR", "TEMP", "LANG", "LC_ALL", "XDG_CONFIG_HOME", "XDG_DATA_HOME"}, allowEnv...)
-	env := map[string]string{}
-	for _, k := range keep {
-		if v, ok := os.LookupEnv(k); ok {
-			env[k] = v
-		}
-	}
-	for k, v := range extraEnv {
-		env[k] = v
-	}
-	if _, ok := env["NO_COLOR"]; !ok {
-		env["NO_COLOR"] = "1"
-	}
-	name := filepath.Base(argv[0])
-	res, err := RunCLI(argv, env, timeout, name, fmt.Sprintf("%s timed out after %.0fs", name, timeout.Seconds()), nil)
-	if err != nil {
-		return res, err
-	}
-	res.Stderr = ScrubANSI(res.Stderr)
-	return res, nil
-}
-
 // ---- cache substrate ----
 
 // SecretFingerprint is a SHA-256 prefix used as a cache key, never logged or displayed

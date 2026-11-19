@@ -11,6 +11,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -267,19 +268,30 @@ func SetSkinToolEmojis(hook func() map[string]string) {
 	skinToolEmojiHook = hook
 }
 
-func skinToolEmojis() map[string]string {
+// Per tool emoji overrides, the registered hook's when one is installed else the text entries of the context profile's active skin
+func skinToolEmojis(ctx context.Context) map[string]string {
 	displayMu.RLock()
 	hook := skinToolEmojiHook
 	displayMu.RUnlock()
-	if hook == nil {
+	if hook != nil {
+		return hook()
+	}
+	skin := config.GetActiveSkin(ctx)
+	if skin == nil || len(skin.ToolEmojis) == 0 {
 		return nil
 	}
-	return hook()
+	overrides := make(map[string]string, len(skin.ToolEmojis))
+	for name, value := range skin.ToolEmojis {
+		if emoji, ok := value.(string); ok && emoji != "" {
+			overrides[name] = emoji
+		}
+	}
+	return overrides
 }
 
 // GetToolEmoji resolves a tool's display emoji, skin override then registry then the default
-func GetToolEmoji(env *Env, toolName, def string) string {
-	if override := skinToolEmojis()[toolName]; override != "" {
+func GetToolEmoji(ctx context.Context, env *Env, toolName, def string) string {
+	if override := skinToolEmojis(ctx)[toolName]; override != "" {
 		return override
 	}
 	if e := Default.Emoji(context.Background(), ScopeKey(envHome(env)), toolName, ""); e != "" {
@@ -780,7 +792,7 @@ func previewClarify(env *Env, args map[string]any, maxLen int) string {
 
 func previewBridgeCall(toolName string) previewBuilder {
 	return func(env *Env, args map[string]any, maxLen int) string {
-		labels := BridgeToolLabels(env, toolName, args)
+		labels := friendlyLabelsForCall(env, toolName, args)
 		if len(labels) == 0 {
 			return primaryArgPreview(toolName, args, maxLen)
 		}
@@ -962,9 +974,9 @@ func BridgeGeneratingPhrase(toolName string) string {
 }
 
 // ToolLabelsForCall applies the skin's emoji overrides to the labels of a call
-func ToolLabelsForCall(env *Env, toolName string, args map[string]any) []ToolLabel {
+func ToolLabelsForCall(ctx context.Context, env *Env, toolName string, args map[string]any) []ToolLabel {
 	labels := LabelsForCall(env, toolName, args)
-	overrides := skinToolEmojis()
+	overrides := skinToolEmojis(ctx)
 	for i, label := range labels {
 		if override, ok := overrides[label.Name]; ok && override != "" {
 			labels[i].Emoji = override
@@ -974,21 +986,29 @@ func ToolLabelsForCall(env *Env, toolName string, args map[string]any) []ToolLab
 }
 
 // BridgeToolLabels lists the labels of a call when friendly labels are enabled
-func BridgeToolLabels(env *Env, toolName string, args map[string]any) []ToolLabel {
+func BridgeToolLabels(ctx context.Context, env *Env, toolName string, args map[string]any) []ToolLabel {
 	if !friendlyLabelsEnabled() {
 		return nil
 	}
-	return ToolLabelsForCall(env, toolName, args)
+	return ToolLabelsForCall(ctx, env, toolName, args)
+}
+
+// Labels of a call when friendly labels are enabled, for text that never shows their emoji
+func friendlyLabelsForCall(env *Env, toolName string, args map[string]any) []ToolLabel {
+	if !friendlyLabelsEnabled() {
+		return nil
+	}
+	return LabelsForCall(env, toolName, args)
 }
 
 // ToolRowEmoji picks the first label's emoji else the tool's own
-func ToolRowEmoji(env *Env, toolName string, args map[string]any, def string) string {
+func ToolRowEmoji(ctx context.Context, env *Env, toolName string, args map[string]any, def string) string {
 	if len(args) > 0 {
-		if labels := BridgeToolLabels(env, toolName, args); len(labels) > 0 {
+		if labels := BridgeToolLabels(ctx, env, toolName, args); len(labels) > 0 {
 			return labels[0].Emoji
 		}
 	}
-	return GetToolEmoji(env, toolName, def)
+	return GetToolEmoji(ctx, env, toolName, def)
 }
 
 // GetToolVerb returns the friendly verb for a built in tool, empty when labels are off or none is curated
@@ -1043,7 +1063,7 @@ func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int)
 	if maxLen != nil {
 		limit = *maxLen
 	}
-	if labels := BridgeToolLabels(env, toolName, args); len(labels) > 0 {
+	if labels := friendlyLabelsForCall(env, toolName, args); len(labels) > 0 {
 		label := labels[0]
 		preview := tailTrunc(label.Preview, limit)
 		extra := ""

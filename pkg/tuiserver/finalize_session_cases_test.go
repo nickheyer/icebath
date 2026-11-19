@@ -28,7 +28,7 @@ func TestFinalizeSessionUsesAgentSessionIdFinalizeTargetsAgentSessionIdNotStaleK
 	a := testAgent(t, agent.AIAgentOptions{Model: "test", Provider: "custom", APIMode: "chat_completions", SessionID: "continuation-session", Platform: "tui"})
 	session := tuihost.NewSession(map[string]any{"agent": a, "session_key": "parent-session", "history": []any{map[string]any{"role": "user", "content": "hello"}},
 		"history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80,
-		"slash_worker": nil, "show_reasoning": false, "tool_progress_mode": "all", "pending_title": nil})
+		"show_reasoning": false, "tool_progress_mode": "all", "pending_title": nil})
 	finalizeSession(context.Background(), session, "tui_close")
 	row, err := db.GetSession(context.Background(), "continuation-session")
 	if err != nil || row.GetOr("ended_at", nil) == nil || row.GetOr("end_reason", nil) != "tui_close" {
@@ -50,15 +50,15 @@ func liveKernel(t *testing.T, source string) (registered, stopped func() bool) {
 	}
 	registered, stopped, remove := codeexec.RegisterKernelForTests(kernelSessionKey, t.TempDir())
 	t.Cleanup(remove)
-	tools.EnableSessionYolo(kernelSessionKey)
-	t.Cleanup(func() { tools.ClearSession(kernelSessionKey) })
+	tools.EnableSessionYolo(context.Background(), kernelSessionKey)
+	t.Cleanup(func() { tools.ClearSession(context.Background(), kernelSessionKey) })
 	return registered, stopped
 }
 
 // Session record of the kernel cases
 func kernelSession() *tuihost.Session {
 	return tuihost.NewSession(map[string]any{"active_session_lease": nil, "agent": nil, "history": []any{}, "history_lock": &sync.Mutex{},
-		"profile_home": nil, "session_key": kernelSessionKey, "slash_worker": nil, "source": "tui"})
+		"profile_home": nil, "session_key": kernelSessionKey, "source": "tui"})
 }
 
 func TestTuiOwnedFinalizeDisposesTheSessionsKernels(t *testing.T) {

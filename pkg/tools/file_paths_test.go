@@ -186,7 +186,12 @@ func TestRegisteredTaskCwdOverrideKeysByRawTaskID(t *testing.T) {
 	if err := RegisterTaskEnvOverrides(env, "acp-session-7", map[string]any{"cwd": workspace}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ClearTaskEnvOverrides(env, "acp-session-7") })
+	t.Cleanup(func() {
+		taskEnvOverrides.Lock()
+		delete(taskEnvOverrides.m, qualifyTaskKey(env, "acp-session-7"))
+		taskEnvOverrides.Unlock()
+		ClearSessionCwd(env, "acp-session-7")
+	})
 	if got := RegisteredTaskCwdOverride(env, "acp-session-7"); got != workspace {
 		t.Fatalf("override = %q, want %q", got, workspace)
 	}

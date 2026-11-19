@@ -38,15 +38,3 @@ func TestRestoreSessionCwdMovesIntoTheRecordedDirectory(t *testing.T) {
 		t.Fatal("a missing directory must leave the process where it is")
 	}
 }
-
-func TestDiscardSessionIfEmptyKeepsALiveTranscript(t *testing.T) {
-	recordPrints(t)
-	c := configuredCLI(t, map[string]any{"tool_progress": "all"}, CLIOptions{})
-	if c.discardSessionIfEmpty("") {
-		t.Fatal("no session id means nothing to discard")
-	}
-	c.conversationHistory = []map[string]any{{"role": "user", "content": "hi"}}
-	if c.discardSessionIfEmpty(c.sessionID) {
-		t.Fatal("a session with an in memory transcript must never be pruned")
-	}
-}

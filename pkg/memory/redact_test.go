@@ -19,8 +19,13 @@ func TestRedactPrefixTokens(t *testing.T) {
 }
 
 func TestPrefixPatternExportsMatchTheMatcher(t *testing.T) {
-	if len(PrefixPatterns()) != len(prefixPatterns) || PrefixPatterns()[0] != prefixPatterns[0] {
-		t.Fatalf("PrefixPatterns differs from the built in list")
+	patterns := PrefixPatterns()
+	if len(patterns) == 0 || LiteralPrefix(patterns[0]) != "sk-" {
+		t.Fatalf("PrefixPatterns differs from the built in list: %v", patterns)
+	}
+	token := LiteralPrefix(patterns[0]) + "Qq7zP2mX9vLk4nRt8wYb1cDf6gHj3sA0"
+	if out := RedactForEgress("key " + token + " ok"); strings.Contains(out, token) {
+		t.Fatalf("matcher ignored the first exported pattern: %q", out)
 	}
 	if got := LiteralPrefix(`sk-ant-[A-Za-z0-9_\-]{10,}`); got != "sk-ant-" {
 		t.Fatalf("LiteralPrefix = %q", got)

@@ -157,20 +157,3 @@ func TestRevokedSourceWritesLeaveTheEnvironment(t *testing.T) {
 		t.Fatal("provenance cleared")
 	}
 }
-
-func TestRunSecretCLIMinimalEnv(t *testing.T) {
-	t.Setenv("LEAKY_API_KEY", "secret")
-	res, err := RunSecretCLI([]string{"/bin/sh", "-c", "env"}, nil, nil, 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		name, _, _ := strings.Cut(line, "=")
-		if strings.HasSuffix(name, "_API_KEY") || strings.HasSuffix(name, "_TOKEN") || strings.HasSuffix(name, "_SECRET") {
-			t.Fatalf("credential leaked to the helper: %s", name)
-		}
-	}
-	if !strings.Contains(res.Stdout, "NO_COLOR=1") {
-		t.Fatal("NO_COLOR expected")
-	}
-}

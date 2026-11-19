@@ -9,8 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 
-	"github.com/nickheyer/icebath/pkg/app"
-
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
@@ -61,8 +59,6 @@ func dispatchChildEntries(ctx context.Context) {
 	provider.DispatchCodexToolsMCPServerEntry()
 	runChildEntries(ctx, childEntriesAfterCodex)
 	agent.DispatchManagedWorkerEntry(exit)
-	app.DispatchSlashWorkerEntry(ctx, exit)
-	app.DispatchCLIModuleEntry(ctx, exit)
 	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
 	runChildEntries(ctx, childEntriesLast)

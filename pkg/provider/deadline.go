@@ -138,30 +138,6 @@ func ClampTimeout(seconds float64) (time.Duration, bool) {
 	return time.Duration(seconds * float64(time.Second)), true
 }
 
-// ClampTimeoutValue clamps a numeric or string timeout, anything non numeric is unbounded with a warning
-func ClampTimeoutValue(v any) (time.Duration, bool) {
-	if v == nil {
-		return 0, false
-	}
-	if d, ok := v.(time.Duration); ok {
-		return ClampTimeout(d.Seconds())
-	}
-	if _, isBool := v.(bool); isBool {
-		pkgLog().Warn(fmt.Sprintf("clamp_timeout: non-numeric timeout %v; treating as unbounded", v))
-		return 0, false
-	}
-	f, ok := config.AsFloat(v)
-	if !ok {
-		pkgLog().Warn(fmt.Sprintf("clamp_timeout: non-numeric timeout %v; treating as unbounded", v))
-		return 0, false
-	}
-	if math.IsNaN(f) {
-		pkgLog().Warn("clamp_timeout: NaN timeout; treating as unbounded")
-		return 0, false
-	}
-	return ClampTimeout(f)
-}
-
 // PollUntil calls pred every interval until it holds or the timeout passes, the last sleep cut to the time left
 func PollUntil[T any](pred func() (T, bool), timeout, interval time.Duration) T {
 	deadline := deadlineNow().Add(timeout)

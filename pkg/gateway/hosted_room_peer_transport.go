@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Coordinates of one scoped prepare call on a target gateway's room member API
@@ -54,99 +53,6 @@ type peerStopReceipter interface {
 // Peer client that hands a member's turn files to the peer before the turn, resuming from what the peer holds
 type peerFileSender interface {
 	SendFile(ctx context.Context, grant string, file map[string]any, data []byte) (map[string]any, error)
-}
-
-// Peer failure classified for failover, retryable on another link unless ambiguous
-type peerFailoverError interface {
-	PeerRetryable() bool
-	PeerAmbiguous() bool
-}
-
-// One address or provider of the same authenticated target gateway
-type RoomLinkCandidate struct {
-	Name            string
-	Mode            string
-	TargetInstallID string
-	Client          HostedRoomPeerClient
-}
-
-// Tries alternate links without changing target or logical task identity
-type FailoverHostedRoomPeerClient struct {
-	Candidates             []RoomLinkCandidate
-	ReprobeIntervalSeconds float64
-	clock                  func() float64
-	active                 int
-	lastPrimaryProbe       float64
-}
-
-// Failover client over candidates of one installation, monotonic clock when nil
-func NewFailoverHostedRoomPeerClient(candidates []RoomLinkCandidate, reprobeIntervalSeconds float64, clock func() float64) (*FailoverHostedRoomPeerClient, error) {
-	if len(candidates) == 0 {
-		return nil, &RoomValueError{Msg: "at least one RoomLink candidate is required"}
-	}
-	installs := map[string]bool{}
-	for _, c := range candidates {
-		installs[c.TargetInstallID] = true
-	}
-	if len(installs) != 1 {
-		return nil, &RoomValueError{Msg: "RoomLink candidates must target one installation"}
-	}
-	if reprobeIntervalSeconds <= 0 {
-		return nil, &RoomValueError{Msg: "reprobe_interval_seconds must be positive"}
-	}
-	if clock == nil {
-		clock = pythread.Monotonic
-	}
-	return &FailoverHostedRoomPeerClient{Candidates: append([]RoomLinkCandidate(nil), candidates...), ReprobeIntervalSeconds: reprobeIntervalSeconds, clock: clock}, nil
-}
-
-// Link calls go to first
-func (f *FailoverHostedRoomPeerClient) ActiveLink() RoomLinkCandidate { return f.Candidates[f.active] }
-
-// Tries the active link, the primary after its cooldown, then the rest, ambiguous or final failures propagating
-func failoverCall[T any](f *FailoverHostedRoomPeerClient, call func(HostedRoomPeerClient) (T, error)) (T, error) {
-	now := f.clock()
-	order := []int{f.active}
-	if f.active != 0 && now-f.lastPrimaryProbe >= f.ReprobeIntervalSeconds {
-		f.lastPrimaryProbe = now
-		order = []int{0, f.active}
-	}
-	for index := range f.Candidates {
-		seen := false
-		for _, o := range order {
-			seen = seen || o == index
-		}
-		if !seen {
-			order = append(order, index)
-		}
-	}
-	var lastErr error
-	var zero T
-	for _, index := range order {
-		result, err := call(f.Candidates[index].Client)
-		if err != nil {
-			var classified peerFailoverError
-			if !errors.As(err, &classified) || classified.PeerAmbiguous() || !classified.PeerRetryable() {
-				return zero, err
-			}
-			lastErr = err
-			continue
-		}
-		f.active = index
-		return result, nil
-	}
-	if lastErr != nil {
-		return zero, lastErr
-	}
-	return zero, errors.New("no RoomLink candidate was attempted")
-}
-
-func (f *FailoverHostedRoomPeerClient) Prepare(ctx context.Context, req PeerPrepare) (map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) { return c.Prepare(ctx, req) })
-}
-
-func (f *FailoverHostedRoomPeerClient) Dispatch(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) { return c.Dispatch(ctx, dispatch, grant) })
 }
 
 // Secret free target coordinates plus a separately stored room grant

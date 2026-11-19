@@ -260,30 +260,6 @@ func StartInJob(cmd *exec.Cmd, job *Job) error {
 	return StartSuspended(cmd, job.Assign, ResumePid)
 }
 
-// StartProcessInJob is StartInJob for a process started through os.StartProcess
-func StartProcessInJob(name string, argv []string, attr *os.ProcAttr, job *Job) (*os.Process, error) {
-	sys := &syscall.SysProcAttr{}
-	if attr.Sys != nil {
-		copied := *attr.Sys
-		sys = &copied
-	}
-	sys.CreationFlags |= windows.CREATE_SUSPENDED
-	held := *attr
-	held.Sys = sys
-	process, err := os.StartProcess(name, argv, &held)
-	if err != nil {
-		return nil, err
-	}
-	err = job.Assign(process.Pid)
-	if err == nil {
-		err = ResumePid(process.Pid)
-	}
-	if err != nil {
-		return nil, errors.Join(err, abandonChild(process, func() error { _, err := process.Wait(); return err }))
-	}
-	return process, nil
-}
-
 // Kills a child whose setup failed, waits up to ten seconds for its reap, and releases its handle when it never comes
 func abandonChild(process *os.Process, reap func() error) error {
 	_ = process.Kill()
@@ -324,18 +300,6 @@ func Tracked(pid int) *Job {
 	trees.Lock()
 	defer trees.Unlock()
 	return trees.jobs[pid]
-}
-
-// Forget stops tracking the tree pid leads and closes its job
-func Forget(pid int) error {
-	trees.Lock()
-	job := trees.jobs[pid]
-	delete(trees.jobs, pid)
-	trees.Unlock()
-	if job == nil {
-		return nil
-	}
-	return job.Close()
 }
 
 // Prune closes the jobs of every tracked tree with no member left

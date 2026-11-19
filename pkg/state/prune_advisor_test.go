@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -76,16 +75,6 @@ func pruneAdvisorBackdate(t *testing.T, dbPath, likeID string) {
 	if _, err := conn.Exec("UPDATE messages SET timestamp=? WHERE session_id LIKE ?", old, likeID); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// Spawn stand in recording each background function instead of running it
-func pruneAdvisorSpawns(t *testing.T) *[]func() {
-	t.Helper()
-	started := &[]func(){}
-	prev := autoPruneSpawn
-	autoPruneSpawn = func(_ string, fn func()) { *started = append(*started, fn) }
-	t.Cleanup(func() { autoPruneSpawn = prev })
-	return started
 }
 
 func TestAsksOnlyWhenLowAndUndecidedAndEitherAnswerEndsIt(t *testing.T) {
@@ -272,41 +261,6 @@ func TestEstimateWeightsByStoredBytesNotMessageCount(t *testing.T) {
 	}
 }
 
-func TestCliStartupNeverReadsTheStoreAndAsksFromTheStoredEstimate(t *testing.T) {
-	ctx := context.Background()
-	h := pruneAdvisorFixture(t)
-	pruneAdvisorDisk(t, 1, 100)
-	started := pruneAdvisorSpawns(t)
-	readStore := false
-	prev := autoPruneAdvise
-	autoPruneAdvise = func(context.Context, string) (*PruneAdvice, error) {
-		readStore = true
-		return nil, errors.New("startup read state.db")
-	}
-	t.Cleanup(func() { autoPruneAdvise = prev })
-	var asked []string
-	ask := func(q string) (string, error) { asked = append(asked, q); return "", nil }
-	var stdout strings.Builder
-	got, err := AutoPruneOfferInteractive(ctx, &stdout, func(string) {}, ask)
-	if err != nil || got != nil || len(asked) != 0 || len(*started) != 1 || readStore {
-		t.Fatalf("first launch %v %v asked %d started %d read %v", got, err, len(asked), len(*started), readStore)
-	}
-	(*started)[0]()
-	if !readStore {
-		t.Fatal("the background measurement is not the advisor")
-	}
-	if _, err := AutoPruneAdvise(ctx, h); err != nil {
-		t.Fatal(err)
-	}
-	var out []string
-	if _, err := AutoPruneOfferInteractive(ctx, &stdout, func(line string) { out = append(out, line) }, ask); err != nil {
-		t.Fatal(err)
-	}
-	if len(asked) != 1 || !strings.Contains(strings.Join(out, "\n"), "Low disk space") {
-		t.Fatalf("asked %d out %q", len(asked), out)
-	}
-}
-
 // Estimate sidecar of a home decoded as plain JSON
 func pruneAdvisorEstimate(t *testing.T, h string) map[string]any {
 	t.Helper()
@@ -356,32 +310,5 @@ func TestFullScanTotalIsMeasuredOnceAndReused(t *testing.T) {
 	}
 	if pruneAdvisorEstimate(t, h)["total_bytes_at"].(float64) <= stale["total_bytes_at"].(float64) {
 		t.Fatal("a week old total was not measured again")
-	}
-}
-
-func TestCliLaunchesFurtherApartThanTheEstimateTtlStillAsk(t *testing.T) {
-	ctx := context.Background()
-	h := pruneAdvisorFixture(t)
-	pruneAdvisorDisk(t, 1, 100)
-	if _, err := AutoPruneAdvise(ctx, h); err != nil {
-		t.Fatal(err)
-	}
-	data := pruneAdvisorEstimate(t, h)
-	data["advice_at"] = pruneNow() - AutoPruneCLIAdviceTTL - 3600
-	raw, _ := json.Marshal(data)
-	if err := os.WriteFile(filepath.Join(h, AutoPruneEstimateFile), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	started := pruneAdvisorSpawns(t)
-	var asked []string
-	var stdout strings.Builder
-	if _, err := AutoPruneOfferInteractive(ctx, &stdout, func(string) {}, func(q string) (string, error) {
-		asked = append(asked, q)
-		return "", nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(asked) != 1 || len(*started) != 1 {
-		t.Fatalf("asked %d started %d", len(asked), len(*started))
 	}
 }

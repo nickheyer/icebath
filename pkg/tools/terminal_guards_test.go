@@ -84,7 +84,7 @@ func TestConversionNeverChangesWhatRunsOrHowItIsApproved(t *testing.T) {
 		"icebath gateway run && cp src .env &",
 		"printf '<%s>' trailing\\ &",
 	} {
-		stripped := trailingAmpBackgroundCommand(command)
+		stripped := trailingAmpBackgroundCommandFor(nil, command)
 		if stripped == "" {
 			continue
 		}

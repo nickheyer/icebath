@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,8 +11,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -66,22 +65,29 @@ func installPluginE2E() {
 	pluginDir := tree.Payload("impeccable/plugin")
 	configDir := filepath.Join(workDir, "claude-config")
 	marketplaceDir := filepath.Join(workDir, "marketplace")
-	if fail(os.MkdirAll(configDir, 0o777)) || fail(copyDirSync(pluginDir, filepath.Join(marketplaceDir, "impeccable"))) {
+	if fail(os.MkdirAll(configDir, 0o777)) || fail(os.CopyFS(filepath.Join(marketplaceDir, "impeccable"), os.DirFS(pluginDir))) {
 		return
 	}
-	manifest := jsonStringify(pyjson.ObjectOf(
-		"name", pluginE2EMarketplace,
-		"owner", pyjson.ObjectOf("name", "impeccable plugin E2E"),
-		"plugins", []any{pyjson.ObjectOf("name", "impeccable", "source", "./impeccable", "description", "committed ./plugin subtree")}), "  ")
-	if fail(writeBuildFile(filepath.Join(marketplaceDir, ".claude-plugin", "marketplace.json"), manifest)) {
-		return
-	}
-	names, err := markdownNames(filepath.Join(pluginDir, "agents"))
+	manifest, err := json.MarshalIndent(map[string]any{
+		"name":    pluginE2EMarketplace,
+		"owner":   map[string]any{"name": "impeccable plugin E2E"},
+		"plugins": []any{map[string]any{"name": "impeccable", "source": "./impeccable", "description": "committed ./plugin subtree"}},
+	}, "", "  ")
 	if fail(err) {
 		return
 	}
-	for _, name := range names {
-		pluginE2E.shipped = append(pluginE2E.shipped, strings.TrimSuffix(name, ".md"))
+	manifestPath := filepath.Join(marketplaceDir, ".claude-plugin", "marketplace.json")
+	if fail(os.MkdirAll(filepath.Dir(manifestPath), 0o777)) || fail(os.WriteFile(manifestPath, manifest, 0o666)) {
+		return
+	}
+	entries, err := os.ReadDir(filepath.Join(pluginDir, "agents"))
+	if fail(err) {
+		return
+	}
+	for _, entry := range entries {
+		if name, ok := strings.CutSuffix(entry.Name(), ".md"); ok {
+			pluginE2E.shipped = append(pluginE2E.shipped, name)
+		}
 	}
 	if _, err := runClaude(workDir, configDir, 120*time.Second, "plugin", "marketplace", "add", marketplaceDir); fail(err) {
 		return

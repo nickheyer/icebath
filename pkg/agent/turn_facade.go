@@ -79,6 +79,7 @@ func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o Run
 func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o RunConversationOptions) (result map[string]any, err error) {
 	ctx = withLifecycleEnv(ctx, a.env)
 	defer bindAdmissionFiniteScope(ctx, a.env)()
+	defer a.bindOutputContext(ctx)()
 	cancelBackgroundReviewForLiveTurn(a)
 	effectiveTaskID := o.TaskID
 	if effectiveTaskID == "" {

@@ -50,8 +50,7 @@ func TestLocalRuntimeSupervisorHelper(t *testing.T) {
 		bootMu.Lock()
 		localSupervisor = sup
 		bootMu.Unlock()
-		stopAtExit()
-		if err := LocalRuntimeAtExit(); err != nil {
+		if err := ShutdownLocalRuntime(); err != nil {
 			os.Exit(5)
 		}
 		os.Exit(0)

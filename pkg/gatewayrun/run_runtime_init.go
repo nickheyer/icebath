@@ -63,7 +63,6 @@ func (r *GatewayRunner) initLifecycleState() {
 	r.profileFailedPlatforms = map[string]map[gateway.Platform]*gatewayTask{}
 	r.profileBotPlatforms = map[string]map[gateway.Platform]struct{}{}
 	r.systemdWatchdog = nil
-	r.externalDrainActive = false
 	r.restartRequested, r.signalInitiatedShutdown, r.restartTaskStarted = false, false, false
 	r.restartDetached, r.restartViaService, r.detachedRestartHelperStarted = false, false, false
 	r.restartCommandSource = nil

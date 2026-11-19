@@ -10,6 +10,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
+// Session store adapted to the provider usage row so the state DB records auxiliary usage
+type stateAuxUsageRecorder struct {
+	db *state.DB
+}
+
+func (r stateAuxUsageRecorder) RecordAuxiliaryUsage(ctx context.Context, sessionID, task string, usage AuxiliaryUsage) error {
+	return r.db.RecordAuxiliaryUsage(ctx, sessionID, task, StateAuxiliaryUsage(usage))
+}
+
 func TestStateDBRecordsAuxiliaryUsageThroughTheRecorder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("ICEBATH_HOME", home)
@@ -19,10 +28,7 @@ func TestStateDBRecordsAuxiliaryUsageThroughTheRecorder(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	var recorder AuxUsageRecorder = AuxUsageRecorderFor(db)
-	if AuxUsageRecorderFor(nil) != nil {
-		t.Fatal("a nil store produced a recorder")
-	}
+	var recorder AuxUsageRecorder = stateAuxUsageRecorder{db: db}
 	actx := SetAccountingContext(ctx, recorder, "s-aux")
 	RecordAuxUsage(actx, map[string]any{"model": "vision-model", "usage": map[string]any{"prompt_tokens": 7, "completion_tokens": 3}}, "vision", "openrouter", "")
 	byTask, err := db.AuxiliaryUsageByTask(ctx, "s-aux")

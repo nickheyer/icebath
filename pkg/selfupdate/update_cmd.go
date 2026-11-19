@@ -8,14 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -23,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -58,11 +54,6 @@ var (
 
 // Whether an open file is a terminal the way isatty reports one
 func fileIsTTY(f *os.File) bool { return pysys.Isatty(f) }
-
-// Mirroring update writer exposing the update log it copies every write into
-type updateLogMirror interface {
-	Log() io.Writer
-}
 
 // The updates section of the config, empty when absent or not a mapping
 func updatesConfig(ctx context.Context) (map[string]any, error) {
@@ -463,143 +454,6 @@ func printCalledProcessErrorTail(w io.Writer, exc error, limit int) {
 	for _, line := range lines {
 		fmt.Fprintf(w, "    %s\n", line)
 	}
-}
-
-// Appends text to the update log only, a failed write swallowed and only an interrupt raised by the log returned
-func logOnlyWrite(w io.Writer, text string) error {
-	if text == "" {
-		return nil
-	}
-	if stream, ok := pysys.Attr[updateLogMirror](w); ok && stream.Log() != nil {
-		log := stream.Log()
-		if _, err := io.WriteString(log, text); err != nil {
-			if isKeyboardInterrupt(err) {
-				return err
-			}
-			return nil
-		}
-		if f, ok := log.(interface{ Sync() error }); ok {
-			_ = f.Sync()
-		}
-		return nil
-	}
-	logPath := filepath.Join(home.Root(), "logs", "update.log")
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o777); err != nil {
-		return nil
-	}
-	fallback, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
-	if err != nil {
-		return nil
-	}
-	defer fallback.Close()
-	_, _ = io.WriteString(fallback, text)
-	return nil
-}
-
-// Decodes chunks as UTF-8 with replacement and universal newlines across chunk boundaries
-type newlineDecoder struct {
-	pending   []byte
-	pendingCR bool
-}
-
-// Text of one chunk, an incomplete rune or a trailing carriage return held until the next call
-func (d *newlineDecoder) decode(chunk []byte, final bool) string {
-	data := append(d.pending, chunk...)
-	d.pending = nil
-	if !final {
-		for cut := len(data); cut > 0 && len(data)-cut < utf8.UTFMax; cut-- {
-			if utf8.RuneStart(data[cut-1]) {
-				if !utf8.FullRune(data[cut-1:]) {
-					d.pending = append([]byte{}, data[cut-1:]...)
-					data = data[:cut-1]
-				}
-				break
-			}
-		}
-	}
-	text := pystr.DecodeUTF8Replace(data)
-	if d.pendingCR {
-		text = "\r" + text
-		d.pendingCR = false
-	}
-	if !final && strings.HasSuffix(text, "\r") {
-		text = text[:len(text)-1]
-		d.pendingCR = true
-	}
-	return pystr.TranslateNewlines(text)
-}
-
-// Runs a build step with its combined output streamed to the update log and kept for failure reports
-func runLoggedSubprocess(ctx context.Context, w io.Writer, cmd []string, cwd string, env []string) (*CompletedProcess, error) {
-	if env == nil {
-		env = os.Environ()
-	}
-	unbuffered := false
-	for _, entry := range env {
-		if strings.HasPrefix(entry, "PYTHONUNBUFFERED=") {
-			unbuffered = true
-		}
-	}
-	if !unbuffered {
-		env = append(append([]string{}, env...), "PYTHONUNBUFFERED=1")
-	}
-	child := exec.Command(cmd[0], cmd[1:]...)
-	child.Dir, child.Env = cwd, env
-	if runtime.GOOS == "windows" {
-		child.SysProcAttr = tools.WindowsHideAttr()
-	} else {
-		proc.Group(child)
-	}
-	pipeR, pipeW, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer pipeR.Close()
-	child.Stdout, child.Stderr = pipeW, pipeW
-	if err := child.Start(); err != nil {
-		pipeW.Close()
-		return nil, err
-	}
-	pipeW.Close()
-	handle := tools.WatchCmd(child)
-	stop := context.AfterFunc(ctx, func() { tools.KillChildTree(handle, 0) })
-	defer stop()
-	abandon := func() {
-		tools.KillChildTree(handle, 0)
-		handle.WaitExit(5 * time.Second)
-	}
-	var decoder newlineDecoder
-	var output strings.Builder
-	buf := make([]byte, 8192)
-	for {
-		n, readErr := pipeR.Read(buf)
-		text := decoder.decode(buf[:n], n == 0)
-		output.WriteString(text)
-		if err := logOnlyWrite(w, text); err != nil {
-			abandon()
-			return nil, err
-		}
-		if n == 0 {
-			if readErr != nil && !errors.Is(readErr, io.EOF) {
-				abandon()
-				return nil, readErr
-			}
-			break
-		}
-	}
-	if ctx.Err() != nil {
-		abandon()
-		return nil, ctx.Err()
-	}
-	code := 0
-	if err := handle.Err(); err != nil {
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) {
-			return nil, err
-		}
-		code = pysubprocess.Returncode(exit)
-	}
-	return &CompletedProcess{Args: cmd, ReturnCode: code, Stdout: output.String()}, nil
 }
 
 // Whether a failure is an exit or interrupt, which the swallowing guards of bookkeeping steps let through

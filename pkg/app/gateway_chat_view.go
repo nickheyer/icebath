@@ -125,18 +125,6 @@ func gatewayPendingLines(pending []any, interactive bool) []string {
 	return lines
 }
 
-// Unknown pending row of the resume snapshot that /discard drops, refused when the id names none
-func gatewayLostAdmission(snapshot map[string]any, admissionID string) (map[string]any, error) {
-	pending, _ := snapshot["pending"].([]any)
-	for _, raw := range pending {
-		row, _ := raw.(map[string]any)
-		if pyrepr.Equal(requireKey(row, "admission_id"), admissionID) && pyrepr.Equal(requireKey(row, "status"), "unknown") {
-			return row, nil
-		}
-	}
-	return nil, &gateway.GatewayClientError{Msg: "No unknown (lost) admission with that id; resume to refresh"}
-}
-
 // Set or clear signal waited on with the view lock released, the asyncio.Event of the view
 type gatewayViewEvent struct {
 	ch  chan struct{}
@@ -168,7 +156,7 @@ type gatewayHeldEvent struct {
 	payload   map[string]any
 }
 
-// Classic terminal view of one gateway session, its event rendering and its fenced controls
+// Terminal view of one gateway session, its event rendering and its fenced controls
 type GatewayChatView struct {
 	// mu is the event loop, held while view code runs and released at each wait
 	mu sync.Mutex
@@ -629,7 +617,7 @@ func (v *GatewayChatView) toolStart(admission any, payload map[string]any) {
 		zero := 0
 		env := bannerToolEnv(context.Background())
 		preview := tools.BuildToolPreview(env, name, args, &zero)
-		line := tools.GetToolEmoji(env, name, "⚡") + " " + name
+		line := tools.GetToolEmoji(context.Background(), env, name, "⚡") + " " + name
 		if preview != "" {
 			line += ": " + preview
 		}
@@ -993,7 +981,7 @@ func gatewayOneshotAdmission(receipt map[string]any) (any, error) {
 	return requireKey(receipt, "admission_id"), nil
 }
 
-// The classic single query exit block naming how to continue this session, the profile flag when not default
+// The single query exit block naming how to continue this session, the profile flag when not default
 func gatewayResumeFooter(ctx context.Context, sessionID string) string {
 	profile := profiles.GetActiveProfileName(ctx)
 	flag := ""

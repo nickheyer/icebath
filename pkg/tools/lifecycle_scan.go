@@ -561,12 +561,6 @@ func ScanGatewayLifecycle(command, cwd string, readRemote ReadRemoteScriptFunc) 
 	return false, ""
 }
 
-// ContainsGatewayLifecycleCommandOrReferencedScript detects lifecycle or submit commands including nested scripts
-func ContainsGatewayLifecycleCommandOrReferencedScript(command, cwd string, readRemote ReadRemoteScriptFunc) bool {
-	unsafe, _ := ScanGatewayLifecycle(command, cwd, readRemote)
-	return unsafe
-}
-
 // CheckGatewayLifecycle refuses a cron prompt or script holding a gateway lifecycle command
 func CheckGatewayLifecycle(env *Env, prompt, script string) error {
 	combined := prompt

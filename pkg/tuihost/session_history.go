@@ -25,8 +25,8 @@ var (
 )
 
 // Labels of a call rendered as the payload maps gateway cards consume
-func BridgedToolLabels(name string, args map[string]any) []map[string]string {
-	labels := tools.ToolLabelsForCall(nil, name, args)
+func BridgedToolLabels(ctx context.Context, name string, args map[string]any) []map[string]string {
+	labels := tools.ToolLabelsForCall(ctx, nil, name, args)
 	out := make([]map[string]string, 0, len(labels))
 	for _, label := range labels {
 		out = append(out, label.AsPayload())

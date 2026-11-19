@@ -49,7 +49,7 @@ func TestForbiddenMarksTargetDeadThenShortCircuits(t *testing.T) {
 	ctx := context.Background()
 	adapter := &raisingDeliveryAdapter{message: "Forbidden: the group chat was deleted", failTimes: 99}
 	router := NewDeliveryRouterIn(ctx, deliveryConfig(), map[string]any{"telegram": adapter}, nil)
-	target := ParseDeliveryTarget(ctx, "telegram:42", nil)
+	target := DeliveryTarget{Platform: PlatformTelegram, ChatID: "42", IsExplicit: true}
 	first := router.Deliver(ctx, "hi", []DeliveryTarget{target}, "", "", nil)
 	if first["telegram:42"]["success"] != false || !router.DeadTargets.IsDead("telegram", "42") || !reflect.DeepEqual(adapter.calls, []string{"42"}) {
 		t.Fatalf("first %v %v", first, adapter.calls)
@@ -67,7 +67,7 @@ func TestSharedDeadRegistryIsUsedWhenInjected(t *testing.T) {
 	shared.MarkDead("telegram", "500", "pre-existing")
 	adapter := &raisingDeliveryAdapter{}
 	router := NewDeliveryRouterIn(ctx, deliveryConfig(), map[string]any{"telegram": adapter}, shared)
-	res := router.Deliver(ctx, "hi", []DeliveryTarget{ParseDeliveryTarget(ctx, "telegram:500", nil)}, "", "", nil)
+	res := router.Deliver(ctx, "hi", []DeliveryTarget{{Platform: PlatformTelegram, ChatID: "500", IsExplicit: true}}, "", "", nil)
 	if res["telegram:500"]["skipped"] != "dead_target" || len(adapter.calls) != 0 {
 		t.Fatalf("%v %v", res, adapter.calls)
 	}

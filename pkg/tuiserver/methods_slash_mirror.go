@@ -9,12 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Commands that read then mutate live state a running turn uses, refused while a turn runs
-var mutatesWhileRunning = map[string]bool{"model": true, "personality": true, "compress": true}
 
 // NormalizePersonalityName is the personality name normalizer of the CLI, assigned in cmd/icebath/wiring.go
 var NormalizePersonalityName func(value any) string
@@ -70,7 +66,7 @@ func compressLiveWithFeedback(ctx context.Context, sid string, session *tuihost.
 		if err != nil {
 			return err
 		}
-		syncSessionKeyAfterCompress(scope, sid, session, true, true)
+		syncSessionKeyAfterCompress(scope, sid, session, true)
 		after := slashRows(slashHistorySnapshot(session))
 		afterPrompt := a.CachedSystemPrompt()
 		if afterPrompt == "" {
@@ -146,119 +142,13 @@ func applyPersonalityToSession(ctx context.Context, sid string, session *tuihost
 	return false, info
 }
 
-// Service tier each fast argument selects, nil clearing the tier
-var fastTiers = map[string]*string{"fast": replyText("priority"), "on": replyText("priority"), "normal": nil, "off": nil,
-	"auto": replyText("auto"), "cold": replyText("cold"), "ultrafast": replyText("ultrafast"), "ultra": replyText("ultrafast")}
-
-// Live side effect of a slash command, the warning text it returns or empty
-type slashMirror func(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error)
-
-// Repaints session info everywhere after an approvals mode write
-func mirrorApprovals(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-	if arg != "" {
-		BroadcastSessionInfo(ctx)
+// Compresses the live session for /compress and returns its feedback, the busy notice while a turn runs
+func liveCompressOutput(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
+	if truthy(session.Get("running")) {
+		return busyMessage("compress", truthy(session.Get("_manual_compress_active")))
 	}
-	return "", nil
-}
-
-// Persists the chosen personality and applies it to the live session
-func mirrorPersonality(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-	if arg == "" || a == nil {
-		return "", nil
-	}
-	name, prompt, err := validatePersonality(arg, loadCfg(ctx))
-	if err != nil {
-		return "", err
-	}
-	PersistPersonality(ctx, name)
-	applyPersonalityToSession(ctx, sid, session, prompt, name)
-	return "", nil
-}
-
-// Sets the live service tier for a known fast argument and repaints session info
-func mirrorFast(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-	if a == nil {
-		return "", nil
-	}
-	if tier, known := fastTiers[pystr.Lower(arg)]; known {
-		a.SetServiceTier(tier)
-	}
-	tuihost.Emit(ctx, "session.info", sid, sessionInfo(ctx, a, session))
-	return "", nil
-}
-
-// Reloads MCP tools on an agent that offers the reload
-func mirrorReloadMCP(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-	if a == nil {
-		return "", nil
-	}
-	if reloader, ok := any(a).(interface{ ReloadMCPTools() }); ok {
-		reloader.ReloadMCPTools()
-	}
-	return "", nil
-}
-
-// Kills every tracked background process as a deliberate user stop
-func mirrorStop(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-	tools.DefaultProcessRegistry().KillAll(ctx, tools.ToolEnvFrom(ctx), "", nil, "slash.stop", false)
-	return "", nil
-}
-
-// Clears the sticky low disk notice once the auto prune question is answered
-func mirrorAutoprune(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-	if arg != "" && pruneAdvisorAnswered(ctx, strOr(session.Get("profile_home"))) {
-		tuihost.Emit(ctx, "notification.clear", sid, map[string]any{"key": "sessions.auto_prune"})
-	}
-	return "", nil
-}
-
-// Live side effect of each mirrored slash command by name
-var slashMirrors map[string]slashMirror
-
-func init() {
-	slashMirrors = map[string]slashMirror{
-		"model": func(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-			if arg == "" || a == nil {
-				return "", nil
-			}
-			result, err := applyModelSwitch(ctx, sid, session, arg, modelSwitchOptions{pinSessionOverride: true})
-			if err != nil {
-				return "", err
-			}
-			return strOr(result["warning"]), nil
-		},
-		"approvals":   mirrorApprovals,
-		"personality": mirrorPersonality,
-		"compress": func(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string) (string, error) {
-			if a == nil {
-				return "", nil
-			}
-			return compressLiveWithFeedback(ctx, sid, session, a, arg, false)
-		},
-		"fast":       mirrorFast,
-		"reload-mcp": mirrorReloadMCP,
-		"stop":       mirrorStop,
-		"autoprune":  mirrorAutoprune,
-	}
-}
-
-// Applies the side effects a worker slash command must also have on the live agent, returning any warning
-func mirrorSlashSideEffects(ctx context.Context, sid string, session *tuihost.Session, command string) string {
-	trimmed := pystr.Strip(strings.TrimLeft(command, "/"))
-	if trimmed == "" {
-		return ""
-	}
-	name, rest := splitFirstWord(trimmed)
-	arg := pystr.Strip(rest)
 	a := sessionAgent(session)
-	if name == "compact" {
-		name = "compress"
-	}
-	if mutatesWhileRunning[name] && truthy(session.Get("running")) {
-		return busyMessage(name, truthy(session.Get("_manual_compress_active")))
-	}
-	mirror, ok := slashMirrors[name]
-	if !ok {
+	if a == nil {
 		return ""
 	}
 	var out string
@@ -269,7 +159,7 @@ func mirrorSlashSideEffects(ctx context.Context, sid string, session *tuihost.Se
 				failure = r
 			}
 		}()
-		text, err := mirror(sessionProfileRuntimeScope(ctx, session, true), sid, session, a, arg)
+		text, err := compressLiveWithFeedback(sessionProfileRuntimeScope(ctx, session, true), sid, session, a, pystr.Strip(arg), false)
 		if err != nil {
 			failure = err
 			return
@@ -283,8 +173,6 @@ func mirrorSlashSideEffects(ctx context.Context, sid string, session *tuihost.Se
 	if err, isErr := failure.(error); isErr && errors.As(err, &busy) {
 		return busy.Error()
 	}
-	if name == "compress" && a != nil {
-		agent.FinalizeContextEngineCompressionNotification(a, false)
-	}
+	agent.FinalizeContextEngineCompressionNotification(a, false)
 	return "live session sync failed: " + failureText(failure)
 }

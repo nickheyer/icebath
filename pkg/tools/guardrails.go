@@ -1458,15 +1458,6 @@ func PlanToolBatchSegments(ctx context.Context, env *Env, toolCalls []state.Tool
 	return segments
 }
 
-// ShouldParallelizeToolBatch is true only when the whole batch is one parallel segment
-func ShouldParallelizeToolBatch(ctx context.Context, env *Env, toolCalls []state.ToolCall) bool {
-	if len(toolCalls) <= 1 {
-		return false
-	}
-	segments := PlanToolBatchSegments(ctx, env, toolCalls, "")
-	return len(segments) == 1 && segments[0].Mode == "parallel"
-}
-
 // CanonicalPath resolves a path for overlap detection against the execution cwd
 func CanonicalPath(rawPath, executionCwd string) string {
 	expanded := expandUser(rawPath)
@@ -1523,15 +1514,6 @@ func ExtractParallelScopePaths(toolName string, functionArgs map[string]any, exe
 		}
 	}
 	return out
-}
-
-// ExtractParallelScopePath returns the primary canonical target or empty
-func ExtractParallelScopePath(toolName string, functionArgs map[string]any, executionCwd string) string {
-	scoped := ExtractParallelScopePaths(toolName, functionArgs, executionCwd)
-	if len(scoped) == 0 {
-		return ""
-	}
-	return scoped[0]
 }
 
 // Lowercases on Windows the way os.path.normcase does

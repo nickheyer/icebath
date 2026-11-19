@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,46 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func TestRequestsVerifyHandsOverThePlatformStoreWithoutOpensslFiles(t *testing.T) {
-	srv, bundle := privateTLSServer(t)
-	rotatedCABundle(t, bundle, false)
-	reloadCABundle = func() string { return "" }
-	h := filepath.Join(t.TempDir(), "home")
-	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("REQUESTS_CA_BUNDLE", "")
-	t.Setenv("CURL_CA_BUNDLE", "")
-	os.Unsetenv("REQUESTS_CA_BUNDLE")
-	os.Unsetenv("CURL_CA_BUNDLE")
-	prevBundles, prevStore := linuxRootBundles, platformStoreCertificates
-	linuxRootBundles = []string{filepath.Join(t.TempDir(), "gone", "cacert.pem")}
-	platformStoreCertificates = func() [][]byte { return [][]byte{srv.Certificate().Raw} }
-	t.Cleanup(func() { linuxRootBundles, platformStoreCertificates = prevBundles, prevStore })
-	trustMu.Lock()
-	platformBundle = ""
-	trustMu.Unlock()
-	verify := SubprocessVerifyBundle(h)
-	if verify == "" || !strings.HasPrefix(verify, h) {
-		t.Fatalf("the platform store goes over as a bundle under the home, got %q", verify)
-	}
-	raw, err := os.ReadFile(verify)
-	if err != nil || !strings.Contains(string(raw), "BEGIN CERTIFICATE") {
-		t.Fatalf("bundle %q %v", raw, err)
-	}
-	cfg := ResolveTLSVerify(nil, verify, nil, "").Config
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: cfg}, Timeout: 2 * time.Second}
-	_, err = client.Get("https://127.0.0.1:9/")
-	var opErr *net.OpError
-	if err == nil || !errors.As(err, &opErr) {
-		t.Fatalf("the request fails on the closed port, not on the bundle: %v", err)
-	}
-	if body, err := getThrough(cfg, srv.URL); err != nil || body != "private provider" {
-		t.Fatalf("the handed over bundle trusts the root it holds, got %q %v", body, err)
-	}
-}
 
 // Loopback TLS server answering every GET with a one model catalog
 func catalogTLSServer(t *testing.T) (*httptest.Server, string) {
@@ -147,17 +107,5 @@ func TestAmbientCaCannotBreakTheSharedClient(t *testing.T) {
 			}
 			client.CloseIdleConnections()
 		})
-	}
-}
-
-func TestPlatformStoreBundleWritesUnderTheProcessHomeByDefault(t *testing.T) {
-	noCAEnv(t)
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	trustMu.Lock()
-	platformBundle = ""
-	trustMu.Unlock()
-	if path := PlatformStoreBundle(""); path != "" && !strings.HasPrefix(path, home.Process()) {
-		t.Fatalf("bundle %q outside the process home %q", path, home.Process())
 	}
 }

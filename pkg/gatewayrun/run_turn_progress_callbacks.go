@@ -152,7 +152,7 @@ func (t *TurnRunner) combinedToolStartCallback(callID, toolName string, args map
 		name := toolName
 		noteLocalToolStart(t, callID, &name, args)
 	}
-	payload, _ := pyjson.Plain(gateway.ToolLifecyclePayload(callID, toolName, args)).(map[string]any)
+	payload, _ := pyjson.Plain(gateway.ToolLifecyclePayload(t.turnCtx, callID, toolName, args)).(map[string]any)
 	t.publishExecution("tool.start", payload)
 	t.publishAPITool("tool.start", callID, toolName, args, nil)
 	if t.ctx.voiceAckGuild != nil {

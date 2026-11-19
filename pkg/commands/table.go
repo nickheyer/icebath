@@ -19,8 +19,6 @@ const (
 	CategoryInfo          = "Info"
 	CategoryToolsSkills   = "Tools & Skills"
 	CategoryExit          = "Exit"
-	CategoryContext       = "Context"
-	CategoryBackground    = "Background & Automation"
 )
 
 // Meta carries the gateway and executor fields every Def embeds
@@ -30,22 +28,8 @@ type Meta struct {
 	Execute           string
 }
 
-// Subgroup is one /help sub heading of the Session category with the names it collects
-type Subgroup struct {
-	Name  string
-	Names []string
-}
-
 // IndicatorStyles lists the TUI busy indicator styles the /indicator command accepts
 var IndicatorStyles = home.IndicatorStyles
-
-// HelpSessionSubgroups splits the Session category into sub headings for /help
-var HelpSessionSubgroups = []Subgroup{
-	{Name: CategoryContext, Names: []string{"compress", "compact", "context", "ctx", "status"}},
-	{Name: CategoryBackground, Names: []string{
-		"bg", "btw", "agents", "tasks", "queue", "q", "steer", "s", "goal", "subgoal", "heartbeat", "hb",
-		"refine", "loop", "proactive", "moa", "journey", "learning", "memory-graph"}},
-}
 
 var builtinMeta = map[string]Meta{}
 
@@ -484,15 +468,4 @@ func CommandsByCategory(r *Registry) []Group {
 		}
 	}
 	return groups
-}
-
-// Commands maps every CLI visible /command and alias to its description
-func Commands(r *Registry) map[string]string {
-	out := map[string]string{}
-	for _, g := range CommandsByCategory(r) {
-		for _, row := range g.Rows {
-			out[row.Command] = row.Description
-		}
-	}
-	return out
 }

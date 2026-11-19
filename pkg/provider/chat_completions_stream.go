@@ -214,46 +214,6 @@ func rawResponseField(resp *Response, key string) any {
 	return m[key]
 }
 
-// IsPartialStreamStub reports a response built for a stream that died after delivering content
-func IsPartialStreamStub(resp *Response) bool {
-	return resp != nil && resp.RequestID == PartialStreamStubID
-}
-
-// PartialStreamDroppedToolNames lists tool calls whose arguments never completed before the stream ended
-func PartialStreamDroppedToolNames(resp *Response) []string {
-	var out []string
-	if list, ok := rawResponseField(resp, ccRawDroppedToolNames).([]any); ok {
-		for _, v := range list {
-			out = append(out, stringOf(v))
-		}
-	}
-	return out
-}
-
-// PartialStreamCleanEOF reports a stub built after a clean server close with no transport error
-func PartialStreamCleanEOF(resp *Response) bool {
-	v, _ := rawResponseField(resp, ccRawCleanEOF).(bool)
-	return v
-}
-
-// PartialStreamOverflowTerminal reports a stub whose stream died on a context overflow so the turn must end
-func PartialStreamOverflowTerminal(resp *Response) bool {
-	v, _ := rawResponseField(resp, ccRawOverflowTerminal).(bool)
-	return v
-}
-
-// ResponseRunawayRepetition reports a response cut because a channel became a repetition loop
-func ResponseRunawayRepetition(resp *Response) bool {
-	v, _ := rawResponseField(resp, ccRawRunaway).(bool)
-	return v
-}
-
-// ResponseContentFilterTerminated reports a partial stub whose stream died on a content policy block
-func ResponseContentFilterTerminated(resp *Response) bool {
-	v, _ := rawResponseField(resp, ccRawContentFilter).(bool)
-	return v
-}
-
 // ---- stream attempt ----
 
 type ccFrameMsg struct {

@@ -7,8 +7,8 @@ import (
 )
 
 // Tool start payload of the lifecycle contract with the call id, name and bounded args
-func ToolLifecyclePayload(callID, toolName, args any) *pyjson.Object {
-	return toolLifecyclePayload(callID, toolName, args)
+func ToolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjson.Object {
+	return toolLifecyclePayload(ctx, callID, toolName, args)
 }
 
 // Tool complete payload with the error flag and the verbose result block

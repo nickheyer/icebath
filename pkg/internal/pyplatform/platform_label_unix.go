@@ -7,29 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 )
-
-// Version field of uname, empty when the kernel refuses
-func version() string {
-	var u unix.Utsname
-	if err := unix.Uname(&u); err != nil {
-		return ""
-	}
-	return unix.ByteSliceToString(u.Version[:])
-}
-
-// Node name field of uname, the host name when the kernel refuses
-func node() string {
-	var u unix.Utsname
-	if err := unix.Uname(&u); err == nil {
-		return unix.ByteSliceToString(u.Nodename[:])
-	}
-	name, _ := os.Hostname()
-	return name
-}
 
 // Processor name uname prints with the p flag, empty for an unknown one or a failed command
 func processor() string {

@@ -227,15 +227,6 @@ func TestMergeFileConfigPromotesModelAndLegacyMaxTurns(t *testing.T) {
 	}
 }
 
-func TestIntOrParsesPythonIntInputs(t *testing.T) {
-	cases := map[any]int{"12": 12, " 7 ": 7, 3.9: 3, true: 1, int64(5): 5, "x": -1, nil: -1, "1.5": -1}
-	for in, want := range cases {
-		if got := intOr(in, -1); got != want {
-			t.Fatalf("intOr(%v) = %d want %d", in, got, want)
-		}
-	}
-}
-
 // Mirrors a local terminal config from a fresh working directory with the inherited gateway marker set
 func mirrorFromGatewayShell(t *testing.T) (string, string) {
 	t.Helper()

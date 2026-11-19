@@ -25,29 +25,14 @@ func wsTestRunDisconnect(t *testing.T, seed func(transport *tuihost.WSTransport)
 	}
 }
 
-type wsTestWorker struct {
-	mu     sync.Mutex
-	closed []bool
-}
-
-func (w *wsTestWorker) Close() {
-	w.mu.Lock()
-	w.closed = append(w.closed, true)
-	w.mu.Unlock()
-}
-
-func TestWsDisconnectReapsFlaggedSessionAndClosesWorker(t *testing.T) {
-	worker := &wsTestWorker{}
+func TestWsDisconnectReapsFlaggedSession(t *testing.T) {
 	t.Cleanup(func() { tuihost.SetSessionRecord("flagged", nil) })
 	wsTestRunDisconnect(t, func(transport *tuihost.WSTransport) {
 		tuihost.SetSessionRecord("flagged", tuihost.NewSession(map[string]any{
-			"transport": tuihost.Transport(transport), "close_on_disconnect": true, "slash_worker": worker, "session_key": "k"}))
+			"transport": tuihost.Transport(transport), "close_on_disconnect": true, "session_key": "k"}))
 	})
 	if tuihost.SessionRecord("flagged") != nil {
 		t.Fatal("the flagged session outlived its transport")
-	}
-	if !reflect.DeepEqual(worker.closed, []bool{true}) {
-		t.Fatalf("worker closes %v", worker.closed)
 	}
 }
 

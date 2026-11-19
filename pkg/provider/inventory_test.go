@@ -132,7 +132,7 @@ func TestIncludeUnconfiguredAppendsCanonicalSkeletons(t *testing.T) {
 	for _, s := range invSlugs(rows) {
 		seen[s] = true
 	}
-	for _, entry := range ListedCanonicalProviders() {
+	for _, entry := range listedCanonicalProviders(context.Background()) {
 		if entry.Slug != "moa" && !seen[entry.Slug] {
 			t.Fatalf("missing %s", entry.Slug)
 		}
@@ -243,7 +243,7 @@ func TestCanonicalOrderWithUnconfiguredPreservesFullUniverse(t *testing.T) {
 	invListReturning([]map[string]any{invRow("custom:Ollama", "Ollama", []any{}, false, true, "user-config")})
 	got := invSlugs(invPayload(t, invCtx("orig", "orig-model", "orig-url"), ModelsPayloadOptions{IncludeUnconfigured: true, PickerHints: true, CanonicalOrder: true}))
 	visible := 0
-	for _, e := range ListedCanonicalProviders() {
+	for _, e := range listedCanonicalProviders(context.Background()) {
 		if e.Slug != "moa" {
 			visible++
 		}

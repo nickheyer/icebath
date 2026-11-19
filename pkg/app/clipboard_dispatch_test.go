@@ -80,23 +80,3 @@ func TestPreprocessImagesWithVisionVisionExceptionIncludesPath(t *testing.T) {
 		t.Fatalf("path dropped: %s", result)
 	}
 }
-
-func TestTryAttachClipboardImageImageFoundAttaches(t *testing.T) {
-	tempHome(t)
-	swapClip(t, &clipSaveImage, func(string) bool { return true })
-	c := &CLI{ctx: context.Background()}
-	if !c.tryAttachClipboardImage() || len(c.attachedImages) != 1 || c.imageCounter != 1 {
-		t.Fatalf("attached %v counter %d", c.attachedImages, c.imageCounter)
-	}
-}
-
-func TestTryAttachClipboardImageImagePathFollowsNamingConvention(t *testing.T) {
-	h := tempHome(t)
-	swapClip(t, &clipSaveImage, func(string) bool { return true })
-	c := &CLI{ctx: context.Background()}
-	c.tryAttachClipboardImage()
-	path := c.attachedImages[0]
-	if filepath.Dir(path) != filepath.Join(h, "images") || !strings.HasPrefix(filepath.Base(path), "clip_") || filepath.Ext(path) != ".png" {
-		t.Fatalf("path %s", path)
-	}
-}

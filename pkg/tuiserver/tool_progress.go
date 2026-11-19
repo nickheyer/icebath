@@ -234,7 +234,7 @@ func toolEnv(ctx context.Context) *tools.Env {
 
 // Friendly labels of a tool call as payloads, nil when it has none
 func toolLabels(ctx context.Context, name string, args map[string]any) []any {
-	labels := tools.ToolLabelsForCall(toolEnv(ctx), name, args)
+	labels := tools.ToolLabelsForCall(ctx, toolEnv(ctx), name, args)
 	if len(labels) == 0 {
 		return nil
 	}

@@ -22,7 +22,6 @@ import (
 func resetApprovalStateForTest(t *testing.T) {
 	t.Helper()
 	approvalState.Lock()
-	approvalState.pending = map[string]PendingApproval{}
 	approvalState.sessionApproved = map[string]map[string]bool{}
 	approvalState.sessionYolo = map[string]bool{}
 	approvalState.launchYoloApplied = map[string]bool{}
@@ -634,7 +633,7 @@ func TestClearSessionCancelsWaiters(t *testing.T) {
 	}()
 	waitQueue(t, coalesceSession, 1)
 	ApproveSession(coalesceSession, "x")
-	ClearSession(coalesceSession)
+	ClearSession(context.Background(), coalesceSession)
 	select {
 	case d := <-done:
 		if d.Choice != "" || d.Cancelled != "the session ended before the prompt was answered" {
@@ -687,7 +686,7 @@ func TestRequestToolApprovalCLIApproveOnce(t *testing.T) {
 
 func TestRequestToolApprovalCLIDenyBlocks(t *testing.T) {
 	env := approvalTestEnv(t, "test-session", nil, map[string]any{"interactive": true})
-	SetCurrentObservabilityContext(env, "turn-1", "call-1", "")
+	env = WithObservabilityContext(env, "turn-1", "call-1", "")
 	env.Ask = &scriptedAsker{answer: "deny"}
 	hooks := captureHooks(t)
 	res := RequestToolApproval(context.Background(), env, "terminal", "curl PUT to external API", "")
@@ -772,7 +771,7 @@ func TestRequestToolApprovalApiServerBridge(t *testing.T) {
 
 func TestRequestToolApprovalBypasses(t *testing.T) {
 	env := approvalTestEnv(t, "test-session", nil, nil)
-	EnableSessionYolo("test-session")
+	EnableSessionYolo(context.Background(), "test-session")
 	if res := RequestToolApproval(context.Background(), env, "terminal", "flagged", ""); !res.Approved {
 		t.Fatalf("yolo %+v", res)
 	}
@@ -813,15 +812,11 @@ func TestApiServerAsksOnlyWithClientBridge(t *testing.T) {
 
 func TestCronModes(t *testing.T) {
 	deny := approvalTestEnv(t, "cron", map[string]any{"mode": "manual", "cron_mode": "deny"}, map[string]any{"cron": true})
-	result := CheckDangerousCommand(context.Background(), deny, "rm -rf /tmp/stuff", "local", false)
-	if result.Approved || !strings.Contains(result.Message, "BLOCKED") || !strings.Contains(result.Message, "cron_mode") {
-		t.Fatalf("cron deny %+v", result)
-	}
-	if r := CheckDangerousCommand(context.Background(), deny, "ls -la", "local", false); !r.Approved {
-		t.Fatalf("safe %+v", r)
-	}
-	if r := CheckAllCommandGuards(context.Background(), deny, "rm -rf /tmp/stuff", "local", false); r.Approved || !strings.Contains(r.Message, "BLOCKED") {
+	if r := CheckAllCommandGuards(context.Background(), deny, "rm -rf /tmp/stuff", "local", false); r.Approved || !strings.Contains(r.Message, "BLOCKED") || !strings.Contains(r.Message, "cron_mode") {
 		t.Fatalf("combined deny %+v", r)
+	}
+	if r := CheckAllCommandGuards(context.Background(), deny, "ls -la", "local", false); !r.Approved {
+		t.Fatalf("safe %+v", r)
 	}
 	if r := CheckAllCommandGuards(context.Background(), deny, "echo hello", "local", false); !r.Approved {
 		t.Fatalf("combined safe %+v", r)
@@ -831,16 +826,13 @@ func TestCronModes(t *testing.T) {
 		t.Fatalf("permanent key in cron deny %+v", r)
 	}
 	approve := approvalTestEnv(t, "cron", map[string]any{"mode": "manual", "cron_mode": "approve"}, map[string]any{"cron": true})
-	if r := CheckDangerousCommand(context.Background(), approve, "rm -rf /tmp/stuff", "local", false); !r.Approved {
-		t.Fatalf("cron approve %+v", r)
-	}
 	if r := CheckAllCommandGuards(context.Background(), approve, "rm -rf /tmp/stuff", "local", false); !r.Approved {
 		t.Fatalf("combined approve %+v", r)
 	}
 	if r := CheckAllCommandGuards(context.Background(), deny, "rm -rf /tmp/stuff", "docker", false); !r.Approved {
 		t.Fatalf("container %+v", r)
 	}
-	EnableSessionYolo("cron")
+	EnableSessionYolo(context.Background(), "cron")
 	if r := CheckAllCommandGuards(context.Background(), deny, "rm -rf /tmp/stuff", "local", false); !r.Approved {
 		t.Fatalf("yolo over cron deny %+v", r)
 	}
@@ -954,7 +946,7 @@ func TestExecuteCodeGuardGatewayFlows(t *testing.T) {
 	if r := CheckExecuteCodeGuard(context.Background(), env, "import os", "local", false); !r.Approved {
 		t.Fatalf("session approval %+v", r)
 	}
-	ClearSession(clusterSession)
+	ClearSession(context.Background(), clusterSession)
 	UnregisterGatewayNotify(clusterSession)
 	if r := CheckExecuteCodeGuard(context.Background(), env, "import os", "local", false); r.Approved || r.Status != "pending_approval" {
 		t.Fatalf("pending %+v", r)
@@ -1052,17 +1044,9 @@ func TestSmartDenyPendingPayloadIsOneOperation(t *testing.T) {
 	if result.Status != "pending_approval" || !result.SmartDenied || result.AllowPermanent {
 		t.Fatalf("terminal %+v", result)
 	}
-	pending, ok := PendingApprovalFor(clusterSession)
-	if !ok || !pending.SmartDenied || pending.AllowPermanent || len(pending.PatternKeys) == 0 {
-		t.Fatalf("pending %+v", pending)
-	}
 	code := CheckExecuteCodeGuard(context.Background(), env, "print('pending')", "local", false)
-	if code.Status != "pending_approval" || !code.SmartDenied || code.AllowPermanent {
+	if code.Status != "pending_approval" || !code.SmartDenied || code.AllowPermanent || code.PatternKey != "execute_code" {
 		t.Fatalf("code %+v", code)
-	}
-	pending, _ = PendingApprovalFor(clusterSession)
-	if !pending.SmartDenied || pending.AllowPermanent || pending.PatternKey != "execute_code" {
-		t.Fatalf("pending %+v", pending)
 	}
 }
 
@@ -1373,11 +1357,11 @@ func TestApprovalBypassAndYoloState(t *testing.T) {
 	if IsApprovalBypassActive(env) {
 		t.Fatal("bypass should be off")
 	}
-	EnableSessionYolo("yolo")
+	EnableSessionYolo(context.Background(), "yolo")
 	if !IsSessionYoloEnabled("yolo") || !IsCurrentSessionYoloEnabled(env) || !IsApprovalBypassActive(env) {
 		t.Fatal("yolo not active")
 	}
-	DisableSessionYolo("yolo")
+	DisableSessionYolo(context.Background(), "yolo")
 	if IsSessionYoloEnabled("yolo") {
 		t.Fatal("yolo still active")
 	}
@@ -1385,8 +1369,8 @@ func TestApprovalBypassAndYoloState(t *testing.T) {
 		t.Fatal("launch yolo must apply once")
 	}
 	released := []string{}
-	RegisterPermissionModeReleaser(func(key string) { released = append(released, key) })
-	EnableSessionYolo("yolo")
+	RegisterPermissionModeReleaser(func(_ context.Context, key string) { released = append(released, key) })
+	EnableSessionYolo(context.Background(), "yolo")
 	if len(released) != 1 || released[0] != "yolo" {
 		t.Fatalf("releasers %v", released)
 	}
@@ -1398,7 +1382,7 @@ func TestApprovalBypassAndYoloState(t *testing.T) {
 
 func TestUserDenyRuleBlocksEverywhere(t *testing.T) {
 	env := approvalTestEnv(t, "deny", map[string]any{"mode": "off", "deny": []any{"git push *"}}, nil)
-	EnableSessionYolo("deny")
+	EnableSessionYolo(context.Background(), "deny")
 	for _, envType := range []string{"local", "docker", "modal"} {
 		r := CheckAllCommandGuards(context.Background(), env, "git push origin main", envType, false)
 		if r.Approved {
@@ -1412,7 +1396,7 @@ func TestUserDenyRuleBlocksEverywhere(t *testing.T) {
 
 func TestHardlineAndRuntimeFloors(t *testing.T) {
 	env := approvalTestEnv(t, "floor", map[string]any{"mode": "off"}, nil)
-	EnableSessionYolo("floor")
+	EnableSessionYolo(context.Background(), "floor")
 	if r := CheckAllCommandGuards(context.Background(), env, "sudo reboot", "local", false); r.Approved {
 		t.Fatalf("hardline bypassed %+v", r)
 	}
@@ -1439,45 +1423,6 @@ func TestHardlineAndRuntimeFloors(t *testing.T) {
 		t.Fatalf("runtime delete bypassed %+v", r)
 	}
 }
-
-func TestCheckCommandApprovalSharedSignature(t *testing.T) {
-	env := approvalTestEnv(t, "shared", map[string]any{"mode": "manual", "cron_mode": "deny"}, map[string]any{"cron": true})
-	decision, err := CheckCommandApproval(context.Background(), env, "rm -rf /tmp/stuff", "task-1")
-	if err != nil || decision.Allowed || !strings.Contains(decision.Reason, "cron_mode") {
-		t.Fatalf("decision %+v err %v", decision, err)
-	}
-	decision, err = CheckCommandApproval(context.Background(), env, "echo hi", "task-1")
-	if err != nil || !decision.Allowed || decision.Reason != "" {
-		t.Fatalf("decision %+v err %v", decision, err)
-	}
-	ctx := WithApprovalTaskID(context.Background(), "task-9")
-	if ApprovalTaskID(ctx) != "task-9" || ApprovalTaskID(context.Background()) != "" {
-		t.Fatal("task id round trip")
-	}
-}
-
-type recordingSlot struct {
-	preparing bool
-	consumed  []string
-	published int
-	entries   []*ApprovalEntry
-	decision  *GuardResult
-}
-
-func (s *recordingSlot) Preparing() bool { return s.preparing }
-func (s *recordingSlot) ConsumePreparedGuard(ctx context.Context, env *Env, command, envType string, hasHostAccess bool) (GuardResult, bool) {
-	s.consumed = append(s.consumed, command+"|"+ApprovalTaskID(ctx))
-	if s.decision != nil {
-		d := *s.decision
-		s.decision = nil
-		return d, true
-	}
-	return GuardResult{}, false
-}
-func (s *recordingSlot) RegisterPreparedApproval(sessionKey string, entry *ApprovalEntry) {
-	s.entries = append(s.entries, entry)
-}
-func (s *recordingSlot) ApprovalPublished() { s.published++ }
 
 func TestElicitationConsent(t *testing.T) {
 	env := approvalTestEnv(t, "elicit", nil, map[string]any{"gateway": true})
@@ -1547,7 +1492,7 @@ func TestApprovalTransportFlow(t *testing.T) {
 			return ApprovalTransportDecision{RequestID: "other", RequestDigest: req.Digest, Choice: "always"}, nil
 		}}, nil
 	})
-	ClearSession("transport")
+	ClearSession(context.Background(), "transport")
 	res = CheckAllCommandGuards(context.Background(), env, "rm -rf .hg", "local", false)
 	if res.Approved || res.Outcome != "transport_stale" {
 		t.Fatalf("stale %+v", res)
@@ -1679,16 +1624,29 @@ func TestBuildProposalsRankingAndThreshold(t *testing.T) {
 	if len(BuildProposals(records, map[string]bool{"docker restart *": true}, 1, 20)) != 1 {
 		t.Fatal("existing patterns must be skipped")
 	}
-	rendered := RenderProposals(proposals, 0)
-	if !strings.Contains(rendered, "1. docker restart *    — approved 5x") || !strings.Contains(rendered, "all history") {
-		t.Fatalf("render %s", rendered)
+	var rendered strings.Builder
+	renderProposals(&rendered, proposals, 0)
+	if !strings.Contains(rendered.String(), "1. docker restart *    — approved 5x") || !strings.Contains(rendered.String(), "all history") {
+		t.Fatalf("render %s", rendered.String())
 	}
-	if !strings.Contains(RenderProposals(nil, 30), "last 30 days") {
+	var empty strings.Builder
+	renderProposals(&empty, nil, 30)
+	if !strings.Contains(empty.String(), "last 30 days") {
 		t.Fatal("empty render")
 	}
-	js := ProposalsJSON(proposals)
-	if js[0].N != 1 || js[1].Pattern != "git push *" {
-		t.Fatalf("json %+v", js)
+	var out strings.Builder
+	ns := map[string]any{"db": path, "days": 0, "json": true}
+	if code, err := suggestCommand(context.Background(), approvalTestEnv(t, "suggest", nil, nil), ns, &out); err != nil || code != 0 {
+		t.Fatalf("suggest --json code %d err %v", code, err)
+	}
+	var js struct {
+		Proposals []struct {
+			N       int    `json:"n"`
+			Pattern string `json:"pattern"`
+		} `json:"proposals"`
+	}
+	if err := json.Unmarshal([]byte(out.String()), &js); err != nil || len(js.Proposals) != 2 || js.Proposals[0].N != 1 || js.Proposals[1].Pattern != "git push *" {
+		t.Fatalf("json %+v err %v from %s", js, err, out.String())
 	}
 }
 
@@ -1834,14 +1792,11 @@ func TestUvPythonUninstallTarget(t *testing.T) {
 func TestRuntimeDeleteFloorBlocksEvenUnderYolo(t *testing.T) {
 	rt := fakeRuntime(t)
 	env := approvalTestEnv(t, "runtime", map[string]any{"mode": "off"}, nil)
-	EnableSessionYolo("runtime")
+	EnableSessionYolo(context.Background(), "runtime")
 	for _, c := range []string{"rm -rf " + rt["venv"], "uv python uninstall 3.11"} {
 		r := CheckAllCommandGuards(context.Background(), env, c, "local", false)
 		if r.Approved || !strings.Contains(r.Message, "BLOCKED") {
 			t.Fatalf("%q bypassed %+v", c, r)
-		}
-		if r := CheckDangerousCommand(context.Background(), env, c, "local", false); r.Approved {
-			t.Fatalf("%q bypassed pattern gate %+v", c, r)
 		}
 	}
 	if r := CheckAllCommandGuards(context.Background(), env, "echo hello", "local", false); !r.Approved {

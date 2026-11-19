@@ -70,7 +70,7 @@ func TestResumeAttachesAndUnknownTargetIsLeftToMainsNotFoundPath(t *testing.T) {
 	}
 }
 
-func TestTitleRenameDeleteAndDetachAreGatewayVerbs(t *testing.T) {
+func TestTitleRenameAndDetachAreGatewayVerbs(t *testing.T) {
 	ctx := context.Background()
 	db, client := storeFixture(t)
 	mustOpen(t, db, storeCLI("local-old", true), nil)
@@ -92,34 +92,6 @@ func TestTitleRenameDeleteAndDetachAreGatewayVerbs(t *testing.T) {
 		"subscription_id": "sub-local-old", "end_reason": "cli_close"}) {
 		t.Fatalf("last call %v", last)
 	}
-	if ok, err := db.DeleteSession(ctx, "local-old"); err != nil || !ok {
-		t.Fatal(ok, err)
-	}
-	deleted := client.lastOf(t, "session.mutate")
-	wantEqual(t, deleted["operation"], "delete")
-	wantEqual(t, deleted["expected_generation"], 0)
-}
-
-func refusingDelete(client *fakeConnClient, reason string) {
-	original := client.rpc
-	client.setRPC(func(ctx context.Context, method string, params map[string]any) (any, error) {
-		if method == "session.mutate" && params["operation"] == "delete" {
-			client.record(method, params)
-			return nil, &gateway.GatewayClientError{Msg: reason}
-		}
-		return original(ctx, method, params)
-	})
-}
-
-func segmentResolvesToOwner(client *fakeConnClient) {
-	original := client.rpc
-	client.setRPC(func(ctx context.Context, method string, params map[string]any) (any, error) {
-		if method == "session.resume" && params["session_id"] == "segment-1" {
-			client.record(method, params)
-			return storeSnapshot("local-owner"), nil
-		}
-		return original(ctx, method, params)
-	})
 }
 
 func wantClientError(t *testing.T, err error, contains string) {
@@ -130,70 +102,7 @@ func wantClientError(t *testing.T, err error, contains string) {
 	}
 }
 
-func TestARefusedDeleteDetachesTheSubscriptionItsReadAttached(t *testing.T) {
-	ctx := context.Background()
-	db, client := storeFixture(t)
-	mustOpen(t, db, storeCLI("local-old", true), nil)
-	if err := db.EndSession(ctx, "local-old", "new_session"); err != nil {
-		t.Fatal(err)
-	}
-	refusingDelete(client, "revision_conflict")
-	_, err := db.DeleteSession(ctx, "local-old")
-	wantClientError(t, err, "revision_conflict")
-	last := client.last()
-	if last.method != "session.detach" || !reflect.DeepEqual(last.params, map[string]any{"session_id": "local-old",
-		"subscription_id": "sub-local-old"}) {
-		t.Fatalf("last call %v", last)
-	}
-}
-
-func TestARefusedDeleteDetachesByTheIdTheReadResolvedTo(t *testing.T) {
-	db, client := storeFixture(t)
-	segmentResolvesToOwner(client)
-	refusingDelete(client, "revision_conflict")
-	_, err := db.DeleteSession(context.Background(), "segment-1")
-	wantClientError(t, err, "revision_conflict")
-	last := client.last()
-	if last.method != "session.detach" || !reflect.DeepEqual(last.params, map[string]any{"session_id": "local-owner",
-		"subscription_id": "sub-local-owner"}) {
-		t.Fatalf("last call %v", last)
-	}
-}
-
-func TestARefusedDeleteOfASegmentKeepsTheResolvedSessionThisViewerWatches(t *testing.T) {
-	db, client := storeFixture(t)
-	client.mu.Lock()
-	client.known["local-owner"] = true
-	client.mu.Unlock()
-	mustOpen(t, db, storeCLI("local-owner", true), nil)
-	segmentResolvesToOwner(client)
-	refusingDelete(client, "permission_denied")
-	_, err := db.DeleteSession(context.Background(), "segment-1")
-	wantClientError(t, err, "permission_denied")
-	if detaches := client.of("session.detach"); len(detaches) != 0 {
-		t.Fatalf("detached %v", detaches)
-	}
-	wantEqual(t, db.Connection.State("local-owner").SubscriptionID, "sub-local-owner")
-}
-
-func TestARefusedDeleteKeepsASessionThisCliIsViewing(t *testing.T) {
-	db, client := storeFixture(t)
-	mustOpen(t, db, storeCLI("local-old", true), nil)
-	real := client.rpc
-	client.setRPC(func(ctx context.Context, method string, params map[string]any) (any, error) {
-		if method == "session.mutate" {
-			return nil, &gateway.GatewayRPCError{Msg: "session_busy"}
-		}
-		return real(ctx, method, params)
-	})
-	_, err := db.DeleteSession(context.Background(), "local-old")
-	wantClientError(t, err, "session_busy")
-	if detaches := client.of("session.detach"); len(detaches) != 0 {
-		t.Fatalf("detached %v", detaches)
-	}
-}
-
-func TestGatewayOwnedWritesAreNoopsAndUnknownWritesRefuse(t *testing.T) {
+func TestGatewayOwnedWritesAreNoops(t *testing.T) {
 	db, client := storeFixture(t)
 	before := len(client.all())
 	db.CreateSession("x", "cli")
@@ -205,35 +114,16 @@ func TestGatewayOwnedWritesAreNoopsAndUnknownWritesRefuse(t *testing.T) {
 	if len(client.all()) != before {
 		t.Fatalf("calls %v", client.all()[before:])
 	}
-	wantClientError(t, db.Refused("request_handoff"), "request_handoff is not on the gateway session yet; nothing was written")
 }
 
-func TestBannerInventoryComesFromTheSessionSnapshot(t *testing.T) {
+func TestConnectionIsFinalOnceClosed(t *testing.T) {
 	db, _ := storeFixture(t)
-	if db.BannerInventory() != nil {
-		t.Fatal("inventory before a session is open")
-	}
-	mustOpen(t, db, storeCLI("local-old", true), nil)
-	inv := db.BannerInventory()
-	var names []any
-	for _, tool := range inv["tools"].([]any) {
-		names = append(names, tool.(map[string]any)["function"].(map[string]any)["name"])
-	}
-	wantEqual(t, names, []any{"read_file", "write_file"})
-	wantEqual(t, inv["get_toolset_for_tool"].(func(string) any)("read_file"), "file")
-	wantEqual(t, pyjson.Plain(inv["skills_by_category"]), map[string]any{"devops": []any{"sdlc-review"}})
-	wantEqual(t, inv["context_length"], 128000)
-	wantEqual(t, inv["cwd"], "/w")
-}
-
-func TestStoreIsFalsyOnceTheGatewayConnectionClosed(t *testing.T) {
-	db, _ := storeFixture(t)
-	if !db.Bool() {
-		t.Fatal("store falsy while connected")
+	if db.Connection.Final() {
+		t.Fatal("connection final while connected")
 	}
 	db.Connection.Close(context.Background())
-	if db.Bool() {
-		t.Fatal("store truthy after close")
+	if !db.Connection.Final() {
+		t.Fatal("connection not final after close")
 	}
 }
 
@@ -251,15 +141,6 @@ func TestReaderOpensOnceTheGatewayCreatedStateDb(t *testing.T) {
 	t.Cleanup(func() { db.CloseReader() })
 	if row, err := db.GetSession(ctx, "x"); row != nil || err != nil || db.reader == nil {
 		t.Fatalf("row %v err %v reader %v", row, err, db.reader)
-	}
-}
-
-func TestBannerSessionLabelIsMainsEightCharactersForACanonicalId(t *testing.T) {
-	for id, want := range map[string]string{"local-ab12cd34" + strings.Repeat("0", 56): "ab12cd34",
-		"20261012_134501_abcdef": "20261012_134501_abcdef", "local-abc": "local-abc", "": ""} {
-		if got := SessionLabel(id); got != want {
-			t.Fatalf("SessionLabel(%q) = %q, want %q", id, got, want)
-		}
 	}
 }
 
@@ -395,23 +276,6 @@ func TestCreateIfMissingTitlesAGatewayCreatedSession(t *testing.T) {
 	params := client.lastOf(t, "session.create")
 	if params["title"] != "Fresh Named" || params["source"] == "" || params["source"] == nil || params["cwd"] == "" || params["cwd"] == nil {
 		t.Fatalf("params %v", params)
-	}
-}
-
-func TestYoloTogglePersistsAsTheGatewaySessionYolo(t *testing.T) {
-	ctx := context.Background()
-	db, client := storeFixture(t)
-	mustOpen(t, db, storeCLI("local-old", true), nil)
-	if err := db.SetSessionYolo(ctx, "local-old", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.SetSessionYolo(ctx, "local-old", false); err != nil {
-		t.Fatal(err)
-	}
-	want := []map[string]any{{"session_id": "local-old", "key": "yolo", "value": "1"},
-		{"session_id": "local-old", "key": "yolo", "value": "0"}}
-	if sets := client.of("config.set"); !reflect.DeepEqual(sets, want) {
-		t.Fatalf("config.set calls %v", sets)
 	}
 }
 

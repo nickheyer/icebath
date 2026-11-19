@@ -144,31 +144,6 @@ func TestFifoControlPointerIsRejectedWithoutAWriter(t *testing.T) {
 	}
 }
 
-func TestStartDecisionsDoNotTurnUncertaintyIntoAnotherOwner(t *testing.T) {
-	for _, c := range []struct {
-		o    RuntimeObservation
-		want string
-	}{
-		{RuntimeObservation{State: "ready"}, "attach"},
-		{RuntimeObservation{State: "starting"}, "wait-owner"},
-		{RuntimeObservation{State: "draining"}, "wait-owner"},
-		{RuntimeObservation{State: "incompatible"}, "reject-version"},
-		{RuntimeObservation{State: "inaccessible"}, "reject-access"},
-		{RuntimeObservation{State: "conflict"}, "reject-conflict"},
-		{RuntimeObservation{State: "absent"}, "spawn-unmanaged"},
-		{RuntimeObservation{State: "absent", InstalledService: true}, "start-service"},
-		{RuntimeObservation{State: "absent", ServiceMayStart: true}, "wait-service"},
-		{RuntimeObservation{State: "ready", UpdatePaused: true}, "wait-update"},
-	} {
-		if got, err := NextStartAction(c.o); err != nil || got != c.want {
-			t.Fatalf("%+v: %q %v", c.o, got, err)
-		}
-	}
-	if _, err := NextStartAction(RuntimeObservation{State: "invalid"}); err == nil || !strings.Contains(err.Error(), "unknown runtime state") {
-		t.Fatal(err)
-	}
-}
-
 func TestEndpointMatchesServedHomeUnderAnyCanonicalSpelling(t *testing.T) {
 	tmp := t.TempDir()
 	real := filepath.Join(tmp, "real-home")
@@ -565,9 +540,6 @@ func TestRefusalNamesTheOtherSessionOwnerWithItsRemedy(t *testing.T) {
 	}
 	if !strings.Contains(result.Detail, fmt.Sprintf("PID %d", pid)) || !strings.Contains(result.Detail, "session 0") {
 		t.Fatal(result.Detail)
-	}
-	if code, err := EnsureExitCode(result); err != nil || code != 4 {
-		t.Fatal(code, err)
 	}
 }
 

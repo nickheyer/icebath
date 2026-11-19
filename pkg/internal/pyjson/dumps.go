@@ -108,16 +108,14 @@ func (e *TypeError) Error() string { return e.Msg }
 func (e *TypeError) PyTypeName() string { return "TypeError" }
 
 type options struct {
-	indent        *string
-	itemSep       string
-	keySep        string
-	separators    bool
-	ensureASCII   bool
-	allowNaN      bool
-	sortKeys      bool
-	skipKeys      bool
-	checkCircular bool
-	def           func(any) (any, error)
+	indent      *string
+	itemSep     string
+	keySep      string
+	separators  bool
+	ensureASCII bool
+	allowNaN    bool
+	sortKeys    bool
+	def         func(any) (any, error)
 }
 
 // One json.dumps keyword argument
@@ -128,9 +126,6 @@ func Indent(n int) Option {
 	s := strings.Repeat(" ", max(n, 0))
 	return func(o *options) { o.indent = &s }
 }
-
-// indent given as the literal per level string
-func IndentText(s string) Option { return func(o *options) { o.indent = &s } }
 
 // separators as the item and key separator pair
 func Separators(item, key string) Option {
@@ -146,9 +141,6 @@ func AllowNaN(on bool) Option { return func(o *options) { o.allowNaN = on } }
 // sort_keys
 func SortKeys(on bool) Option { return func(o *options) { o.sortKeys = on } }
 
-// skipkeys, dropping entries whose key is not str int float bool or None
-func SkipKeys(on bool) Option { return func(o *options) { o.skipKeys = on } }
-
 // default, called for values json cannot encode and its result encoded in their place
 func Default(fn func(any) (any, error)) Option { return func(o *options) { o.def = fn } }
 
@@ -162,7 +154,7 @@ type encoder struct {
 
 // json.dumps of v under the given keyword arguments, Python defaults for the rest
 func Dumps(v any, opts ...Option) (string, error) {
-	e := &encoder{options: options{ensureASCII: true, allowNaN: true, checkCircular: true}, seen: map[uintptr]bool{}}
+	e := &encoder{options: options{ensureASCII: true, allowNaN: true}, seen: map[uintptr]bool{}}
 	for _, opt := range opts {
 		opt(&e.options)
 	}
@@ -247,16 +239,14 @@ func mappingID(rv reflect.Value) uintptr {
 func (e *encoder) mapping(m pyrepr.Mapping) error {
 	var ms []member
 	for k, v := range m.PyItems() {
-		text, keep := "null", true
+		text := "null"
 		if k != nil {
 			var err error
-			if text, keep, err = e.keyText(reflect.ValueOf(k)); err != nil {
+			if text, err = e.keyText(reflect.ValueOf(k)); err != nil {
 				return err
 			}
 		}
-		if keep {
-			ms = append(ms, member{text, v})
-		}
+		ms = append(ms, member{text, v})
 	}
 	if e.sortKeys {
 		sort.SliceStable(ms, func(i, j int) bool { return ms[i].key < ms[j].key })
@@ -353,7 +343,7 @@ func sliceID(rv reflect.Value) uintptr {
 
 // Runs body with id marked as in progress, ValueError when it already is
 func (e *encoder) container(id uintptr, body func() error) error {
-	if !e.checkCircular || id == 0 {
+	if id == 0 {
 		return body()
 	}
 	if e.seen[id] {
@@ -452,13 +442,11 @@ func (e *encoder) mapValue(rv reflect.Value) error {
 	sort.Slice(keys, func(i, j int) bool { return keyLess(keys[i], keys[j], kind) })
 	ms := make([]member, 0, len(keys))
 	for _, k := range keys {
-		text, ok, err := e.keyText(k)
+		text, err := e.keyText(k)
 		if err != nil {
 			return err
 		}
-		if ok {
-			ms = append(ms, member{text, rv.MapIndex(k).Interface()})
-		}
+		ms = append(ms, member{text, rv.MapIndex(k).Interface()})
 	}
 	return e.members(ms)
 }
@@ -480,31 +468,27 @@ func keyLess(a, b reflect.Value, kind reflect.Kind) bool {
 	return fmt.Sprint(a.Interface()) < fmt.Sprint(b.Interface())
 }
 
-// Dict key as JSON text, false when skipkeys drops it and TypeError for unsupported key types
-func (e *encoder) keyText(k reflect.Value) (string, bool, error) {
+// Dict key as JSON text, TypeError for unsupported key types
+func (e *encoder) keyText(k reflect.Value) (string, error) {
 	if k.Kind() == reflect.Interface {
 		if k.IsNil() {
-			return "null", true, nil
+			return "null", nil
 		}
 		k = k.Elem()
 	}
 	switch k.Kind() {
 	case reflect.String:
-		return k.String(), true, nil
+		return k.String(), nil
 	case reflect.Bool:
-		return strconv.FormatBool(k.Bool()), true, nil
+		return strconv.FormatBool(k.Bool()), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return strconv.FormatInt(k.Int(), 10), true, nil
+		return strconv.FormatInt(k.Int(), 10), nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return strconv.FormatUint(k.Uint(), 10), true, nil
+		return strconv.FormatUint(k.Uint(), 10), nil
 	case reflect.Float32, reflect.Float64:
-		text, err := e.floatText(k.Float())
-		return text, err == nil, err
+		return e.floatText(k.Float())
 	}
-	if e.skipKeys {
-		return "", false, nil
-	}
-	return "", false, &TypeError{fmt.Sprintf("keys must be str, int, float, bool or None, not %s", k.Type())}
+	return "", &TypeError{fmt.Sprintf("keys must be str, int, float, bool or None, not %s", k.Type())}
 }
 
 // Writes object members with key separators and indentation

@@ -168,16 +168,21 @@ func (a *AIAgent) VPrint(text string, force bool) { a.vprint(text, force, false)
 
 func (a *AIAgent) ShouldEmitQuietToolMessages() bool { return a.shouldEmitQuietToolMessages() }
 
-func (a *AIAgent) ShouldStartQuietSpinner() bool { return a.shouldStartQuietSpinner() }
+func (a *AIAgent) ShouldStartQuietSpinner() bool {
+	return a.shouldStartQuietSpinner(a.outputContext())
+}
 
-// Started spinner on the agent printer, the label behind a waiting face when the skin authors any
+// Started spinner on the agent printer or its stdout, the label behind a waiting face when the skin authors any
 func (a *AIAgent) StartSpinner(label string) tools.Spinner {
 	ctx := a.homeContext()
 	faces, err := waitingFaces(ctx)
 	if err != nil {
 		panic(err)
 	}
-	return startStatusSpinner(ctx, faced(faces, label), a.printFn)
+	s := newStatusSpinner(ctx, faced(faces, label), a.printFn)
+	s.out = a.stdout()
+	s.Start()
+	return s
 }
 
 func (a *AIAgent) CuteToolMessage(name string, args map[string]any, duration float64, result any) string {
@@ -348,8 +353,8 @@ func (a *AIAgent) BuildToolPreview(name string, args map[string]any) string {
 	return tools.BuildToolPreview(a.env, name, args, nil)
 }
 
-func (a *AIAgent) ToolRowEmoji(name string, args map[string]any) string {
-	return tools.ToolRowEmoji(a.env, name, args, "⚡")
+func (a *AIAgent) ToolRowEmoji(ctx context.Context, name string, args map[string]any) string {
+	return tools.ToolRowEmoji(ctx, a.env, name, args, "⚡")
 }
 
 func (a *AIAgent) BuildToolLabel(name string, args map[string]any) string {

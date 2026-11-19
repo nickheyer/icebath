@@ -526,8 +526,7 @@ func TestAuthAddOpenrouterOauthPersistsPkceKeyWithoutTouchingApiKeyDefault(t *te
 }
 
 func TestOpenrouterLoopbackCallbackBindsNoncePathAndRejectsForgedRedirect(t *testing.T) {
-	t.Setenv("BROWSER", "firefox")
-	t.Setenv("DISPLAY", ":0")
+	scriptBrowserEnv(t, map[string]string{"DISPLAY": ":0", "BROWSER": "firefox"})
 	var mu sync.Mutex
 	seen := map[string]any{}
 	done := make(chan struct{})

@@ -391,16 +391,10 @@ func (a *QQAdapter) sendMedia(ctx context.Context, chatID, mediaSource string, f
 		return gateway.SendResult{}, ctx.Err()
 	}
 	var dailyLimit *UploadDailyLimitExceededError
-	var tooLarge *UploadFileTooLargeError
-	switch {
-	case errors.As(err, &dailyLimit):
+	if errors.As(err, &dailyLimit) {
 		pkgLog().Warn(fmt.Sprintf("[%s] Daily upload limit exceeded for %s (%s)", a.logTag(), dailyLimit.FileName, dailyLimit.FileSizeHuman()))
 		return gateway.SendResult{Success: false, Retryable: false,
 			Error: fmt.Sprintf("QQ daily upload limit exceeded for %s (%s). Retry tomorrow.", pyrepr.Repr(dailyLimit.FileName), dailyLimit.FileSizeHuman())}, nil
-	case errors.As(err, &tooLarge):
-		pkgLog().Warn(fmt.Sprintf("[%s] File too large: %s (%s, platform limit %s)", a.logTag(), tooLarge.FileName, tooLarge.FileSizeHuman(), tooLarge.LimitHuman()))
-		return gateway.SendResult{Success: false, Retryable: false,
-			Error: fmt.Sprintf("%s (%s) exceeds the QQ per-file upload limit (%s).", pyrepr.Repr(tooLarge.FileName), tooLarge.FileSizeHuman(), tooLarge.LimitHuman())}, nil
 	}
 	pkgLog().Error(fmt.Sprintf("[%s] Media send failed: %s", a.logTag(), errText(err)))
 	return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil

@@ -128,7 +128,44 @@ func statusFromLiveSession(status string, running bool) string {
 	return "ready"
 }
 
-// Credential, config and redaction warnings of a new session, then its opening message
+// Notices the gateway computed with the session inventory: toolsets it cannot place, tools switched off, and the project skills of the folder
+func reportInventoryNotices(info *tuigateway.SessionInfo, sys func(string)) {
+	held := infoOf(info)
+	if len(held.UnknownToolsets) > 0 {
+		sys("warning: " + tr("session.notices.unknownToolsets", strings.Join(held.UnknownToolsets, ", ")))
+	}
+	for _, notice := range held.ToolAvailabilityWarnings {
+		if notice = trimJS(notice); notice != "" {
+			sys("warning: " + notice)
+		}
+	}
+	if untrusted := held.ProjectSkillsUntrusted; untrusted != nil && untrusted.Count > 0 {
+		sys("warning: " + tr("session.notices.projectSkillsUntrusted", untrusted.Count, untrusted.Root))
+	} else if loaded := val(held.ProjectSkillsLoaded); loaded > 0 {
+		sys(tr("session.notices.projectSkillsLoaded", loaded))
+	}
+}
+
+// Update line of the session banner, empty while the install is current or the check has no answer
+func updateNotice(info *tuigateway.SessionInfo) string {
+	behind, known := argNumber(infoOf(info).UpdateBehind)
+	if !known || behind == 0 {
+		return ""
+	}
+	command := infoText(infoOf(info).UpdateCommand)
+	if command == "" {
+		command = "icebath update"
+	}
+	switch {
+	case behind < 0:
+		return tr("session.notices.updateAvailable", command)
+	case behind == 1:
+		return tr("session.notices.updateBehindOne", behind, command)
+	}
+	return tr("session.notices.updateBehindOther", behind, command)
+}
+
+// Credential, config, redaction and inventory warnings of a new session, then its opening message
 func reportNewSessionNotices(info *tuigateway.SessionInfo, message string, sys func(string)) {
 	if warning := val(infoOf(info).CredentialWarning); warning != "" {
 		sys("warning: " + describeCredentialWarning(warning))
@@ -137,6 +174,7 @@ func reportNewSessionNotices(info *tuigateway.SessionInfo, message string, sys f
 		sys("warning: " + warning)
 	}
 	reportRedactionOff(info, sys)
+	reportInventoryNotices(info, sys)
 	if message != "" {
 		sys(message)
 	}
@@ -543,6 +581,7 @@ func (l *sessionLifecycle) applyAttachment(a attachment, hold *attachHold) tea.C
 	transcript := append(toTranscriptMessages(a.Messages), liveSessionInflightMessages(a.Inflight)...)
 	l.view.setHistoryItems(func([]msg) []msg { return append([]msg{introMsg(a.Info)}, transcript...) })
 	reportRedactionOff(a.Info, l.view.sys)
+	reportInventoryNotices(a.Info, l.view.sys)
 	writeActiveSessionFile(a.StoredSID)
 	connected := true
 	l.store.ui.Busy, l.store.ui.GatewayConnected = a.Running, &connected

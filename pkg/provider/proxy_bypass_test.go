@@ -55,9 +55,6 @@ func TestLoopbackHelpers(t *testing.T) {
 			t.Fatalf("%s: want %t", host, want)
 		}
 	}
-	if !LoopbackBypassesProxy("ws://127.0.0.1:9222/devtools") || LoopbackBypassesProxy("wss://remote.example/x") {
-		t.Fatal("loopback dials skip proxy detection")
-	}
 	env := AddLoopbackNoProxy(map[string]string{"NO_PROXY": "corp.example"})
 	if env["NO_PROXY"] != "corp.example,127.0.0.1,localhost,::1" || env["no_proxy"] != "127.0.0.1,localhost,::1" {
 		t.Fatalf("got %v", env)

@@ -14,12 +14,10 @@ func init() {
 	requirementAppliesHereEntry = managedRequirementAppliesHere
 	activationEnvironmentEntry = managedActivationEnvironment
 	venvIsCurrentEntry = managedVenvIsCurrent
-	candidateMembersEntry = managedCandidateMembers
 	coreRequirementErrorEntry = managedCoreRequirementError
 	anchorSitePackagesEntry = managedAnchorSitePackages
 	availableEntry = managedAvailable
 	collectGenerationsEntry = managedCollectGenerations
-	collectRuntimeGenerationsEntry = managedCollectRuntimeGenerations
 	ensureRuntimeEnvironmentEntry = managedEnsureRuntimeEnvironment
 	extraPythonCommandEntry = managedExtraPythonCommand
 	refreshDependenciesEntry = managedRefreshDependencies

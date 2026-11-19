@@ -118,8 +118,8 @@ func TestAGlobalBackendSwitchIsRefusedOnAManagedInstall(t *testing.T) {
 	}
 }
 
-// Backends list default first then registered names sorted, and the pin follows the carried definition
-func TestListBackendsAndAdoptBuiltBackend(t *testing.T) {
+// Backends list default first then registered names sorted, and an agent never built has no pin
+func TestListBackendsAndPinnedBackend(t *testing.T) {
 	installBackendHooks(t)
 	registerTestDelegationProvider(t, newOptionsDelegationProvider())
 	got := ListDelegationBackends(context.Background())
@@ -133,13 +133,5 @@ func TestListBackendsAndAdoptBuiltBackend(t *testing.T) {
 	a := &rebuildAgentDouble{tools: []map[string]any{def}}
 	if PinnedBackend(nil) != "" || PinnedBackend(a) != "" {
 		t.Fatal("unbuilt agent has a pin")
-	}
-	AdoptBuiltBackend(a, []map[string]any{{"function": map[string]any{"name": "delegate_task", "description": "other"}}}, "probe-options")
-	if PinnedBackend(a) != "" {
-		t.Fatal("a kept older definition adopted the new backend")
-	}
-	AdoptBuiltBackend(a, []map[string]any{{"function": map[string]any{"name": "delegate_task", "description": "d"}}}, "probe-options")
-	if PinnedBackend(a) != "probe-options" {
-		t.Fatal(PinnedBackend(a))
 	}
 }

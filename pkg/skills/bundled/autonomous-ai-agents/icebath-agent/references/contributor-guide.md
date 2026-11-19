@@ -74,7 +74,7 @@ with its `plugin.yaml` in `~/.icebath/plugins/` instead of editing core —
 ### Adding a Slash Command
 
 1. Add a `def(...)` entry to `Builtin` in `pkg/commands/table.go` (description key `slash.<name>.description` in the locale catalogs)
-2. Add its handler to `(*CLI).processCommand` in `pkg/app/cli_process_command.go` (the terminal UI reaches it through the slash worker, `pkg/app/tui_slash_worker.go`; commands the UI answers itself live in `pkg/tui/slash.go`)
+2. Add its terminal UI handler to the command tables in `pkg/tui/slash.go` and `pkg/tui/slash_*.go`; a command the UI does not answer itself goes to the gateway as `slash.exec`, which the session authority serves in `pkg/gateway/session_commands_exec.go`
 3. (Optional) Add a gateway handler: a `case` in `commandHandlerFor` and the name in `plainCommands` (or `idleCommands`) in `pkg/gatewayrun/run_busy_dispatch.go`
 
 All consumers (help text, autocomplete, Telegram menu, Slack mapping) derive from the central registry automatically.

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"reflect"
 	"slices"
 	"testing"
 
@@ -17,21 +16,10 @@ func withSafeWorker(t *testing.T, on bool) {
 
 func TestDiscoverBuiltinToolsSafeWorkerClosure(t *testing.T) {
 	withSafeWorker(t, false)
-	ordinary := DiscoverBuiltinTools()
-	for _, m := range []string{"tools.file_tools", "tools.clarify", "tools.process_manage"} {
-		if !slices.Contains(ordinary, m) {
-			t.Fatalf("ordinary discovery lacks %s: %v", m, ordinary)
-		}
-	}
 	if Default.Get("clarify") == nil {
 		t.Fatal("clarify hidden without a safe worker policy")
 	}
 	withSafeWorker(t, true)
-	got := make(chan []string, 1)
-	go func() { got <- DiscoverBuiltinTools() }()
-	if mods := <-got; !reflect.DeepEqual(mods, []string{"tools.file_tools", "tools.terminal_tool", "tools.process_registry"}) {
-		t.Fatalf("safe worker modules %v", mods)
-	}
 	for name := range safeWorkerTools {
 		if Default.Get(name) == nil || Default.Lookup(context.Background(), "", name) == nil {
 			t.Fatalf("core tool %s hidden under safe worker", name)
@@ -54,8 +42,8 @@ func TestSafeWorkerHidesOnlyInitBuiltins(t *testing.T) {
 	withSafeWorker(t, true)
 	r := NewRegistry()
 	h := func(context.Context, *Call) string { return "" }
-	r.registerBuiltin(Def{Name: "web_search", Toolset: "web", Schema: pyjson.ObjectOf(), Handler: h}, "tools.web_tools")
-	r.registerBuiltin(Def{Name: "terminal", Toolset: "terminal", Schema: pyjson.ObjectOf(), Handler: h}, "tools.terminal")
+	r.registerBuiltin(Def{Name: "web_search", Toolset: "web", Schema: pyjson.ObjectOf(), Handler: h})
+	r.registerBuiltin(Def{Name: "terminal", Toolset: "terminal", Schema: pyjson.ObjectOf(), Handler: h})
 	if r.Get("web_search") != nil || r.Get("terminal") == nil {
 		t.Fatal("safe worker filter wrong on fresh registry")
 	}

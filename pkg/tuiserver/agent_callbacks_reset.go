@@ -48,6 +48,5 @@ func resetSessionAgent(ctx context.Context, sid string, session *tuihost.Session
 	}()
 	info := sessionInfo(ctx, newAgent, session)
 	tuihost.Emit(ctx, "session.info", sid, info)
-	restartSlashWorker(ctx, sid, session)
 	return info, nil
 }

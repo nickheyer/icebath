@@ -58,7 +58,7 @@ var (
 var (
 	hostedEventKindRE        = regexp.MustCompile(`^[a-z][a-z0-9_.-]*$`)
 	hostedControlEventKinds  = map[string]bool{"authority.claimed": true, "authority.lost": true, "room.disbanded": true, "room.stop_requested": true}
-	hostedEventKindsByActor  = map[string]map[string]bool{"user": {"message.user": true}, "member": {"message.member": true}, "gateway": {"member.unavailable": true, "room.activity": true, "room.stop_requested": true, "turn.deferred": true, "turn.reassigned": true, "turn.cancelled": true, "turn.failed": true, "turn.settled": true, "turn.started": true}, "system": {"authority.claimed": true, "authority.lost": true, "room.created": true, "room.disbanded": true, "room.members_changed": true, "room.renamed": true}}
+	hostedEventKindsByActor  = map[string]map[string]bool{"user": {"message.user": true}, "member": {"message.member": true}, "gateway": {"member.unavailable": true, "room.activity": true, "room.continued": true, "room.stop_requested": true, "turn.deferred": true, "turn.reassigned": true, "turn.cancelled": true, "turn.failed": true, "turn.settled": true, "turn.started": true}, "system": {"authority.claimed": true, "authority.lost": true, "room.created": true, "room.disbanded": true, "room.members_changed": true, "room.renamed": true}}
 	hostedOptionalActorField = []struct {
 		name     string
 		maxChars int
@@ -139,14 +139,6 @@ func (e *EventAttachmentConflictError) Unwrap() error { return e.EventCursorConf
 
 // Python class name of the error
 func (e *EventAttachmentConflictError) PyTypeName() string { return "EventAttachmentConflictError" }
-
-// A successful authority claim that a later claim superseded
-type AuthoritySupersededError struct{ *AuthorityConflictError }
-
-func (e *AuthoritySupersededError) Unwrap() error { return e.AuthorityConflictError }
-
-// Python class name of the error
-func (e *AuthoritySupersededError) PyTypeName() string { return "AuthoritySupersededError" }
 
 // Stable wire reason of a stale authority
 func (e *AuthorityConflictError) Reason() string { return "authority_conflict" }
@@ -711,20 +703,6 @@ func DeleteRoomLinkRecords(ctx context.Context, dbPath, roomID string) (int64, e
 	return deleted, err
 }
 
-// Whether a live target side RoomLink reservation fences direct local prompts
-func PeerRoomIsReserved(ctx context.Context, dbPath string, roomID, targetProfile any, now *float64) (bool, error) {
-	room, err := hostedRoomID(roomID)
-	if err != nil {
-		return false, err
-	}
-	profile, err := hostedActorID(targetProfile, "target_profile")
-	if err != nil {
-		return false, err
-	}
-	row, err := hostedReadOne(ctx, dbPath, hostedSelectLiveReservation, room, profile, hostedClock(now))
-	return row != nil, err
-}
-
 // Identity column values of one remote run record in key order
 func hostedRemoteRunIdentity(record map[string]any) ([]any, error) {
 	return recordValues(record, hostedRemoteRunIdentityColumns)
@@ -765,35 +743,6 @@ func UpsertRemoteRunReceipt(ctx context.Context, dbPath string, record map[strin
 		}
 		return captureTransitionLocked(ctx, conn, fmt.Sprint(record["room_id"]))
 	})
-}
-
-// Remote run handles in durable task order, filtered by any given column
-func ListRemoteRunReceipts(ctx context.Context, dbPath string, roomID, targetProfile, sessionID *string) ([]map[string]any, error) {
-	var where []string
-	var args []any
-	for _, filter := range []struct {
-		column string
-		value  *string
-	}{{"room_id", roomID}, {"target_profile", targetProfile}, {"session_id", sessionID}} {
-		if filter.value != nil {
-			where = append(where, filter.column+"=?")
-			args = append(args, *filter.value)
-		}
-	}
-	clause := ""
-	if len(where) > 0 {
-		clause = " WHERE " + strings.Join(where, " AND ")
-	}
-	var out []map[string]any
-	err := hostedTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) error {
-		rows, err := state.QueryObjects(ctx, conn, "SELECT * FROM hosted_room_remote_runs"+clause+" ORDER BY created_at, task_id, execution_generation", args...)
-		out = make([]map[string]any, len(rows))
-		for i, row := range rows {
-			out[i] = hrDict(row)
-		}
-		return err
-	})
-	return out, err
 }
 
 // Exact durable remote run handle of one task attempt, nil when none

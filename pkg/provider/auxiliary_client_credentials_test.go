@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Writes auth.json into the temp home of the context
@@ -20,7 +22,7 @@ func auxWriteAuthJSON(t *testing.T, ctx context.Context, payload map[string]any)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(auxAuthJSONPath(ctx), raw, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(home.Dir(ctx), "auth.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -79,3 +79,6 @@ func TestLinkedSQLiteVersionMatchesTheLibrary(t *testing.T) {
 		t.Fatal("linked verdict differs from the predicate")
 	}
 }
+
+// Version tuple of the linked SQLite library as sqlite3.sqlite_version_info
+func LinkedSQLiteVersionInfo() VersionTuple { return linkedSQLiteVersionInfo }

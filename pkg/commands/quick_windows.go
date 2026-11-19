@@ -24,35 +24,6 @@ func gatewayProgram(command string, isBytes bool) (quickProgram, error) {
 	return ntShellProgram(command, 0)
 }
 
-// ComSpec command line for the CLI command with CREATE_NO_WINDOW, a sequence joined by list2cmdline
-func cliProgram(command any) (quickProgram, error) {
-	var args string
-	switch c := command.(type) {
-	case string:
-		args = c
-	case []byte:
-		return quickProgram{}, pyError("bytes args is not allowed on Windows")
-	default:
-		items, err := pyListItems(command)
-		if err != nil {
-			return quickProgram{}, err
-		}
-		parts := make([]string, len(items))
-		for i, item := range items {
-			switch v := item.(type) {
-			case string:
-				parts[i] = v
-			case []byte:
-				parts[i] = string(v)
-			default:
-				return quickProgram{}, notPathLike(item)
-			}
-		}
-		args = pysubprocess.List2cmdline(parts)
-	}
-	return ntShellProgram(args, windows.CREATE_NO_WINDOW)
-}
-
 // Hidden window ComSpec program, an empty path left for CreateProcess to search once the strings convert
 func ntShellProgram(args string, flags uint32) (quickProgram, error) {
 	executable, cmdline, err := pysubprocess.NtShell(args, os.Getenv)
@@ -159,10 +130,3 @@ func stillActive(pid int) (bool, error) {
 
 // Windows has no process group to signal, taskkill /T already walked the tree
 func killQuickGroup(int) {}
-
-// After a timeout kill communicate drains both pipes to EOF and waits for the shell without a bound
-func reapAfterTimeoutKill(q *quickProc) {
-	<-q.stdout.done
-	<-q.stderr.done
-	<-q.exited
-}

@@ -321,7 +321,7 @@ func stopMCPLoopIfIdle() bool { return stopMCPLoop(true) }
 
 // Argv markers of gateway children that race into a spawn window and are never MCP servers, matched against argv[1:]
 var nonMCPChildCmdlineMarkers = []string{
-	tuihost.SlashWorkerEntry, tuihost.TUIGatewayEntry,
+	tuihost.TUIGatewayEntry,
 	"-dorg.eclipse.equinox.launcher", "eclipse.jdt.ls", "org.eclipse.equinox.launcher_",
 }
 

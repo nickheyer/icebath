@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Row of the sessions table
@@ -130,30 +128,12 @@ func scanSession(r rowScanner) (*Session, error) {
 	return &s, nil
 }
 
-// Drops prompts no session references
-func deleteUnreferencedPrompts(tx *Tx) error {
-	_, err := tx.Exec(deleteUnreferencedSystemPromptsSQL)
-	return err
-}
-
 // Nullable text bound as NULL when empty
 func nullStr(s string) any {
 	if s == "" {
 		return nil
 	}
 	return s
-}
-
-// JSON text of a map, NULL when empty
-func jsonOrNull(m map[string]any) any {
-	if len(m) == 0 {
-		return nil
-	}
-	b, err := json.Marshal(m)
-	if err != nil {
-		return nil
-	}
-	return string(b)
 }
 
 // Full session id matching an id or a unique prefix, empty when none or ambiguous
@@ -422,51 +402,4 @@ func assignValue(dest, value any) error {
 // Freshest continuation of a session, the session itself when it was never compressed away
 func (d *DB) CompressionTip(id string) (string, error) {
 	return d.GetCompressionTip(context.Background(), id)
-}
-
-// Typed view of a session dict, nil for a missing row
-func sessionFromRow(row *pyjson.Object) *Session {
-	if row == nil {
-		return nil
-	}
-	str := func(k string) string {
-		if v, ok := rowValue(row, k).(string); ok {
-			return v
-		}
-		return ""
-	}
-	f64 := func(k string) float64 {
-		f, _ := pyFloatOf(orZero(rowValue(row, k)))
-		return f
-	}
-	i64 := func(k string) int64 {
-		n, err := pyIntOf(orZero(rowValue(row, k)))
-		if err != nil {
-			return 0
-		}
-		return n.Int64()
-	}
-	s := &Session{ID: str("id"), Source: str("source"), UserID: str("user_id"), Model: str("model"),
-		SystemPrompt: str("system_prompt"), ParentSessionID: str("parent_session_id"), StartedAt: f64("started_at"),
-		EndedAt: f64("ended_at"), EndReason: str("end_reason"), MessageCount: int(i64("message_count")),
-		ToolCallCount: int(i64("tool_call_count")), InputTokens: i64("input_tokens"), OutputTokens: i64("output_tokens"),
-		CacheReadTokens: i64("cache_read_tokens"), CacheWriteTokens: i64("cache_write_tokens"),
-		ReasoningTokens: i64("reasoning_tokens"), Cwd: str("cwd"), GitBranch: str("git_branch"),
-		GitRepoRoot: str("git_repo_root"), BillingProvider: str("billing_provider"), BillingBaseURL: str("billing_base_url"),
-		BillingMode: str("billing_mode"), EstimatedCostUSD: f64("estimated_cost_usd"), ActualCostUSD: f64("actual_cost_usd"),
-		CostStatus: str("cost_status"), CostSource: str("cost_source"), PricingVersion: str("pricing_version"),
-		Title: str("title"), TitleSource: str("title_source"), LastActivityAt: f64("last_activity_at"),
-		LastActivity: str("last_activity_description"), APICallCount: int(i64("api_call_count")),
-		ProfileName: str("profile_name"), RewindCount: int(i64("rewind_count")), Archived: i64("archived") != 0,
-		AutoArchived: i64("auto_archived") != 0, Pinned: i64("pinned") != 0, Hidden: i64("hidden") != 0,
-		LastReadAt: f64("last_read_at"), TranscriptRev: i64("transcript_revision")}
-	if cfg := parseModelConfigValue(rowValue(row, "model_config")); cfg.Len() > 0 {
-		if b, err := cfg.MarshalJSON(); err == nil {
-			_ = json.Unmarshal(b, &s.ModelConfig)
-		}
-	}
-	if names := str("tool_names"); names != "" {
-		_ = json.Unmarshal([]byte(names), &s.ToolNames)
-	}
-	return s
 }

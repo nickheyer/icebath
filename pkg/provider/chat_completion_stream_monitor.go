@@ -198,10 +198,6 @@ type streamCall struct {
 
 type streamCallKey struct{}
 
-func withStreamCall(ctx context.Context, c *streamCall) context.Context {
-	return context.WithValue(ctx, streamCallKey{}, c)
-}
-
 // Call of the current attempt, a lone attempt outside the reconnect loop is attempt one of a worker call
 func streamCallFrom(ctx context.Context) *streamCall {
 	if c, ok := ctx.Value(streamCallKey{}).(*streamCall); ok && c != nil {
@@ -210,25 +206,11 @@ func streamCallFrom(ctx context.Context) *streamCall {
 	return &streamCall{attempt: 1}
 }
 
-// Starts the next attempt of the call and returns its id
-func (c *streamCall) start() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.attempt++
-	return c.attempt
-}
-
 // Fresh upstream diagnostics for the wire call now opening, read by the retry loop when it drops
 func (c *streamCall) newDiag() *StreamDiag {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.diag = StreamDiagInit()
-	return c.diag
-}
-
-func (c *streamCall) currentDiag() *StreamDiag {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.diag
 }
 

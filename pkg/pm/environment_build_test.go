@@ -129,7 +129,7 @@ func TestEnvironmentBuildPublicBuildInstallsAllExtrasAtExplicitDestination(t *te
 			t.Setenv("VIRTUAL_ENV", filepath.Join(root, "wrong-environment"))
 			before := os.Environ()
 			locked := peRead(t, filepath.Join(source, "uv.lock"))
-			executable, err := BuildEnvironment(context.Background(), BuildEnvironmentOptions{Explicit: true, Source: source,
+			executable, err := buildEnvironment(context.Background(), BuildEnvironmentOptions{Explicit: true, Source: source,
 				Python: peHostPython(t), Out: filepath.Join(root, "native environment"), Cache: filepath.Join(root, "cache"), Env: env,
 				AllExtras: true, Offline: true, Sealed: sealed, Frozen: true})
 			if err != nil {
@@ -173,7 +173,7 @@ func TestEnvironmentBuildPublicDependencyOnlyBuildNeedsNoApplicationSource(t *te
 			os.Remove(filepath.Join(source, "root_app.py"))
 			os.Remove(filepath.Join(source, "local_backend.py"))
 			locked := peRead(t, filepath.Join(source, "uv.lock"))
-			executable, err := BuildEnvironment(context.Background(), BuildEnvironmentOptions{Explicit: true, Source: source,
+			executable, err := buildEnvironment(context.Background(), BuildEnvironmentOptions{Explicit: true, Source: source,
 				Python: peHostPython(t), Out: filepath.Join(root, "docker env"), Cache: filepath.Join(root, "cache"), Env: env,
 				NoInstallProject: true, Offline: true, Extras: c.extras, AllExtras: c.allExtras, Frozen: true})
 			if err != nil {
@@ -223,7 +223,7 @@ func (l *peAcknowledgingLog) String() string {
 }
 
 func TestEnvironmentBuildBuildBackendOutputIsStreamedBeforeBuildFinishes(t *testing.T) {
-	for _, operation := range []string{"sync", "requirements"} {
+	for _, operation := range []string{"sync"} {
 		t.Run(operation, func(t *testing.T) {
 			isolateHome(t)
 			t.Setenv("ICEBATH_VERBOSE", "1")
@@ -262,13 +262,7 @@ build_editable = build_wheel
 			if err := e.Create(ctx); err != nil {
 				t.Fatal(err)
 			}
-			var err error
-			if operation == "sync" {
-				err = e.Sync(ctx, source, SyncOptions{Timeout: 30 * time.Second})
-			} else {
-				err = e.InstallRequirements(ctx, []string{"file://" + filepath.ToSlash(source)}, "", "")
-			}
-			if err != nil {
+			if err := e.Sync(ctx, source, SyncOptions{Timeout: 30 * time.Second}); err != nil {
 				t.Fatal(err)
 			}
 			if err := e.Check(ctx, ""); err != nil {
@@ -482,7 +476,7 @@ func TestEnvironmentBuildFailedBuildRemovesOnlyItsCandidate(t *testing.T) {
 			ctx := context.Background()
 			previous := filepath.Join(root, "previous")
 			build := func(out, cache string) (string, error) {
-				return BuildEnvironment(ctx, BuildEnvironmentOptions{Explicit: true, Source: source, Python: python, Out: out, Env: env,
+				return buildEnvironment(ctx, BuildEnvironmentOptions{Explicit: true, Source: source, Python: python, Out: out, Env: env,
 					Cache: cache, Offline: true, Frozen: true})
 			}
 			executable, err := build(previous, filepath.Join(root, "cache"))

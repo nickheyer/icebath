@@ -199,7 +199,6 @@ func TestTermuxPackageOfRecognizesOnlyPoolArchives(t *testing.T) {
 		{rptGlib, "glib"},
 		{rptLicenses, "termux-licenses"},
 		{"https://github.com/astral-sh/uv/releases/download/0.12.3/uv.tar.gz", ""},
-		{"docker://termux/termux-docker@sha256:" + strings.Repeat("a", 64), ""},
 		{TermuxPool + "dists/stable/main/binary-aarch64/Packages", ""},
 		{TermuxPool + "pool/main/libi/libiconv/deeper/thing.deb", ""},
 	} {

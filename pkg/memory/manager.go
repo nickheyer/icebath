@@ -1406,46 +1406,6 @@ func (m *MemoryManager) InitializeAll(ctx context.Context, sessionID string, opt
 	})
 }
 
-// Turn based nudge toward a memory review
-type MemoryNudge struct {
-	Interval   int
-	turnsSince int
-}
-
-// Nudge firing every interval user turns, zero disabling it
-func NewMemoryNudge(interval int) *MemoryNudge {
-	return &MemoryNudge{Interval: interval}
-}
-
-// Hydrates the counter from persisted history so a resumed session keeps its cadence
-func (n *MemoryNudge) Hydrate(priorUserTurns int) {
-	if priorUserTurns > 0 && n.Interval > 0 && n.turnsSince == 0 {
-		n.turnsSince = priorUserTurns % n.Interval
-	}
-}
-
-// Advances the counter, true when the review should fire, only while the memory tool and store exist
-func (n *MemoryNudge) Tick(memoryToolValid, storePresent bool) bool {
-	if n.Interval > 0 && memoryToolValid && storePresent {
-		n.turnsSince++
-		if n.turnsSince >= n.Interval {
-			n.turnsSince = 0
-			return true
-		}
-	}
-	return false
-}
-
-// Resets the counter when the model used the memory tool itself
-func (n *MemoryNudge) NoteToolCall(name string) {
-	if name == "memory" {
-		n.turnsSince = 0
-	}
-}
-
-// Turns since the last memory write or review
-func (n *MemoryNudge) TurnsSince() int { return n.turnsSince }
-
 // Bare function tool with a resolvable name, unwrapping the OpenAI function wrapper
 func NormalizeToolSchema(schema any) (map[string]any, bool) {
 	m, ok := schema.(map[string]any)

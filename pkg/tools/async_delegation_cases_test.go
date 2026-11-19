@@ -86,9 +86,14 @@ func asyncChildMain(mode, home, delegationID string) int {
 		fmt.Println(text)
 		return 0
 	case "acker":
-		ok, err := MarkCompletionDelivered(env, delegationID)
-		fmt.Println(ok, err)
-		if !ok || err != nil {
+		claimed, err := ClaimCompletionDelivery(env, delegationID, "acker")
+		fmt.Println(claimed, err)
+		if !claimed || err != nil {
+			return 1
+		}
+		acked, err := CompleteCompletionDelivery(env, delegationID, "acker")
+		fmt.Println(acked, err)
+		if !acked || err != nil {
 			return 1
 		}
 		return 0

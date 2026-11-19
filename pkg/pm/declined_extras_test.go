@@ -135,8 +135,8 @@ func TestASyncQueuedBehindAnOptInKeepsTheExtra(t *testing.T) {
 	selected := make(chan struct{})
 	var once sync.Once
 	realTarget, realRecord := selectTarget, recordDeclines
-	peSwap(t, &selectTarget, func(ctx context.Context, p VenvState, fact map[string]any, extras []string, inputs VenvApplyOptions, repair bool, shipped, frozen []string) ([]string, string, VenvApplyOptions, error) {
-		enabled, stamp, opts, err := realTarget(ctx, p, fact, extras, inputs, repair, shipped, frozen)
+	peSwap(t, &selectTarget, func(ctx context.Context, p VenvState, fact map[string]any, extras []string, inputs VenvApplyOptions, repair bool) ([]string, string, VenvApplyOptions, error) {
+		enabled, stamp, opts, err := realTarget(ctx, p, fact, extras, inputs, repair)
 		if declActorOf(ctx) != "main" {
 			once.Do(func() { close(selected) })
 		}

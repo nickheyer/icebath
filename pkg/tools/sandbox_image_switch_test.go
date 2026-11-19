@@ -307,26 +307,3 @@ func TestPendingSandboxImageSwitchOddInputs(t *testing.T) {
 		t.Fatalf("no docker on PATH %+v %v", p, err)
 	}
 }
-
-func TestSandboxImageSwitchExplainLines(t *testing.T) {
-	one := SandboxImageSwitchExplainLines(&SandboxImageSwitch{CurrentImage: "old:1", TargetImage: "new:2", Containers: []string{"a"}})
-	want := []string{
-		"Your Docker sandbox (1 container) runs old:1.",
-		"The default sandbox image is now new:2: Python 3.13, Node 26, and a desktop",
-		"so Bot Screen, computer_use and the browser run inside the sandbox instead of on this machine.",
-		"Switching recreates the container on the next terminal call. Files in /root and /workspace",
-		"stay (they live on this machine); packages installed with apt/pip/npm -g inside the container",
-		"are reinstalled on demand; Python 3.11 virtualenvs need a rebuild.",
-	}
-	if !slices.Equal(one, want) {
-		t.Fatalf("lines %q", one)
-	}
-	two := SandboxImageSwitchExplainLines(&SandboxImageSwitch{CurrentImage: "old:1", TargetImage: "new:2", Containers: []string{"a", "b"}})
-	if two[0] != "Your Docker sandbox (2 containers) runs old:1." {
-		t.Fatalf("plural %q", two[0])
-	}
-	none := SandboxImageSwitchExplainLines(&SandboxImageSwitch{CurrentImage: "old:1", TargetImage: "new:2"})
-	if none[0] != "Your Docker sandbox (0 containers) runs old:1." {
-		t.Fatalf("zero %q", none[0])
-	}
-}

@@ -752,24 +752,6 @@ func TestCatStagedRepairInstallsLibatomicThenReprobes(t *testing.T) {
 	}
 }
 
-func TestCatNodeCandidatesKeepTermuxDockerOutOfUpdates(t *testing.T) {
-	versions, err := catPackage(t, "termux-docker").LatestVersions(bionicTarget, "")
-	if err != nil || len(versions) != 0 {
-		t.Fatalf("termux-docker latest = %q, %v", versions, err)
-	}
-}
-
-func TestCatTermuxDockerIsAPinNeverStaged(t *testing.T) {
-	p := catPackage(t, "termux-docker")
-	if pin, ok := p.(PinOnlyPackage); !ok || !pin.PinOnly() {
-		t.Fatal("termux-docker is not pin only")
-	}
-	if p.MissingReason(bionicTarget) != "" || p.MissingReason("linux-x64") == "" {
-		t.Fatal("termux-docker targets only bionic")
-	}
-	dsWantInstallError(t, p.Unpack("image", t.TempDir(), bionicTarget), "pin, not a downloadable artifact")
-}
-
 func TestCatProbeRunnerReportsExitTimeoutAndSpawnFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("platforms posix")

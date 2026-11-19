@@ -49,14 +49,14 @@ func newPluginFlow(t *testing.T, withAPI bool) *pluginFlow {
 	f.idp.installBrowser(t)
 	client := f.idp.client()
 	logger := slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	prevEnv, prevOut, prevPKCE := pkceEnvFn, pluginOAuthOut, pkceOut
+	prevEnv, prevOut := pkceEnvFn, pluginOAuthOut
 	pkceEnvFn = func() PoolEnv {
 		env := modelsPoolEnv(context.Background())
 		env.HTTP, env.Log = client, logger
 		return env
 	}
-	pluginOAuthOut, pkceOut = f.out, f.out
-	t.Cleanup(func() { pkceEnvFn, pluginOAuthOut, pkceOut = prevEnv, prevOut, prevPKCE })
+	pluginOAuthOut = f.out
+	t.Cleanup(func() { pkceEnvFn, pluginOAuthOut = prevEnv, prevOut })
 	if withAPI {
 		f.allowed = newLoopbackAPI(t, 200, "", `{"ok": true}`)
 		f.other = newLoopbackAPI(t, 200, "", `{"ok": true}`)

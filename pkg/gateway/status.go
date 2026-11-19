@@ -43,9 +43,6 @@ const (
 	StartTimeDriftTolerance = 200
 )
 
-// Exit reasons the out of loop watchdogs stamp with a degraded state before a hard exit
-var WatchdogExitReasons = map[string]bool{"loop_liveness_watchdog": true, "shutdown_watchdog": true}
-
 // Seams over the process facts status reads, replaced by tests
 var (
 	statusIsWindows               = runtime.GOOS == "windows"
@@ -268,21 +265,6 @@ func NormalizeUpdatedAt(value any) (string, bool, error) {
 		us -= 1e6
 	}
 	return pydatetime.ISOFormat(time.Unix(int64(whole), int64(us)*1000).UTC()), true, nil
-}
-
-// State a not running gateway's retained record reports, startup_failed or watchdog degraded while still wanted
-func RetainedGatewayState(rt any) string {
-	r, _ := rt.(*pyjson.Object)
-	if !pyEq(recGet(r, "desired_state"), "stopped") {
-		state := recGet(r, "gateway_state")
-		if pyEq(state, "startup_failed") {
-			return "startup_failed"
-		}
-		if reason, ok := recGet(r, "exit_reason").(string); ok && pyEq(state, "degraded") && WatchdogExitReasons[reason] {
-			return "degraded"
-		}
-	}
-	return "stopped"
 }
 
 // Error kinds terminate_pid raises, OSError refusals and the os.kill failures

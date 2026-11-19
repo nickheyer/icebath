@@ -165,7 +165,7 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintln(statusStdout, echo)
+		fmt.Fprintln(a.stdout(), echo)
 	}
 	return dumpFile, nil
 }

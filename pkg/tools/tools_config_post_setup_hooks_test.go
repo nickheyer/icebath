@@ -476,7 +476,6 @@ func TestPMRuntimeOrOSErrorClasses(t *testing.T) {
 		{pm.NewInstallError("a", "b", ""), true},
 		{&pm.ResolutionConflict{InstallError: pm.NewInstallError("a", "b", "")}, true},
 		{&pm.DownloadError{Message: "x"}, true},
-		{&pm.FeatureProbeError{Message: "x"}, true},
 		{&pm.PyError{Class: "RuntimeError", Message: "x"}, true},
 		{&pm.PyError{Class: "ConnectionResetError", Message: "x"}, true},
 		{&pm.PyError{Class: "KeyError", Message: "x"}, false},

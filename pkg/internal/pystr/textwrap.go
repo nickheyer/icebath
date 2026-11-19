@@ -176,9 +176,6 @@ func textwrapHandleLongWord(chunks, cur []string, curLen, width int, o TextwrapO
 	return cur, chunks
 }
 
-// ExpandTabs is str.expandtabs with the given tab size
-func ExpandTabs(s string, tabsize int) string { return expandTabs(s, tabsize) }
-
 // str.expandtabs with the given tab size, columns reset at newlines and carriage returns
 func expandTabs(s string, tabsize int) string {
 	if !strings.Contains(s, "\t") {

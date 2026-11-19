@@ -1298,12 +1298,3 @@ func (c *PoolCredentials) CredentialForEntry(poolKey string, entry map[string]an
 	}
 	return poolCredential(pool, row), true
 }
-
-// LoadPoolProbe adapts LoadPool to the chain's PoolProbe loader
-func (c *PoolCredentials) LoadPoolProbe(provider string) PoolProbe {
-	pool := c.Pool(provider)
-	if pool == nil {
-		return nil
-	}
-	return pool
-}

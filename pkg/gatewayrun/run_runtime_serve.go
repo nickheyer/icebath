@@ -20,7 +20,6 @@ func retireProfileAuthority(ctx context.Context, a *gateway.SessionAuthority, ti
 		r.publishServedSet()
 	}
 	gateway.StopAuthorityWork(a)
-	gateway.StopOneshots(a)
 	var rooms chan bool
 	if service, ok := a.HostedRoomService.(interface{ Stop(timeout float64) bool }); ok && service != nil {
 		rooms = make(chan bool, 1)

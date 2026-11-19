@@ -657,3 +657,6 @@ func TestTempHomePrepareLaunchRelaunchesWithoutRebinding(t *testing.T) {
 		}
 	}
 }
+
+// Reports this process as the child a relaunch started
+func Relaunched() bool { return relaunched.Load() }

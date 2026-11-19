@@ -126,13 +126,6 @@ func TestInvisibleUnicodeAndNFKC(t *testing.T) {
 	if !containsFinding(MustScanForThreats("ｃａｔ ~/.icebath/.env", "all"), "read_secrets") {
 		t.Fatal("fullwidth homograph not folded")
 	}
-	msg := FirstThreatMessage("hello​", "strict")
-	if msg == "" || !strings.Contains(msg, "U+200B") {
-		t.Fatalf("first threat message: %q", msg)
-	}
-	if FirstThreatMessage("ordinary project note", "strict") != "" {
-		t.Fatal("clean content produced a message")
-	}
 }
 
 func TestReDoSHardening(t *testing.T) {

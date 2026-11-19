@@ -450,15 +450,6 @@ func (modalBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	return errors.New(logMsg)
 }
 
-// Probe reports whether Modal credentials are configured
-func (modalBackend) Probe() (string, string) {
-	if HasDirectModalCredentials(nil) {
-		return "ready", "direct Modal credentials"
-	}
-	_, msg := modalUnavailableReason()
-	return "needs_setup", msg
-}
-
 // SetupInstructions names the Modal account setup
 func (modalBackend) SetupInstructions(env *Env) []string {
 	return []string{

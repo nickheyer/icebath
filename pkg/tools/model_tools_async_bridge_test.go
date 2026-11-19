@@ -115,7 +115,7 @@ func TestConcurrentWorkersReuseDistinctLoops(t *testing.T) {
 	var innerSeen sync.Map
 	reg := NewRegistry()
 	reg.Register(handlerDef("inner_state_probe", func(ctx context.Context, call *Call) string {
-		id, _ := loadSessionString(call.Env, "approval.tool_call_id")
+		id, _ := loadObservabilityID(call.Env, "approval.tool_call_id")
 		innerSeen.Store(call.ToolCallID, id)
 		return `{"inner": true}`
 	}))
@@ -126,11 +126,11 @@ func TestConcurrentWorkersReuseDistinctLoops(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			return toolErrorJSON("workers never ran together", nil)
 		}
-		bound, _ := loadSessionString(call.Env, "approval.tool_call_id")
+		bound, _ := loadObservabilityID(call.Env, "approval.tool_call_id")
 		innerID := call.ToolCallID + "-inner"
 		HandleFunctionCall(ctx, &Call{Name: "inner_state_probe", Args: map[string]any{}, ToolCallID: innerID, Env: call.Env})
 		inner, _ := innerSeen.Load(innerID)
-		after, _ := loadSessionString(call.Env, "approval.tool_call_id")
+		after, _ := loadObservabilityID(call.Env, "approval.tool_call_id")
 		mu.Lock()
 		got[call.ToolCallID] = seen{worker: WorkerOf(ctx), callID: call.ToolCallID, boundCallID: bound, innerBound: fmt.Sprint(inner), afterOwn: after, dispatcher: DispatcherOf(ctx)}
 		mu.Unlock()
@@ -164,7 +164,7 @@ func TestConcurrentWorkersReuseDistinctLoops(t *testing.T) {
 	if len(workers) != 3 {
 		t.Fatalf("concurrent calls shared a worker identity %v", workers)
 	}
-	if id, ok := loadSessionString(host.env, "approval.tool_call_id"); ok || id != "" {
+	if id, ok := loadObservabilityID(host.env, "approval.tool_call_id"); ok || id != "" {
 		t.Fatalf("a per call correlation id leaked into the session values %q", id)
 	}
 }

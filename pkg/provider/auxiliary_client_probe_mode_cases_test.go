@@ -5,18 +5,6 @@ import (
 	"testing"
 )
 
-func TestAuxProbeModeProbeStubNeverCached(t *testing.T) {
-	auxIsolateClientCache(t)
-	key := auxClientCacheKey{Provider: "probe-test", Model: "m"}
-	auxStoreCachedClient(key, &auxProbeClient{}, "m", nil, nil)
-	auxClientCacheMu.Lock()
-	_, cached := auxClientCache[key]
-	auxClientCacheMu.Unlock()
-	if cached {
-		t.Fatal("the probe client landed in the client cache")
-	}
-}
-
 func TestAuxProbeModeRepeatProbesStayResolvableAndNeverCache(t *testing.T) {
 	for _, wrap := range []bool{false, true} {
 		auxIsolateClientCache(t)

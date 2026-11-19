@@ -85,14 +85,14 @@ func withEnv(base map[string]string, extra map[string]string) map[string]string 
 
 func TestClientEnvIsFilteredAndValidated(t *testing.T) {
 	installSecretPolicy(t)
-	got, err := AcceptClientEnv(map[string]string{"ICEBATH_EPHEMERAL_SYSTEM_PROMPT": "P", "OPENAI_API_KEY": "sk-leak", "ICEBATH_YOLO_MODE": "1",
-		"NODE_CREDS": "c", "CONDA_DSN": "postgres://u:p@h/db", "NVM_DIR": "/client/.nvm"}, clientEnvTestConfig, true)
+	got, err := NormaliseClientEnv(map[string]string{"ICEBATH_EPHEMERAL_SYSTEM_PROMPT": "P", "OPENAI_API_KEY": "sk-leak", "ICEBATH_YOLO_MODE": "1",
+		"NODE_CREDS": "c", "CONDA_DSN": "postgres://u:p@h/db", "NVM_DIR": "/client/.nvm"}, ClientEnvRulesFor(clientEnvTestConfig, true))
 	if err != nil || !reflect.DeepEqual(got, map[string]string{"ICEBATH_EPHEMERAL_SYSTEM_PROMPT": "P", "NVM_DIR": "/client/.nvm"}) {
 		t.Fatalf("accepted %v %v", got, err)
 	}
 	bad := map[string]any{"PATH": int64(1)}
 	for _, value := range []any{"PATH=/x", bad} {
-		if _, err := AcceptClientEnv(value, clientEnvTestConfig, true); err == nil || err.Error() != "client_env must be a map of variable names to string values" {
+		if _, err := NormaliseClientEnv(value, ClientEnvRulesFor(clientEnvTestConfig, true)); err == nil || err.Error() != "client_env must be a map of variable names to string values" {
 			t.Fatalf("bad %v accepted %v", value, err)
 		}
 	}
@@ -114,7 +114,7 @@ func TestCredentialAndControlNamesAreRefusedByTheSecretPolicy(t *testing.T) {
 	sent := map[string]string{"NODE_BEARER": "b", "NODE_CREDS": "c", "CONDA_DSN": "postgres://u:p@h/db", "DEPLOY_WEBHOOK": "https://h",
 		"ICEBATH_KANBAN_DB": "/board.db", "ICEBATH_DELEGATED_CHILD_CONTEXT": "1", "NVM_DIR": "/client/.nvm", "MY_TOOLCHAIN_HOME": "/opt/tc", "PATH": "/client/bin"}
 	kept := map[string]string{"NVM_DIR": "/client/.nvm", "MY_TOOLCHAIN_HOME": "/opt/tc", "PATH": "/client/bin"}
-	if got, err := AcceptClientEnv(sent, config, true); err != nil || !reflect.DeepEqual(got, kept) {
+	if got, err := NormaliseClientEnv(sent, ClientEnvRulesFor(config, true)); err != nil || !reflect.DeepEqual(got, kept) {
 		t.Fatalf("gateway kept %v %v", got, err)
 	}
 	if got := CollectClientEnv(sent, config); !reflect.DeepEqual(got, kept) {
@@ -150,7 +150,7 @@ func TestExactRetryIsJudgedByTheCommittedMapNotTheCurrentAllowlist(t *testing.T)
 			t.Fatalf("changed retry %v matched", changed)
 		}
 	}
-	fresh, _ := AcceptClientEnv(env, map[string]any{"terminal": map[string]any{"client_env_passthrough": []any{"BUNDLE_PATH"}}}, true)
+	fresh, _ := NormaliseClientEnv(env, ClientEnvRulesFor(map[string]any{"terminal": map[string]any{"client_env_passthrough": []any{"BUNDLE_PATH"}}}, true))
 	if !reflect.DeepEqual(fresh, map[string]string{"BUNDLE_PATH": "/bundle", "PATH": "/client/bin"}) {
 		t.Fatalf("fresh create %v", fresh)
 	}

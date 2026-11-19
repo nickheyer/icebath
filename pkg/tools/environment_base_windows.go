@@ -63,11 +63,6 @@ func hideConsoleWindow(cmd *exec.Cmd) {
 // Windows processes never report a terminating signal
 func signalOf(state *os.ProcessState) int { return 0 }
 
-// Reports a write to a pipe whose reader is gone
-func isBrokenPipe(err error) bool {
-	return errors.Is(err, windows.ERROR_BROKEN_PIPE) || errors.Is(err, windows.ERROR_NO_DATA)
-}
-
 // PeekNamedPipe from kernel32 for pipe readiness polling
 var procPeekNamedPipe = windows.NewLazySystemDLL("kernel32.dll").NewProc("PeekNamedPipe")
 

@@ -43,20 +43,6 @@ func TestSignalReplacesTheSlotAndReturnsThePreviousValue(t *testing.T) {
 	}
 }
 
-func TestRaiseRunsTheHandlerBeforeItReturnsAndCarriesItsError(t *testing.T) {
-	boom := errors.New("boom")
-	ran := false
-	original := Signal(syscall.SIGUSR1, Func(func(os.Signal) error { ran = true; return boom }))
-	defer Signal(syscall.SIGUSR1, original)
-	if err := Raise(syscall.SIGUSR1); err != boom || !ran {
-		t.Fatalf("raise returned %v with ran=%v", err, ran)
-	}
-	Signal(syscall.SIGUSR1, Ignore)
-	if err := Raise(syscall.SIGUSR1); err != nil {
-		t.Fatalf("an ignored signal raised %v", err)
-	}
-}
-
 func TestInterruptSlotStartsWithTheKeyboardInterruptRaiser(t *testing.T) {
 	if h := initial(os.Interrupt); h != DefaultInt && h != Ignore {
 		t.Fatalf("SIGINT starts with %v", h)

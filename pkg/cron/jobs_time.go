@@ -46,13 +46,6 @@ func (w *knobWarner) warnOnce(kind string, value any, detail string) {
 		"`icebath cron edit`.", kind, pyrepr.Repr(value), detail))
 }
 
-// Forgets every warned value
-func (w *knobWarner) reset() {
-	w.mu.Lock()
-	w.warned = map[string]bool{}
-	w.mu.Unlock()
-}
-
 // Whether ZoneInfo accepts a key, a normalized relative path naming a zone file, Local being no file
 func zoneInfoKey(name string) bool {
 	if name == "Local" || strings.HasPrefix(name, "/") || path.Clean(name) != name || strings.HasPrefix(name, "..") {

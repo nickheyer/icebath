@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -124,13 +125,18 @@ func inventoryToolEnv(ctx context.Context) *tools.Env {
 	return &tools.Env{Home: home.Dir(ctx)}
 }
 
-// Toolset availability warning lines the classic CLI printed under its banner, empty when they cannot be computed
-func cliStartupNotices(ctx context.Context, enabled []string) []any {
+// Toolset availability notices a terminal UI session shows at its start, empty when they cannot be computed.
+// The terminal tool answers through its own check, since process_manage keeps its toolset exposable without a backend
+func toolNotices(ctx context.Context, enabled []string) []any {
 	lines := []any{}
 	suppressed(func() {
 		env := inventoryToolEnv(ctx)
 		scope := tools.ScopeKey(env.Home)
 		_, unavailable := tools.Default.CheckToolAvailability(ctx, env)
+		if !tools.Default.CheckCached(ctx, env, tools.CheckTerminalRequirements) &&
+			!slices.ContainsFunc(unavailable, func(u tools.UnavailableToolset) bool { return u.Name == "terminal" }) {
+			unavailable = append(unavailable, tools.UnavailableToolset{Name: "terminal", Tools: []string{"terminal"}})
+		}
 		unavailable = tools.FilterToEnabledToolsets(unavailable, enabled, func(name string) ([]string, error) {
 			return tools.Default.ResolveToolset(ctx, scope, name), nil
 		})
@@ -146,6 +152,40 @@ func cliStartupNotices(ctx context.Context, enabled []string) []any {
 		lines = found
 	})
 	return lines
+}
+
+// Records the project skills of a session folder: the count loaded from a trusted root, or the untrusted root that holds some
+func setProjectSkills(ctx context.Context, info *pyjson.Object, cfg map[string]any, cwd string) {
+	if strings.TrimSpace(cwd) == "" {
+		return
+	}
+	env := &tools.Env{}
+	if current := tools.ToolEnvFrom(ctx); current != nil {
+		*env = *current
+	}
+	env.Values = &sync.Map{}
+	if env.Home == "" {
+		env.Home = home.Dir(ctx)
+	}
+	if env.Config == nil {
+		env.Config = config.Tree(cfg)
+	}
+	env.Cwd = cwd
+	tools.SetLogicalSessionCwd(env, cwd)
+	scope := skills.ScopeFromEnv(env)
+	if dirs := scope.ProjectSkillsDirs(); len(dirs) > 0 {
+		loaded := 0
+		for _, dir := range dirs {
+			loaded += len(skills.IterSkillIndexFiles(dir, "SKILL.md"))
+		}
+		if loaded > 0 {
+			info.Set("project_skills_loaded", loaded)
+		}
+		return
+	}
+	if root, found := scope.UntrustedProjectSkillsRoot(); root != "" {
+		info.Set("project_skills_untrusted", pyjson.ObjectOf("root", root, "count", found))
+	}
 }
 
 // Session toolset names that neither registry, MCP servers, plugin toolsets nor platform bundles can place
@@ -325,9 +365,12 @@ func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSes
 	}
 	info.Set("enabled_toolsets", names)
 	suppressed(func() { info.Set("tool_availability", InventoryBanner.ToolsetAvailability(scoped, enabled)) })
-	if policy != nil && policy.Source == "cli" {
-		info.Set("tool_availability_warnings", cliStartupNotices(scoped, enabled))
+	if policy != nil && (policy.Source == "cli" || policy.Source == "tui") {
 		info.Set("unknown_toolsets", unknownToolsets(scoped, enabled, cfg))
+	}
+	if policy != nil && policy.Source == "tui" {
+		info.Set("tool_availability_warnings", toolNotices(scoped, enabled))
+		suppressed(func() { setProjectSkills(scoped, info, cfg, cwd) })
 	}
 	suppressed(func() {
 		if policy != nil && policy.Source == "cli" {

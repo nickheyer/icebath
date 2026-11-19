@@ -101,7 +101,7 @@ func RegisterProvider(reg ProviderRegistration) {
 	registrations = append(registrations, &r)
 }
 
-// Removes external registrations of a source, used when the plugin host rescans its directories
+// Removes external registrations of a source and home, the inverse of RegisterProvider that tests retract their providers with
 func UnregisterProviders(source, homeDir string) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -113,13 +113,6 @@ func UnregisterProviders(source, homeDir string) {
 		kept = append(kept, r)
 	}
 	registrations = kept
-}
-
-// Replaces the plugin manager of the home in effect as the provider skill registry, nil restores it
-func SetPluginSkillRegistry(r PluginSkillRegistry) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	skillRegistry = r
 }
 
 // Skill registry provider skills resolve against, the replacement first and the home plugin manager otherwise
@@ -371,18 +364,6 @@ func ParkedProviderNotice(ctx context.Context, env *tools.Env, name string) (str
 	}
 	return fmt.Sprintf("⚠ Memory provider '%s' is turned off: plugins.disabled lists it, so external memory is off "+
 		"(built-in memory still works).%s Turn it back on with `icebath plugins enable %s`.", name, why, name), true
-}
-
-// Whether the configured or named provider resolves to compiled in code ready to construct without import work
-func WarmMemoryProvider(ctx context.Context, env *tools.Env, name string) bool {
-	if name == "" {
-		name = ActiveMemoryProvider(ctx, env)
-	}
-	if name == "" {
-		return false
-	}
-	r := FindProvider(ctx, env, name)
-	return r != nil && r.Source == SourceBundled
 }
 
 // CLI command contributed by the active memory provider

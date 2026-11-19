@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -1074,10 +1075,33 @@ func TestDisabledProviderGuardAndUnknownProvider(t *testing.T) {
 		t.Fatalf("nothing configured: %+v", authErr)
 	}
 	r = testResolver(t, nil, &fakeCreds{}, "")
-	r.cfgError = errors.New("bad yaml")
+	prevParse := config.ParseFailureOut
+	config.ParseFailureOut = io.Discard
+	config.ResetConfigParseFailures()
+	t.Cleanup(func() {
+		config.ParseFailureOut = prevParse
+		config.ResetConfigParseFailures()
+	})
+	corrupt := config.GetConfigPath(r.home)
+	if err := os.WriteFile(corrupt, []byte("model: [unterminated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, parseErr := config.ReadDocument(corrupt)
+	if parseErr == nil {
+		t.Fatal("the fixture config must not parse")
+	}
+	if err := config.WarnConfigParseFailure(context.Background(), corrupt, parseErr, "defaults"); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-v1-abcdef")
 	if _, err := r.resolveProvider("auto", "", ""); err == nil || authErrOf(t, err).Code != "corrupt_config" {
 		t.Fatalf("corrupt config: %v", err)
+	}
+	if err := os.WriteFile(corrupt, []byte("model:\n  default: x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.refuseEnvAdoptionIfConfigCorrupt(); err != nil {
+		t.Fatalf("a repaired config no longer blocks env adoption: %v", err)
 	}
 }
 
@@ -1243,7 +1267,7 @@ func TestResolveTaskProviderModelPrecedence(t *testing.T) {
 	}
 }
 
-func TestResolveAuxiliaryRouteAndFallbackChain(t *testing.T) {
+func TestResolveMainRouteAndFallbackChain(t *testing.T) {
 	cfg := map[string]any{
 		"model":     map[string]any{"provider": "deepseek", "default": "deepseek-v4-pro"},
 		"auxiliary": map[string]any{"compression": map[string]any{"provider": "custom:gw", "model": "small"}},
@@ -1260,19 +1284,10 @@ func TestResolveAuxiliaryRouteAndFallbackChain(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", h)
 	secrets := config.NewSecrets(h)
-	route, err := Resolve(context.Background(), config.Tree(cfg), secrets, h, &fakeCreds{}, Overrides{})
-	if err != nil || route.Provider != "deepseek" || route.Model != "deepseek-v4-pro" || route.APIKey != "sk-deepseek-1234" {
-		t.Fatalf("main: %+v %v", route, err)
-	}
-	aux, err := ResolveAux(context.Background(), config.Tree(cfg), secrets, h, &fakeCreds{}, "compression")
-	if err != nil || aux.Provider != "custom:gw" || aux.Model != "small" || aux.BaseURL != "https://gw.example/v1" || aux.APIKey != "gw-key-1234" {
-		t.Fatalf("aux: %+v %v", aux, err)
-	}
-	routes, err := FallbackRoutes(context.Background(), config.Tree(cfg), secrets, h, &fakeCreds{})
-	if err != nil || len(routes) != 1 || routes[0].Provider != "custom:gw" || routes[0].Model != "fb-model" {
-		t.Fatalf("fallback: %+v %v", routes, err)
-	}
 	r := newResolver(context.Background(), config.Tree(cfg), secrets, h, &fakeCreds{})
+	if route := mustResolve(t, r, "", "", "", "").Route(); route.Provider != "deepseek" || route.APIKey != "sk-deepseek-1234" {
+		t.Fatalf("main: %+v", route)
+	}
 	rt, entry, err := r.ResolveRuntimeWithFallback("anthropic", "", "", "")
 	if err != nil || entry == nil || rt.Provider != "custom:gw" || rt.APIKey != "gw-key-1234" {
 		t.Fatalf("with fallback: %+v %v %v", rt, entry, err)

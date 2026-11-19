@@ -416,7 +416,7 @@ func TestSessionClearDisposesTheOwnersKernels(t *testing.T) {
 	if len(kernels) != 1 || !kernels[0].alive() {
 		t.Fatalf("want one live kernel, got %d", len(kernels))
 	}
-	tools.ClearSession("conv-a")
+	tools.ClearSession(context.Background(), "conv-a")
 	if len(liveKernels()) != 0 {
 		t.Fatal("session clear kept the kernel")
 	}

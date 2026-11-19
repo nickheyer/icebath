@@ -62,7 +62,7 @@ func transformProcessOutput(env *Env, output, command string, returncode *int, t
 	if TerminalOutputTransformHook == nil {
 		return output
 	}
-	callID, _ := loadSessionString(env, "approval.tool_call_id")
+	callID, _ := loadObservabilityID(env, "approval.tool_call_id")
 	var code any
 	if returncode != nil {
 		code = *returncode

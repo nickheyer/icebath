@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,8 +10,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const forensicsArgvCanary = "lin_api_CANARY_SHUTDOWN_FORENSICS_9f3a2c"
@@ -51,22 +48,6 @@ func TestSnapshotShutdownContextDetectsTakeoverMarkerForSelf(t *testing.T) {
 	}
 }
 
-func TestFormattersContextAsJSONHandlesUnserialisableValues(t *testing.T) {
-	ctx := pyjson.NewObject()
-	ctx.Set("signal", "SIGTERM")
-	ctx.Set("weird", struct{ x chan int }{})
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(ContextAsJSON(ctx)), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded["signal"] != "SIGTERM" {
-		t.Fatalf("signal = %v", decoded["signal"])
-	}
-	if _, ok := decoded["weird"]; !ok {
-		t.Fatal("weird missing")
-	}
-}
-
 func TestArgvFreePersistenceSnapshotAndLogLineIdentifyProcessWithoutArgv(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
@@ -86,7 +67,7 @@ func TestArgvFreePersistenceSnapshotAndLogLineIdentifyProcessWithoutArgv(t *test
 	ctx := SnapshotShutdownContext(&sig)
 	ctx.Set("parent", summary)
 	line := FormatContextForLog(ctx)
-	if strings.Contains(line, forensicsArgvCanary) || strings.Contains(ContextAsJSON(ctx), forensicsArgvCanary) {
+	if strings.Contains(line, forensicsArgvCanary) {
 		t.Fatal("argv canary leaked")
 	}
 	if !strings.Contains(line, fmt.Sprintf("parent_pid=%d", child.Process.Pid)) {

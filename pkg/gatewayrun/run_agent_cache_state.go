@@ -32,11 +32,6 @@ func (r *GatewayRunner) snapshotSessionModelOverride(sessionKey string) map[stri
 	return modelOverrideSnapshot(r.sessionModelOverride(sessionKey))
 }
 
-// Arms the one shot restore snapshot in one hold, a repeated one shot command keeping the earliest snapshot
-func (r *GatewayRunner) claimOneTurnRestore(sessionKey string, snapshot map[string]any) {
-	r.withSessionState(sessionKey, func(s *SessionState) { claimOneTurnRestoreIn(s, snapshot) })
-}
-
 // Arms the one shot restore snapshot on a state whose lock the caller holds, keeping an earlier snapshot
 func claimOneTurnRestoreIn(s *SessionState, snapshot map[string]any) {
 	conv := &s.conversation

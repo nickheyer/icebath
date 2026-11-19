@@ -39,18 +39,6 @@ type minimalProvider struct{ name string }
 func (m *minimalProvider) Name() string                                         { return m.name }
 func (m *minimalProvider) Start(context.Context, <-chan struct{}, StartOptions) {}
 
-// Provider overriding fire_due alone, fire_due(job_id, *, adapters=None, loop=None)
-type legacyProvider struct{ minimalProvider }
-
-func (l *legacyProvider) FireDue(context.Context, string, FireOptions) (bool, error) {
-	return true, nil
-}
-
-// Legacy provider that also overrides the two phase claim
-type splitProvider struct{ legacyProvider }
-
-func (p *splitProvider) ClaimFire(context.Context, string, bool, bool) (*Job, error) { return nil, nil }
-
 type unavailableProvider struct{ minimalProvider }
 
 func (u *unavailableProvider) IsAvailable() bool { return false }
@@ -157,14 +145,8 @@ func TestAbcGrowthStaysAdditive(t *testing.T) {
 		t.Fatalf("CronScheduler required methods changed to %v; growth must be additive (optional methods with defaults), not new required methods.", required)
 	}
 	p := &minimalProvider{"current"}
-	if schedulerOnJobsChanged(p) != nil || schedulerRegisterJob(p, &Job{}) != nil || schedulerReconcile(p) != nil || !schedulerIsAvailable(p) {
+	if schedulerOnJobsChanged(p) != nil || schedulerRegisterJob(p, &Job{}) != nil || !schedulerIsAvailable(p) {
 		t.Fatal("optional hooks must default safely")
-	}
-}
-
-func TestProviderSupportsSplitFireFollowsTheOverrides(t *testing.T) {
-	if !providerSupportsSplitFire(&minimalProvider{}) || providerSupportsSplitFire(&legacyProvider{}) || !providerSupportsSplitFire(&splitProvider{}) {
-		t.Fatal("split fire detection")
 	}
 }
 
@@ -288,7 +270,12 @@ func TestFireDueDefaultClaimsThenRuns(t *testing.T) {
 		ran = append(ran, [2]string{job.ID, job.FireClaim.By})
 		return true, nil
 	})
-	ok, err := schedulerFireDue(ctx, &InProcessCronScheduler{}, "j1", FireOptions{})
+	provider := &InProcessCronScheduler{}
+	claimed, err := schedulerClaimFire(ctx, provider, "j1", false, false)
+	if err != nil || claimed == nil {
+		t.Fatal(claimed, err)
+	}
+	ok, err := schedulerFireClaimed(ctx, provider, claimed, FireOptions{})
 	if err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -348,13 +335,22 @@ func TestFireDueForwardsManualForceToStoreClaim(t *testing.T) {
 		return &Job{ID: jobID, Name: "t", FireClaim: &Claim{By: "manual-owner"}}, true, nil
 	})
 	patchSeam(t, &runOneJobSeam, func(context.Context, *Store, *Job, runOneJobOptions) (bool, error) { return true, nil })
-	if ok, err := schedulerFireDue(ctx, &InProcessCronScheduler{}, "j1", FireOptions{Force: true}); err != nil || !ok {
+	provider := &InProcessCronScheduler{}
+	claimed, err := schedulerClaimFire(ctx, provider, "j1", true, false)
+	if err != nil || claimed == nil {
+		t.Fatal(claimed, err)
+	}
+	if ok, err := schedulerFireClaimed(ctx, provider, claimed, FireOptions{}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
 	if !reflect.DeepEqual(claims, []claimCall{{"j1", FireClaimOptions{Force: true}}}) {
 		t.Fatalf("claims %+v", claims)
 	}
-	if ok, err := schedulerFireDue(ctx, &InProcessCronScheduler{}, "j1", FireOptions{Manual: true}); err != nil || !ok {
+	claimed, err = schedulerClaimFire(ctx, provider, "j1", false, true)
+	if err != nil || claimed == nil {
+		t.Fatal(claimed, err)
+	}
+	if ok, err := schedulerFireClaimed(ctx, provider, claimed, FireOptions{}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
 	if got := claims[len(claims)-1]; got != (claimCall{"j1", FireClaimOptions{Manual: true}}) {
@@ -373,8 +369,8 @@ func TestFireDueLostClaimDoesNotRun(t *testing.T) {
 		ran = append(ran, job.ID)
 		return true, nil
 	})
-	if ok, err := schedulerFireDue(ctx, &InProcessCronScheduler{}, "j1", FireOptions{}); err != nil || ok {
-		t.Fatal(ok, err)
+	if claimed, err := schedulerClaimFire(ctx, &InProcessCronScheduler{}, "j1", false, false); err != nil || claimed != nil {
+		t.Fatal(claimed, err)
 	}
 	if len(ran) != 0 {
 		t.Fatalf("ran %v", ran)

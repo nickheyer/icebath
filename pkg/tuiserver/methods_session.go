@@ -480,7 +480,7 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 		"pending_hidden": flagParam(params, "hidden"), "room_plumbing": flagParam(params, "room_plumbing"),
 		"follow_profile_config": flagParam(params, "follow_profile_config"), "profile_home": profileValue,
 		"running": false, "session_key": key, "show_reasoning": loadShowReasoning(ctx), "source": source,
-		"slash_worker": nil, "tool_progress_mode": loadToolProgressMode(ctx), "tool_started_at": map[string]any{},
+		"tool_progress_mode": loadToolProgressMode(ctx), "tool_started_at": map[string]any{},
 		"transport": callerTransport(ctx), "auth_user_id": authUserID})
 	func() {
 		sessionsLock.Lock()

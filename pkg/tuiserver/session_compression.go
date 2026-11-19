@@ -150,7 +150,7 @@ func compressSessionHistory(ctx context.Context, session *tuihost.Session, focus
 }
 
 // Re anchors the session key on a compression rotated agent session id with its lease, approvals and yolo state
-func syncSessionKeyAfterCompress(ctx context.Context, sid string, session *tuihost.Session, clearPendingTitle, restartWorker bool) {
+func syncSessionKeyAfterCompress(ctx context.Context, sid string, session *tuihost.Session, clearPendingTitle bool) {
 	a := sessionAgent(session)
 	newSessionID := ""
 	if a != nil {
@@ -166,7 +166,7 @@ func syncSessionKeyAfterCompress(ctx context.Context, sid string, session *tuiho
 	session.Set("session_key", newSessionID)
 	suppress(func() {
 		suppress(func() { tools.UnregisterGatewayNotify(oldKey) })
-		tools.TransferSessionYolo(oldKey, newSessionID)
+		tools.TransferSessionYolo(ctx, oldKey, newSessionID)
 		suppress(func() {
 			tools.RegisterGatewayNotify(newSessionID, func(data map[string]any) error {
 				emitApprovalRequest(ctx, sid, data)
@@ -177,8 +177,5 @@ func syncSessionKeyAfterCompress(ctx context.Context, sid string, session *tuiho
 	session.Set("_queued_prompt_generation", intOr(session.Get("_queued_prompt_generation"))+1)
 	if clearPendingTitle {
 		session.Set("pending_title", nil)
-	}
-	if restartWorker {
-		suppress(func() { restartSlashWorker(ctx, sid, session) })
 	}
 }

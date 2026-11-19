@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -189,25 +188,6 @@ func tipShas(ctx context.Context, gitCmd []string, targetRef, base string) (stri
 		shas[i] = pystr.Strip(result.Stdout)
 	}
 	return shas[0], shas[1], nil
-}
-
-// Reports the check's verdict, up to date, a counted distance, or behind by an unknown count
-func printUpdateCheckResult(ctx context.Context, w io.Writer, behind *int, compareBranch string) error {
-	if behind != nil && *behind == 0 {
-		fmt.Fprintln(w, "✓ Already up to date.")
-		return nil
-	}
-	if behind != nil {
-		fmt.Fprintf(w, "󰆧 Update available: %d %s behind %s.\n", *behind, commitsWord(*behind), compareBranch)
-	} else {
-		fmt.Fprintf(w, "󰆧 Update available (behind %s).\n", compareBranch)
-	}
-	command, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(w, "  Run '%s' to install.\n", command)
-	return nil
 }
 
 // Freezes the data the completion process needs before the checkout moves

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -70,7 +69,6 @@ var (
 	}
 	setupLoadConfig        = loadSetupConfig
 	setupSaveConfig        = saveSetupConfig
-	setupEnsureRuntime     = EnsureGatewayRuntime
 	setupInstallLinuxScope = installLinuxGatewayFromSetup
 	setupServiceActionFn   = setupServiceAction
 )
@@ -287,84 +285,6 @@ func errOr(err, outcome error) error {
 
 // Pointer to a keyword boolean of the Windows installer
 func optBool(b bool) *bool { return &b }
-
-// Wizard step choosing persistence once, a start without persistence staying unmanaged
-func wizardInstallService(ctx context.Context, w io.Writer, backend string) error {
-	con := serviceConsole(w)
-	if !setupStdinIsTTY() {
-		return nil
-	}
-	startNow := setupPromptConsent(ctx, "  Start the gateway now?", true)
-	wants, err := WantsServiceInstall(ctx, true, false, nil)
-	if err != nil {
-		return err
-	}
-	if !wants {
-		con.PrintInfo(serviceAbsentNotice("Without a service, messaging and scheduled jobs stop at logout/reboot; jobs cannot run while the host is off."))
-		if !startNow {
-			con.PrintInfo("Run later: icebath gateway run. Install later: icebath gateway install")
-			return nil
-		}
-		result, err := setupEnsureRuntime(ctx, home.Dir(ctx), 5.0, false)
-		if err != nil {
-			return err
-		}
-		if result.State == "ready" {
-			con.PrintSuccess("Gateway runtime ready; no service was installed.")
-		} else {
-			reason := result.ReasonCode
-			if reason == "" {
-				reason = "pending"
-			}
-			con.PrintInfo(fmt.Sprintf("Gateway runtime: %s (%s). Check: icebath gateway status", result.State, reason))
-		}
-		return nil
-	}
-	err = func() error {
-		scope, didInstall := "", true
-		var err error
-		switch backend {
-		case "systemd":
-			scope, didInstall, err = setupInstallLinuxScope(ctx, w, false, true)
-		case "launchd":
-			err = setupLaunchdInstall(ctx, w, false, true, false)
-		default:
-			err = setupWindowsInstall(ctx, WindowsInstallOptions{Force: false, StartNow: optBool(startNow), StartOnLogin: optBool(true)})
-		}
-		if err != nil {
-			return err
-		}
-		installed := false
-		if didInstall {
-			if installed, err = setupServiceInstalled(ctx); err != nil {
-				return err
-			}
-		}
-		if !didInstall || !installed {
-			con.PrintWarning("Gateway service install did not complete. Retry: icebath gateway install")
-			return nil
-		}
-		if err := RecordServiceChoice(ctx, "install", nil); err != nil {
-			return err
-		}
-		if startNow && backend != "windows" {
-			return setupServiceActionFn(ctx, w, "start", "Start failed", true, scope == "system")
-		}
-		return nil
-	}()
-	var exit *SystemExitError
-	var called *CalledProcessError
-	if errors.As(err, &exit) || errors.As(err, &called) {
-		text := err.Error()
-		if exit != nil {
-			text = strconv.Itoa(exit.Code)
-		}
-		con.PrintError("Install failed: " + text)
-		con.PrintInfo("You can try manually: icebath gateway install")
-		return nil
-	}
-	return err
-}
 
 // Whether the gateway service is running, an active unit, a registered launchd job or a live gateway process
 func IsServiceRunning(ctx context.Context) (bool, error) {

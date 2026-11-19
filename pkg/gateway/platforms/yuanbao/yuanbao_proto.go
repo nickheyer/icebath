@@ -498,12 +498,6 @@ func EncodeConnMsgFull(cmdType int64, cmd string, seqNo int64, msgID, module str
 	return p.b, nil
 }
 
-// EncodeConnMsg encodes a ConnMsg carrying only cmd_type, seq_no and the payload
-func EncodeConnMsg(msgType, seqNo int64, data []byte) []byte {
-	out, _ := EncodeConnMsgFull(msgType, "", seqNo, "", "", data, false)
-	return out
-}
-
 // DecodeConnMsg decodes a ConnMsg into msg_type, seq_no, data and the full head
 func DecodeConnMsg(data []byte) (*pyjson.Object, error) {
 	fd, err := parseDict(data)
@@ -529,23 +523,6 @@ func connRequest(cmdType int64, cmd, msgID, module string, data []byte) ([]byte,
 // EncodeBizMsg wraps an encoded business payload as a request ConnMsg
 func EncodeBizMsg(service, method, reqID string, body []byte) ([]byte, error) {
 	return connRequest(CmdType["Request"], method, reqID, service, body)
-}
-
-// DecodeBizMsg decodes a ConnMsg into service, method, req_id, body, is_response and head
-func DecodeBizMsg(data []byte) (*pyjson.Object, error) {
-	result, err := DecodeConnMsg(data)
-	if err != nil {
-		return nil, err
-	}
-	head := result.Vals["head"].(*pyjson.Object)
-	out := pyjson.NewObject()
-	out.Set("service", head.Vals["module"])
-	out.Set("method", head.Vals["cmd"])
-	out.Set("req_id", head.Vals["msg_id"])
-	out.Set("body", result.Vals["data"])
-	out.Set("is_response", pyjson.Equal(head.Vals["cmd_type"], CmdType["Response"]))
-	out.Set("head", head)
-	return out, nil
 }
 
 // Biz request whose req_id is the msg_id, else prefix_seq with seq taken before the conn seq_no

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ---- OpenRouter and bare custom fallback ----
@@ -269,7 +271,7 @@ func resolveExternalProcessCommand(command string) string {
 		return ""
 	}
 	lookup := command
-	if strings.Contains(command, string(os.PathSeparator)) {
+	if strings.Contains(command, string(os.PathSeparator)) || (runtime.GOOS == "windows" && strings.Contains(command, "/")) {
 		expanded := os.ExpandEnv(command)
 		if strings.HasPrefix(expanded, "~") {
 			if h, err := os.UserHomeDir(); err == nil {
@@ -280,14 +282,8 @@ func resolveExternalProcessCommand(command string) string {
 			lookup = abs
 		}
 	}
-	if found, err := exec.LookPath(lookup); err == nil {
-		return filepath.Clean(found)
-	}
-	if h, err := os.UserHomeDir(); err == nil && !strings.Contains(lookup, string(os.PathSeparator)) {
-		candidate := filepath.Join(h, ".local", "bin", lookup)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return candidate
-		}
+	if found := tools.LocateUserCommand(lookup); len(found) > 0 {
+		return filepath.Clean(found[0])
 	}
 	return findClaudeCodeCLI(command)
 }

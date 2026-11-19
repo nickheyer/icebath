@@ -273,13 +273,13 @@ func bcaOpenAIIDForms() []string {
 
 func TestBedrockOpenAIClassifier(t *testing.T) {
 	for _, id := range append(bcaOpenAIIDForms(), "openai.gpt-6-astra", "openai.gpt-6-sol", "openai.gpt-6-luna", "openai.gpt-6.1-sol") {
-		if !isOpenAIBedrockModel(id) {
+		if _, _, ok := parseBedrockOpenAIModelID(id); !ok {
 			t.Errorf("%s is off the OpenAI route", id)
 		}
 	}
 	for _, id := range []string{"openai.gpt-oss-120b", "us.openai.gpt-oss-120b-1:0", "anthropic.claude-opus-5", "us.anthropic.claude-opus-5",
 		"openai.gpt-99", "bogus.openai.gpt-6.1-sol", ""} {
-		if isOpenAIBedrockModel(id) {
+		if _, _, ok := parseBedrockOpenAIModelID(id); ok {
 			t.Errorf("%s is on the OpenAI route", id)
 		}
 	}

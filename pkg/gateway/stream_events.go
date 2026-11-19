@@ -61,21 +61,6 @@ func (ToolCallFinished) isStreamEvent() {}
 func (LongToolHint) isStreamEvent()     {}
 func (GatewayNotice) isStreamEvent()    {}
 
-// Finished tool call with the dataclass defaults, ok true and zero duration and index
-func NewToolCallFinished(toolName string) ToolCallFinished {
-	return ToolCallFinished{ToolName: toolName, OK: true}
-}
-
-// Gateway notice with an empty extra mapping like the dataclass default factory
-func NewGatewayNotice(kind, text string) GatewayNotice {
-	return GatewayNotice{Kind: kind, Text: text, Extra: map[string]any{}}
-}
-
-// Tool call chunk whose argument keys keep the insertion order the caller lists
-func NewToolCallChunk(toolName string, preview *string, args map[string]any, argKeys []string, index int) ToolCallChunk {
-	return ToolCallChunk{ToolName: toolName, Preview: preview, Args: args, ArgKeys: argKeys, Index: index}
-}
-
 // Argument keys in insertion order, the recorded order first then any key it misses in sorted order
 func (c ToolCallChunk) OrderedArgKeys() []string {
 	seen := map[string]bool{}

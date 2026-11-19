@@ -50,15 +50,19 @@ func TestVarintPartialDecode(t *testing.T) {
 }
 
 func TestConnCodecBasicRoundTrip(t *testing.T) {
-	dec, err := DecodeConnMsg(EncodeConnMsg(0, 42, []byte("hello world")))
+	enc, err := EncodeConnMsgFull(0, "", 42, "", "", []byte("hello world"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, err := DecodeConnMsg(enc)
 	if err != nil || get(dec, "msg_type") != int64(0) || get(dec, "seq_no") != int64(42) || !bytes.Equal(get(dec, "data").([]byte), []byte("hello world")) {
 		t.Fatalf("got %v %v", dec, err)
 	}
 }
 
 func TestConnCodecFixedBytesSimple(t *testing.T) {
-	if enc := EncodeConnMsg(0, 1, nil); !bytes.Equal(enc, []byte{0x0a, 0x02, 0x18, 0x01}) {
-		t.Fatalf("got %x", enc)
+	if enc, err := EncodeConnMsgFull(0, "", 1, "", "", nil, false); err != nil || !bytes.Equal(enc, []byte{0x0a, 0x02, 0x18, 0x01}) {
+		t.Fatalf("got %x %v", enc, err)
 	}
 }
 
@@ -68,17 +72,10 @@ func TestBizCodecRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dec, err := DecodeBizMsg(enc)
-	if err != nil || get(dec, "service") != "trpc.yuanbao.example" || get(dec, "method") != "/im/send_c2c_msg" ||
-		get(dec, "req_id") != "req-001" || !bytes.Equal(get(dec, "body").([]byte), body) || get(dec, "is_response") != false {
+	dec, err := DecodeConnMsg(enc)
+	if err != nil || get(dec, "head", "module") != "trpc.yuanbao.example" || get(dec, "head", "cmd") != "/im/send_c2c_msg" ||
+		get(dec, "head", "msg_id") != "req-001" || !bytes.Equal(get(dec, "data").([]byte), body) || get(dec, "msg_type") != CmdType["Request"] {
 		t.Fatalf("got %v %v", dec, err)
-	}
-}
-
-func TestBizCodecIsResponseFlag(t *testing.T) {
-	enc, _ := EncodeConnMsgFull(CmdType["Response"], "/im/send_c2c_msg", 1, "rsp-001", "svc", []byte{1}, false)
-	if dec, _ := DecodeBizMsg(enc); get(dec, "is_response") != true {
-		t.Fatalf("got %v", dec)
 	}
 }
 

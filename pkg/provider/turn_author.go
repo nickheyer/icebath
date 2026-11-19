@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -173,17 +172,4 @@ func TurnAuthorEnv(author *pyjson.Object) (map[string]string, error) {
 		return nil, err
 	}
 	return map[string]string{TurnAuthorEnvName: text}, nil
-}
-
-// Shared a2a name of a bot author turns, empty for a human or an id less bot
-func A2AKey(author *pyjson.Object) string {
-	if author == nil {
-		return ""
-	}
-	isBot, _ := author.Get("is_bot")
-	id, _ := author.Get("id")
-	if !pyrepr.Truthy(isBot) || !pyrepr.Truthy(id) {
-		return ""
-	}
-	return "a2a:" + pyrepr.Str(id)
 }

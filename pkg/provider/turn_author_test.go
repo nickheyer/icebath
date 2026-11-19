@@ -51,9 +51,6 @@ func TestTurnAuthorCleansFieldsAndQualifiesOrigins(t *testing.T) {
 	if name, _ := got.Get("name"); name != turnAuthorFamily+" Fam" {
 		t.Fatalf("cleaned name %q", name)
 	}
-	if A2AKey(got) != "a2a:bot:desk-1/alpha" || A2AKey(ParseTurnAuthor(`{"id": "u1", "is_bot": 0}`)) != "" || A2AKey(nil) != "" {
-		t.Fatal("a2a key")
-	}
 	long := ParseTurnAuthor(map[string]any{"name": string(make([]rune, 0)) + repeatRune('n', 250)})
 	if name, _ := long.Get("name"); len([]rune(name.(string))) != 200 {
 		t.Fatal("field cap")

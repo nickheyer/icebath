@@ -332,62 +332,64 @@ func TestRestartCountsAUnitWhoseStartJobOutlivedTheClient(t *testing.T) {
 	}
 }
 
-// Sandboxes the user home so a unit that declares no home resolves to this update's own home
-func bestEffortRestartHost(t *testing.T, mainPID func(svc string) int) *[]string {
+// User scope host listing units whose live main pids come from mainPID, returning the units a restart verb reached
+func unitRestartHost(t *testing.T, mainPID func(svc string) int, units ...string) *[]string {
 	t.Helper()
-	userHome := t.TempDir()
-	t.Setenv("HOME", userHome)
-	t.Setenv("ICEBATH_HOME", filepath.Join(userHome, ".icebath"))
-	if err := os.MkdirAll(filepath.Join(userHome, ".icebath"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	vsSwap(t, &fleetUnitMainPid, func(_ context.Context, _ []string, svc string) (int, error) { return mainPID(svc), nil })
-	vsSwap(t, &fleetHomeForPID, func(context.Context, int) (string, bool, error) { return "", false, nil })
-	// The host's systemd is never asked what an invented unit declares, it answers as for an unknown unit
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
-		return completedText(cmd, ""), nil
-	})
-	restarted := []string{}
-	vsSwap(t, &fleetResetAndRestart, func(_ context.Context, _ io.Writer, _ []string, svc string, _ []string) (*pysubprocess.Completed, error) {
-		restarted = append(restarted, svc)
-		return &pysubprocess.Completed{}, nil
-	})
-	vsSwap(t, &fleetWaitServiceActive, func(context.Context, []string, string, float64) (bool, error) { return true, nil })
-	vsSwap(t, &systemdScopes, []systemdScope{{"user", []string{"systemctl", "--user"}}})
-	return &restarted
-}
-
-func userListing(units ...string) []systemdUnitListing {
+	unitsBelongToThisUpdate(t)
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	scope := []string{"systemctl", "--user"}
 	lines := make([]string, len(units))
 	for i, unit := range units {
 		lines[i] = unit + " loaded active running x"
 	}
-	return []systemdUnitListing{{Scope: "user", ScopeCmd: []string{"systemctl", "--user"}, Listing: completedText(nil, strings.Join(lines, "\n"))}}
+	restarted := []string{}
+	vsSwap(t, &fleetUnitMainPid, func(_ context.Context, _ []string, svc string) (int, error) { return mainPID(svc), nil })
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+		switch {
+		case slices.Contains(cmd, "list-units"):
+			return completedText(cmd, strings.Join(lines, "\n")), nil
+		case slices.Contains(cmd, "--property=MainPID"):
+			return completedText(cmd, ""), nil
+		case slices.Contains(cmd, "show"):
+			return completedText(cmd, "TimeoutStopUSec=70s\nTimeoutStartUSec=90s"), nil
+		case slices.Contains(cmd, "restart"):
+			restarted = append(restarted, cmd[len(cmd)-1])
+		}
+		return completedText(cmd, "active"), nil
+	})
+	vsSwap(t, &systemdScopes, []systemdScope{{"user", scope}})
+	vsSwap(t, &fleetRepairUnit, func(context.Context, io.Writer, string, string) error { return nil })
+	vsSwap(t, &fleetWaitServiceActive, func(context.Context, []string, string, float64) (bool, error) { return true, nil })
+	vsSwap(t, &fleetSupportsSystemd, func(context.Context) bool { return true })
+	vsSwap(t, &fleetEnsureUserSystemdEnv, func() {})
+	return &restarted
 }
 
 func TestLeftoverPerProfileUnitsRestartTheirOneHostProcessOnce(t *testing.T) {
-	restarted := bestEffortRestartHost(t, func(string) int { return 4242 })
-	failed := []string{}
-	err := restartSystemdGatewayUnitsBestEffort(context.Background(), io.Discard, &failed,
-		userListing("icebath-gateway.service", "icebath-gateway-coder.service", "icebath-gateway-writer.service"))
-	if err != nil {
+	verbs := unitRestartHost(t, func(string) int { return 4242 },
+		"icebath-gateway.service", "icebath-gateway-coder.service", "icebath-gateway-writer.service")
+	restarted, failed, scoped := []string{}, []string{}, map[string]bool{}
+	if err := restartSystemdGatewayUnits(context.Background(), io.Discard, &restarted, &failed, scoped, 45, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(*restarted, []string{"icebath-gateway"}) || len(failed) != 0 {
-		t.Fatalf("restarted=%v failed=%v", *restarted, failed)
+	if !reflect.DeepEqual(*verbs, []string{"icebath-gateway"}) || !reflect.DeepEqual(restarted, []string{"icebath-gateway"}) || len(failed) != 0 {
+		t.Fatalf("verbs=%v restarted=%v failed=%v", *verbs, restarted, failed)
+	}
+	if !reflect.DeepEqual(scoped, map[string]bool{"user/icebath-gateway": true}) {
+		t.Fatalf("scoped = %v", scoped)
 	}
 }
 
 func TestUnitsWithDistinctLivePidsAreEachRestarted(t *testing.T) {
 	pids := map[string]int{"icebath-gateway": 1, "icebath-gateway-coder": 2}
-	restarted := bestEffortRestartHost(t, func(svc string) int { return pids[svc] })
-	failed := []string{}
-	if err := restartSystemdGatewayUnitsBestEffort(context.Background(), io.Discard, &failed, userListing("icebath-gateway.service", "icebath-gateway-coder.service")); err != nil {
+	verbs := unitRestartHost(t, func(svc string) int { return pids[svc] }, "icebath-gateway.service", "icebath-gateway-coder.service")
+	restarted, failed, scoped := []string{}, []string{}, map[string]bool{}
+	if err := restartSystemdGatewayUnits(context.Background(), io.Discard, &restarted, &failed, scoped, 45, nil); err != nil {
 		t.Fatal(err)
 	}
-	got := append([]string{}, *restarted...)
+	got := append([]string{}, *verbs...)
 	slices.Sort(got)
-	if !reflect.DeepEqual(got, []string{"icebath-gateway", "icebath-gateway-coder"}) {
-		t.Fatalf("restarted = %v", *restarted)
+	if !reflect.DeepEqual(got, []string{"icebath-gateway", "icebath-gateway-coder"}) || len(restarted) != 2 || len(failed) != 0 {
+		t.Fatalf("verbs=%v restarted=%v failed=%v", *verbs, restarted, failed)
 	}
 }

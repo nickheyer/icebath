@@ -20,8 +20,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Worker child of the re-executed test binary, optionally with a probe replacing an operation
@@ -31,7 +29,7 @@ func ieWorkerHelper(args []string) int {
 	}
 	if len(args) > 0 && strings.HasPrefix(args[0], "stdio-probe") {
 		streaming := args[0] == "stdio-probe-streaming"
-		workerOperations["prune_cache"] = &workerOperation{bootstrap: bootstrapAlways, run: func(ctx context.Context, arguments map[string]any, hooks workerHooks) (any, error) {
+		workerOperations["venv_is_current"] = &workerOperation{bootstrap: bootstrapNever, run: func(ctx context.Context, arguments map[string]any, hooks workerHooks) (any, error) {
 			cmd := exec.Command("sh", "-c", "input=$(cat); [ -z \"$input\" ] && echo EOF_OK")
 			cmd.Stdin = os.Stdin
 			var captured bytes.Buffer
@@ -146,7 +144,7 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX node fixture")
 	}
-	for _, operation := range []string{"ensure", "stage_only"} {
+	for _, operation := range []string{"ensure"} {
 		t.Run(operation, func(t *testing.T) {
 			ieClientEnv(t)
 			ieUseTestWorker(t)
@@ -160,13 +158,10 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 				stages = append(stages, []any{stage, done, total, label})
 				return nil
 			}}
-			arguments := map[string]any{"name": "node", "target": target}
-			if operation == "ensure" {
-				arguments = map[string]any{"name": "node", "explicit": true}
-				hooks.downloadProgress = func(done, total int64, ranges []RangeSet) error {
-					downloads = append(downloads, ieTick{done, total, ranges})
-					return nil
-				}
+			arguments := map[string]any{"name": "node", "explicit": true}
+			hooks.downloadProgress = func(done, total int64, ranges []RangeSet) error {
+				downloads = append(downloads, ieTick{done, total, ranges})
+				return nil
 			}
 			factsPath, _ := FactsPath(ctx)
 			storeRoot, _ := StoreRoot(ctx)
@@ -174,37 +169,25 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var entry string
-			if operation == "stage_only" {
-				entry = pyrepr.Str(result)
-				if pathExists(factsPath) {
-					t.Fatal("staging published host identity")
-				}
-			} else {
-				if result != nil {
-					t.Fatalf("ensure crossed the wire with a result %v", result)
-				}
-				facts, _ := NewFacts(factsPath, false)
-				fact, _ := facts.Get("node")
-				entry = filepath.Join(storeRoot, pyrepr.Str(fact["entry"]))
-				last := downloads[len(downloads)-1]
-				if len(downloads) == 0 || last.done != last.total || len(last.ranges) == 0 {
-					t.Fatalf("download progress %v", downloads)
-				}
-				base := map[string]string{"PATH": "/caller/bin", "CALLER": "kept", "PYTHONPATH": "/caller/dependencies"}
-				runner, err := Ensure(ctx, "node", EnsureOptions{BaseEnv: base})
-				if err != nil || runner.Env["CALLER"] != "kept" || runner.Env["PYTHONPATH"] != base["PYTHONPATH"] || !strings.HasSuffix(runner.Env["PATH"], base["PATH"]) {
-					t.Fatalf("runner %v %v", runner, err)
-				}
+			if result != nil {
+				t.Fatalf("ensure crossed the wire with a result %v", result)
+			}
+			facts, _ := NewFacts(factsPath, false)
+			fact, _ := facts.Get("node")
+			entry := filepath.Join(storeRoot, pyrepr.Str(fact["entry"]))
+			last := downloads[len(downloads)-1]
+			if len(downloads) == 0 || last.done != last.total || len(last.ranges) == 0 {
+				t.Fatalf("download progress %v", downloads)
+			}
+			base := map[string]string{"PATH": "/caller/bin", "CALLER": "kept", "PYTHONPATH": "/caller/dependencies"}
+			runner, err := Ensure(ctx, "node", EnsureOptions{BaseEnv: base})
+			if err != nil || runner.Env["CALLER"] != "kept" || runner.Env["PYTHONPATH"] != base["PYTHONPATH"] || !strings.HasSuffix(runner.Env["PATH"], base["PATH"]) {
+				t.Fatalf("runner %v %v", runner, err)
 			}
 			if !bytes.Equal(readFile(t, filepath.Join(entry, relative)), body) || len(stages) == 0 || stages[0][0] != "download" {
 				t.Fatalf("stages %v", stages)
 			}
 			install := func() (string, error) {
-				if operation == "stage_only" {
-					out, err := request(ctx, "stage_only", map[string]any{"name": "node", "target": target}, workerHooks{}, "")
-					return pyrepr.Str(out), err
-				}
 				_, err := request(ctx, "ensure", map[string]any{"name": "node", "explicit": true}, workerHooks{}, "")
 				return entry, err
 			}
@@ -452,7 +435,7 @@ func TestWorkerChildrenGetEOFWhileControlPipeStaysOpen(t *testing.T) {
 				mode = "stdio-probe-streaming"
 			}
 			ieUseTestWorker(t, mode)
-			response := ieRawWorker(t, map[string]any{"id": "stdio-probe", "operation": "prune_cache", "arguments": map[string]any{"cache": tmp},
+			response := ieRawWorker(t, map[string]any{"id": "stdio-probe", "operation": "venv_is_current", "arguments": map[string]any{"cache": tmp},
 				"callbacks": []any{}, "packages": []any{}, "context": map[string]any{"repo": RepoRoot(), "lockfile": LockfilePath()}}, true)
 			if response["result"] != "child completed" {
 				t.Fatalf("response %v", response)
@@ -609,24 +592,8 @@ func TestWorkerObserverFailurePreservesResumableBytes(t *testing.T) {
 	}
 }
 
-func TestWorkerColdBootstrapNeverCreatesAPrivateCache(t *testing.T) {
-	tmp := ieClientEnv(t)
-	cache := filepath.Join(tmp, "shared-cache")
-	before := os.Environ()
-	err := PruneCache(context.Background(), PruneCacheOptions{Cache: cache})
-	if err == nil {
-		t.Fatal("prune ran without a pinned uv")
-	}
-	if pathExists(filepath.Join(home.Root(), "cache", "uv")) {
-		t.Fatal("the facade bootstrapped an unshared private cache")
-	}
-	if strings.Join(os.Environ(), "\n") != strings.Join(before, "\n") {
-		t.Fatal("the facade changed the process environment")
-	}
-}
-
 func TestWorkerRegisteredPackageInstallsArchiveInRealWorker(t *testing.T) {
-	for _, operation := range []string{"ensure", "stage_only"} {
+	for _, operation := range []string{"ensure"} {
 		t.Run(operation, func(t *testing.T) {
 			tmp := ieClientEnv(t)
 			ieUseTestWorker(t, "register-regtool")
@@ -641,10 +608,6 @@ func TestWorkerRegisteredPackageInstallsArchiveInRealWorker(t *testing.T) {
 			ieSwapRegistry(t, &ieFakeTool{BinaryPackage: ieBinary("regtool", "bin/regtool")})
 			target, _ := CurrentTarget()
 			arguments := map[string]any{"name": "regtool", "explicit": true}
-			if operation == "stage_only" {
-				target = "linux-arm64-bionic"
-				arguments = map[string]any{"name": "regtool", "target": target}
-			}
 			if _, err := request(ctx, operation, arguments, workerHooks{}, ""); err != nil {
 				t.Fatal(err)
 			}

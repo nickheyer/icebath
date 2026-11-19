@@ -68,11 +68,6 @@ func (e *tracedError) Unwrap() error                { return e.cause }
 func (e *tracedError) PyTypeName() string           { return e.name }
 func (e *tracedError) StackFrames() []runtime.Frame { return e.frames }
 
-// Error of an exception class raised at the caller with its cause and the caller frames recorded
-func raiseTraced(name, msg string, cause error) error {
-	return &tracedError{name: name, msg: msg, cause: cause, frames: callerFrames(3)}
-}
-
 // Error of a recovered panic value with the frames of the panicking goroutine
 func panicTraceback(r any) error {
 	if err, ok := r.(error); ok {

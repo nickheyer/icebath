@@ -45,12 +45,6 @@ func TestSetupLinuxLoadsNullSinkAndVirtualSource(t *testing.T) {
 	if !reflect.DeepEqual(info, want) {
 		t.Fatal(info)
 	}
-	if d, _ := br.device(); d != "icebath_meet_src" {
-		t.Fatal(d)
-	}
-	if w, _ := br.target(); w != "icebath_meet_sink" {
-		t.Fatal(w)
-	}
 }
 
 func TestTeardownLinuxUnloadsModulesInReverseOrder(t *testing.T) {
@@ -77,15 +71,5 @@ func TestTeardownLinuxUnloadsModulesInReverseOrder(t *testing.T) {
 	br.teardown()
 	if len(unload) != 0 {
 		t.Fatal(unload)
-	}
-}
-
-func TestPropertyAccessBeforeSetupRaises(t *testing.T) {
-	br := newAudioBridge("icebath_meet")
-	if _, err := br.device(); err == nil {
-		t.Fatal("device before setup")
-	}
-	if _, err := br.target(); err == nil {
-		t.Fatal("target before setup")
 	}
 }

@@ -344,7 +344,7 @@ func TestNetworkDisabledNeverFetches(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newModelsDevFixture(t)
 			f.setMemory(tc.cache, tc.at)
-			got := ModelsDevOffline(f.ctx)
+			got := fetchModelsDevIn(home.Dir(f.ctx), false)
 			if len(got) != len(tc.expected) || (len(got) > 0 && !reflect.DeepEqual(got, tc.expected)) {
 				t.Fatalf("got %v", got)
 			}
@@ -876,8 +876,7 @@ func TestOpencodeRelayVisionMarker(t *testing.T) {
 
 func TestRegisteredModelCapabilitiesReachEveryConsumerAndUserOverrideWins(t *testing.T) {
 	f := newModelsDevFixture(t)
-	RegisterModelCapabilities("acme", map[string]map[string]any{"acme-vision": {"supports_vision": true, "context_window": 64000, "supports_reasoning": true}})
-	t.Cleanup(func() { RegisterModelCapabilities("acme", nil) })
+	registerTestProfile(t, Profile{Name: "acme", ModelCapabilities: map[string]map[string]any{"acme-vision": {"supports_vision": true, "context_window": 64000, "supports_reasoning": true}}})
 	caps, ok := ModelsDevCapabilities(f.ctx, "acme", "acme-vision", false)
 	if !ok || !boolPtrEq(caps.SupportsVision, true) || caps.ContextWindow != 64000 || !boolPtrEq(caps.SupportsReasoning, true) {
 		t.Fatalf("%+v %v", caps, ok)

@@ -15,7 +15,7 @@ func TestPersistModelSelectionWritesTheModelSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := PoolEnv{Store: NewStore(dir)}
-	if _, err := PersistPluginModelSelection(env, "m-1", "fake-provider", optStr("https://api.example.test/v1"), optStr("chat_completions")); err != nil {
+	if _, err := persistModel(env, "m-1", "fake-provider", persistModelOptions{BaseURL: optStr("https://api.example.test/v1"), APIMode: optStr("chat_completions")}); err != nil {
 		t.Fatal(err)
 	}
 	tree, err := config.Load(dir, config.NewSecrets(dir).Lookup())

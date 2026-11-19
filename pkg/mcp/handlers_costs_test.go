@@ -151,7 +151,7 @@ func TestCostsChatKeepsItsTotalAcrossARotationAndEachCronRunHasItsOwn(t *testing
 	for i := 0; i < 2; i++ {
 		costCall(t, ctx, "paid_render", "parent", "accept", nil)
 	}
-	tools.TransferSessionYolo("parent", "child")
+	tools.TransferSessionYolo(context.Background(), "parent", "child")
 	if _, asked := costCall(t, ctx, "paid_render", "child", "decline", nil); len(asked) == 0 || !strings.Contains(asked[0], "used about 80 credits") {
 		t.Fatalf("rotated chat prompt %q", asked)
 	}

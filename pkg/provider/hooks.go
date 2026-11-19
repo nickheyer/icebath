@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -15,14 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/state"
-)
-
-// Lifecycle hook names fired around every inference request
-const (
-	HookPreAPIRequest   = "pre_api_request"
-	HookPostAPIRequest  = "post_api_request"
-	HookAPIRequestError = "api_request_error"
 )
 
 // Env var overriding the serialized hook payload cap, floor 1000 chars
@@ -31,81 +22,6 @@ const HookPayloadMaxCharsEnv = "ICEBATH_PLUGIN_PAYLOAD_MAX_CHARS"
 const defaultHookPayloadMaxChars = 50000
 
 var sensitiveHookKeys = map[string]bool{"api_key": true, "authorization": true, "proxy_authorization": true, "cookie": true, "set_cookie": true}
-
-// Hooks receives the request, response, and error payloads of every API call
-type Hooks interface {
-	Has(name string) bool
-	PreRequest(ctx context.Context, p *PreRequestPayload)
-	PostRequest(ctx context.Context, p *PostRequestPayload)
-	Error(ctx context.Context, p *ErrorPayload)
-}
-
-// HookIdentity names the task, turn, request, session, and route a hook payload belongs to
-type HookIdentity struct {
-	TaskID       string
-	TurnID       string
-	APIRequestID string
-	SessionID    string
-	Platform     string
-	Model        string
-	Provider     string
-	BaseURL      string
-	APIMode      APIMode
-	APICallCount int
-}
-
-// PreRequestPayload is the pre_api_request hook argument set
-type PreRequestPayload struct {
-	HookIdentity
-	UserMessage         any
-	ConversationHistory []*state.Message
-	RetryCount          int
-	RequestMessages     []*state.Message
-	SystemPrompt        string
-	MessageCount        int
-	ToolCount           int
-	ApproxInputTokens   int
-	RequestCharCount    int
-	MaxTokens           int
-	StartedAt           time.Time
-	MiddlewareTrace     []string
-	Request             any
-}
-
-// PostRequestPayload is the post_api_request hook argument set
-type PostRequestPayload struct {
-	HookIdentity
-	APIDuration            time.Duration
-	StartedAt              time.Time
-	EndedAt                time.Time
-	FirstChunkAt           time.Time
-	FinishReason           string
-	MessageCount           int
-	ResponseModel          string
-	Response               any
-	Usage                  map[string]any
-	ContextLength          int
-	AssistantMessage       *state.Message
-	AssistantContentChars  int
-	AssistantToolCallCount int
-	MoAReferences          any
-}
-
-// ErrorPayload is the api_request_error hook argument set
-type ErrorPayload struct {
-	HookIdentity
-	APIDuration  time.Duration
-	StartedAt    time.Time
-	EndedAt      time.Time
-	StatusCode   int
-	RetryCount   int
-	MaxRetries   int
-	Retryable    bool
-	Reason       FailoverReason
-	ErrorType    string
-	ErrorMessage string
-	Request      any
-}
 
 // HookPayloadMaxChars reads the payload cap from the environment with a 1000 char floor
 func HookPayloadMaxChars() int {
@@ -345,146 +261,4 @@ func SanitizeHookPayload(value any) any {
 		}
 	}
 	return map[string]any{"_truncated": true, "original_type": pyrepr.TypeName(value), "preview": pystr.Slice(encoded, 0, limit)}
-}
-
-// requestBody renders a request as the wire shaped body a plugin inspects
-func requestBody(req *Request) map[string]any {
-	body := map[string]any{}
-	if req == nil {
-		return body
-	}
-	body["model"] = req.Model
-	body["messages"] = req.Messages
-	if len(req.Tools) > 0 {
-		body["tools"] = req.Tools
-	}
-	if req.ToolChoice != nil {
-		body["tool_choice"] = req.ToolChoice
-	}
-	if req.ParallelToolCalls != nil {
-		body["parallel_tool_calls"] = *req.ParallelToolCalls
-	}
-	if req.MaxTokens > 0 {
-		body["max_tokens"] = req.MaxTokens
-	}
-	if req.Temperature != nil {
-		body["temperature"] = *req.Temperature
-	}
-	if req.TopP != nil {
-		body["top_p"] = *req.TopP
-	}
-	if len(req.Stop) > 0 {
-		body["stop"] = req.Stop
-	}
-	if req.Reasoning != (Reasoning{}) {
-		reasoning := map[string]any{}
-		if req.Reasoning.Effort != "" {
-			reasoning["effort"] = req.Reasoning.Effort
-		}
-		if req.Reasoning.BudgetTokens > 0 {
-			reasoning["budget_tokens"] = req.Reasoning.BudgetTokens
-		}
-		if req.Reasoning.Enabled != nil {
-			reasoning["enabled"] = *req.Reasoning.Enabled
-		}
-		if req.Reasoning.Summary != "" {
-			reasoning["summary"] = req.Reasoning.Summary
-		}
-		if req.Reasoning.IncludeInResponse {
-			reasoning["include_in_response"] = true
-		}
-		body["reasoning"] = reasoning
-	}
-	if req.ResponseFormat != nil {
-		body["response_format"] = req.ResponseFormat
-	}
-	if req.ExtraBody != nil {
-		body["extra_body"] = req.ExtraBody
-	}
-	body["stream"] = req.Stream
-	if req.ServiceTier != "" {
-		body["service_tier"] = req.ServiceTier
-	}
-	if len(req.Metadata) > 0 {
-		body["metadata"] = req.Metadata
-	}
-	if req.User != "" {
-		body["user"] = req.User
-	}
-	if req.CacheTTL != "" {
-		body["cache_ttl"] = req.CacheTTL
-	}
-	if req.CacheScope != "" {
-		body["cache_scope"] = req.CacheScope
-	}
-	return body
-}
-
-// RequestPayloadForHook is the sanitized POST body view of a request without transport only fields
-func RequestPayloadForHook(req *Request) any {
-	return SanitizeHookPayload(map[string]any{"method": "POST", "body": requestBody(req)})
-}
-
-// Token buckets of a response with prompt and total sums
-func UsageSummaryForHook(resp *Response) map[string]any {
-	if resp == nil {
-		return nil
-	}
-	u := resp.Usage
-	if u == (Usage{}) {
-		return nil
-	}
-	prompt := u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens
-	return map[string]any{
-		"input_tokens": u.InputTokens, "output_tokens": u.OutputTokens,
-		"cache_read_tokens": u.CacheReadTokens, "cache_write_tokens": u.CacheWriteTokens,
-		"reasoning_tokens": u.ReasoningTokens, "request_count": 1,
-		"prompt_tokens": prompt, "total_tokens": prompt + u.OutputTokens,
-	}
-}
-
-// ResponsePayloadForHook is the sanitized model, upstream provider, finish reason, assistant message, and usage view
-func ResponsePayloadForHook(resp *Response, finishReason string) any {
-	var model, upstream any
-	var msg *state.Message
-	if resp != nil {
-		if resp.Model != "" {
-			model = resp.Model
-		}
-		if resp.Provider != "" {
-			upstream = resp.Provider
-		}
-		msg = resp.Message
-	}
-	assistant := map[string]any{"role": "assistant", "content": nil, "tool_calls": []any{}}
-	if msg != nil {
-		if msg.Role != "" {
-			assistant["role"] = msg.Role
-		}
-		assistant["content"] = msg.Content
-		calls := make([]any, 0, len(msg.ToolCalls))
-		for _, tc := range msg.ToolCalls {
-			calls = append(calls, tc)
-		}
-		assistant["tool_calls"] = calls
-	}
-	var finish any
-	if finishReason != "" {
-		finish = finishReason
-	}
-	return SanitizeHookPayload(map[string]any{
-		"model": model, "upstream_provider": upstream, "finish_reason": finish,
-		"assistant_message": assistant, "usage": UsageSummaryForHook(resp),
-	})
-}
-
-// InvokeAPIRequestErrorHook fires api_request_error with the duration measured at dispatch time
-func InvokeAPIRequestErrorHook(ctx context.Context, hooks Hooks, p *ErrorPayload, req *Request) {
-	if hooks == nil || p == nil || !hooks.Has(HookAPIRequestError) {
-		return
-	}
-	p.EndedAt = time.Now()
-	p.APIDuration = p.EndedAt.Sub(p.StartedAt)
-	p.Request = RequestPayloadForHook(req)
-	hooks.Error(ctx, p)
 }

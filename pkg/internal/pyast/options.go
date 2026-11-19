@@ -49,31 +49,6 @@ func ParseWith(source string, opts Options) (*Node, []Warning, error) {
 	return parseOpts(translateLines([]byte(source), execMode(opts.Mode)), opts)
 }
 
-// ParseNode compiles an AST object like ast.parse(tree), returning a converted, validated and preprocessed copy
-func ParseNode(n *Node, opts Options) (*Node, error) {
-	if err := checkCompileArgs(opts); err != nil {
-		return nil, err
-	}
-	if n == nil {
-		return nil, pyErr("TypeError", "compile() arg 1 must be a string, bytes or AST object")
-	}
-	mode := opts.Mode
-	if mode == "" {
-		mode = "exec"
-	}
-	mod, err := obj2mod(n, mode)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateMod(mod); err != nil {
-		return nil, err
-	}
-	if err := compileAST(mod, opts, cpythonStack, len(Walk(mod))); err != nil {
-		return nil, withFilename(err, opts)
-	}
-	return mod, nil
-}
-
 func execMode(mode string) bool { return mode == "" || mode == "exec" }
 
 // Rejects a feature_version tuple major other than 3, an optimize level or a mode compile() does not know

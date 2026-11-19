@@ -177,7 +177,7 @@ func compressLive(ctx context.Context, rid any, sid string, session *tuihost.Ses
 	unlock()
 	afterTokens := tokens(messages)
 	a := sessionAgent(session)
-	syncSessionKeyAfterCompress(ctx, sid, session, true, true)
+	syncSessionKeyAfterCompress(ctx, sid, session, true)
 	var engine any
 	if a != nil {
 		engine = a.ContextCompressor()

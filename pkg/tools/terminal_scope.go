@@ -364,14 +364,6 @@ func WithProfileTerminalScope(ctx context.Context, h string, envOverlay map[stri
 	return SetTerminalScope(ctx, PrepareProfileTerminalScope(ctx, h, envOverlay))
 }
 
-// Binds a scope prepared earlier for a bounded turn, building the home policy when none was prepared
-func WithPreparedTerminalScope(ctx context.Context, h string, prepared *TerminalScope) context.Context {
-	if prepared != nil {
-		return SetTerminalScope(ctx, prepared)
-	}
-	return WithProfileTerminalScope(ctx, h, nil)
-}
-
 // Env of a call carrying the context terminal scope, the same env when none is bound
 func EnvInTerminalScope(ctx context.Context, env *Env) *Env {
 	scope := GetTerminalScope(ctx)

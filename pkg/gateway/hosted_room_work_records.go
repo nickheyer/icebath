@@ -31,13 +31,12 @@ const (
 var workMaxStoreBytes int64 = 4 * 1024 * 1024
 
 var (
-	workBlockedDeliveryStatuses = map[string]bool{"rejected": true, "needs_reauthorization": true, "invalid_ack": true, "unsupported_lineage": true, "invalid_work_evidence": true}
-	workRecordDisclosures       = []any{"process_local_approvals_not_captured", "field_journals_not_captured", "external_effects_not_captured", "absent_record_is_not_non_admission", "not_execution_checkpoint"}
-	workPhases                  = map[string]bool{"queued": true, "running": true, "indeterminate": true, "stopping": true, "deferred": true, "settled": true, "failed": true, "cancelled": true}
-	workTaskFields              = []string{"task_id", "thread_id", "turn_id", "source_event_seq", "payload_sha256", "member_id", "profile", "execution_generation", "cancel_generation", "phase", "settlement_id", "cancel_id"}
-	workReceiptFields           = []string{"room_id", "home_install_id", "authority_gateway_id", "authority_epoch", "member_id", "target_install_id", "target_profile", "task_id", "execution_generation", "run_id", "session_id"}
-	workRecordFields            = []string{"version", "room_id", "home_install_id", "authority", "roster_sha256", "history", "revision", "digest", "availability", "reason", "tasks", "receipts", "stop", "limitations"}
-	workSHARE                   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	workRecordDisclosures = []any{"process_local_approvals_not_captured", "field_journals_not_captured", "external_effects_not_captured", "absent_record_is_not_non_admission", "not_execution_checkpoint"}
+	workPhases            = map[string]bool{"queued": true, "running": true, "indeterminate": true, "stopping": true, "deferred": true, "settled": true, "failed": true, "cancelled": true}
+	workTaskFields        = []string{"task_id", "thread_id", "turn_id", "source_event_seq", "payload_sha256", "member_id", "profile", "execution_generation", "cancel_generation", "phase", "settlement_id", "cancel_id"}
+	workReceiptFields     = []string{"room_id", "home_install_id", "authority_gateway_id", "authority_epoch", "member_id", "target_install_id", "target_profile", "task_id", "execution_generation", "run_id", "session_id"}
+	workRecordFields      = []string{"version", "room_id", "home_install_id", "authority", "roster_sha256", "history", "revision", "digest", "availability", "reason", "tasks", "receipts", "stop", "limitations"}
+	workSHARE             = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // Controlled invalid or unavailable work evidence, a ValueError
@@ -378,8 +377,8 @@ func ValidateWorkRecord(value any) (map[string]any, error) {
 	return record, nil
 }
 
-// Refuses an evidence write that would exceed the store byte or row bound
-func workBudget(ctx context.Context, conn state.SQLiteConn, table string, keys []string, values []any) error {
+// Refuses a source evidence write that would exceed the store byte or row bound
+func workBudget(ctx context.Context, conn state.SQLiteConn, keys []string, values []any) error {
 	totalSQL, countSQL := workUsageSQL([]string{WorkSourceTable, WorkPendingTable, workInvalidTable})
 	var total, count int64
 	if err := conn.QueryRowContext(ctx, "SELECT "+totalSQL+", "+countSQL).Scan(&total, &count); err != nil {
@@ -390,21 +389,18 @@ func workBudget(ctx context.Context, conn state.SQLiteConn, table string, keys [
 		proposed[key] = values[i]
 	}
 	scopeKeys := []string{"room_id", "producer_gateway_id", "producer_epoch"}
-	if table == WorkPendingTable {
-		scopeKeys = append(scopeKeys, "target_install_id")
-	}
 	where := strings.Join(mapStrings(scopeKeys, func(k string) string { return k + "=?" }), " AND ")
 	scopeArgs := make([]any, len(scopeKeys))
 	for i, key := range scopeKeys {
 		scopeArgs[i] = proposed[key]
 	}
-	old, err := state.QueryObjects(ctx, conn, "SELECT "+workRowSizeSQL(table, "")+" AS size FROM "+table+" WHERE "+where, scopeArgs...)
+	old, err := state.QueryObjects(ctx, conn, "SELECT "+workRowSizeSQL(WorkSourceTable, "")+" AS size FROM "+WorkSourceTable+" WHERE "+where, scopeArgs...)
 	if err != nil {
 		return err
 	}
 	selects := mapStrings(keys, func(k string) string { return "? AS " + k })
 	var size int64
-	if err := conn.QueryRowContext(ctx, "SELECT "+workRowSizeSQL(table, "")+" FROM (SELECT "+strings.Join(selects, ",")+")", values...).Scan(&size); err != nil {
+	if err := conn.QueryRowContext(ctx, "SELECT "+workRowSizeSQL(WorkSourceTable, "")+" FROM (SELECT "+strings.Join(selects, ",")+")", values...).Scan(&size); err != nil {
 		return err
 	}
 	var oldSize, oldCount int64
@@ -692,7 +688,7 @@ func CaptureWorkRecordLocked(ctx context.Context, conn state.SQLiteConn, roomID,
 	if previousRecord != nil && previousRecord["digest"] == record["digest"] {
 		return previousRecord, nil
 	}
-	if err := workSaveLocked(ctx, conn, WorkSourceTable, record, nil, nil); err != nil {
+	if err := workSaveLocked(ctx, conn, record); err != nil {
 		return nil, err
 	}
 	return record, nil
@@ -731,109 +727,6 @@ func workValidateRoster(record map[string]any, members any) error {
 	return nil
 }
 
-// Freezes a source view for one target, exposed only once its history is acknowledged
-func PrepareWorkDeliveryLocked(ctx context.Context, conn state.SQLiteConn, roomID, targetInstallID, routeGeneration, localGatewayID string, throughSeq int64) (map[string]any, error) {
-	if err := workStorageInitialize(ctx, conn); err != nil {
-		return nil, err
-	}
-	current, err := state.QueryRowObject(ctx, conn, "SELECT authority_gateway_id,authority_epoch FROM hosted_rooms WHERE room_id=?", roomID)
-	if err != nil {
-		return nil, err
-	}
-	if current == nil || hrStr(current, "authority_gateway_id") != localGatewayID {
-		return nil, workRecordError("work record source is unavailable")
-	}
-	key := []any{roomID, current.Vals["authority_gateway_id"], current.Vals["authority_epoch"], targetInstallID}
-	old, err := state.QueryRowObject(ctx, conn, "SELECT * FROM "+WorkPendingTable+" WHERE room_id=? AND producer_gateway_id=? AND producer_epoch=? AND target_install_id=?", key...)
-	if err != nil {
-		return nil, err
-	}
-	var oldRecord, record map[string]any
-	if old != nil {
-		if oldRecord, err = workValidateStoredLocked(ctx, conn, WorkPendingTable, old); err != nil {
-			return nil, err
-		}
-		if hrStr(old, "disposition") != "current" {
-			return nil, workRecordError("pending work record is not current")
-		}
-	}
-	if old != nil && hrStr(old, "status") != "acked" {
-		if hrStr(old, "route_generation") == routeGeneration && workBlockedDeliveryStatuses[hrStr(old, "status")] {
-			return nil, nil
-		}
-		record = oldRecord
-		latest, err := state.QueryRowObject(ctx, conn, "SELECT authority_gateway_id,authority_epoch,members_json FROM hosted_rooms WHERE room_id=?", roomID)
-		if err != nil {
-			return nil, err
-		}
-		stale := latest == nil || record["home_install_id"] != localGatewayID
-		if !stale {
-			members, err := roomLoads(hrStr(latest, "members_json"))
-			if err != nil {
-				return nil, err
-			}
-			roster, err := WorkRosterDigest(members)
-			if err != nil {
-				return nil, err
-			}
-			stale = !pyjson.Equal(record["authority"], map[string]any{"gateway_id": latest.Vals["authority_gateway_id"], "epoch": latest.Vals["authority_epoch"]}) ||
-				record["roster_sha256"] != roster
-		}
-		if stale {
-			return nil, workRecordError("pending work record source changed")
-		}
-	} else {
-		if record, err = CaptureWorkRecordLocked(ctx, conn, roomID, localGatewayID, nil); err != nil {
-			return nil, err
-		}
-		if old != nil && pyjson.Equal(old.Vals["revision"], record["revision"]) && old.Vals["digest"] == record["digest"] {
-			return nil, nil
-		}
-	}
-	if old != nil && hrStr(old, "status") != "acked" {
-		if _, err := conn.ExecContext(ctx, "UPDATE "+WorkPendingTable+` SET route_generation=?,status='pending'
-            WHERE room_id=? AND producer_gateway_id=? AND producer_epoch=? AND target_install_id=?
-            AND disposition='current'`, append([]any{routeGeneration}, key...)...); err != nil {
-			return nil, err
-		}
-	} else if err := workSaveLocked(ctx, conn, WorkPendingTable, record, &targetInstallID, &routeGeneration); err != nil {
-		return nil, err
-	}
-	historySeq, _ := hostedStrictInt(record["history"].(map[string]any)["seq"])
-	if historySeq <= throughSeq {
-		return record, nil
-	}
-	return nil, nil
-}
-
-// Moves the current pending row of exactly this record to status, false when it changed
-func WorkDeliveryStatusLocked(ctx context.Context, conn state.SQLiteConn, roomID, targetInstallID, routeGeneration string, record map[string]any, status string) (bool, error) {
-	if err := workStorageInitialize(ctx, conn); err != nil {
-		return false, err
-	}
-	authority, _ := record["authority"].(map[string]any)
-	row, err := state.QueryRowObject(ctx, conn, "SELECT * FROM "+WorkPendingTable+" WHERE room_id=? AND target_install_id=? "+
-		"AND producer_gateway_id=? AND producer_epoch=? AND disposition='current'", roomID, targetInstallID, authority["gateway_id"], authority["epoch"])
-	if err != nil || row == nil {
-		return false, err
-	}
-	stored, err := workValidateStoredLocked(ctx, conn, WorkPendingTable, row)
-	var invalid *InvalidStoredWorkRecord
-	if errors.As(err, &invalid) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if !pyjson.Equal(stored, record) {
-		return false, nil
-	}
-	changed, err := roomExecCount(ctx, conn, "UPDATE "+WorkPendingTable+` SET status=? WHERE room_id=? AND target_install_id=?
-        AND route_generation=? AND revision=? AND digest=? AND producer_gateway_id=? AND producer_epoch=?
-        AND disposition='current'`, status, roomID, targetInstallID, routeGeneration, record["revision"], record["digest"], authority["gateway_id"], authority["epoch"])
-	return changed == 1, err
-}
-
 // SHA-256 of the canonical member roster
 func WorkRosterDigest(members any) (string, error) {
 	_, encoded, err := hostedValidateMembers(members)
@@ -842,31 +735,4 @@ func WorkRosterDigest(members any) (string, error) {
 	}
 	sum := sha256.Sum256([]byte(encoded))
 	return hex.EncodeToString(sum[:]), nil
-}
-
-// Exact passive acknowledgement shape of a record, never an admission or execution receipt
-func WorkAcknowledgement(record map[string]any) map[string]any {
-	ack := map[string]any{"room_id": record["room_id"], "revision": record["revision"], "digest": record["digest"], "passive": true}
-	if version, _ := hostedStrictInt(record["version"]); version == 2 {
-		ack["version"] = int64(2)
-		ack["authority"] = record["authority"]
-		ack["lineage_sha256"] = record["lineage_sha256"]
-	}
-	return ack
-}
-
-// Marks the record acknowledged when ack is exactly its acknowledgement
-func AcknowledgeWorkLocked(ctx context.Context, conn state.SQLiteConn, roomID, targetInstallID, routeGeneration string, record, ack map[string]any) (bool, error) {
-	got, err := WorkEncode(ack)
-	if err != nil {
-		return false, err
-	}
-	want, err := WorkEncode(WorkAcknowledgement(record))
-	if err != nil {
-		return false, err
-	}
-	if got != want {
-		return false, nil
-	}
-	return WorkDeliveryStatusLocked(ctx, conn, roomID, targetInstallID, routeGeneration, record, "acked")
 }

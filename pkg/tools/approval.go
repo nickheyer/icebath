@@ -33,13 +33,6 @@ func SwapYoloModeFrozen(on bool) func() {
 	return func() { yoloModeFrozen = prev }
 }
 
-// ApprovalDecision is the shared verdict every tool slice reads before running a command
-type ApprovalDecision struct {
-	Allowed bool
-	Reason  string
-	Pattern string
-}
-
 // The full approval verdict of one gate in the dict shape gates return
 type GuardResult struct {
 	Approved        bool
@@ -56,16 +49,6 @@ type GuardResult struct {
 	UserApproved    bool
 	AllowPermanent  bool
 	DenyReason      string
-}
-
-// PendingApproval is one approval parked for later review through approve or deny commands
-type PendingApproval struct {
-	Command        string
-	PatternKey     string
-	PatternKeys    []string
-	Description    string
-	SmartDenied    bool
-	AllowPermanent bool
 }
 
 // GatewayNotifyFunc sends one approval request to the user through the gateway surface
@@ -121,7 +104,6 @@ func newRequestID() string {
 // Per session approval state shared by every gate and the gateway queue
 var approvalState = struct {
 	sync.Mutex
-	pending             map[string]PendingApproval
 	sessionApproved     map[string]map[string]bool
 	sessionYolo         map[string]bool
 	launchYoloApplied   map[string]bool
@@ -131,10 +113,9 @@ var approvalState = struct {
 	denialOrder         []string
 	gatewayQueues       map[string][]*ApprovalEntry
 	gatewayNotify       map[string]GatewayNotifyFunc
-	permissionReleasers []func(sessionKey string)
+	permissionReleasers []func(ctx context.Context, sessionKey string)
 	sessionClosers      []func(sessionKey string)
 }{
-	pending:           map[string]PendingApproval{},
 	sessionApproved:   map[string]map[string]bool{},
 	sessionYolo:       map[string]bool{},
 	launchYoloApplied: map[string]bool{},
@@ -372,21 +353,6 @@ func copyMap(m map[string]any) map[string]any {
 	return out
 }
 
-// SubmitPending stores a pending approval request for a session
-func SubmitPending(sessionKey string, approval PendingApproval) {
-	approvalState.Lock()
-	defer approvalState.Unlock()
-	approvalState.pending[sessionKey] = approval
-}
-
-// PendingApprovalFor returns the stored pending approval of a session
-func PendingApprovalFor(sessionKey string) (PendingApproval, bool) {
-	approvalState.Lock()
-	defer approvalState.Unlock()
-	p, ok := approvalState.pending[sessionKey]
-	return p, ok
-}
-
 // ApproveSession approves a pattern for this session only
 func ApproveSession(sessionKey, patternKey string) {
 	approvalState.Lock()
@@ -399,8 +365,8 @@ func ApproveSession(sessionKey, patternKey string) {
 	set[patternKey] = true
 }
 
-// RegisterPermissionModeReleaser adds a hook run on both yolo edges and at session clear
-func RegisterPermissionModeReleaser(fn func(sessionKey string)) {
+// RegisterPermissionModeReleaser adds a hook run on both yolo edges and at session clear with the caller's context
+func RegisterPermissionModeReleaser(fn func(ctx context.Context, sessionKey string)) {
 	approvalState.Lock()
 	defer approvalState.Unlock()
 	approvalState.permissionReleasers = append(approvalState.permissionReleasers, fn)
@@ -414,17 +380,24 @@ func RegisterSessionCloser(fn func(sessionKey string)) {
 }
 
 // Drops resources whose immutable permission mode derives from yolo
-func releasePermissionModeDependents(sessionKey string) {
+func releasePermissionModeDependents(ctx context.Context, sessionKey string) {
 	approvalState.Lock()
-	hooks := append([]func(string){}, approvalState.permissionReleasers...)
+	hooks := append([]func(context.Context, string){}, approvalState.permissionReleasers...)
 	approvalState.Unlock()
 	for _, fn := range hooks {
-		fn(sessionKey)
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					pkgLog().Debug(fmt.Sprintf("Failed to release permission-mode dependent resources for %s", sessionKey), "error", rec)
+				}
+			}()
+			fn(ctx, sessionKey)
+		}()
 	}
 }
 
 // Flips the session yolo flag and releases mode dependent resources
-func setSessionYolo(sessionKey string, enabled bool) {
+func setSessionYolo(ctx context.Context, sessionKey string, enabled bool) {
 	if sessionKey == "" {
 		return
 	}
@@ -435,14 +408,18 @@ func setSessionYolo(sessionKey string, enabled bool) {
 		delete(approvalState.sessionYolo, sessionKey)
 	}
 	approvalState.Unlock()
-	releasePermissionModeDependents(sessionKey)
+	releasePermissionModeDependents(ctx, sessionKey)
 }
 
 // EnableSessionYolo enables the approval bypass for one session key
-func EnableSessionYolo(sessionKey string) { setSessionYolo(sessionKey, true) }
+func EnableSessionYolo(ctx context.Context, sessionKey string) {
+	setSessionYolo(ctx, sessionKey, true)
+}
 
 // DisableSessionYolo disables the approval bypass for one session key
-func DisableSessionYolo(sessionKey string) { setSessionYolo(sessionKey, false) }
+func DisableSessionYolo(ctx context.Context, sessionKey string) {
+	setSessionYolo(ctx, sessionKey, false)
+}
 
 // MarkLaunchYoloApplied records the launch yolo seed once per session, false when already seeded
 func MarkLaunchYoloApplied(sessionKey string) bool {
@@ -455,8 +432,8 @@ func MarkLaunchYoloApplied(sessionKey string) bool {
 	return true
 }
 
-// ClearSession removes every approval, yolo, pending, and gateway state of a session
-func ClearSession(sessionKey string) {
+// ClearSession removes every approval, yolo, and gateway state of a session
+func ClearSession(ctx context.Context, sessionKey string) {
 	if sessionKey == "" {
 		return
 	}
@@ -464,7 +441,6 @@ func ClearSession(sessionKey string) {
 	delete(approvalState.sessionApproved, sessionKey)
 	delete(approvalState.sessionYolo, sessionKey)
 	delete(approvalState.launchYoloApplied, sessionKey)
-	delete(approvalState.pending, sessionKey)
 	for _, entry := range approvalState.gatewayQueues[sessionKey] {
 		entry.Cancelled = "the session ended before the prompt was answered"
 		entry.set()
@@ -472,7 +448,7 @@ func ClearSession(sessionKey string) {
 	delete(approvalState.gatewayQueues, sessionKey)
 	closers := append([]func(string){}, approvalState.sessionClosers...)
 	approvalState.Unlock()
-	releasePermissionModeDependents(sessionKey)
+	releasePermissionModeDependents(ctx, sessionKey)
 	for _, fn := range closers {
 		fn(sessionKey)
 	}
@@ -837,17 +813,8 @@ func gatewayNotifyCb(sessionKey string) GatewayNotifyFunc {
 	return approvalState.gatewayNotify[sessionKey]
 }
 
-// Queues an approval nobody can answer now and returns the pending shape of the gate
+// Result for an approval nobody can answer now, in the pending shape of the gate
 func pendingResult(spec gateSpec, sessionKey, command, description, patternKey string, patternKeys []string, body string, smartDenied bool) GuardResult {
-	pending := PendingApproval{Command: command, PatternKey: patternKey, Description: description, AllowPermanent: true}
-	if spec.pendingKeys {
-		pending.PatternKeys = append([]string{}, patternKeys...)
-	}
-	if smartDenied {
-		pending.SmartDenied = true
-		pending.AllowPermanent = false
-	}
-	SubmitPending(sessionKey, pending)
 	if !spec.pendingKeys {
 		return GuardResult{PatternKey: patternKey, Status: "approval_required", Command: command, Description: description,
 			Message:        fmt.Sprintf("⚠️ This action is potentially dangerous (%s). Asking the user for approval.\n\n**Target:**\n```\n%s\n```", description, command),
@@ -1488,34 +1455,6 @@ func commandDeletesRuntime(command string) string {
 	return ""
 }
 
-// CheckDangerousCommand runs the pattern layer only and resolves approval through the shared gate
-func CheckDangerousCommand(ctx context.Context, env *Env, command, envType string, hasHostAccess bool) GuardResult {
-	if shouldSkipContainerGuards(envType, hasHostAccess) {
-		if blocked, ok := userDenyBlock(env, command); ok {
-			return blocked
-		}
-		return approvedResult()
-	}
-	if blocked, ok := floorBlock(env, command, false); ok {
-		return blocked
-	}
-	if yoloActive(env) {
-		return approvedResult()
-	}
-	if commandMatchesPermanentAllowlist(env, command) {
-		return approvedResult()
-	}
-	sessionKey := getCurrentSessionKey(env, "default")
-	keys, description, pending := unapprovedFindings(command, func(key string) bool { return IsApproved(env, sessionKey, key) })
-	if !pending {
-		return approvedResult()
-	}
-	return runApprovalGate(ctx, env, approvalGateOptions{patternKey: keys[0], patternKeys: keys, description: description,
-		displayTarget: command, subject: fmt.Sprintf("Command flagged as dangerous (%s)", description),
-		noun: "dangerous commands", advice: "Find an alternative approach that avoids this command.",
-		autoapproveLogPrefix: "AUTO-APPROVED dangerous command in non-interactive non-gateway context"})
-}
-
 // RequestToolApproval escalates an arbitrary tool call to the same human gate as dangerous commands
 func RequestToolApproval(ctx context.Context, env *Env, toolName, reason, ruleKey string) GuardResult {
 	description := reason
@@ -1532,22 +1471,6 @@ func RequestToolApproval(ctx context.Context, env *Env, toolName, reason, ruleKe
 		autoapproveLogPrefix:  fmt.Sprintf("plugin-escalated tool call '%s' in non-interactive non-gateway context", toolName),
 		failClosedWhenNoHuman: true,
 		noHumanBlockMessage:   fmt.Sprintf("BLOCKED: %s but no interactive user or gateway is present to approve it. A plugin flagged this action for human confirmation.", subject)})
-}
-
-type approvalTaskKey struct{}
-
-// WithApprovalTaskID binds the task running a guarded command to the context
-func WithApprovalTaskID(ctx context.Context, taskID string) context.Context {
-	return context.WithValue(ctx, approvalTaskKey{}, taskID)
-}
-
-// ApprovalTaskID returns the task bound by CheckCommandApproval, empty when none
-func ApprovalTaskID(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	id, _ := ctx.Value(approvalTaskKey{}).(string)
-	return id
 }
 
 // CheckAllCommandGuards runs every pre exec security check and returns one approval decision
@@ -1642,45 +1565,6 @@ func dockerVolumeUsesHostPath(spec string) bool {
 		}
 	}
 	return len(vol) >= 3 && vol[1] == ':' && (vol[2] == '/' || vol[2] == '\\')
-}
-
-// True when a docker sandbox exposes host paths through bind mounts
-func dockerHasHostAccess(env *Env, policy TerminalPolicy) bool {
-	if policy.Get("TERMINAL_ENV", "local") != "docker" {
-		return false
-	}
-	if env != nil && isHostCwd(env.Cwd) && policy.GetBool("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false") {
-		return true
-	}
-	var volumes []string
-	if raw := policy.Get("TERMINAL_DOCKER_VOLUMES", ""); raw != "" {
-		var parsed any
-		if yaml.Unmarshal([]byte(raw), &parsed) == nil {
-			volumes = config.AsStrings(parsed)
-		} else {
-			volumes = strings.Split(raw, ",")
-		}
-	}
-	for _, vol := range volumes {
-		if dockerVolumeUsesHostPath(vol) {
-			return true
-		}
-	}
-	return false
-}
-
-// CheckCommandApproval is the shared pre exec verdict for a terminal command of one task
-func CheckCommandApproval(ctx context.Context, env *Env, command, taskID string) (ApprovalDecision, error) {
-	env = EnvInTerminalScope(ctx, env)
-	policy, err := terminalPolicy(env)
-	if err != nil {
-		return ApprovalDecision{}, err
-	}
-	if taskID != "" {
-		ctx = WithApprovalTaskID(ctx, taskID)
-	}
-	result := CheckAllCommandGuards(ctx, env, command, policy.Get("TERMINAL_ENV", "local"), dockerHasHostAccess(env, policy))
-	return ApprovalDecision{Allowed: result.Approved, Reason: result.Message, Pattern: result.PatternKey}, nil
 }
 
 // CommandVerdict is the dry run answer of EvaluateCommand

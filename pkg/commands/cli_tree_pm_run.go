@@ -81,7 +81,7 @@ func pmLockArgs(cmd *cobra.Command, args []string) pm.LockArgs {
 	return lockArgs
 }
 
-// Install arguments with a bare test environment flag meaning all extras and absent optional flags nil
+// Install arguments with absent optional flags nil
 func pmInstallArgs(cmd *cobra.Command, args []string) pm.InstallArgs {
 	f := cmd.Flags()
 	installArgs := pm.InstallArgs{Names: append([]string{}, args...)}
@@ -89,13 +89,6 @@ func pmInstallArgs(cmd *cobra.Command, args []string) pm.InstallArgs {
 	installArgs.Without, _ = f.GetStringArray("without")
 	installArgs.ToolsOnly, _ = f.GetBool("tools-only")
 	installArgs.TrustRecorded, _ = f.GetBool("trust-recorded")
-	if f.Changed("test-environment") {
-		extras, _ := f.GetString("test-environment")
-		if extras == FlagPresent {
-			extras = ""
-		}
-		installArgs.TestEnvironment = &extras
-	}
 	if f.Changed("target") {
 		target, _ := f.GetString("target")
 		installArgs.Target = &target

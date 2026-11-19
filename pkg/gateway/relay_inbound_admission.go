@@ -5,15 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Admits on the reader, or behind the chat's earlier admission when a producer hook may await the reader
+// Admits off the reader behind the chat's earlier admission, a plugin hook or the chat's running turn may await a send only the reader settles
 func admitRelayDelivery(ctx context.Context, a *RelayAdapter, runner any, event *MessageEvent) (RelayAdmission, error) {
-	if !(plugins.HasHook(ctx, "pre_gateway_dispatch") || plugins.HasHook(ctx, PostAdmissionHook)) {
-		return nil, relayAdmit(ctx, a, runner, event)
-	}
 	lane := [2]string{string(event.Source.Platform), event.Source.ChatID}
 	settled := make(chan error, 1)
 	a.mu.Lock()

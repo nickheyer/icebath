@@ -21,6 +21,7 @@ var termPool = struct {
 	creationMu    sync.Mutex
 	creationLocks map[string]*sync.Mutex
 	cleanupStop   chan struct{}
+	cleanupDone   chan struct{}
 }{
 	active:        map[string]Environment{},
 	lastActivity:  map[string]time.Time{},
@@ -203,17 +204,6 @@ func RegisterTaskEnvOverrides(env *Env, taskID string, overrides map[string]any)
 		}
 	}
 	return nil
-}
-
-// ClearTaskEnvOverrides drops a task's overrides, cwd record and container alias
-func ClearTaskEnvOverrides(env *Env, taskID string) {
-	taskEnvOverrides.Lock()
-	delete(taskEnvOverrides.m, qualifyTaskKey(env, taskID))
-	taskEnvOverrides.Unlock()
-	ClearSessionCwd(env, taskID)
-	containerAliases.Lock()
-	delete(containerAliases.m, taskID)
-	containerAliases.Unlock()
 }
 
 // RegisterContainerAlias makes a child task resolve to its parent's container

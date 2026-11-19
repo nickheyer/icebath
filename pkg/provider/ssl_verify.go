@@ -3,7 +3,6 @@ package provider
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,9 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 var (
@@ -22,7 +18,6 @@ var (
 	trustInstalled   *bool
 	platformRoots    *x509.CertPool
 	caConfigs        = map[string]*tls.Config{}
-	platformBundle   string
 	staleBundleMu    sync.Mutex
 	staleBundleKnown = map[string]string{}
 	caBundleMu       sync.Mutex
@@ -39,9 +34,6 @@ var linuxRootBundles = []string{
 var linuxRootDirs = []string{"/etc/ssl/certs", "/etc/pki/tls/certs", "/system/etc/security/cacerts"}
 
 var systemCertPool = x509.SystemCertPool
-
-// Roots of the OS store as the stdlib context enumerates them, a seam the tests stand a store in for
-var platformStoreCertificates = platformRootCertificates
 
 // InstallTrustStore loads the OS trust store once, false when no platform root could be read
 func InstallTrustStore() bool {
@@ -245,108 +237,6 @@ func defaultVerify() *tls.Config {
 		return sharedTLSConfig("", false)
 	}
 	return sharedTLSConfig(bundle, InstallTrustStore())
-}
-
-// PlatformStoreBundle writes the OS store roots once to a PEM file under the home cache, empty when none
-func PlatformStoreBundle(h string) string {
-	InstallTrustStore()
-	trustMu.Lock()
-	defer trustMu.Unlock()
-	if platformBundle != "" {
-		if info, err := os.Stat(platformBundle); err == nil && !info.IsDir() {
-			return platformBundle
-		}
-	}
-	certs := platformStoreCertificates()
-	if len(certs) == 0 {
-		return ""
-	}
-	var buf strings.Builder
-	for _, der := range certs {
-		_ = pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: der})
-	}
-	if h == "" {
-		h = home.Process()
-	}
-	path := filepath.Join(home.CacheDir(h), "platform-ca-bundle.pem")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		pkgLog().Debug(fmt.Sprintf("platform CA bundle not written: %v", err))
-		return ""
-	}
-	if err := config.AtomicWrite(path, []byte(buf.String()), 0o644); err != nil {
-		pkgLog().Debug(fmt.Sprintf("platform CA bundle not written: %v", err))
-		return ""
-	}
-	platformBundle = path
-	return platformBundle
-}
-
-// DER encoded roots of the platform store read from the system bundle locations
-func platformRootCertificates() [][]byte {
-	var out [][]byte
-	seen := map[string]bool{}
-	add := func(raw []byte) {
-		for {
-			block, rest := pem.Decode(raw)
-			if block == nil {
-				return
-			}
-			if block.Type == "CERTIFICATE" {
-				key := string(block.Bytes)
-				if !seen[key] {
-					seen[key] = true
-					out = append(out, block.Bytes)
-				}
-			}
-			raw = rest
-		}
-	}
-	if ca := strings.TrimSpace(os.Getenv("SSL_CERT_FILE")); ca != "" {
-		if raw, err := os.ReadFile(ca); err == nil {
-			add(raw)
-		}
-	}
-	for _, bundle := range linuxRootBundles {
-		if raw, err := os.ReadFile(bundle); err == nil {
-			add(raw)
-		}
-	}
-	if len(out) == 0 && runtime.GOOS != "linux" {
-		if ca := strings.TrimSpace(os.Getenv("SSL_CERT_DIR")); ca != "" {
-			if entries, err := os.ReadDir(ca); err == nil {
-				for _, entry := range entries {
-					if raw, err := os.ReadFile(filepath.Join(ca, entry.Name())); err == nil {
-						add(raw)
-					}
-				}
-			}
-		}
-	}
-	return out
-}
-
-// SubprocessVerifyBundle is the CA bundle path a child process should verify with, empty keeps its own default
-func SubprocessVerifyBundle(h string) string {
-	if os.Getenv("REQUESTS_CA_BUNDLE") != "" || os.Getenv("CURL_CA_BUNDLE") != "" {
-		return ""
-	}
-	if frozen, ok := importCABundle(); ok && fileExists(frozen) {
-		return ""
-	}
-	if bundle := DefaultCABundlePath(); bundle != "" {
-		return bundle
-	}
-	for _, key := range []string{"SSL_CERT_FILE", "SSL_CERT_DIR"} {
-		if candidate := strings.TrimSpace(os.Getenv(key)); candidate != "" {
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate
-			}
-		}
-	}
-	if live, ok := searchCABundle(); ok {
-		return live
-	}
-	return PlatformStoreBundle(h)
 }
 
 // TLSVerify is the resolved verification mode for one HTTP client

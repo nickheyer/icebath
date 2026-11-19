@@ -184,8 +184,8 @@ func TestLegacyRemoteRunReceiptMigratesWithoutCurrentLineageAccess(t *testing.T)
 	if receipt := hrOK(RemoteRunReceipt(ctx, db, current)); receipt != nil {
 		t.Fatalf("receipt %v", receipt)
 	}
-	legacy := hrOK(ListRemoteRunReceipts(ctx, db, nil, nil, nil))
-	if legacy[0]["home_install_id"] != "legacy" || legacy[0]["authority_gateway_id"] != "legacy" {
+	legacy := hrRawRow(t, db, "SELECT home_install_id, authority_gateway_id FROM hosted_room_remote_runs")
+	if hrStr(legacy, "home_install_id") != "legacy" || hrStr(legacy, "authority_gateway_id") != "legacy" {
 		t.Fatalf("legacy %v", legacy)
 	}
 	record := map[string]any{"run_id": "run-current", "session_id": "session-current"}

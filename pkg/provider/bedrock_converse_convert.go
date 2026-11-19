@@ -902,9 +902,6 @@ type bedrockConverseInput struct {
 	Resolve         func(string) string
 }
 
-// Default output limit of a Converse call when the caller sets none
-const bedrockDefaultMaxTokens = 4096
-
 // Converse and ConverseStream kwargs with cachePoint markers on system, tools and the second newest message
 func buildBedrockConverseKwargs(in bedrockConverseInput) map[string]any {
 	model := in.Model

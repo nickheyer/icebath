@@ -478,16 +478,6 @@ func (d *HostedMemberDispatch) AsMapping() *pyjson.Object {
 	return mapping
 }
 
-// Room grant secret domain separated from the configured API key, refused for a weak key
-func DeriveRoomGrantSecret(apiKey string) ([]byte, error) {
-	if utf8.RuneCountInString(apiKey) < 8 {
-		return nil, hostedGrantError("room grants require a strong gateway API key")
-	}
-	mac := hmac.New(sha256.New, []byte(apiKey))
-	mac.Write([]byte("icebath-hosted-room-grant-v1"))
-	return mac.Sum(nil), nil
-}
-
 // Whether a grant an older gateway signed with the old domain key of this secret verifies
 func hostedLegacySignatureValid(secret, encoded, supplied []byte) bool {
 	legacy, ok := hostedLegacyGrantKeys.Load(string(secret))

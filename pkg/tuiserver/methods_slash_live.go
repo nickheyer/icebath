@@ -21,7 +21,7 @@ var computeSessionContextBreakdown = agent.ComputeSessionContextBreakdown
 // Per skill and per toolset cost engine behind the expanded context view
 var computeContextDetails = agent.ComputeContextDetails
 
-// Commands a local session answers in process instead of through the slash worker
+// Commands a local session answers in process
 var contextLocalInProcess = map[string]bool{"context": true}
 
 const noAgentUsage = "◈ No active agent -- send a message first."
@@ -479,22 +479,20 @@ var liveSlashOutput map[string]liveSlashEntry
 
 func init() {
 	liveSlashOutput = map[string]liveSlashEntry{
-		"compress": {replyText("no active session for /compress"), func(ctx context.Context, sid string, session *tuihost.Session, arg string) string {
-			return mirrorSlashSideEffects(ctx, sid, session, pystr.Strip("/compress "+arg))
-		}, ""},
-		"usage":   {replyText(noAgentUsage), formatLiveUsageOutput, ""},
-		"review":  {nil, formatLiveReviewOutput, ""},
-		"history": {replyText("No conversation history yet."), formatLiveHistoryOutput, ""},
-		"refine":  {nil, formatLiveRefineOutput, ""},
-		"status":  {nil, formatLiveStatusOutput, ""},
-		"clear":   {nil, nil, "Screen clear is terminal-only; the TUI chat is left unchanged."},
-		"models":  {nil, nil, "Use /model to view or switch the current model."},
-		"rename":  {nil, nil, "Use /title <name> to rename this session."},
-		"effort":  {nil, nil, "Use /reasoning <effort> to change reasoning effort."},
+		"compress": {replyText("no active session for /compress"), liveCompressOutput, ""},
+		"usage":    {replyText(noAgentUsage), formatLiveUsageOutput, ""},
+		"review":   {nil, formatLiveReviewOutput, ""},
+		"history":  {replyText("No conversation history yet."), formatLiveHistoryOutput, ""},
+		"refine":   {nil, formatLiveRefineOutput, ""},
+		"status":   {nil, formatLiveStatusOutput, ""},
+		"clear":    {nil, nil, "Screen clear is terminal-only; the TUI chat is left unchanged."},
+		"models":   {nil, nil, "Use /model to view or switch the current model."},
+		"rename":   {nil, nil, "Use /title <name> to rename this session."},
+		"effort":   {nil, nil, "Use /reasoning <effort> to change reasoning effort."},
 	}
 }
 
-// Answers a slash command from the live session instead of the slash worker, ok false when it is not one of these
+// Answers a slash command from the live session, ok false when it is not one of these
 func liveSlashCommandOutput(ctx context.Context, sid string, session *tuihost.Session, name, arg string) (string, bool) {
 	name = pystr.Lower(strings.TrimLeft(name, "/"))
 	if name == "model" && pystr.Strip(arg) == "" {

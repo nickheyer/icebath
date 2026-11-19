@@ -613,11 +613,6 @@ func TestFTSLayoutRegistryAndDrift(t *testing.T) {
 func TestHolderPIDHelpers(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "state.db")
-	pids, err := concreteStateDBHolderPIDs(db, []Holder{{PID: 5, Target: db + "-wal (deleted)"}, {PID: 0, Target: db}, {PID: 6, Target: db + ".bak"},
-		{PID: 5, Target: db}, {PID: 7, Target: db + "-shm"}})
-	if err != nil || !slices.Equal(pids, []int{5, 7}) {
-		t.Fatalf("pids = %v %v", pids, err)
-	}
 	retain := prepareConnectionRetirement()
 	before := len(retainedConnections)
 	retain("conn")
@@ -641,4 +636,9 @@ func TestHolderPIDHelpers(t *testing.T) {
 	if n, ok := CountDBHolders(db); !ok || n != 1 {
 		t.Fatalf("holder count = %d %v", n, ok)
 	}
+}
+
+// Stored form of the virtual table statement for table in ddl
+func expectedVTableSQL(ddl, table string) (string, error) {
+	return expectedStoredSQL(ddl, "VIRTUAL TABLE", table)
 }

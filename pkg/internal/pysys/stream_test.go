@@ -80,21 +80,3 @@ func TestFilenoReachesWrappedDescriptor(t *testing.T) {
 		t.Fatalf("stdout fileno = %d %v", fd, ok)
 	}
 }
-
-func TestPatchRoutesTheStandInsUntilItsRestore(t *testing.T) {
-	var out, errOut, inner bytes.Buffer
-	restore := Patch(&out, &errOut)
-	io.WriteString(Stdout, "to stdout")
-	io.WriteString(Stderr, "to stderr")
-	restoreInner := Patch(&inner, &inner)
-	io.WriteString(Stdout, "nested")
-	restoreInner()
-	io.WriteString(Stdout, " again")
-	restore()
-	if out.String() != "to stdout again" || errOut.String() != "to stderr" || inner.String() != "nested" {
-		t.Fatalf("stdout %q stderr %q nested %q", out.String(), errOut.String(), inner.String())
-	}
-	if patchedOut.Load() != nil || patchedErr.Load() != nil {
-		t.Fatal("a patch outlived its restore")
-	}
-}

@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 const (
@@ -224,7 +222,7 @@ func clientBusy(r *GatewayRunner, window float64) string {
 }
 
 // Why the gateway must stay up, empty when it may exit, failing closed on any probe error
-func busyReason(ctx context.Context, r *GatewayRunner, window float64, countClients bool) (reason string) {
+func busyReason(ctx context.Context, r *GatewayRunner, window float64) (reason string) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			pkgLog().Debug("idle-exit probe failed; staying up", "exc_info", rec)
@@ -235,13 +233,8 @@ func busyReason(ctx context.Context, r *GatewayRunner, window float64, countClie
 		pkgLog().Debug("idle-exit probe failed; staying up", "exc_info", err)
 		return fmt.Sprintf("idle probe failed (%s)", pyrepr.ExceptionName(err))
 	}
-	if countClients {
-		if reason := clientBusy(r, window); reason != "" {
-			return reason
-		}
-	}
-	if !countClients && idleAttaching(r) {
-		return "client attaching"
+	if reason := clientBusy(r, window); reason != "" {
+		return reason
 	}
 	if r.draining.Load() || !r.running.Load() {
 		return "already stopping"
@@ -296,7 +289,7 @@ func probeOffLoop(ctx context.Context, fn func() string) (string, error) {
 }
 
 // Withdraws admission at once after the last idle check, then stops the gateway
-func beginIdleExit(r *GatewayRunner, window float64, restart string) {
+func beginIdleExit(r *GatewayRunner, window float64) {
 	r.draining.Store(true)
 	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
 		descriptor["state"] = "draining"
@@ -304,47 +297,11 @@ func beginIdleExit(r *GatewayRunner, window float64, restart string) {
 		descriptor["drain_reason"] = IdleExitReason
 	})
 	reason := fmt.Sprintf("%s for %.0fs (gateway.unmanaged_idle_exit_seconds)", IdleExitStopPrefix, window)
-	if restart != "" {
-		reason = fmt.Sprintf("%s; restarting to load %s", IdleExitStopPrefix, restart)
-	}
 	r.exitReason = &reason
 	pkgLog().Info(fmt.Sprintf("Exiting: %s; the next client starts a fresh gateway", reason))
 	r.idleExitStopTask = spawnGatewayTask(context.Background(), "idle_exit_stop", func(ctx context.Context) (any, error) {
 		return nil, r.Stop(ctx, false, false, false)
 	})
-}
-
-// Sleeps the interval in one second slices, waking early once a restart is pending
-func sleepUnlessRestartPending(ctx context.Context, interval float64) error {
-	deadline := pythread.Monotonic() + interval
-	for {
-		slice := math.Min(1.0, math.Max(0, deadline-pythread.Monotonic()))
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Duration(slice * float64(time.Second))):
-		}
-		if pm.RestartPending() != "" || pythread.Monotonic() >= deadline {
-			return nil
-		}
-	}
-}
-
-// Retires the gateway for a pending dependency restart once nothing but clients holds it
-func retiredForRestart(ctx context.Context, r *GatewayRunner, window float64) (bool, error) {
-	restart := pm.RestartPending()
-	if restart == "" {
-		return false, nil
-	}
-	reason, err := probeOffLoop(ctx, func() string { return busyReason(ctx, r, window, false) })
-	if err != nil {
-		return false, err
-	}
-	if reason != "" || busyReason(ctx, r, window, false) != "" {
-		return false, nil
-	}
-	beginIdleExit(r, window, restart)
-	return true, nil
 }
 
 // Ends an auto started gateway after two consecutive idle readings across the configured window
@@ -358,18 +315,14 @@ func unmanagedIdleExitWatcher(ctx context.Context, r *GatewayRunner) error {
 	interval := math.Min(30.0, math.Max(0.5, window/4))
 	idleSince := 0.0
 	for r.running.Load() && !r.draining.Load() {
-		if err := sleepUnlessRestartPending(ctx, interval); err != nil {
+		if err := sleepCtx(ctx, interval); err != nil {
 			return err
 		}
 		if window = idleExitSeconds(ctx); window <= 0 {
 			idleSince = 0
 			continue
 		}
-		retired, err := retiredForRestart(ctx, r, window)
-		if err != nil || retired {
-			return err
-		}
-		reason, err := probeOffLoop(ctx, func() string { return busyReason(ctx, r, window, true) })
+		reason, err := probeOffLoop(ctx, func() string { return busyReason(ctx, r, window) })
 		if err != nil {
 			return err
 		}
@@ -383,8 +336,8 @@ func unmanagedIdleExitWatcher(ctx context.Context, r *GatewayRunner) error {
 		if pythread.Monotonic()-idleSince < interval && window > interval {
 			continue
 		}
-		if busyReason(ctx, r, window, true) == "" {
-			beginIdleExit(r, window, "")
+		if busyReason(ctx, r, window) == "" {
+			beginIdleExit(r, window)
 			return nil
 		}
 	}

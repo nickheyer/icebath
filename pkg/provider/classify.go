@@ -18,7 +18,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -625,20 +624,7 @@ func (c *classifyCtx) largeSession(frac float64, tokens, messages int) bool {
 // ClassifierHook lets a plugin add or correct a verdict before the built in pipeline runs
 type ClassifierHook func(in ClassifyInput, status int, errorType, errorCode, message string, body map[string]any) *Verdict
 
-var (
-	classifierHooksMu sync.RWMutex
-	classifierHooks   []ClassifierHook
-)
-
 func pluginVerdict(c *classifyCtx) *Verdict {
-	classifierHooksMu.RLock()
-	hooks := append([]ClassifierHook{}, classifierHooks...)
-	classifierHooksMu.RUnlock()
-	for _, h := range hooks {
-		if vd := h(c.in, c.status, c.errorType, c.errorCode, c.msg, c.body); vd != nil && vd.Reason != "" {
-			return vd
-		}
-	}
 	var status *int
 	if c.status != 0 {
 		status = &c.status

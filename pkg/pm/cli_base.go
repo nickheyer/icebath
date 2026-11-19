@@ -17,15 +17,14 @@ type LockArgs struct {
 	Version *string
 }
 
-// InstallArgs are pm install's arguments, a nil Target or TestEnvironment when not given
+// InstallArgs are pm install's arguments, a nil Target when not given
 type InstallArgs struct {
-	Names           []string
-	Extra           []string
-	Without         []string
-	ToolsOnly       bool
-	TrustRecorded   bool
-	TestEnvironment *string
-	Target          *string
+	Names         []string
+	Extra         []string
+	Without       []string
+	ToolsOnly     bool
+	TrustRecorded bool
+	Target        *string
 }
 
 // EnvironmentArgs are pm environment's arguments

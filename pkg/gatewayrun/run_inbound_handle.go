@@ -82,10 +82,6 @@ func (r *GatewayRunner) handleMessageTurn(ctx context.Context, event *gateway.Me
 			}
 			return nil, nil
 		}
-		if r.externalDrainActive {
-			pkgLog().Info(fmt.Sprintf("Refusing new turn for session %s — external drain active.", quickKey))
-			return i18n.T(ctx, "gateway.busy.draining_maintenance", "", nil), nil
-		}
 	}
 	lease, refusal := r.claimActiveSessionSlot(ctx, quickKey, source)
 	if refusal != nil {

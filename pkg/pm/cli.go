@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -68,23 +67,13 @@ func relockProject(ctx context.Context, root string) (int, error) {
 		return 0, err
 	}
 	fmt.Fprintln(out, "✓ uv.lock updated from pyproject.toml")
-	windows := runtime.GOOS == "windows"
-	activate := "source ./activate"
-	if windows {
-		activate = `. .\activate.ps1`
-	}
-	fmt.Fprintf(out, "Next: re-source activation to sync the environments: %s\n", activate)
+	fmt.Fprintln(out, "Next: run `icebath pm install` to sync the environments")
 	optIn, err := newOptInExtras(root, before)
 	if err != nil {
 		return 0, err
 	}
 	if len(optIn) > 0 {
-		names := strings.Join(append([]string{"all"}, optIn...), ",")
-		flag := "--test-extras " + names
-		if windows {
-			flag = "-TestExtras '" + names + "'"
-		}
-		fmt.Fprintf(out, "New extras outside [all] (%s) need: %s %s\n", strings.Join(optIn, ", "), activate, flag)
+		fmt.Fprintf(out, "New extras outside [all] (%s) need: icebath pm install --extra %s\n", strings.Join(optIn, ", "), strings.Join(optIn, " --extra "))
 	}
 	fmt.Fprintln(out, "Then commit pyproject.toml and uv.lock together.")
 	return 0, nil
@@ -275,9 +264,6 @@ func defaultProgressStream(ctx context.Context) io.Writer {
 	return nil
 }
 
-// Reports whether stdout or stderr is a terminal that renders progress
-func interactive(ctx context.Context) bool { return progressStream(ctx) != nil }
-
 // Per package progress redrawn in place on a terminal and printed as throttled lines off one
 type liveProgress struct {
 	name     string
@@ -462,7 +448,7 @@ func installNamesFor(ctx context.Context, names []string, target *string, verify
 }
 
 // First incompatible install flag combination as its user facing message, empty when none
-func installFlagError(args InstallArgs, extras []string, crossTarget string, toolsOnly, trustRecorded bool, testEnvironment *string) (string, error) {
+func installFlagError(args InstallArgs, extras []string, crossTarget string, toolsOnly, trustRecorded bool) (string, error) {
 	names := len(args.Names) > 0
 	if crossTarget != "" {
 		if !containsString(AllTargets, crossTarget) {
@@ -471,9 +457,6 @@ func installFlagError(args InstallArgs, extras []string, crossTarget string, too
 		if !names {
 			return "--target requires explicit package names", nil
 		}
-	}
-	if testEnvironment != nil && (len(extras) > 0 || crossTarget != "" || names || toolsOnly) {
-		return "--test-environment builds beside the default closure; it does not take names, --extra, --target, or --tools-only", nil
 	}
 	if toolsOnly && (len(extras) > 0 || crossTarget != "" || names) {
 		return "--tools-only installs the tool closure and then stops; it does not take names, --extra, or --target", nil
@@ -591,8 +574,8 @@ func firstSelection(ctx context.Context, extras []string) (requested, carried []
 	return selection, left, nil
 }
 
-// Syncs the venv and builds the side test environment, returning the failure count
-func installPythonEnvironments(ctx context.Context, extras []string, sync bool, testEnvironment *string) (int, error) {
+// Syncs the venv, returning the failure count
+func installPythonEnvironments(ctx context.Context, extras []string, sync bool) (int, error) {
 	out := SyncOutput(ctx)
 	failed := 0
 	var install *InstallError
@@ -642,25 +625,10 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 			return failed, err
 		}
 	}
-	if testEnvironment != nil && failed == 0 {
-		err := pmCheckProjectLock(ctx, CheckProjectLockOptions{Source: RepoRoot(), Explicit: true})
-		if err == nil {
-			_, err = EnsureTestenv(ctx, RepoRoot(), ParseTestExtras(*testEnvironment))
-		}
-		switch {
-		case err == nil:
-			fmt.Fprintln(out, "✓ test environment")
-		case errors.As(err, &install):
-			fmt.Fprintf(out, "✗ %s\n", err)
-			failed++
-		default:
-			return failed, err
-		}
-	}
 	return failed, nil
 }
 
-// Installs the tool closure then the venv, the optional defaults last, recording activation inputs for a full closure
+// Installs the tool closure then the venv, the optional defaults last, recording the owning checkout for a full closure
 func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 	out := SyncOutput(ctx)
 	canonical := make([]string, 0, len(args.Names))
@@ -673,7 +641,7 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 		crossTarget = *args.Target
 	}
 	extras := dedupeStrings(args.Extra)
-	errText, err := installFlagError(args, extras, crossTarget, args.ToolsOnly, args.TrustRecorded, args.TestEnvironment)
+	errText, err := installFlagError(args, extras, crossTarget, args.ToolsOnly, args.TrustRecorded)
 	if err != nil {
 		return 0, err
 	}
@@ -715,12 +683,6 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 		}
 	}
 	fullClosure := !(len(args.Names) > 0 || args.ToolsOnly || crossTarget != "")
-	inputMtimes := map[string]int64{}
-	if fullClosure {
-		if inputMtimes, err = ActivationInputMtimes(RepoRoot()); err != nil {
-			return 0, err
-		}
-	}
 	toolNames := names
 	if len(args.Names) == 0 {
 		if toolNames, err = ToolRoots(names); err != nil {
@@ -752,7 +714,7 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 	if args.ToolsOnly {
 		return 0, cliInstallDefaults(ctx, defaults, !args.TrustRecorded)
 	}
-	failed, err := installPythonEnvironments(ctx, extras, len(extras) > 0 || len(args.Names) == 0, args.TestEnvironment)
+	failed, err := installPythonEnvironments(ctx, extras, len(extras) > 0 || len(args.Names) == 0)
 	if err != nil {
 		return 0, err
 	}
@@ -762,7 +724,7 @@ func CmdInstall(ctx context.Context, args InstallArgs) (int, error) {
 		}
 	}
 	if fullClosure && failed == 0 {
-		if err := RecordActivationInputs(ActivationInputsDir(ctx, RepoRoot()), inputMtimes, RepoRoot(), args.TestEnvironment != nil); err != nil {
+		if err := recordProjectRoot(ctx, RepoRoot()); err != nil {
 			return 0, err
 		}
 	}
@@ -1008,7 +970,7 @@ func gcStore(ctx context.Context, store *Store, facts *Facts) (int, int, error) 
 	return removed, len(keep), nil
 }
 
-// Sweeps the writable store, dependency and PM runtime generations, and orphaned install state dirs
+// Sweeps the writable store, dependency generations, and orphaned install state dirs
 func CmdGC(ctx context.Context) (int, error) {
 	root, err := WritableStoreRoot(ctx)
 	if err != nil {
@@ -1036,16 +998,12 @@ func CmdGC(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	runtimes, err := CollectRuntimeGenerations(filepath.Join(InstallStateDir(ctx, RepoRoot()), "pm-runtime"))
-	if err != nil {
-		return 0, err
-	}
 	orphans, err := CollectOrphanInstallStates(InstallsRoot(ctx))
 	if err != nil {
 		return 0, err
 	}
-	fmt.Fprintf(SyncOutput(ctx), "gc: removed %d, kept %d; removed %d dependency generations, %d PM runtime generations, %d install state dir(s) of deleted checkouts\n",
-		removed, kept, len(generations), len(runtimes), len(orphans))
+	fmt.Fprintf(SyncOutput(ctx), "gc: removed %d, kept %d; removed %d dependency generations, %d install state dir(s) of deleted checkouts\n",
+		removed, kept, len(generations), len(orphans))
 	return 0, nil
 }
 

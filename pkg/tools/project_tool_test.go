@@ -82,22 +82,8 @@ func TestProjectsDBCreateListSwitch(t *testing.T) {
 	if p, _ := db.GetProject(pid); p.PrimaryPath != nil {
 		t.Fatal("primary cleared")
 	}
-	if ok, _ := db.DeleteProject(pid); !ok {
-		t.Fatal("delete")
-	}
 	if BranchNameFor(&Project{Slug: "my-app"}, "t1", "Fix Login!") != "my-app/t1-fix-login" {
 		t.Fatal(BranchNameFor(&Project{Slug: "my-app"}, "t1", "Fix Login!"))
-	}
-	n, _ := db.RecordDiscoveredRepos([]DiscoveredRepo{{Root: folder}}, true, strPtr("v1"))
-	repos, _ := db.ListDiscoveredRepos()
-	if n != 1 || len(repos) != 1 || repos[0].Label != filepath.Base(folder) {
-		t.Fatal(repos)
-	}
-	if cleared, _ := db.ReconcileDiscoveredReposPolicy("v2", false); !cleared {
-		t.Fatal("policy change clears")
-	}
-	if repos, _ := db.ListDiscoveredRepos(); len(repos) != 0 {
-		t.Fatal("cleared")
 	}
 }
 

@@ -84,14 +84,6 @@ func pyMinFloat(a, b float64) float64 {
 	return a
 }
 
-// Exit 78 becomes 0 so launchd parks the job, every other code passes through
-func MapFatalConfigExitForLaunchd(returncode int) int {
-	if returncode == GatewayFatalConfigExitCode {
-		return 0
-	}
-	return returncode
-}
-
 // Seconds of the exit timeout line in launchctl print output, nil when absent
 func ParseLaunchdExitTimeout(printOutput any) *float64 {
 	text := ""
@@ -356,11 +348,6 @@ func ResolveSystemdTimeoutStopSec(drainTimeout, cronDrainTimeout, cleanupReserve
 	}
 	n, _ := big.NewFloat(math.Trunc(v)).Int(nil)
 	return n, nil
-}
-
-// TimeoutStopSec with the shipped cron drain, reserve, headroom and floor
-func DefaultSystemdTimeoutStopSec(drainTimeout any) (*big.Int, error) {
-	return ResolveSystemdTimeoutStopSec(drainTimeout, DefaultGatewayCronDrainTimeout, CronDrainCleanupReserveS, SystemdStopHeadroomS, SystemdTimeoutStopSecFloor)
 }
 
 // Seconds a CLI waits for the gateway to exit after SIGUSR1, infinite for a non finite drain

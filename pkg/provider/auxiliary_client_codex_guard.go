@@ -192,12 +192,6 @@ func (g *auxCodexStreamGuard) recordProgress() {
 	g.deadlineMu.Unlock()
 }
 
-// Hard ceiling, first token or mid stream stall wording of the timeout
-func (g *auxCodexStreamGuard) timeoutMessage() string {
-	msg, _ := g.timeoutWording()
-	return msg
-}
-
 // Timeout error of the guard over the failure that ended the stream
 func (g *auxCodexStreamGuard) timeoutError(cause error) *AuxTimeoutError {
 	msg, kind := g.timeoutWording()

@@ -98,7 +98,7 @@ func TestCredentialAndControlNamesAreRefusedByExecuteCodesSecretPolicy(t *testin
 	sent := maps.Clone(refusedClientEnv)
 	kept := map[string]string{"NVM_DIR": "/client/.nvm", "MY_TOOLCHAIN_HOME": "/opt/tc", "PATH": "/client/bin"}
 	maps.Copy(sent, kept)
-	accepted, err := state.AcceptClientEnv(anyMap(sent), cfg, true)
+	accepted, err := state.NormaliseClientEnv(anyMap(sent), state.ClientEnvRulesFor(cfg, true))
 	if err != nil || !maps.Equal(accepted, kept) {
 		t.Fatalf("gateway accepted %v err %v", accepted, err)
 	}

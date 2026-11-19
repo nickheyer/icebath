@@ -61,9 +61,6 @@ func foreignGateway(record map[string]any) {
 func TestPoolOfAnUntickedHomeIsReaped(t *testing.T) {
 	a, b := ownershipHomes(t)
 	registerTickedHomes([]string{a, b})
-	if got := tickedHomes(); len(got) != 2 || got[home.Key(a)] != a || got[home.Key(b)] != b {
-		t.Fatalf("ticked homes %v", got)
-	}
 	if !servesProfile(a) || !servesProfile(b) || !servesProfile("") {
 		t.Fatal("registered homes are not served")
 	}

@@ -518,22 +518,6 @@ func (s *fakeWorkerStore) Apply(op string, payload map[string]any) (map[string]a
 	return map[string]any{"value": true}, nil
 }
 
-func TestSafeScheduleThreadsafe(t *testing.T) {
-	if f := SafeScheduleThreadsafe(context.Background(), nil, func(context.Context) (any, error) { return 1, nil }, nil, "", 0); f != nil {
-		t.Fatal("a missing loop must return nil")
-	}
-	pool := NewDaemonPool(1, "t")
-	f := SafeScheduleThreadsafe(context.Background(), pool, func(context.Context) (any, error) { return 7, nil }, nil, "", 0)
-	if v, err := f.Result(time.Second); v != 7 || err != nil {
-		t.Fatalf("scheduled = %v %v", v, err)
-	}
-	ConsumeDetachedTaskResult(f)
-	pool.Shutdown(true, false)
-	if SafeScheduleThreadsafe(context.Background(), pool, func(context.Context) (any, error) { return nil, nil }, nil, "", 0) != nil {
-		t.Fatal("a shut down loop must refuse")
-	}
-}
-
 func TestNewDelegationIDWrapperShape(t *testing.T) {
 	id := NewDelegationID()
 	if !strings.HasPrefix(id, "deleg_") || len(id) != len("deleg_")+8 {

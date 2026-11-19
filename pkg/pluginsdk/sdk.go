@@ -227,6 +227,16 @@ type HTTPResponse struct {
 	Body    []byte
 }
 
+// Request icebath sends to a provider with the sign in the plugin declares in requires_auth or oauth attached
+type ProviderRequest struct {
+	Provider       string
+	Method         string
+	URL            string
+	Headers        map[string]string
+	JSON           any
+	TimeoutSeconds float64
+}
+
 // Everything a plugin can register on icebath and ask of it
 type Host interface {
 	PluginID() string
@@ -278,6 +288,7 @@ type Host interface {
 	ListDir(ctx context.Context, path string) ([]DirEntry, error)
 	Remove(ctx context.Context, path string) error
 	HTTP(ctx context.Context, req HTTPRequest) (*HTTPResponse, error)
+	ProviderRequest(ctx context.Context, req ProviderRequest) (*HTTPResponse, error)
 	Env(ctx context.Context, name string) (value string, ok bool, err error)
 }
 

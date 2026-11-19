@@ -41,16 +41,16 @@ func TestBuildAdmissionPrepareRerecordsAnOutdatedEnvWithoutRefetching(t *testing
 	if err := facts.Record("env-tool", "1.0", filepath.Base(entry), stale, store, FactRecord{Target: &target, Artifacts: []string{strings.Repeat("a", 64)}, Digest: &digest}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prepareTools(ctx, PrepareToolsOptions{Names: []string{"env-tool"}, Out: store, Target: target}); err != nil {
+	facts, _ = NewFacts(filepath.Join(resolvePath(store), "facts.json"), true)
+	if _, err := InstallPackage(ctx, p, currentLockfile(), facts, NewStore(resolvePath(store)), target, InstallPackageOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	facts, _ = NewFacts(filepath.Join(store, "facts.json"), false)
 	if !envDiffEqual(facts.EnvFor("env-tool", store), p.Env(entry, target)) {
 		t.Fatalf("env not re-recorded %v", facts.EnvFor("env-tool", store))
 	}
-	selected, err := ReadVerifiedTools([]string{"env-tool"}, store, target, NewLockfile(lockPath))
-	if err != nil || selected.Entries["env-tool"].Path != entry || string(readFile(t, filepath.Join(entry, "data"))) != "tool" {
-		t.Fatalf("admission %v %v", selected, err)
+	if string(readFile(t, filepath.Join(entry, "data"))) != "tool" {
+		t.Fatal("the entry was fetched again")
 	}
 }
 
@@ -58,10 +58,6 @@ func TestBuildAdmissionFactsRecordedWithMetadataInTheDigestStillVerify(t *testin
 	tmp := isolateHome(t)
 	target, _ := CurrentTarget()
 	store := filepath.Join(tmp, "tools")
-	lockPath := filepath.Join(tmp, "lock.json")
-	ieEmptyLock(t, lockPath)
-	lock := NewLockfile(lockPath)
-	lock.SetPin("python", "1.0", map[string]any{target: map[string]any{"url": "https://invalid.test/python", "sha256": strings.Repeat("a", 64)}})
 	p, _ := GetPackage("python")
 	entry := filepath.Join(store, p.StoreEntry("1.0", target))
 	binary := p.Binary(entry, target)
@@ -87,11 +83,12 @@ func TestBuildAdmissionFactsRecordedWithMetadataInTheDigestStillVerify(t *testin
 	}
 	facts, _ := NewFacts(filepath.Join(store, "facts.json"), false)
 	facts.Record("python", "1.0", filepath.Base(entry), env, store, FactRecord{Target: &target, Artifacts: []string{strings.Repeat("a", 64)}, Digest: &digest})
-	selected, err := ReadVerifiedTools([]string{"python"}, store, target, lock)
-	if err != nil || selected.Entries["python"].Binary != binary {
-		t.Fatalf("legacy digest admission %v %v", selected, err)
+	fact, _ := facts.Get("python")
+	if matches, err := DigestMatches(entry, factDigest(fact)); err != nil || !matches {
+		t.Fatalf("legacy digest admission %v %v", matches, err)
 	}
 	os.WriteFile(binary, []byte("changed runtime"), 0o755)
-	_, err = ReadVerifiedTools([]string{"python"}, store, target, lock)
-	ieWantInstallError(t, err, "source failed verification")
+	if matches, err := DigestMatches(entry, factDigest(fact)); err != nil || matches {
+		t.Fatalf("a changed binary still verified %v %v", matches, err)
+	}
 }

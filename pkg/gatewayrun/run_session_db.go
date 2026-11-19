@@ -87,11 +87,6 @@ func (r *GatewayRunner) sessionDB(ctx context.Context) *state.AsyncSessionDB {
 	return db
 }
 
-// Pins db for every later read of the session database, nil included
-func (r *GatewayRunner) pinSessionDB(db *state.AsyncSessionDB) {
-	r.sessionDBPinned = sessionDBPin{set: true, db: db}
-}
-
 // Store wrapped by the session database of the active scope, nil when it is unavailable
 func (r *GatewayRunner) SessionDB(ctx context.Context) *state.SessionDB {
 	db := r.sessionDB(ctx)

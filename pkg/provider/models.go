@@ -120,31 +120,6 @@ func GetDefaultModelForProvider(ctx context.Context, provider string) string {
 	return ""
 }
 
-// True for the Claude Opus and Fable tiers, never a silent default
-func isAnthropicFrontierTier(modelID string) bool {
-	base := strings.ToLower(strings.SplitN(stripVendorPrefixLower(modelID), ":", 2)[0])
-	if !strings.HasPrefix(base, "claude-") {
-		return false
-	}
-	return strings.Contains(base, "opus-") || strings.Contains(base, "fable-")
-}
-
-// PickSilentDefaultModel is the labeled default when listed, else the first non frontier row, else the first row
-func PickSilentDefaultModel(ctx context.Context, modelIDs []string, provider string) string {
-	if len(modelIDs) == 0 {
-		return ""
-	}
-	if preferred := preferredSilentDefaultFn(ctx, provider); containsString(modelIDs, preferred) {
-		return preferred
-	}
-	for _, mid := range modelIDs {
-		if !isAnthropicFrontierTier(mid) {
-			return mid
-		}
-	}
-	return modelIDs[0]
-}
-
 // ---- provider identity ----
 
 // Every provider id and alias valid on the left of the provider colon model syntax
@@ -226,7 +201,7 @@ func ListAvailableProviders(ctx context.Context) []AvailableProvider {
 		aliasesFor[canonical] = append(aliasesFor[canonical], alias)
 	}
 	var slugs []string
-	for _, p := range listedCanonicalProviders() {
+	for _, p := range listedCanonicalProviders(ctx) {
 		slugs = append(slugs, p.Slug)
 	}
 	slugs = append(slugs, "custom")
@@ -375,24 +350,6 @@ func anthropicNextCursor(page any, seenCursors map[string]bool) string {
 	}
 	seenCursors[lastID] = true
 	return lastID
-}
-
-// CuratedModelsForProvider returns picker rows from the live list when reachable else the static catalog
-func CuratedModelsForProvider(ctx context.Context, provider string, forceRefresh bool) []CatalogModel {
-	normalized := catalogNormalizeProvider(provider)
-	if normalized == "openrouter" {
-		return FetchOpenRouterModels(ctx, FetchModelsOptions{ForceRefresh: forceRefresh})
-	}
-	live := providerModelIDsFn(ctx, normalized, false)
-	ids := live.IDs
-	if len(ids) == 0 {
-		ids = staticCatalogFn(ctx, normalized)
-	}
-	out := make([]CatalogModel, 0, len(ids))
-	for _, m := range ids {
-		out = append(out, CatalogModel{ID: m})
-	}
-	return out
 }
 
 // Raw and normalized spellings of a provider, in that order

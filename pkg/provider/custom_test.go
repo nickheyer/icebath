@@ -56,30 +56,29 @@ func TestFindCustomProviderIdentity(t *testing.T) {
 func TestCanonicalCustomIdentity(t *testing.T) {
 	const providerKey, displayName, baseURL, model = "my-endpoint", "My Endpoint Display", "https://example.invalid/v1", "cool-model-1"
 	cfg := map[string]any{"providers": map[string]any{providerKey: map[string]any{"name": displayName, "api": baseURL, "api_key": "sk-test", "default_model": model, "models": []any{model}}}}
-	r := testResolver(t, cfg, &fakeCreds{}, "")
+	testResolver(t, cfg, &fakeCreds{}, "")
+	ctx := WithFrozenRuntimeConfig(context.Background(), cfg)
 	canonical := "custom:" + providerKey
-	if got := r.CanonicalCustomIdentity("", displayName, "", ""); got != canonical {
+	if got := CanonicalCustomIdentity(ctx, "", displayName, "", ""); got != canonical {
 		t.Fatalf("display name heals: %q", got)
 	}
 	cfgWithModel := map[string]any{"providers": cfg["providers"], "model": map[string]any{"provider": displayName}}
-	r2 := testResolver(t, cfgWithModel, &fakeCreds{}, "")
-	if got := r2.CanonicalCustomIdentity("", "", "", ""); got != canonical {
+	if got := CanonicalCustomIdentity(WithFrozenRuntimeConfig(context.Background(), cfgWithModel), "", "", "", ""); got != canonical {
 		t.Fatalf("config model provider heals: %q", got)
 	}
-	if got := r.CanonicalCustomIdentity("", providerKey, "", ""); got != canonical {
+	if got := CanonicalCustomIdentity(ctx, "", providerKey, "", ""); got != canonical {
 		t.Fatalf("config key spelling: %q", got)
 	}
-	byURL := r.CanonicalCustomIdentity(baseURL, "", "", "")
-	byModel := r.CanonicalCustomIdentity("", "", model, "")
+	byURL := CanonicalCustomIdentity(ctx, baseURL, "", "", "")
+	byModel := CanonicalCustomIdentity(ctx, "", "", model, "")
 	if byURL != canonical || byModel != canonical {
 		t.Fatalf("sources disagree: %q %q", byURL, byModel)
 	}
-	if got := r.CanonicalCustomIdentity("", "not-a-configured-entry", "", ""); got != "" {
+	if got := CanonicalCustomIdentity(ctx, "", "not-a-configured-entry", "", ""); got != "" {
 		t.Fatalf("unconfigured: %q", got)
 	}
 	legacy := map[string]any{"custom_providers": []any{map[string]any{"name": "Legacy Endpoint", "base_url": "https://legacy.invalid/v1", "api_key": "sk-legacy", "models": []any{"legacy-model"}}}}
-	r = testResolver(t, legacy, &fakeCreds{}, "")
-	if got := r.CanonicalCustomIdentity("", "Legacy Endpoint", "", ""); got != "custom:legacy-endpoint" {
+	if got := CanonicalCustomIdentity(WithFrozenRuntimeConfig(context.Background(), legacy), "", "Legacy Endpoint", "", ""); got != "custom:legacy-endpoint" {
 		t.Fatalf("legacy name identity: %q", got)
 	}
 }
@@ -111,14 +110,15 @@ func TestSessionProviderIdentityAndRoutedIdentity(t *testing.T) {
 		"a": map[string]any{"api": "https://gw.example/v1", "models": []any{"m1"}},
 		"b": map[string]any{"api": "https://gw.example/v1", "models": []any{"m2"}},
 	}}
-	r := testResolver(t, cfg, &fakeCreds{}, "")
-	if got := r.SessionProviderIdentity("custom", "custom:b", "https://gw.example/v1", ""); got != "custom:b" {
+	testResolver(t, cfg, &fakeCreds{}, "")
+	ctx := WithFrozenRuntimeConfig(context.Background(), cfg)
+	if got := SessionProviderIdentity(ctx, "custom", "custom:b", "https://gw.example/v1", "", nil); got != "custom:b" {
 		t.Fatalf("requested entry still serving the url: %q", got)
 	}
-	if got := r.SessionProviderIdentity("custom", "custom:zzz", "https://gw.example/v1", ""); got != "custom:a" {
+	if got := SessionProviderIdentity(ctx, "custom", "custom:zzz", "https://gw.example/v1", "", nil); got != "custom:a" {
 		t.Fatalf("endpoint owner: %q", got)
 	}
-	if got := r.SessionProviderIdentity("deepseek", "", "", ""); got != "deepseek" {
+	if got := SessionProviderIdentity(ctx, "deepseek", "", "", "", nil); got != "deepseek" {
 		t.Fatalf("builtin adapter: %q", got)
 	}
 	if got := RoutedCustomIdentity("https://gw.example/v1", "m2", cfg, ""); got != "custom:b" {

@@ -151,12 +151,12 @@ func replayedJSON(t *testing.T, v any) any {
 	if v == nil {
 		return nil
 	}
-	text, err := state.DumpsUnicode(v)
+	raw, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out any
-	if err := json.Unmarshal([]byte(text), &out); err != nil {
+	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatal(err)
 	}
 	return out

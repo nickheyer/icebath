@@ -288,10 +288,3 @@ func GetScheduler() *SignalAttachmentScheduler {
 	}
 	return scheduler.s
 }
-
-// Drops the cached scheduler so the next access builds a fresh one
-func resetScheduler() {
-	scheduler.Lock()
-	defer scheduler.Unlock()
-	scheduler.s = nil
-}

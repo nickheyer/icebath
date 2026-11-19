@@ -115,3 +115,11 @@ func TestChartedSignalLabelsClearReadableContrastFloor(t *testing.T) {
 	}
 	t.Fatal("no charted signal row named old-skill")
 }
+
+func (l journeyLine) plain() string {
+	var b strings.Builder
+	for _, r := range l {
+		b.WriteString(r.Text)
+	}
+	return b.String()
+}

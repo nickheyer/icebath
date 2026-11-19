@@ -245,7 +245,7 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 	for _, p := range canonical {
 		canonicalDescs[p.Slug] = p.TUIDesc
 	}
-	listed := listedCanonicalProviders()
+	listed := listedCanonicalProviders(ctx)
 	excluded := map[string]bool{}
 	var modelCatalog map[string]any
 	if raw := cfg["model_catalog"]; pyTruthy(raw) {

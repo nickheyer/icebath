@@ -191,8 +191,8 @@ func (h *fakeExecutorHost) MarkTrimAfterToolBatch() {}
 func (h *fakeExecutorHost) RedactToolArgsForDisplay(_ string, args map[string]any) map[string]any {
 	return args
 }
-func (h *fakeExecutorHost) BuildToolPreview(string, map[string]any) string { return "" }
-func (h *fakeExecutorHost) ToolRowEmoji(string, map[string]any) string     { return "" }
+func (h *fakeExecutorHost) BuildToolPreview(string, map[string]any) string              { return "" }
+func (h *fakeExecutorHost) ToolRowEmoji(context.Context, string, map[string]any) string { return "" }
 func (h *fakeExecutorHost) BuildToolLabel(name string, _ map[string]any) string {
 	return name
 }

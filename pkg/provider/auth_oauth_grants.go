@@ -395,29 +395,6 @@ func ConsumeOAuthHealNotices() []string {
 	return notes
 }
 
-// Stable account identity from JWT claims of the access or id token, empty when neither carries one
-func oauthIdentity(entry map[string]any) string {
-	if entry == nil {
-		return ""
-	}
-	for _, token := range []any{entry["access_token"], entry["id_token"]} {
-		claims := DecodeJWTClaims(anyString(token))
-		if len(claims) == 0 {
-			continue
-		}
-		var account any
-		if nested, ok := claims["https://api.openai.com/auth"].(map[string]any); ok {
-			account = nested["chatgpt_account_id"]
-		}
-		for _, value := range []any{account, claims["sub"], claims["email"]} {
-			if nonblank(value) {
-				return strings.TrimSpace(value.(string))
-			}
-		}
-	}
-	return ""
-}
-
 func oauthFresher(candidate, target map[string]any) bool {
 	order, ok := oauthPairOrder(candidate, target)
 	return ok && order == 1

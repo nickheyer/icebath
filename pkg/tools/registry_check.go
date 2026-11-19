@@ -320,23 +320,6 @@ func (r *Registry) memoCheck(ctx context.Context, env *Env, fn func(*Env) bool, 
 	return v
 }
 
-// CachedCheckResult returns a probe's live cached verdict without ever running it
-func CachedCheckResult(env *Env, fn func(*Env) bool) (bool, bool) {
-	scope, bypass := CheckFnCacheScope(env)
-	if bypass {
-		return false, false
-	}
-	key := checkKey{fnPointer(fn), scope}
-	now := checkNow()
-	checkMu.Lock()
-	defer checkMu.Unlock()
-	v, ok := checkCache[key]
-	if !ok || now.Sub(v.at) >= checkTTL {
-		return false, false
-	}
-	return v.value, true
-}
-
 // toolsetHasExposableTools reports whether any member of a toolset passes its check
 func (r *Registry) toolsetHasExposableTools(ctx context.Context, env *Env, toolset string, entries []*Def) bool {
 	memo := checkMemo{}

@@ -770,37 +770,15 @@ func unknownCost(source string, notes ...string) CostResult {
 // UsageCostHook lets a provider profile report the cost its own API returned for a response
 type UsageCostHook func(model string, usage CanonicalUsage) (CostResult, bool)
 
-var (
-	usageCostHooksMu sync.Mutex
-	usageCostHooks   = map[string]UsageCostHook{}
-)
-
-// RegisterUsageCostHook installs the profile level cost reporter for a provider
-func RegisterUsageCostHook(provider string, hook UsageCostHook) {
-	usageCostHooksMu.Lock()
-	defer usageCostHooksMu.Unlock()
-	key := NormalizeProvider(provider)
-	if hook == nil {
-		delete(usageCostHooks, key)
-		return
-	}
-	usageCostHooks[key] = hook
-}
-
 func reportedUsageCost(provider, model string, usage CanonicalUsage) (CostResult, bool) {
 	if strings.TrimSpace(provider) == "" {
 		return CostResult{}, false
 	}
-	usageCostHooksMu.Lock()
-	hook := usageCostHooks[NormalizeProvider(provider)]
-	if p := getProviderProfile(context.Background(), NormalizeProvider(provider)); p != nil && p.GetUsageCostHook != nil {
-		hook = p.GetUsageCostHook
-	}
-	usageCostHooksMu.Unlock()
-	if hook == nil {
+	p := getProviderProfile(context.Background(), NormalizeProvider(provider))
+	if p == nil || p.GetUsageCostHook == nil {
 		return CostResult{}, false
 	}
-	return hook(model, usage)
+	return p.GetUsageCostHook(model, usage)
 }
 
 // EstimateUsageCost prices a usage bucket for a model route with tier, fast mode and ultrafast rules
@@ -895,42 +873,6 @@ func FormatDurationCompact(seconds float64) string {
 		return fmt.Sprintf("%dh", int(hours))
 	}
 	return fmt.Sprintf("%.1fd", hours/24)
-}
-
-// FormatTokenCountCompact renders a count with K, M or B suffix and trimmed decimals
-func FormatTokenCountCompact(value int) string {
-	abs := value
-	if abs < 0 {
-		abs = -abs
-	}
-	if abs < 1_000 {
-		return strconv.Itoa(value)
-	}
-	sign := ""
-	if value < 0 {
-		sign = "-"
-	}
-	threshold, suffix := 1_000, "K"
-	switch {
-	case abs >= 1_000_000_000:
-		threshold, suffix = 1_000_000_000, "B"
-	case abs >= 1_000_000:
-		threshold, suffix = 1_000_000, "M"
-	}
-	scaled := float64(abs) / float64(threshold)
-	var text string
-	switch {
-	case scaled < 10:
-		text = fmt.Sprintf("%.2f", scaled)
-	case scaled < 100:
-		text = fmt.Sprintf("%.1f", scaled)
-	default:
-		text = fmt.Sprintf("%.0f", scaled)
-	}
-	if strings.Contains(text, ".") {
-		text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
-	}
-	return sign + text + suffix
 }
 
 // ---- models_pricing: live catalog pricing with per endpoint and per credential caches ----
@@ -1029,50 +971,6 @@ func pricingAuthFingerprint(apiKey string) string {
 	}
 	sum := sha256.Sum256([]byte(apiKey))
 	return pricingAuthKeyPrefix + hex.EncodeToString(sum[:8])
-}
-
-func stripV1(url string) string {
-	if strings.HasSuffix(url, "/v1") {
-		return strings.TrimRight(url[:len(url)-3], "/")
-	}
-	return url
-}
-
-// PeekCachedPricing returns pricing already cached for a base URL preferring the newest authenticated catalog
-func PeekCachedPricing(baseURL string) PricingTable {
-	root := stripV1(strings.TrimRight(baseURL, "/"))
-	authedPrefix := root + pricingAuthKeyPrefix
-	pricingCacheMu.Lock()
-	keys := cloneStrings(pricingCacheOrder)
-	pricingCacheMu.Unlock()
-	for i := len(keys) - 1; i >= 0; i-- {
-		if strings.HasPrefix(keys[i], authedPrefix) {
-			if cached := cachedCatalog(keys[i]); len(cached) > 0 {
-				return cached
-			}
-		}
-	}
-	if cached := cachedCatalog(root); cached != nil {
-		return cached
-	}
-	return PricingTable{}
-}
-
-// PricingFetchSuppressed reports a recent failed fetch for the base URL whose empty result is still cached
-func PricingFetchSuppressed(baseURL string) bool {
-	root := stripV1(strings.TrimRight(baseURL, "/"))
-	pricingCacheMu.Lock()
-	defer pricingCacheMu.Unlock()
-	now := pricingClock()
-	for _, key := range pricingCacheOrder {
-		if key != root && !strings.HasPrefix(key, root+pricingAuthKeyPrefix) {
-			continue
-		}
-		if table, ok := pricingCache[key]; ok && len(table) == 0 && pricingCacheRetryAfter[key].After(now) {
-			return true
-		}
-	}
-	return false
 }
 
 // FormatPricePerMtok renders a per token price string as dollars per million tokens

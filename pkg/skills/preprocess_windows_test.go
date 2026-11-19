@@ -14,7 +14,7 @@ import (
 )
 
 // Replaces the Git Bash resolver for the test duration
-func withFindBash(t *testing.T, fn func() (string, error)) {
+func withFindBash(t *testing.T, fn func(context.Context) (string, error)) {
 	t.Helper()
 	prev := findBash
 	findBash = fn
@@ -36,7 +36,7 @@ func TestInlineShellKeepsOutputContract(t *testing.T) {
 }
 
 func TestInlineShellResolverFailureIsAMarker(t *testing.T) {
-	withFindBash(t, func() (string, error) { return "", errors.New("Git Bash unavailable") })
+	withFindBash(t, func(context.Context) (string, error) { return "", errors.New("Git Bash unavailable") })
 	s := NewScope(t.TempDir(), config.Defaults())
 	if got := s.RunInlineShell(context.Background(), ":", t.TempDir(), 5); got != "[inline-shell error: Git Bash unavailable]" {
 		t.Fatalf("got %q", got)
@@ -44,7 +44,7 @@ func TestInlineShellResolverFailureIsAMarker(t *testing.T) {
 }
 
 func TestDisabledInlineShellDoesNotResolveBash(t *testing.T) {
-	withFindBash(t, func() (string, error) {
+	withFindBash(t, func(context.Context) (string, error) {
 		t.Fatal("disabled inline shell must not resolve an interpreter")
 		return "", nil
 	})

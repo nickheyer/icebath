@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"strings"
-	"sync"
 )
 
 // First hyphen token of a bare model name mapped onto the vendor slug aggregators expect
@@ -35,20 +34,10 @@ var deepseekRetiredAliases = map[string]string{"deepseek-chat": "deepseek-flash"
 // ModelIDNormalizer is a provider profile hook that returns the native id for a model or empty for generic rules
 type ModelIDNormalizer func(ctx context.Context, model, apiKey string) string
 
-var (
-	modelIDNormalizersMu sync.RWMutex
-	modelIDNormalizers   = map[string]ModelIDNormalizer{}
-)
-
 // Native id from the provider profile hook, empty when no hook exists or it declines
 func profileNormalizeModelID(ctx context.Context, provider, model string) (out string) {
-	modelIDNormalizersMu.RLock()
-	fn := modelIDNormalizers[provider]
-	if p := getProviderProfile(ctx, provider); p != nil && p.NormalizeModelIDHook != nil {
-		fn = p.NormalizeModelIDHook
-	}
-	modelIDNormalizersMu.RUnlock()
-	if fn == nil {
+	p := getProviderProfile(ctx, provider)
+	if p == nil || p.NormalizeModelIDHook == nil {
 		return ""
 	}
 	defer func() {
@@ -56,7 +45,7 @@ func profileNormalizeModelID(ctx context.Context, provider, model string) (out s
 			out = ""
 		}
 	}()
-	return fn(ctx, model, "")
+	return p.NormalizeModelIDHook(ctx, model, "")
 }
 
 // Folds retired DeepSeek aliases onto their replacement and lowercases everything else

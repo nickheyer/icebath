@@ -46,7 +46,6 @@ var (
 	fleetRepairUnit        = repairUnitWithoutFatalExitPark
 	fleetUnitOwned         = systemdUnitOwnedByUpdate
 	fleetUnitMainPid       = unitMainPid
-	fleetResetAndRestart   = systemctlResetAndRestart
 	fleetSystemUnitDir     = gateway.SystemUnitDir
 	fleetServiceName       = gateway.GetServiceName
 	fleetRefreshUnit       = gateway.RefreshSystemdUnitIfNeeded
@@ -219,56 +218,6 @@ func (t *systemdRestartTargets) collapse(ctx context.Context, w io.Writer) []str
 		fmt.Fprintf(w, "  • %s is a legacy per-profile unit sharing one host gateway process with %s; restarting it again would restart that process twice. Fold the units together with: icebath gateway migrate\n", unitKey, ownerKey)
 	}
 	return keys
-}
-
-// Restarts every gateway unit once per live host process, appending each failure to failed
-func restartSystemdGatewayUnitsBestEffort(ctx context.Context, w io.Writer, failed *[]string, listings []systemdUnitListing) error {
-	answered := map[string]bool{}
-	targets := &systemdRestartTargets{}
-	for _, listing := range listings {
-		answered[listing.Scope] = true
-		if listing.Listing.Returncode != 0 {
-			*failed = append(*failed, fmt.Sprintf("systemd-%s (listing failed)", listing.Scope))
-			continue
-		}
-		err := forEachSystemdGatewayUnit(completedStdout(listing.Listing),
-			func(svcName string) error { targets.add(listing.Scope, listing.ScopeCmd, svcName); return nil },
-			func(svcName string, _ error) { *failed = append(*failed, svcName) })
-		if err != nil {
-			return err
-		}
-	}
-	for _, key := range targets.collapse(ctx, w) {
-		target := targets.units[key]
-		owned, err := fleetUnitOwned(ctx, w, target.ScopeCmd, target.Unit)
-		if err != nil {
-			return err
-		}
-		if !owned {
-			continue
-		}
-		manageCmd := fleetArgv(target.ScopeCmd, "--no-ask-password")
-		if needsSudo(target.Scope) {
-			manageCmd = fleetArgv([]string{"sudo", "-n"}, manageCmd...)
-		}
-		result, err := fleetResetAndRestart(ctx, w, manageCmd, target.Unit, target.ScopeCmd)
-		if err == nil && result.Returncode == 0 {
-			var active bool
-			if active, err = fleetWaitServiceActive(ctx, target.ScopeCmd, target.Unit, 10.0); err == nil && active {
-				continue
-			}
-		}
-		if err != nil && asCommandTimeout(err) == nil {
-			return err
-		}
-		*failed = append(*failed, target.Unit)
-	}
-	for _, scope := range systemdScopes {
-		if !answered[scope.Name] {
-			*failed = append(*failed, fmt.Sprintf("systemd-%s (listing unavailable)", scope.Name))
-		}
-	}
-	return nil
 }
 
 // Clears a unit's failed state then restarts it, waiting out the unit's own stop and start budgets

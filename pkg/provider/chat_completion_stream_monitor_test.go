@@ -3,7 +3,8 @@ package provider
 import (
 	"context"
 	"errors"
-	"log/slog"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,89 +31,147 @@ func (e *scriptedAnthEvents) Next() (*anthEvent, error) { return e.next() }
 // Anthropic transport whose stream events come from a per attempt factory instead of the response body
 type anthEventsOverride struct {
 	anthTransport
-	open   func(resp *http.Response) anthEventSource
-	opened atomic.Int32
+	open func(resp *http.Response) anthEventSource
 }
 
-func (o *anthEventsOverride) Events(resp *http.Response) anthEventSource {
-	o.opened.Add(1)
-	return o.open(resp)
-}
+func (o *anthEventsOverride) Events(resp *http.Response) anthEventSource { return o.open(resp) }
 
-func anthTextEvents(texts ...string) []*anthEvent {
-	evs := []*anthEvent{
-		{Type: "message_start", Payload: map[string]any{"type": "message_start", "message": map[string]any{"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-sonnet-4-20250514", "content": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 0}}}},
-		{Type: "content_block_start", Payload: map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}}},
-	}
-	for _, text := range texts {
-		evs = append(evs, &anthEvent{Type: "content_block_delta", Payload: map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": text}}})
-	}
-	return evs
-}
-
-// Source replaying events, then parking on release where neither the abort nor the socket can reach it
-func wedgedAnthSource(release <-chan struct{}, evs ...*anthEvent) anthEventSource {
-	i := 0
-	return &scriptedAnthEvents{next: func() (*anthEvent, error) {
-		if i < len(evs) {
-			i++
-			return evs[i-1], nil
-		}
-		select {
-		case <-release:
-		case <-time.After(30 * time.Second):
-		}
-		return &anthEvent{Type: "message_stop", Payload: map[string]any{"type": "message_stop"}}, nil
-	}}
-}
-
-type streamCallOutcome struct {
-	resp *Response
-	err  error
-}
-
-type abandonHarness struct {
-	t        *testing.T
-	session  *RetrySession
-	override *anthEventsOverride
-	client   *anthropicClient
-	loop     *doLoop
-	mu       sync.Mutex
-	events   []StreamEvent
-}
-
-// Anthropic client against a server that opens every stream, with a 0.3s stale window and give up five
-func newAbandonHarness(t *testing.T, open func(resp *http.Response) anthEventSource) *abandonHarness {
+// Typed Anthropic client against a server that opens every stream, its events scripted per attempt, with a 0.3s stale window
+func scriptedAnthropicClient(t *testing.T, open func(resp *http.Response) anthEventSource) *anthropicClient {
 	t.Helper()
 	t.Setenv(home.EnvHome, t.TempDir())
 	t.Setenv(StreamStaleTimeoutEnv, "0.3")
-	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "5")
 	srv := newAnthServer(t, func(w http.ResponseWriter, body map[string]any) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
 	})
 	c := srv.client(srv.route("https://example.invalid", "test-key"))
-	o := &anthEventsOverride{anthTransport: c.transport, open: open}
-	c.transport = o
-	return &abandonHarness{t: t, session: &RetrySession{}, override: o, client: c}
+	c.transport = &anthEventsOverride{anthTransport: c.transport, open: open}
+	return c
 }
 
-// Runs the reconnect loop of one streaming call
+// Messages stream of the agent wire whose events a test scripts, consulted once per Next call
+type scriptedMessageStream struct {
+	next  func(ctx context.Context) (any, error)
+	final map[string]any
+}
+
+func (s *scriptedMessageStream) Next(ctx context.Context) (any, error) { return s.next(ctx) }
+func (s *scriptedMessageStream) Close() error                          { return nil }
+func (s *scriptedMessageStream) HTTPResponse() *http.Response {
+	return &http.Response{StatusCode: 200, Header: http.Header{}}
+}
+func (s *scriptedMessageStream) AttemptConn() net.Conn    { return nil }
+func (s *scriptedMessageStream) Snapshot() map[string]any { return s.final }
+
+// Anthropic client opening one scripted Messages stream per attempt and counting the opens
+type scriptedMessagesClient struct {
+	open   func() (anthMessageStream, error)
+	opened atomic.Int32
+}
+
+func (c *scriptedMessagesClient) MessagesStream(context.Context, map[string]any) (anthMessageStream, error) {
+	c.opened.Add(1)
+	return c.open()
+}
+
+// Events of one text block carrying the given deltas
+func messageTextEvents(texts ...string) []map[string]any {
+	evs := []map[string]any{{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}}}
+	for _, text := range texts {
+		evs = append(evs, map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": text}})
+	}
+	return evs
+}
+
+// Stream replaying events, then parking on release where neither the abort nor the socket can reach it
+func wedgedMessageStream(release <-chan struct{}, events ...map[string]any) *scriptedMessageStream {
+	i := 0
+	return &scriptedMessageStream{next: func(context.Context) (any, error) {
+		if i < len(events) {
+			i++
+			return events[i-1], nil
+		}
+		select {
+		case <-release:
+		case <-time.After(30 * time.Second):
+		}
+		return nil, io.EOF
+	}}
+}
+
+// Streams whose first read waits for the abort of their attempt, or out the wait when the abort is ignored, then drops the connection
+type droppingStreams struct {
+	mu      sync.Mutex
+	aborted chan struct{}
+}
+
+func (d *droppingStreams) open(wait time.Duration, ignoreAbort bool) *scriptedMessageStream {
+	aborted := make(chan struct{})
+	d.mu.Lock()
+	d.aborted = aborted
+	d.mu.Unlock()
+	return &scriptedMessageStream{next: func(context.Context) (any, error) {
+		if ignoreAbort {
+			time.Sleep(wait)
+		} else {
+			select {
+			case <-aborted:
+			case <-time.After(wait):
+			}
+		}
+		return nil, &AuxTransportError{Class: "ConnectError", Message: "connection dropped after close()"}
+	}}
+}
+
+// Wakes the read of the stream opened last, the request client abort of the agent
+func (d *droppingStreams) abort(any, string) {
+	d.mu.Lock()
+	if d.aborted != nil {
+		close(d.aborted)
+		d.aborted = nil
+	}
+	d.mu.Unlock()
+}
+
+// Swaps the stream reconnect backoff for a recorder of the requested waits
+func recordStreamBackoff(t *testing.T) *[]time.Duration {
+	t.Helper()
+	var waits []time.Duration
+	prev := waitStreamRetryBackoffFn
+	waitStreamRetryBackoffFn = func(_ ChatCompletionAgent, delay time.Duration) { waits = append(waits, delay) }
+	t.Cleanup(func() { waitStreamRetryBackoffFn = prev })
+	return &waits
+}
+
+type streamCallOutcome struct {
+	resp any
+	err  error
+}
+
+type abandonHarness struct {
+	t      *testing.T
+	agent  *fakeChatAgent
+	client *scriptedMessagesClient
+}
+
+// Anthropic agent whose every stream attempt opens the scripted stream, with a 0.3s stale window and give up five
+func newAbandonHarness(t *testing.T, open func() (anthMessageStream, error)) *abandonHarness {
+	t.Helper()
+	t.Setenv(home.EnvHome, t.TempDir())
+	t.Setenv(StreamStaleTimeoutEnv, "0.3")
+	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "5")
+	client := &scriptedMessagesClient{open: open}
+	agent := &fakeChatAgent{provider: "custom", apiMode: "anthropic_messages", baseURL: "https://example.com/v1", model: "claude-opus-4-7", plat: "cli",
+		anthropicCreate: func(string) (any, error) { return client, nil }}
+	return &abandonHarness{t: t, agent: agent, client: client}
+}
+
+// Runs one streaming call of the agent, the kwargs naming no model so no reasoning stale floor applies
 func (h *abandonHarness) start(ctx context.Context) <-chan streamCallOutcome {
 	out := make(chan streamCallOutcome, 1)
-	noSleep := func(context.Context, time.Duration) error { return nil }
-	opts := DoOptions{Session: h.session, Log: slog.Default(), Now: time.Now, Sleep: noSleep, Stream: func(ev StreamEvent) error {
-		h.mu.Lock()
-		h.events = append(h.events, ev)
-		h.mu.Unlock()
-		return nil
-	}}
-	req := &Request{Messages: userRequest("hi").Messages}
-	l := &doLoop{ctx: withStaleStreak(ctx, h.session), opts: opts, client: h.client, req: req, route: h.client.Route(), session: h.session,
-		log: opts.Log, now: opts.Now, sleep: noSleep, maxRetries: 1}
-	h.loop = l
 	go func() {
-		resp, _, err := l.streamWithReconnects()
+		resp, err := InterruptibleStreamingAPICall(ctx, h.agent, map[string]any{}, nil)
 		out <- streamCallOutcome{resp: resp, err: err}
 	}()
 	return out
@@ -129,18 +188,6 @@ func (h *abandonHarness) wait(out <-chan streamCallOutcome, limit time.Duration)
 	return streamCallOutcome{}
 }
 
-func (h *abandonHarness) activity() []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var out []string
-	for _, ev := range h.events {
-		if ev.Kind == EventActivity || ev.Kind == EventWaitNotice {
-			out = append(out, string(ev.Kind)+":"+ev.Text)
-		}
-	}
-	return out
-}
-
 func logCount(c *logCapture, needle string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -155,9 +202,7 @@ func logCount(c *logCapture, needle string) int {
 
 func assertAbandonTimeout(t *testing.T, err error) {
 	t.Helper()
-	var abandoned *StreamAbandonedError
-	var apiErr *APIError
-	if !errors.As(err, &abandoned) || !errors.As(err, &apiErr) || apiErr.Kind != ErrTimeout || !strings.Contains(err.Error(), streamAbandonedText) {
+	if err == nil || TimeoutPhase(err) != TimeoutPhaseRead || !errors.Is(err, ErrStreamStalled) || !strings.Contains(err.Error(), streamAbandonedText) {
 		t.Fatalf("want a retryable abandon timeout, got %T %v", err, err)
 	}
 }
@@ -166,7 +211,7 @@ func TestWedgedWorkerIsAbandonedWithARetryableTimeout(t *testing.T) {
 	logs := captureLogs(t)
 	release := make(chan struct{})
 	defer close(release)
-	h := newAbandonHarness(t, func(*http.Response) anthEventSource { return wedgedAnthSource(release) })
+	h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
 	o := h.wait(h.start(context.Background()), 10*time.Second)
 	assertAbandonTimeout(t, o.err)
 	if n := logCount(logs, "Stream stale for"); n != 3 {
@@ -175,25 +220,23 @@ func TestWedgedWorkerIsAbandonedWithARetryableTimeout(t *testing.T) {
 	if n := logCount(logs, "abandoning the request"); n != 1 {
 		t.Fatalf("abandon logged %d", n)
 	}
-	if h.session.StaleStreak() != 1 {
-		t.Fatalf("one wedged attempt must still count once, streak %d", h.session.StaleStreak())
+	if h.agent.retry.StaleStreak() != 1 {
+		t.Fatalf("one wedged attempt must still count once, streak %d", h.agent.retry.StaleStreak())
 	}
 }
 
 func TestWorkerThatUnwindsAfterAKillStillRetries(t *testing.T) {
 	logs := captureLogs(t)
+	recordStreamBackoff(t)
+	drops := &droppingStreams{}
+	h := newAbandonHarness(t, func() (anthMessageStream, error) { return drops.open(10*time.Second, false), nil })
 	t.Setenv("ICEBATH_STREAM_RETRIES", "2")
-	h := newAbandonHarness(t, func(resp *http.Response) anthEventSource {
-		return &scriptedAnthEvents{next: func() (*anthEvent, error) {
-			<-resp.Request.Context().Done()
-			return nil, errors.New("peer closed connection without sending complete message body")
-		}}
-	})
+	h.agent.onAbort = drops.abort
 	o := h.wait(h.start(context.Background()), 15*time.Second)
 	if o.err == nil || strings.Contains(o.err.Error(), streamAbandonedText) {
 		t.Fatalf("want the exhausted stale error, got %v", o.err)
 	}
-	if n := h.override.opened.Load(); n != 3 {
+	if n := h.client.opened.Load(); n != 3 {
 		t.Fatalf("each kill should lead to a fresh attempt (1 + 2 retries), saw %d", n)
 	}
 	if logCount(logs, "abandoning the request") != 0 {
@@ -208,7 +251,7 @@ func TestAbandonLimitOfOneAbandonsOnTheFirstKill(t *testing.T) {
 	t.Cleanup(func() { staleAbandonKills = prev })
 	release := make(chan struct{})
 	defer close(release)
-	h := newAbandonHarness(t, func(*http.Response) anthEventSource { return wedgedAnthSource(release) })
+	h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
 	o := h.wait(h.start(context.Background()), 10*time.Second)
 	assertAbandonTimeout(t, o.err)
 	if logCount(logs, "Stream stale for") != 1 || logCount(logs, "abandoning the request") != 1 {
@@ -220,10 +263,11 @@ func TestAbandonAfterInvisibleDeltasRetriesInsteadOfAnEmptyStub(t *testing.T) {
 	logs := captureLogs(t)
 	release := make(chan struct{})
 	defer close(release)
-	h := newAbandonHarness(t, func(*http.Response) anthEventSource { return wedgedAnthSource(release, anthTextEvents("  \n")...) })
+	h := newAbandonHarness(t, func() (anthMessageStream, error) {
+		return wedgedMessageStream(release, messageTextEvents("  \n")...), nil
+	})
 	o := h.wait(h.start(context.Background()), 10*time.Second)
-	var partial *PartialStreamError
-	if o.resp != nil || errors.As(o.err, &partial) {
+	if o.resp != nil {
 		t.Fatalf("an empty partial stub was returned: %+v %v", o.resp, o.err)
 	}
 	assertAbandonTimeout(t, o.err)
@@ -238,28 +282,30 @@ func TestWedgedInlineCallStopsReportingActivity(t *testing.T) {
 	directAPICallFor = func(context.Context, string, string, APIMode) bool { return true }
 	t.Cleanup(func() { directAPICallFor = prev })
 	release := make(chan struct{})
-	defer close(release)
-	h := newAbandonHarness(t, func(*http.Response) anthEventSource { return wedgedAnthSource(release) })
-	ctx, cancel := context.WithCancel(context.Background())
-	out := h.start(ctx)
+	var releaseOnce sync.Once
+	unwedge := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unwedge()
+	h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
+	t.Setenv("ICEBATH_STREAM_RETRIES", "0")
+	out := h.start(context.Background())
 	select {
 	case o := <-out:
 		t.Fatalf("an inline call runs on the caller and is not abandoned: %v", o.err)
 	case <-time.After(2500 * time.Millisecond):
 	}
 	kills := logCount(logs, "Stream stale for")
-	touches := h.activity()
-	cancel()
-	o := h.wait(out, 5*time.Second)
-	if !errors.Is(o.err, context.Canceled) {
-		t.Fatalf("interrupt did not end the inline call: %v", o.err)
+	touches := h.agent.snapshotStrings(&h.agent.touches)
+	notices := h.agent.snapshotStrings(&h.agent.diagWaits)
+	unwedge()
+	if o := h.wait(out, 5*time.Second); o.err == nil {
+		t.Fatalf("the wedged attempt succeeded: %+v", o.resp)
 	}
 	if kills <= 3 {
 		t.Fatalf("kills %d", kills)
 	}
-	want := []string{"wait_notice:⚠ no output from provider for 0s — reconnecting...", "activity:stale stream detected after 0s, reconnecting"}
-	if len(touches) != 4 || touches[0] != want[0] || touches[1] != want[1] || touches[2] != want[0] || touches[3] != want[1] {
-		t.Fatalf("kills past the limit still reported activity: %q", touches)
+	wantNotice, wantTouch := "⚠ no output from provider for 0s — reconnecting...", "stale stream detected after 0s, reconnecting"
+	if len(notices) != 2 || notices[0] != wantNotice || notices[1] != wantNotice || len(touches) != 2 || touches[0] != wantTouch || touches[1] != wantTouch {
+		t.Fatalf("kills past the limit still reported activity: %q %q", notices, touches)
 	}
 	if logCount(logs, "no longer reporting it as active") != 1 || logCount(logs, "abandoning the request") != 0 {
 		t.Fatalf("hold logged %d abandon logged %d", logCount(logs, "no longer reporting it as active"), logCount(logs, "abandoning the request"))
@@ -289,24 +335,36 @@ func TestHeldInlineCallHeartbeatIsWithheldUntilARealChunk(t *testing.T) {
 }
 
 func TestAbandonAfterVisibleTextReturnsAStubClassifiedAsTheAbandon(t *testing.T) {
+	logs := captureLogs(t)
 	release := make(chan struct{})
 	defer close(release)
-	h := newAbandonHarness(t, func(*http.Response) anthEventSource {
-		return wedgedAnthSource(release, anthTextEvents("Hello there")...)
+	h := newAbandonHarness(t, func() (anthMessageStream, error) {
+		return wedgedMessageStream(release, messageTextEvents("Hello there")...), nil
 	})
+	h.agent.st().streamedText = "Hello there"
 	o := h.wait(h.start(context.Background()), 10*time.Second)
-	var partial *PartialStreamError
-	if !errors.As(o.err, &partial) {
-		t.Fatalf("want the partial delivery stub, got %T %v", o.err, o.err)
+	cut, _ := o.resp.(map[string]any)
+	if o.err != nil || cut == nil || cut["id"] != PartialStreamStubID || cut["stop_reason"] != "max_tokens" {
+		t.Fatalf("want the partial delivery stub, got %+v %v", o.resp, o.err)
 	}
-	if apiErr := h.loop.asAPIError(partial.Err); apiErr.Kind != ErrTimeout || !strings.Contains(partial.Err.Error(), streamAbandonedText) {
-		t.Fatalf("the stub is not classified from the abandon: %v %v", apiErr.Kind, partial.Err)
+	blocks, _ := cut["content"].([]any)
+	if len(blocks) != 1 || blocks[0].(map[string]any)["text"] != "Hello there" {
+		t.Fatalf("stub content %+v", cut["content"])
+	}
+	fromAbandon := false
+	logs.mu.Lock()
+	for _, line := range logs.lines {
+		fromAbandon = fromAbandon || (strings.Contains(line, "returning length-truncated cut") && strings.Contains(line, streamAbandonedText))
+	}
+	logs.mu.Unlock()
+	if !fromAbandon {
+		t.Fatal("the stub is not classified from the abandon")
 	}
 }
 
 func TestAbandonJoinsTheWorkerForRelayTeardownLikeStop(t *testing.T) {
 	release := make(chan struct{})
-	h := newAbandonHarness(t, func(*http.Response) anthEventSource { return wedgedAnthSource(release) })
+	h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
 	relayLLMInstallFake(t, "stream-abandon-profile")
 	ctx := pyctx.With(context.Background(), pyctx.New())
 	host := tools.GetRelayRuntime(ctx, true, tools.CurrentRelayProfileKey(ctx))
@@ -322,7 +380,7 @@ func TestAbandonJoinsTheWorkerForRelayTeardownLikeStop(t *testing.T) {
 	o := h.wait(h.start(ctx), 10*time.Second)
 	assertAbandonTimeout(t, o.err)
 	if took := time.Since(started); took < 1500*time.Millisecond || took > 2800*time.Millisecond {
-		t.Fatalf("the abandon did not join the reader for Relay teardown, took %v", took)
+		t.Fatalf("the abandon did not join the worker for Relay teardown, took %v", took)
 	}
 }
 
@@ -332,7 +390,7 @@ func TestWedgedWorkerUnderTheLifetimeCapIsAbandonedOnce(t *testing.T) {
 			logs := captureLogs(t)
 			release := make(chan struct{})
 			defer close(release)
-			h := newAbandonHarness(t, func(*http.Response) anthEventSource { return wedgedAnthSource(release) })
+			h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
 			t.Setenv(StreamStaleTimeoutEnv, tc.stale)
 			if err := os.WriteFile(home.ConfigPath(os.Getenv(home.EnvHome)), []byte("agent:\n  stream_max_lifetime: "+tc.cap+"\n"), 0o600); err != nil {
 				t.Fatal(err)
@@ -340,9 +398,11 @@ func TestWedgedWorkerUnderTheLifetimeCapIsAbandonedOnce(t *testing.T) {
 			o := h.wait(h.start(context.Background()), 10*time.Second)
 			capped := tc.stale == "inf"
 			var cut *StreamLifetimeExceededError
-			var apiErr *APIError
-			if errors.As(o.err, &cut) != capped || !errors.As(o.err, &apiErr) || apiErr.Kind != ErrTimeout {
+			if errors.As(o.err, &cut) != capped {
 				t.Fatalf("outcome %T %v", o.err, o.err)
+			}
+			if !capped {
+				assertAbandonTimeout(t, o.err)
 			}
 			wantCap, wantStale, wantStreak := 0, 3, 1
 			if capped {
@@ -354,8 +414,8 @@ func TestWedgedWorkerUnderTheLifetimeCapIsAbandonedOnce(t *testing.T) {
 			if logCount(logs, "abandoning the request") != 1 {
 				t.Fatal("the wedged attempt was not abandoned once")
 			}
-			if h.session.StaleStreak() != wantStreak {
-				t.Fatalf("cap kills must not feed the stale breaker, streak %d", h.session.StaleStreak())
+			if h.agent.retry.StaleStreak() != wantStreak {
+				t.Fatalf("cap kills must not feed the stale breaker, streak %d", h.agent.retry.StaleStreak())
 			}
 		})
 	}
@@ -391,13 +451,13 @@ func TestWatchdogKillWithALiveRequestContextIsNeverAnInterrupt(t *testing.T) {
 		assertKillNotInterrupt(t, err)
 	})
 	t.Run("anthropic_messages", func(t *testing.T) {
-		h := newAbandonHarness(t, func(resp *http.Response) anthEventSource {
+		c := scriptedAnthropicClient(t, func(resp *http.Response) anthEventSource {
 			return &scriptedAnthEvents{next: func() (*anthEvent, error) {
 				<-resp.Request.Context().Done()
 				return nil, errors.New("peer closed connection without sending complete message body")
 			}}
 		})
-		_, err := h.client.Stream(context.Background(), &Request{Messages: userRequest("hi").Messages}, func(StreamEvent) error { return nil })
+		_, err := c.Stream(context.Background(), &Request{Messages: userRequest("hi").Messages}, func(StreamEvent) error { return nil })
 		assertKillNotInterrupt(t, err)
 	})
 	t.Run("gemini_native", func(t *testing.T) {

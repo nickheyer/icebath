@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -377,14 +376,3 @@ func extraString(extra map[string]any, key string) string {
 
 // Bot API default server of the SDK the PTB default base url maps onto
 const defaultBotAPIServer = "https://api.telegram.org"
-
-// Joins strings with a separator after dropping empty ones
-func joinNonEmpty(sep string, parts ...string) string {
-	var kept []string
-	for _, p := range parts {
-		if p != "" {
-			kept = append(kept, p)
-		}
-	}
-	return strings.Join(kept, sep)
-}

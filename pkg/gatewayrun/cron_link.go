@@ -321,7 +321,7 @@ func startGatewayCronTicker(ctx context.Context, r *GatewayRunner, stop *pythrea
 		pkgLog().Info(fmt.Sprintf("Cron scheduler will tick %d profile(s): %s", len(homes), strings.Join(names, ", ")))
 	}
 	if inProcess {
-		opts.CanDispatch = func() bool { return !(r.draining.Load() || r.externalDrainActive) }
+		opts.CanDispatch = func() bool { return !r.draining.Load() }
 	}
 	stopCh := make(chan struct{})
 	go func() {

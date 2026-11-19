@@ -375,9 +375,10 @@ func startCleanupThread(env *Env) {
 	if termPool.cleanupStop != nil {
 		return
 	}
-	stop := make(chan struct{})
-	termPool.cleanupStop = stop
+	stop, done := make(chan struct{}), make(chan struct{})
+	termPool.cleanupStop, termPool.cleanupDone = stop, done
 	go func() {
+		defer close(done)
 		for {
 			lifetime := 300
 			if cfg, err := getEnvConfig(env); err == nil {
@@ -397,14 +398,19 @@ func startCleanupThread(env *Env) {
 	}()
 }
 
-// StopCleanupThread stops the idle reaper
+// StopCleanupThread stops the idle reaper and waits up to five seconds for its running pass to end
 func StopCleanupThread() {
 	termPool.Lock()
-	stop := termPool.cleanupStop
-	termPool.cleanupStop = nil
+	stop, done := termPool.cleanupStop, termPool.cleanupDone
+	termPool.cleanupStop, termPool.cleanupDone = nil, nil
 	termPool.Unlock()
-	if stop != nil {
-		close(stop)
+	if stop == nil {
+		return
+	}
+	close(stop)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
 	}
 }
 

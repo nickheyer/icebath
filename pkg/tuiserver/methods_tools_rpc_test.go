@@ -112,7 +112,7 @@ func TestRollbackRestoreRefusesANonBooleanAllBeforeTouchingAnything(t *testing.T
 		for _, extra := range []map[string]any{{}, {"file_path": "a.py"}} {
 			session := liveSession(t, "sid", map[string]any{"agent": testAgent(t, agent.AIAgentOptions{}), "session_key": "session-key",
 				"history": append([]any{}, history...), "history_version": 0, "running": false, "attached_images": []any{},
-				"image_counter": 0, "cols": 80, "slash_worker": nil, "show_reasoning": false})
+				"image_counter": 0, "cols": 80, "show_reasoning": false})
 			params := map[string]any{"session_id": "sid", "hash": "1", "all": value}
 			for k, v := range extra {
 				params[k] = v

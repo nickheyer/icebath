@@ -20,7 +20,4 @@ func TestSystemdRestartCommandsFollowTheScope(t *testing.T) {
 	if _, err := SystemdRestartCommands("u", []any{"x"}); err == nil {
 		t.Error("unhashable scope accepted")
 	}
-	if got := FormatRestartCommands([]string{user, system}); got != "`"+user+"` or `"+system+"`" {
-		t.Errorf("formatted %q", got)
-	}
 }

@@ -35,7 +35,8 @@ func setScanBudget(t *testing.T, bytesMax, lines, lineBytes, paths, remote int) 
 }
 
 func guardScan(command, cwd string, remote ReadRemoteScriptFunc) bool {
-	return ContainsGatewayLifecycleCommandOrReferencedScript(command, cwd, remote)
+	unsafe, _ := ScanGatewayLifecycle(command, cwd, remote)
+	return unsafe
 }
 
 func writeScript(t *testing.T, path, text string) {

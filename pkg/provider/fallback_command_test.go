@@ -288,7 +288,7 @@ func TestDispatcherUnknownSubcommandExits(t *testing.T) {
 	h, ctx := fallbackTestHome(t)
 	writeConfig(t, h, map[string]any{})
 	out, _, code := runFallback(t, ctx, h, "nope")
-	if code != 2 || out != "Unknown fallback subcommand: nope\nUse one of: list, add, remove, clear\n" {
+	if code != 2 || out != "Unknown fallback subcommand: nope\nUse one of: list, add, remove, clear, check\n" {
 		t.Fatalf("code %d out %q", code, out)
 	}
 }

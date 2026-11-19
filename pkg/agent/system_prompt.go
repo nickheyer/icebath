@@ -1012,6 +1012,7 @@ func BuildSystemPromptParts(ctx context.Context, a *AIAgent, systemMessage *stri
 
 // BuildSystemPrompt joins the tiers, records the stable prefix and surfaces context truncation warnings
 func BuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string) (string, error) {
+	ctx = tools.CopyTruncationWarningsContext(ctx)
 	parts, err := BuildSystemPromptParts(ctx, a, systemMessage)
 	if err != nil {
 		return "", err
@@ -1056,7 +1057,7 @@ func ReconstructStaticPrefix(ctx context.Context, a *AIAgent, systemMessage *str
 	if !a.usePromptCaching || stored == "" || (existing != "" && strings.HasPrefix(stored, existing)) || a.staticRebuildFailedFor == stored {
 		return
 	}
-	parts, err := reconstructPartsBuilder(ctx, a, systemMessage)
+	parts, err := reconstructPartsBuilder(tools.CopyTruncationWarningsContext(ctx), a, systemMessage)
 	if err == nil && parts.Stable != "" && strings.HasPrefix(stored, parts.Stable) {
 		a.cachedSystemPromptStatic, a.staticRebuildFailedFor = parts.Stable, ""
 		return

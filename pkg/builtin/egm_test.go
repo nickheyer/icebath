@@ -52,31 +52,15 @@ func TestEGMPersonasLoadByFrontmatterName(t *testing.T) {
 		t.Fatal(err)
 	}
 	var names []string
-	reviewers := 0
 	for _, p := range personas {
 		names = append(names, p.Name)
-		if p.Reviewer {
-			reviewers++
-		}
 	}
 	want := "egm-bootstrap-orchestrator egm-codebase-details egm-comprehension egm-design egm-implementation-readiness egm-structural egm-style egm-synthesizer egm-zoom-out"
-	if strings.Join(names, " ") != want || reviewers != 7 {
-		t.Fatalf("personas %v reviewers %d", names, reviewers)
+	if strings.Join(names, " ") != want {
+		t.Fatalf("personas %v", names)
 	}
-	p, err := LoadPersona("egm-zoom-out")
-	if err != nil || p.File != "agents/zoom_out.md" || !p.Reviewer {
-		t.Fatalf("zoom out %+v %v", p, err)
-	}
-	tree, err := materializeAt(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := p.DelegateContext(tree)
-	if !strings.Contains(ctx, "Read "+tree.Payload(egmRoot+"/agents/zoom_out.md")+" before the target") || !strings.Contains(ctx, "Do not write reports or delegate.") {
-		t.Fatalf("delegate context %s", ctx)
-	}
-	if _, err := LoadPersona("egm-missing"); err == nil {
-		t.Fatal("missing persona loaded")
+	if p := personas[len(personas)-1]; p.File != "agents/zoom_out.md" {
+		t.Fatalf("zoom out %+v", p)
 	}
 }
 

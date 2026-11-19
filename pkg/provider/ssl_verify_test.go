@@ -132,49 +132,9 @@ func base64Lines(raw []byte) string {
 	return lines.String()
 }
 
-func TestRequestsVerifyKeepsRequestsOwnCaOverrides(t *testing.T) {
-	noCAEnv(t)
-	if _, ok := importCABundle(); !ok {
-		t.Skip("no CA bundle on this host to freeze")
-	}
-	if got := SubprocessVerifyBundle(t.TempDir()); got != "" {
-		t.Fatalf("a healthy install keeps the child's own default, got %q", got)
-	}
-	t.Setenv("REQUESTS_CA_BUNDLE", "/corp/proxy-ca.pem")
-	if got := SubprocessVerifyBundle(t.TempDir()); got != "" {
-		t.Fatalf("an operator override keeps the child's own default, got %q", got)
-	}
-}
-
-func TestPlatformStoreBundleSurvivesAnUnwritableHome(t *testing.T) {
-	noCAEnv(t)
-	blocker := filepath.Join(t.TempDir(), "home")
-	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if PlatformStoreBundle(blocker) != "" {
-		t.Fatal("a disk error must not escape as a bundle path")
-	}
-	h := t.TempDir()
-	path := PlatformStoreBundle(h)
-	if path == "" {
-		t.Skip("no platform roots readable on this host")
-	}
-	raw, _ := os.ReadFile(path)
-	if !strings.Contains(string(raw), "BEGIN CERTIFICATE") || !strings.HasPrefix(path, h) {
-		t.Fatal("the bundle is PEM under the home cache")
-	}
-	if PlatformStoreBundle(h) != path {
-		t.Fatal("written once")
-	}
-	if cfg := PlatformTLSConfig(); cfg.RootCAs == nil || cfg.MinVersion != tls.VersionTLS12 {
-		t.Fatal("the platform context carries the roots")
-	}
-}
-
 // ResetTrustStoreForTests forgets the installed store and every cached context
 func ResetTrustStoreForTests() {
 	trustMu.Lock()
 	defer trustMu.Unlock()
-	trustInstalled, platformRoots, caConfigs, platformBundle = nil, nil, map[string]*tls.Config{}, ""
+	trustInstalled, platformRoots, caConfigs = nil, nil, map[string]*tls.Config{}
 }

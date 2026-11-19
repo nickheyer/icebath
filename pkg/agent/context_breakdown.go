@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var skillsBlockRe = regexp.MustCompile(`(?s)<available_skills>.*?</available_skills>`)
@@ -88,7 +89,7 @@ type ContextUsageFields struct {
 
 // System prompt tiers the breakdown measures, swapped by tests
 var breakdownPromptParts = func(ctx context.Context, a *AIAgent) (SystemPromptParts, error) {
-	return BuildSystemPromptParts(ctx, a, nil)
+	return BuildSystemPromptParts(tools.CopyTruncationWarningsContext(ctx), a, nil)
 }
 
 // Rough token estimate of a text, the shared character heuristic

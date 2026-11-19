@@ -75,22 +75,6 @@ func mustPyre(pattern string) func(string) bool {
 func init() {
 	pm.SetUpdateReceiptHooks(pm.UpdateReceiptHooks{
 		RecordStopReason: func(reason string) { RecordStopReason(context.Background(), reason) },
-		Current: func() map[string]any {
-			st := stateOf(nil)
-			st.mu.Lock()
-			defer st.mu.Unlock()
-			if st.current == nil {
-				return nil
-			}
-			plain, _ := pyjson.Plain(st.current.Data).(map[string]any)
-			return plain
-		},
-		Clear: func() {
-			st := stateOf(nil)
-			st.mu.Lock()
-			st.current = nil
-			st.mu.Unlock()
-		},
 	})
 }
 
@@ -148,15 +132,6 @@ func withState(ctx context.Context, st *receiptState) context.Context {
 // Context with no open receipt and a fresh terminal cell, keeping the command guard off an enclosing update
 func UpdateReceiptScope(ctx context.Context) context.Context {
 	return withState(ctx, &receiptState{terminal: map[string]any{}})
-}
-
-// Context inheriting the open receipt and terminal cell of ctx whose later records stay local to it
-func CopyReceiptContext(ctx context.Context) context.Context {
-	parent := stateOf(ctx)
-	parent.mu.Lock()
-	st := &receiptState{current: parent.current, terminal: parent.terminal}
-	parent.mu.Unlock()
-	return withState(ctx, st)
 }
 
 // A completion child finalized this command's run so its terminal outcome becomes this scope's
@@ -1095,40 +1070,6 @@ func pruneOldReceipts(directory string) {
 	for _, stale := range ordered[receiptKeep:] {
 		_ = os.Remove(stale)
 	}
-}
-
-// Records on latest.json that the fleet it reports as owed now serves the install
-func SettleLatestReceiptFleet(ctx context.Context, fleet []any, discharges func(map[string]any) bool) bool {
-	v, err := loadJSONFile(filepath.Join(receiptDir(ctx), "latest.json"))
-	if err != nil {
-		receiptLog().Debug(fmt.Sprintf("Could not settle latest update receipt from the live fleet: %s", errchain.OSText(err)))
-		return false
-	}
-	receipt, ok := v.(*pyjson.Object)
-	if !ok {
-		return false
-	}
-	receipt.Set("fleet", append([]any{}, fleet...))
-	gateway, ok := receipt.Vals["gateway_restart"].(*pyjson.Object)
-	if !ok {
-		gateway = pyjson.NewObject()
-	}
-	gateway.Set("incomplete", false)
-	gateway.Set("phase_error", "")
-	gateway.Set("settled_from_live_fleet_at", utcNowISO())
-	receipt.Set("gateway_restart", gateway)
-	if !discharges(plainReceipt(receipt)) {
-		return false
-	}
-	payload, err := receiptPayload(receipt, true)
-	if err == nil {
-		err = writeLatest(ctx, payload)
-	}
-	if err != nil {
-		receiptLog().Debug(fmt.Sprintf("Could not settle latest update receipt from the live fleet: %s", errchain.OSText(err)))
-		return false
-	}
-	return true
 }
 
 // Most recent update receipt across the stores of this home in key order, nil when none parses

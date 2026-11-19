@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -236,13 +235,6 @@ type PendingOptions struct {
 	MemoryStore *Store
 	ApplySkill  func(payload map[string]any) string
 	SetMode     func(enabled bool) error
-}
-
-// Setter persisting subsystem write_approval in the home config
-func ConfigModeSetter(ctx context.Context, env *tools.Env, subsystem string) func(enabled bool) error {
-	return func(enabled bool) error {
-		return config.SetKey(tools.WithEnvHome(ctx, env), envHome(env), subsystem+".write_approval", enabled)
-	}
 }
 
 func fmtState(env *tools.Env, subsystem string) string {
@@ -562,29 +554,6 @@ func setApproval(env *tools.Env, subsystem string, rest []string, setMode func(b
 		return fmt.Sprintf("Failed to set %s.write_approval: %s", subsystem, osErrorText(err))
 	}
 	return fmt.Sprintf("%s.write_approval set to '%s'.", subsystem, state)
-}
-
-// Reply for a memory subcommand the review handler does not own
-const memoryUnknownSubcommand = "Unknown /memory subcommand. Use: pending, approve <id>, reject <id>, approval <on|off>."
-
-// Handles the memory slash command against the live store or a freshly loaded on disk one
-func MemoryCommand(ctx context.Context, env *tools.Env, args []string, store *Store) (string, error) {
-	if store == nil {
-		loaded, err := LoadOnDiskStore(tools.WithEnvHome(ctx, env), env)
-		if err != nil {
-			return "", err
-		}
-		store = loaded
-	}
-	out, handled, err := HandlePendingSubcommand(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory, args, PendingOptions{
-		MemoryStore: store, SetMode: ConfigModeSetter(tools.WithEnvHome(ctx, env), env, tools.WriteApprovalMemory)})
-	if err != nil {
-		return "", err
-	}
-	if !handled {
-		return memoryUnknownSubcommand, nil
-	}
-	return out, nil
 }
 
 // Write approval commands and the gate register nothing at import

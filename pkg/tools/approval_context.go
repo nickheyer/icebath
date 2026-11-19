@@ -50,13 +50,7 @@ func storeSessionValue(env *Env, key string, value any) {
 }
 
 func loadSessionString(env *Env, key string) (string, bool) {
-	if env == nil {
-		return "", false
-	}
-	if v, ok := env.observability.lookup(key); ok {
-		return v, true
-	}
-	if env.Values == nil {
+	if env == nil || env.Values == nil {
 		return "", false
 	}
 	v, ok := env.Values.Load(key)
@@ -94,14 +88,14 @@ func fireApprovalHook(ctx context.Context, env *Env, hookName string, payload ma
 		p[k] = v
 	}
 	if _, ok := p["turn_id"]; !ok {
-		turn, _ := loadSessionString(env, "approval.turn_id")
+		turn, _ := loadObservabilityID(env, "approval.turn_id")
 		p["turn_id"] = turn
 	}
 	if _, ok := p["tool_call_id"]; !ok {
-		call, _ := loadSessionString(env, "approval.tool_call_id")
+		call, _ := loadObservabilityID(env, "approval.tool_call_id")
 		p["tool_call_id"] = call
 	}
-	if sid, _ := loadSessionString(env, "approval.session_id"); sid != "" {
+	if sid, _ := loadObservabilityID(env, "approval.session_id"); sid != "" {
 		if _, ok := p["session_id"]; !ok {
 			p["session_id"] = sid
 		}
@@ -141,13 +135,6 @@ func ResetCurrentSessionKey(env *Env) {
 	}
 }
 
-// SetCurrentObservabilityContext binds the tool correlation ids forwarded to approval hooks
-func SetCurrentObservabilityContext(env *Env, turnID, toolCallID, sessionID string) {
-	storeSessionValue(env, "approval.turn_id", turnID)
-	storeSessionValue(env, "approval.tool_call_id", toolCallID)
-	storeSessionValue(env, "approval.session_id", sessionID)
-}
-
 // Correlation ids one tool call binds, the per call contextvars approval hooks and output transforms read
 type observabilityIDs struct{ turnID, toolCallID, sessionID string }
 
@@ -166,6 +153,14 @@ func (o *observabilityIDs) lookup(key string) (string, bool) {
 	return "", false
 }
 
+// Correlation id the running tool call bound under key, absent outside a call
+func loadObservabilityID(env *Env, key string) (string, bool) {
+	if env == nil {
+		return "", false
+	}
+	return env.observability.lookup(key)
+}
+
 // WithObservabilityContext copies env with its own tool correlation ids so concurrent calls never read each other's
 func WithObservabilityContext(env *Env, turnID, toolCallID, sessionID string) *Env {
 	if env == nil {
@@ -174,15 +169,6 @@ func WithObservabilityContext(env *Env, turnID, toolCallID, sessionID string) *E
 	bound := *env
 	bound.observability = &observabilityIDs{turnID: turnID, toolCallID: toolCallID, sessionID: sessionID}
 	return &bound
-}
-
-// ResetCurrentObservabilityContext drops the bound tool correlation ids
-func ResetCurrentObservabilityContext(env *Env) {
-	if env != nil && env.Values != nil {
-		env.Values.Delete("approval.session_id")
-		env.Values.Delete("approval.tool_call_id")
-		env.Values.Delete("approval.turn_id")
-	}
 }
 
 // Active session key, approval binding first, session environment second, default last

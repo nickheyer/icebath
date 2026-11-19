@@ -105,3 +105,8 @@ func TestListExposesRunErrorAndClearsItAfterSuccess(t *testing.T) {
 		t.Fatalf("last_error kept %v", v)
 	}
 }
+
+// Error of an exception class raised at the caller with its cause and the caller frames recorded
+func raiseTraced(name, msg string, cause error) error {
+	return &tracedError{name: name, msg: msg, cause: cause, frames: callerFrames(3)}
+}

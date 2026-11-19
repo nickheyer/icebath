@@ -70,10 +70,6 @@ func (e *PeerRunsHTTPError) Unwrap() error { return e.Cause }
 // Python class name of the failure
 func (e *PeerRunsHTTPError) PyTypeName() string { return "PeerRunsHTTPError" }
 
-func (e *PeerRunsHTTPError) PeerRetryable() bool { return e.Retryable }
-
-func (e *PeerRunsHTTPError) PeerAmbiguous() bool { return e.Ambiguous }
-
 func (e *PeerRunsHTTPError) attemptProof() (bool, bool) { return e.NotAdmitted, false }
 
 type peerErrorFlags struct {

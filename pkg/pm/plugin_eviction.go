@@ -24,10 +24,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// EvictingSync is how an update sync was asked, the extras it adds, the shipped and frozen features and whether explicit
+// EvictingSync is how an update sync was asked, the extras it adds and whether explicit
 type EvictingSync struct {
-	Extras, Shipped, Frozen []string
-	Explicit                bool
+	Extras   []string
+	Explicit bool
 }
 
 // Version of the interpreter the eviction verdicts judge requires-python against
@@ -743,7 +743,7 @@ func syncEvicting(ctx context.Context, p VenvState, facts *Facts, fact map[strin
 	if err != nil {
 		return err
 	}
-	base, _, _, err := selectTarget(ctx, p, fact, opts.Extras, VenvApplyOptions{PluginDirs: []MemberDir{}}, false, opts.Shipped, opts.Frozen)
+	base, _, _, err := selectTarget(ctx, p, fact, opts.Extras, VenvApplyOptions{PluginDirs: []MemberDir{}}, false)
 	if err != nil {
 		return err
 	}
@@ -865,7 +865,7 @@ func (u *evictingUpdate) commit(ctx context.Context, members []string) error {
 		}
 		u.tried[resolvePath(member)] = fingerprint
 	}
-	enabled, stamp, inputs, err := selectTarget(ctx, u.pkg, u.fact, u.opts.Extras, VenvApplyOptions{PluginDirs: sameMemberDirs(members)}, false, u.opts.Shipped, u.opts.Frozen)
+	enabled, stamp, inputs, err := selectTarget(ctx, u.pkg, u.fact, u.opts.Extras, VenvApplyOptions{PluginDirs: sameMemberDirs(members)}, false)
 	if err != nil {
 		return err
 	}

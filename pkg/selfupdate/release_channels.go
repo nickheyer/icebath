@@ -98,15 +98,6 @@ func channelKey(name any) (string, error) {
 	return "releases/channels/" + valid + ".json", nil
 }
 
-// Sorted compact ASCII JSON with a trailing newline, the byte form every channel digest covers
-func canonicalJSON(value any) ([]byte, error) {
-	text, err := pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(true), pyjson.AllowNaN(false))
-	if err != nil {
-		return nil, err
-	}
-	return []byte(text + "\n"), nil
-}
-
 // Channel object decoded with duplicate keys refused and a top level object required
 func decodeChannelJSON(body []byte) (*pyjson.Object, error) {
 	value, err := pyjson.LoadsBytesPairsHook(body, func(keys []string, vals []any) (any, error) {
@@ -502,7 +493,7 @@ func NewChannelReader(baseURL string, repository *string, opener ChannelOpener) 
 	if r.opener == nil {
 		client := &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: &http.Transport{Proxy: sourceUrlopenProxy},
+			Transport: &http.Transport{Proxy: pyurl.UrlopenProxy},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return channelErr("Channel archive redirects are not permitted")
 			},

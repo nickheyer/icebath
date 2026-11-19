@@ -40,8 +40,6 @@ var (
 	ModelNotFoundPatterns func() []string
 	// AsyncDelegationLedger replays and marks durable delegation completions, installed by the delegate slice
 	AsyncDelegationLedger AsyncDelegationCompletions
-	// DiagnosticProcessEvent reports a delegation event that is diagnostic rather than a result, installed by the agent
-	DiagnosticProcessEvent func(evt map[string]any) bool
 )
 
 // SubagentHandoff is the live subagent record a process handoff validates against
@@ -1648,14 +1646,6 @@ func HeartbeatDisplayText(evt map[string]any) string {
 		return fmt.Sprintf("Background Process Output after %s: %s", age, cmd)
 	}
 	return "Background Process Output after " + age
-}
-
-// TimelineNotification is queued model text with the display kind and compact title a surface paints
-type TimelineNotification struct {
-	Text                 string
-	DisplayText          string
-	DisplayKind          string
-	NotificationCategory string
 }
 
 // One line provenance for a subagent owned process event, empty otherwise

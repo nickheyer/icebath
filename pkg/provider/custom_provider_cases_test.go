@@ -84,9 +84,10 @@ func TestGetCustomProviderExtraHeadersSkipsEmptyHeaderDictAlias(t *testing.T) {
 
 func TestApplyExtraHeadersMergesOntoExistingDefaults(t *testing.T) {
 	defaults := map[string]string{"User-Agent": "curl/8.7.1", "X-Keep": "1"}
+	clientKwargs := map[string]any{"api_key": "x", "base_url": "https://llm.internal.example.com/v1", "default_headers": defaults}
 	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"User-Agent": "override", "X-New": "2"}}}
-	got := MergeExtraHeaders(defaults, "https://llm.internal.example.com/v1", providers, nil)
-	if !reflect.DeepEqual(got, map[string]string{"User-Agent": "override", "X-Keep": "1", "X-New": "2"}) {
+	ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs, "https://llm.internal.example.com/v1", providers, nil)
+	if got := clientKwargs["default_headers"]; !reflect.DeepEqual(got, map[string]string{"User-Agent": "override", "X-Keep": "1", "X-New": "2"}) {
 		t.Fatalf("got %v", got)
 	}
 	if !reflect.DeepEqual(defaults, map[string]string{"User-Agent": "curl/8.7.1", "X-Keep": "1"}) {
@@ -96,7 +97,9 @@ func TestApplyExtraHeadersMergesOntoExistingDefaults(t *testing.T) {
 
 func TestApplyExtraHeadersNoopWithoutMatch(t *testing.T) {
 	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"X-Secret": "s"}}}
-	if got := MergeExtraHeaders(nil, "https://other.example.com/v1", providers, nil); got != nil {
+	clientKwargs := map[string]any{"api_key": "x", "base_url": "https://other.example.com/v1"}
+	ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs, "https://other.example.com/v1", providers, nil)
+	if got, ok := clientKwargs["default_headers"]; ok {
 		t.Fatalf("default headers created without a match: %v", got)
 	}
 }

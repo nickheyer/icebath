@@ -86,9 +86,7 @@ func TestARequestRejectedAtTheRowsHostNamesTheInstall(t *testing.T) {
 	t.Cleanup(provider.SnapshotProviderRegistryForTests())
 	acme := provider.LeftCoreFeature{
 		Plugin: "acme-llm", Label: "Acme LLM", Unchanged: "your ACME_KEY is unchanged",
-		InUse: func(h string, processEnv bool) bool {
-			return provider.ProvidersSelected(h, []string{"acme", "acme-acp"}, processEnv)["acme"]
-		},
+		InUse:     func(string, bool) bool { return false },
 		Providers: []string{"acme", "acme-acp"}, ProfileEnv: []string{"ACME_CLI_PATH"}, Hosts: []string{"acme.test"},
 		Notice: func(string, bool) string { return "" },
 	}

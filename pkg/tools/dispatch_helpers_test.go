@@ -210,7 +210,7 @@ func TestPlanToolBatchSegments(t *testing.T) {
 	if !reflect.DeepEqual(segKinds(PlanToolBatchSegments(ctx, env, []state.ToolCall{segTC("read_file", "{}", "x"), segTC("web_search", "{}", "y")}, "")), []string{"sequential"}) {
 		t.Fatal("path scoped tool without path should be a barrier")
 	}
-	if ShouldParallelizeToolBatch(ctx, env, []state.ToolCall{segTC("web_search", "{}", "only")}) {
+	if !reflect.DeepEqual(segKinds(PlanToolBatchSegments(ctx, env, []state.ToolCall{segTC("web_search", "{}", "only")}, "")), []string{"sequential"}) {
 		t.Fatal("single call parallelized")
 	}
 }
@@ -292,9 +292,9 @@ func TestPathCanonicalization(t *testing.T) {
 	execCwd := filepath.Join(dir, "sub")
 	os.Mkdir(execCwd, 0o755)
 	os.WriteFile(filepath.Join(execCwd, "x.txt"), nil, 0o644)
-	withCwd := ExtractParallelScopePath("write_file", map[string]any{"path": "x.txt"}, execCwd)
-	absolute := ExtractParallelScopePath("write_file", map[string]any{"path": filepath.Join(execCwd, "x.txt")}, "")
-	if withCwd == "" || absolute == "" || !PathsOverlap(withCwd, absolute) {
+	withCwd := ExtractParallelScopePaths("write_file", map[string]any{"path": "x.txt"}, execCwd)
+	absolute := ExtractParallelScopePaths("write_file", map[string]any{"path": filepath.Join(execCwd, "x.txt")}, "")
+	if len(withCwd) != 1 || len(absolute) != 1 || withCwd[0] == "" || absolute[0] == "" || !PathsOverlap(withCwd[0], absolute[0]) {
 		t.Fatalf("execution cwd ignored: %q %q", withCwd, absolute)
 	}
 }

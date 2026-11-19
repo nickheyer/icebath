@@ -1,8 +1,6 @@
 package cron
 
 import (
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -24,9 +22,6 @@ func systemFixedZone(now time.Time) *time.Location {
 func FormatISO(t time.Time) string {
 	return pydatetime.ISOFormat(t)
 }
-
-// FormatISOUTC renders an instant in UTC with a +00:00 suffix
-func FormatISOUTC(t time.Time) string { return FormatISO(t.UTC()) }
 
 // ParseISO parses like Python datetime fromisoformat, naive values kept as UTC wall fields
 func ParseISO(value string) (ISOTime, error) {
@@ -125,34 +120,4 @@ func offsetMismatch(stored, current time.Time) bool {
 // Reports whether the stored wall clock is later than the current wall clock
 func storedWallClockIsFuture(stored, current time.Time) bool {
 	return wallOf(stored).After(wallOf(current))
-}
-
-// Compact lateness text such as 31m, 2h 30m or 45s
-func FormatLateness(seconds float64) string {
-	if seconds < 0 {
-		seconds = 0
-	}
-	total := int64(seconds)
-	if total < 60 {
-		return fmt.Sprintf("%ds", total)
-	}
-	minutes := total / 60
-	hours := minutes / 60
-	minutes %= 60
-	days := hours / 24
-	hours %= 24
-	var parts []string
-	if days > 0 {
-		parts = append(parts, fmt.Sprintf("%dd", days))
-	}
-	if hours > 0 {
-		parts = append(parts, fmt.Sprintf("%dh", hours))
-	}
-	if minutes > 0 && days == 0 {
-		parts = append(parts, fmt.Sprintf("%dm", minutes))
-	}
-	if len(parts) == 0 {
-		return "0m"
-	}
-	return strings.Join(parts, " ")
 }

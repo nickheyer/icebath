@@ -96,14 +96,12 @@ type SessionState struct {
 	Messages            []any
 	Usage               map[string]any
 	UsageListeners      []*SessionListener
-	RequestListeners    []*SessionListener
 	AdmittedTurn        map[string]any
 	Pending             []any
 	QueuedInputs        *pyjson.Object
 	Adopted             map[string]any
 	ArmedAdmission      string
 	PendingSeq          int
-	QueuedAt            map[string]int
 	RecoveredSeq        int
 	Missed              map[string]bool
 	Gaps                int
@@ -114,20 +112,9 @@ type SessionState struct {
 // Callback a session state hands one usage dict or one withdrawn request, registered and removed by its pointer
 type SessionListener func(ctx context.Context, payload map[string]any)
 
-// Listeners without the given one, every registration of it dropped
-func WithoutListener(listeners []*SessionListener, listener *SessionListener) []*SessionListener {
-	kept := make([]*SessionListener, 0, len(listeners))
-	for _, registered := range listeners {
-		if registered != listener {
-			kept = append(kept, registered)
-		}
-	}
-	return kept
-}
-
 func NewSessionState(sessionID string) *SessionState {
 	return &SessionState{SessionID: sessionID, Info: map[string]any{}, Usage: map[string]any{}, QueuedInputs: pyjson.NewObject(),
-		Adopted: map[string]any{}, QueuedAt: map[string]int{}, Missed: map[string]bool{}}
+		Adopted: map[string]any{}, Missed: map[string]bool{}}
 }
 
 // Plain map of a dict value, ok false for anything else
@@ -233,13 +220,6 @@ func (s *SessionState) ApplyEvent(ctx context.Context, kind any, payload any) {
 		} else {
 			s.ApplyUsage(ctx, nested)
 		}
-	case name == "request.cancel" && isDict:
-		s.Lock()
-		listeners := append([]*SessionListener{}, s.RequestListeners...)
-		s.Unlock()
-		for _, listener := range listeners {
-			(*listener)(ctx, dict)
-		}
 	case name == "session.replay_gap":
 		s.Lock()
 		s.Gaps++
@@ -298,7 +278,7 @@ type liveSocket struct {
 	epoch  int
 }
 
-// One gateway connection per classic CLI process, its loop goroutine feeding Events and the session caches
+// One gateway connection per one shot chat process, its loop goroutine feeding Events and the session caches
 type GatewayConnection struct {
 	connect           ConnectFunc
 	Events            *gateway.EventQueue
@@ -319,7 +299,6 @@ type GatewayConnection struct {
 	epoch             int
 	side              map[string]*gateway.EventQueue
 	sideLock          sync.Mutex
-	commands          map[*pythread.Event]bool
 	launchAPIKey      string
 	launchAPIKeyTyped bool
 }
@@ -332,7 +311,7 @@ var (
 // Connection dialing through connect, the home owner when connect is nil
 func NewGatewayConnection(connect ConnectFunc) *GatewayConnection {
 	c := &GatewayConnection{connect: connect, Events: gateway.NewEventQueue(0), states: map[string]*SessionState{},
-		side: map[string]*gateway.EventQueue{}, commands: map[*pythread.Event]bool{}}
+		side: map[string]*gateway.EventQueue{}}
 	c.runner = c
 	return c
 }
@@ -698,24 +677,10 @@ func (c *GatewayConnection) SideWaiter(taskID string) *gateway.EventQueue {
 	return queue
 }
 
-// Forgets the answer queue of a side task
-func (c *GatewayConnection) DropSideWaiter(taskID string) {
-	c.sideLock.Lock()
-	defer c.sideLock.Unlock()
-	delete(c.side, taskID)
-}
-
-// Ends the viewer, stopping the loop and every command socket so no later call dials again
+// Ends the viewer and stops its loop so no later call dials again, the teardown test fixtures run
 func (c *GatewayConnection) Close(ctx context.Context) {
 	c.mu.Lock()
 	c.detached = true
-	c.mu.Unlock()
-	c.sideLock.Lock()
-	for wake := range c.commands {
-		wake.Set()
-	}
-	c.sideLock.Unlock()
-	c.mu.Lock()
 	looping, stop, once, closed, thread := c.looping, c.stop, c.stopOnce, c.closed, c.thread
 	c.mu.Unlock()
 	if looping && stop != nil && !closed {
@@ -874,114 +839,4 @@ func (c *GatewayConnection) CallTagged(ctx context.Context, method string, param
 	case <-ctx.Done():
 		return nil, 0, ctx.Err()
 	}
-}
-
-type commandAnswer struct {
-	mu     sync.Mutex
-	done   bool
-	result any
-	err    error
-	wake   *pythread.Event
-}
-
-// Settles the answer once and wakes the waiting caller
-func (a *commandAnswer) settle(result any, err error) {
-	a.mu.Lock()
-	a.done, a.result, a.err = true, result, err
-	a.mu.Unlock()
-	a.wake.Set()
-}
-
-func (a *commandAnswer) settled() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.done
-}
-
-// One request with no answer deadline on its own socket, CallStopped once wake is set, the cause once ctx ends
-func (c *GatewayConnection) CallUntil(ctx context.Context, method string, wake *pythread.Event, params map[string]any) (any, error) {
-	if c.onLoop(ctx) {
-		return nil, &LoopThreadError{Msg: "GatewayConnection.call_until() on the gateway loop thread would deadlock"}
-	}
-	if err := c.Start(ctx, DefaultStartTimeout); err != nil {
-		return nil, err
-	}
-	if c.Final() {
-		return nil, &gateway.GatewayClientError{Msg: gateway.GatewayNotSent}
-	}
-	answer := &commandAnswer{wake: wake}
-	sent := &pythread.Event{}
-	thread := memory.SpawnContextThread(ctx, "icebath-gateway-command", func(ctx context.Context) {
-		c.command(ctx, method, params, wake, answer, sent)
-	})
-	c.sideLock.Lock()
-	c.commands[wake] = true
-	c.sideLock.Unlock()
-	thread.Start()
-	select {
-	case <-wake.Waiter():
-	case <-ctx.Done():
-	}
-	wake.Set()
-	thread.Join(10 * time.Second)
-	c.sideLock.Lock()
-	delete(c.commands, wake)
-	c.sideLock.Unlock()
-	if ctx.Err() != nil {
-		return nil, context.Cause(ctx)
-	}
-	if answer.settled() {
-		return answer.result, answer.err
-	}
-	if sent.IsSet() {
-		return nil, &CallStopped{Method: method}
-	}
-	return nil, &gateway.GatewayClientError{Msg: gateway.GatewayNotSent}
-}
-
-// Command socket of one unbounded call, dial then send once then settle with the reply or the transport error
-func (c *GatewayConnection) command(ctx context.Context, method string, params map[string]any, wake *pythread.Event, answer *commandAnswer, sent *pythread.Event) {
-	connect := c.connect
-	if connect == nil {
-		connect = DefaultConnect
-	}
-	cmdCtx, cancel := context.WithCancel(ctx)
-	watched := make(chan struct{})
-	go func() {
-		defer close(watched)
-		wake.Wait(-1)
-		if !answer.settled() {
-			cancel()
-		}
-	}()
-	defer func() {
-		wake.Set()
-		<-watched
-		cancel()
-	}()
-	client, err := connect(cmdCtx)
-	if err != nil {
-		if cmdCtx.Err() != nil {
-			return
-		}
-		if !isClientError(err) {
-			err = &gateway.GatewayClientError{Msg: gateway.GatewayNotSent}
-		}
-		answer.settle(nil, err)
-		return
-	}
-	defer client.Close()
-	sent.Set()
-	result, err := client.RPCTimeout(cmdCtx, method, params, -1)
-	if err != nil {
-		if cmdCtx.Err() != nil && errors.Is(err, context.Canceled) {
-			return
-		}
-		if !isClientError(err) {
-			err = &gateway.GatewayClientError{Msg: gateway.GatewayDisconnected}
-		}
-		answer.settle(nil, err)
-		return
-	}
-	answer.settle(result, nil)
 }

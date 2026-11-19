@@ -186,9 +186,6 @@ func TestPlatformAvailabilityMissingThenPresentThenVersionGate(t *testing.T) {
 	if v := insp.Inspect(insp.Locate(nil), nil).Version; v.State != checkError || v.Detail != "InvalidFileException" {
 		t.Fatalf("invalid plist observation %+v", v)
 	}
-	if got := fmt.Sprint(ok.AsDict().Keys); got != "[state version path min_version]" {
-		t.Fatal(got)
-	}
 }
 
 func TestPlatformLocationListParsesEachKindInOrder(t *testing.T) {
@@ -353,7 +350,7 @@ func TestPlatformBundlePresenceAndPlistVersion(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 	insp := r.Inspect(res, nil)
-	if insp.Version.State != checkPresent || *insp.Version.Value != "9.8.7" || insp.Signer.State != checkNotChecked || !insp.OK() {
+	if insp.Version.State != checkPresent || *insp.Version.Value != "9.8.7" || insp.Signer.State != checkNotChecked {
 		t.Fatalf("%+v", insp)
 	}
 }

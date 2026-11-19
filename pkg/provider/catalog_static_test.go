@@ -127,7 +127,7 @@ func TestXAIFloorReusesTheProcessModelsDevCopyWithoutNetwork(t *testing.T) {
 		t.Fatal("xai-oauth row differs from xai")
 	}
 	ctx := home.WithOverride(context.Background(), tmp)
-	offline := ModelsDevOffline(ctx)
+	offline := fetchModelsDevIn(home.Dir(ctx), false)
 	if _, ok := offline["xai"]; !ok {
 		t.Fatal("process copy not shared")
 	}
@@ -194,7 +194,7 @@ func TestHiddenProfilesStayOutOfTheListedRowsUntilOptedIn(t *testing.T) {
 	registerTestProfile(t, Profile{Name: "prerelease-test", AuthType: AuthTypeOAuthExternal, Hidden: true})
 	SyncPluginProviderCatalog()
 	listed := map[string]bool{}
-	for _, p := range listedCanonicalProviders() {
+	for _, p := range listedCanonicalProviders(context.Background()) {
 		listed[p.Slug] = true
 	}
 	if listed["prerelease-test"] {
@@ -203,7 +203,7 @@ func TestHiddenProfilesStayOutOfTheListedRowsUntilOptedIn(t *testing.T) {
 	if !listed["openrouter"] || !listed["deepinfra"] {
 		t.Fatal("visible rows missing")
 	}
-	hidden := unlistedProviderNames()
+	hidden := UnlistedProviderNames(context.Background())
 	if !hidden["prerelease-test"] || hidden["openrouter"] {
 		t.Fatalf("unlisted set: %v", hidden)
 	}
@@ -288,7 +288,7 @@ func TestCatalogProviderAliasesAndFlags(t *testing.T) {
 	if !reflect.DeepEqual(ProviderRetiredAliases("deepseek"), []string{"deepseek-chat", "deepseek-reasoner"}) || ProviderRetiredAliases("zai") != nil {
 		t.Fatal("retired aliases wrong")
 	}
-	if !IsLiveFirstPickerProvider("opencode-zen") || IsLiveFirstPickerProvider("openrouter") || !IsModelsDevPreferred("xai-oauth") || IsModelsDevPreferred("openrouter") || IsBorrowedModelProvider("openrouter") {
+	if !IsLiveFirstPickerProvider("opencode-zen") || IsLiveFirstPickerProvider("openrouter") || !IsModelsDevPreferred("xai-oauth") || IsModelsDevPreferred("openrouter") || borrowedModelProviders["openrouter"] {
 		t.Fatal("picker policy sets wrong")
 	}
 }

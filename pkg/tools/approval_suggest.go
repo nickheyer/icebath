@@ -70,16 +70,6 @@ func (p *Proposal) addExample(command string) {
 	}
 }
 
-// SortedClasses lists the dangerous classes of a proposal in order
-func (p *Proposal) SortedClasses() []string {
-	out := make([]string, 0, len(p.Classes))
-	for c := range p.Classes {
-		out = append(out, c)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // ApprovalRecord is one dangerous classified terminal command that actually ran
 type ApprovalRecord struct {
 	Command     string
@@ -346,56 +336,4 @@ func ApplyProposals(env *Env, proposals []*Proposal, indices []int) map[string]b
 	SavePermanentAllowlist(env, merged)
 	LoadPermanent(env, merged)
 	return merged
-}
-
-// RenderProposals formats proposals the way the approvals suggest command prints them
-func RenderProposals(proposals []*Proposal, days int) string {
-	window := "all history"
-	if days > 0 {
-		window = fmt.Sprintf("last %d days", days)
-	}
-	var b strings.Builder
-	if len(proposals) == 0 {
-		fmt.Fprintf(&b, "No allowlist candidates found in approval history (%s).\nEither nothing dangerous was approved often enough (see --min-count/--days), or the approved classes are excluded for safety.\n", window)
-		return b.String()
-	}
-	fmt.Fprintf(&b, "Proposed command_allowlist additions (from approval history, %s):\n\n", window)
-	for i, p := range proposals {
-		kind := ""
-		if p.Kind == "class" {
-			kind = " (class key)"
-		}
-		fmt.Fprintf(&b, "  %d. %s    — approved %dx%s\n", i+1, p.Pattern, p.Count, kind)
-		for _, cls := range p.SortedClasses() {
-			fmt.Fprintf(&b, "       class: %s\n", cls)
-		}
-		for _, ex := range p.Examples {
-			fmt.Fprintf(&b, "       e.g. %s\n", ex)
-		}
-	}
-	b.WriteString("\nNothing has been changed. Apply selected entries with:\n  icebath approvals suggest --apply 1,3\nEntries are merged into command_allowlist in ~/.icebath/config.yaml.\n")
-	return b.String()
-}
-
-// ProposalJSON is the machine readable shape of one proposal
-type ProposalJSON struct {
-	N        int      `json:"n"`
-	Pattern  string   `json:"pattern"`
-	Kind     string   `json:"kind"`
-	Count    int      `json:"count"`
-	Classes  []string `json:"classes"`
-	Examples []string `json:"examples"`
-}
-
-// ProposalsJSON numbers proposals for JSON output
-func ProposalsJSON(proposals []*Proposal) []ProposalJSON {
-	out := make([]ProposalJSON, 0, len(proposals))
-	for i, p := range proposals {
-		examples := p.Examples
-		if examples == nil {
-			examples = []string{}
-		}
-		out = append(out, ProposalJSON{N: i + 1, Pattern: p.Pattern, Kind: p.Kind, Count: p.Count, Classes: p.SortedClasses(), Examples: examples})
-	}
-	return out
 }

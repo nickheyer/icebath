@@ -88,11 +88,8 @@ type ccPrepared struct {
 }
 
 // Reports whether stream_options include_usage goes on the wire for this request
-func (c *chatCompletionsClient) includeUsage(req *Request, rejected bool) bool {
-	if rejected || c.cc.isNativeGemini() {
-		return false
-	}
-	return req == nil || req.Metadata[StreamOptionsOffKey] != "off"
+func (c *chatCompletionsClient) includeUsage(rejected bool) bool {
+	return !rejected && !c.cc.isNativeGemini()
 }
 
 // Builds the wire body, endpoint URL and headers for one request
@@ -115,7 +112,7 @@ func (c *chatCompletionsClient) prepare(ctx context.Context, req *Request, strea
 	}
 	if stream {
 		wire.Set("stream", true)
-		if c.includeUsage(req, rejected) {
+		if c.includeUsage(rejected) {
 			wire.Set("stream_options", map[string]any{"include_usage": true})
 		} else {
 			wire.Del("stream_options")

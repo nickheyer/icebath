@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -180,10 +179,6 @@ func (r *GatewayRunner) notifyActiveSessionsOfShutdown(ctx context.Context) {
 		pkgLog().Debug("Skipping home-channel shutdown notifications for in-chat restart")
 		return
 	}
-	if r.drainNotificationSuppressed(ctx) {
-		pkgLog().Info("Home-channel shutdown broadcast suppressed by drain marker (suppress_notification=true)")
-		return
-	}
 	for _, served := range r.servedHomeChannelConfigs() {
 		r.sendHomeShutdownNotice(ctx, served, msg, notified)
 	}
@@ -226,17 +221,6 @@ func (r *GatewayRunner) activeShutdownTarget(ctx context.Context, target *shutdo
 	}
 	metadata = r.threadMetadataForTarget(platform, target.chatID, target.threadID, chatType, replyTo, adapter)
 	return platform, adapter, metadata, true
-}
-
-// Whether the current drain marker asks to suppress the home channel broadcast, false when the check fails
-func (r *GatewayRunner) drainNotificationSuppressed(ctx context.Context) (suppressed bool) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			pkgLog().Debug(fmt.Sprintf("drain_notification_suppressed check failed: %v", rec))
-			suppressed = false
-		}
-	}()
-	return gateway.DrainNotificationSuppressed(ctx, home.Dir(ctx))
 }
 
 // Sends the shutdown notice to one served profile's home channel through that profile's own bot

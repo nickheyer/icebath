@@ -576,25 +576,9 @@ func CanonicalProviders() []CanonicalProviderEntry {
 	return append([]CanonicalProviderEntry(nil), canonicalProviders...)
 }
 
-// Hidden profiles the user has not opted into by adding a credential pool row for them
-func unlistedProviderNames() map[string]bool {
-	hidden := map[string]bool{}
-	store := NewStore(home.Process())
-	for _, p := range Profiles() {
-		if !p.Hidden {
-			continue
-		}
-		rows, err := store.ReadCredentialPool(p.Name)
-		if err != nil || len(rows) == 0 {
-			hidden[p.Name] = true
-		}
-	}
-	return hidden
-}
-
-// Canonical rows minus pre release profiles the user has not opted into
-func listedCanonicalProviders() []CanonicalProviderEntry {
-	hidden := unlistedProviderNames()
+// Canonical rows minus pre release profiles the user has not opted into in the home of ctx
+func listedCanonicalProviders(ctx context.Context) []CanonicalProviderEntry {
+	hidden := UnlistedProviderNames(ctx)
 	var out []CanonicalProviderEntry
 	for _, p := range CanonicalProviders() {
 		if !hidden[p.Slug] {
@@ -603,9 +587,6 @@ func listedCanonicalProviders() []CanonicalProviderEntry {
 	}
 	return out
 }
-
-// ListedCanonicalProviders is the exported form of the picker row list
-func ListedCanonicalProviders() []CanonicalProviderEntry { return listedCanonicalProviders() }
 
 // CatalogProviderLabel returns the short display label for a slug, empty when unknown
 func CatalogProviderLabel(slug string) string {
@@ -783,9 +764,6 @@ func ProviderRetiredAliases(provider string) []string {
 
 // Subscription providers whose catalogs re expose other vendors' models, tried last for bare aliases
 var borrowedModelProviders = map[string]bool{}
-
-// IsBorrowedModelProvider reports whether a provider only re exposes other vendors' models
-func IsBorrowedModelProvider(provider string) bool { return borrowedModelProviders[provider] }
 
 // Providers whose live /v1/models leads the picker with curated only entries appended
 var liveFirstPickerProviders = map[string]bool{"opencode-zen": true, "opencode-go": true, "meta-ai": true}

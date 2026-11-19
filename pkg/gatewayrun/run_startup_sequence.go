@@ -354,7 +354,6 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 			r.logScaleToZeroNotArmedReason(ctx)
 		}
 	}()
-	r.spawnSupervised(func(c context.Context) error { return r.drainControlWatcher(c, 1.0) }, "drain_control_watcher", true, 0, supervisedHooks{})
 }
 
 // Bounds startup on the latest diagnostic snapshot, never on filesystem health

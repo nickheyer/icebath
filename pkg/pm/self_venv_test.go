@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -58,7 +57,6 @@ func svKeepProcess(t *testing.T) {
 		importPath.Lock()
 		importPath.entries = saved
 		importPath.Unlock()
-		NoteRestartPending("")
 	})
 }
 
@@ -459,58 +457,7 @@ func TestSVCollectsOnlyUnselectedUnleasedOldGenerations(t *testing.T) {
 	}
 }
 
-func TestSVActivationAdoptAndRestart(t *testing.T) {
-	repo := svRepo(t)
-	svKeepProcess(t)
-	ctx := context.Background()
-	first := svGeneration(t, ctx, repo, "first")
-	svSelect(t, ctx, repo, first)
-	if reason, _ := RestartNeeded(ctx, repo); reason != "" {
-		t.Fatalf("a process that never booted from the install needs no restart: %q", reason)
-	}
-	if err := ActivateDependencies(ctx, repo); err != nil {
-		t.Fatal(err)
-	}
-	running, _, err := runningFromSelectedEnvironment(ctx, repo)
-	if err != nil || !running {
-		t.Fatal("activation must put the selection on the import path")
-	}
-	site, _ := SitePackages(resolvePath(first))
-	if !strings.Contains(os.Getenv("PYTHONPATH"), site) {
-		t.Fatalf("PYTHONPATH %q", os.Getenv("PYTHONPATH"))
-	}
-	second := svGeneration(t, ctx, repo, "second")
-	svSelect(t, ctx, repo, second)
-	reason, err := RestartNeeded(ctx, repo)
-	if err != nil || !strings.Contains(reason, "second") {
-		t.Fatalf("reason %q %v", reason, err)
-	}
-	if ok, err := AdoptSelected(ctx, repo); err != nil || !ok {
-		t.Fatalf("adopt %v %v", ok, err)
-	}
-	if reason, _ := RestartNeeded(ctx, repo); reason != "" {
-		t.Fatalf("adopted process still owes %q", reason)
-	}
-	secondSite, _ := SitePackages(resolvePath(second))
-	tool := filepath.Join(secondSite, "demo.py")
-	writeFile(t, tool, []byte("x"), 0o666)
-	writeFile(t, filepath.Join(secondSite, "demo-1.0.dist-info", "METADATA"), []byte("Name: demo\nVersion: 1.0\n"), 0o666)
-	writeFile(t, filepath.Join(secondSite, "demo-1.0.dist-info", "RECORD"), []byte("demo.py,,\n"), 0o666)
-	third := svGeneration(t, ctx, repo, "third")
-	thirdSite, _ := SitePackages(resolvePath(third))
-	writeFile(t, filepath.Join(thirdSite, "demo-2.0.dist-info", "METADATA"), []byte("Name: demo\nVersion: 2.0\n"), 0o666)
-	svSelect(t, ctx, repo, third)
-	releaseHold := HoldGenerationFiles([]string{tool})
-	if ok, _ := AdoptSelected(ctx, repo); ok {
-		t.Fatal("a live child of a changed distribution forbids adoption")
-	}
-	releaseHold()
-	if ok, _ := AdoptSelected(ctx, repo); !ok {
-		t.Fatal("released holds leave the generation adoptable")
-	}
-}
-
-func TestSVActivationEnvironmentCarriesTheSentinel(t *testing.T) {
+func TestSVActivationEnvironmentComposesThePythonPath(t *testing.T) {
 	repo := svRepo(t)
 	ctx := context.Background()
 	t.Setenv("VIRTUAL_ENV", "/somewhere")
@@ -526,45 +473,8 @@ func TestSVActivationEnvironmentCarriesTheSentinel(t *testing.T) {
 		values[k] = v
 	}
 	site, _ := SitePackages(resolvePath(venv))
-	if _, has := values["VIRTUAL_ENV"]; has || values["PYTHONPATH"] != resolvePath(repo)+string(os.PathListSeparator)+site ||
-		values["__ICEBATH_ACTIVATED"] != EnvironmentRuntimeFactsPath(ctx, repo) {
+	if _, has := values["VIRTUAL_ENV"]; has || values["PYTHONPATH"] != resolvePath(repo)+string(os.PathListSeparator)+site {
 		t.Fatalf("activation env %v", values)
-	}
-}
-
-func TestSVShellExportsQuoteForEachDialect(t *testing.T) {
-	env := []string{"PLAIN=a b", "QUOTE=it's", "PWD=/x", "ProgramFiles(ARM)=c", "SLASH=back\\slash"}
-	sh, _ := ShellExports(env, "sh")
-	if sh != "export PLAIN='a b'\nexport QUOTE='it'\"'\"'s'\nexport PWD=/x\nexport SLASH='back\\slash'" {
-		t.Fatalf("sh %q", sh)
-	}
-	fish, _ := ShellExports(env, "fish")
-	if fish != "set -gx PLAIN 'a b'\nset -gx QUOTE 'it\\'s'\nset -gx SLASH 'back\\\\slash'" {
-		t.Fatalf("fish %q", fish)
-	}
-	if _, err := ShellExports(env, "csh"); errorClass(err) != "KeyError" {
-		t.Fatal("unknown dialect must be a KeyError")
-	}
-	if bash, err := exec.LookPath("bash"); err == nil && runtime.GOOS != "windows" {
-		out, err := exec.Command(bash, "-c", sh+"\nprintf '%s|%s|%s' \"$PLAIN\" \"$QUOTE\" \"$SLASH\"").Output()
-		if err != nil || string(out) != "a b|it's|back\\slash" {
-			t.Fatalf("bash evaluated %q %v", out, err)
-		}
-	}
-}
-
-func TestSVEnvironmentsMainParsesLikeArgparse(t *testing.T) {
-	var out, errOut bytes.Buffer
-	if code := EnvironmentsMain(context.Background(), []string{"--format", "csh"}, "env", &out, &errOut); code != 2 ||
-		!strings.Contains(errOut.String(), "argument --format: invalid choice: 'csh' (choose from json, sh, fish)") {
-		t.Fatalf("code %d %q", code, errOut.String())
-	}
-	errOut.Reset()
-	if code := EnvironmentsMain(context.Background(), []string{"stray"}, "env", &out, &errOut); code != 2 || !strings.Contains(errOut.String(), "unrecognized arguments: stray") {
-		t.Fatalf("stray %q", errOut.String())
-	}
-	if code := EnvironmentsMain(context.Background(), []string{"-h"}, "env", &out, &errOut); code != 0 || !strings.Contains(out.String(), "Print the composed activation environment.") {
-		t.Fatalf("help %q", out.String())
 	}
 }
 
@@ -596,18 +506,8 @@ func TestSVDeclinedExtrasRecordAndReasons(t *testing.T) {
 	}
 }
 
-func TestSVFeaturesFileAndDeclarations(t *testing.T) {
+func TestSVDeclaredAndOptInExtras(t *testing.T) {
 	isolateHome(t)
-	ctx := context.Background()
-	if got, err := readFeatures(ctx); got != nil || err != nil {
-		t.Fatal("no file reads as None")
-	}
-	if _, err := WriteFeatures(ctx, []string{"b", "a", "b"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := readFeatures(ctx); strings.Join(got, ",") != "a,b" {
-		t.Fatalf("features %v", got)
-	}
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "pyproject.toml"), []byte("[project]\nname = \"icebath-agent\"\n[project.optional-dependencies]\nall = [\"icebath-agent[web]\"]\nweb = []\nfal = []\n[tool.icebath]\nopt-in-extras = [\"fal\"]\n"), 0o666)
 	if got, _ := declaredExtras(repo); strings.Join(got, ",") != "all,fal,web" {

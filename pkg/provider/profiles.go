@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"net"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -348,39 +347,6 @@ func URLPath(rawURL string) string {
 	return path
 }
 
-// URLPort returns the port of a URL or -1 when it cannot be parsed
-func URLPort(rawURL string) int {
-	raw := strings.TrimSpace(rawURL)
-	if !strings.Contains(raw, "://") {
-		raw = "//" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return -1
-	}
-	port := u.Port()
-	if port == "" {
-		switch strings.ToLower(u.Scheme) {
-		case "https":
-			return 443
-		case "http":
-			return 80
-		}
-		return 0
-	}
-	n := 0
-	for _, c := range port {
-		if c < '0' || c > '9' {
-			return -1
-		}
-		n = n*10 + int(c-'0')
-		if n > 65535 {
-			return -1
-		}
-	}
-	return n
-}
-
 // HostMatches reports whether the URL host equals the domain or is a subdomain of it
 func HostMatches(rawURL, domain string) bool {
 	host := Hostname(rawURL)
@@ -407,33 +373,6 @@ func IsLoopbackHost(host string) bool {
 // IsOfficialOpenAIHost reports whether the URL points at api.openai.com or a data residency subdomain
 func IsOfficialOpenAIHost(rawURL string) bool {
 	return HostMatches(rawURL, "api.openai.com")
-}
-
-// IsOllamaEndpoint reports whether the URL carries an explicit Ollama signature
-func IsOllamaEndpoint(rawURL string) bool {
-	if strings.TrimSpace(rawURL) == "" {
-		return false
-	}
-	port := URLPort(rawURL)
-	if port == -1 {
-		return false
-	}
-	if port == 11434 {
-		return true
-	}
-	host := Hostname(rawURL)
-	if host == "" {
-		return false
-	}
-	if host == "ollama.com" || strings.HasSuffix(host, ".ollama.com") {
-		return true
-	}
-	for _, label := range strings.Split(host, ".") {
-		if label == "ollama" {
-			return true
-		}
-	}
-	return false
 }
 
 // NormalizeActualBaseURL gives hosted or loopback Actual roots their /v1 surface and the default when empty

@@ -1,7 +1,6 @@
 package pyast
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -14,7 +13,7 @@ func nodeTypes(nodes []*Node) []string {
 	return out
 }
 
-func TestWalkIterChildNodesAndDocstringMatchCPython(t *testing.T) {
+func TestWalkIterChildNodesMatchCPython(t *testing.T) {
 	tree, err := Parse("def f(a, b=1):\n    \"\"\"  Doc line.\n\n\tindented\n    \"\"\"\n    return a + b\nclass C: pass\n")
 	if err != nil {
 		t.Fatal(err)
@@ -26,23 +25,6 @@ func TestWalkIterChildNodesAndDocstringMatchCPython(t *testing.T) {
 	fn := tree.Children("body")[0]
 	if got := nodeTypes(IterChildNodes(fn)); !equalStrings(got, []string{"arguments", "Expr", "Return"}) {
 		t.Errorf("IterChildNodes = %v", got)
-	}
-	if doc, ok, _ := GetDocstring(fn, true); !ok || doc != "Doc line.\n\nindented" {
-		t.Errorf("clean docstring = %q %v", doc, ok)
-	}
-	if doc, ok, _ := GetDocstring(fn, false); !ok || doc != "  Doc line.\n\n\tindented\n    " {
-		t.Errorf("raw docstring = %q %v", doc, ok)
-	}
-	if _, ok, _ := GetDocstring(tree.Children("body")[1], true); ok {
-		t.Error("class without docstring reported one")
-	}
-	if _, ok, _ := GetDocstring(tree, true); ok {
-		t.Error("module without docstring reported one")
-	}
-	_, _, err = GetDocstring(fn.Children("body")[1], true)
-	var de *DocstringError
-	if !errors.As(err, &de) || err.Error() != "'Return' can't have docstrings" {
-		t.Errorf("GetDocstring(Return) error = %v", err)
 	}
 }
 

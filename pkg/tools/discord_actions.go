@@ -175,21 +175,6 @@ func discordFetchCapabilities(env *Env, token string) *pyjson.Object {
 	return caps
 }
 
-// Blocking detection cached per token for the warm up path, force fetches again
-func discordDetectCapabilities(env *Env, token string, force bool) *pyjson.Object {
-	discordCapsMu.Lock()
-	cached := discordCapsCache[token]
-	discordCapsMu.Unlock()
-	if cached != nil && !force {
-		return cached
-	}
-	caps := discordFetchCapabilities(env, token)
-	discordCapsMu.Lock()
-	discordCapsCache[token] = caps
-	discordCapsMu.Unlock()
-	return caps
-}
-
 // Python int() of a decoded value with a falsy value counting as the fallback
 func discordInt(v any, fallback int64) (int64, error) {
 	switch t := v.(type) {

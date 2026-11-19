@@ -220,7 +220,9 @@ func TestXAIDeviceCodeLoginSavesTokensAndSelectsProvider(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	tokenStatus, tokenBody = 400, `{"error":"expired_token"}`
-	if _, err = xaiOAuthDeviceCodeLogin(env, &out, time.Second, false); !IsDeviceCodeExpired(err) {
+	_, err = xaiOAuthDeviceCodeLogin(env, &out, time.Second, false)
+	var expiredCopy *SignInCopyError
+	if !errors.As(err, &expiredCopy) || expiredCopy.OAuthErrorCode != "expired_token" {
 		t.Fatalf("%v", err)
 	}
 }

@@ -16,17 +16,12 @@ import (
 
 const egmRoot = "elephant-goldfish-model"
 
-// Persona files the opencode adapter registers as read only reviewers
-var egmReviewers = []string{"codebase_details", "comprehension", "design_critic", "implementation_readiness", "structural", "style", "zoom_out"}
-
 // One EGM reviewer or orchestrator persona keyed by its frontmatter name
 type Persona struct {
 	Name        string
 	Description string
 	File        string
-	Reviewer    bool
 	Frontmatter map[string]any
-	Body        string
 }
 
 // Compiled-in Elephant-Goldfish Model plugin
@@ -128,7 +123,7 @@ func Personas() ([]Persona, error) {
 		if err != nil {
 			return nil, err
 		}
-		fm, body := skills.ParseFrontmatter(string(data))
+		fm, _ := skills.ParseFrontmatter(string(data))
 		name, _ := fm["name"].(string)
 		desc, _ := fm["description"].(string)
 		if name == "" {
@@ -139,47 +134,10 @@ func Personas() ([]Persona, error) {
 			return nil, fmt.Errorf("builtin: ambiguous persona name %s in %s and %s", name, prev, file)
 		}
 		seen[name] = file
-		stem := strings.TrimSuffix(path.Base(rel), ".md")
-		reviewer := false
-		for _, r := range egmReviewers {
-			reviewer = reviewer || r == stem
-		}
-		out = append(out, Persona{Name: name, Description: desc, File: file, Reviewer: reviewer, Frontmatter: fm, Body: body})
+		out = append(out, Persona{Name: name, Description: desc, File: file, Frontmatter: fm})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
-}
-
-// Persona registered under a frontmatter name such as egm-zoom-out
-func LoadPersona(name string) (Persona, error) {
-	personas, err := Personas()
-	if err != nil {
-		return Persona{}, err
-	}
-	for _, p := range personas {
-		if p.Name == name {
-			return p, nil
-		}
-	}
-	return Persona{}, fmt.Errorf("builtin: no EGM persona named %s", name)
-}
-
-// Delegate task context telling a general purpose subagent to read the persona file first
-func (p Persona) DelegateContext(t *Tree) string {
-	bundle := t.Payload(egmRoot)
-	persona := t.Payload(egmRoot + "/" + p.File)
-	context := "EGM bundle root: " + bundle + ". " +
-		"Resolve agents/, resources/, and docs/ against this root. " +
-		"Resolve references/ against the canonical skill directory. " +
-		"Resolve user files and outputs against the project working directory. "
-	if !p.Reviewer {
-		return context + "Read " + persona + " first and follow it as your persona."
-	}
-	return context + "Read " + persona + " before the target and supplied standards. " +
-		"Return findings to the caller. Do not write reports or delegate. " +
-		"Read prior reports only when explicitly supplied and required by the canonical stage. " +
-		"Do not retrieve unsolicited history, memory, or earlier reviewer findings. " +
-		"Report inaccessible required files as an incomplete review."
 }
 
 // Bundle mirror at the host root, skill and persona dirs with agents and resources beside them, links and plugin root resolved

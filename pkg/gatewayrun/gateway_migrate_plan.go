@@ -214,11 +214,6 @@ func (m *MigrationPlan) TargetRunAsUser() string {
 	return ""
 }
 
-// Update hook bar, two profiles with a standalone secondary, not converged and nothing blocking
-func (m *MigrationPlan) EligibleForMigration() bool {
-	return len(m.Profiles) >= 2 && len(m.StandaloneSecondaries()) > 0 && !m.AlreadyMultiplexed() && !m.Blocked()
-}
-
 // Runs service helpers as if h were the active home, the launch identity pinned while swapped
 func HomeEnv(ctx context.Context, h string) (context.Context, func()) {
 	previous, hadPrevious := os.LookupEnv(home.EnvHome)

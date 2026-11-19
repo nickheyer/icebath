@@ -1111,8 +1111,8 @@ func envTempDir(e Environment) string {
 }
 
 // Login shell argv for safeCommand wrapped in a transient systemd scope under the supervised gateway
-func (r *ProcessRegistry) scopeArgv(s *ProcessSession, safeCommand, unitSuffix, label string) ([]string, error) {
-	shell, err := FindShell()
+func (r *ProcessRegistry) scopeArgv(ctx context.Context, s *ProcessSession, safeCommand, unitSuffix, label string) ([]string, error) {
+	shell, err := FindShell(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,7 +1138,9 @@ func (r *ProcessRegistry) spawnEnv(ctx context.Context, env *Env, envVars map[st
 	if err != nil {
 		return nil, err
 	}
-	child = terminalEnv(child)
+	if child, err = terminalEnv(ctx, child); err != nil {
+		return nil, err
+	}
 	child["PYTHONUNBUFFERED"] = "1"
 	return child, nil
 }
@@ -1163,7 +1165,7 @@ func (r *ProcessRegistry) spawnLocalPty(ctx context.Context, s *ProcessSession, 
 	if !ptyAvailable() {
 		return nil, errPtyUnavailable
 	}
-	ptyArgv, err := r.scopeArgv(s, safeCommand, s.ID, "PTY")
+	ptyArgv, err := r.scopeArgv(ctx, s, safeCommand, s.ID, "PTY")
 	if err != nil {
 		return nil, err
 	}
@@ -1253,7 +1255,7 @@ func (r *ProcessRegistry) SpawnLocal(ctx context.Context, env *Env, command stri
 	if log != "" {
 		spawnCommand = recordExitCommand(log, safeCommand)
 	}
-	spawnArgv, err := r.scopeArgv(s, spawnCommand, unitSuffix, "Local")
+	spawnArgv, err := r.scopeArgv(ctx, s, spawnCommand, unitSuffix, "Local")
 	if err != nil {
 		return nil, err
 	}

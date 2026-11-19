@@ -50,14 +50,3 @@ func TestFindOriginFollowsFileFinderOrder(t *testing.T) {
 		t.Errorf("extension module must win over source, got %q", got)
 	}
 }
-
-func TestReadSourceStripsBOMAndCutsCodePoints(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "m.py"), "\uFEFFé\xff\xfeabc")
-	if got := ReadSource(filepath.Join(dir, "m.py"), 3); got != "é\uFFFD\uFFFD" {
-		t.Fatalf("got %q", got)
-	}
-	if ReadSource(filepath.Join(dir, "m.pyc"), 10) != "" {
-		t.Fatal("bytecode origin has no source")
-	}
-}

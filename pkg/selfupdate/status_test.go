@@ -382,6 +382,40 @@ func TestNonOpenrouterProviderUntouched(t *testing.T) {
 	}
 }
 
+func TestStatusAuthFormattersAndOAuthBlockGates(t *testing.T) {
+	if statusFormatISOTimestamp(nil) != "(unknown)" || statusFormatISOTimestamp("  ") != "(unknown)" || statusFormatISOTimestamp(" not a date") != " not a date" {
+		t.Fatal("timestamp fallbacks")
+	}
+	want := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC).Local().Format("2006-01-02 15:04:05 MST")
+	if got := statusFormatISOTimestamp("2030-01-01T00:00:00Z"); got != want {
+		t.Fatalf("timestamp %v want %s", got, want)
+	}
+	if got, err := statusQwenExpiry(int64(1893456000123)); err != nil || got != "2030-01-01T00:00:00.123000+00:00" {
+		t.Fatalf("qwen expiry %q %v", got, err)
+	}
+	if got, err := statusQwenExpiry("1893456000000"); err != nil || got != "2030-01-01T00:00:00+00:00" {
+		t.Fatalf("qwen expiry %q %v", got, err)
+	}
+	if _, err := statusQwenExpiry("soon"); err == nil {
+		t.Fatal("a non integer expiry must raise")
+	}
+	var out bytes.Buffer
+	s := &statusRun{ctx: context.Background(), h: stHome(t), w: &out, c: &cliui.Console{Out: &out}, config: map[string]any{}}
+	block := statusOAuthBlocks[2]
+	if err := s.oauthBlock(block, map[string]any{"logged_in": false, "region": "cn", "expires_at": "x", "error": "boom"}); err != nil {
+		t.Fatal(err)
+	}
+	if text := out.String(); !strings.Contains(text, "not logged in (run: icebath auth add minimax-oauth)") || strings.Contains(text, "Region:") ||
+		!strings.Contains(text, "    Access exp: x") || !strings.Contains(text, "    Error:      boom") {
+		t.Fatalf("logged out block:\n%s", text)
+	}
+	out.Reset()
+	_ = s.oauthBlock(block, map[string]any{"logged_in": true, "region": "cn", "error": "boom"})
+	if text := out.String(); !strings.Contains(text, "✓ logged in") || !strings.Contains(text, "Region:     cn") || strings.Contains(text, "Error:") {
+		t.Fatalf("logged in block:\n%s", text)
+	}
+}
+
 // Writes a jobs file with a UTF-8 BOM holding the given enabled flags
 func stBOMJobs(t *testing.T, h string, enabled ...bool) {
 	t.Helper()

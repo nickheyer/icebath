@@ -17,11 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Recovers a shipped caller's publication row through the boot journal owner
-func RecoverPluginPublication(ctx context.Context, project string, row map[string]any, journal string) error {
-	return pm.RecoverPluginPublication(ctx, project, row, journal)
-}
-
 // Whether a plugin tree is part of the effective enabled selection, counting the tree being installed
 func activePluginTree(ctx context.Context, target string, installing bool) (bool, error) {
 	opts := pm.EnabledPluginsOptions{}

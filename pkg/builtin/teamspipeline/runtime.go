@@ -136,7 +136,7 @@ func BuildPipelineRuntimeConfig(gatewayConfig *gateway.GatewayConfig) (*pyjson.O
 	return pipelineConfig, nil
 }
 
-// Pipeline over the env Graph client and the durable store, with the Teams summary writer when delivery is enabled
+// Pipeline over the env Graph client and the durable store, with the Notion and Linear writers of the sinks the config enables and the Teams summary writer when delivery is enabled
 func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsMeetingPipeline, error) {
 	gatewayConfig := host.RunnerConfig()
 	teamsConfig := gatewayConfig.Platforms[gateway.Platform("teams")]
@@ -144,7 +144,29 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 	if err != nil {
 		return nil, err
 	}
-	var teamsSender SummarySink
+	var notionWriter, linearWriter, teamsSender SummarySink
+	notionEnabled, err := orDictGet(get(pipelineConfig, "notion"), "enabled")
+	if err != nil {
+		return nil, err
+	}
+	if pyrepr.Truthy(notionEnabled) {
+		writer, err := NewNotionWriter(ctx, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		notionWriter = writer
+	}
+	linearEnabled, err := orDictGet(get(pipelineConfig, "linear"), "enabled")
+	if err != nil {
+		return nil, err
+	}
+	if pyrepr.Truthy(linearEnabled) {
+		writer, err := NewLinearWriter(ctx, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		linearWriter = writer
+	}
 	if teamsConfig != nil && teamsConfig.Enabled {
 		enabled, err := orDictGet(get(pipelineConfig, "teams_delivery"), "enabled")
 		if err != nil {
@@ -174,7 +196,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 	if err != nil {
 		return nil, err
 	}
-	pipeline.TeamsSender = teamsSender
+	pipeline.NotionWriter, pipeline.LinearWriter, pipeline.TeamsSender = notionWriter, linearWriter, teamsSender
 	return pipeline, nil
 }
 

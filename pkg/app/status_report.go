@@ -55,9 +55,9 @@ func timestampOr(value any, def *time.Time) *time.Time {
 }
 
 // Created and last activity times of a session row, last activity falling back to created
-func sessionTimestamps(meta map[string]any, createdFallback *time.Time) (time.Time, time.Time) {
+func sessionTimestamps(meta map[string]any) (time.Time, time.Time) {
 	created := time.Now()
-	if c := timestampOr(meta["started_at"], createdFallback); c != nil {
+	if c := timestampOr(meta["started_at"], nil); c != nil {
 		created = *c
 	}
 	for _, field := range lastActivityFields {
@@ -70,16 +70,15 @@ func sessionTimestamps(meta map[string]any, createdFallback *time.Time) (time.Ti
 
 // statusFieldsInput carries the surface fallbacks of the shared status field set
 type statusFieldsInput struct {
-	ctx             context.Context
-	sessionID       string
-	agentModel      string
-	agentProvider   string
-	agentTokens     int
-	meta            map[string]any
-	model           string
-	provider        string
-	createdFallback *time.Time
-	agentRunning    bool
+	ctx           context.Context
+	sessionID     string
+	agentModel    string
+	agentProvider string
+	agentTokens   int
+	meta          map[string]any
+	model         string
+	provider      string
+	agentRunning  bool
 }
 
 // The shared status facts preformatted for display, the agent winning for model, provider and tokens
@@ -88,7 +87,7 @@ func buildStatusFields(in statusFieldsInput) map[string]any {
 	if meta == nil {
 		meta = map[string]any{}
 	}
-	created, lastActivity := sessionTimestamps(meta, in.createdFallback)
+	created, lastActivity := sessionTimestamps(meta)
 	title := ""
 	if s, ok := meta["title"].(string); ok {
 		title = pystr.Strip(s)

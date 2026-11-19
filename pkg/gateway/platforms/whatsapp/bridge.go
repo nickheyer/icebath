@@ -101,14 +101,6 @@ func envFlag(env map[string]string, key string) bool {
 	return false
 }
 
-// Value of an env key, the default when the key is absent
-func envOr(env map[string]string, key, def string) string {
-	if v, ok := env[key]; ok {
-		return v
-	}
-	return def
-}
-
 // Value of an env key when present and non empty, else the default
 func envTruthyOr(env map[string]string, key, def string) string {
 	if v := env[key]; v != "" {

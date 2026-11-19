@@ -155,19 +155,6 @@ func TestNvidiaNIMAndGatewayHeaders(t *testing.T) {
 	}
 }
 
-func TestAuthJSONPathFollowsTheActiveProfile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("ICEBATH_HOME", dir)
-	if got := auxAuthJSONPath(context.Background()); got != filepath.Join(dir, "auth.json") {
-		t.Fatalf("got %q", got)
-	}
-	auxAuthJSONPathOverride = "/patched/auth.json"
-	defer func() { auxAuthJSONPathOverride = "" }()
-	if auxAuthJSONPath(context.Background()) != "/patched/auth.json" {
-		t.Fatal("a patched path wins")
-	}
-}
-
 func TestApplyUserDefaultHeadersMergesModelHeaders(t *testing.T) {
 	orig := auxLoadConfigReadonlyFn
 	t.Cleanup(func() { auxLoadConfigReadonlyFn = orig })

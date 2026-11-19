@@ -54,9 +54,6 @@ func runMainFailureCode(err error, stderr io.Writer) int {
 	return 1
 }
 
-// Exit status of a gateway run failure, printing one plain error line
-func MainFailureCode(err error, stderr io.Writer) int { return runMainFailureCode(err, stderr) }
-
 // Runs the gateway module entry and returns its exit status, hard exiting after a started gateway tore down
 func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	if err := ImportRunModule(ctx); err != nil {

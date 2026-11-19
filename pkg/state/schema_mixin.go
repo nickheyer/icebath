@@ -616,11 +616,6 @@ func withSavepoint(ctx context.Context, conn SQLiteConn, name string, body func(
 	return nil
 }
 
-// Reports whether a table of the given name exists
-func sqliteTableExists(ctx context.Context, conn SQLiteConn, name string) (bool, error) {
-	return rowExists(ctx, conn, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", name)
-}
-
 // Installs the source filtered trigram view and rebuilds from it, false holding the schema version back for retry
 func (s *sessionSchema) migrateTrigramCronExclusion(ctx context.Context, conn SQLiteConn) (bool, error) {
 	legacy, err := dbHasLegacyInlineFTS(ctx, conn)

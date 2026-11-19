@@ -56,49 +56,17 @@ func (a *GatewayAgent) submitParams(userMessage, persistUserMessage any, turnAut
 	if staged := a.pendingCLIUserMessage; staged != nil && pyrepr.Truthy(staged["display_kind"]) {
 		params["display_kind"] = staged["display_kind"]
 	}
-	if a.finite {
-		params["finite"] = true
-	}
+	params["finite"] = true
 	moaPreset := a.moaPreset
 	a.mu.Unlock()
 	if a.opts.ClarifyCallback != nil {
 		params["clarify_batch"] = true
 	}
 	info := a.stateInfo()
-	if pending := a.takeTurnRoute(); pending != nil {
-		params["model_override"] = pending
-	} else if moaPreset != "" && !(pyjson.Equal(info["provider"], "moa") && pyjson.Equal(info["model"], moaPreset)) {
+	if moaPreset != "" && !(pyjson.Equal(info["provider"], "moa") && pyjson.Equal(info["model"], moaPreset)) {
 		params["model_override"] = map[string]any{"model": moaPreset, "provider": "moa"}
 	}
 	return params, nil
-}
-
-// One turn model pick for the admission being built, consumed so a single admission carries it
-func (a *GatewayAgent) takeTurnRoute() map[string]any {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	pending, reasoning := a.turnRoute, a.turnReasoning
-	a.turnRoute, a.turnReasoning, a.takenTurnRoute = nil, "", nil
-	if pending == nil {
-		return nil
-	}
-	a.takenTurnRoute = &gatewayTakenRoute{route: pending, reasoning: reasoning}
-	out := copyMap(pending)
-	if reasoning != "" {
-		out["reasoning"] = reasoning
-	}
-	return out
-}
-
-// Puts back a taken one turn pick when the admission it rode was never admitted
-func (a *GatewayAgent) giveBackTurnRoute() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	taken := a.takenTurnRoute
-	a.takenTurnRoute = nil
-	if taken != nil && a.turnRoute == nil {
-		a.turnRoute, a.turnReasoning = taken.route, taken.reasoning
-	}
 }
 
 // Text and owner staged attachments of native content parts, the local image hints dropped
@@ -154,13 +122,8 @@ func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o a
 	}()
 	turn := newGatewayTurn(a.SessionID())
 	history := append([]map[string]any{}, o.ConversationHistory...)
-	askIndex := len(history)
 	a.mu.Lock()
 	a.turn = turn
-	a.turnCtx = ctx
-	a.turnAskIndex = &askIndex
-	a.turnAPICalls = nil
-	a.turnCallsBase = a.counters["session_api_calls"]
 	a.usageStale = true
 	a.interruptRequested = false
 	a.interruptSentAt = nil
@@ -176,9 +139,6 @@ func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o a
 		turn.gapped = pyrepr.Truthy(adopted["recovered"])
 	} else {
 		a.drainStale()
-		a.mu.Lock()
-		a.takenTurnRoute = nil
-		a.mu.Unlock()
 		raw, failure, err := a.submit(ctx, turn, userMessage, o)
 		if err != nil {
 			return nil, err
@@ -261,7 +221,6 @@ func (a *GatewayAgent) submit(ctx context.Context, turn *gatewayTurn, userMessag
 			return a.unadmitted(history, userMessage, unadmitted.notice)
 		}, nil
 	case errors.As(err, &stopped):
-		a.giveBackTurnRoute()
 		return nil, func(history []map[string]any) map[string]any {
 			return a.failed(history, userMessage, "Stopped before the prompt was sent; nothing was sent.", "", false)
 		}, nil
@@ -269,7 +228,6 @@ func (a *GatewayAgent) submit(ctx context.Context, turn *gatewayTurn, userMessag
 		busy := refused.Error() == "session_busy"
 		reason := ""
 		if busy {
-			a.giveBackTurnRoute()
 			reason = "session_busy"
 		}
 		return nil, func(history []map[string]any) map[string]any {
@@ -499,8 +457,6 @@ func (a *GatewayAgent) recover(ctx context.Context, turn *gatewayTurn) any {
 			return lost
 		}
 		turn.gapped = turn.gapped || row["status"] != "queued"
-		pendingConnection, _ := snapshot["pending_connection"].(map[string]any)
-		a.restoreConnectionCard(pendingConnection)
 		prompts, _ := snapshot["prompts"].([]any)
 		for _, rawPrompt := range prompts {
 			prompt, _ := rawPrompt.(map[string]any)

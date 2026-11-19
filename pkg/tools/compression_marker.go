@@ -7,10 +7,6 @@ import (
 	"unicode/utf8"
 )
 
-// Marker sentence with the omitted and total counts rendered with thousands separators
-const compressionMarkerDisclaimer = " This is NOT part of the original tool call and must never be reproduced in new " +
-	"output \u2014 always write full, untruncated content.\u27eb"
-
 const markerCountPattern = `\d[\d,]*`
 
 // Either marker prefix, the legacy spelling kept so older session artifacts still match

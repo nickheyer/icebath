@@ -109,9 +109,6 @@ type IronProxyStatus struct {
 	Warnings      []string
 }
 
-// Installed reports a binary on disk
-func (s IronProxyStatus) Installed() bool { return s.BinaryPath != "" && fileExists(s.BinaryPath) }
-
 // Configured reports both the config and the CA cert on disk
 func (s IronProxyStatus) Configured() bool {
 	return s.ConfigPath != "" && fileExists(s.ConfigPath) && s.CACertPath != "" && fileExists(s.CACertPath)
@@ -191,44 +188,6 @@ func (p IronProxy) InstallIronProxy() (string, error) {
 	delete(ironVersionCache, target)
 	ironVersionMu.Unlock()
 	return target, nil
-}
-
-// VerifyChecksumsSignature checks checksums.txt with gpg in an ephemeral keyring, false when unavailable
-func (p IronProxy) VerifyChecksumsSignature(tmp, checksumPath string) (bool, error) {
-	gpg, err := exec.LookPath("gpg")
-	if err != nil {
-		p.log().Warn("gpg not found on PATH — skipping iron-proxy release-signature verification (SHA-256 checksum check still enforced).")
-		return false, nil
-	}
-	sigPath, pubkeyPath := filepath.Join(tmp, "checksums.txt.asc"), filepath.Join(tmp, "public-key.asc")
-	if !fileExists(sigPath) || !fileExists(pubkeyPath) {
-		p.log().Warn("iron-proxy release signature assets unavailable — skipping GPG verification (SHA-256 checksum check still enforced).")
-		return false, nil
-	}
-	gnupgHome, err := os.MkdirTemp("", "icebath-iron-signature-")
-	if err != nil {
-		return false, err
-	}
-	defer os.RemoveAll(gnupgHome)
-	base := []string{gpg, "--homedir", gnupgHome, "--batch", "--no-tty"}
-	imp := ironRun(append(base, "--import", pubkeyPath), 60*time.Second, nil)
-	if imp.err != nil || imp.code != 0 {
-		p.log().Warn(fmt.Sprintf("Could not import iron-proxy signing key — skipping GPG verification (SHA-256 still enforced): %s", truncateText(imp.stderr, 200)))
-		return false, nil
-	}
-	verify := ironRun(append(base, "--verify", sigPath, checksumPath), 60*time.Second, nil)
-	if verify.err != nil || verify.code != 0 {
-		return false, fmt.Errorf("iron-proxy checksums.txt failed GPG signature verification — refusing to install (possible release-channel tampering). gpg: %s", truncateText(verify.stderr, 300))
-	}
-	p.log().Info("Verified iron-proxy checksums.txt GPG signature.")
-	return true, nil
-}
-
-func truncateText(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }
 
 // IronAllowlistedEnv is the infrastructure only environment, never the operator's secrets

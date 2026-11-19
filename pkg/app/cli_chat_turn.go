@@ -13,13 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -30,8 +28,6 @@ var (
 	interruptJoinPoll        = 200 * time.Millisecond
 	interruptJoinPolls       = 50
 	agentJoinTimeout         = 30 * time.Second
-	ttsDrainTimeout          = 120 * time.Second
-	ttsReleaseTimeout        = 5 * time.Second
 	loadFallbackChainConfig  = config.LoadUserEffectiveFailClosed
 	decideImageInputMode     = tools.DecideImageInputMode
 	buildNativeContentParts  = tools.BuildNativeContentParts
@@ -117,14 +113,9 @@ var _ fallbackChainApplier = (*agent.AIAgent)(nil)
 
 // Runs one user turn and returns the agent's response, false when the turn produced none
 func (c *CLI) chat(message any, images []string) (response string, ok bool) {
-	skills.SetSecretCaptureCallback(c.secretCaptureCallback)
 	c.uiMu.Lock()
 	c.lastTurnInterrupted = false
 	c.uiMu.Unlock()
-	switch m := message.(type) {
-	case *voiceInputMessage:
-		message = m.Text
-	}
 	if !ensureTurnCredentials(c) {
 		return "", false
 	}
@@ -160,9 +151,6 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 		message = state.SanitizeSurrogates(text)
 	}
 	displayMetadata := c.chatStageUserMessage(a, message)
-	if n, isNotification := message.(tools.TimelineNotification); isNotification {
-		message = n.Text
-	}
 	if !c.modernLayout {
 		chatConsolePrint("[" + accentHex() + "]" + strings.Repeat("─", 40) + "[/]")
 		cprint("")
@@ -170,7 +158,6 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 	defer a.NotificationPolicySnapshot(agent.NotificationConfigSnapshot(c.ctx))()
 	turn := &chatTurn{}
 	turn.muteNotificationReply = config.DiagnosticTurnMuted(c.ctx, displayMetadata, "cli", a.NotificationConfig())
-	defer c.chatReleaseTurnAudio(turn)
 	defer func() {
 		if r := recover(); r != nil {
 			if _, interrupted := r.(keyboardInterrupt); interrupted {
@@ -185,12 +172,6 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 	c.reasoningShownThisTurn = false
 	c.streamedTextThisTurn = ""
 	c.streamMu.Unlock()
-	c.chatSetupTurnAudio(turn)
-	started := wallClock()
-	c.uiMu.Lock()
-	c.promptStartTime = &started
-	c.promptDuration = 0
-	c.uiMu.Unlock()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -200,29 +181,6 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 	interruptMsg := c.chatMonitorAgentThread(turn, done)
 	c.chatSettleTurn(turn)
 	return c.chatRenderTurn(turn, done, interruptMsg)
-}
-
-// Stops the thinking sound, sends the TTS end sentinel and cuts playback only after an abnormal exit
-func (c *CLI) chatReleaseTurnAudio(turn *chatTurn) {
-	if turn.thinkingStarted && stopThinkingSound != nil {
-		func() {
-			defer func() { _ = recover() }()
-			stopThinkingSound()
-		}()
-	}
-	if turn.textQueue != nil {
-		turn.textQueue.Put(nil)
-	}
-	if turn.stopEvent != nil && !turn.ttsNormalExit {
-		pkgLog().Info("TTS CUT: exception finally block setting stop_event")
-		turn.stopEvent.Set()
-	}
-	if turn.ttsDone != nil && !turnDone(turn.ttsDone) {
-		select {
-		case <-turn.ttsDone:
-		case <-time.After(ttsReleaseTimeout):
-		}
-	}
 }
 
 // Attaches images as native content parts for a vision model, else prepends their text descriptions
@@ -267,165 +225,23 @@ func (c *CLI) chatRouteImages(message any, images []string) any {
 func (c *CLI) chatStageUserMessage(a cliAgent, message any) map[string]any {
 	staged := state.StampMessageTimestamp(map[string]any{"role": "user", "content": message}, nil)
 	var displayMetadata map[string]any
-	if n, isNotification := message.(tools.TimelineNotification); isNotification {
-		displayMetadata = map[string]any{"display_text": n.DisplayText, "notification_category": n.NotificationCategory}
-		staged["content"] = n.Text
-		staged["display_kind"] = n.DisplayKind
-		staged["display_metadata"] = displayMetadata
-	}
 	a.StagePendingCLIUserMessage(staged, func() {
 		c.conversationHistory = append(append([]map[string]any{}, c.conversationHistory...), staged)
 	})
 	return displayMetadata
 }
 
-// Wake word and full duplex state of the voice mixin
-type cliVoiceExtra struct {
-	fdActive            *syncEvent
-	noSpeechCount       int
-	wakeWordActive      bool
-	wakeSuspended       bool
-	wakeStartNewSession bool
-	wakeWatchdogStarted bool
-}
-
-// Voice mode audio of the chat turn, set by the voice mode file and nil in a build without it
-var (
-	checkTTSRequirements    func(ctx context.Context) bool
-	streamTTSToSpeaker      func(ctx context.Context, textQueue *inputQueue, stopEvent, ttsDoneEvent *syncEvent, displayCallback func(string), provider string)
-	startThinkingSound      func(ctx context.Context, shouldPlay func() bool) bool
-	stopThinkingSound       func()
-	takeSpeechInterrupted   func() bool
-	voiceFullDuplexListener func(c *CLI)
-	voiceSpeakResponseAsync func(c *CLI, text string)
-)
-
-// Arms the full duplex listener and the streaming TTS pipeline of this turn in voice mode
-func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
-	if turn.muteNotificationReply {
-		return
-	}
-	c.voiceLock.Lock()
-	voiceMode, continuous, voiceTTS := c.voiceMode, c.voiceContinuous, c.voiceTTS
-	c.voiceLock.Unlock()
-	if voiceMode && continuous && voiceFullDuplexListener != nil {
-		c.voiceLock.Lock()
-		c.voiceLastTTSText = ""
-		c.voiceLock.Unlock()
-		go voiceFullDuplexListener(c)
-	}
-	if voiceTTS {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					pkgLog().Debug("streaming TTS arm check failed", "error", r)
-				}
-			}()
-			turn.useStreamingTTS = checkTTSRequirements != nil && streamTTSToSpeaker != nil && checkTTSRequirements(c.ctx)
-		}()
-	}
-	if turn.useStreamingTTS {
-		turn.textQueue = &inputQueue{}
-		turn.stopEvent = newSyncEvent()
-		displayCallback := func(sentence string) {
-			if !turn.boxOpened && c.modernLayout {
-				turn.boxOpened = true
-				cprint(answerLabel(""))
-			}
-			if !turn.boxOpened {
-				turn.boxOpened = true
-				label := " 󰆧 Icebath "
-				if c.showTimestamps {
-					label = label + c.timestampNow() + " "
-				}
-				w := scrollbackBoxWidth()
-				fill := w - 2 - statusBarDisplayWidth(label)
-				cprint("\n" + accentANSI.String() + "╭─" + label + strings.Repeat("─", max(fill-1, 0)) + "╮" + resetANSI)
-			}
-			cprint(streamPad + pystr.Rstrip(sentence))
-		}
-		if c.streamingEnabled {
-			displayCallback = nil
-		}
-		turn.ttsDone = make(chan struct{})
-		textQueue, stopEvent, ttsDone := turn.textQueue, turn.stopEvent, turn.ttsDone
-		go func() {
-			defer close(ttsDone)
-			streamTTSToSpeaker(c.ctx, textQueue, stopEvent, c.voiceTTSDone, displayCallback, "")
-		}()
-		c.voiceLock.Lock()
-		c.voiceTTSStop = turn.stopEvent
-		c.voiceLock.Unlock()
-		turn.streamCallback = func(delta string) {
-			textQueue.Put(delta)
-			c.voiceLock.Lock()
-			c.voiceLastTTSText += delta
-			c.voiceLock.Unlock()
-		}
-	}
-}
-
 // Agent goroutine body binding the turn callbacks and approval key, prepending one shot notes and running the turn
 func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 	ctx := tools.WithThreadLocals(c.turnCtx)
-	ctx = skills.WithTurnSecretCapture(ctx, c.secretCaptureCallback)
-	tools.SetUnlockPromptCallback(ctx, c.vaultUnlockCallback)
-	tools.SetSaveLoginPromptCallback(ctx, c.vaultSaveLoginCallback)
-	tools.SetCodePromptCallback(ctx, c.vaultCodeCallback)
 	sessionKey := c.sessionID
 	if sessionKey == "" {
 		sessionKey = "default"
 	}
 	tools.SetCurrentSessionKey(c.env, sessionKey)
 	a := c.agentRef()
-	agentMessage, changed := message, false
-	c.uiMu.Lock()
-	takenModelNote, takenSkillsNote := c.pendingModelSwitchNote, c.pendingSkillsReloadNote
-	c.pendingModelSwitchNote, c.pendingSkillsReloadNote = "", ""
-	c.uiMu.Unlock()
-	for _, note := range []string{takenModelNote, takenSkillsNote} {
-		if note != "" {
-			agentMessage, changed = prependNoteToMessage(agentMessage, note), true
-		}
-	}
-	if takeSpeechInterrupted != nil && takeSpeechInterrupted() {
-		agentMessage, changed = prependNoteToMessage(agentMessage, agent.SpeechInterruptedNote), true
-	}
-	c.uiMu.Lock()
-	moaConfig := c.pendingMoaConfig
-	c.pendingMoaConfig = nil
-	oneTurnModelRestore := c.pendingOneTurnModelRestore
-	c.pendingOneTurnModelRestore = nil
-	c.uiMu.Unlock()
-	var persistCleanUserMessage any
-	if changed {
-		persistCleanUserMessage = message
-	}
 	defer func() {
-		result := turn.getResult()
-		admitted, hasAdmitted := result["admitted"]
-		unadmitted := hasAdmitted && admitted == false
-		c.uiMu.Lock()
-		if unadmitted {
-			if takenModelNote != "" {
-				c.pendingModelSwitchNote = takenModelNote
-			}
-			if takenSkillsNote != "" {
-				c.pendingSkillsReloadNote = takenSkillsNote
-			}
-		}
-		keepOneTurn := len(oneTurnModelRestore) > 0 && (unadmitted || result["failure_reason"] == "session_busy")
-		if keepOneTurn {
-			c.pendingOneTurnModelRestore = oneTurnModelRestore
-		}
-		c.uiMu.Unlock()
-		if len(oneTurnModelRestore) > 0 && !keepOneTurn {
-			c.restoreModelRuntimeSnapshot(oneTurnModelRestore)
-		}
 		c.flushCreditNotices()
-		tools.SetUnlockPromptCallback(ctx, nil)
-		tools.SetSaveLoginPromptCallback(ctx, nil)
-		tools.SetCodePromptCallback(ctx, nil)
 		tools.ResetCurrentSessionKey(c.env)
 	}()
 	defer func() {
@@ -434,10 +250,6 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 		}
 	}()
 	muted := turn.muteNotificationReply
-	streamCallback := turn.streamCallback
-	if muted {
-		streamCallback = nil
-	}
 	history := append([]map[string]any{}, c.conversationHistory[:max(0, len(c.conversationHistory)-1)]...)
 	c.uiMu.Lock()
 	turnSessionID := c.sessionID
@@ -445,38 +257,14 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 	result, err := func() (map[string]any, error) {
 		runCtx, restoreTurn := a.NotificationTurn(ctx, muted, turnSessionID)
 		defer restoreTurn()
-		return runTurnConversation(runCtx, a, agentMessage, agent.RunConversationOptions{
-			ConversationHistory: history, StreamCallback: streamCallback, TaskID: turnSessionID,
-			PersistUserMessage: persistCleanUserMessage, MoaConfig: moaConfig, TurnAuthor: c.singleQueryTurnAuthor})
+		return runTurnConversation(runCtx, a, message, agent.RunConversationOptions{
+			ConversationHistory: history, TaskID: turnSessionID, TurnAuthor: c.singleQueryTurnAuthor})
 	}()
 	if err != nil {
 		turn.setResult(c.runConversationFailure(a, err))
 		return
 	}
 	turn.setResult(result)
-	c.uiMu.Lock()
-	disableMoa := c.pendingMoaDisableAfterTurn
-	restoreModel := c.pendingMoaRestoreModel
-	c.uiMu.Unlock()
-	if disableMoa {
-		c.restoreMoaModelFields(restoreModel)
-		retireAgent(c)
-		c.uiMu.Lock()
-		c.pendingMoaRestoreModel = nil
-		c.pendingMoaDisableAfterTurn = false
-		c.uiMu.Unlock()
-	}
-}
-
-// Puts back the model routing fields a one shot MoA prompt replaced, fields captured empty left alone
-func (c *CLI) restoreMoaModelFields(saved map[string]string) {
-	fields := map[string]*string{"requested_provider": &c.requestedProvider, "provider": &c.provider, "model": &c.model,
-		"api_key": &c.apiKey, "base_url": &c.baseURL, "api_mode": &c.apiMode}
-	for key, value := range saved {
-		if target, known := fields[key]; known && value != "" {
-			*target = value
-		}
-	}
 }
 
 // Failed turn result carrying the chat error copy for an error run_conversation raised
@@ -498,24 +286,6 @@ func (c *CLI) runConversationFailure(a cliAgent, err error) map[string]any {
 
 // Polls the interrupt queue while the agent goroutine runs and returns the interrupting message, nil for none
 func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
-	c.voiceLock.Lock()
-	voiceMode := c.voiceMode
-	c.voiceLock.Unlock()
-	if voiceMode {
-		func() {
-			defer func() {
-				if recover() != nil {
-					turn.thinkingStarted = false
-				}
-			}()
-			turn.thinkingStarted = startThinkingSound != nil && startThinkingSound(c.ctx, func() bool {
-				c.voiceLock.Lock()
-				recording := c.voiceRecording
-				c.voiceLock.Unlock()
-				return c.voiceTTSDone.IsSet() && !recording && !c.voiceBargeCapture.IsSet()
-			})
-		}()
-	}
 	var interruptMsg any
 	for !turnDone(done) {
 		c.raiseIfTurnCancelled()
@@ -527,20 +297,8 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 		if !pyrepr.Truthy(interruptPayloadValue(msg)) {
 			continue
 		}
-		c.uiMu.Lock()
-		clarifying := c.clarifyState != nil || c.clarifyFreetext
-		c.uiMu.Unlock()
-		if clarifying {
-			c.pendingInput.Put(msg)
-			interruptMsg = nil
-			continue
-		}
 		cprint("\n" + c.t("cli.chat.new_message_interrupting", nil))
-		if turn.stopEvent != nil {
-			turn.stopEvent.Set()
-		}
 		interruptTurnAgent(c.agentRef(), interruptText(msg))
-		c.clearActiveOverlaysForInterrupt()
 		c.writeInterruptDebugLog(msg)
 		break
 	}
@@ -551,7 +309,7 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 			case <-time.After(interruptJoinPoll):
 			}
 			c.raiseIfTurnCancelled()
-			if turnDone(done) || c.exitRequested() {
+			if turnDone(done) {
 				break
 			}
 		}
@@ -588,13 +346,6 @@ func interruptText(msg any) string {
 		return q.Text
 	}
 	return pyrepr.Str(msg)
-}
-
-// Reports whether the user asked the CLI to exit
-func (c *CLI) exitRequested() bool {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	return c.shouldExit
 }
 
 // Appends the interrupt and the flags of the agent and its children to the home interrupt debug log
@@ -634,14 +385,8 @@ func resultMessages(result map[string]any) ([]map[string]any, bool) {
 
 // Freezes the timers, flushes the stream, drains TTS and syncs history and session id after the agent ends
 func (c *CLI) chatSettleTurn(turn *chatTurn) {
-	now := wallClock()
 	result := turn.getResult()
 	c.uiMu.Lock()
-	if c.promptStartTime != nil {
-		c.promptDuration = max(0.0, now-*c.promptStartTime)
-		c.promptStartTime = nil
-	}
-	c.lastTurnFinishedAt = &now
 	c.lastTurnResult = result
 	c.uiMu.Unlock()
 	func() {
@@ -649,16 +394,6 @@ func (c *CLI) chatSettleTurn(turn *chatTurn) {
 		cleanupStaleAsyncClients()
 	}()
 	c.flushStream()
-	if turn.useStreamingTTS && turn.textQueue != nil {
-		turn.textQueue.Put(nil)
-		if turn.ttsDone != nil {
-			select {
-			case <-turn.ttsDone:
-			case <-time.After(ttsDrainTimeout):
-			}
-			turn.ttsNormalExit = turnDone(turn.ttsDone)
-		}
-	}
 	time.Sleep(settlePaintDelay)
 	if len(result) > 0 {
 		if msgs, ok := resultMessages(result); ok {
@@ -666,67 +401,10 @@ func (c *CLI) chatSettleTurn(turn *chatTurn) {
 		}
 	}
 	if a := c.agentRef(); a != nil && a.SessionID() != "" && a.SessionID() != c.sessionID {
-		tools.TransferSessionYolo(c.sessionID, a.SessionID())
+		tools.TransferSessionYolo(c.ctx, c.sessionID, a.SessionID())
 		c.sessionID = a.SessionID()
 		c.writeTerminalBreadcrumb()
-		c.pendingTitle = ""
 	}
-}
-
-// Acknowledges a turn the gateway lost in a restart, the in process CLI holding no gateway session
-func (c *CLI) handleDiscardCommand(cmdOriginal string) {
-	_, rest, _ := strings.Cut(cmdOriginal, " ")
-	admissionID := pystr.Strip(rest)
-	if admissionID == "" {
-		cprint("  Usage: /discard <admission_id>")
-		return
-	}
-	connection := gatewayConnectionFor(c)
-	if connection == nil {
-		cprint("  /discard: no gateway session is open")
-		return
-	}
-	var lost, snapshot map[string]any
-	err := func() error {
-		raw, err := connection.Reattach(c.ctx, c.sessionID, nil)
-		if err != nil {
-			return err
-		}
-		before, _ := pyjson.Plain(raw).(map[string]any)
-		if lost, err = gatewayLostAdmission(before, admissionID); err != nil {
-			return err
-		}
-		if _, err = connection.Call(c.ctx, "prompt.resolve_unknown", map[string]any{"session_id": c.sessionID,
-			"admission_id": requireKey(lost, "admission_id"), "execution_generation": requireKey(lost, "execution_generation")}); err != nil {
-			return err
-		}
-		raw, err = connection.Reattach(c.ctx, c.sessionID, nil)
-		snapshot, _ = pyjson.Plain(raw).(map[string]any)
-		return err
-	}()
-	if err != nil {
-		if !isGatewayClientError(err) {
-			panic(err)
-		}
-		cprint("  /discard: " + err.Error())
-		return
-	}
-	left := 0
-	pending, _ := snapshot["pending"].([]any)
-	for _, row := range anyRows(pending) {
-		if requireKey(row, "status") == "unknown" {
-			left++
-		}
-	}
-	tail := "You can send messages again."
-	if left > 0 {
-		plural := ""
-		if left > 1 {
-			plural = "s"
-		}
-		tail = fmt.Sprintf("%d more paused turn%s to /discard first.", left, plural)
-	}
-	cprint(fmt.Sprintf("  Discarded %s; it was not re-run. %s", pyrepr.Str(lost["admission_id"]), tail))
 }
 
 // Post turn display of errors, the interrupt marker, reasoning and response blocks, bell and requeues
@@ -748,13 +426,6 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 			errText = pyrepr.Str(result["error"])
 		}
 		response = chatErrorResponse(c.ctx, errText, c.turnProvider(), c.turnModel(), cliStr(result["failure_reason"], ""))
-		c.voiceLock.Lock()
-		continuous := c.voiceContinuous
-		c.voiceContinuous = false
-		c.voiceLock.Unlock()
-		if continuous {
-			cprint("\n" + dimANSI + c.t("cli.chat.continuous_voice_stopped", nil) + resetANSI)
-		}
 	}
 	pendingMessage, showInterruptMarker := c.chatResolveInterrupt(turn, done, interruptMsg, response)
 	c.chatPrintReasoningBox(turn)
@@ -766,7 +437,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 		defer func() { _ = recover() }()
 		c.emitFocusRecoveryLine()
 	}()
-	c.ringBell(false, c.t("cli.modal.bell_turn_complete", nil), "")
+	c.ringBell()
 	if len(result) > 0 && !cliTruthy(result["completed"]) && !cliTruthy(result["interrupted"]) {
 		apiCalls, _ := progressNumber(mapValueOr(result, "api_calls", 0))
 		maxIter := 500
@@ -781,12 +452,6 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 				return nil
 			}, "cli", false, notificationConfig)
 		}
-	}
-	c.voiceLock.Lock()
-	voiceTTS := c.voiceTTS
-	c.voiceLock.Unlock()
-	if voiceTTS && response != "" && !turn.useStreamingTTS && voiceSpeakResponseAsync != nil {
-		voiceSpeakResponseAsync(c, response)
 	}
 	if pyrepr.Truthy(interruptPayloadValue(pendingMessage)) {
 		c.requeueInterruptedInput(pendingMessage)
@@ -929,12 +594,6 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 		mode = "raw"
 	}
 	switch {
-	case turn.useStreamingTTS && turn.boxOpened && !isErrorResponse:
-		if c.modernLayout {
-			cprint(closingSeparator(true))
-		} else {
-			cprint("\n" + accentANSI.String() + "╰" + strings.Repeat("─", max(scrollbackBoxWidth()-2, 0)) + "╯" + resetANSI)
-		}
 	case alreadyStreamed:
 		if text := postStreamTransformOutput(response, result); pystr.Strip(text) != "" {
 			cprint(text)

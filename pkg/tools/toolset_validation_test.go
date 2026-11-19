@@ -186,10 +186,13 @@ func TestToolAvailabilityWarningLines(t *testing.T) {
 	if strings.Contains(text, "EXA_API_KEY") || !strings.Contains(text, "Web search is off") || !strings.Contains(text, "/setup tools") {
 		t.Fatalf("web line %q", text)
 	}
-	got := ToolAvailabilityWarningLines([]UnavailableToolset{tvRL}, "", "local")
-	want := []string{"[yellow]⚠️  Some tools disabled (missing API keys):[/]", "   [dim]• rl[/] [dim italic](TINKER_API_KEY)[/]", "[dim]   Type '/setup tools' to configure[/]"}
+	got := ToolAvailabilityWarningLines([]UnavailableToolset{tvRL, {Name: "fal", EnvVars: []string{"FAL_KEY", "FAL_API_KEY"}}}, "", "local")
+	want := []string{"Some tools are disabled (missing API keys): rl (TINKER_API_KEY); fal (FAL_KEY, FAL_API_KEY). Type /setup tools to configure."}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("generic %q", got)
+	}
+	if all := strings.Join(ToolAvailabilityWarningLines([]UnavailableToolset{tvTerminal, tvWeb, tvRL}, "down", "docker"), "\n"); strings.ContainsAny(all, "[]") {
+		t.Fatalf("a notice carries console markup: %q", all)
 	}
 	if len(ToolAvailabilityWarningLines(nil, "", "local")) != 0 || len(ToolAvailabilityWarningLines([]UnavailableToolset{{Name: "honcho"}}, "", "local")) != 0 {
 		t.Fatal("expected no lines")

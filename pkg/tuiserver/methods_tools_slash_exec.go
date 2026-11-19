@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -17,25 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// CLI commands that queue onto pending input, routed to command.dispatch since the slash worker cannot read them
+// Commands that queue onto pending input, routed straight to command.dispatch ahead of the skill and plugin stages
 var pendingInputCommands = map[string]bool{"retry": true, "queue": true, "q": true, "steer": true, "plan": true, "goal": true,
 	"loop": true, "proactive": true, "moa": true, "undo": true, "learn": true, "init": true, "compress": true, "compact": true}
 
-// Commands the slash worker must not run when they restore live state
-var workerBlockedCommands = map[string]bool{"snapshot": true, "snap": true}
-
-// Error text of a skill command the slash worker refused before processing it
-const SkillWorkerRefusedLead = "skill command refused before process: /"
-
-// Slash worker surface slash.exec drives
-type slashCommandRunner interface {
-	run(command string) (string, error)
-}
-
-// Slash worker that composes a next turn prompt for the caller to send
-type slashSeedPopper interface {
-	popSeed() string
-}
+// Snapshot command words, their restore form refused here since it mutates live config and state
+var snapshotCommands = map[string]bool{"snapshot": true, "snap": true}
 
 var toolsSlashExecRegistry = &handlerRegistry{}
 
@@ -74,12 +60,7 @@ func resultType(resp map[string]any) bool {
 	return truthy(result["type"])
 }
 
-// Whether a worker failure is its pre process refusal of a skill command
-func workerRefusedSkill(err error) bool {
-	return strings.Contains(err.Error(), SkillWorkerRefusedLead)
-}
-
-// Whether a base is a registry built in the slash worker may still run
+// Whether a base is a registry built in, a name no skill slug can carry
 func isRegistryCommand(base string) (found bool) {
 	if catchPanic(func() { _, found = ResolveCommand(base) }) != nil {
 		return false
@@ -87,41 +68,7 @@ func isRegistryCommand(base string) (found bool) {
 	return found
 }
 
-// Session slash worker, spawned once under the session spawn lock on first use
-func sessionSlashWorker(ctx context.Context, sid string, session *tuihost.Session) (any, error) {
-	if worker := session.Get("slash_worker"); truthy(worker) {
-		return worker, nil
-	}
-	sessionsLock.Lock()
-	spawnLock, _ := session.SetDefault("_slash_spawn_lock", &sync.Mutex{}).(sync.Locker)
-	sessionsLock.Unlock()
-	spawnLock.Lock()
-	defer spawnLock.Unlock()
-	if worker := session.Get("slash_worker"); truthy(worker) {
-		return worker, nil
-	}
-	var worker any
-	failure := catchPanic(func() {
-		sessionKey, hasKey := session.Lookup("session_key")
-		if !hasKey {
-			panic(fmt.Errorf("'session_key'"))
-		}
-		model, providerName := resolveModel(ctx), ""
-		if a := sessionAgent(session); a != nil {
-			model, providerName = a.Model(), a.Provider()
-		}
-		spawned, err := newSlashWorker(ctx, strOr(sessionKey), model, strOr(session.Get("profile_home")), providerName)
-		panicIf(err)
-		attachWorker(sid, session, spawned)
-		worker = spawned
-	})
-	if failure != nil {
-		return nil, errors.New(panicMessage(failure))
-	}
-	return worker, nil
-}
-
-// Runs a slash command through live output, dispatch routing, skills, plugins or the session slash worker
+// Runs a slash command through live output, dispatch routing, skills and plugins, handing every other name to command.dispatch
 func slashExec(ctx context.Context, rid any, params map[string]any) map[string]any {
 	session, errResp := sessNowait(ctx, params, rid)
 	if errResp != nil {
@@ -146,7 +93,7 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 		}
 		return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Output: live}))
 	}
-	if workerBlockedCommands[base] && isSnapshotRestore(arg) {
+	if snapshotCommands[base] && isSnapshotRestore(arg) {
 		return rpcErr(rid, 4018, "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore", nil)
 	}
 	target, routed := base, pendingInputCommands[base]
@@ -188,38 +135,7 @@ func slashExec(ctx context.Context, rid any, params map[string]any) map[string]a
 			return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Output: output}))
 		}
 	}
-	worker, err := sessionSlashWorker(ctx, sid, session)
-	if err != nil {
-		return rpcErr(rid, 5030, "slash worker start failed: "+err.Error(), nil)
-	}
-	runner, isRunner := worker.(slashCommandRunner)
-	if !isRunner {
-		closeSlashWorker(worker)
-		session.Set("slash_worker", nil)
-		return rpcErr(rid, 5030, "the slash worker of this session cannot run commands", nil)
-	}
-	output, err := runner.run(cmd)
-	if err != nil {
-		if workerRefusedSkill(err) {
-			return skillDispatchOrRefuse(ctx, rid, sid, base, arg)
-		}
-		closeSlashWorker(worker)
-		session.Set("slash_worker", nil)
-		return rpcErr(rid, 5030, err.Error(), nil)
-	}
-	if popper, hasSeed := worker.(slashSeedPopper); hasSeed {
-		if seed := popper.popSeed(); seed != "" {
-			return ok(rid, tuigateway.Plain(tuigateway.SlashExecResult{Type: "send", Message: seed}))
-		}
-	}
-	if output == "" {
-		output = "(no output)"
-	}
-	payload := tuigateway.SlashExecResult{Output: output, Warning: mirrorSlashSideEffects(ctx, sid, session, cmd)}
-	if sessionControlSlashes[base] {
-		publishSessionControlSnapshot(ctx, sid, session, false, false)
-	}
-	return ok(rid, tuigateway.Plain(payload))
+	return lookupMethod("command.dispatch")(ctx, rid, map[string]any{"name": base, "arg": arg, "session_id": sid})
 }
 
 // Runs a user typed shell command with a sanitized env in the named session's cwd and profile, refusing hardline and dangerous commands

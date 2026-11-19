@@ -69,7 +69,6 @@ type folder struct {
 	checkOnly   bool
 	annotations bool
 	limit       int
-	seen        func(n *Node, d int)
 }
 
 // Raises the RecursionError once a frame whose address check sits d bytes down reaches the soft stack limit
@@ -137,9 +136,6 @@ func (f *folder) optExpr(e *Node, d int) {
 // Folds one statement, children in tail position reuse the frame as GCC's sibling calls do
 func (f *folder) stmt(n *Node, d int) {
 	f.check(d)
-	if f.seen != nil {
-		f.seen(n, d)
-	}
 	c := d + foldStmtFrame
 	switch n.Type {
 	case "FunctionDef", "AsyncFunctionDef":
@@ -256,9 +252,6 @@ func (f *folder) argument(x *Node, field string, d int) {
 // Folds one expression, the operand of a tail position loops in the same frame as GCC's tail recursion does
 func (f *folder) expr(n *Node, d int) {
 	f.check(d)
-	if f.seen != nil {
-		f.seen(n, d)
-	}
 	c := d + foldExprFrame
 	switch n.Type {
 	case "BoolOp":
@@ -328,9 +321,6 @@ func (f *folder) expr(n *Node, d int) {
 // Folds patterns, whose recursion check runs one frame down inside an outlined Py_EnterRecursiveCall clone
 func (f *folder) pattern(n *Node, d int) {
 	f.check(d + foldPatternFrame)
-	if f.seen != nil {
-		f.seen(n, d+foldPatternFrame)
-	}
 	c := d + foldPatternFrame
 	switch n.Type {
 	case "MatchValue":
@@ -619,7 +609,6 @@ func formatUnit(fmt []rune, pos *int, arg *Node) *Node {
 
 type objWalker struct {
 	limit int
-	seen  func(n *Node, d int)
 }
 
 // Checks the ast2obj recursion over the final tree, each check one helper frame below its function
@@ -632,9 +621,6 @@ func (w objWalker) node(n *Node, d int) {
 	}
 	if d+size >= w.limit {
 		panic(recursionStop{})
-	}
-	if w.seen != nil {
-		w.seen(n, d+size)
 	}
 	c := d + size
 	for i, fs := range n.spec.fields {

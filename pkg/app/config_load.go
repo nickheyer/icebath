@@ -430,11 +430,3 @@ func pyIntString(s string) (int, bool) {
 	}
 	return math.MaxInt, true
 }
-
-// Python int of the value, or def when it does not parse
-func intOr(v any, def int) int {
-	if n, ok := pyIntOf(v); ok {
-		return n
-	}
-	return def
-}

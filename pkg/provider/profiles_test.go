@@ -78,8 +78,8 @@ func TestOpenCodeBaseURLNormalization(t *testing.T) {
 }
 
 func TestURLHelpers(t *testing.T) {
-	if !IsOllamaEndpoint("http://localhost:11434") || !IsOllamaEndpoint("https://ollama.com/v1") || !IsOllamaEndpoint("http://my.ollama.lan/v1") || IsOllamaEndpoint("http://localhost:8080/v1") || IsOllamaEndpoint("http://host:99999") {
-		t.Fatal("IsOllamaEndpoint wrong")
+	if !looksLikeOllamaEndpoint("http://localhost:11434") || !looksLikeOllamaEndpoint("https://ollama.com/v1") || !looksLikeOllamaEndpoint("http://my.ollama.lan/v1") || looksLikeOllamaEndpoint("http://localhost:8080/v1") || looksLikeOllamaEndpoint("http://host:99999") || looksLikeOllamaEndpoint("http://my.ollama.lan:99999") {
+		t.Fatal("looksLikeOllamaEndpoint wrong")
 	}
 	if !HostMatches("https://us.api.openai.com/v1", "openai.com") || HostMatches("https://openai.com.evil.test", "openai.com") {
 		t.Fatal("HostMatches wrong")

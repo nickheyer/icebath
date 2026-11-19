@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"reflect"
 	"testing"
 )
 
@@ -14,16 +13,12 @@ type releaseCountingAgent struct {
 
 func (a *releaseCountingAgent) releaseClients() { a.releaseCalls++ }
 
-func TestReasoningCommandReleasesOldAgentClientsBeforeRebuild(t *testing.T) {
+func TestRetireAgentReleasesOldAgentClientsBeforeRebuild(t *testing.T) {
 	recordPrints(t)
 	agent := &releaseCountingAgent{GatewayAgent: &GatewayAgent{ctx: context.Background()}}
 	c := bareCLI()
-	c.reasoningConfig = map[string]any{"enabled": true, "effort": "medium"}
 	c.setAgent(agent)
-	c.handleReasoningCommand("/reasoning high")
-	if want := map[string]any{"enabled": true, "effort": "high"}; !reflect.DeepEqual(c.reasoningConfig, want) {
-		t.Fatalf("reasoningConfig = %#v, want %#v", c.reasoningConfig, want)
-	}
+	retireAgent(c)
 	if c.agentRef() != nil {
 		t.Fatalf("agent = %#v, want nil", c.agentRef())
 	}

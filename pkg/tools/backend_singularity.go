@@ -596,14 +596,6 @@ func (singularityBackend) CheckRequirements(env *Env, cfg map[string]any) error 
 	return nil
 }
 
-// Probe is ready with the CLI on PATH and needs setup without it
-func (b singularityBackend) Probe() (string, string) {
-	if b.IsAvailable() {
-		return "ready", ""
-	}
-	return "needs_setup", "Neither singularity nor apptainer found on PATH."
-}
-
 // SetupInstructions names the CLI found or where to install it and the image in use
 func (singularityBackend) SetupInstructions(env *Env) []string {
 	lines := []string{fmt.Sprintf("Singularity/Apptainer not found in PATH! Install: %s", singularityInstallURL)}

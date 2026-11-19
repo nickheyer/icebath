@@ -121,7 +121,6 @@ func TestTurnLeaseWalksCompressionChildThatInheritedForkMarkers(t *testing.T) {
 func TestTurnLeaseWriteTxnDoesNotTrustFailOpenKeyHelper(t *testing.T) {
 	db := leaseDB(t)
 	leaseForkContinuations(t, db, false)
-	db.leaseSeams.key = func(sid string) (string, error) { return sid, nil }
 	holder := leaseHolder("delegate")
 	if !leaseTry(t, db, "delegate", holder, 5) {
 		t.Fatal("acquire delegate")
@@ -402,4 +401,18 @@ func TestCompressionLockHolderReadsRaceFree(t *testing.T) {
 	if len(failures) != 0 {
 		t.Fatalf("race failures %v", failures)
 	}
+}
+
+// Conversation key the turn lease of a session is stored under
+func (d *SessionDB) sessionTurnLeaseKey(ctx context.Context, sessionID string) (string, error) {
+	if sessionID == "" {
+		return sessionID, nil
+	}
+	var key string
+	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
+		var err error
+		key, err = d.sessionTurnLeaseKeyOnConn(ctx, conn, sessionID)
+		return err
+	})
+	return key, err
 }

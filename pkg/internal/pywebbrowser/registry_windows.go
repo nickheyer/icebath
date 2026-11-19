@@ -3,13 +3,11 @@
 package pywebbrowser
 
 import (
-	"os"
 	"syscall"
 
 	"golang.org/x/sys/windows"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
 // Process attributes of a browser start, Windows has no sessions to detach into
@@ -32,7 +30,7 @@ func newWindowsDefault() *browser {
 
 // Value of an environment variable or the fallback when it is unset
 func environGet(name, fallback string) string {
-	if value, ok := os.LookupEnv(name); ok {
+	if value, ok := lookupEnv(name); ok {
 		return value
 	}
 	return fallback
@@ -44,11 +42,11 @@ func registerPlatformBrowsers() {
 	edge64 := pypath.NtJoin(environGet("PROGRAMFILES(x86)", `C:\Program Files (x86)`), `Microsoft\Edge\Application\msedge.exe`)
 	edge32 := pypath.NtJoin(environGet("PROGRAMFILES", `C:\Program Files`), `Microsoft\Edge\Application\msedge.exe`)
 	for _, name := range []string{"firefox", "seamonkey", "mozilla", "chrome", "opera", edge64, edge32} {
-		if _, ok := pyshutil.Which(name, nil); ok {
+		if which(name) {
 			register(name, nil, newBackground(name), false)
 		}
 	}
-	if _, ok := pyshutil.Which("MicrosoftEdge.exe", nil); ok {
+	if which("MicrosoftEdge.exe") {
 		register("microsoft-edge", nil, newChrome("MicrosoftEdge.exe"), false)
 	}
 }

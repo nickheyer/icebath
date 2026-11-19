@@ -23,14 +23,6 @@ func (s *GatewaySessionStore) GetSessionTitle(ctx context.Context, sessionID str
 	return "", false, nil
 }
 
-// Session row holding a title from the reader
-func (s *GatewaySessionStore) GetSessionByTitle(ctx context.Context, title string) (*pyjson.Object, error) {
-	if db := s.Reader(ctx); db != nil {
-		return db.DB().GetSessionByTitle(ctx, title)
-	}
-	return nil, nil
-}
-
 // Resume target of a session id from the reader
 func (s *GatewaySessionStore) ResolveResumeSessionID(ctx context.Context, sessionID string) (string, error) {
 	if db := s.Reader(ctx); db != nil {
@@ -45,14 +37,6 @@ func (s *GatewaySessionStore) GetMessagesAsConversation(ctx context.Context, ses
 		return db.DB().GetMessagesAsConversation(ctx, sessionID, o)
 	}
 	return nil, nil
-}
-
-// Model and display conversations of a resumed session from the reader
-func (s *GatewaySessionStore) GetResumeConversations(ctx context.Context, sessionID string) ([]map[string]any, []map[string]any, error) {
-	if db := s.Reader(ctx); db != nil {
-		return db.DB().GetResumeConversations(ctx, sessionID)
-	}
-	return nil, nil, nil
 }
 
 // Resume safety check of a session through the reader
@@ -93,14 +77,6 @@ func (s *GatewaySessionStore) GetNextTitleInLineage(ctx context.Context, baseTit
 		return db.DB().GetNextTitleInLineage(ctx, baseTitle)
 	}
 	return "", nil
-}
-
-// Handoff state of a session from the reader
-func (s *GatewaySessionStore) GetHandoffState(ctx context.Context, sessionID string) *pyjson.Object {
-	if db := s.Reader(ctx); db != nil {
-		return db.DB().GetHandoffState(ctx, sessionID)
-	}
-	return nil
 }
 
 // Store metadata value from the reader
@@ -178,18 +154,6 @@ func (s *GatewaySessionStore) FlushTokenCounts(timeoutS float64) bool {
 
 var _ interface{ FlushTokenCounts(timeoutS float64) bool } = (*GatewaySessionStore)(nil)
 
-// Model record the gateway performs itself
-func (s *GatewaySessionStore) UpdateSessionModel(_ context.Context, sessionID, model string) error {
-	noop(sessionID, model)
-	return nil
-}
-
-// Model config patch the gateway performs itself
-func (s *GatewaySessionStore) PatchSessionModelConfig(_ context.Context, sessionID string, patch map[string]any) error {
-	noop(sessionID, patch)
-	return nil
-}
-
 // Archive maintenance the gateway performs itself
 func (s *GatewaySessionStore) MaybeAutoArchive(args ...any) { noop(args...) }
 
@@ -201,9 +165,6 @@ func (s *GatewaySessionStore) SetMeta(args ...any) { noop(args...) }
 
 // Token accounting the gateway performs itself
 func (s *GatewaySessionStore) UpdateTokenCounts(args ...any) { noop(args...) }
-
-// Writer close the gateway owns, the viewer holding no writer
-func (s *GatewaySessionStore) Close(args ...any) { noop(args...) }
 
 // Ghost session repair the gateway owns, zero rows repaired here
 func (s *GatewaySessionStore) PruneEmptyGhostSessions(args ...any) int { return zero(args...) }

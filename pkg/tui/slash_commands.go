@@ -225,8 +225,8 @@ func writeSessionExport(payload *tuigateway.SessionExportResult, filename, cwd s
 	return path, os.WriteFile(path, []byte(payload.Content), 0o644)
 }
 
-// Runs a command through the gateway's own command worker and shows what it printed
-func (r *slashRun) viaWorker(title, empty string) tea.Cmd {
+// Runs a command at the gateway and shows what it printed
+func (r *slashRun) viaGateway(title, empty string) tea.Cmd {
 	return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: strings.TrimPrefix(r.cmd, "/"), SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
 		if res == nil {
 			return nil
@@ -234,9 +234,6 @@ func (r *slashRun) viaWorker(title, empty string) tea.Cmd {
 		body := res.Output
 		if body == "" {
 			body = empty
-		}
-		if res.Warning != "" {
-			body = tr("slashCmd.ops.slashWorker.warning", res.Warning) + "\n" + body
 		}
 		return r.a.showOutput(body, title)
 	})
@@ -1112,13 +1109,13 @@ func (a *app) opsCommands() []slashCommand {
 						return nil
 					})
 				}
-				return r.viaWorker(tr("slashCmd.ops.slashWorker.skillsTitle"), tr("slashCmd.ops.slashWorker.skillsNoOutput"))
+				return r.viaGateway(tr("slashCmd.ops.gatewayExec.skillsTitle"), tr("slashCmd.ops.gatewayExec.skillsNoOutput"))
 			}},
 		{name: "plugins", help: "view and toggle plugins", usage: "[enable|disable <name>]", run: func(r *slashRun) tea.Cmd {
 			if trimJS(r.arg) == "" {
 				return a.openPluginsHub()
 			}
-			return r.viaWorker(tr("slashCmd.ops.slashWorker.pluginsTitle"), tr("slashCmd.ops.slashWorker.pluginsNoOutput"))
+			return r.viaGateway(tr("slashCmd.ops.gatewayExec.pluginsTitle"), tr("slashCmd.ops.gatewayExec.pluginsNoOutput"))
 		}},
 	}
 }

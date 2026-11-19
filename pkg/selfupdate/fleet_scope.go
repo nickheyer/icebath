@@ -61,15 +61,6 @@ func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName stri
 	return "", false
 }
 
-// Whether a unit belongs to this update, known false when its ownership is unreadable
-func systemdUnitInUpdateScope(ctx context.Context, scopeCmd []string, svcName string, scope map[string]bool) (inScope, known bool) {
-	unitHome, known := systemdUnitIcebathHome(ctx, scopeCmd, svcName)
-	if !known {
-		return false, false
-	}
-	return gateway.HomeInUpdateScope(ctx, unitHome, scope), true
-}
-
 // Home a label's installed plist pins when this update does not own it, false for ours or an unreadable plist
 func launchdLabelForeignHome(ctx context.Context, label string) (string, bool) {
 	return launchdLabelForeignHomeIn(ctx, label, nil)

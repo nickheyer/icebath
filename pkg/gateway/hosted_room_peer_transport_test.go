@@ -26,26 +26,13 @@ type hptFakePeerClient struct {
 	session map[string]any
 	active  bool
 	taskID  any
-	failOn  string
-	err     *PeerRunsHTTPError
 }
 
 func newHptFakePeerClient() *hptFakePeerClient {
 	return &hptFakePeerClient{session: map[string]any{"session_id": "group-session"}}
 }
 
-// Client whose named method fails with a peer runs error of the given proof
-func newHptFailingPeerClient(method string, retryable, notAdmitted bool) *hptFakePeerClient {
-	c := newHptFakePeerClient()
-	c.failOn = method
-	c.err = &PeerRunsHTTPError{Msg: method + " failed", Retryable: retryable, Ambiguous: method == "dispatch" && !notAdmitted, NotAdmitted: notAdmitted}
-	return c
-}
-
 func (c *hptFakePeerClient) Prepare(_ context.Context, req PeerPrepare) (map[string]any, error) {
-	if c.failOn == "prepare" {
-		return nil, c.err
-	}
 	params := map[string]any{"room_id": req.RoomID, "profile": req.Profile, "source": req.Source, "grant": req.Grant, "create": req.Create}
 	if req.ExpectedSessionID != nil {
 		params["expected_session_id"] = *req.ExpectedSessionID
@@ -59,9 +46,6 @@ func (c *hptFakePeerClient) Prepare(_ context.Context, req PeerPrepare) (map[str
 
 func (c *hptFakePeerClient) Dispatch(_ context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
 	c.calls = append(c.calls, hptCall{"dispatch", map[string]any{"dispatch": dispatch, "grant": grant}})
-	if c.failOn == "dispatch" {
-		return nil, c.err
-	}
 	c.active = true
 	c.taskID, _ = dispatch.Get("task_id")
 	return map[string]any{"status": "accepted", "task_id": c.taskID}, nil
@@ -73,9 +57,6 @@ func (c *hptFakePeerClient) History(_ context.Context, roomID, profile, sessionI
 }
 
 func (c *hptFakePeerClient) Status(_ context.Context, roomID, profile, sessionID, grant string) (map[string]any, error) {
-	if c.failOn == "status" {
-		return nil, c.err
-	}
 	c.calls = append(c.calls, hptCall{"status", map[string]any{"room_id": roomID, "profile": profile, "session_id": sessionID}})
 	return map[string]any{"active": c.active, "task_id": c.taskID}, nil
 }
@@ -223,102 +204,5 @@ func TestPeerTransportRejectsProfileSourceAndRoomTitleMismatch(t *testing.T) {
 		if !errors.As(err, &refusal) {
 			t.Fatalf("mismatch was accepted: %v (%v)", args, err)
 		}
-	}
-}
-
-func hptFailover(t *testing.T, direct, relay HostedRoomPeerClient, reprobe float64, clock func() float64) *FailoverHostedRoomPeerClient {
-	t.Helper()
-	client, err := NewFailoverHostedRoomPeerClient([]RoomLinkCandidate{
-		{Name: "direct", Mode: "direct", TargetInstallID: "install-peer", Client: direct},
-		{Name: "relay", Mode: "relay", TargetInstallID: "install-peer", Client: relay},
-	}, reprobe, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return client
-}
-
-var hptPrepare = PeerPrepare{RoomID: "room-1", Profile: "reviewer", Source: "bot_room", Grant: "grant", Create: true}
-
-func TestRoomlinkFallsBackToRelayOnRetryablePrepareFailure(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	client := hptFailover(t, newHptFailingPeerClient("prepare", true, false), newHptFakePeerClient(), 60, nil)
-	session, err := client.Prepare(context.Background(), hptPrepare)
-	if err != nil || session["session_id"] != "group-session" {
-		t.Fatalf("prepare = %v, %v", session, err)
-	}
-	if client.ActiveLink().Name != "relay" {
-		t.Fatalf("active link = %s", client.ActiveLink().Name)
-	}
-}
-
-func TestRoomlinkNeverFallsBackAfterAmbiguousDirectFailure(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	direct, relay := newHptFailingPeerClient("dispatch", true, false), newHptFakePeerClient()
-	client := hptFailover(t, direct, relay, 60, nil)
-	dispatch := pyjson.ObjectOf("task_id", "task-1", "execution_generation", 1)
-	_, err := client.Dispatch(context.Background(), dispatch, "grant")
-	var failure *PeerRunsHTTPError
-	if !errors.As(err, &failure) || !failure.Ambiguous {
-		t.Fatalf("ambiguous dispatch was automatically replayed: %v", err)
-	}
-	if direct.calls[0].params["dispatch"] != dispatch || len(relay.calls) != 0 || client.ActiveLink().Name != "direct" {
-		t.Fatalf("direct calls %v relay calls %v active %s", direct.calls, relay.calls, client.ActiveLink().Name)
-	}
-}
-
-func TestRoomlinkFallsBackAfterProvenNotAdmittedDirectFailure(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	direct, relay := newHptFailingPeerClient("dispatch", true, true), newHptFakePeerClient()
-	client := hptFailover(t, direct, relay, 60, nil)
-	dispatch := pyjson.ObjectOf("task_id", "task-1", "execution_generation", 1)
-	result, err := client.Dispatch(context.Background(), dispatch, "grant")
-	if err != nil || result["status"] != "accepted" {
-		t.Fatalf("dispatch = %v, %v", result, err)
-	}
-	if direct.calls[0].params["dispatch"] != dispatch || relay.calls[0].params["dispatch"] != dispatch || client.ActiveLink().Name != "relay" {
-		t.Fatalf("dispatch was not the same object on both links, active %s", client.ActiveLink().Name)
-	}
-}
-
-func TestRoomlinkNeverFallsBackAfterNonretryableRejection(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	relay := newHptFakePeerClient()
-	client := hptFailover(t, newHptFailingPeerClient("prepare", false, false), relay, 60, nil)
-	_, err := client.Prepare(context.Background(), hptPrepare)
-	var failure *PeerRunsHTTPError
-	if !errors.As(err, &failure) {
-		t.Fatalf("nonretryable rejection was silently bypassed: %v", err)
-	}
-	if len(relay.calls) != 0 {
-		t.Fatalf("relay calls = %v", relay.calls)
-	}
-}
-
-func TestRoomlinkReprobesAndUpgradesBackToPrimaryAfterCooldown(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	now := 0.0
-	direct := newHptFailingPeerClient("prepare", true, false)
-	client := hptFailover(t, direct, newHptFakePeerClient(), 30, func() float64 { return now })
-	if _, err := client.Prepare(context.Background(), hptPrepare); err != nil {
-		t.Fatal(err)
-	}
-	if client.ActiveLink().Name != "relay" {
-		t.Fatalf("active link = %s", client.ActiveLink().Name)
-	}
-	direct.failOn = "none"
-	now = 10
-	if _, err := client.Prepare(context.Background(), hptPrepare); err != nil {
-		t.Fatal(err)
-	}
-	if client.ActiveLink().Name != "relay" {
-		t.Fatalf("active link before cooldown = %s", client.ActiveLink().Name)
-	}
-	now = 31
-	if _, err := client.Prepare(context.Background(), hptPrepare); err != nil {
-		t.Fatal(err)
-	}
-	if client.ActiveLink().Name != "direct" {
-		t.Fatalf("active link after cooldown = %s", client.ActiveLink().Name)
 	}
 }

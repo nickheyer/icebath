@@ -87,22 +87,6 @@ func TestFixtureNoAccessTokenIsMissingConfig(t *testing.T) {
 	}
 }
 
-func TestAutoRetryableSetAndPredicate(t *testing.T) {
-	for code := range tools.AutoRetryable {
-		if !tools.IsAutoRetryable(code) {
-			t.Fatal(code)
-		}
-	}
-	for code := range tools.AllReasons {
-		if !tools.AutoRetryable[code] && tools.IsAutoRetryable(code) {
-			t.Fatal(code)
-		}
-	}
-	if tools.IsAutoRetryable("") || tools.IsAutoRetryable("nonsense") {
-		t.Fatal("blank or unknown reason retried")
-	}
-}
-
 func TestTransientReasonsResume(t *testing.T) {
 	reasons := make([]string, 0, len(tools.AutoRetryable))
 	for reason := range tools.AutoRetryable {

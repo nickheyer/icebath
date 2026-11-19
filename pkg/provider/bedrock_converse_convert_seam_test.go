@@ -7,6 +7,9 @@ func ResetBedrockCachePointRejections() {
 	bedrockCachePointRejections = map[string]map[string]bool{}
 }
 
+// Default output limit of a Converse call when the caller sets none
+const bedrockDefaultMaxTokens = 4096
+
 // Converse inputs with the default 4096 token output limit
 func newBedrockConverseInput(model string, messages []map[string]any) bedrockConverseInput {
 	maxTokens := bedrockDefaultMaxTokens

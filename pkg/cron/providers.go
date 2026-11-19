@@ -29,13 +29,6 @@ type cronProviderDir struct {
 	dir  string
 }
 
-// Name, plugin.yaml description and availability probe of one discovered provider
-type CronProviderInfo struct {
-	Name        string
-	Description string
-	Available   bool
-}
-
 // Whether the first 8192 characters of __init__.py mention the cron scheduler contract
 func isCronProviderDir(path string) bool {
 	raw, err := os.ReadFile(filepath.Join(path, "__init__.py"))
@@ -47,38 +40,6 @@ func isCronProviderDir(path string) bool {
 		source = string([]rune(source)[:8192])
 	}
 	return strings.Contains(source, cronSchedulerCapture) || strings.Contains(source, "CronScheduler")
-}
-
-// User installed plugin dirs of the profile that look like cron providers
-func userCronProviderDirs(ctx context.Context) ([]string, error) {
-	userDir, ok := plugins.UserPluginsDir(ctx)
-	if !ok {
-		return nil, nil
-	}
-	children, err := plugins.IterPluginDirs(userDir)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, child := range children {
-		if isCronProviderDir(child) {
-			out = append(out, child)
-		}
-	}
-	return out, nil
-}
-
-// User providers by name
-func iterCronProviderDirs(ctx context.Context) ([]cronProviderDir, error) {
-	user, err := userCronProviderDirs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	dirs := make([]cronProviderDir, 0, len(user))
-	for _, child := range user {
-		dirs = append(dirs, cronProviderDir{name: filepath.Base(child), dir: child})
-	}
-	return dirs, nil
 }
 
 // Provider of a name, a user plugin dir that holds a cron provider
@@ -94,21 +55,6 @@ func findCronProviderDir(ctx context.Context, name string) (cronProviderDir, boo
 // Context the provider loader and a hosted provider run under, scoped to the store home
 func providerContext(s *Store) context.Context {
 	return withCronStore(home.WithOverride(context.Background(), s.home), s)
-}
-
-// Every discovered provider with its description and whether it loads and reports available
-func DiscoverCronSchedulers(s *Store) ([]CronProviderInfo, error) {
-	ctx := providerContext(s)
-	dirs, err := iterCronProviderDirs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]CronProviderInfo, 0, len(dirs))
-	for _, d := range dirs {
-		out = append(out, CronProviderInfo{Name: d.name, Description: plugins.ReadPluginDescription(d.dir),
-			Available: plugins.ProbeAvailability(func() (any, error) { return loadCronProviderFromDir(ctx, s, d) })})
-	}
-	return out, nil
 }
 
 // Provider instance by name, nil when it is not found or fails to load, a seam the tests record through
@@ -269,28 +215,6 @@ func (h *hostedCronScheduler) RecoverInterrupted(ctx context.Context) (int, erro
 	return 0, fmt.Errorf("recover_interrupted returned %s, expected a whole number", errchain.Kind(res))
 }
 
-// Registry convergence forwarded to the child
-func (h *hostedCronScheduler) Reconcile() error {
-	_, err := h.obj.Call(h.ctx, "reconcile", nil, nil)
-	return err
-}
-
-// Child fire_due with the transport, force and manual passed only when set as callers gate them
-func (h *hostedCronScheduler) FireDue(ctx context.Context, jobID string, o FireOptions) (bool, error) {
-	kwargs := map[string]any{"adapters": o.Adapters, "loop": o.Loop}
-	if o.Force {
-		kwargs["force"] = true
-	}
-	if o.Manual {
-		kwargs["manual"] = true
-	}
-	res, err := h.obj.Call(h.ctx, "fire_due", []any{jobID}, kwargs)
-	if err != nil {
-		return false, err
-	}
-	return pyrepr.Truthy(res), nil
-}
-
 // Child claim_fire snapshot, nil when the claim was not acquired
 func (h *hostedCronScheduler) ClaimFire(ctx context.Context, jobID string, force, manual bool) (*Job, error) {
 	res, err := h.obj.Call(h.ctx, "claim_fire", []any{jobID}, map[string]any{"force": force, "manual": manual})
@@ -300,44 +224,16 @@ func (h *hostedCronScheduler) ClaimFire(ctx context.Context, jobID string, force
 	return claimedJobFromWire(res)
 }
 
-// Child fire_claimed of the exact snapshot, a cancel channel crossing as an event set when it closes
+// Child fire_claimed of the exact snapshot
 func (h *hostedCronScheduler) FireClaimed(ctx context.Context, job *Job, o FireOptions) (bool, error) {
 	wire, err := claimedJobToWire(job)
 	if err != nil {
 		return false, err
 	}
 	kwargs := map[string]any{"adapters": o.Adapters, "loop": o.Loop, "cancel_event": nil}
-	if o.Cancel != nil {
-		ev := plugins.NewHostEvent()
-		done := make(chan struct{})
-		defer close(done)
-		go func() {
-			select {
-			case <-o.Cancel:
-				ev.Set()
-			case <-done:
-			}
-		}()
-		kwargs["cancel_event"] = ev
-	}
 	res, err := h.obj.Call(h.ctx, "fire_claimed", []any{wire}, kwargs)
 	if err != nil {
 		return false, err
 	}
 	return pyrepr.Truthy(res), nil
-}
-
-// Two phase fire contract of the child class, an override of claim_fire or fire_claimed or no fire_due override
-func (h *hostedCronScheduler) SupportsSplitFire() bool {
-	overrides := func(name string) bool {
-		ok, err := h.obj.OverridesBase(h.ctx, name)
-		if err != nil {
-			panic(err)
-		}
-		return ok
-	}
-	if overrides("claim_fire") || overrides("fire_claimed") {
-		return true
-	}
-	return !overrides("fire_due")
 }

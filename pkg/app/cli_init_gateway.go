@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
@@ -15,9 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Launch flags that pick the model route, a new session starting on the profile's default route
-var gatewayRouteFlags = map[string]bool{"model": true, "provider": true, "api_key": true, "base_url": true}
 
 // Adopts the profile default toolsets the gateway resolved for display and prints its unknown toolsets warning
 func adoptGatewayToolsets(c *CLI, store *gatewaycli.GatewaySessionStore) {
@@ -198,7 +194,6 @@ func (c *CLI) ensureGatewaySession() error {
 		c.gatewaySessionOpen = true
 		tools.GatewayPluginToolsets = func() ([]tools.ConfigurableToolset, map[string]bool, bool) { return gatewayPluginToolsets(c) }
 		adoptGatewayToolsets(c, store)
-		bindGatewaySession(c, store.Connection)
 		if sid != "" && sid != c.sessionID {
 			c.uiMu.Lock()
 			c.sessionID = sid
@@ -223,70 +218,4 @@ func (c *CLI) gatewayOpenRequest() gatewaycli.OpenSessionCLI {
 	}
 	return gatewaycli.OpenSessionCLI{SessionID: c.sessionID, Resumed: c.resumed,
 		TypedAPIKey: typedAPIKey, TypedToolsets: typedToolsets, ExplicitIgnoreRules: explicitIgnoreRules}
-}
-
-// Id for a new or branched session, a session the gateway created once this CLI's gateway session is open
-func (c *CLI) newSessionID(now time.Time, branchOf, title string) (string, error) {
-	store := c.sessionDB
-	if store == nil || !c.gatewaySessionOpen {
-		return newSessionID(now), nil
-	}
-	if branchOf != "" {
-		child, err := store.Branch(c.ctx, branchOf, title)
-		if err != nil {
-			return "", err
-		}
-		if tools.IsSessionYoloEnabled(branchOf) {
-			if err := store.SetSessionYolo(c.ctx, child, true); err != nil {
-				return "", err
-			}
-			tools.EnableSessionYolo(child)
-		}
-		return child, nil
-	}
-	launch := map[string]any{}
-	for key, value := range gatewayLaunch(c) {
-		if !gatewayRouteFlags[key] {
-			launch[key] = value
-		}
-	}
-	sid, err := store.Create(c.ctx, launch, "", false)
-	if err != nil {
-		return "", err
-	}
-	c.uiMu.Lock()
-	c.sessionID = sid
-	c.uiMu.Unlock()
-	return sid, nil
-}
-
-// Closes the modal answering a server request the gateway withdrew, as if cancelled locally
-func (c *CLI) withdrawGatewayModal(method string) {
-	c.uiMu.Lock()
-	clarify, sudo := c.clarifyState, c.sudoState
-	c.uiMu.Unlock()
-	switch {
-	case method == "clarify" && clarify != nil:
-		c.clarifyTeardown()
-		select {
-		case clarify.response <- nil:
-		default:
-		}
-	case (method == "sudo" || method == "vault.unlock_prompt" || method == "vault.save_login" || method == "vault.code") && sudo != nil:
-		select {
-		case sudo.response <- "":
-		default:
-		}
-	}
-}
-
-// Asks before a guarded model target the owner refused, once per warning the user already confirmed
-func (c *CLI) confirmOwnerModelSwitch(refusal map[string]any) bool {
-	message := strOrEmpty(refusal["confirm_message"])
-	confirmed := c.confirmedSwitchWarning
-	c.confirmedSwitchWarning = ""
-	if message != "" && message == confirmed {
-		return true
-	}
-	return c.askSwitchAnyway(confirmationTitle(refusal), message)
 }

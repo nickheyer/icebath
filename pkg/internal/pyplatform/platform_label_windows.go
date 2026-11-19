@@ -4,7 +4,6 @@ package pyplatform
 
 import (
 	"fmt"
-	"os"
 
 	"golang.org/x/sys/windows"
 )
@@ -13,12 +12,6 @@ import (
 func version() string {
 	info := windows.RtlGetVersion()
 	return fmt.Sprintf("%d.%d.%d", info.MajorVersion, info.MinorVersion, info.BuildNumber)
-}
-
-// DNS host name of the computer, empty when Windows refuses
-func node() string {
-	name, _ := os.Hostname()
-	return name
 }
 
 // Service pack label of Windows, the minor part only when it is not zero

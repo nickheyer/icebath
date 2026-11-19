@@ -16,9 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// ZipExtFile.MAX_N, the read size of read with no limit
-const maxN = 1<<31 - 1
-
 // Member stream with ZipExtFile.read semantics alongside io.Reader
 type pyFile interface {
 	io.ReadCloser
@@ -69,22 +66,10 @@ func (f *extFile) Close() error {
 	return nil
 }
 
-// ZipExtFile.read of up to n bytes, everything to the end when n is negative
+// ZipExtFile.read of up to n bytes
 func (f *extFile) read(n int) ([]byte, error) {
 	if f.closed {
 		return nil, &ValueError{"read from closed file."}
-	}
-	if n < 0 {
-		buf := f.readbuffer[f.offset:]
-		f.readbuffer, f.offset = nil, 0
-		for !f.eof {
-			data, err := f.read1(maxN)
-			if err != nil {
-				return nil, err
-			}
-			buf = append(buf, data...)
-		}
-		return buf, nil
 	}
 	end := n + f.offset
 	if end < len(f.readbuffer) {

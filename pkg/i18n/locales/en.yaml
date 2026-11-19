@@ -804,7 +804,6 @@ gateway:
     slash_rejected: "⏳ Agent is running — `/{command}` can't run mid-turn. Wait for the current response or `/stop` first."
     reject_goal: "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
     reject_loop: "Agent is running — use /loop status / pause / stop mid-run, or /stop before setting a new loop."
-    draining_maintenance: "⏳ This agent is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly."
     another_turn_running: "⏳ Another turn is still running on this session. To protect the transcript, this message was not processed. Wait for the active turn to finish, then resend it."
     behavior_queue_short: "queues for next turn"
     behavior_queue_long: "Messages will be queued for the next turn while Icebath is busy."
@@ -2074,42 +2073,17 @@ cli:
 
   model:
 
-    # /model switch summary (labels shared with the gateway live under gateway.model.*)
-    switched: "✓ Model switched: {model}"
-    acting_model: "Acting model (billed for the run): {model}"
-    reasoning_effort: "Reasoning effort: {effort}"
-    reasoning_effort_saved: "Reasoning effort: {effort} (saved to config)"
-    saved: "Saved to config.yaml"
-    saved_global: "Saved to config.yaml (--global)"
-    next_turn_only: "(next turn only — restores after one response)"
-    session_only: "(session only — add --global to persist)"
     # picker
-    no_authenticated_providers: "No authenticated providers found."
-    usage_switch: "switch model (this session)"
-    usage_switch_global: "switch model and persist as default"
-    usage_switch_once: "switch for the next turn only"
-    usage_switch_session: "switch for this session only"
-    usage_switch_provider_model: "switch provider + model"
-    usage_switch_reasoning: "switch and set reasoning effort"
-    usage_switch_provider: "switch provider"
-    usage_refresh: "re-fetch live model lists"
     reset_none: "Already on the configured default ({model}) — nothing to reset."
     reset_no_default: "No model.default in config.yaml — nothing to reset to."
     choice_switch_anyway: "Switch anyway"
-    desc_switch_anyway: "Use this model for the current Icebath session."
     choice_cancel: "Cancel"
-    desc_keep_current_model: "Keep the current model."
     switch_cancelled: "Model switch cancelled."
     switch_failed: "⚠ Model switch to {model} failed ({error}); staying on {old_model}."
-    cleared_picker_cache: "Cleared model picker cache. Refreshing..."
-    moa_one_shot_queued: "MoA one-shot queued with preset {preset}; previous model will be restored after this turn."
     # model-id normalization notices (yellow)
     normalized_model: "Normalized model '{old}' to '{new}' for {provider}."
     stripped_provider_prefix: "Stripped provider prefix from '{old}'; using '{new}' for {provider}."
     restored_from_session: "Model restored from session: {model}"
-    # openai_runtime sub-command
-    could_not_load_config: "❌ could not load config: {error}"
-    tip_reset_new_session: "Tip: `/reset` starts a new session immediately."
 
   single_query:
 
@@ -2117,26 +2091,9 @@ cli:
     kanban_run_reclaimed: "kanban: this worker's run was reclaimed before it started; exiting"
   shared:
 
-    unknown: "unknown"
-    unknown_error: "Unknown error"
-    label_enabled: "enabled"
-    label_disabled: "disabled"
-    label_yes: "yes"
-    label_no: "no"
-    label_on:                 "on"
-    label_off:                "off"
-    label_on_upper:          "ON"
-    label_off_upper: "OFF"
-    label_value: "{label}: {value}"
     duration_s: "{seconds}s"
-    duration_m: "{minutes}m"
-    duration_ms: "{minutes}m {seconds}s"
-    duration_hm: "{hours}h {minutes}m"
-    duration_hms: "{hours}h {minutes}m {seconds}s"
-    duration_dhm: "{days}d {hours}h {minutes}m"
     duration_m_rest: "{minutes}m {rest}"
     duration_hm_rest: "{hours}h {minutes}m {rest}"
-    no_active_agent: "◈ No active agent -- send a message first."
     n_more: "{count} more"
     more_not_shown: "more not shown"
     yes_no_default_yes: "Y/n"
@@ -2144,220 +2101,34 @@ cli:
     yes_initial: "y"
   tui:
 
-    interrupting: "⚡ Interrupting agent..."
     suspend_unsupported: "Suspend (Ctrl+Z) is not supported on Windows."
     suspend_no_job_control: "Suspend (Ctrl+Z) needs job control, and the shell that started {agent_name} has none."
     suspended: "{agent_name} has been suspended. Run `fg` to bring {agent_name} back."
 
   voice:
 
-    err_termux_app_missing: "Termux:API command package detected, but the Android app is missing.\nInstall/update the Termux:API Android app, then retry /voice on."
-    err_mic_access: "Voice mode needs microphone access.\nRun pkg install termux-api and install the Termux:API Android app, then retry /voice on."
-    err_audio_capture: "Voice mode requires audio capture."
-    err_stt_provider: "Voice mode requires an STT provider for transcription.\nRun icebath tools and configure Speech-to-Text, then restart Icebath."
-    silence_autostop: "Silence detected, auto-stopping..."
-    hint_continuous: "auto-stops on silence | {shortcut} to stop & exit continuous"
-    hint_termux: "Termux:API capture | {shortcut} to stop"
-    hint_stop: "{shortcut} to stop"
-    recording: "● Recording..."
-    autorestart_failed: "Voice auto-restart failed: {error}"
-    no_speech: "No speech detected."
-    preparing_stt: "Preparing local STT model '{model}' (first use may download it from Hugging Face)..."
-    transcribing: "Transcribing..."
-    stop_phrase: "Stop phrase detected — ending voice chat."
-    transcription_failed: "Transcription failed: {error}"
-    processing_error: "Voice processing error: {error}"
-    recording_preserved: "Recording preserved at: {path}"
-    no_speech_stop: "No speech detected 3 times, continuous mode stopped."
-    tts_failed: "TTS playback failed: {error}"
-    interjection: "🎤 Voice interjection — interrupting…"
-    echo_ignored: "Ignored likely TTS echo (not queued)."
-    already_enabled: "Voice mode is already enabled."
-    unavailable_header: "Voice mode unavailable in this environment:"
-    requirements_header: "Voice mode requirements not met:"
-    termux_install_cmd: "Run: pkg install termux-api"
-    termux_install_hint: "Then install/update the Termux:API Android app for microphone capture"
-    tts_enabled_suffix: " (TTS enabled)"
-    enabled: "Voice mode enabled{tts_status}"
-    record_key_hint: "{shortcut} to start/stop recording"
-    tts_toggle_hint: "/voice tts  to toggle speech output"
-    disable_hint: "/voice off  to disable voice mode"
     stop_phrase_typed: "Stop phrase typed — ending voice chat."
-    disabled: "Voice mode disabled."
-    wake_unavailable: "Wake word unavailable: {error}"
-    wake_already: "Wake word is already listening."
-    wake_requirements_header: "Wake word requirements not met:"
-    wake_installing: "Installing wake word engine (first use — this may take a minute)..."
-    wake_start_failed: "Failed to start wake word: {error}"
-    wake_listening: "Wake word listening"
-    wake_listening_hint: "(say \"{phrase}\" — /wake off to stop)"
-    wake_stopped: "Wake word stopped."
-    wake_not_running: "Wake word is not running."
-    wake_profile_hint: "Wake phrase for profile '{profile}' — run: icebath -p {profile}"
-    wake_detected: "✦ Wake word detected — listening..."
-    wake_capture_failed: "Wake capture failed: {error}"
-    state_listening: "LISTENING"
-    state_paused: "PAUSED"
-    state_off: "OFF"
-    state_on: "ON"
-    state_yes: "YES"
-    wake_status_title: "Wake Word Status"
-    label_state: "  State:       {state}"
-    label_phrase: "  Phrase:      \"{phrase}\""
-    label_provider: "  Provider:    {provider}"
-    label_surface: "  Surface:     {surface}"
-    label_new_session: "  New session: {value}"
-    mic_silent_warning: "⚠ Microphone delivers only silence — the listener can't hear anything."
-    mic_silent_macos_hint: "On macOS: System Settings > Privacy & Security > Microphone — allow your terminal/Icebath, then /wake off + /wake on."
-    wake_enable_hint: "Enable with /wake on"
-    enable_first_hint: "Enable voice mode first: /voice on"
-    tts_no_provider: "Warning: The configured TTS provider is not ready. Set its API key or pick another provider with `/setup tts`."
-    tts_status: "Voice TTS {status}."
-    status_title: "Voice Mode Status"
-    label_mode: "  Mode:      {value}"
-    label_tts: "  TTS:       {value}"
-    label_recording: "  Recording: {value}"
-    label_record_key: "  Record key: {shortcut}"
-    label_requirements: "Requirements:"
 
   render:
 
     response_transformed: "[Response transformed after streaming]"
-    banner_tagline: "{name} - AI Agent Framework"
-    banner_version: "Icebath Agent v{version} ({date})"
 
   approval:
 
-    bell_context: "approval"
     label: "Approval"
-    timeout_denying: "⏱ Timeout — denying command"
-    timed_out_no_response: "timed out (no response)"
-    outcome_once: "allowed once"
-    outcome_session: "allowed for session"
-    outcome_always: "added to allowlist"
     outcome_deny: "denied"
-  clarify:
-
-    bell_context: "clarify"
-    timed_out_locked_answers: "(clarify timed out after {timeout}s — locked answers returned)"
-  connect:
-
-    bell_context: "connection setup"
   modal:
 
-    cancelled_no_input: "🟡 /{command} cancelled (no input)."
-    unrecognized_choice: "🟡 Unrecognized choice '{raw}'. /{command} cancelled."
-    cancelled: "🟡 /{command} cancelled. {unchanged}"
-    re_enable_hint: "   Re-enable via `approvals.{setting}: true` in config.yaml."
-    persist_opt_out_failed: "⚠️  Couldn't persist opt-out — {once_verb} once."
-    persist_failed_proceeding: "⚠️  Couldn't persist opt-out — proceeding once."
-    choice_prompt: "Choice [1/2/3]: "
-    destructive_title: "⚠️  /{command} — destroys conversation state"
-    approve_once: "Approve Once"
-    approve_once_detail: "proceed this time only"
-    always_approve: "Always Approve"
-    always_approve_detail: "proceed and silence this prompt permanently"
-    cancel: "Cancel"
-    cancel_detail: "keep current conversation"
-    conversation_unchanged: "Conversation unchanged."
-    destructive_always_msg: "🔒 Future /clear, /new, /reset, and /undo will run without confirmation."
-    bell_input_needed: "input needed"
     bell_turn_complete: "turn complete"
   secret:
 
     bell_sudo: "sudo password"
-    sudo_timeout: "⏱ Timeout — continuing without sudo"
-    sudo_received: "✓ Password received (cached for session)"
     sudo_skipped: "⏭ Skipped"
-    bell_unlock: "unlock {name}"
     stays_locked: "⏭ {name} stays locked"
-    unlocking_for_session: "✓ Unlocking {name} for this session"
-    bell_save_login: "save login for {site}"
     login_not_saved: "⏭ Not saving a login for {site}"
-    login_saved: "✓ Login for {site} saved to your vault"
-    bell_verification_code: "verification code for {site}"
     code_not_entered: "⏭ No code entered for {site}"
-    code_entered: "✓ Code entered into {site}"
-  display:
-
-    status_bar_visible: "Status bar visible"
-    status_bar_hidden: "Status bar hidden"
-  exit:
-
-    unknown_argument: "✗ Unknown argument: {argument}. Use /exit --delete to also remove session history."
-  plugins:
-
-    none_installed: "No user plugins installed."
-    install_hint: "Install one: icebath plugins install owner/repo"
-    drop_dir_hint: "Or drop a plugin directory into {path}"
-    bundled_available: "({count} bundled plugins available — see: icebath plugins list)"
-    user_plugins_header: "User plugins ({count}):"
-    count_noun_tools: "tools"
-    count_noun_hooks: "hooks"
-    count_noun_commands: "commands"
-    bundled_more: "(+{count} bundled — see: icebath plugins list)"
-    enable_disable_hint: "Enable/disable: icebath plugins enable/disable <name>"
-    system_error: "Plugin system error: {error}"
-  queue:
-
-    usage: "Usage: /queue <prompt> | /queue list | /queue edit N <prompt> | /queue rm N | /queue move FROM TO | /queue clear"
-    queued: "Queued: {preview}"
-    queued_next_turn: "Queued for the next turn: {preview}"
-    empty: "Queue is empty."
-    pending_header: "Queue ({count} pending):"
-    cleared_one: "Cleared {count} queued prompt."
-    cleared_other: "Cleared {count} queued prompts."
-    removed: "Removed queue item {index}: {preview}"
-    item_not_found: "Queue item {index} not found. Current size: {size}"
-    usage_edit: "Usage: /queue edit <number> <new prompt>"
-    usage_remove: "Usage: /queue rm <number>"
-    updated: "Updated queue item {index}: {preview}"
-    usage_move: "Usage: /queue move <from> <to>"
-    move_out_of_range: "Queue move out of range. Current size: {size}"
-    moved: "Moved queue item {source} to {destination}."
-    usage_add: "Usage: /queue add <prompt>"
-    gateway_refused: "The gateway did not queue it: {error}. Nothing was queued; send it again when the turn ends."
-    submit_unknown: "The gateway did not answer ({error}), so the prompt may already be queued. Check /queue list before sending it again."
-    move_gateway_fifo: "The gateway runs queued prompts in the order they were sent; edit or remove one instead."
-    remove_refused: "Could not remove queue item {index}: {error}"
-    edit_refused: "Could not edit queue item {index}: {error}"
-    already_started: "Queue item {index} already started; it runs as it was sent."
-    started_stopped: "Queue item {index} had already started; the gateway stopped it."
-    change_unknown: "The gateway did not answer about queue item {index} ({error}); check /queue list before trying again."
-  reload:
-
-    env_reloaded: "Reloaded .env ({count} var(s) updated)"
-  steer:
-
-    usage: "Usage: /steer <prompt>"
-    failed: "Steer failed: {error}"
-    queued: "⏩ Steer queued — arrives after the next tool call: {preview}"
-    rejected_empty: "Steer rejected (empty payload)."
-    no_agent_queued: "No agent running; queued as next turn: {preview}"
-  title:
-
-    session_id: "Session ID: {session_id}"
-    current: "Title: {title}"
-    pending: "Title (pending): {title}"
-    none_set_usage: "No title set. Usage: /title <your session title>"
-    usage: "Usage: /title <your session title>"
-    empty_after_cleanup: "Title is empty after cleanup. Please use printable characters."
-    set: "Session title set: {title}"
-    already_in_use: "Title '{title}' is already in use by session {session_id}"
-    queued: "Session title queued: {title} (will be saved on first message)"
-  undo:
-
-    invalid_count: "◈ Invalid count {value} — use /undo or /undo N."
-    removes_last_exchange: "This removes the last user/assistant exchange from history."
-    removes_last_turns: "This removes the last {count} user turns from history."
   resume:
 
-    tool_calls_one: "[{count} tool call: {names}]"
-    tool_calls_other: "[{count} tool calls: {names}]"
-    event_model_changed: "model changed"
-    event_delegation_completed: "background delegation completed"
-    event_process_finished: "background process finished"
-    event_resumed_interrupted: "resumed interrupted turn"
     session_id_hint: "Use a session ID from a previous CLI run (icebath sessions list)."
     session_not_found: "Session not found: {session_id}"
     compressed_into: "Session {session_id} was compressed into {descendant}; resuming the descendant with your transcript."
@@ -2370,10 +2141,6 @@ cli:
     session_no_messages: "Session {session_id} found but has no messages. Starting fresh."
     title_applied: "Session title applied: {title}"
     title_apply_failed: "Could not apply pending title: {error}"
-    label_you: "● You:"
-    label_assistant: "◆ {agent_name}:"
-    earlier_messages: "... {count} earlier messages ..."
-    panel_title: "Previous Conversation"
   startup:
 
     provider_resolution_failed: "Provider resolution failed."
@@ -2391,7 +2158,6 @@ cli:
     attaching_images_natively: "📎 attaching {count} image(s) natively (model supports vision): {names}"
     new_message_interrupting: "⚡ New message detected, interrupting..."
     unknown_error: "Unknown error"
-    continuous_voice_stopped: "Continuous voice mode stopped due to error."
     interrupted_marker: "── [Interrupted — processing new message] ──"
     iteration_budget_reached: "⚠ Iteration budget reached ({used}/{max}) — response may be incomplete"
     sending_after_interrupt_multi: "⚡ Sending {count} messages after interrupt: '{preview}'"
@@ -2405,76 +2171,12 @@ cli:
     out_of_credits_title: "⚡ Out of credits"
   session:
 
-    fresh_start: "❆ Fresh start! Screen cleared and conversation reset."
-    model_reset_default: "(model reset to config default: {model})"
-    title_rejected: "Title rejected: {error}"
-    title_empty_untitled: "Title is empty after cleanup — session started untitled."
-    title_error_untitled: "{error} — session started untitled."
     cwd_gone: "⚠ Session's working directory is gone: {recorded} — staying in {current}"
     cwd_restored: "↻ Working directory: {path}"
     cwd_enter_failed: "⚠ Could not enter session's working directory {path}: {error}"
     yolo_restored: "⚡ YOLO mode restored from session — all commands auto-approved. /yolo to turn off."
-    status_tools_deferred: "tools deferred"
-    status_tools_count: "{count} tools"
-    status_toolsets: "toolsets: {toolsets}"
-    status_provider: "provider: {provider}"
-    status_auth: "auth: {source}"
-    reasoning_display_suffix: " (display: {state})"
-    yolo_bypass_suffix: " (YOLO bypass active)"
-    ctx_left_prefix: "{percent}% left · "
-    ctx_tokens_used: "{left}{used} / {max} tokens used"
-    status_title: "Icebath CLI Status"
-    label_reasoning: "Reasoning"
-    label_approvals: "Approvals"
-    label_context: "Context"
-    recent_intro: "◈ No messages in the current chat yet — here are recent sessions you can resume:"
-    recent_header: "Recent sessions:"
-    column_title: "Title"
-    column_preview: "Preview"
-    column_last_active: "Last Active"
-    column_id: "ID"
-    resume_usage: "Use /resume <number>, /resume <session id>, or /resume <session title> to continue."
-    resume_example: "Example: /resume 2"
-    history_empty: "◈ No conversation history yet."
-    history_tools_header: "[Tools]"
-    history_tools_hidden_one: "({count} tool message hidden)"
-    history_tools_hidden_other: "({count} tool messages hidden)"
-    history_title: "❆ Conversation History"
-    history_you_header: "[You #{index}]"
-    history_assistant_header: "[{agent_name} #{index}]"
-    history_no_text: "(no text response)"
-    history_tool_calls_one: "(requested {count} tool call)"
-    history_tool_calls_other: "(requested {count} tool calls)"
-    new_session_titled: "✓ New session started: {title}"
-    new_session: "✓ New session started!"
-    save_nothing: "◈ No conversation to save."
-    save_dir_failed: "✘ Failed to create save directory {path}: {error}"
-    format_markdown: "Markdown"
-    save_ok: "✓ Conversation saved to: {path} ({label})"
-    save_resume_hint: "Resume the live session with: icebath --resume {session_id}"
-    save_failed: "✘ Failed to save: {error}"
-    retry_no_messages: "◈ No messages to retry."
     retry_no_user_message: "◈ No user message found to retry."
-    retry_unsafe: "◈ Cannot retry that message safely: {error}"
-    retry_rewind_failed: "✘ Retry rewind failed; history was not changed: {error}"
-    retrying: "✓ Retrying: \"{preview}\""
-    undo_no_messages: "◈ No messages to undo."
     undo_no_user_message: "◈ No user message found to undo."
-    undo_failed: "✘ Undo failed; history was not changed: {error}"
-    undo_ok_one: "✓ Undid {count} turn ({messages} message(s)). Backed up to: \"{backup}\""
-    undo_ok_other: "✓ Undid {count} turns ({messages} message(s)). Backed up to: \"{backup}\""
-    undo_remaining: "{count} message(s) remaining in history."
-    yolo_state_locked_on: "locked ON"
-    yolo_locked: "⚡ YOLO is {state} for this process (started with --yolo / ICEBATH_YOLO_MODE). /yolo cannot disable it — restart without the flag to re-enable approvals."
-    yolo_off: "⚠ YOLO mode {state} — dangerous commands will require approval."
-    yolo_on: "⚡ YOLO mode {state} — all commands auto-approved. Use with caution."
-    compress_too_short: "◈ Not enough conversation to compress (need at least {min} messages)."
-    compress_no_agent: "◈ No active agent -- send a message first."
-    compress_busy: "Compressing context..."
-    compress_summarizing: "🗜️  Summarizing up to here: {count} messages, keeping last {keep_last} exchange(s) verbatim..."
-    compress_focus: "🗜️  Compressing {count} messages, focus: \"{focus}\"..."
-    compress_plain: "🗜️  Compressing {count} messages..."
-    compress_failed: "❌ Compression failed: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
     goodbye: "Goodbye! 󰆧"
     exit_resume_hint: "Resume this session with:"
@@ -2482,28 +2184,8 @@ cli:
     exit_label_title: "Title:          {title}"
     exit_label_duration: "Duration:       {duration}"
     exit_label_messages: "Messages:       {count} ({user} user, {tool_calls} tool calls)"
-  status_bar:
-
-    battery_none: "no battery detected on this machine"
-    battery_none_nothing_shown: "no battery detected, so nothing will show here"
-    battery_currently: " — currently {reading}"
-    battery_state: "Battery indicator {state}{detail}"
-    battery_usage: "Usage: /battery [on|off|status]"
-    battery_on: "Battery indicator on{detail}"
-    battery_off: "Battery indicator off"
-    latency_label: "{value}s"
-    velocity_label: "{value} t/s"
   stream:
 
-    busy_skills_search: "Searching skills..."
-    busy_skills_browse: "Loading skills..."
-    busy_skills_inspect: "Inspecting skill..."
-    busy_skills_install: "Installing skill..."
-    busy_skills: "Processing skills command..."
-    busy_browser: "Configuring browser..."
-    busy_reload_mcp: "Reloading MCP servers..."
-    busy_reload_skills: "Reloading skills..."
-    processing_command: "Processing command..."
     thinking_label: "[thinking]"
     thinking_more_lines: "... ({count} more lines)"
     vision_analyzing: "👁️  analyzing {name} ({size_kb}KB)..."
@@ -2538,63 +2220,14 @@ cli:
       agent_busy: "Agent is busy. Wait for the current turn to finish, then retry {command}."
       no_active_agent_session: "No active agent session."
       could_not_generate_diff: "Could not generate diff"
-    busy:
-
-      short_queue: "queues for next turn"
-      short_steer: "steers into current run (after next tool call)"
-      short_interrupt: "redirects current run immediately"
-      long_queue: "Enter will queue follow-up input while Icebath is busy."
-      long_steer: "Enter will steer your message into the current run (after the next tool call)."
-      long_interrupt: "Enter will redirect the current run while Icebath is busy; /stop still cancels it."
-      usage: "Usage: /busy [queue|steer|interrupt|status]"
-      status: "Busy input mode: {mode}"
-      enter_while_busy: "Enter while busy: {behavior}"
-      label: "Busy input mode"
-    reasoning:
-
-      headline_on: "ON"
-      headline_off: "OFF"
-      headline_full: "FULL"
-      headline_clamped: "CLAMPED to 10 lines"
-      note_show: "Model thinking will be shown during and after each response."
-      note_full: "The post-response recap box will print complete thinking."
-      display_on: "on ✓"
-      display_off: "off"
-      full_state_full: "full"
-      full_state_clamped: "clamped to 10 lines"
-      effort_line: "Reasoning effort:  {level}"
-      display_line: "Reasoning display: {display} ({full})"
-      usage: "Usage: /reasoning <none|minimal|low|medium|high|xhigh|max|ultra|show|hide|full|clamp> [--global]"
-      display_saved: "✓ Reasoning display: {headline} (saved)"
-      display_off_note: "Note: reasoning display is OFF — run /reasoning show to see it."
-      valid_levels: "Valid levels: none, minimal, low, medium, high, xhigh, max, ultra"
-      valid_display: "Display:      show, hide"
-      valid_scope: "Scope:        session-scoped by default, --global to persist"
-      effort_set: "✓ Reasoning effort set to '{effort}' {scope}"
-    indicator:
-
-      usage: "Usage: /indicator [{styles}]"
-      status: "Busy-indicator style: {style}"
-      unknown_style: "◈ Unknown indicator style: {arg}"
-      label: "Busy-indicator style"
-      note: "The TUI picks up the new style on its next render."
     fast:
 
-      not_supported: "◈ /fast is only available for models that support fast mode (OpenAI Priority Processing or Anthropic Fast Mode)."
       feature_generic: "Fast mode"
-      feature_anthropic: "Anthropic Fast Mode"
-      feature_openai: "Priority Processing"
-      feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "◈ Ultrafast isn't available for {model} on this account or route."
-      usage: "Usage: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
-      status: "{feature}: {status}"
-      set_to: "✓ {feature} set to {value} {scope}"
     hatch:
 
       progress_compose: "┊ composing spritesheet…"
       progress_save: "┊ saving…"
       progress_drawing: "┊ drawing {state}…"
-      describe_prompt: "◈ Describe your pet: "
       usage: "◈ Usage: /hatch <description>  (e.g. /hatch a tiny cyber fox)"
       default_name: "Pet"
       designing: "◈ Designing '{concept}'… (a minute of image-model calls)"
@@ -2612,30 +2245,10 @@ cli:
       fetching: "◈ Fetching '{name}' from petdex…"
       adopt_failed: "✘ Couldn't adopt '{name}': {error}"
       error: "✘ {error}"
-    diff:
-
-      label_working: "Unstaged"
-      label_staged: "Staged"
-      label_all: "All (vs HEAD)"
-      untracked: "Untracked:"
-      and_more: "... and {count} more"
-      more_lines: "... ({count} more lines — {hint})"
-      stat_hint: "run /diff --stat for a summary"
-      stat_hint_session: "run /diff session --stat for a summary"
-      not_enabled: "Checkpoints are not enabled, so there's no session baseline.\nEnable with: icebath --checkpoints\nOr in config.yaml: checkpoints: { enabled: true }\n(Plain /diff still works — it uses git directly.)"
-      no_session_changes: "No changes — Icebath hasn't edited any files here yet."
     rollback:
 
-      not_enabled: "Checkpoints are not enabled.\nEnable with: icebath --checkpoints\nOr in config.yaml: checkpoints: { enabled: true }"
       none_here_showing_all: "No checkpoints for {cwd} — showing all directories."
       all_directories: "all directories"
-      usage_diff: "Usage: /rollback diff <N>"
-      no_changes_since: "No changes since this checkpoint."
-      more_lines: "... ({count} more lines, showing first 80)"
-      restored_all: "✅ Restored to checkpoint {hash}: {reason}"
-      restored_file: "✅ Restored {file} from checkpoint {hash}: {reason}"
-      snapshot_saved: "A pre-rollback snapshot was saved automatically."
-      chat_turn_undone: "Chat turn undone to match restored file state."
     snapshot:
 
       unknown_subcommand: "Unknown subcommand: {subcommand}"
@@ -2670,12 +2283,6 @@ cli:
       imported: "✓ Imported profile '{name}' at {path}"
       wrapper_created: "Wrapper created: {path}"
       use_it: "Use it: icebath -p {name}"
-    stop:
-
-      none_running: "No running background processes."
-      stopping: "Stopping {count} background process(es)..."
-      stopped: "✅ Stopped {count} process(es)."
-      interrupted_delegations: "✅ Interrupted {count} background delegation(s)."
     agents:
 
       running_processes: "Running processes: {count}"
@@ -2695,17 +2302,9 @@ cli:
     paste:
 
       no_image: "◈ No image found in clipboard"
-      attached: "📎 Image #{index} attached from clipboard"
-      extract_failed: "◬ Clipboard has an image but extraction failed"
     copy:
 
       nothing_yet: "Nothing to copy yet."
-      usage: "Usage: /copy [number]"
-      invalid_number: "Invalid response number. Use 1-{max}."
-      nothing_in_responses: "Nothing to copy in assistant responses yet."
-      nothing_in_response: "Nothing to copy in that assistant response."
-      copied_osc52: "Copied assistant response #{index} via OSC 52 (terminal support required)"
-      copied: "Copied assistant response #{index} to clipboard"
       failed: "Clipboard copy failed: {error}"
     image:
 
@@ -2722,15 +2321,10 @@ cli:
       disabling: "Disabling {names}..."
       enabling: "Enabling {names}..."
       session_reset: "Session reset. New tool configuration is active."
-    profile:
-
-      profile: "Profile: {profile}"
-      home: "Home:    {home}"
     handoff:
 
       usage: "Usage: /handoff <platform>"
       usage_detail_1: "Hands the current session off to that platform's home channel."
-      usage_detail_2: "The CLI session ends here; resume it later with /resume."
       already_in_flight: "Session is already in flight for handoff. Wait for it to settle, then retry."
       queued: "Queued handoff of '{title}' → {platform} (home: {home})."
       waiting: "Waiting for the gateway to pick it up..."
@@ -2743,28 +2337,19 @@ cli:
       session_row_failed: "Could not ensure session row in state.db: {error}"
       picked_up: "Gateway picked it up; transferring..."
       complete: "↻ Handoff complete. The session is now active on {platform}."
-      resume_hint: "Resume it on this CLI later with: /resume {title}"
       unknown_error: "unknown error"
       failed: "Handoff failed: {error}"
       session_intact_retry: "Your CLI session is intact. Try /handoff again, or /resume on the platform manually."
       still_transferring: "Still transferring (the agent is replaying your session on the destination)..."
       taking_long: "The gateway is taking unusually long to finish the transfer."
       check_platform: "Check {platform} — the session may still arrive there."
-      no_longer_waiting: "This CLI is no longer waiting. Avoid continuing this session here;"
       retry_when_settled: "if nothing arrives, retry /handoff once the state settles."
       timed_out: "Timed out waiting for the gateway. Is `icebath gateway` running?"
       session_intact: "Your CLI session is intact."
     resume:
 
-      usage: "Usage: /resume <number|session_id_or_title>"
-      tip_find_sessions: "Tip:   Use /history or `icebath sessions list` to find sessions."
-      already_on: "Already on that session."
       resumed_one: "↻ Resumed session {session_id}{title} ({count} user message, {total} total)"
       resumed_other: "↻ Resumed session {session_id}{title} ({count} user messages, {total} total)"
-      resumed_empty: "↻ Resumed session {session_id}{title} — no messages, starting fresh."
-      not_found: "Session not found: {target}"
-      not_found_hint: "Use /sessions or `icebath sessions list` to see available sessions."
-      compressed_redirect: "Session {session_id} was compressed into {resolved_id}; resuming the descendant with your transcript."
     sessions:
 
       none_yet: "◈ No previous sessions yet."
@@ -2797,15 +2382,6 @@ cli:
     personality:
 
       title: "❆ Personalities"
-      none_option: "(no personality overlay)"
-      usage: "Usage: /personality <name>   (* = active)"
-      unknown: "◈ Unknown personality: {name}"
-      available: "Available: none, {available}"
-      scope_saved: "(saved to config)"
-      scope_session: "(session only)"
-      cleared: "{face} Personality cleared {scope}"
-      cleared_note: "No personality overlay — using base agent behavior."
-      set_to: "{face} Personality set to '{name}' {scope}"
     cron:
 
       repeat_must_be_integer: "◈ --repeat must be an integer"
@@ -2865,117 +2441,24 @@ cli:
     memory:
 
       unknown_subcommand: "Unknown /memory subcommand. Use: pending, approve <id>, reject <id>, approval <on|off>."
-    learn:
-
-      from_description: "⚡ Learning a skill from what you described..."
-      from_conversation: "⚡ Learning a skill from this conversation..."
-    plan:
-
-      planning: "📋 Planning: {task}"
-      from_conversation: "📋 Planning from this conversation's context..."
-    init:
-
-      updating: "⚡ Updating AGENTS.md from a project scan..."
-      generating: "⚡ Generating AGENTS.md from a project scan..."
     background:
 
-      usage: "Usage: /bg <prompt>\nExample: /bg Summarize the top HN stories today\n(For a side question about this conversation, use /btw <question>.)\nThe task runs in a separate session and results display here when done."
-      no_credentials: "◬ Cannot start background task: no valid credentials."
-      started: "🔄 Background task #{number} started: \"{preview}\""
-      task_id: "Task ID: {task_id}"
-      keep_chatting: "You can continue chatting — results will appear when done."
-      label: "Background task #{number}"
       complete: "✅ Background task #{number} complete"
-      prompt: "Prompt: \"{preview}\""
-      title_suffix: "(background #{number})"
-      no_response: "(No response generated)"
-    side_result:
-
-      complete: "{label} complete"
-      failed: "❌ {label} failed: {error}"
     btw:
 
-      usage: "Usage: /btw <question>\nExample: /btw which file was that error in?\nAnswers a quick question about this conversation without interrupting it.\n(For an independent background task, use /bg <prompt>.)"
-      no_credentials: "◬ Cannot answer side question: no valid credentials."
       header: "💬 /btw: \"{preview}\""
-      title_suffix: "(btw)"
-      no_answer: "(No answer generated)"
     bundles:
 
       unavailable: "Bundle subsystem unavailable: {error}"
-      none_installed: "No skill bundles installed."
-      create_hint: "Create one with: icebath bundles create <name> --skill <s1> --skill <s2>"
-      directory: "Directory: {dir}"
       title: "Skill Bundles"
-      installed_count: "({count} installed):"
-      default_desc: "Load {count} skills"
-      skills_count: "({count} skills)"
-      invoke_hint: "Invoke a bundle with /<slug>. Manage with `icebath bundles`."
-    browser:
-
-      engine_not_in_use: "⚠ browser.engine is 'lightpanda' but it is NOT in use: {reason}"
-      engine_lightpanda: "Engine: Lightpanda — {reason} (no screenshots)"
-      binary: "Binary: {path}"
-      binary_not_found: "⚠ lightpanda binary not found — {hint}"
-      scheme_missing: "(missing)"
-      unsupported_scheme: "⚠ Unsupported browser url scheme: {scheme} (expected one of: http, https, ws, wss)"
-      invalid_port: "⚠ Invalid port in browser url: {url}"
-      missing_host: "⚠ Missing host in browser url: {url}"
-      port_occupied: "⚠ Port {port} is occupied by another application that isn't a CDP browser"
-      port_occupied_detail: "(an IDE debugger or dev server may be using it) — launching on port {launch_port} instead..."
-      launching: "Chromium-family browser isn't running with remote debugging — attempting to launch..."
-      launch_failed: "⚠ Could not auto-launch a Chromium-family browser"
-      launch_manually: "Launch a Chromium-family browser manually:"
-      no_executable: "No supported Chromium-family browser executable found in this environment"
-      launched: "✓ Chromium-family browser launched and listening on port {port}"
-      not_responding: "⚠ Browser launched but port {port} isn't responding yet"
-      try_again: "Try again in a few seconds — the debug instance may still be starting"
-      already_listening: "✓ Chromium-family browser is already listening at {url}"
-      port_unreachable: "⚠ Port {port} is not reachable at {url}"
-      not_connected: "Browser not connected — start a Chromium-family browser with remote debugging and retry /browser connect"
-      connected: "🌐 Browser connected to live Chromium-family browser via CDP"
-      endpoint: "Endpoint: {url}"
-      already_default: "Browser is not connected to a live Chromium-family browser (already using default mode)"
-      disconnected: "🌐 Browser disconnected from live Chromium-family browser"
-      reverted: "Browser tools reverted to default mode (local headless or cloud provider)"
-      status_lightpanda: "🌐 Browser: local Lightpanda (lightpanda serve)"
-      status_lightpanda_note: "⚡ Lightpanda: faster navigation, no screenshot support"
-      status_auto: "🌐 Browser: local headless Chromium"
-      status_connected: "🌐 Browser: connected to live Chromium-family browser via CDP"
-      status_reachable: "Status: ✓ reachable"
-      status_unreachable: "Status: ⚠ not reachable (browser may not be running)"
-      status_cloud: "🌐 Browser: {provider} (cloud)"
-      status_connect_hint: "/browser connect      — connect to your live Chromium-family browser"
-      status_disconnect_hint: "/browser disconnect   — revert to default"
-      usage: "Usage: /browser connect|disconnect|status"
-      usage_connect: "connect      Connect browser tools to your live Chromium-family browser session"
-      usage_disconnect: "disconnect   Revert to default browser backend"
-      usage_status: "status       Show current browser mode"
-      remote_gateway: "/browser connect and /browser disconnect manage a Chromium-family browser on the gateway host — only available when connected to a local gateway."
-      checking: "Checking Chromium-family browser remote debugging at {url}..."
-      status_gateway_default: "🌐 Browser: the gateway's default browser backend (no live CDP connection)"
     heartbeat:
 
-      label: "Heartbeats"
       paused: "⏸ Heartbeat paused: {prompt}"
-      none_set: "No heartbeat set."
-      none_to_resume: "No heartbeat to resume."
-      resumed: "▶ Heartbeat resumed (every {interval}): {prompt}"
-      cleared: "✓ Heartbeat cleared."
-      usage: "Usage: /heartbeat every <interval> <prompt>   (e.g. /heartbeat every 10m Check CI)"
-      usage_also: "Also: /heartbeat status | pause | resume | clear"
-      interval_too_small: "Interval too small — minimum is {min_seconds}s."
-      prompt_required: "Usage: /heartbeat every <interval> <prompt> — the prompt is required."
-      invalid_label: "Invalid heartbeat"
-      set: "♥ Heartbeat set (every {interval}): {prompt}"
-      set_note: "Fires as a normal turn whenever the session is idle and the interval has elapsed. /heartbeat pause | resume | clear to manage; lives only while this Icebath process runs — use `icebath cron` for durable schedules."
     refine:
 
       nothing_yet: "Nothing to refine yet — send a message first."
       empty: "Nothing to refine yet — the conversation is empty."
       failed: "/refine failed to start: {error}"
-      focus_suffix: " (focus: {focus})"
-      started: "⚗ Reviewing this conversation in the background{focus} — any memory/skill updates will be reported when done."
     review:
 
       nothing_yet: "Nothing to review yet — send a message first."
@@ -2985,10 +2468,6 @@ cli:
       label: "Goals"
       continuing: "Continuing now — taking the next step."
       send_to_kick: "Send any message to kick off the next step."
-    loop:
-
-      label: "Loops"
-      goal_defers_note: "Note: an active /goal is driving this session — loop wakeups defer until the goal finishes, pauses, or parks."
     subgoal:
 
       no_goal: "No active goal. Set one with /goal <text>."
@@ -3002,104 +2481,18 @@ cli:
     skin:
 
       unavailable: "Skin engine not available."
-      current: "Current skin: {name}"
-      available_header: "Available skins:"
-      usage: "Usage: /skin <name>"
-      custom_hint: "Custom skins: drop a YAML file in {dir}/skins/"
-      unknown: "Unknown skin: {name}"
-      available: "Available: {names}"
-      saved_suffix: " (saved)"
-      set_to: "Skin set to: {name}{saved}"
-      banner_note: "Note: banner colors will update on next session start."
       colors_updated: "Prompt + TUI colors updated."
-    prompt_compose:
-
-      editor_header: "#! Compose your prompt below. Lines starting with '#!' are ignored.\n#! Save and quit to send; leave empty to cancel."
-      editor_failed: "◬ Could not open editor: {error}"
-      empty: "◈ Empty prompt — nothing sent."
-    focus:
-
-      usage: "Usage: /focus [on|off|status]"
-    toggle:
-
-      save_failed: "Failed to save {setting} setting to config.yaml"
-    footer:
-
-      usage: "/footer [on|off|status]"
-      label: "Runtime footer"
-      fields: "Fields: {fields}"
-    timestamps:
-
-      usage: "/timestamps [on|off|status]"
-      label: "Message timestamps"
     update:
 
-      managed_action: "update Icebath Agent"
-      choice_update: "Update Now"
-      choice_update_desc: "exit the current session and update Icebath Agent"
-      choice_cancel: "Cancel"
-      choice_cancel_desc: "keep the current session"
       title: "󰆧  Update Icebath Agent"
-      detail: "This will exit the current session and run `icebath update`."
-      cancelled: "🟡 /update cancelled."
-      launching: "󰆧 Launching update..."
-    voice:
-
-      unknown_subcommand: "Unknown voice subcommand: {subcommand}"
-      usage: "Usage: /voice [on|off|tts|status]"
-    wake:
-
-      unknown_subcommand: "Unknown wake subcommand: {subcommand}"
-      usage: "Usage: /wake [on|off|status]"
-      enabled_in_config: "Wake word enabled in config (wake_word.enabled: true)."
-      disabled_in_config: "Wake word disabled in config (wake_word.enabled: false)."
-  tip_line: "✦ Tip: {tip}"
-  banner:
-
-    context_too_low: "⚠️  Context length is only {tokens} tokens — this is likely too low for agent use with tools."
-    context_minimum: "Icebath needs at least {tokens} tokens. Tool schemas + system prompt use a large fixed prefix."
-    fix_ollama: "Ollama fix: OLLAMA_CONTEXT_LENGTH={tokens} ollama serve"
-    fix_lm_studio: "LM Studio fix: Set context length in model settings → reload model"
-    fix_local_server: "Fix: start your server with at least {tokens_k}K context (llama.cpp: -c {tokens}), or set model.ollama_num_ctx in config.yaml to the window it really serves"
-    fix_config: "Fix: Set model.context_length in config.yaml, or increase your server's context setting"
-    project_skills_loaded: "◆ {count} project skill(s) loaded from this repo"
-    project_skills_untrusted: "◆ {count} project skill(s) found in {root} but not loaded — run `icebath skills trust` to enable them."
-  command:
-
-    ambiguous: "Ambiguous command: {command}"
-    did_you_mean_many: "Did you mean: {candidates}?"
   config:
 
     title: "❆ Configuration"
-    loaded: "(loaded)"
-    not_found: "(not found)"
     microsoft_entra_id: "Microsoft Entra ID"
     google_vertex_oauth: "Google OAuth (Vertex AI)"
     key_cmd_token: "key_cmd token (command)"
     minimax_oauth: "MiniMax OAuth"
     token_provider: "Token provider"
-    api_key_not_set: "Not set!"
-    value_not_set: "not set"
-    section_model: "Model"
-    section_terminal: "Terminal"
-    section_agent: "Agent"
-    section_session: "Session"
-    label_model: "Model:"
-    label_base_url: "Base URL:"
-    label_api_key: "API Key:"
-    label_environment: "Environment:"
-    label_ssh_target: "SSH Target:"
-    label_working_dir: "Working Dir:"
-    label_timeout: "Timeout:"
-    label_max_turns: "Max Turns:"
-    label_toolsets: "Toolsets:"
-    label_verbose: "Verbose:"
-    label_started: "Started:"
-    label_config_file: "Config File:"
-  context:
-
-    header: "🧠 Context Usage — {model}"
-    compute_failed: "◈ Could not compute context breakdown: {error}"
   error:
 
     # Chat-panel copy for a failed model request (icebath_cli/cli_chat_error_copy.py).
@@ -3116,9 +2509,6 @@ cli:
     the_current_model: "the current model"
     with_details: "{lead}\nDetails: {details}"
     agent_init_failed: "Icebath couldn't start the model connection: {error}. Your message was not sent. Run `icebath doctor` to check the setup, or /model to pick a different provider."
-  gateway:
-
-    starting: "Starting Icebath Gateway (messaging platforms)..."
   gateway_status:
 
     header: "❆ Gateway Status"
@@ -3132,82 +2522,15 @@ cli:
     to_configure: "To configure the gateway:"
     step_env_vars: "1. Set environment variables:"
     step_config: "2. Or configure settings in {path}"
-  help:
-
-    header: "❆ Available Commands"
-    section_session: "Session"
-    section_configuration: "Configuration"
-    section_tools_skills: "Tools & Skills"
-    section_info: "Info"
-    section_exit: "Exit"
-    section_context: "Context"
-    section_background_automation: "Background & Automation"
-    usage_suffix: "{description} (usage: /{command} {args})"
-    alias_suffix: "{description} (alias for /{command})"
-    skill_commands: "Skill Commands"
-    skill_bundles: "Skill Bundles"
-    quick_commands: "Quick Commands"
-    n_installed: "{count} installed"
-    n_configured: "{count} configured"
-    n_skills: "{count} skills"
-    load_n_skills: "Load {count} skills"
-    no_skill_commands: "No skill commands installed."
-    matching_query: "matching '{query}'"
-    to_list_them: "to list them"
-    filtered_by: "Filtered by '{query}' — run /help for the full list."
-    tip_line: "Tip: /help skills lists skill commands · /help <text> filters · Ctrl+P opens the command palette"
-    multiline_hint: "Multi-line: Ctrl+J, Alt+Enter, or \\\\+Enter for a new line"
-    draft_editor_hint: "Draft editor: Ctrl+G (Alt+G in VSCode/Cursor)"
-    attach_image_hint: "Attach image: /image {path} or start your prompt with a local image path"
-    paste_image_hint: "Paste image: Alt+V (or /paste)"
   insights:
 
     no_session_data: "No session data yet."
   plugin:
 
     command_error: "Plugin command error: {error}"
-  quick:
-
-    no_target: "Quick command '{command}' has no target defined"
-    unsupported_type: "Quick command '{command}' has unsupported type (supported: 'exec', 'alias')"
-    no_command: "Quick command '{command}' has no command defined"
-    no_output: "Command returned no output"
-    timed_out: "Quick command timed out (30s)"
-    error: "Quick command error: {error}"
-  reload_mcp:
-
-    title: "⚠️  /reload-mcp — Prompt cache invalidation warning"
-    detail: "Reloading MCP servers rebuilds the tool set for this session and\ninvalidates the provider prompt cache. The next message will\nre-send full input tokens (can be expensive on long-context or\nhigh-reasoning models)."
-    choice_once: "Approve Once"
-    choice_once_hint: "reload now"
-    choice_always: "Always Approve"
-    choice_always_hint: "reload now and silence this prompt permanently"
-    choice_cancel: "Cancel"
-    choice_cancel_hint: "leave MCP tools unchanged"
-    unchanged: "MCP tools unchanged."
-    always_msg: "🔒 Future /reload-mcp calls will run without confirmation."
-    once_verb: "reloading"
-    reloading: "🔄 Reloading MCP servers..."
-    reconnected: "♻️  Reconnected: {names}"
-    added: "➕ Added: {names}"
-    removed: "➖ Removed: {names}"
-    tools_available: "🔧 {tools} tool(s) available from {servers} server(s)"
-    agent_updated: "✅ Agent updated — {count} tool(s) available"
-  reload_skills:
-
-    reloading: "🔄 Reloading skills..."
-    total: "📚 {count} skill(s) available"
-    added_header: "➕ Added Skills:"
-    removed_header: "➖ Removed Skills:"
   skills:
 
-    bundle_load_failed: "Failed to load bundle for {command}"
-    loading_bundle: "Loading bundle: {name} ({count} skills)"
     skipped_missing: "Skipped missing skills: {names}"
-    stacked_load_failed: "Failed to load stacked skills for {command}"
-    loading_stacked: "Loading {count} stacked skills: {names}"
-    loading_skill: "Loading skill: {name}"
-    skill_load_failed: "Failed to load skill for {command}"
   tools:
 
     none_available: "◈ No tools available"
@@ -3215,50 +2538,10 @@ cli:
     total: "Total: {count} tools"
   toolsets:
 
-    header: "✓ Available Toolsets"
+    header: "❆ Available Toolsets"
     currently_enabled_legend: "(*) = currently enabled"
     tip_enable_all: "Tip: Use 'all' or '*' to enable all toolsets"
     example: "Example: icebath chat --toolsets web,terminal"
-  usage:
-
-    unknown_subcommand: "Unknown /usage subcommand: {args}. Try /usage or /usage reset [--force]."
-    reset_wrong_provider: "Banked usage resets are only available on the openai-codex provider."
-    reset_switch_hint: "Switch with `/model` or `icebath auth` first."
-    checking_reset_credits: "⏳ Checking banked reset credits..."
-    codex_timeout: "❌ Timed out talking to the Codex backend — try again shortly."
-    no_api_calls: "◈ No API calls made yet in this session."
-    header_session: "📊 Session Token Usage"
-    label_model: "Model:"
-    label_input_tokens: "Input tokens:"
-    label_output_tokens: "Output tokens:"
-    label_reasoning_subset: "↳ Reasoning (subset):"
-    label_prompt_tokens_total: "Prompt tokens (total):"
-    label_completion_tokens: "Completion tokens:"
-    label_total_tokens: "Total tokens:"
-    label_api_calls: "API calls:"
-    label_session_duration: "Session duration:"
-    label_current_context: "Current context:"
-    label_messages: "Messages:"
-    label_compressions: "Compressions:"
-  verbose:
-
-    label_off: "Tool progress: OFF"
-    detail_off: "silent mode, just the final response."
-    label_new: "Tool progress: NEW"
-    detail_new: "show each new tool (skip repeats)."
-    label_all: "Tool progress: ALL"
-    detail_all: "show every tool call."
-    label_verbose: "Tool progress: VERBOSE"
-    detail_verbose: "full args, results, and think blocks."
-  whoami:
-
-    you_label: "You:"
-    you_value: "cli (local terminal)"
-    user_label: "User:"
-    tier_label: "Tier:"
-    tier_value: "unrestricted"
-    slash_commands_label: "Slash commands:"
-    slash_commands_value: "all available"
   worktree:
 
     shallow_clone_keeping: "⚠ Shallow clone — cannot verify push state, keeping: {path}"

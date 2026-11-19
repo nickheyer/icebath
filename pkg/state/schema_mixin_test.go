@@ -363,3 +363,8 @@ func scalarCount(t *testing.T, conn SQLiteConn, query string) int64 {
 	}
 	return row[0].(int64)
 }
+
+// Reports whether a table of the given name exists
+func sqliteTableExists(ctx context.Context, conn SQLiteConn, name string) (bool, error) {
+	return rowExists(ctx, conn, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", name)
+}

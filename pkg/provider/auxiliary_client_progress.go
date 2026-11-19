@@ -632,20 +632,6 @@ func auxAggregateChatStreamAsync(ctx context.Context, chunks AuxChatStream, mode
 	return acc.Finish()
 }
 
-// Async create for stream only providers, streaming and aggregating the chunks
-func auxAcreateWithStream(ctx context.Context, client AuxClient, kwargs map[string]any) (any, error) {
-	streamKwargs, model, ceiling := auxStreamRequestPlan(kwargs, client)
-	chunks, err := client.CreateChatCompletion(ctx, streamKwargs)
-	if err != nil {
-		return nil, err
-	}
-	stream, ok := chunks.(AuxChatStream)
-	if !ok {
-		return chunks, nil
-	}
-	return auxAggregateChatStreamAsync(ctx, stream, model, &ceiling)
-}
-
 // Async create that streams and re-aggregates under a progress hook or a stream only provider
 func auxAcreateWithProgress(ctx context.Context, client AuxClient, kwargs map[string]any, task string, forceStream bool) (any, error) {
 	kwargs = BypassChatSDKRequestTransform(kwargs, client)

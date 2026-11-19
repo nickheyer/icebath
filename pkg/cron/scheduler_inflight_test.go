@@ -76,7 +76,7 @@ func TestReleaseHonoursTheRegistrationOwner(t *testing.T) {
 	if len(details) != 1 || details[0].WorkerPID == nil || *details[0].WorkerPID != 4321 || !details[0].RestartSafe || details[0].ElapsedS == nil {
 		t.Fatalf("details %+v", details)
 	}
-	if c := sa.getRestartWaitCronCounts(context.Background()); c != (RestartWaitCounts{RestartSafe: 1}) {
+	if c := GetRestartWaitCronCounts(home.WithOverride(context.Background(), sa.Home())); c != (RestartWaitCronCounts{RestartSafe: 1}) {
 		t.Fatalf("counts %+v", c)
 	}
 	sa.releaseRunningJob(id, "", first)
@@ -105,7 +105,7 @@ func TestWedgedRunsUseTheIntervalAllowance(t *testing.T) {
 	if w := sa.getWedgedJobIDs(context.Background()); len(w) != 1 || !w["fast"] {
 		t.Fatalf("wedged %v", w)
 	}
-	if c := sa.getRestartWaitCronCounts(context.Background()); c != (RestartWaitCounts{Awaitable: 1, Wedged: 1}) {
+	if c := GetRestartWaitCronCounts(home.WithOverride(context.Background(), sa.Home())); c != (RestartWaitCronCounts{Awaitable: 1, Wedged: 1}) {
 		t.Fatalf("counts %+v", c)
 	}
 	now = start.Add(121 * time.Minute)

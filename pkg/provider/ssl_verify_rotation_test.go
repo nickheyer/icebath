@@ -121,12 +121,10 @@ func TestRotationRepairAndWarningHappenOnce(t *testing.T) {
 		reloads++
 		return reloadCABundleFromSearch()
 	}
-	h := t.TempDir()
 	for range 5 {
 		if verify := ResolveTLSVerify(nil, "", nil, ""); verify.Insecure || verify.Config == nil {
 			t.Fatal("a verifying default context")
 		}
-		SubprocessVerifyBundle(h)
 	}
 	if reloads != 1 || len(sink.containing("TLS trust: certifi's CA bundle")) != 1 {
 		t.Fatalf("one repair and one warning, got %d reloads", reloads)
@@ -158,30 +156,6 @@ func TestUnrecoverableBundleHandsOverThePlatformContext(t *testing.T) {
 	}
 	if _, err := getThrough(verify.Config, srv.URL); err == nil {
 		t.Fatal("the platform context still verifies certificates")
-	}
-}
-
-func TestRequestsVerifyHandsOverABundleThatExists(t *testing.T) {
-	_, bundle := privateTLSServer(t)
-	rotation := rotatedCABundle(t, bundle, true)
-	got := SubprocessVerifyBundle(t.TempDir())
-	if got != rotation.live || !fileExists(got) {
-		t.Fatalf("the live bundle is handed over, got %q", got)
-	}
-}
-
-func TestRequestsVerifyNeverHandsOverTheDeletedBundle(t *testing.T) {
-	_, bundle := privateTLSServer(t)
-	rotation := rotatedCABundle(t, bundle, false)
-	reloadCABundle = func() string { return "" }
-	got := SubprocessVerifyBundle(t.TempDir())
-	if got == rotation.stale {
-		t.Fatal("the dead path is never handed over")
-	}
-	if got != "" {
-		if _, err := os.Stat(got); err != nil {
-			t.Fatalf("a handed over bundle exists, got %q", got)
-		}
 	}
 }
 

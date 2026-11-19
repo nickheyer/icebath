@@ -5,10 +5,8 @@ package selfupdate
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
@@ -21,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/skills"
 )
 
 // One named home or machine maintenance step
@@ -30,30 +27,13 @@ type PostUpdateStep struct {
 	Run  func(ctx context.Context) (map[string]any, error)
 }
 
-// Home steps in their order, boot bootstrap gating them with the per home record
-var HomeSteps = []PostUpdateStep{
+// Home steps boot runs in their order, gated by the per home record, every entry point syncing skills itself
+var BootHomeSteps = []PostUpdateStep{
 	{"adopt_blessed_checkout", func(ctx context.Context) (map[string]any, error) { return StepAdoptBlessedCheckout(ctx, "") }},
 	{"migrate_config", StepMigrateConfig},
-	{"sync_skills", StepSyncSkills},
 	{"state_db_guard", StepStateDBGuard},
 	{"drop_live_plugin_catalog", StepDropLivePluginCatalog},
 	{"expose_cli", StepExposeCLI},
-}
-
-// Home steps boot runs, every entry point already syncing skills itself
-var BootHomeSteps = bootHomeStepsOf(HomeSteps)
-
-// Machine steps only the explicit scope CLI runs
-var MachineSteps = []PostUpdateStep{{"provision_runtimes", StepProvisionRuntimes}}
-
-func bootHomeStepsOf(steps []PostUpdateStep) []PostUpdateStep {
-	out := []PostUpdateStep{}
-	for _, s := range steps {
-		if s.Name != "sync_skills" {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // Collaborators of the config migration step, the module attributes tests patch
@@ -73,19 +53,11 @@ var (
 	}
 )
 
-// Collaborators of the runtime provisioning step, the pm attributes tests patch
-var (
-	pmDriftFn               = func(ctx context.Context) (*pm.DriftReport, error) { return pm.Drift(ctx, true) }
-	pmSealedFn              = pm.Sealed
-	pmLazyInstallsAllowedFn = pm.LazyInstallsAllowed
-	pmSyncVenvFn            = func(ctx context.Context) error {
-		return pm.SyncVenv(ctx, pm.SyncVenvOptions{Explicit: true, EvictIncompatiblePlugins: true})
-	}
-	pmEnsureFn = func(ctx context.Context, name string) error {
-		_, err := pm.Ensure(ctx, name, pm.EnsureOptions{Explicit: true})
-		return err
-	}
-)
+// Explicit pm install of one package, the pm attribute tests patch
+var pmEnsureFn = func(ctx context.Context, name string) error {
+	_, err := pm.Ensure(ctx, name, pm.EnsureOptions{Explicit: true})
+	return err
+}
 
 // Puts every backup that still exists back over its original, the restored originals returned
 func restoreBackups(backups []backupPair) []string {
@@ -150,27 +122,6 @@ func StepMigrateConfig(ctx context.Context) (map[string]any, error) {
 		}
 	}
 	return map[string]any{"ok": true, "migrated": fmt.Sprintf("%d->%d", current, latest)}, nil
-}
-
-// Length of a list valued result field, zero for anything else
-func listLength(v any) int {
-	if v == nil {
-		return 0
-	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
-		return rv.Len()
-	}
-	return 0
-}
-
-// Syncs bundled skills into the active home, content diffed and convergent
-func StepSyncSkills(ctx context.Context) (map[string]any, error) {
-	result, err := skills.SyncSkills(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"ok": true, "copied": listLength(result["copied"]), "updated": listLength(result["updated"])}, nil
 }
 
 // Verifies the active home's state.db is intact, damage reported loudly and never repaired here
@@ -277,46 +228,6 @@ func StepAdoptBlessedCheckout(ctx context.Context, projectRoot string) (map[stri
 	return map[string]any{"ok": true, "adopted": root}, nil
 }
 
-// Explicit refresh of PM's drifted packages, never selected by boot
-func StepProvisionRuntimes(ctx context.Context) (map[string]any, error) {
-	report, err := pmDriftFn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if report == nil || len(report.Names) == 0 {
-		return map[string]any{"ok": true, "skipped": "current"}, nil
-	}
-	sealed, err := pmSealedFn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if sealed {
-		return map[string]any{"ok": true, "skipped": "sealed"}, nil
-	}
-	if !pmLazyInstallsAllowedFn() {
-		return map[string]any{"ok": true, "skipped": "lazy-installs-disabled"}, nil
-	}
-	refreshed, errors := []any{}, []string{}
-	for _, name := range report.Names {
-		var err error
-		if name == "venv" {
-			err = pmSyncVenvFn(ctx)
-		} else {
-			err = pmEnsureFn(ctx, name)
-		}
-		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("provision_runtimes: %s failed: %s", name, err.Error()))
-			errors = append(errors, name+": "+err.Error())
-			continue
-		}
-		refreshed = append(refreshed, name)
-	}
-	if len(errors) > 0 {
-		return map[string]any{"ok": false, "error": strings.Join(errors, "; "), "refreshed": refreshed}, nil
-	}
-	return map[string]any{"ok": true, "refreshed": refreshed}, nil
-}
-
 // Publishes the durable commands, over this checkout
 func StepExposeCLI(ctx context.Context) (map[string]any, error) {
 	result, err := pm.ExposeCLI(ctx, pm.RepoRoot(), true)
@@ -370,73 +281,4 @@ func runStepGuarded(ctx context.Context, step PostUpdateStep) (result map[string
 		}
 	}()
 	return step.Run(ctx)
-}
-
-var postUpdateScopes = map[string]bool{"home": true, "machine": true, "all": true}
-
-// Argparse of icebath_cli.post_update, the scope and an exit code when the arguments are rejected
-func parsePostUpdateArgs(argv []string, stdout, stderr io.Writer) (string, int, bool) {
-	const usage = "usage: icebath_cli.post_update [-h] [--scope {home,machine,all}]\n"
-	scope := "all"
-	for i := 0; i < len(argv); i++ {
-		arg := argv[i]
-		switch {
-		case arg == "-h" || arg == "--help":
-			fmt.Fprint(stdout, usage+"\noptions:\n  -h, --help            show this help message and exit\n  --scope {home,machine,all}\n")
-			return "", 0, true
-		case arg == "--scope":
-			if i+1 >= len(argv) {
-				fmt.Fprint(stderr, usage+"icebath_cli.post_update: error: argument --scope: expected one argument\n")
-				return "", 2, true
-			}
-			i++
-			scope = argv[i]
-		case strings.HasPrefix(arg, "--scope="):
-			scope = strings.TrimPrefix(arg, "--scope=")
-		default:
-			fmt.Fprintf(stderr, "%sicebath_cli.post_update: error: unrecognized arguments: %s\n", usage, strings.Join(argv[i:], " "))
-			return "", 2, true
-		}
-		if !postUpdateScopes[scope] {
-			fmt.Fprintf(stderr, "%sicebath_cli.post_update: error: argument --scope: invalid choice: '%s' (choose from 'home', 'machine', 'all')\n", usage, scope)
-			return "", 2, true
-		}
-	}
-	return scope, 0, false
-}
-
-// Runs the selected maintenance registry and reports its failures, exit 1 when any step failed
-func PostUpdateMain(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
-	scope, code, done := parsePostUpdateArgs(argv, stdout, stderr)
-	if done {
-		return code
-	}
-	var selected []PostUpdateStep
-	if scope == "home" || scope == "all" {
-		selected = append(selected, HomeSteps...)
-	}
-	if scope == "machine" || scope == "all" {
-		selected = append(selected, MachineSteps...)
-	}
-	results := RunSteps(ctx, selected)
-	failed := false
-	for _, step := range selected {
-		res := results[step.Name]
-		ok := config.PyTruthy(res["ok"])
-		if !ok {
-			failed = true
-		}
-		state := "ok"
-		if !ok {
-			state = fmt.Sprintf("FAILED (%v)", res["error"])
-		}
-		if skipped := res["skipped"]; config.PyTruthy(skipped) {
-			state = fmt.Sprintf("skipped (%v)", skipped)
-		}
-		fmt.Fprintf(stdout, "  post-update %s: %s\n", step.Name, state)
-	}
-	if failed {
-		return 1
-	}
-	return 0
 }

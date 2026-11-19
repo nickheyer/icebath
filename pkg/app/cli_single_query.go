@@ -284,15 +284,13 @@ func installSingleQuerySignalHandlers(c *CLI) {
 
 // Neutralizes every stdout writing callback so -Q stdout carries only the final response
 func configureQuietAgent(a *GatewayAgent) {
-	a.SetQuietMode(true)
 	a.SetSuppressStatusOutput(true)
 	a.silencePresentation()
 	a.SetToolProgressMode("off")
 }
 
 // Runs the one shot turn and exits with its code
-func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON bool) {
-	c.singleQueryMode = true
+func runSingleQueryMode(c *CLI, query, image string, quiet, streamJSON bool) {
 	_ = os.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
 	if os.Getenv("ICEBATH_KANBAN_TASK") != "" && !registerKanbanWorker(c) {
 		fmt.Fprintln(stderrWriter(), i18n.T(c.ctx, "cli.single_query.kanban_run_reclaimed", "", nil))

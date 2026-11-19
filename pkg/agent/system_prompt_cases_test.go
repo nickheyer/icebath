@@ -314,6 +314,34 @@ func TestMemoryProviderSystemPromptGating(t *testing.T) {
 	})
 }
 
+func TestPromptMemoryPartsStoreBlocksFollowFlags(t *testing.T) {
+	store := memory.NewStore(t.TempDir(), memory.DefaultMemoryCharLimit, memory.DefaultUserCharLimit, true, true)
+	if _, err := store.Add(context.Background(), "memory", "Project uses Go"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Add(context.Background(), "user", "User prefers terse answers"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.LoadFromDisk(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	a := spAgent(t)
+	a.memoryStore, a.memoryEnabled, a.userProfileEnabled = store, true, true
+	parts := memoryParts(context.Background(), a)
+	if len(parts) != 2 || !strings.Contains(parts[0], "Project uses Go") || !strings.Contains(parts[1], "User prefers terse answers") {
+		t.Fatalf("parts %q", parts)
+	}
+	a.memoryEnabled = false
+	parts = memoryParts(context.Background(), a)
+	if len(parts) != 1 || !strings.Contains(parts[0], "User prefers terse answers") {
+		t.Fatalf("parts %q", parts)
+	}
+	a.memoryStore, a.memoryEnabled = nil, true
+	if got := memoryParts(context.Background(), a); len(got) != 0 {
+		t.Fatalf("no store must yield no parts, got %q", got)
+	}
+}
+
 func executionGuidancePrompt(t *testing.T, model string, guidance any, enforcement any, names ...string) string {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -752,6 +780,37 @@ func TestNamedProfileHintIntegration(t *testing.T) {
 		prompt := fullPrompt(profilePrompt(t))
 		if !strings.Contains(prompt, "Active Icebath profile: default.") || !strings.Contains(prompt, "under "+root+"/profiles/<name>/.") {
 			t.Fatalf("prompt %q", prompt)
+		}
+	})
+}
+
+func TestResolveActiveProfileName(t *testing.T) {
+	ctx := context.Background()
+	t.Run("default when home is root", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), ".icebath")
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("ICEBATH_HOME", root)
+		if got := ambientFileSafetyProfileName(ctx); got != "default" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("named profile under the root", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), ".icebath")
+		profile := filepath.Join(root, "profiles", "coder")
+		if err := os.MkdirAll(profile, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("ICEBATH_HOME", profile)
+		if got := ambientFileSafetyProfileName(ctx); got != "coder" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("falls back to default on resolution failure", func(t *testing.T) {
+		t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), "bad\xed\xa0\x80"))
+		if got := ambientFileSafetyProfileName(ctx); got != "default" {
+			t.Fatalf("got %q", got)
 		}
 	})
 }

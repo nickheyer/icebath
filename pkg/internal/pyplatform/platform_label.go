@@ -10,12 +10,6 @@ import (
 	"sync"
 )
 
-// Python platform.version of this host, the kernel build text or the Windows version triple
-func Version() string { return version() }
-
-// Python platform.node of this host, empty when the name cannot be read
-func Node() string { return node() }
-
 // Python platform.platform of this host with default arguments, computed once per process
 var Platform = sync.OnceValue(platformLabel)
 

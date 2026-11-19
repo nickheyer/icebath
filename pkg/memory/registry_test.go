@@ -367,15 +367,15 @@ func TestRegistryWarmAndDiscoverBundled(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	ctx := context.Background()
-	if WarmMemoryProvider(ctx, nil, "") {
+	if ImportMemoryProviderModule(ctx, nil, "") {
 		t.Fatal("warmed with no provider configured")
 	}
 	writeConfig(t, h, "memory:\n  provider: retaindb\n")
-	if !WarmMemoryProvider(ctx, nil, "") || WarmMemoryProvider(ctx, nil, "nope") {
+	if !ImportMemoryProviderModule(ctx, nil, "") || ImportMemoryProviderModule(ctx, nil, "nope") {
 		t.Fatal("warm resolution wrong")
 	}
 	RegisterProvider(ProviderRegistration{Name: "usermem", Source: SourceUser, Home: h, Dir: filepath.Join(h, "plugins", "usermem"), New: regFactory("usermem")})
-	if WarmMemoryProvider(ctx, nil, "usermem") {
+	if ImportMemoryProviderModule(ctx, nil, "usermem") {
 		t.Fatal("user provider warmed in process")
 	}
 	var names []string
@@ -428,4 +428,11 @@ func listedProviderNames(ctx context.Context) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// Replaces the plugin manager of the home in effect as the provider skill registry, nil restores it
+func SetPluginSkillRegistry(r PluginSkillRegistry) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	skillRegistry = r
 }

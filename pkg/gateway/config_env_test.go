@@ -88,7 +88,7 @@ func TestRelayExclusiveSweepLogLevelsAndMarkerCleanup(t *testing.T) {
 	logs := captureLogs(t)
 	cfg := loadLayers(t, ctx, h)
 	cfg.Platforms[PlatformSlack].Extra = map[string]any{}
-	applyEnvOverrides(ctx, cfg, "")
+	applyEnvOverrides(ctx, cfg)
 	out := logs.String()
 	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "platform 'telegram' even though") ||
 		!strings.Contains(out, "level=INFO msg=\"Relay connector is configured via GATEWAY_RELAY_URL; disabling directly-connected platform 'slack'.\"") {
@@ -116,7 +116,7 @@ func TestEnvKeyDoesNotReenableExplicitlyDisabledListeners(t *testing.T) {
 	t.Setenv("WEBHOOK_SECRET", "shared-secret")
 	t.Setenv("MSGRAPH_WEBHOOK_ENABLED", "true")
 	t.Setenv("MSGRAPH_WEBHOOK_PORT", "9998")
-	applyEnvOverrides(ctx, cfg, "")
+	applyEnvOverrides(ctx, cfg)
 	api, wh, mg := cfg.Platforms[PlatformAPIServer], cfg.Platforms[PlatformWebhook], cfg.Platforms[PlatformMSGraphWebhook]
 	if api.Enabled || api.Extra["key"] != "secret-key-at-least-16" || wh.Enabled || mg.Enabled {
 		t.Fatalf("explicit disables hold %+v %+v %+v", api, wh, mg)
@@ -224,20 +224,13 @@ func TestBundledEnvRowsRunWithoutTheirPlugin(t *testing.T) {
 	}
 }
 
-func TestExplicitDisableWarnsOnceAndStatusReadsStaySilent(t *testing.T) {
+func TestExplicitDisableWarnsOnce(t *testing.T) {
 	ctx, _ := yamlHome(t, "platforms:\n  relay:\n    enabled: false\n")
 	t.Setenv("GATEWAY_RELAY_URL", "https://r")
 	logs := captureLogs(t)
 	explicitDisableWarned.Lock()
 	delete(explicitDisableWarned.set, PlatformRelay)
 	explicitDisableWarned.Unlock()
-	enabled, connected, ok, err := BuiltinPlatformStatus(ctx, "relay", map[string]any{"platforms": map[string]any{"relay": map[string]any{"enabled": false}}})
-	if err != nil || !ok || enabled || !connected || strings.Contains(logs.String(), "explicitly disabled") || strings.Contains(logs.String(), "Failed to load plugin") {
-		t.Fatalf("status read %v %v %v %v %q", enabled, connected, ok, err, logs.String())
-	}
-	if _, _, ok, _ := BuiltinPlatformStatus(ctx, "myplugin", map[string]any{}); ok {
-		t.Fatal("plugin only id")
-	}
 	for range 2 {
 		if cfg := loadFull(t, ctx); cfg.Platforms[PlatformRelay].Enabled {
 			t.Fatal("explicit disable wins")

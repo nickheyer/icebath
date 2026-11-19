@@ -210,7 +210,7 @@ func TestAsyncStreamAggregationAsyncStreamIsConsumedWithAsyncFor(t *testing.T) {
 func TestAsyncStreamAggregationAcreateWithStreamPassesStreamKwargs(t *testing.T) {
 	stream := &auxSliceStream{chunks: []map[string]any{auxChunk(map[string]any{"content": "ok"}, "stop", nil)}}
 	client := &auxScriptedClient{create: func(map[string]any) (any, error) { return stream, nil }}
-	got, err := auxAcreateWithStream(context.Background(), client, map[string]any{"model": "m1", "messages": []any{}, "timeout": 30})
+	got, err := auxAcreateWithProgress(context.Background(), client, map[string]any{"model": "m1", "messages": []any{}, "timeout": 30}, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}

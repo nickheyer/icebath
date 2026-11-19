@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -36,9 +35,6 @@ var (
 var auxLoadConfigReadonlyFn = func(ctx context.Context) (config.Tree, error) {
 	return config.LoadReadonly(ctx, home.Dir(ctx), nil)
 }
-
-// Patched auth.json path of a test, empty to use the active profile's file
-var auxAuthJSONPathOverride string
 
 // OpenRouter attribution headers every OpenRouter call carries
 func auxORHeadersBase() map[string]string {
@@ -209,14 +205,6 @@ func auxAIGatewayHeaders() map[string]string {
 
 // AIGatewayHeaders is the AI Gateway attribution header set for callers outside the package
 func AIGatewayHeaders() map[string]string { return auxAIGatewayHeaders() }
-
-// Active profile's auth.json at call time so a multiplexed secondary never reads the launch profile's token
-func auxAuthJSONPath(ctx context.Context) string {
-	if auxAuthJSONPathOverride != "" {
-		return auxAuthJSONPathOverride
-	}
-	return filepath.Join(home.Dir(ctx), "auth.json")
-}
 
 // True when the URL host is a MiniMax family host serving both API surfaces
 func auxIsDualSurfaceAnthropicHost(raw string) bool {

@@ -84,7 +84,7 @@ func ouTakeoverChild() int {
 	return code
 }
 
-// Points the takeover spawn at this test binary and resets the once per process takeover memo
+// Points the takeover spawn at this test binary
 func ouUseTestTakeover(t *testing.T, env map[string]string) string {
 	t.Helper()
 	home := filepath.Join(t.TempDir(), "isolated home 日本 café")
@@ -101,23 +101,28 @@ func ouUseTestTakeover(t *testing.T, env map[string]string) string {
 	for key, value := range env {
 		t.Setenv(ouHelperEnv+"_"+key, value)
 	}
-	previousArgv, previousArgs := takeoverArgv, os.Args
+	previousArgv := takeoverArgv
 	takeoverArgv = func() ([]string, error) {
-		return []string{previousArgs[0], "-test.run=^TestOUTakeoverHelper$", "-test.count=1"}, nil
+		return []string{os.Args[0], "-test.run=^TestOUTakeoverHelper$", "-test.count=1"}, nil
 	}
-	os.Args = []string{previousArgs[0], "update", "--gateway"}
-	takeoverMemo.Lock()
-	takeoverMemo.set, takeoverMemo.code = false, 0
-	takeoverMemo.Unlock()
 	t.Cleanup(func() {
-		takeoverArgv, os.Args = previousArgv, previousArgs
-		takeoverMemo.Lock()
-		takeoverMemo.set, takeoverMemo.code = false, 0
-		takeoverMemo.Unlock()
+		takeoverArgv = previousArgv
 		SetUpdateReceiptHooks(UpdateReceiptHooks{})
 		SetUpdateLockHooks(UpdateLockHooks{})
 	})
 	return home
+}
+
+// Post swap hand off file of a shipped updater whose payload carries the fields the takeover child checks
+func ouHandoff(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "handoff.json")
+	payload := `{"pre_update_snapshot_id": null, "pre_update_version": null, "gateway_mode": true, ` +
+		`"plan": {"install_method": "git"}, "receipt": {"update_id": "old-correlation", "outcome": "running", "plan": {"install_method": "git"}}}`
+	if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // Exit code a returned SystemExit carries
@@ -130,7 +135,7 @@ func ouExitCode(t *testing.T, err error) int {
 	return exit.Code
 }
 
-func TestOUTakeoverWaitsPropagatesStatusAndNeverReentersOldCode(t *testing.T) {
+func TestOUTakeoverWaitsAndPropagatesStatus(t *testing.T) {
 	for _, status := range []int{0, 7} {
 		for _, encoding := range []string{"utf-8", "utf-8-sig"} {
 			t.Run(fmt.Sprintf("%d-%s", status, encoding), func(t *testing.T) {
@@ -139,35 +144,21 @@ func TestOUTakeoverWaitsPropagatesStatusAndNeverReentersOldCode(t *testing.T) {
 					ack = "\xef\xbb\xbf" + ack
 				}
 				home := ouUseTestTakeover(t, map[string]string{"STATUS": strconv.Itoa(status), "ACK": ack})
-				cleared := 0
-				SetUpdateReceiptHooks(UpdateReceiptHooks{
-					Current: func() map[string]any {
-						return map[string]any{"update_id": "old-correlation", "outcome": "running", "plan": map[string]any{"install_method": "git"}}
-					},
-					Clear: func() { cleared++ },
-				})
-				var stdout, stderr bytes.Buffer
-				ctx := WithCLIStderr(withSyncOutput(context.Background(), &stdout), &stderr)
-				first := stopForRelaunch(ctx, false)
-				second := stopForRelaunch(ctx, false)
-				if got := ouExitCode(t, first); got != status {
-					t.Fatalf("first status %d want %d, stderr %s", got, status, stderr.String())
-				}
-				if got := ouExitCode(t, second); got != status {
-					t.Fatalf("second status %d want %d", got, status)
+				handoff := ouHandoff(t)
+				var stdout bytes.Buffer
+				got, err := ContinueLegacyPostSwap(withSyncOutput(context.Background(), &stdout), handoff, []string{"--gateway"})
+				if err != nil || got != status {
+					t.Fatalf("status %d %v want %d", got, err, status)
 				}
 				runs, err := os.ReadFile(filepath.Join(home, "runs"))
 				if err != nil || string(runs) != "child\n" {
-					t.Fatalf("runs %q %v, stderr %s", runs, err, stderr.String())
+					t.Fatalf("runs %q %v", runs, err)
 				}
-				if cleared != 1 {
-					t.Fatalf("receipt cleared %d times", cleared)
+				if _, err := os.Stat(handoff); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("the hand off file was left behind: %v", err)
 				}
 				if !strings.Contains(stdout.String(), "-> Handing off to the new updater (package manager) for the rest of this update...") {
 					t.Fatalf("stdout %q", stdout.String())
-				}
-				if strings.Contains(stderr.String(), "run `icebath` again") || strings.Contains(stderr.String(), "failed") {
-					t.Fatalf("stderr %q", stderr.String())
 				}
 			})
 		}
@@ -180,7 +171,7 @@ func TestOUIncompleteHandoffRecordsStopWithoutChild(t *testing.T) {
 	SetUpdateReceiptHooks(UpdateReceiptHooks{RecordStopReason: func(reason string) { reasons = append(reasons, reason) }})
 	var stderr bytes.Buffer
 	ctx := WithCLIStderr(withSyncOutput(context.Background(), &bytes.Buffer{}), &stderr)
-	if got := ouExitCode(t, stopForRelaunch(ctx, true)); got != 1 {
+	if got := ouExitCode(t, StopForRelaunchIncomplete(ctx)); got != 1 {
 		t.Fatalf("status %d", got)
 	}
 	if !reflect.DeepEqual(reasons, []string{"old_version_handoff"}) {
@@ -196,25 +187,15 @@ func TestOUIncompleteHandoffRecordsStopWithoutChild(t *testing.T) {
 
 func TestOUInvalidAcknowledgementFailsTheTakeover(t *testing.T) {
 	cases := map[string]string{
-		"[1]":   "Update takeover failed: invalid update takeover acknowledgement\n",
-		"{oops": "Update takeover failed: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)\n",
+		"[1]":   "invalid update takeover acknowledgement",
+		"{oops": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
 	}
 	for ack, want := range cases {
 		t.Run(ack, func(t *testing.T) {
 			ouUseTestTakeover(t, map[string]string{"STATUS": "0", "ACK": ack})
-			SetUpdateReceiptHooks(UpdateReceiptHooks{Current: func() map[string]any {
-				return map[string]any{"update_id": "old-correlation", "plan": map[string]any{"install_method": "git"}}
-			}})
-			var stderr bytes.Buffer
-			ctx := WithCLIStderr(withSyncOutput(context.Background(), &bytes.Buffer{}), &stderr)
-			if got := ouExitCode(t, stopForRelaunch(ctx, false)); got != 1 {
-				t.Fatalf("status %d", got)
-			}
-			if stderr.String() != want {
-				t.Fatalf("stderr %q want %q", stderr.String(), want)
-			}
-			if got := ouExitCode(t, stopForRelaunch(ctx, false)); got != 1 {
-				t.Fatalf("memo status %d", got)
+			_, err := ContinueLegacyPostSwap(withSyncOutput(context.Background(), &bytes.Buffer{}), ouHandoff(t), []string{"--gateway"})
+			if err == nil || err.Error() != want {
+				t.Fatalf("error %v want %q", err, want)
 			}
 		})
 	}

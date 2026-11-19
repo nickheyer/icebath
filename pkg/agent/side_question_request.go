@@ -194,7 +194,7 @@ func sendSideQuestion(ctx context.Context, fork *AIAgent, capture *sideQuestionC
 			return nil, err
 		}
 		fork.recordResponseUsage(ctx, verdict.Response, messages, 1, nowSeconds()-apiStart, 0, 0)
-		if assistant, err = fork.normalizeResponseForAgent(verdict.Response); err != nil {
+		if assistant, err = fork.normalizeResponseForAgent(ctx, verdict.Response); err != nil {
 			return nil, err
 		}
 		normalized = &provider.AuxNormalizedReply{Message: assistant, FinishReason: assistant.FinishReason,

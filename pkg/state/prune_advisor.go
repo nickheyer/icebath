@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -30,16 +29,11 @@ const (
 	autoPruneSnoozeFile    = ".auto_prune_prompt.json"
 	AutoPruneEstimateFile  = ".auto_prune_estimate.json"
 	AutoPruneTotalBytesTTL = 7 * 86400
-	AutoPruneCLIAdviceTTL  = 86400
 	AutoPruneNoticeKey     = "sessions.auto_prune"
 	autoPruneSaveFailed    = "Could not save sessions.auto_prune; check disk space and config.yaml permissions."
 )
 
-var (
-	autoPruneDiskUsage = pyfs.DiskUsage
-	autoPruneAdvise    = AutoPruneAdvise
-	autoPruneSpawn     = func(name string, fn func()) { go fn() }
-)
+var autoPruneDiskUsage = pyfs.DiskUsage
 
 // Size of state.db and the free and total bytes of its filesystem
 type DiskSnapshot struct {
@@ -359,80 +353,6 @@ func autoPruneCachedTotalBytes(ctx context.Context, h string, dbBytes int64) (in
 	return exactScaled(total.Int64(), dbBytes, base.Int64()), true
 }
 
-// Advice from the last stored estimate of the same retention scaled to the live disk, and whether it is stale
-func AutoPruneCachedAdvice(ctx context.Context, h string) (*PruneAdvice, bool, error) {
-	snap := AutoPruneShouldAsk(ctx, h)
-	if snap == nil {
-		return nil, false, nil
-	}
-	sessions, _ := autoPruneSessions(ctx, h)
-	if sessions == nil {
-		sessions = map[string]any{}
-	}
-	retention, err := autoPruneRetentionDays(sessions)
-	if err != nil {
-		return nil, false, err
-	}
-	stored := autoPruneReadEstimate(ctx, h)
-	raw, _ := stored.Get("advice")
-	est, ok := raw.(*pyjson.Object)
-	field := func(key string) (*big.Int, error) {
-		v, present := est.Get(key)
-		if !present {
-			return nil, &pyint.Error{Kind: "KeyError", Msg: key}
-		}
-		return pyint.Of(v)
-	}
-	soft := func(err error) bool {
-		var conv *pyint.Error
-		return errors.As(err, &conv) && conv.Kind != "OverflowError"
-	}
-	if !ok {
-		return nil, true, nil
-	}
-	days, err := field("retention_days")
-	if err != nil {
-		if soft(err) {
-			return nil, true, nil
-		}
-		return nil, false, err
-	}
-	if days.Cmp(big.NewInt(retention)) != 0 {
-		return nil, true, nil
-	}
-	atRaw, present := stored.Get("advice_at")
-	if !present {
-		return nil, true, nil
-	}
-	at, err := pyint.Float(atRaw)
-	if err != nil {
-		return nil, true, nil
-	}
-	stale := pruneNow()-at > AutoPruneCLIAdviceTTL
-	values := map[string]*big.Int{}
-	for _, key := range []string{"reclaim_bytes", "db_bytes", "prunable", "total"} {
-		n, err := field(key)
-		if err != nil {
-			if soft(err) {
-				return nil, true, nil
-			}
-			return nil, false, err
-		}
-		values[key] = n
-	}
-	divisor := values["db_bytes"]
-	if divisor.Cmp(big.NewInt(1)) < 0 {
-		divisor = big.NewInt(1)
-	}
-	reclaim := new(big.Int).Div(new(big.Int).Mul(values["reclaim_bytes"], big.NewInt(snap.DBBytes)), divisor)
-	if reclaim.Cmp(big.NewInt(snap.DBBytes)) > 0 {
-		reclaim = big.NewInt(snap.DBBytes)
-	}
-	return &PruneAdvice{Disk: *snap, RetentionDays: retention, PrunableSessions: values["prunable"].Int64(),
-		TotalSessions: values["total"].Int64(), ReclaimBytes: reclaim.Int64(), EstimateOK: true,
-		VacuumAfterPrune: vacuumAfterPrune(sessions)}, stale, nil
-}
-
 // Stored size of one messages row, the byte length of every text or blob column of the live schema
 func autoPruneRowBytesSQL(ctx context.Context, db *SessionDB) (string, error) {
 	rows, err := db.readAll(ctx, "PRAGMA table_info(messages)")
@@ -601,53 +521,4 @@ func AutoPruneCommand(ctx context.Context, args, h string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Auto-prune is %s (%s), retention %d days.%s Usage: /autoprune on | off | later", state, chosen, retention, disk), nil
-}
-
-// Startup offer of the classic CLI asked from the stored estimate, the decision or nil for no answer or later
-func AutoPruneOfferInteractive(ctx context.Context, stdout io.Writer, cprint func(string), ask func(prompt string) (string, error)) (*bool, error) {
-	if AutoPruneShouldAsk(ctx, "") == nil {
-		return nil, nil
-	}
-	advice, stale, err := AutoPruneCachedAdvice(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	if stale {
-		advise := autoPruneAdvise
-		autoPruneSpawn("auto-prune-estimate", func() { _, _ = advise(ctx, "") })
-	}
-	if advice == nil {
-		return nil, nil
-	}
-	lines := AutoPruneAdviceLines(*advice, "/")
-	cprint("")
-	cprint("󰆧 " + lines[0])
-	for _, line := range lines[1 : len(lines)-1] {
-		cprint("  " + line)
-	}
-	answer, err := ask("  Enable auto-prune? [y = enable / n = never prune, don't ask again / Enter = remind me later]: ")
-	if err != nil {
-		fmt.Fprintln(stdout)
-		return nil, nil
-	}
-	answer = pystr.Lower(pystr.Strip(answer))
-	switch answer {
-	case "y", "yes", "n", "no":
-		enable := strings.HasPrefix(answer, "y")
-		if !AutoPruneDecide(ctx, enable, "") {
-			cprint("  " + autoPruneSaveFailed)
-			return nil, nil
-		}
-		if enable {
-			cprint("  ✓ sessions.auto_prune: true")
-		} else {
-			cprint("  ✓ sessions.auto_prune: false. You won't be asked again.")
-		}
-		return &enable, nil
-	}
-	if err := AutoPruneSnooze(ctx, "", AutoPruneSnoozeSeconds); err != nil {
-		return nil, err
-	}
-	cprint("  Later. /autoprune on|off decides it any time.")
-	return nil, nil
 }

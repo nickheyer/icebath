@@ -92,7 +92,6 @@ type runnerCoreState struct {
 	profileFailedPlatforms       map[string]map[gateway.Platform]*gatewayTask
 	profileBotPlatforms          map[string]map[gateway.Platform]struct{}
 	systemdWatchdog              *gateway.SystemdWatchdog
-	externalDrainActive          bool
 	restartRequested             bool
 	signalInitiatedShutdown      bool
 	restartTaskStarted           bool

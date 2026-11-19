@@ -3,10 +3,8 @@ package tools
 import (
 	"context"
 	"slices"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // PluginToolsetCatalog is the plugin toolset source pkg/plugins installs at init
@@ -46,34 +44,6 @@ func portableMCPServerNames(ctx context.Context) (names map[string]bool) {
 
 // PortableMCPServerSet lists the in memory portable plugin MCP servers, the projected set first
 func PortableMCPServerSet(ctx context.Context) map[string]bool { return portableMCPServerNames(ctx) }
-
-// Toolset title without its leading emoji word for GUI surfaces, the raw stripped label otherwise
-func GUIToolsetLabel(label string) string {
-	text := pystr.Strip(label)
-	i := strings.IndexFunc(text, pystr.IsSpace)
-	if i < 0 {
-		return text
-	}
-	for _, ch := range text[:i] {
-		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') {
-			return text
-		}
-	}
-	return pystr.Strip(strings.TrimLeftFunc(text[i:], pystr.IsSpace))
-}
-
-// Platform a platform less configuration UI targets, a restricted toolset moving to its first allowed platform
-func ToolsetConfigurationPlatform(tsKey, def string) string {
-	allowed := ToolsetPlatformRestrictions[tsKey]
-	if len(allowed) == 0 || allowed[def] {
-		return def
-	}
-	names := make([]string, 0, len(allowed))
-	for k := range allowed {
-		names = append(names, k)
-	}
-	return slices.Min(names)
-}
 
 // Built in configurable toolsets then plugin toolsets whose keys are not built in
 func EffectiveConfigurableToolsets(ctx context.Context) (result []ConfigurableToolset) {
@@ -249,36 +219,4 @@ func buildToolCategories() *pyjson.Object {
 				"Background computer-use via cua-driver — does NOT steal your cursor or focus. Works with any model.", nil, "computer_use_backend", "cua", "post_setup", "cua_driver"),
 		}),
 	)
-}
-
-// Every env var key a tool category provider row asks for, in catalog order
-func ToolProviderEnvKeys() []string {
-	var keys []string
-	for _, cat := range ToolCategories.Keys {
-		v, _ := ToolCategories.Get(cat)
-		category, _ := v.(*pyjson.Object)
-		if category == nil {
-			continue
-		}
-		providers, _ := category.Get("providers")
-		rows, _ := providers.([]any)
-		for _, r := range rows {
-			row, _ := r.(*pyjson.Object)
-			if row == nil {
-				continue
-			}
-			envVars, _ := row.Get("env_vars")
-			entries, _ := envVars.([]any)
-			for _, e := range entries {
-				if entry, ok := e.(*pyjson.Object); ok {
-					if k, ok := entry.Get("key"); ok {
-						if s, ok := k.(string); ok {
-							keys = append(keys, s)
-						}
-					}
-				}
-			}
-		}
-	}
-	return keys
 }

@@ -3,86 +3,13 @@
 package pm
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// FeaturesFilename is the enabled features file beside a payload or the runtime store
-const FeaturesFilename = "enabled-features.json"
-
-// Enabled features file in baseDir, or beside the byte store of this process when baseDir is empty
-func FeaturesPath(ctx context.Context, baseDir string) (string, error) {
-	if baseDir != "" {
-		return filepath.Join(baseDir, FeaturesFilename), nil
-	}
-	store, err := StoreRoot(ctx)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(store), FeaturesFilename), nil
-}
-
-// Records the exact extras an install carries, sorted and deduplicated
-func WriteFeatures(ctx context.Context, extras []string, baseDir string) (string, error) {
-	path, err := FeaturesPath(ctx, baseDir)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-		return "", err
-	}
-	doc := NewOrderedObject()
-	doc.Set("schema", 1)
-	doc.Set("extras", sortedSet(extras))
-	data, err := dumpsJSON(doc, true)
-	if err != nil {
-		return "", err
-	}
-	return path, os.WriteFile(path, append(data, '\n'), 0o666)
-}
-
-// Frozen or baseline feature list, nil when no readable file exists
-func readFeatures(ctx context.Context) ([]string, error) {
-	path, err := FeaturesPath(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil
-	}
-	data = trimBOM(data)
-	if utf8Strict(data) != nil {
-		return nil, nil
-	}
-	doc, err := loadJSON(data)
-	if err != nil {
-		return nil, nil
-	}
-	record, ok := doc.(map[string]any)
-	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("%s must hold a mapping, got %s", path, errchain.Kind(doc))}
-	}
-	list, ok := record["extras"].([]any)
-	if !ok {
-		return nil, nil
-	}
-	names := make([]string, len(list))
-	for i, item := range list {
-		names[i] = pyrepr.Str(item)
-	}
-	return sortedSet(names), nil
-}
 
 // Parsed pyproject of a source tree the way tomllib load reads it
 func loadPyproject(repoDir string) (*OrderedObject, error) {
@@ -184,100 +111,4 @@ func optInExtras(repoDir string) ([]string, error) {
 		return nil, &PyError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + errchain.Show(unknown)}
 	}
 	return sortedSet(names), nil
-}
-
-// Probe the target interpreter runs to resolve every anchor against the selected tree's site directories
-const featureProbeSource = `
-import contextlib, importlib.util, json, os, site, sys, sysconfig
-base, anchors = sys.argv[1], json.loads(sys.argv[2])
-paths = sysconfig.get_paths(vars={"base": base, "platbase": base})
-sites = dict.fromkeys(paths[key] for key in ("purelib", "platlib"))
-if not any(os.path.isdir(path) for path in sites):
-    raise RuntimeError("target dependency tree has no site-packages")
-result = {}
-with contextlib.redirect_stdout(sys.stderr):
-    for path in sites:
-        site.addsitedir(path)
-    for anchor in anchors:
-        try:
-            result[anchor] = importlib.util.find_spec(anchor) is not None
-        except (ImportError, ValueError):
-            result[anchor] = False
-print(json.dumps(result))
-`
-
-// Runs a feature inventory child, replaced by tests the way they patch subprocess run
-var runFeatureProbe = func(ctx context.Context, argv []string, cwd string) (uvResult, error) {
-	return runCaptured(ctx, argv, cwd, pyEnviron(), 60*time.Second)
-}
-
-// Failure detail like subprocess errors give it, the captured stderr when nonempty and the exception text otherwise
-func featureProbeDetail(result uvResult, err error) string {
-	var timeout *uvTimeoutError
-	if errors.As(err, &timeout) {
-		if len(timeout.Stderr) == 0 {
-			return pystr.Strip(pyExceptionText(err))
-		}
-		text, _ := decodeUTF8Replace(timeout.Stderr, true)
-		return pystr.Strip(universalNewlines(text))
-	}
-	if result.Stderr != "" {
-		return pystr.Strip(result.Stderr)
-	}
-	return pystr.Strip(pyExceptionText(err))
-}
-
-// Extras whose every anchor the target tree resolves, probed in one isolated interpreter process
-func InstalledExtras(ctx context.Context, repoDir, venvDir, python string) ([]string, error) {
-	declared, err := declaredExtras(repoDir)
-	if err != nil {
-		return nil, err
-	}
-	required := map[string][]string{}
-	var anchorList []string
-	for _, extra := range declared {
-		required[extra] = anchors(extra)
-		anchorList = append(anchorList, required[extra]...)
-	}
-	anchorList = sortedSet(anchorList)
-	encoded, err := json.Marshal(anchorList)
-	if err != nil {
-		return nil, err
-	}
-	argv := []string{python, "-B", "-I", "-S", "-c", featureProbeSource, resolvePath(venvDir), string(asciiEscape(pySeparators(encoded)))}
-	result, err := runFeatureProbe(ctx, argv, repoDir)
-	if err == nil && result.Code != 0 {
-		err = fmt.Errorf("the feature probe of %s exited with status %d", python, result.Code)
-	}
-	if err != nil {
-		return nil, &FeatureProbeError{Message: fmt.Sprintf("feature inventory failed on %s: %s", python, featureProbeDetail(result, err))}
-	}
-	doc, err := loadJSON([]byte(result.Stdout))
-	if err != nil {
-		return nil, &FeatureProbeError{Message: "feature inventory returned invalid JSON"}
-	}
-	resolved, ok := doc.(map[string]any)
-	incomplete := &FeatureProbeError{Message: "feature inventory returned incomplete anchor results"}
-	if !ok || len(resolved) != len(anchorList) {
-		return nil, incomplete
-	}
-	for _, anchor := range anchorList {
-		if _, isBool := resolved[anchor].(bool); !isBool {
-			return nil, incomplete
-		}
-	}
-	var out []string
-	for _, extra := range declared {
-		all := true
-		for _, anchor := range required[extra] {
-			all = all && resolved[anchor].(bool)
-		}
-		if all {
-			out = append(out, extra)
-		}
-	}
-	if out == nil {
-		out = []string{}
-	}
-	return out, nil
 }

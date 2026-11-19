@@ -1,16 +1,12 @@
 package pystr
 
 import (
-	"errors"
 	"strings"
 	"unicode"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
-
-// ValueError str.split raises for an empty separator
-var ErrEmptySeparator = errors.New("empty separator")
 
 // Code points str.isspace accepts, Unicode White_Space plus the ASCII file group record and unit separators
 func IsSpace(r rune) bool {
@@ -95,17 +91,6 @@ func SplitWhitespace(s string, maxsplit int) []string {
 		i = j
 	}
 	return out
-}
-
-// str.split(sep, maxsplit) with a literal separator, ValueError for an empty one
-func Split(s, sep string, maxsplit int) ([]string, error) {
-	if sep == "" {
-		return nil, ErrEmptySeparator
-	}
-	if maxsplit < 0 {
-		return strings.Split(s, sep), nil
-	}
-	return strings.SplitN(s, sep, maxsplit+1), nil
 }
 
 // str.splitlines over every Python line boundary, carrying the boundaries when keepends is set

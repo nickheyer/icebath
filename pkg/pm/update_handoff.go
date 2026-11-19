@@ -72,12 +72,5 @@ func ContinueLegacyPostSwap(ctx context.Context, handoffPath string, argvTail []
 		return 0, err
 	}
 	_ = pypath.Unlink(handoffPath)
-	code, _, err := runChild(ctx, takeoverRequest(payload, argvTail))
-	return code, err
+	return runChild(ctx, takeoverRequest(payload, argvTail))
 }
-
-// Env var set on the post swap child, its receipt header reads continued and the lock is the parent's
-const PostSwapEnv = "ICEBATH_UPDATE_POST_SWAP"
-
-// True inside the process that finishes an update after the checkout swap
-func IsPostSwapChild() bool { return os.Getenv(PostSwapEnv) == "1" }

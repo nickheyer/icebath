@@ -104,11 +104,9 @@ func TestDumpsKeywordSurface(t *testing.T) {
 		{"😀\x7f", []Option{EnsureASCII(false)}, "\"😀\x7f\""},
 		{map[string]any{}, []Option{Indent(4)}, `{}`},
 		{[]any{1, []any{}}, []Option{Indent(0)}, "[\n1,\n[]\n]"},
-		{[]any{1, 2}, []Option{IndentText("\t"), Separators(", ", ": ")}, "[\n\t1, \n\t2\n]"},
 		{map[float64]any{1.5: true, math.Inf(1): nil}, nil, `{"1.5": true, "Infinity": null}`},
 		{map[bool]int{true: 1, false: 0}, []Option{SortKeys(true)}, `{"false": 0, "true": 1}`},
 		{[]float64{0.1, 1e16, 1e-5, math.Copysign(0, -1)}, nil, `[0.1, 1e+16, 1e-05, -0.0]`},
-		{map[[2]int]int{{1, 2}: 3}, []Option{SkipKeys(true)}, `{}`},
 	}
 	for _, c := range cases {
 		got, err := Dumps(c.v, c.opts...)

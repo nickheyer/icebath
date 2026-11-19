@@ -50,11 +50,11 @@ func yoloEvent(chatID string) *gateway.MessageEvent {
 func cleanYoloState(t *testing.T) {
 	t.Setenv("ICEBATH_YOLO_MODE", "")
 	for _, k := range []string{"agent:main:telegram:dm:chat-a", "agent:main:telegram:dm:chat-b"} {
-		tools.DisableSessionYolo(k)
+		tools.DisableSessionYolo(context.Background(), k)
 	}
 	t.Cleanup(func() {
 		for _, k := range []string{"agent:main:telegram:dm:chat-a", "agent:main:telegram:dm:chat-b"} {
-			tools.DisableSessionYolo(k)
+			tools.DisableSessionYolo(context.Background(), k)
 		}
 	})
 }
@@ -116,9 +116,9 @@ func TestYoloSurvivesGatewayRestartAndDiesAtSessionBoundary(t *testing.T) {
 	if !tools.IsSessionYoloEnabled(key) {
 		t.Fatal("yolo not enabled")
 	}
-	tools.DisableSessionYolo(key)
+	tools.DisableSessionYolo(context.Background(), key)
 	second := newRunner()
-	tools.RestoreSessionYolo(key, persistedYolo(second, event.Source))
+	tools.RestoreSessionYolo(context.Background(), key, persistedYolo(second, event.Source))
 	if !tools.IsSessionYoloEnabled(key) {
 		t.Fatal("restart did not re-arm yolo")
 	}
@@ -127,7 +127,7 @@ func TestYoloSurvivesGatewayRestartAndDiesAtSessionBoundary(t *testing.T) {
 		t.Fatal("boundary kept yolo")
 	}
 	third := newRunner()
-	tools.RestoreSessionYolo(key, persistedYolo(third, event.Source))
+	tools.RestoreSessionYolo(context.Background(), key, persistedYolo(third, event.Source))
 	if tools.IsSessionYoloEnabled(key) {
 		t.Fatal("boundary did not clear the persisted copy")
 	}

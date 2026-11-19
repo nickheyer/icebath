@@ -88,7 +88,10 @@ func TestAnthropicNativeKeyCmdRouteChoosesHeaderPerMint(t *testing.T) {
 }
 
 func TestEveryTaggedMinterKeepsItsSourceOnTheRoute(t *testing.T) {
-	entra := BuildEntraTokenProvider(nil, ScopeAIAzureDefault, true)
+	entra, err := BuildEntraTokenProviderIn(context.Background(), nil, ScopeAIAzureDefault, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if CredentialSourceOf(entra) != CredentialSourceEntraID || CredentialLabel(entra) != "Microsoft Entra ID" {
 		t.Fatalf("entra provider tag %q %q", CredentialSourceOf(entra), CredentialLabel(entra))
 	}

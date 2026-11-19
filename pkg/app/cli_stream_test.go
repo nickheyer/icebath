@@ -98,11 +98,6 @@ func configuredCLI(t *testing.T, display map[string]any, o CLIOptions) *CLI {
 	if err != nil {
 		t.Fatalf("NewCLI: %v", err)
 	}
-	t.Cleanup(func() {
-		if c.sessionDB != nil {
-			c.sessionDB.Close()
-		}
-	})
 	return c
 }
 

@@ -10,9 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -30,14 +28,6 @@ var explicitDisableWarned = struct {
 	sync.Mutex
 	set map[Platform]bool
 }{set: map[Platform]bool{}}
-
-// Context key marking a status read whose logs and one time warnings are held back
-type statusReadKey struct{}
-
-func statusRead(ctx context.Context) bool {
-	v, _ := ctx.Value(statusReadKey{}).(bool)
-	return v
-}
 
 // Credential names a disable warning cites, the core row else the entry's or the bundled declaration
 func enableCredentialNames(ctx context.Context, platform Platform) []string {
@@ -59,7 +49,7 @@ func enableCredentialNames(ctx context.Context, platform Platform) []string {
 // One time warning that platforms.x.enabled false wins over env credentials
 func warnExplicitDisableBeatsEnv(ctx context.Context, platform Platform) {
 	explicitDisableWarned.Lock()
-	if explicitDisableWarned.set[platform] || statusRead(ctx) {
+	if explicitDisableWarned.set[platform] {
 		explicitDisableWarned.Unlock()
 		return
 	}
@@ -295,20 +285,16 @@ type envRowsEntry struct {
 }
 
 // Bundled platforms with activation evidence but no registry entry, read from their declarations
-func bundledEnvFallbacks(ctx context.Context, cfg *GatewayConfig, entries []*PlatformEntry, only Platform) []envRowsEntry {
+func bundledEnvFallbacks(ctx context.Context, cfg *GatewayConfig, entries []*PlatformEntry) []envRowsEntry {
 	have := map[string]bool{}
 	for _, e := range entries {
 		have[e.Name] = true
 	}
 	names := map[string]bool{}
-	if only != "" {
-		names[string(only)] = true
-	} else {
-		bundled, _ := bundledPlatformScanCached()
-		maps.Copy(names, bundled)
-		for n := range bundledEnvSiblings {
-			names[n] = true
-		}
+	bundled, _ := bundledPlatformScanCached()
+	maps.Copy(names, bundled)
+	for n := range bundledEnvSiblings {
+		names[n] = true
 	}
 	for n := range have {
 		delete(names, n)
@@ -414,16 +400,14 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 		if skip[platform] || !pc.Enabled {
 			continue
 		}
-		switch {
-		case statusRead(ctx):
-		case pyrepr.Truthy(pc.Extra["_enabled_explicit"]):
+		if pyrepr.Truthy(pc.Extra["_enabled_explicit"]) {
 			pkgLog().Warn(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; "+
 				"disabling directly-connected platform '%s' even though "+
 				"it is explicitly enabled in this profile's configuration. "+
 				"All messaging goes through the connector on this "+
 				"deployment. Set GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS=true "+
 				"to keep direct platforms alongside the relay.", platform))
-		default:
+		} else {
 			pkgLog().Info(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; disabling directly-connected platform '%s'.", platform))
 		}
 		pc.Enabled = false
@@ -437,86 +421,18 @@ func scrubExplicitMarkers(cfg *GatewayConfig) {
 	}
 }
 
-// Env wins over config.yaml and gateway.json, only limiting the plugin passes to one built in platform
-func applyEnvOverrides(ctx context.Context, cfg *GatewayConfig, only Platform) {
-	var entries []*PlatformEntry
-	if only == "" {
-		entries = configuredPluginEntriesFor(ctx, cfg)
-	} else if entry := discoveredRegistryEntry(ctx, only); entry != nil {
-		entries = []*PlatformEntry{entry}
-	}
+// Env wins over config.yaml and gateway.json
+func applyEnvOverrides(ctx context.Context, cfg *GatewayConfig) {
+	entries := configuredPluginEntriesFor(ctx, cfg)
 	rows := make([]envRowsEntry, 0, len(entries))
 	for _, e := range entries {
 		rows = append(rows, envRowsEntry{e.Name, e.EnvOverrides})
 	}
-	applyPluginEnvOverrides(ctx, cfg, append(rows, bundledEnvFallbacks(ctx, cfg, entries, only)...))
+	applyPluginEnvOverrides(ctx, cfg, append(rows, bundledEnvFallbacks(ctx, cfg, entries)...))
 	applyAPIServerEnv(ctx, cfg)
 	applyWebhookEnv(ctx, cfg)
 	applyMSGraphWebhookEnv(ctx, cfg)
 	enablePluginPlatformsFromEnv(ctx, cfg, entries)
 	applyRelayEnv(ctx, cfg)
 	scrubExplicitMarkers(cfg)
-}
-
-// Enabled and connected as the gateway decides them for one built in platform of the profile yamlCfg configures
-func BuiltinPlatformStatus(ctx context.Context, platformID string, yamlCfg map[string]any) (enabled, connected, ok bool, err error) {
-	if !BuiltinPlatformValues[platformID] {
-		return false, false, false, nil
-	}
-	platform := Platform(platformID)
-	names := map[string]bool{platformID: true, string(PlatformRelay): true}
-	top, nested := platformLayers(yamlCfg, names)
-	platforms, err := MergePlatformSections(ctx, top, nested, map[string]any{}, nil)
-	if err != nil {
-		return false, false, true, err
-	}
-	authored := snapshotAuthoredExtra(platforms)
-	managedTop, managedNested := platformLayers(config.ApplyManagedOverlay(map[string]any{}), names)
-	managed := maps.Clone(managedTop)
-	managed["gateway"] = managedNested
-	if _, err := applyManagedExtra(ctx, authored, managed, platforms); err != nil {
-		return false, false, true, err
-	}
-	BridgePlatformSharedKeys(top, nested["platforms"], map[string]any{}, platforms, []Platform{platform, PlatformRelay}, nil, authored)
-	for _, block := range platforms {
-		if m, isMap := block.(map[string]any); isMap {
-			delete(m, "home_channel")
-		}
-	}
-	cfg, err := GatewayConfigFromDict(ctx, map[string]any{"platforms": platforms})
-	if err != nil {
-		return false, false, true, err
-	}
-	ctx = context.WithValue(ctx, statusReadKey{}, true)
-	applyEnvOverrides(ctx, cfg, platform)
-	pc, has := cfg.Platforms[platform]
-	if !has {
-		return false, false, true, nil
-	}
-	return pc.Enabled, cfg.isPlatformConnected(ctx, platform, pc), true, nil
-}
-
-// The root layer and the gateway layer of yamlCfg holding only the named platform blocks
-func platformLayers(yamlCfg map[string]any, names map[string]bool) (map[string]any, map[string]any) {
-	gatewaySection, _ := yamlCfg["gateway"].(map[string]any)
-	top := map[string]any{"platforms": onlyKeys(yamlCfg["platforms"], names)}
-	maps.Copy(top, onlyKeys(yamlCfg, names))
-	nested := map[string]any{"platforms": onlyKeys(gatewaySection["platforms"], names)}
-	maps.Copy(nested, onlyKeys(gatewaySection, names))
-	return top, nested
-}
-
-// Deep copies of a mapping's entries named in names, empty for a non mapping
-func onlyKeys(section any, names map[string]bool) map[string]any {
-	out := map[string]any{}
-	m, ok := section.(map[string]any)
-	if !ok {
-		return out
-	}
-	for k, v := range m {
-		if names[k] {
-			out[k] = pycopy.DeepCopy(v)
-		}
-	}
-	return out
 }

@@ -320,28 +320,6 @@ func extraTruthy(ctx context.Context, cfg *gateway.PlatformConfig, key, envName,
 	return false
 }
 
-// YAML bool or off style string from config extra, nil when unset
-func configuredBool(cfg *gateway.PlatformConfig, key string) *bool {
-	configured, ok := cfg.Extra[key]
-	if !ok || configured == nil {
-		return nil
-	}
-	var out bool
-	switch v := configured.(type) {
-	case bool:
-		out = v
-	case string:
-		switch pystr.Lower(v) {
-		case "false", "0", "no", "off":
-		default:
-			out = true
-		}
-	default:
-		out = pyTruthy(v)
-	}
-	return &out
-}
-
 // Whether a configured value is anything other than a false or off spelling
 func notFalseSpelling(configured any) bool {
 	if b, ok := configured.(bool); ok {

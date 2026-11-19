@@ -67,7 +67,7 @@ func TestStableUpdateFetchBringsTheReleaseTag(t *testing.T) {
 	ucGit(t, checkout, "merge", "-q", "--ff-only", release)
 	updaterecord.ResetVersionInfoCache()
 	info := updaterecord.GitVersionInfo(checkout, true)
-	if info.Commit == nil || *info.Commit != release || info.BaseVersion != "0.22.3" || info.DisplayVersion() != "0.22.3" {
+	if info.Commit == nil || *info.Commit != release || info.BaseVersion != "0.22.3" {
 		t.Fatalf("version info = %+v", info)
 	}
 }

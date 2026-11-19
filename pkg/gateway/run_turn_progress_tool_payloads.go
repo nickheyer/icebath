@@ -33,7 +33,7 @@ func toolText(value any, fallback string) string {
 }
 
 // Tool start contract every client reads plus the call id, name and bounded args the gateway consumers use
-func toolLifecyclePayload(callID, toolName, args any) *pyjson.Object {
+func toolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjson.Object {
 	name := toolText(toolName, "tool")
 	if _, isObject := pyjson.AsObject(args); !isObject {
 		args = pyjson.NewObject()
@@ -44,7 +44,7 @@ func toolLifecyclePayload(callID, toolName, args any) *pyjson.Object {
 		"context", tools.BuildToolPreview(nil, name, plain, &limit),
 		"tool_call_id", toolText(callID, ""), "tool_name", name, "args", boundedArgs(args))
 	var labels []any
-	for _, label := range tools.ToolLabelsForCall(nil, name, plain) {
+	for _, label := range tools.ToolLabelsForCall(ctx, nil, name, plain) {
 		entry := pyjson.NewObject()
 		for key, value := range label.AsPayload() {
 			entry.Set(key, value)
@@ -63,7 +63,7 @@ func toolCompletePayload(ctx context.Context, callID, toolName, args, result any
 	if isError != nil {
 		failed = *isError || refused
 	}
-	payload := toolLifecyclePayload(callID, toolName, args)
+	payload := toolLifecyclePayload(ctx, callID, toolName, args)
 	payload.Set("is_error", failed)
 	if refused {
 		payload.Set("refused", true)
@@ -118,7 +118,7 @@ func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID 
 	}
 	var payload *pyjson.Object
 	if kind == "tool.start" {
-		payload = toolLifecyclePayload(callID, name, args)
+		payload = toolLifecyclePayload(ctx, callID, name, args)
 	} else {
 		live, ok := a.live(sessionID)
 		if !ok {

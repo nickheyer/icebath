@@ -24,6 +24,8 @@ const (
 
 var (
 	policyTerminalKinds = map[string]bool{"turn.settled": true, "turn.failed": true, "turn.cancelled": true, "turn.deferred": true}
+	// Kinds a Continue restores into the active projection of the discussion it reopens
+	policyReopenedKinds = []any{"turn.cancelled", "turn.deferred", "turn.failed", "turn.settled", "message.member", continuedEventKind}
 	policySchemaDDL     = []string{
 		`CREATE TABLE IF NOT EXISTS hosted_room_policy_capacity (
         singleton INTEGER PRIMARY KEY CHECK(singleton=1), max_active_events INTEGER NOT NULL)`,
@@ -380,6 +382,58 @@ func policyApplyRoomActivity(ctx context.Context, conn state.SQLiteConn, event, 
 	return err
 }
 
+// Reopens a discussion its cap completed, restoring its thread row and active projection from the room log
+func policyApplyContinued(ctx context.Context, conn state.SQLiteConn, event, payload map[string]any) error {
+	roomID, discussionEventID := pyrepr.Str(event["room_id"]), policyText(payload, "discussion_event_id")
+	source, err := state.QueryRowObject(ctx, conn, "SELECT "+hostedEventColumns+" FROM hosted_room_events WHERE room_id=? AND event_id=?", roomID, discussionEventID)
+	if err != nil || source == nil || hrStr(source, "kind") != "message.user" {
+		return err
+	}
+	sourceEvent, err := hostedEventFromRow(source, false)
+	if err != nil {
+		return err
+	}
+	sourcePayload, _ := sourceEvent["payload"].(map[string]any)
+	threadID, sourceSeq := policyText(sourcePayload, "thread_id"), hrInt(source, "seq")
+	seq, err := pyint.Int64(event["seq"])
+	if err != nil {
+		return err
+	}
+	newer, err := state.QueryRowObject(ctx, conn, `SELECT 1 FROM hosted_room_events WHERE room_id=? AND seq>? AND seq<=?
+            AND kind='message.user' AND json_extract(payload_json, '$.thread_id')=? LIMIT 1`, roomID, sourceSeq, seq, threadID)
+	if err != nil || newer != nil {
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, `INSERT INTO hosted_room_policy_threads(
+                   room_id, thread_id, discussion_event_id, latest_user_seq, completed
+               ) VALUES (?, ?, ?, ?, 0)
+               ON CONFLICT(room_id, thread_id) DO UPDATE SET
+                   discussion_event_id=excluded.discussion_event_id,
+                   latest_user_seq=excluded.latest_user_seq, completed=0`, roomID, threadID, discussionEventID, sourceSeq); err != nil {
+		return err
+	}
+	if err := policyStoreActiveEvent(ctx, conn, sourceEvent, threadID, discussionEventID); err != nil {
+		return err
+	}
+	args := append(append([]any{roomID, sourceSeq, seq}, policyReopenedKinds...), discussionEventID)
+	rows, err := state.QueryObjects(ctx, conn, "SELECT "+hostedEventColumns+` FROM hosted_room_events
+            WHERE room_id=? AND seq>? AND seq<=? AND kind IN (`+strings.TrimSuffix(strings.Repeat("?,", len(policyReopenedKinds)), ",")+`)
+              AND json_extract(payload_json, '$.discussion_event_id')=? ORDER BY seq`, args...)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		reopened, err := hostedEventFromRow(row, false)
+		if err != nil {
+			return err
+		}
+		if err := policyStoreActiveEvent(ctx, conn, reopened, threadID, discussionEventID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Advances the stop fence of the room cursor
 func policyApplyStopRequested(ctx context.Context, conn state.SQLiteConn, event, _ map[string]any) error {
 	seq, err := pyint.Int64(event["seq"])
@@ -402,6 +456,8 @@ func policyApplyEvent(ctx context.Context, conn state.SQLiteConn, event map[stri
 		handler = policyApplyDiscussionEvent
 	case kind == "room.activity":
 		handler = policyApplyRoomActivity
+	case kind == continuedEventKind:
+		handler = policyApplyContinued
 	case kind == "room.stop_requested":
 		handler = policyApplyStopRequested
 	default:

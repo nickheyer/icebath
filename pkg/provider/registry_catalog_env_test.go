@@ -346,11 +346,11 @@ func stepfunOverrideView(t *testing.T, plugin Profile) (runtimeURL string, row P
 	if r == nil || g == nil {
 		t.Fatalf("stepfun row %v gmi row %v", r, g)
 	}
-	route, err := Resolve(ctx, config.Tree(map[string]any{}), config.NewSecrets(h), h, NewStore(h), Overrides{Provider: "stepfun"})
+	rt, err := newResolver(ctx, config.Tree(map[string]any{}), config.NewSecrets(h), h, NewStore(h)).ResolveRuntime("stepfun", "", "", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return route.BaseURL, *r, g.BaseURL
+	return rt.Route().BaseURL, *r, g.BaseURL
 }
 
 // Built in stepfun and gmi rows as a home without plugins reads them

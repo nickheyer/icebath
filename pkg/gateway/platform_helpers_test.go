@@ -283,18 +283,6 @@ func TestFenceChunker(t *testing.T) {
 			t.Fatalf("fences %q", fences)
 		}
 	})
-	t.Run("merge_streaming_fences_rejoins_split_fence", func(t *testing.T) {
-		merged := MergeStreamingFences([]string{"intro\n```py\ncode line", "more code\n```\ntail"})
-		if len(merged) != 1 || TextHasUnclosedFence(merged[0]) {
-			t.Fatalf("merged %q", merged)
-		}
-	})
-	t.Run("infer_block_separator_rules", func(t *testing.T) {
-		if InferBlockSeparator("text\n```", "next") != "\n" || InferBlockSeparator("text", "```py\nx") != "\n" ||
-			InferBlockSeparator("| a | b |", "| c | d |") != "\n" || InferBlockSeparator("plain", "plain") != "\n\n" {
-			t.Fatal("separator rules")
-		}
-	})
 	t.Run("balance_closes_and_reopens", func(t *testing.T) {
 		out := BalanceFencesAcrossChunks([]string{"a\n```go\nx", "y\n```\nb"})
 		if !strings.HasSuffix(out[0], "\n```") || !strings.HasPrefix(out[1], "```go\n") || TextHasUnclosedFence(out[0]) || TextHasUnclosedFence(out[1]) {

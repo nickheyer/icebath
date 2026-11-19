@@ -324,7 +324,7 @@ func ComputePromptBreakdown(ctx context.Context, env *tools.Env, platform string
 	if env != nil && env.Home != "" {
 		ctx = home.WithOverride(ctx, env.Home)
 	}
-	ctx = tools.WithToolEnv(ctx, env)
+	ctx = tools.CopyTruncationWarningsContext(tools.WithToolEnv(ctx, env))
 	a, err := buildInspectionAgent(ctx, env, platform)
 	if err != nil {
 		return nil, err

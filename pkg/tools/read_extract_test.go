@@ -127,8 +127,7 @@ func TestReadExtractNotebookGolden(t *testing.T) {
 
 func TestReadExtractDocxGolden(t *testing.T) {
 	g := loadReadExtractGolden(t)
-	p := writeFixture(t, "a.docx", zipOf(t, map[string]string{"word/document.xml": g.Fixtures.DocxXML}))
-	got, err := ExtractDocumentText(context.Background(), nil, p)
+	got, err := ExtractDocumentBytes(context.Background(), nil, zipOf(t, map[string]string{"word/document.xml": g.Fixtures.DocxXML}), "a.docx")
 	if err != nil || got != g.str(t, "docx") {
 		t.Fatalf("docx:\n got  %q %v\n want %q", got, err, g.str(t, "docx"))
 	}
@@ -148,8 +147,7 @@ func TestReadExtractDocxGolden(t *testing.T) {
 
 func TestReadExtractXlsxGolden(t *testing.T) {
 	g := loadReadExtractGolden(t)
-	p := writeFixture(t, "a.xlsx", zipOf(t, g.Fixtures.XlsxParts))
-	got, err := ExtractDocumentText(context.Background(), nil, p)
+	got, err := ExtractDocumentBytes(context.Background(), nil, zipOf(t, g.Fixtures.XlsxParts), "a.xlsx")
 	if err != nil || got != g.str(t, "xlsx") {
 		t.Fatalf("xlsx:\n got  %q %v\n want %q", got, err, g.str(t, "xlsx"))
 	}
@@ -172,7 +170,11 @@ func TestReadExtractSqliteGolden(t *testing.T) {
 		}
 	}
 	db.Close()
-	got, err := ExtractDocumentText(context.Background(), nil, p)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ExtractDocumentBytes(context.Background(), nil, data, p)
 	if err != nil || got != g.str(t, "sqlite") {
 		t.Fatalf("sqlite:\n got  %q %v\n want %q", got, err, g.str(t, "sqlite"))
 	}
@@ -211,8 +213,8 @@ func TestReadExtractHelpersGolden(t *testing.T) {
 	if IsExtractableDocument("x.TXT") || !IsExtractableDocument("/a/B.PDF") || IsExtractableDocument(".docx") || !IsExtractableDocument("deck.ppsx") {
 		t.Fatal("extension recognition")
 	}
-	if _, err := ExtractDocumentText(context.Background(), nil, "notes.txt"); !strings.Contains(extractionMessage(err), "notes.txt") {
-		t.Fatalf("missing plain file: %v", err)
+	if _, err := ExtractDocumentBytes(context.Background(), nil, []byte("plain"), "notes.txt"); err == nil || !strings.Contains(extractionMessage(err), "notes.txt") {
+		t.Fatalf("plain file: %v", err)
 	}
 }
 
@@ -302,7 +304,7 @@ func TestReadExtractPDFNeedsOCR(t *testing.T) {
 	t.Setenv("FIRECRAWL_API_KEY", "")
 	t.Setenv("PATH", t.TempDir())
 	p := writeFixture(t, "scan.pdf", scannedPDF())
-	got, err := ExtractDocumentText(context.Background(), nil, p)
+	got, err := ExtractDocumentBytes(context.Background(), nil, scannedPDF(), p)
 	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "", "pdftoppm, pdftotext and tesseract are not on PATH, install poppler and tesseract") {
 		t.Fatalf("needs ocr: %q %v", got, err)
 	}
@@ -359,7 +361,7 @@ func TestReadExtractPDFHostedOCR(t *testing.T) {
 	t.Setenv("FIRECRAWL_API_URL", srv.URL+"/")
 	t.Setenv("PATH", t.TempDir())
 	p := writeFixture(t, "scan.pdf", data)
-	got, err := ExtractDocumentText(context.Background(), nil, p)
+	got, err := ExtractDocumentBytes(context.Background(), nil, data, p)
 	if err != nil || got != "# OCR text\n" {
 		t.Fatalf("hosted ocr: %q %v", got, err)
 	}
@@ -368,18 +370,14 @@ func TestReadExtractPDFHostedOCR(t *testing.T) {
 		t.Fatalf("multipart shape: %q %q %q %v %q", gotOptions, gotFilename, gotType, bytes.Equal(gotFile, data), gotAuth)
 	}
 	status = 402
-	got, err = ExtractDocumentText(context.Background(), nil, p)
+	got, err = ExtractDocumentBytes(context.Background(), nil, data, p)
 	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "hosted PDF parsing failed: Firecrawl Parse is out of credits: no credits", "pdftoppm, pdftotext and tesseract are not on PATH, install poppler and tesseract") {
 		t.Fatalf("hosted failure: %q %v", got, err)
 	}
 }
 
 func TestReadExtractNativeErrors(t *testing.T) {
-	_, err := ExtractDocumentText(context.Background(), nil, filepath.Join(t.TempDir(), "gone.pdf"))
-	if !strings.Contains(extractionMessage(err), "gone.pdf") {
-		t.Fatalf("missing file: %v", err)
-	}
-	_, err = ExtractDocumentText(context.Background(), nil, writeFixture(t, "e.odt", emptyODT(t)))
+	_, err := ExtractDocumentBytes(context.Background(), nil, emptyODT(t), "e.odt")
 	if extractionMessage(err) != "Document contains no extractable text" {
 		t.Fatalf("empty odt: %v", err)
 	}

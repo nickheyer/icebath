@@ -106,7 +106,6 @@ func (d *SessionDB) GetCompressionLockHolder(sessionID string) (*string, error) 
 // Test overrides of the turn lease steps tests swap, nil fields running the real step
 type turnLeaseSeams struct {
 	keyOnConn  func(ctx context.Context, conn SQLiteConn, sessionID string) (string, error)
-	key        func(sessionID string) (string, error)
 	tryAcquire func(sessionID, holder string, ttlSeconds float64, patienceS *float64) (bool, error)
 	sleepRetry func(deadline, patienceS float64) bool
 }
@@ -114,23 +113,6 @@ type turnLeaseSeams struct {
 // Installs the sleep every write of this store runs between lock retries, nil restoring the jittered sleep
 func (d *SessionDB) SetWriteRetrySleep(fn func(deadline, patienceS float64) bool) {
 	d.leaseSeams.sleepRetry = fn
-}
-
-// Conversation key the turn lease of a session is stored under
-func (d *SessionDB) sessionTurnLeaseKey(ctx context.Context, sessionID string) (string, error) {
-	if d.leaseSeams.key != nil {
-		return d.leaseSeams.key(sessionID)
-	}
-	if sessionID == "" {
-		return sessionID, nil
-	}
-	var key string
-	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
-		var err error
-		key, err = d.sessionTurnLeaseKeyOnConn(ctx, conn, sessionID)
-		return err
-	})
-	return key, err
 }
 
 // Claims the conversation turn lease once after sweeping long expired rows

@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -272,8 +271,6 @@ func (f *Facts) Get(name string) (map[string]any, bool) {
 	fact, ok := f.packages[name].(map[string]any)
 	return fact, ok
 }
-
-var sha256Hex = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // Reports whether a tool fact matches the expected version and identity and its entry exists
 func (f *Facts) Installed(name string, expectedVersion *string, storeRoot string, expectedIdentity *Identity) bool {

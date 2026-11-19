@@ -8,10 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -21,13 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Agent that flushes its live transcript under its persist lock before the session ends
-type closePersister interface {
-	PersistActiveSessionBeforeClose(ctx context.Context, readCLIHistory func() []map[string]any) bool
-}
-
-var _ closePersister = (*agent.AIAgent)(nil)
 
 // Records this terminal's live session so a later bare -c in this terminal resumes it
 func (c *CLI) writeTerminalBreadcrumb() {
@@ -45,16 +36,6 @@ func squash(text string, limit int) string {
 		return string([]rune(text)[:limit-1]) + "…"
 	}
 	return text
-}
-
-// Prints a one line scrollback summary of a resolved modal prompt when display.persist_prompts is on
-func (c *CLI) persistPromptSummary(icon, label, detail, outcome string) {
-	if !cliTruthy(mapValueOr(cliMap(CLIConfig(c.ctx), "display"), "persist_prompts", true)) {
-		return
-	}
-	detail, outcome = squash(detail, 120), squash(outcome, 120)
-	cprint("\n" + dimANSI + i18n.T(c.ctx, "cli.session.persist_prompt_summary", "", map[string]any{
-		"icon": icon, "label": label, "detail": detail, "outcome": outcome}) + resetANSI)
 }
 
 // Active profile lookup of the exit resume hint, the profile resolver in production
@@ -184,20 +165,7 @@ func (c *CLI) restoreSessionYolo(sessionMeta map[string]any, quiet bool) {
 	if sessionKey == "" {
 		sessionKey = "default"
 	}
-	if tools.RestoreSessionYolo(sessionKey, state.SessionYoloEnabled(sessionMeta)) {
+	if tools.RestoreSessionYolo(c.ctx, sessionKey, state.SessionYoloEnabled(sessionMeta)) {
 		c.dimNotice(c.t("cli.session.yolo_restored", nil), quiet)
 	}
-}
-
-// Drops a just ended session row that never gained content so it does not clutter the resume list
-func (c *CLI) discardSessionIfEmpty(sessionID string) bool {
-	if c.sessionDB == nil || sessionID == "" || len(c.conversationHistory) > 0 {
-		return false
-	}
-	removed, err := c.sessionDB.DeleteSessionIfEmpty(c.ctx, sessionID)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Could not prune empty session %s", sessionID), "error", err)
-		return false
-	}
-	return removed
 }

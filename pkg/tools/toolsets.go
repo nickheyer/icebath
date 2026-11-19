@@ -1982,27 +1982,27 @@ func CurrentTerminalBackend(env *Env) (string, error) {
 	return "local", nil
 }
 
+// Notice of a toolset any one of several providers serves, by toolset name
 var multiProviderNotices = map[string]string{
-	"web": "[yellow]⚠ Web search is off[/] — no search provider is set up yet (any one of Exa, Perplexity, " +
-		"Tavily, Firecrawl, Brave, or free DuckDuckGo works). Type [bold]/setup tools[/] and set one up under " +
+	"web": "Web search is off: no search provider is set up yet (any one of Exa, Perplexity, " +
+		"Tavily, Firecrawl, Brave, or free DuckDuckGo works). Type /setup tools and set one up under " +
 		"\"Web Search & Scraping\".",
 }
 
-const genericNoticeFooter = "[dim]   Type '/setup tools' to configure[/]"
-
+// Notice of a terminal backend that cannot run, with the probe's reason when it gave one
 func terminalNoticeLine(backend, reason string) string {
 	detail := ""
 	if reason != "" {
 		detail = " (" + reason + ")"
 	}
-	return fmt.Sprintf("[yellow]⚠ Terminal tool disabled:[/] the '%s' backend is not usable%s. ", backend, detail) +
-		"Run [bold]icebath doctor[/] for details, or type [bold]/setup terminal[/] to pick another backend."
+	return fmt.Sprintf("Terminal tool disabled: the '%s' backend is not usable%s. ", backend, detail) +
+		"Run icebath doctor for details, or type /setup terminal to pick another backend."
 }
 
-// ToolAvailabilityWarningLines renders the Rich markup startup notices for toolsets switched off by missing requirements
+// ToolAvailabilityWarningLines renders one session start notice per toolset problem, the toolsets missing only API keys sharing one
 func ToolAvailabilityWarningLines(unavailable []UnavailableToolset, terminalReason, terminalBackend string) []string {
 	lines := []string{}
-	var generic []UnavailableToolset
+	var missingKeys []string
 	for _, item := range unavailable {
 		switch {
 		case item.Name == "terminal":
@@ -2010,15 +2010,11 @@ func ToolAvailabilityWarningLines(unavailable []UnavailableToolset, terminalReas
 		case multiProviderNotices[item.Name] != "":
 			lines = append(lines, multiProviderNotices[item.Name])
 		case len(item.EnvVars) > 0:
-			generic = append(generic, item)
+			missingKeys = append(missingKeys, fmt.Sprintf("%s (%s)", item.Name, strings.Join(item.EnvVars, ", ")))
 		}
 	}
-	if len(generic) > 0 {
-		lines = append(lines, "[yellow]⚠️  Some tools disabled (missing API keys):[/]")
-		for _, item := range generic {
-			lines = append(lines, fmt.Sprintf("   [dim]• %s[/] [dim italic](%s)[/]", item.Name, strings.Join(item.EnvVars, ", ")))
-		}
-		lines = append(lines, genericNoticeFooter)
+	if len(missingKeys) > 0 {
+		lines = append(lines, "Some tools are disabled (missing API keys): "+strings.Join(missingKeys, "; ")+". Type /setup tools to configure.")
 	}
 	return lines
 }

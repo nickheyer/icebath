@@ -346,34 +346,23 @@ func workScope(record map[string]any) []any {
 	return []any{record["room_id"], authority["gateway_id"], authority["epoch"]}
 }
 
-// Upserts the current evidence row of a record within the store budget
-func workSaveLocked(ctx context.Context, conn state.SQLiteConn, table string, record map[string]any, targetInstallID, routeGeneration *string) error {
+// Upserts the current source evidence row of a record within the store budget
+func workSaveLocked(ctx context.Context, conn state.SQLiteConn, record map[string]any) error {
 	data, err := WorkEncode(record)
 	if err != nil {
 		return err
 	}
 	fields := []string{"room_id", "producer_gateway_id", "producer_epoch", "revision", "digest", "record_json", "disposition"}
 	values := append(workScope(record), record["revision"], record["digest"], data, "current")
-	keys := append([]string{}, fields[:3]...)
-	if targetInstallID != nil {
-		fields = append(fields, "target_install_id", "route_generation", "status")
-		values = append(values, *targetInstallID, *routeGeneration, "pending")
-		keys = append(keys, "target_install_id")
-	}
-	if err := workBudget(ctx, conn, table, fields, values); err != nil {
+	keys := fields[:3]
+	if err := workBudget(ctx, conn, fields, values); err != nil {
 		return err
 	}
-	keySet := map[string]bool{}
-	for _, key := range keys {
-		keySet[key] = true
-	}
 	var updates []string
-	for _, field := range fields {
-		if !keySet[field] {
-			updates = append(updates, field+"=excluded."+field)
-		}
+	for _, field := range fields[3:] {
+		updates = append(updates, field+"=excluded."+field)
 	}
-	_, err = conn.ExecContext(ctx, workInsertSQL(table, fields)+" ON CONFLICT("+strings.Join(keys, ",")+") DO UPDATE SET "+strings.Join(updates, ","), values...)
+	_, err = conn.ExecContext(ctx, workInsertSQL(WorkSourceTable, fields)+" ON CONFLICT("+strings.Join(keys, ",")+") DO UPDATE SET "+strings.Join(updates, ","), values...)
 	return err
 }
 

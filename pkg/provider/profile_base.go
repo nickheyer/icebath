@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -694,14 +693,6 @@ func (p Profile) RefreshRuntimeCredentials(ctx context.Context, reason string) (
 	return "", "", false, nil
 }
 
-// IsStaleCredentialError reports whether a non auth error means the credential went stale
-func (p Profile) IsStaleCredentialError(statusCode int, message string) bool {
-	if p.IsStaleCredentialErrorHook != nil {
-		return p.IsStaleCredentialErrorHook(statusCode, message)
-	}
-	return false
-}
-
 // CredentialRefreshNotice returns the status line after a refresh, empty for the generic wording
 func (p Profile) CredentialRefreshNotice(reason string) string {
 	if p.CredentialRefreshNoticeHook != nil {
@@ -798,24 +789,4 @@ func refreshRouteProfiles(ctx context.Context, provider, baseURL string) []*Prof
 // Profiles overriding the runtime credential refresh for the route
 func RefreshRouteProfiles(ctx context.Context, providerName, baseURL string) []*Profile {
 	return refreshRouteProfiles(ctx, providerName, baseURL)
-}
-
-var errorPathWarned sync.Map
-
-// Asks the route's credential refresh profile whether a non auth error means a stale credential, a panicking hook answers false
-func routeProfileIsStaleCredentialError(ctx context.Context, route Route, status int, message string) (stale bool) {
-	profiles := refreshRouteProfiles(ctx, route.Provider, route.BaseURL)
-	if len(profiles) == 0 {
-		return false
-	}
-	p := profiles[0]
-	defer func() {
-		if r := recover(); r != nil {
-			if _, seen := errorPathWarned.LoadOrStore([2]string{p.Name, "is_stale_credential_error"}, true); !seen {
-				pkgLog().Warn(fmt.Sprintf("provider %s: %s hook failed; handling the API error without it", p.Name, "is_stale_credential_error"), "panic", r)
-			}
-			stale = false
-		}
-	}()
-	return p.IsStaleCredentialError(status, message)
 }

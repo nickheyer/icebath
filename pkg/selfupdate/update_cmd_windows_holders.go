@@ -5,11 +5,9 @@ package selfupdate
 import (
 	"context"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -255,16 +252,6 @@ func venvHolderKind(cmdline string) string {
 // Status of the holder listing when holders remain
 const venvHoldersExit = 3
 
-// Live argv of a holder joined, the scanned command line when it cannot be read or is empty
-func winLiveArgv(pid int, cmdline string) string {
-	if argv, err := winCmdline(pid); err == nil && len(argv) > 0 {
-		if joined := strings.Join(argv, " "); joined != "" {
-			return joined
-		}
-	}
-	return cmdline
-}
-
 // Pid, exe, argv and kind of every process the venv holder guard would refuse on
 func listVenvHolders(ctx context.Context) []any {
 	holders := []any{}
@@ -283,45 +270,4 @@ func listVenvHolders(ctx context.Context) []any {
 		holders = append(holders, map[string]any{"pid": match.PID, "exe": exe, "argv": argv, "kind": venvHolderKind(argv)})
 	}
 	return holders
-}
-
-// Pids of the holders when every one is a pausable gateway, nil with false when any is not
-func leftoverPausableGatewayPids(matches []venvMatch) ([]int, bool) {
-	pids := []int{}
-	for _, match := range matches {
-		if !winIsPausableGateway(winLiveArgv(match.PID, match.Cmdline)) {
-			return nil, false
-		}
-		pids = append(pids, match.PID)
-	}
-	return pids, true
-}
-
-// Refuses a plain Windows update that would tree kill a gateway this updater runs inside
-func refuseGatewayAncestorTreeKill(ctx context.Context, w io.Writer, pids []int, gatewayMode bool) bool {
-	if gatewayMode || len(pids) == 0 {
-		return false
-	}
-	var ancestors []string
-	for _, pid := range pids {
-		if gateway.IsPidAncestorOfCurrentProcess(pid) {
-			ancestors = append(ancestors, strconv.Itoa(pid))
-		}
-	}
-	if len(ancestors) == 0 {
-		return false
-	}
-	fmt.Fprintln(w, "✗ Refusing to stop the gateway process tree because this updater "+
-		"is running inside it (gateway PID(s): "+strings.Join(ancestors, ", ")+").\n"+
-		"  On Windows, taskkill /T would terminate the updater before the update can run.\n"+
-		"  From a chat platform, use `/update` instead.\n  Otherwise, run `icebath update` from a separate terminal.")
-	return true
-}
-
-// Text of a truthy value, empty for a falsy one
-func winText(v any) string {
-	if !pyrepr.Truthy(v) {
-		return ""
-	}
-	return pyrepr.Str(v)
 }

@@ -143,7 +143,7 @@ func peRecordUVEnvs(t *testing.T) *[]map[string]string {
 	return seen
 }
 
-func TestEnvironmentBothInstallTiersReceiveTheCMakePolicyFloor(t *testing.T) {
+func TestEnvironmentSyncReceivesTheCMakePolicyFloor(t *testing.T) {
 	root := t.TempDir()
 	seen := peRecordUVEnvs(t)
 	ctx := context.Background()
@@ -153,10 +153,7 @@ func TestEnvironmentBothInstallTiersReceiveTheCMakePolicyFloor(t *testing.T) {
 	if err := e.Sync(ctx, root, SyncOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.InstallRequirements(ctx, []string{"python-olm==3.2.16"}, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	if len(*seen) != 2 || (*seen)[0]["CMAKE_POLICY_VERSION_MINIMUM"] != "3.5" || (*seen)[1]["CMAKE_POLICY_VERSION_MINIMUM"] != "3.5" {
+	if len(*seen) != 1 || (*seen)[0]["CMAKE_POLICY_VERSION_MINIMUM"] != "3.5" {
 		t.Fatalf("envs %v", *seen)
 	}
 }

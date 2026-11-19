@@ -32,13 +32,13 @@ func TestMCPToolsParallelWhenServerOptedIn(t *testing.T) {
 		delete(mcpToolServerNames, "mcp__github__search_code")
 		mcpMu.Unlock()
 	})
-	if !tools.ShouldParallelizeToolBatch(ctx, nil, batch) {
+	if segments := tools.PlanToolBatchSegments(ctx, nil, batch, ""); len(segments) != 1 || segments[0].Mode != "parallel" {
 		t.Fatal("a parallel opted in MCP server's batch must run concurrently")
 	}
 	mcpMu.Lock()
 	delete(parallelSafeServers, own)
 	mcpMu.Unlock()
-	if tools.ShouldParallelizeToolBatch(ctx, nil, batch) {
+	if segments := tools.PlanToolBatchSegments(ctx, nil, batch, ""); len(segments) == 1 && segments[0].Mode == "parallel" {
 		t.Fatal("MCP tools without the server opt in stay sequential")
 	}
 }

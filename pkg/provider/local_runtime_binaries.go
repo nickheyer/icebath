@@ -56,21 +56,6 @@ func PinnedTag(backend string) (string, error) {
 	return "b" + version, nil
 }
 
-// Picks metal on macOS, cuda for NVIDIA, vulkan for AMD or Intel, and cpu otherwise, empty osName detects the host
-func SelectBackend(gpuVendor, osName string) (string, error) {
-	if osName == "" {
-		target, err := pm.CurrentTarget()
-		if err != nil {
-			return "", err
-		}
-		osName = "other"
-		if strings.HasPrefix(target, "darwin-") {
-			osName = "macos"
-		}
-	}
-	return selectBackendFor(gpuVendor, osName), nil
-}
-
 func selectBackendFor(gpuVendor, osName string) string {
 	if osName == "macos" {
 		return "metal"

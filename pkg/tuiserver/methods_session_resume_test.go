@@ -155,7 +155,7 @@ func TestIsServerMintedKeyShape(t *testing.T) {
 func TestSessionYoloToggleSurvivesABackendRestart(t *testing.T) {
 	db := resumeDB(t)
 	ctx := context.Background()
-	t.Cleanup(func() { tools.ClearSession("row-a") })
+	t.Cleanup(func() { tools.ClearSession(context.Background(), "row-a") })
 	session := tuihost.NewSession(map[string]any{"agent": NewSyntheticHeavyAgent("row-a", "test-model"), "session_key": "row-a"})
 	tuihost.SetSessionRecord("sid", session)
 	handleRequest(ctx, map[string]any{"id": "1", "method": "config.set", "params": map[string]any{"session_id": "sid", "key": "yolo"}})
@@ -167,7 +167,7 @@ func TestSessionYoloToggleSurvivesABackendRestart(t *testing.T) {
 		t.Fatalf("persisted yolo %v %v", row, err)
 	}
 	tuihost.SetSessionRecord("sid", nil)
-	tools.ClearSession("row-a")
+	tools.ClearSession(context.Background(), "row-a")
 	resp := handleRequest(ctx, map[string]any{"id": "2", "method": "session.resume", "params": map[string]any{"session_id": "row-a"}})
 	result := envelopeResult(t, resp)
 	if result["session_key"] != "row-a" || !tools.IsSessionYoloEnabled("row-a") {

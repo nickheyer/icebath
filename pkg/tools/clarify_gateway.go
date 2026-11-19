@@ -350,11 +350,6 @@ func AttemptClarifyTextResponse(sessionKey, response string) string {
 	return ClarifyTextNoPending
 }
 
-// ResolveClarifyTextResponse is true only when the typed reply was accepted and the waiter unblocked
-func ResolveClarifyTextResponse(sessionKey, response string) bool {
-	return AttemptClarifyTextResponse(sessionKey, response) == ClarifyTextResolved
-}
-
 // MarkClarifyAwaitingText flips an entry into text capture mode, false if unknown
 func MarkClarifyAwaitingText(clarifyID string) bool {
 	clarifyMu.Lock()

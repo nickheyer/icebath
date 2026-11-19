@@ -10,13 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -95,80 +92,8 @@ func (q *inputQueue) GetNoWait() (any, bool) {
 	return item, true
 }
 
-// Reports whether nothing is queued
-func (q *inputQueue) Empty() bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return len(q.items) == 0
-}
-
-// Returns the number of queued items
-func (q *inputQueue) Len() int {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return len(q.items)
-}
-
-// syncEvent is a settable flag goroutines can wait on
-type syncEvent struct {
-	mu  sync.Mutex
-	set bool
-	ch  chan struct{}
-}
-
-func newSyncEvent() *syncEvent { return &syncEvent{ch: make(chan struct{})} }
-
-// Marks the event and releases every waiter
-func (e *syncEvent) Set() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if !e.set {
-		e.set = true
-		close(e.ch)
-	}
-}
-
-// Clears the event so later waits block again
-func (e *syncEvent) Clear() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.set {
-		e.set = false
-		e.ch = make(chan struct{})
-	}
-}
-
-// Reports whether the event is set
-func (e *syncEvent) IsSet() bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.set
-}
-
-// Blocks until the event is set or the timeout passes, returning the set state
-func (e *syncEvent) Wait(timeout time.Duration) bool {
-	e.mu.Lock()
-	ch := e.ch
-	e.mu.Unlock()
-	if timeout < 0 {
-		<-ch
-		return true
-	}
-	select {
-	case <-ch:
-		return true
-	case <-time.After(timeout):
-		return e.IsSet()
-	}
-}
-
 // keyboardInterrupt is the panic that unwinds a turn when a shutdown signal cancelled the turn context
 type keyboardInterrupt struct{}
-
-// voiceInputMessage marks transcribed input so the concise voice prefix never applies to typed text
-type voiceInputMessage struct{ Text string }
-
-func (m *voiceInputMessage) String() string { return m.Text }
 
 // chatTurn holds the per turn state the chat phases and the agent worker share
 type chatTurn struct {
@@ -176,19 +101,10 @@ type chatTurn struct {
 	workerID              atomic.Uint64
 	result                map[string]any
 	muteNotificationReply bool
-	useStreamingTTS       bool
-	boxOpened             bool
-	thinkingStarted       bool
-	textQueue             *inputQueue
-	ttsDone               chan struct{}
-	streamCallback        func(string)
-	stopEvent             *syncEvent
-	ttsNormalExit         bool
 }
 
 // cliRuntime snapshots the resolved provider routing an agent is built from
 type cliRuntime struct {
-	APIKey            string
 	BaseURL           string
 	Provider          string
 	RequestedProvider string
@@ -199,165 +115,109 @@ type cliRuntime struct {
 	Resolved          *provider.Runtime
 }
 
-// The classic terminal chat with every mixin bound onto one struct
+// The one shot chat client, its turn, stream and session state on one struct
 type CLI struct {
 	ctx     context.Context
 	env     *tools.Env
 	console *cliui.Console
 	config  map[string]any
 
-	compact                    bool
-	toolProgressMode           string
-	focusViewEnabled           bool
-	focusSavedToolProgress     string
-	focusLastCountedTool       string
-	focusHiddenLines           int
-	resumeDisplay              string
-	bellOnComplete             bool
-	bellOnPrompt               bool
-	showReasoning              bool
-	reasoningFull              bool
-	modernLayout               bool
-	busyInputMode              string
-	verbose                    bool
-	streamingEnabled           bool
-	showTimestamps             bool
-	timestampFormat            string
-	finalResponseMarkdown      string
-	inlineDiffsEnabled         bool
-	turnSummaryCollector       *agent.TurnSummaryCollector
-	streamBuf                  string
-	reasoningPreviewBuf        string
-	streamStarted              bool
-	streamBoxOpened            bool
-	streamBoxLive              bool
-	streamedTextThisTurn       string
-	heldStatusLines            []string
-	streamTableBuf             []string
-	inStreamTable              bool
-	streamMu                   sync.Mutex
-	streamPrefilt              string
-	streamMidLine              bool
-	streamTextANSI             string
-	inReasoningBlock           bool
-	reasoningBoxOpened         bool
-	reasoningBuf               string
-	reasoningStartedAt         float64
-	reasoningShownThisTurn     bool
-	pendingCreditNotices       [][2]string
-	toolGenAnnounced           map[string]bool
-	runningToolLabels          map[string][]string
-	longToolHintFired          bool
-	pendingModelSwitchNote     string
-	pendingSkillsReloadNote    string
-	deferToolWarnings          bool
-	reloadMCPHook              func()
-	pendingMoaConfig           map[string]any
-	pendingMoaDisableAfterTurn bool
-	pendingMoaRestoreModel     map[string]string
-	pendingEditSnapshots       map[string]*tools.LocalEditSnapshot
+	toolProgressMode       string
+	focusViewEnabled       bool
+	focusSavedToolProgress string
+	focusLastCountedTool   string
+	focusHiddenLines       int
+	bellOnComplete         bool
+	showReasoning          bool
+	reasoningFull          bool
+	modernLayout           bool
+	verbose                bool
+	streamingEnabled       bool
+	showTimestamps         bool
+	timestampFormat        string
+	finalResponseMarkdown  string
+	inlineDiffsEnabled     bool
+	streamBuf              string
+	reasoningPreviewBuf    string
+	streamStarted          bool
+	streamBoxOpened        bool
+	streamBoxLive          bool
+	streamedTextThisTurn   string
+	heldStatusLines        []string
+	streamTableBuf         []string
+	inStreamTable          bool
+	streamMu               sync.Mutex
+	streamPrefilt          string
+	streamMidLine          bool
+	streamTextANSI         string
+	inReasoningBlock       bool
+	reasoningBoxOpened     bool
+	reasoningBuf           string
+	reasoningStartedAt     float64
+	reasoningShownThisTurn bool
+	pendingCreditNotices   [][2]string
+	toolGenAnnounced       map[string]bool
+	runningToolLabels      map[string][]string
+	longToolHintFired      bool
+	pendingEditSnapshots   map[string]*tools.LocalEditSnapshot
 
-	explicitModelOverride    bool
-	model                    string
-	modelIsDefault           bool
-	explicitAPIKey           string
-	typedAPIKey              string
-	explicitBaseURL          string
-	requestedProvider        string
-	explicitProvider         string
-	providerSource           string
-	provider                 string
-	apiMode                  string
-	acpCommand               string
-	acpArgs                  []string
-	baseURL                  string
-	apiKey                   string
-	credentialPool           *provider.Pool
-	resolvedRuntime          *provider.Runtime
-	credentialsRateLimited   bool
-	credentialsTerminal      bool
-	maxTurns                 int
-	runBudgetSeconds         *float64
-	explicitRunBudget        *float64
-	explicitMaxTurns         *int
-	enabledToolsets          []string
-	explicitToolsets         bool
-	typedToolsets            []string
-	disabledToolsets         []string
-	explicitCheckpoints      bool
-	passSessionID            bool
-	ignoreRules              bool
-	explicitIgnoreRules      bool
-	systemPrompt             string
-	personalities            map[string]any
-	prefillMessages          []any
-	reasoningConfig          map[string]any
-	explicitReasoningConfig  map[string]any
-	explicitReasoning        string
-	reasoningUserSet         bool
-	serviceTier              string
-	providerSort             any
-	providersOnly            any
-	providersIgnore          any
-	providersOrder           any
-	providerRequireParams    bool
-	providerDataCollection   any
-	openRouterMinCodingScore *float64
-	fallbackModel            []map[string]any
+	explicitModelOverride   bool
+	model                   string
+	modelIsDefault          bool
+	explicitAPIKey          string
+	typedAPIKey             string
+	explicitBaseURL         string
+	requestedProvider       string
+	explicitProvider        string
+	provider                string
+	apiMode                 string
+	acpCommand              string
+	acpArgs                 []string
+	baseURL                 string
+	apiKey                  string
+	credentialPool          *provider.Pool
+	resolvedRuntime         *provider.Runtime
+	credentialsRateLimited  bool
+	credentialsTerminal     bool
+	maxTurns                int
+	runBudgetSeconds        *float64
+	explicitRunBudget       *float64
+	explicitMaxTurns        *int
+	enabledToolsets         []string
+	explicitToolsets        bool
+	typedToolsets           []string
+	explicitCheckpoints     bool
+	passSessionID           bool
+	ignoreRules             bool
+	explicitIgnoreRules     bool
+	systemPrompt            string
+	prefillMessages         []any
+	reasoningConfig         map[string]any
+	explicitReasoningConfig map[string]any
+	explicitReasoning       string
+	serviceTier             string
+	fallbackModel           []map[string]any
 
-	activeAgentRouteSignature  string
-	agent                      atomic.Pointer[cliAgentSlot]
-	toolCallbacksInstalled     bool
-	conversationHistory        []map[string]any
-	sessionStart               time.Time
-	promptStartTime            *float64
-	promptDuration             float64
-	lastTurnFinishedAt         *float64
-	sessionDB                  *gatewaycli.GatewaySessionStore
-	handoffDB                  handoffStore
-	pendingTitle               string
-	resumed                    bool
-	sessionID                  string
-	resumeReadID               string
-	resumeHistoryError         string
-	resumeDisplayHistory       []map[string]any
-	pendingOneTurnModelRestore map[string]any
-	singleQueryMode            bool
-	singleQueryTurnAuthor      map[string]any
-	lastTurnResult             map[string]any
-	quietNotifyLingerDone      bool
-	ownsProcessNotification    func(map[string]any) bool
+	activeAgentRouteSignature string
+	agent                     atomic.Pointer[cliAgentSlot]
+	conversationHistory       []map[string]any
+	sessionStart              time.Time
+	sessionDB                 *gatewaycli.GatewaySessionStore
+	resumed                   bool
+	sessionID                 string
+	resumeReadID              string
+	resumeHistoryError        string
+	singleQueryTurnAuthor     map[string]any
+	lastTurnResult            map[string]any
+	quietNotifyLingerDone     bool
+	ownsProcessNotification   func(map[string]any) bool
 
 	pendingInput                   *inputQueue
 	interruptQueue                 *inputQueue
-	agentRunning                   bool
-	shouldExit                     bool
 	lastTurnInterrupted            bool
-	clarifyState                   *clarifyModalState
-	clarifyFreetext                bool
-	sudoState                      *sudoModalState
-	approvalState                  *approvalModalState
-	slashConfirmState              *slashConfirmModalState
-	modelPickerState               any
-	clarifyDeadline                *float64
-	sudoDeadline                   float64
-	approvalDeadline               float64
-	approvalLock                   sync.Mutex
-	composerPlaceholder            string
-	pendingAgentSeed               any
 	pendingToolInfo                map[string][]map[string]any
 	spinnerText                    string
 	lastScrollbackTool             string
-	commandRunning                 bool
-	statusBarTitleSessionID        string
-	statusBarTitleCache            string
-	statusBarTitleCheckedAt        float64
-	statusBarFieldSet              map[string]bool
-	statusBarFieldSetLoaded        bool
-	voiceRecordKeyDisplayCache     string
-	goalManager                    goals.Manager
-	attachedImages                 []string
-	imageCounter                   int
 	preloadedSkills                []string
 	autoLoadSkillsResult           *skillsPromptResult
 	preloadSkillsDone              chan struct{}
@@ -366,40 +226,13 @@ type CLI struct {
 	preloadSkillsRequested         []string
 	preloadSkillsFinalized         bool
 	activeSessionLease             ActiveSessionLease
-	voiceLock                      sync.Mutex
-	voiceMode                      bool
-	voiceTTS                       bool
-	voiceRecording                 bool
-	voiceProcessing                bool
-	voiceContinuous                bool
-	voiceRecorder                  any
-	voiceTTSStop                   *syncEvent
-	voiceTTSDone                   *syncEvent
-	voiceBargeCapture              *syncEvent
-	voiceLastTTSText               string
-	voiceBargePhase                string
-	voiceExtra                     cliVoiceExtra
-	statusBarVisible               bool
-	batteryVisible                 bool
 	statusBarSuppressedAfterResize atomic.Bool
-	backgroundTasks                map[string]chan struct{}
-	backgroundTaskCounter          int
-	cacheHitBaselinePrompt         int
-	cacheHitBaselineRead           int
-	cacheHitBaselineCompressions   int
-	cacheHitBaselineModel          string
 	gatewaySessionOpen             bool
-	gatewayPluginCommands          *gatewayPluginCatalog
-	gatewaySkills                  *gatewaySkillCatalog
 	gatewayPluginToolsetCache      *gatewayToolsetCatalog
-	observeUnsupported             *gatewayBoundary
-	observeNoticeShown             bool
 	turnCtx                        context.Context
 	turnCancel                     context.CancelFunc
 	signalStop                     func()
 	uiMu                           sync.Mutex
-	connectionState                any
-	cliCommandState
 }
 
 // skillsPromptResult is the (prompt, loaded names, missing names) triple a skills preload renders
@@ -426,15 +259,8 @@ var (
 	activeAgentRefMu                         sync.Mutex
 	sessionEndMessages                       []string
 	sessionEndMessagesMu                     sync.Mutex
-	cliWakeOwner                             any
-	handedOffSessionIDs                      = map[string]bool{}
 	singleQueryFinalizeAttemptedSessionIDs   = map[string]bool{}
 	sessionIDSetsMu                          sync.Mutex
-	skillCommandsCache                       skills.SkillCommands
-	skillBundlesCache                        skills.SkillCommands
-	skillCacheMu                             sync.Mutex
-	reverseAliasCache                        map[string]string
-	reverseAliasMu                           sync.Mutex
 	osExit                                   = os.Exit
 	TryAcquireActiveSession                  = AcquireActiveSessionLease
 	oneshotPendingCompletionsPollIntervalSec = 1.0
@@ -558,76 +384,9 @@ func takeSessionEndMessages() []string {
 	return lines
 }
 
-// Reports whether a session id was handed off to another owner
-func sessionHandedOff(sessionID string) bool {
-	sessionIDSetsMu.Lock()
-	defer sessionIDSetsMu.Unlock()
-	return handedOffSessionIDs[sessionID]
-}
-
-// Marks a session id as handed off so shutdown leaves its rows alone
-func markSessionHandedOff(sessionID string) {
-	sessionIDSetsMu.Lock()
-	handedOffSessionIDs[sessionID] = true
-	sessionIDSetsMu.Unlock()
-}
-
-// Returns the cached interactive skill commands, scanning them on first use
-func ensureSkillCommands(ctx context.Context) skills.SkillCommands {
-	skillCacheMu.Lock()
-	defer skillCacheMu.Unlock()
-	if skillCommandsCache != nil {
-		return skillCommandsCache
-	}
-	cmds, err := skillsScope(ctx).GetInteractiveSkillCommands(ctx)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("interactive skill commands scan failed: %v", err))
-	}
-	return cmds
-}
-
-// GetSkillCommands returns the interactive skill command table the slash dispatcher matches
-func GetSkillCommands(ctx context.Context) skills.SkillCommands { return ensureSkillCommands(ctx) }
-
-// Skill commands of the CLI, the gateway session's own when it is open, else this process's scan
-func sessionSkillCommands(c *CLI) skills.SkillCommands {
-	found, onGateway := gatewaySessionSkills(c)
-	if !onGateway {
-		return ensureSkillCommands(c.ctx)
-	}
-	out := make(skills.SkillCommands, len(found))
-	for key, info := range found {
-		out[key] = info
-	}
-	return out
-}
-
-// Returns the cached skill bundle table, loading it on first use
-func getSkillBundles(ctx context.Context) skills.SkillCommands {
-	skillCacheMu.Lock()
-	defer skillCacheMu.Unlock()
-	if skillBundlesCache == nil {
-		bundles, err := skillsScope(ctx).GetSkillBundles()
-		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("skill bundles scan failed: %v", err))
-		}
-		skillBundlesCache = bundles
-	}
-	return skillBundlesCache
-}
-
 // Builds the skills scope over the active home and the loaded CLI config
 func skillsScope(ctx context.Context) *skills.Scope {
 	return skills.NewScope(home.Dir(ctx), config.Tree(CLIConfig(ctx)))
-}
-
-// Returns the plugin command names without their slash prefix for dispatch matching
-func getPluginCmdHandlerNames(ctx context.Context) map[string]bool {
-	names := map[string]bool{}
-	for name := range plugins.GetPluginCommands(ctx) {
-		names[name] = true
-	}
-	return names
 }
 
 // Normalizes repeated or comma separated skills flags into a deduplicated identifier list
@@ -672,57 +431,6 @@ func normalizeMoaModel(model string) (string, string) {
 		}
 	}
 	return "", model
-}
-
-// Returns the shortest configured alias for a model name, else the name itself
-func reverseAliasForDisplay(ctx context.Context, modelName string) string {
-	if modelName == "" {
-		return modelName
-	}
-	reverseAliasMu.Lock()
-	defer reverseAliasMu.Unlock()
-	if reverseAliasCache == nil {
-		rmap := map[string]string{}
-		put := func(m, alias string) {
-			if m == "" {
-				return
-			}
-			if cur, ok := rmap[m]; !ok || len(alias) < len(cur) {
-				rmap[m] = alias
-			}
-		}
-		cfg, err := config.Load(home.Dir(ctx), nil)
-		if err != nil {
-			cfg = config.Tree{}
-		}
-		if ma, ok := cfg["model_aliases"].(map[string]any); ok {
-			for alias, entry := range ma {
-				if e, ok := entry.(map[string]any); ok {
-					put(strings.TrimSpace(cliStr(e["model"], "")), alias)
-				}
-			}
-		}
-		if mdl, ok := cfg["model"].(map[string]any); ok {
-			if simple, ok := mdl["aliases"].(map[string]any); ok {
-				for alias, val := range simple {
-					v, isStr := val.(string)
-					if !isStr || strings.TrimSpace(v) == "" {
-						continue
-					}
-					v = strings.TrimSpace(v)
-					if i := strings.Index(v, "/"); i >= 0 {
-						v = v[i+1:]
-					}
-					put(v, alias)
-				}
-			}
-		}
-		reverseAliasCache = rmap
-	}
-	if alias, ok := reverseAliasCache[modelName]; ok {
-		return alias
-	}
-	return modelName
 }
 
 // Returns the string form of a config value, the fallback for nil or empty
@@ -777,21 +485,6 @@ func cliMap(cfg map[string]any, key string) map[string]any {
 		return m
 	}
 	return map[string]any{}
-}
-
-// Returns the string list a config value holds, nil when it is not a list
-func cliStrList(v any) []string {
-	switch t := v.(type) {
-	case []string:
-		return append([]string{}, t...)
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, x := range t {
-			out = append(out, fmt.Sprint(x))
-		}
-		return out
-	}
-	return nil
 }
 
 // Returns a map value, the default when the key is absent

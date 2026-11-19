@@ -153,15 +153,6 @@ func removePath(path string, ignoreErrors bool) error {
 	return nil
 }
 
-// Replaces dst with src through the two phase stage and swap, the old tree never half deleted
-func atomicReplaceDir(w io.Writer, src, dst string) error {
-	staging, err := stageReplacement(w, src, dst, nil)
-	if err != nil {
-		return err
-	}
-	return commitStagedReplacements([]stagedEntry{{staging, dst}}, nil, "", nil)
-}
-
 // Copies src to the sibling staging path of dst and returns it, nothing live touched
 func stageReplacement(w io.Writer, src, dst string, onCreated func(staging string) error) (string, error) {
 	staging, backup := dst+zipStagingSuffix, dst+zipOldSuffix

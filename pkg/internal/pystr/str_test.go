@@ -19,12 +19,6 @@ func TestStripAndSplit(t *testing.T) {
 	if got := SplitWhitespace(" a\x1fb ", -1); !reflect.DeepEqual(got, []string{"a", "b"}) {
 		t.Errorf("split %q", got)
 	}
-	if got, _ := Split("a,b,c", ",", 1); !reflect.DeepEqual(got, []string{"a", "b,c"}) {
-		t.Errorf("split sep %q", got)
-	}
-	if _, err := Split("a", "", -1); err != ErrEmptySeparator {
-		t.Errorf("empty separator %v", err)
-	}
 	if got := Splitlines("a\r\nb c\x1d", false); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
 		t.Errorf("splitlines %q", got)
 	}

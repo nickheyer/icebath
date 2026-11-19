@@ -227,7 +227,7 @@ func TestRestoreIdentityPinsThePersistedTransportOnlyUnderMultiplexing(t *testin
 }
 
 // Auth v1 subjects parse back, native identities keep their bare subject and the digest is stable
-func TestAuthenticatedSubjectFormsAndPrincipalDigest(t *testing.T) {
+func TestAuthenticatedSubjectForms(t *testing.T) {
 	login := map[string]any{"user_id": "u1", "provider": "github", "issuer": "https://github.com"}
 	subject, err := AuthenticatedSubject(login)
 	if err != nil || subject != `auth:v1:["github","https://github.com","u1"]` {
@@ -254,10 +254,6 @@ func TestAuthenticatedSubjectFormsAndPrincipalDigest(t *testing.T) {
 	}
 	if subject, _ := AuthenticatedSubject(map[string]any{}); subject != `auth:v1:["","","unbound"]` {
 		t.Fatalf("unbound subject %q", subject)
-	}
-	digest, err := AuthenticatedPrincipalDigest(login)
-	if err != nil || len(digest) != len("principal:auth:")+32 || digest[:15] != "principal:auth:" {
-		t.Fatalf("digest %q %v", digest, err)
 	}
 	if !IsAuthenticatedIdentity(login) || IsAuthenticatedIdentity(map[string]any{"user_id": "server-internal", "provider": "server-internal"}) ||
 		IsAuthenticatedIdentity(map[string]any{"user_id": " ", "provider": "github"}) || IsAuthenticatedIdentity("u1") {

@@ -197,7 +197,7 @@ func doctorGitHubProbeRow(t *testing.T, dotenv string, hasDotenv bool) doctorPro
 	if len(probes) != 1 {
 		t.Fatal("GitHub token probe missing from the doctor's connectivity table")
 	}
-	results, err := doctorRunProbes(probes)
+	results, err := doctorRunProbes(probes, false)
 	if err != nil || len(results) != 1 {
 		t.Fatalf("results = %#v %v", results, err)
 	}
@@ -309,7 +309,7 @@ func TestRunProbesSanitizesEnvBeforeAnyWorkerBuildsAClient(t *testing.T) {
 	results, err := doctorRunProbes([]doctorProbe{{"stand-in", func() (doctorProbeResult, error) {
 		seenInWorker = os.Getenv("NO_PROXY")
 		return e.doctorConnectivityRow("stand-in", "ok", "", nil, ""), nil
-	}}})
+	}}}, false)
 	if err != nil || len(results) != 1 || len(results[0].Lines) != 1 {
 		t.Fatalf("results = %#v %v", results, err)
 	}
@@ -332,7 +332,7 @@ func TestRunProbesLeavesACleanEnvironmentUntouched(t *testing.T) {
 	results, err := doctorRunProbes([]doctorProbe{{"stand-in", func() (doctorProbeResult, error) {
 		imds = os.Getenv("AWS_EC2_METADATA_DISABLED")
 		return e.doctorConnectivityRow("stand-in", "ok", "", nil, ""), nil
-	}}})
+	}}}, false)
 	if err != nil || len(results) != 1 || !strings.Contains(results[0].Lines[0].Glyph, "✓") {
 		t.Fatalf("results = %#v %v", results, err)
 	}

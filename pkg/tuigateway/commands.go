@@ -86,10 +86,9 @@ type SlashExecParams struct {
 	Profile   *string `json:"profile,omitzero"`
 }
 
-// Worker or plugin text with its warning, or the directive of a command rerouted to command.dispatch with its type set
+// Live or plugin text, or the directive of a command rerouted to command.dispatch with its type set
 type SlashExecResult struct {
 	Output  string       `json:"output,omitzero"`
-	Warning string       `json:"warning,omitzero"`
 	Type    DispatchType `json:"type,omitzero"`
 	Target  string       `json:"target,omitzero"`
 	Message string       `json:"message,omitzero"`
@@ -164,7 +163,7 @@ var CommandsCatalog = NewMethod[CommandsCatalogParams, CommandsCatalogResult]("c
 // Runs a quick, plugin, bundle, skill or built in slash command and answers its directive
 var CommandDispatch = NewMethod[CommandDispatchParams, CommandDispatchResult]("command.dispatch")
 
-// Runs a slash line against the session's slash worker or a live or plugin shortcut
+// Runs a slash line through the live, plugin and dispatch stages of the session
 var SlashExec = NewMethod[SlashExecParams, SlashExecResult]("slash.exec")
 
 // Tells the shared owner a client ran a recognized command itself

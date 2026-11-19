@@ -152,8 +152,6 @@ func (osProcessProber) Running(pid int) bool {
 
 func (osProcessProber) Birth(pid int) (float64, error) { return proc.Birth(pid) }
 
-func (osProcessProber) WorkerBirth(pid int) (float64, error) { return proc.WorkerBirth(pid) }
-
 func (osProcessProber) BootStart(pid int) (float64, bool) { return proc.BootStart(pid) }
 
 func (osProcessProber) Zombie(pid int) bool { return proc.Zombie(pid) }
@@ -215,7 +213,5 @@ func endPid(pid int, code uint32) error {
 	defer windows.CloseHandle(h)
 	return windows.TerminateProcess(h, code)
 }
-
-func (osProcessProber) Environ(pid int) (map[string]string, error) { return proc.Environ(pid) }
 
 func (osProcessProber) Cmdline(pid int) ([]string, error) { return proc.Cmdline(pid) }

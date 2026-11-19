@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -96,7 +95,7 @@ func openMacOSX(b *browser, url string) (bool, error) {
 // Registers one launcher per program of the list found on the path
 func registerEachFound(build func(string) *browser, names ...string) {
 	for _, name := range names {
-		if _, ok := pyshutil.Which(name, nil); ok {
+		if which(name) {
 			register(name, nil, build(name), false)
 		}
 	}
@@ -105,21 +104,21 @@ func registerEachFound(build func(string) *browser, names ...string) {
 // Graphical browsers of a desktop session in the stdlib preference order
 func registerXBrowsers() {
 	registerEachFound(newBackground, "xdg-open")
-	if _, ok := pyshutil.Which("gio", nil); ok {
+	if which("gio") {
 		register("gio", nil, newGenericList(kindBackground, []string{"gio", "open", "--", "%s"}), false)
 	}
-	desktop := strings.Split(os.Getenv("XDG_CURRENT_DESKTOP"), ":")
-	_, gnomeSession := os.LookupEnv("GNOME_DESKTOP_SESSION_ID")
+	desktop := strings.Split(getenv("XDG_CURRENT_DESKTOP"), ":")
+	_, gnomeSession := lookupEnv("GNOME_DESKTOP_SESSION_ID")
 	if slices.Contains(desktop, "GNOME") || gnomeSession {
 		registerEachFound(newBackground, "gvfs-open")
 	}
-	_, kdeSession := os.LookupEnv("KDE_FULL_SESSION")
+	_, kdeSession := lookupEnv("KDE_FULL_SESSION")
 	if slices.Contains(desktop, "KDE") || kdeSession {
 		registerEachFound(newKonqueror, "kfmclient")
 	}
 	registerEachFound(newBackground, "x-www-browser")
 	registerEachFound(newMozilla, "firefox", "iceweasel", "seamonkey", "mozilla-firefox", "mozilla")
-	if _, ok := pyshutil.Which("kfm", nil); ok {
+	if which("kfm") {
 		register("kfm", nil, newKonqueror("kfm"), false)
 	} else {
 		registerEachFound(newKonqueror, "konqueror")
@@ -135,13 +134,11 @@ func registerPlatformBrowsers() {
 		register("chrome", nil, newMacOSX("google chrome"), false)
 		register("firefox", nil, newMacOSX("firefox"), false)
 		register("safari", nil, newMacOSX("safari"), false)
-	} else if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-		if out, err := exec.Command("xdg-settings", "get", "default-web-browser").Output(); err == nil {
-			osPreferred = pystr.Strip(string(out))
-		}
+	} else if getenv("DISPLAY") != "" || getenv("WAYLAND_DISPLAY") != "" {
+		osPreferred = desktopDefault()
 		registerXBrowsers()
 	}
-	if os.Getenv("TERM") == "" {
+	if getenv("TERM") == "" {
 		return
 	}
 	registerEachFound(newGeneric, "www-browser", "links")

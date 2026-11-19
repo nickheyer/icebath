@@ -117,18 +117,15 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	if caps := discordLoadCapsFromDisk(env, "bot-c"); caps == nil || caps.GetOr("has_members_intent", nil) != false || caps.GetOr("detected", nil) != true {
 		t.Fatalf("background detection saved %v", caps)
 	}
-	if caps := discordDetectCapabilities(env, "bot-c", false); caps.GetOr("detected", nil) != false {
-		t.Fatalf("cached blocking caps %v", caps)
+	if caps := discordFetchCapabilities(env, "bot-c"); caps.GetOr("detected", nil) != true || caps.GetOr("has_message_content", nil) != false {
+		t.Fatalf("fetched caps %v", caps)
 	}
-	if caps := discordDetectCapabilities(env, "bot-c", true); caps.GetOr("detected", nil) != true || caps.GetOr("has_message_content", nil) != false {
-		t.Fatalf("forced blocking caps %v", caps)
-	}
-	if caps := discordDetectCapabilitiesNonblocking(env, "bot-c"); caps.GetOr("detected", nil) != true {
-		t.Fatalf("forced caps reach the schema lookup %v", caps)
+	if caps := discordDetectCapabilitiesNonblocking(env, "bot-c"); caps.GetOr("detected", nil) != false {
+		t.Fatalf("a fetch reached the schema lookup cache %v", caps)
 	}
 	discordResetCapabilityCache()
-	if caps := discordDetectCapabilities(env, "bot-d", false); caps.GetOr("detected", nil) != true || caps.GetOr("has_members_intent", nil) != false {
-		t.Fatalf("first blocking caps %v", caps)
+	if caps := discordFetchCapabilities(env, "bot-d"); caps.GetOr("detected", nil) != true || caps.GetOr("has_members_intent", nil) != false {
+		t.Fatalf("first fetch caps %v", caps)
 	}
 }
 

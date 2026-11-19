@@ -627,17 +627,6 @@ func raceDirectDials(t *http.Transport) {
 	}
 }
 
-// Stdio writer that swallows broken pipe and closed handle errors so console output never crashes the agent
-type safeWriter struct{ inner io.Writer }
-
-func (w safeWriter) Write(p []byte) (int, error) {
-	n, err := w.inner.Write(p)
-	if err != nil {
-		return len(p), nil
-	}
-	return n, nil
-}
-
 // Keeps the process alive when its stdout or stderr pipe goes away, writes then fail quietly
 func installSafeStdio() {
 	signal.Ignore(syscall.SIGPIPE)

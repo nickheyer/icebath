@@ -3,10 +3,8 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -159,95 +157,6 @@ func TestExplicitSetupConsentIsDurableOnlyAfterSuccess(t *testing.T) {
 	}
 }
 
-// Unmanaged spawn boundary recording gateway run launches instead of starting them
-func recordGatewaySpawns(t *testing.T) *[][]string {
-	t.Helper()
-	var spawned [][]string
-	real := gatewayPopen
-	swapSetup(t, &gatewayPopen, func(cmd *exec.Cmd) (SpawnedGateway, error) {
-		if slices.Contains(cmd.Args, "gateway") && slices.Contains(cmd.Args, "run") {
-			spawned = append(spawned, cmd.Args)
-			return pendingSpawn{}, nil
-		}
-		return real(cmd)
-	})
-	return &spawned
-}
-
-func TestWizardServiceChoiceControlsInstallation(t *testing.T) {
-	for _, tc := range []struct{ startNow, consent bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
-		t.Run(fmt.Sprintf("start_now=%v-consent=%v", tc.startNow, tc.consent), func(t *testing.T) {
-			s := newChoiceSupervisor(t)
-			ctx := context.Background()
-			if err := config.SaveConfig(ctx, s.profile, map[string]any{"gateway": map[string]any{"service_install_choice": nil}},
-				config.SaveOptions{}); err != nil {
-				t.Fatal(err)
-			}
-			swapSetup(t, &setupStdinIsTTY, func() bool { return true })
-			answers := []bool{tc.startNow, tc.consent}
-			swapSetup(t, &setupPromptConsent, func(context.Context, string, bool) bool {
-				answer := answers[0]
-				answers = answers[1:]
-				return answer
-			})
-			swapSetup(t, &gatewayFacade.promptChoice, func(string, []string, int) int { return 0 })
-			spawned := recordGatewaySpawns(t)
-			var out bytes.Buffer
-			if err := wizardInstallService(ctx, &out, "systemd"); err != nil {
-				t.Fatal(err)
-			}
-			unit, err := GetSystemdUnitPath(ctx, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(unit); (err == nil) != tc.consent {
-				t.Fatalf("unit exists %v, consent %v\n%s", err == nil, tc.consent, out.String())
-			}
-			if (len(*spawned) > 0) != (tc.startNow && !tc.consent) {
-				t.Fatalf("spawned %v\n%s", *spawned, out.String())
-			}
-			loaded, err := loadSetupConfig(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := map[bool]string{true: "install", false: "decline"}[tc.consent]
-			if got := loaded["gateway"].(map[string]any)["service_install_choice"]; got != want {
-				t.Fatalf("choice %v want %v", got, want)
-			}
-			if len(*spawned) > 0 && slices.Contains((*spawned)[0], "--replace") {
-				t.Fatalf("replace in %v", (*spawned)[0])
-			}
-		})
-	}
-}
-
-func TestWizardStartDoesNotSpawnOverReservedOwner(t *testing.T) {
-	s := newChoiceSupervisor(t)
-	ctx := context.Background()
-	if err := os.Chmod(s.profile, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := config.SaveConfig(ctx, s.profile, map[string]any{"gateway": map[string]any{"service_install_choice": "decline"}},
-		config.SaveOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	swapSetup(t, &setupStdinIsTTY, func() bool { return true })
-	swapSetup(t, &setupPromptConsent, func(context.Context, string, bool) bool { return true })
-	spawned := recordGatewaySpawns(t)
-	owner := NewProfileOwnership()
-	if err := owner.Reserve(ctx, []string{s.profile}, ""); err != nil {
-		t.Fatal(err)
-	}
-	defer owner.Close()
-	var out bytes.Buffer
-	if err := wizardInstallService(ctx, &out, "systemd"); err != nil {
-		t.Fatal(err)
-	}
-	if len(*spawned) != 0 {
-		t.Fatalf("spawned %v", *spawned)
-	}
-}
-
 func TestDockerAwareGatewaySetupWizardUserScopeInContainerSkipsInstall(t *testing.T) {
 	swapSetup(t, &setupIsContainer, func() bool { return true })
 	swapSetup(t, &setupPromptInstallScope, func(io.Writer) string { return "user" })
@@ -259,21 +168,5 @@ func TestDockerAwareGatewaySetupWizardUserScopeInContainerSkipsInstall(t *testin
 	scope, did, err := installLinuxGatewayFromSetup(context.Background(), &out, false, true)
 	if err != nil || scope != "user" || did || !strings.Contains(out.String(), "--system") {
 		t.Fatalf("scope %q did %v err %v\n%s", scope, did, err, out.String())
-	}
-}
-
-func TestWizardInstallServiceReportsInstallerExitLikeSystemExitStr(t *testing.T) {
-	swapSetup(t, &setupStdinIsTTY, func() bool { return true })
-	swapSetup(t, &setupPromptConsent, func(context.Context, string, bool) bool { return false })
-	swapSetup(t, &setupLoadConfig, func(context.Context) (map[string]any, error) {
-		return map[string]any{"gateway": map[string]any{"service_install_choice": "install"}}, nil
-	})
-	swapSetup(t, &setupLaunchdInstall, func(context.Context, io.Writer, bool, bool, bool) error { return &SystemExitError{Code: 1} })
-	var out bytes.Buffer
-	if err := wizardInstallService(context.Background(), &out, "launchd"); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "Install failed: 1\n") || strings.Contains(out.String(), "exit 1") {
-		t.Fatalf("output %q", out.String())
 	}
 }

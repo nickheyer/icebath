@@ -35,9 +35,6 @@ func listenerClaimKey(claim *[4]any) *claimKey {
 	return &key
 }
 
-// Whether the key is the four field listener claim rather than a credential pair
-func (k claimKey) isListener() bool { return k[0] == "listener" }
-
 // Held secondary claims of one profile platform and the task or adapter that owns the hold
 type heldClaims struct {
 	owner  any

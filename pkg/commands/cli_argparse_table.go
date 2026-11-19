@@ -32,10 +32,11 @@ var argparseTree = map[string]*apParser{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"-q", "--query"}, Dest: "query", Mutex: 1},
 		{Kind: 'f', Opts: []string{"--query-file"}, Dest: "query_file", Metavar: []string{"PATH"}, Mutex: 1},
-		{Kind: 'f', Opts: []string{"--oneshot"}, Dest: "oneshot_exit", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--image"}, Dest: "image"},
 		{Kind: 'f', Opts: []string{"-m", "--model"}, Dest: "model"},
 		{Kind: 'f', Opts: []string{"-t", "--toolsets"}, Dest: "toolsets"},
+		{Kind: 'f', Opts: []string{"--list-tools"}, Dest: "list_tools", Nargs: "0"},
+		{Kind: 'f', Opts: []string{"--list-toolsets"}, Dest: "list_toolsets", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--reasoning"}, Dest: "reasoning", Metavar: []string{"LEVEL"}},
 		{Kind: 'f', Opts: []string{"-s", "--skills"}, Dest: "skills"},
 		{Kind: 'f', Opts: []string{"--provider"}, Dest: "provider"},
@@ -86,7 +87,7 @@ var argparseTree = map[string]*apParser{
 	}},
 	"fallback": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "fallback_command", Nargs: "A...", Choices: []string{"list", "ls", "add", "remove", "rm", "clear"}, Sub: []apChoice{{Name: "list", Aliases: []string{"ls"}, Help: "Show the current fallback chain (default when no subcommand)", Listed: true}, {Name: "add", Aliases: []string{}, Help: "Pick a provider + model (same picker as `icebath model`) and append to the chain", Listed: true}, {Name: "remove", Aliases: []string{"rm"}, Help: "Pick an entry to delete from the chain", Listed: true}, {Name: "clear", Aliases: []string{}, Help: "Remove all fallback entries", Listed: true}}},
+		{Kind: 's', Dest: "fallback_command", Nargs: "A...", Choices: []string{"list", "ls", "add", "remove", "rm", "clear", "check"}, Sub: []apChoice{{Name: "list", Aliases: []string{"ls"}, Help: "Show the current fallback chain (default when no subcommand)", Listed: true}, {Name: "add", Aliases: []string{}, Help: "Pick a provider + model (same picker as `icebath model`) and append to the chain", Listed: true}, {Name: "remove", Aliases: []string{"rm"}, Help: "Pick an entry to delete from the chain", Listed: true}, {Name: "clear", Aliases: []string{}, Help: "Remove all fallback entries", Listed: true}, {Name: "check", Aliases: []string{}, Help: "Check each fallback entry is usable, without starting an agent session (exit 1 if not)", Listed: true}}},
 	}},
 	"fallback list": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -99,6 +100,11 @@ var argparseTree = map[string]*apParser{
 	}},
 	"fallback clear": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+	}},
+	"fallback check": {Acts: []apAction{
+		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+		{Kind: 'f', Opts: []string{"--live"}, Dest: "live", Nargs: "0"},
+		{Kind: 'f', Opts: []string{"--json"}, Dest: "json", Nargs: "0"},
 	}},
 	"worktree": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},

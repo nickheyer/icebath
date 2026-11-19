@@ -27,12 +27,13 @@ type chatArgs struct {
 	Skills                              []string
 	MaxTurns                            *int
 	RunBudget                           float64
-	Version, OneshotExit, Verbose       bool
+	Version, Verbose                    bool
 	Quiet, Worktree, Checkpoints        bool
 	PassSessionID, IgnoreUserConfig     bool
 	IgnoreRules, SafeMode, Yolo         bool
 	AcceptHooks, TUINative, TUIDev      bool
 	NoRestoreCWD, CreateIfMissing       bool
+	ListTools, ListToolsets             bool
 	noninteractiveConfigValidated       bool
 }
 
@@ -77,13 +78,7 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 		str("api-key", &a.APIKey)
 		str("base-url", &a.BaseURL)
 		str("format", &a.OutputFormat)
-		if flags.Flags().Lookup("oneshot") != nil {
-			if flags.Flags().Lookup("oneshot").Value.Type() == "bool" {
-				boolean("oneshot", &a.OneshotExit)
-			} else {
-				str("oneshot", &a.Oneshot)
-			}
-		}
+		str("oneshot", &a.Oneshot)
 		if flags.Flags().Lookup("skills") != nil {
 			if v, err := flags.Flags().GetStringArray("skills"); err == nil && len(v) > 0 {
 				a.Skills = v
@@ -114,6 +109,8 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 		boolean("dev", &a.TUIDev)
 		boolean("no-restore-cwd", &a.NoRestoreCWD)
 		boolean("create-if-missing", &a.CreateIfMissing)
+		boolean("list-tools", &a.ListTools)
+		boolean("list-toolsets", &a.ListToolsets)
 	}
 	read(cli.Root.Flags(), cli.Root)
 	if cmd != cli.Root {

@@ -111,11 +111,6 @@ func HostObligationPresent() bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
-// Merges fields into the armed record, never failing
-func AmendHostObligation(ctx context.Context, fields *pyjson.Object) {
-	updateObligationRecord(ctx, func(record *pyjson.Object) { record.Update(fields) }, "amend")
-}
-
 // Arms the host obligation, true when written, runtimes nil standing for no inventory
 func WriteHostObligation(ctx context.Context, expectedSHA string, runtimes []any, profile, owner string) bool {
 	path := HostObligationPath()

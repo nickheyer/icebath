@@ -3,12 +3,11 @@ package provider
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -275,104 +274,150 @@ func TestBedrockStreamCallInterruptRaisesInterruptedError(t *testing.T) {
 	}
 }
 
-// Typed client whose stream attempts run the scripted function
-type scriptedStreamClient struct {
-	route  Route
-	calls  int
-	stream func(ctx context.Context, call int, fn StreamFunc) (*Response, error)
+// Chat completions agent on a scripted request client under a private home
+func scriptedStreamAgent(t *testing.T) *fakeChatAgent {
+	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	return &fakeChatAgent{provider: "custom", apiMode: "chat_completions", baseURL: "https://example.com/v1", model: "test/model", plat: "cli"}
 }
 
-func (c *scriptedStreamClient) Route() Route { return c.route }
-func (c *scriptedStreamClient) Complete(context.Context, *Request) (*Response, error) {
-	return nil, errors.New("blocking call in a stream test")
+func scriptedStreamKwargs() map[string]any {
+	return map[string]any{"model": "test/model", "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
 }
-func (c *scriptedStreamClient) Stream(ctx context.Context, req *Request, fn StreamFunc) (*Response, error) {
-	c.calls++
-	return c.stream(ctx, c.calls, fn)
-}
-func (c *scriptedStreamClient) CountTokens(context.Context, *Request) (int, error) { return 0, nil }
 
-func scriptedLoop(ctx context.Context, c *scriptedStreamClient, opts DoOptions) *doLoop {
-	if opts.Stream == nil {
-		opts.Stream = func(StreamEvent) error { return nil }
+// Chat completions agent a test re-points to another route while its request is in flight
+type switchedRouteAgent struct {
+	*fakeChatAgent
+	switched atomic.Bool
+}
+
+func (a *switchedRouteAgent) Model() string {
+	if a.switched.Load() {
+		return "kimi-k2.6"
 	}
-	l := &doLoop{ctx: ctx, opts: opts, client: c, req: &Request{Model: c.route.Model}, route: c.route, session: &RetrySession{},
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)), now: time.Now, sleep: func(context.Context, time.Duration) error { return nil }, maxRetries: 3}
-	l.st = &RetryState{Route: c.route, Request: l.req, Client: c, MaxRetries: 3}
-	return l
+	return a.fakeChatAgent.Model()
+}
+
+func (a *switchedRouteAgent) Provider() string {
+	if a.switched.Load() {
+		return "kimi-coding"
+	}
+	return a.fakeChatAgent.Provider()
+}
+
+func (a *switchedRouteAgent) BaseURL() string {
+	if a.switched.Load() {
+		return "https://api.moonshot.ai/v1"
+	}
+	return a.fakeChatAgent.BaseURL()
 }
 
 func TestStreamRetryIsHandedBackOnceTheRouteSwitchedUnderTheRequest(t *testing.T) {
-	stall := func(context.Context, int, StreamFunc) (*Response, error) {
-		return nil, &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: errors.New("stalled")}
+	recordStreamBackoff(t)
+	agent := &switchedRouteAgent{fakeChatAgent: scriptedStreamAgent(t)}
+	var sent []string
+	client := &fakeChatClient{create: func(_ context.Context, kw map[string]any) (any, error) {
+		sent = append(sent, stringOf(kw["model"])+" via "+agent.BaseURL())
+		agent.switched.Store(true)
+		return nil, &AuxTransportError{Class: "ReadError", Message: "stale stream killed"}
+	}}
+	agent.create = func(string, map[string]any) (any, error) { return client, nil }
+	_, err := InterruptibleStreamingAPICall(t.Context(), agent, scriptedStreamKwargs(), nil)
+	var dropped *AuxTransportError
+	if !errors.As(err, &dropped) || dropped.Class != "ReadError" || !reflect.DeepEqual(sent, []string{"test/model via https://example.com/v1"}) {
+		t.Fatalf("sent %q err %v", sent, err)
 	}
-	route := Route{Provider: "openrouter", Model: "old/model", BaseURL: "https://openrouter.ai/api/v1", Mode: ModeChatCompletions}
-	c := &scriptedStreamClient{route: route, stream: stall}
-	l := scriptedLoop(t.Context(), c, DoOptions{LiveRoute: func() Route {
-		if c.calls > 0 {
-			return Route{Provider: "anthropic", Model: "claude-opus-4.8", BaseURL: "https://api.anthropic.com", Mode: ModeAnthropicMessages}
+	same := scriptedStreamAgent(t)
+	var models []string
+	sameClient := &fakeChatClient{create: func(_ context.Context, kw map[string]any) (any, error) {
+		models = append(models, stringOf(kw["model"]))
+		if len(models) == 1 {
+			return nil, &AuxTransportError{Class: "ReadError", Message: "stale stream killed"}
 		}
-		return route
-	}})
-	_, _, err := l.streamWithReconnects()
-	if TimeoutPhase(err) == "" || c.calls != 1 {
-		t.Fatalf("calls %d err %v", c.calls, err)
+		return &scriptedChatStream{chunks: []map[string]any{chatContentChunk("ok"), chatFinishChunk("stop")}}, nil
+	}}
+	same.create = func(string, map[string]any) (any, error) { return sameClient, nil }
+	resp, err := InterruptibleStreamingAPICall(t.Context(), same, scriptedStreamKwargs(), nil)
+	if err != nil || streamFinalText(resp) != "ok" || !reflect.DeepEqual(models, []string{"test/model", "test/model"}) {
+		t.Fatalf("unswitched route sent %q, resp %v err %v", models, resp, err)
 	}
-	same := &scriptedStreamClient{route: route, stream: stall}
-	if _, _, err := scriptedLoop(t.Context(), same, DoOptions{LiveRoute: func() Route { return route }}).streamWithReconnects(); err == nil || same.calls != streamRetries()+1 {
-		t.Fatalf("unswitched route retried %d times, err %v", same.calls, err)
-	}
-}
-
-type recordingEmitters struct{ events []string }
-
-func (r *recordingEmitters) EmitStreamStart() { r.events = append(r.events, "start") }
-func (r *recordingEmitters) EmitStreamEnd(finalText string, finished bool, errText *string) {
-	e := "end " + finalText
-	if !finished {
-		e += " unfinished"
-	}
-	if errText != nil {
-		e += " " + *errText
-	}
-	r.events = append(r.events, e)
 }
 
 func TestStreamAttemptsFireTheFirstDeltaOnceAndAreBracketedByTheEmitters(t *testing.T) {
-	route := Route{Provider: "openrouter", Model: "m", Mode: ModeChatCompletions}
-	c := &scriptedStreamClient{route: route, stream: func(_ context.Context, call int, fn StreamFunc) (*Response, error) {
-		if call == 1 {
-			return nil, &TimeoutPhaseError{Phase: TimeoutPhaseConnect, Err: errors.New("connect")}
+	recordStreamBackoff(t)
+	agent := scriptedStreamAgent(t)
+	client := &fakeChatClient{}
+	client.create = func(context.Context, map[string]any) (any, error) {
+		if client.calls.Load() == 1 {
+			return nil, &AuxTransportError{Class: "ConnectTimeout", Message: "connect"}
 		}
-		for _, text := range []string{"he", "llo"} {
-			if err := fn(StreamEvent{Kind: EventTextDelta, Text: text}); err != nil {
-				return nil, err
-			}
-		}
-		return &Response{Message: &state.Message{Role: "assistant", Content: "hello"}}, nil
-	}}
-	em := &recordingEmitters{}
+		return &scriptedChatStream{chunks: []map[string]any{chatContentChunk("he"), chatContentChunk("llo"), chatFinishChunk("stop")}}, nil
+	}
+	agent.create = func(string, map[string]any) (any, error) { return client, nil }
 	first := 0
-	resp, _, err := scriptedLoop(t.Context(), c, DoOptions{StreamEmitters: em, OnFirstDelta: func() { first++ }}).streamWithReconnects()
-	if err != nil || resp.Message.Text() != "hello" || first != 1 {
+	resp, err := InterruptibleStreamingAPICall(t.Context(), agent, scriptedStreamKwargs(), func() { first++ })
+	if err != nil || streamFinalText(resp) != "hello" || first != 1 {
 		t.Fatalf("resp %v err %v first %d", resp, err, first)
 	}
-	want := []string{"start", "end  unfinished connect", "start", "end hello"}
-	if len(em.events) != 4 || em.events[0] != want[0] || !strings.HasPrefix(em.events[1], "end  unfinished") || em.events[2] != want[2] || em.events[3] != want[3] {
-		t.Fatalf("%q", em.events)
+	st := agent.st()
+	st.mu.Lock()
+	events, deltas := append([]string(nil), st.events...), append([]string(nil), st.deltas...)
+	st.mu.Unlock()
+	want := []string{"start", "end text= error=connect", "start", "end text=hello finished"}
+	if !reflect.DeepEqual(events, want) || !reflect.DeepEqual(deltas, []string{"he", "llo"}) {
+		t.Fatalf("events %q deltas %q", events, deltas)
 	}
 }
 
-func TestStreamThatFinishesAfterTheInterruptRaisesThePostWorkerInterrupt(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	c := &scriptedStreamClient{route: Route{Provider: "openrouter", Model: "m", Mode: ModeChatCompletions}, stream: func(context.Context, int, StreamFunc) (*Response, error) {
-		cancel()
-		return &Response{Message: &state.Message{Role: "assistant", Content: "late"}}, nil
+// Chat stream raising the agent interrupt once its last chunk was read
+type interruptAtEndStream struct {
+	scriptedChatStream
+	agent *fakeChatAgent
+}
+
+func (s *interruptAtEndStream) Next(ctx context.Context) (map[string]any, error) {
+	chunk, err := s.scriptedChatStream.Next(ctx)
+	if err != nil {
+		s.agent.setInterrupted(true)
+	}
+	return chunk, err
+}
+
+func TestStreamThatFinishesAfterTheInterruptRaisesTheInterrupt(t *testing.T) {
+	agent := scriptedStreamAgent(t)
+	client := &fakeChatClient{create: func(context.Context, map[string]any) (any, error) {
+		return &interruptAtEndStream{agent: agent, scriptedChatStream: scriptedChatStream{chunks: []map[string]any{chatContentChunk("late"), chatFinishChunk("stop")}}}, nil
 	}}
-	em := &recordingEmitters{}
-	_, _, err := scriptedLoop(ctx, c, DoOptions{StreamEmitters: em}).streamWithReconnects()
+	agent.create = func(string, map[string]any) (any, error) { return client, nil }
+	resp, err := InterruptibleStreamingAPICall(t.Context(), agent, scriptedStreamKwargs(), nil)
 	var ie *InterruptedError
-	if !errors.As(err, &ie) || ie.Message != "Agent interrupted during streaming API call (post-worker)" {
-		t.Fatalf("%v", err)
+	if resp != nil || !errors.As(err, &ie) || !strings.HasPrefix(ie.Message, "Agent interrupted during streaming API call") {
+		t.Fatalf("resp %v err %v", resp, err)
+	}
+}
+
+func TestStreamOptionsRejectionRetriesWithoutUsageExtension(t *testing.T) {
+	agent := scriptedStreamAgent(t)
+	var sent []map[string]any
+	client := &fakeChatClient{create: func(_ context.Context, kw map[string]any) (any, error) {
+		sent = append(sent, kw)
+		if len(sent) == 1 {
+			return nil, &APIError{StatusCode: 400, Message: "extra_forbidden: stream_options", Kind: ErrInvalidRequest, Body: `{"error":{"message":"extra fields not permitted: stream_options"}}`}
+		}
+		return &scriptedChatStream{chunks: []map[string]any{chatContentChunk("ok"), chatFinishChunk("stop")}}, nil
+	}}
+	agent.create = func(string, map[string]any) (any, error) { return client, nil }
+	resp, err := InterruptibleStreamingAPICall(t.Context(), agent, scriptedStreamKwargs(), nil)
+	if err != nil || streamFinalText(resp) != "ok" {
+		t.Fatalf("resp %v err %v", resp, err)
+	}
+	if !agent.RetrySession().StreamOptionsUnsupported || len(sent) != 2 {
+		t.Fatalf("stream options latch not set: %+v after %d requests", agent.RetrySession(), len(sent))
+	}
+	if _, has := sent[0]["stream_options"]; !has {
+		t.Fatalf("first request carried no stream_options: %v", sent[0])
+	}
+	if _, has := sent[1]["stream_options"]; has {
+		t.Fatalf("compat retry still sent stream_options: %v", sent[1])
 	}
 }

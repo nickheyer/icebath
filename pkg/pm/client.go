@@ -40,15 +40,8 @@ func init() { clientRequest, coldEngine = request, engineReady }
 // Relay environment provisioning an explicit sync of the relay extra runs, replaced by tests
 var syncRuntimeEnvironment = EnsureRuntimeEnvironment
 
-// Reports PM's engine toolchain ready without installing anything, a resident payload runtime counting as ready
+// Reports PM's engine toolchain ready without installing anything
 func engineReady(ctx context.Context) (*InstallError, error) {
-	resident, err := FindResidentRuntime()
-	if err != nil {
-		return nil, err
-	}
-	if resident != nil {
-		return nil, nil
-	}
 	_, _, found, err := Toolchain(ctx, false, false)
 	if err != nil {
 		return nil, err
@@ -618,33 +611,16 @@ func pathCall(ctx context.Context, operation string, args policyArgs, run func(c
 	return path, err
 }
 
-// Builds a validated Python environment without exposing install machinery
-func BuildEnvironment(ctx context.Context, opts BuildEnvironmentOptions) (string, error) {
-	return pathCall(ctx, "build_environment", policyArgs{Explicit: opts.Explicit, Extras: opts.Extras},
-		func(c context.Context) (string, error) { return buildEnvironment(c, opts) })
-}
-
 // Resolves a project's lock without creating or selecting an environment
 func LockProject(ctx context.Context, opts LockProjectOptions) error {
 	return clientWorkerCall(ctx, "lock_project", policyArgs{Explicit: opts.Explicit},
 		func(c context.Context) error { return lockProject(c, opts) })
 }
 
-// Stages PM's own offline runtime directly, its construction never dispatched through that runtime
-func StageManagerRuntime(ctx context.Context, opts StageManagerRuntimeOptions) (string, error) {
-	return stageManagerRuntime(ctx, opts)
-}
-
 // Selects a complete isolated dependency generation, retaining the previous one
 func EnsureEnvironment(ctx context.Context, opts EnsureEnvironmentOptions) (string, error) {
 	return pathCall(ctx, "ensure_environment", policyArgs{Name: opts.Name, Explicit: opts.Explicit},
 		func(c context.Context) (string, error) { return ensureEnvironment(c, opts) })
-}
-
-// Selects an isolated environment of a project's locked dependencies
-func EnsureProjectEnvironment(ctx context.Context, opts EnsureProjectEnvironmentOptions) (string, error) {
-	return pathCall(ctx, "ensure_project_environment", policyArgs{Name: opts.Name, Explicit: opts.Explicit, Extras: opts.Extras},
-		func(c context.Context) (string, error) { return ensureProjectEnvironment(c, opts) })
 }
 
 // Installs an isolated Python tool and returns its validated executable
@@ -674,27 +650,6 @@ func managedVenvIsCurrent(ctx context.Context, opts VenvIsCurrentOptions) (bool,
 func CheckProjectLock(ctx context.Context, opts CheckProjectLockOptions) error {
 	return clientWorkerCall(ctx, "check_project_lock", policyArgs{Explicit: opts.Explicit},
 		func(c context.Context) error { return checkProjectLock(c, opts) })
-}
-
-// Exports a project's locked requirements
-func ExportRequirements(ctx context.Context, opts ExportRequirementsOptions) error {
-	return clientWorkerCall(ctx, "export_requirements", policyArgs{Explicit: opts.Explicit, Extras: opts.Extras},
-		func(c context.Context) error {
-			_, err := exportRequirements(c, opts)
-			return err
-		})
-}
-
-// Builds an environment from caller owned requirements
-func BuildRequirementsEnvironment(ctx context.Context, opts BuildRequirementsEnvironmentOptions) (string, error) {
-	return pathCall(ctx, "build_requirements_environment", policyArgs{Explicit: opts.Explicit},
-		func(c context.Context) (string, error) { return buildRequirementsEnvironment(c, opts) })
-}
-
-// Prunes a uv cache to what the lock needs
-func PruneCache(ctx context.Context, opts PruneCacheOptions) error {
-	return clientWorkerCall(ctx, "prune_cache", policyArgs{},
-		func(c context.Context) error { return pruneCache(c, opts) })
 }
 
 // Receipt of a worker result line in the key order the worker wrote it, nil when absent or not an object

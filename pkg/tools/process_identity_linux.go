@@ -10,13 +10,9 @@ func (osProcessProber) BootStart(pid int) (float64, bool) { return proc.BootStar
 
 func (osProcessProber) Birth(pid int) (float64, error) { return proc.Birth(pid) }
 
-func (osProcessProber) WorkerBirth(pid int) (float64, error) { return proc.WorkerBirth(pid) }
-
 func (osProcessProber) Zombie(pid int) bool { return proc.Zombie(pid) }
 
 func (osProcessProber) PPID(pid int) (int, bool) { return proc.PPID(pid) }
-
-func (osProcessProber) Environ(pid int) (map[string]string, error) { return proc.Environ(pid) }
 
 func (osProcessProber) Cmdline(pid int) ([]string, error) { return proc.Cmdline(pid) }
 

@@ -3,7 +3,6 @@
 package pm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -81,46 +80,6 @@ func svAlwaysCurrent(t *testing.T) {
 	peSwap(t, &engineVenvIsCurrent, func(context.Context, []string, PluginInput, string) (bool, error) { return true, nil })
 }
 
-func TestBuildRecordsTheExtraListAsTheStoreSelection(t *testing.T) {
-	root, store := svBaked(t)
-	ctx := context.Background()
-	peSwap(t, &clientBuildEnvironment, func(context.Context, BuildEnvironmentOptions) (string, error) {
-		return filepath.Join(root, "venv", "bin", "python"), nil
-	})
-	peSwap(t, &runFeatureProbe, func(context.Context, []string, string) (uvResult, error) {
-		t.Fatal("no inventory expected")
-		return uvResult{}, nil
-	})
-	writeFile(t, filepath.Join(root, "uv.lock"), []byte("version = 1\n"), 0o666)
-	var stdout, stderr bytes.Buffer
-	argv := []string{"--source", root, "--out", filepath.Join(root, "venv"), "--record-selection",
-		"--extra", "all", "--extra", "messaging", "--extra", "otlp", "--extra", "all"}
-	if code := BuildEnvMain(ctx, argv, "build_env", &stdout, &stderr); code != 0 {
-		t.Fatalf("exit %d: %s", code, stderr.String())
-	}
-	stamp, err := NewVenv(resolvePath(root)).(*Venv).Stamp(ctx, []string{"all", "messaging", "otlp"}, []MemberDir{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]any{"stamp": stamp, "extras": []any{"all", "messaging", "otlp"}}
-	if got := svFactOf(t, filepath.Join(store, "facts.json")); !reflect.DeepEqual(got, want) {
-		t.Fatalf("fact %v, want %v", got, want)
-	}
-}
-
-func TestRecordSelectionRefusesBuildsWithoutAnExtraList(t *testing.T) {
-	root, _ := svBaked(t)
-	peSwap(t, &clientBuildEnvironment, func(context.Context, BuildEnvironmentOptions) (string, error) {
-		t.Fatal("a refused selection record built an environment")
-		return "", nil
-	})
-	var stdout, stderr bytes.Buffer
-	argv := []string{"--source", root, "--out", filepath.Join(root, "venv"), "--record-selection", "--all-extras"}
-	if code := BuildEnvMain(context.Background(), argv, "build_env", &stdout, &stderr); code != 2 || !strings.Contains(stderr.String(), "--record-selection") {
-		t.Fatalf("exit %d: %s", code, stderr.String())
-	}
-}
-
 func TestFirstLazyExtraExtendsTheRecordedImageSelection(t *testing.T) {
 	for _, row := range []struct {
 		store    []string
@@ -140,7 +99,7 @@ func TestFirstLazyExtraExtendsTheRecordedImageSelection(t *testing.T) {
 			if fact == nil {
 				fact = map[string]any{}
 			}
-			enabled, _, _, err := targetSelection(ctx, svBakedVenv(root), fact, []string{"fal"}, VenvApplyOptions{PluginDirs: []MemberDir{}}, false, nil, nil)
+			enabled, _, _, err := targetSelection(ctx, svBakedVenv(root), fact, []string{"fal"}, VenvApplyOptions{PluginDirs: []MemberDir{}}, false)
 			if err != nil || !reflect.DeepEqual(enabled, row.expected) {
 				t.Fatalf("enabled %v %v", enabled, err)
 			}
@@ -198,7 +157,7 @@ func TestOfflineRefreshKeepsBakedExtrasForTheNextLazyInstall(t *testing.T) {
 	if _, has := fact["environment"]; has {
 		t.Fatalf("the image environment must boot, fact %v", fact)
 	}
-	enabled, _, _, err := targetSelection(ctx, svBakedVenv(root), fact, []string{"fal"}, VenvApplyOptions{PluginDirs: []MemberDir{}}, false, nil, nil)
+	enabled, _, _, err := targetSelection(ctx, svBakedVenv(root), fact, []string{"fal"}, VenvApplyOptions{PluginDirs: []MemberDir{}}, false)
 	if err != nil || !reflect.DeepEqual(enabled, []string{"all", "fal", "messaging", "otlp"}) {
 		t.Fatalf("enabled %v %v", enabled, err)
 	}

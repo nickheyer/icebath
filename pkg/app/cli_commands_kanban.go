@@ -5,49 +5,18 @@ package app
 import (
 	"bytes"
 	"errors"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/spf13/cobra"
 )
 
-// Adds /kanban to the slash dispatch table and the CLI tree parser to the kanban slash runner
+// Adds the CLI tree parser to the kanban slash runner
 func init() {
-	slashDispatch["kanban"] = withArg((*CLI).handleKanbanCommand)
 	kanban.ParseSlash = ParseKanbanSlash
-}
-
-// Handles /kanban, handing the text after the command word to the shared slash runner
-func (c *CLI) handleKanbanCommand(cmd string) {
-	rest := strings.TrimLeft(pystr.Strip(cmd), "/")
-	if strings.HasPrefix(rest, "kanban") {
-		rest = pystr.Lstrip(rest[len("kanban"):])
-	}
-	output, err := kanban.RunSlash(c.ctx, rest)
-	if err != nil {
-		output = c.commandsT("kanban.failed", map[string]any{"error": pyrepr.ExceptionMessage(err)})
-	}
-	if output == kanban.SlashKanbanHelp {
-		output = terminalBold(output)
-	}
-	if output != "" {
-		printLines(output)
-	}
-}
-
-var markdownBoldRe = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
-
-// Markdown bold spans drawn bold on a console that shows styles, kept as written on one that does not
-func terminalBold(text string) string {
-	if !console().ShouldUseColor() {
-		return text
-	}
-	return markdownBoldRe.ReplaceAllString(text, boldANSI+"$1"+resetANSI)
 }
 
 // Prog argparse shows for a kanban parser, /kanban and its direct children renamed, deeper ones built under the wrapper

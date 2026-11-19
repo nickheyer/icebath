@@ -16,7 +16,7 @@ import (
 // Keymap context of the open stash panel, ahead of the session keys while it shows
 const stashContext = "tui.stash"
 
-// Composer drafts parked with ctrl+s, newest first, held in memory for the process as the REPL held them
+// Composer drafts parked with ctrl+s, newest first, held in memory for the process
 type promptStash struct {
 	*PromptStash
 	start time.Time
@@ -116,7 +116,7 @@ func (a *app) pressStash() tea.Cmd {
 	return nil
 }
 
-// Puts a parked draft back into the composer, images of the current draft kept beside it as the REPL did
+// Puts a parked draft back into the composer, images of the current draft kept beside it
 func (a *app) restoreDraft(text string, attached []any) tea.Cmd {
 	restored := make([]composerToken, 0, len(attached))
 	for _, item := range attached {
@@ -159,7 +159,7 @@ func (a *app) restoreDraft(text string, attached []any) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Age of a parked draft as the REPL panel words it
+// Age of a parked draft in words
 func stashAge(seconds float64) string {
 	secs := int(seconds)
 	switch {
@@ -236,7 +236,7 @@ func (a *app) stashIndicator() string {
 	return a.stash.Indicator()
 }
 
-// Placeholder of the empty composer, the English REPL stash hint while idle with parked drafts, else the launch hint
+// Placeholder of the empty composer, the English stash hint while idle with parked drafts, else the launch hint
 func (a *app) composerPlaceholder() string {
 	if a.stash != nil && !a.store.ui.Busy && !a.voiceEnabled {
 		if hint := a.stash.ComposerHint(); hint != "" {

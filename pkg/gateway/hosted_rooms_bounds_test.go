@@ -173,7 +173,7 @@ func TestPeerReservationRejectsStaleOrConflictingAuthority(t *testing.T) {
 	hrRequireErr[AuthorityConflictError](t, err, "authority changed")
 	err = ReservePeerRoom(ctx, db, claims("gateway-conflict", 2), 300, hrFloatPtr(100))
 	hrRequireErr[AuthorityConflictError](t, err, "authority changed")
-	if !hrOK(PeerRoomIsReserved(ctx, db, "room-peer", "reviewer", hrFloatPtr(200))) {
+	if !hrOK(ProbePeerRoomReservation(ctx, db, "room-peer", "reviewer", hrFloatPtr(200))) {
 		t.Fatal("reservation is not live")
 	}
 }

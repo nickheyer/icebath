@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -267,6 +269,19 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 // NewOpenAIClient is the OpenAI SDK client with a static or callable key, the env key and base URL when none is given
 func NewOpenAIClient(apiKey any, baseURL string, opts OpenAIClientOptions) AuxClient {
 	return newAuxOpenAIClient(apiKey, baseURL, opts)
+}
+
+// Copy of the client on the same HTTP client, key, headers and timeout retrying a failed request at most maxRetries times, the SDK with_options call
+func (c *auxOpenAIClient) withMaxRetries(maxRetries int) *auxOpenAIClient {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return &auxOpenAIClient{
+		apiKey: c.apiKey, apiKeyProvider: c.apiKeyProvider, baseURL: c.baseURL,
+		customHeaders: maps.Clone(c.customHeaders), customOrder: slices.Clone(c.customOrder), customQuery: maps.Clone(c.customQuery),
+		async: c.async, timeout: c.timeout, timeoutText: c.timeoutText, hasTimeout: c.hasTimeout, maxRetries: maxRetries,
+		httpClient: c.httpClient, ownsHTTP: c.ownsHTTP, closed: c.closed, initErr: c.initErr,
+		responseHooks: slices.Clone(c.responseHooks), responseMarks: maps.Clone(c.responseMarks),
+	}
 }
 
 // Base URL with the trailing slash the SDK enforces

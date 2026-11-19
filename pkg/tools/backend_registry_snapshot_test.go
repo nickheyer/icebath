@@ -23,7 +23,6 @@ func (b *snapshotFakeBackend) IsAvailable() bool                      { return t
 func (b *snapshotFakeBackend) CheckRequirements(*Env, map[string]any) error {
 	return nil
 }
-func (b *snapshotFakeBackend) Probe() (string, string)         { return "ok", "" }
 func (b *snapshotFakeBackend) SetupInstructions(*Env) []string { return nil }
 func (b *snapshotFakeBackend) DoctorChecks() []DoctorCheck     { return nil }
 func (b *snapshotFakeBackend) CreateEnvironment(context.Context, *Env, CreateOptions) (Environment, error) {

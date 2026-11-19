@@ -79,7 +79,6 @@ type LiveTail struct {
 	Live     bool
 	Tail     []string
 	partial  string
-	pending  []byte
 	drawn    int
 	lastDraw time.Time
 }
@@ -99,23 +98,6 @@ func NewLiveTail(label *string, stream io.Writer, hide func(string) bool, indent
 		}
 	}
 	return t
-}
-
-// Takes child output bytes decoded like a text pipe, a split character waiting for its remaining bytes
-func (t *LiveTail) Write(p []byte) (int, error) {
-	text, rest := decodeUTF8Replace(append(t.pending, p...), false)
-	t.pending = rest
-	t.WriteString(text)
-	return len(p), nil
-}
-
-// Ends the byte stream, an unfinished character decoding as one replacement character
-func (t *LiveTail) flushPending() {
-	if len(t.pending) > 0 {
-		text, _ := decodeUTF8Replace(t.pending, true)
-		t.pending = nil
-		t.WriteString(text)
-	}
 }
 
 // Takes child output text, bare carriage returns counting as line ends
@@ -145,7 +127,6 @@ func (t *LiveTail) WriteString(text string) {
 
 // Clears the status line without a verdict, for a step that will be retried
 func (t *LiveTail) Discard() {
-	t.flushPending()
 	if t.partial != "" {
 		t.line(t.partial)
 		t.partial = ""
@@ -158,7 +139,6 @@ func (t *LiveTail) Discard() {
 
 // Ends the status line with a success mark, or a failure mark and the captured tail
 func (t *LiveTail) Close(ok bool) {
-	t.flushPending()
 	if t.partial != "" {
 		t.line(t.partial)
 		t.partial = ""

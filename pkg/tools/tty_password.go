@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,14 +11,15 @@ import (
 // Hidden line reader of the controlling terminal, swapped by tests that hold the read open
 var readHiddenLineFn = readHiddenLine
 
-// Prints the sudo password box and reads one hidden line from the controlling terminal, false when the wait timed out
-func readHiddenPasswordFromTTY(timeout time.Duration) (string, bool) {
+// Prints the sudo password box on the stdout of ctx and reads one hidden line from the controlling terminal, false when the wait timed out
+func readHiddenPasswordFromTTY(ctx context.Context, timeout time.Duration) (string, bool) {
 	os.Setenv("ICEBATH_SPINNER_PAUSE", "1")
 	defer os.Unsetenv("ICEBATH_SPINNER_PAUSE")
+	out := ScopedStdout(ctx)
 	time.Sleep(200 * time.Millisecond)
 	seconds := int(timeout.Seconds())
 	wait := fmt.Sprintf("\u2502    \u2022 Wait %ds to auto-skip", seconds)
-	fmt.Println(strings.Join([]string{
+	fmt.Fprintln(out, strings.Join([]string{
 		"",
 		"\u250c" + strings.Repeat("\u2500", 58) + "\u2510",
 		"\u2502  \U0001F510 SUDO PASSWORD REQUIRED" + strings.Repeat(" ", 30) + "\u2502",
@@ -28,7 +30,7 @@ func readHiddenPasswordFromTTY(timeout time.Duration) (string, bool) {
 		"\u2514" + strings.Repeat("\u2500", 58) + "\u2518",
 		"",
 	}, "\n"))
-	fmt.Print("  Password (hidden): ")
+	fmt.Fprint(out, "  Password (hidden): ")
 	flushStdout()
 	done := make(chan string, 1)
 	read := readHiddenLineFn
@@ -40,14 +42,14 @@ func readHiddenPasswordFromTTY(timeout time.Duration) (string, bool) {
 		closeWindow()
 	case <-time.After(timeout):
 		closeWindow()
-		fmt.Print("\n  \u23f1 Timeout - continuing without sudo\n    (Press Enter to dismiss)\n\n")
+		fmt.Fprint(out, "\n  \u23f1 Timeout - continuing without sudo\n    (Press Enter to dismiss)\n\n")
 		flushStdout()
 		return "", false
 	}
 	if password != "" {
-		fmt.Print("\n  \u2713 Password received (cached for this session)\n\n")
+		fmt.Fprint(out, "\n  \u2713 Password received (cached for this session)\n\n")
 	} else {
-		fmt.Print("\n  \u23ed Skipped - continuing without sudo\n\n")
+		fmt.Fprint(out, "\n  \u23ed Skipped - continuing without sudo\n\n")
 	}
 	flushStdout()
 	return password, true

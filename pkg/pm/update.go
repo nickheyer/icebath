@@ -205,16 +205,6 @@ type Resolved struct {
 	ArtifactUpdates map[string][]string
 }
 
-// Exact version a decision pins for a target
-func (d *Resolved) TargetVersion(target string) (string, bool) {
-	for _, tv := range d.PerTarget {
-		if tv.Target == target {
-			return tv.Version, true
-		}
-	}
-	return "", false
-}
-
 // Reports whether the decision moves the lockfile
 func (d *Resolved) Changed() bool {
 	if d.Version == nil {
@@ -1459,7 +1449,6 @@ func refreshNPMLock(ctx context.Context, out io.Writer) (int, error) {
 	return 0, nil
 }
 
-// Runs pm update, re-pinning changed packages unless checking, the termux pool pass running on its own
 // Replaces the release resolver and the artifact pinner of the update driver until the returned restore runs
 func SwapUpdateResolution(resolve func(Package, []string, *string, map[string]any) (*Resolved, error),
 	pin func(Package, *Resolved, map[string]any) (map[string]any, error)) func() {
@@ -1468,6 +1457,7 @@ func SwapUpdateResolution(resolve func(Package, []string, *string, map[string]an
 	return func() { updateResolvePackage, updatePinArtifacts = resolvePrev, pinPrev }
 }
 
+// Runs pm update, re-pinning changed packages unless checking, the termux pool pass running on its own
 func CmdUpdate(ctx context.Context, args UpdateArgs, out io.Writer) (int, error) {
 	if args.Termux {
 		var ignored []string
@@ -1555,6 +1545,15 @@ func CmdUpdate(ctx context.Context, args UpdateArgs, out io.Writer) (int, error)
 		return refreshNPMLock(ctx, out)
 	}
 	return 0, nil
+}
+
+// Index fetch of the Termux pool, the termux_libs index a test replaces
+var termuxIndex = func() (map[string]PoolPackage, error) {
+	text, err := GetText(TermuxIndexURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTermuxIndex(text), nil
 }
 
 // Repins the pool archives Termux retired under the pins, a check reporting without writing

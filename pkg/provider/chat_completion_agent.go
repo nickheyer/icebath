@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -43,10 +42,7 @@ type ChatCompletionAgent interface {
 	SetWireReasoningConfig(cfg map[string]any)
 	OllamaNumCtx() int
 	OllamaSupportsThinkingCached() bool
-	CredentialPool() PoolProbe
-	SetCredentialPool(pool PoolProbe)
-	ClearCredentialPool()
-	CredentialPoolEnv() PoolEnv
+
 	ToolEnv() *tools.Env
 	IsHeadedMode() (bool, error)
 	CleanupBrowser(ctx context.Context, taskID string) error
@@ -545,31 +541,6 @@ func UnsetReasoningDefault(ctx context.Context, agent ChatCompletionAgent) (out 
 		return nil
 	}
 	return copyDict(def)
-}
-
-// Swaps a pool of another provider for the fallback provider's own pool when it holds credentials
-func RebindFallbackCredentialPool(agent ChatCompletionAgent, fbProvider, fbModel string) {
-	if existing := agent.CredentialPool(); existing != nil {
-		poolProvider := strings.ToLower(strings.TrimSpace(existing.Provider()))
-		if poolProvider != "" && poolProvider != fbProvider {
-			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: clearing primary credential pool (pool_provider=%s) to prevent cross-provider contamination", fbProvider, fbModel, poolProvider))
-			agent.ClearCredentialPool()
-		}
-	}
-	if agent.CredentialPool() != nil {
-		return
-	}
-	func() {
-		defer func() {
-			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, rec))
-			}
-		}()
-		if pool := LoadPool(agent.CredentialPoolEnv(), fbProvider); pool != nil && pool.HasCredentials() {
-			agent.SetCredentialPool(pool)
-			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
-		}
-	}()
 }
 
 // Per turn VM and browser cleanup that leaves persistent terminals and headed browsers to their idle reapers

@@ -127,16 +127,3 @@ func unhandled(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
 }
-
-// Sends the signal to this process through its slot, the raise_signal of the Python signal module
-func Raise(sig os.Signal) error {
-	h := Getsignal(sig)
-	switch {
-	case h.Callable():
-		return h.Call(sig)
-	case h.ignore:
-		return nil
-	}
-	defaultAction(sig)
-	return nil
-}

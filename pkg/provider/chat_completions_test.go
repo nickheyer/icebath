@@ -724,20 +724,6 @@ func TestStreamOptionsRejectionRetriesWithoutThem(t *testing.T) {
 	}
 }
 
-func TestStreamMetadataOffOmitsStreamOptions(t *testing.T) {
-	ws := newWireServer(t, func(w http.ResponseWriter, r *http.Request, n int, body map[string]any) {
-		sseFrames(w, chunk(map[string]any{"content": "ok"}, "stop", nil), "data: [DONE]\n\n")
-	})
-	req := userRequest("hi")
-	req.Metadata = map[string]string{StreamOptionsOffKey: "off"}
-	if _, err := newTestClient(t, ws.route("custom")).Stream(context.Background(), req, func(StreamEvent) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if _, has := ws.request(0).Body["stream_options"]; has {
-		t.Fatal("stream_options sent despite metadata off")
-	}
-}
-
 func TestStreamEmptyFrameAndNonJSONCodes(t *testing.T) {
 	ws := newWireServer(t, func(w http.ResponseWriter, r *http.Request, n int, body map[string]any) {
 		w.Header().Set("x-request-id", "req-9")
@@ -797,10 +783,10 @@ func TestStreamPartialStubs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !IsPartialStreamStub(resp) || resp.FinishReason != "length" || !resp.Truncated || !PartialStreamCleanEOF(resp) {
+	if resp == nil || resp.RequestID != PartialStreamStubID || resp.FinishReason != "length" || !resp.Truncated || partialStreamStubRaw(t, resp)[ccRawCleanEOF] != true {
 		t.Fatalf("stub %+v", resp)
 	}
-	if names := PartialStreamDroppedToolNames(resp); fmt.Sprint(names) != "[terminal]" {
+	if names := partialStreamStubRaw(t, resp)[ccRawDroppedToolNames]; fmt.Sprint(names) != "[terminal]" {
 		t.Fatalf("dropped %v", names)
 	}
 	if len(resp.Message.ToolCalls) != 0 {
@@ -810,7 +796,10 @@ func TestStreamPartialStubs(t *testing.T) {
 		t.Fatalf("text before the tool call must stream: %v", texts)
 	}
 	resp, err = c.Stream(context.Background(), userRequest("hi"), func(StreamEvent) error { return nil })
-	if err != nil || !IsPartialStreamStub(resp) || resp.Message.Text() != "half an answer" || len(PartialStreamDroppedToolNames(resp)) != 0 {
+	if err != nil || resp == nil || resp.RequestID != PartialStreamStubID || resp.Message.Text() != "half an answer" {
+		t.Fatalf("text drop stub %+v err %v", resp, err)
+	}
+	if dropped, _ := partialStreamStubRaw(t, resp)[ccRawDroppedToolNames].([]any); len(dropped) != 0 {
 		t.Fatalf("text drop stub %+v err %v", resp, err)
 	}
 	_, err = c.Stream(context.Background(), userRequest("hi"), func(StreamEvent) error { return nil })
@@ -843,7 +832,7 @@ func TestStreamRunawayRepetitionIsCut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.FinishReason != "length" || !ResponseRunawayRepetition(resp) || !resp.Truncated {
+	if resp.FinishReason != "length" || partialStreamStubRaw(t, resp)[ccRawRunaway] != true || !resp.Truncated {
 		t.Fatalf("runaway not marked: %+v", resp)
 	}
 	if ws.count() != 1 || time.Since(start) > 20*time.Second {

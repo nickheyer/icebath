@@ -20,13 +20,12 @@ type fakeProber struct {
 	denied      map[int]bool
 	zombies     map[int]bool
 	ppid        map[int]int
-	environ     map[int]map[string]string
 	zombieCalls []int
 	kills       []int
 }
 
 func newFakeProber(procs map[int]float64) *fakeProber {
-	return &fakeProber{procs: procs, denied: map[int]bool{}, zombies: map[int]bool{}, ppid: map[int]int{}, environ: map[int]map[string]string{}}
+	return &fakeProber{procs: procs, denied: map[int]bool{}, zombies: map[int]bool{}, ppid: map[int]int{}}
 }
 
 func (f *fakeProber) Birth(pid int) (float64, error) {
@@ -40,8 +39,7 @@ func (f *fakeProber) Birth(pid int) (float64, error) {
 	return t, nil
 }
 
-func (f *fakeProber) WorkerBirth(pid int) (float64, error) { return f.Birth(pid) }
-func (f *fakeProber) BootStart(pid int) (float64, bool)    { return 0, false }
+func (f *fakeProber) BootStart(pid int) (float64, bool) { return 0, false }
 func (f *fakeProber) Running(pid int) bool {
 	_, ok := f.procs[pid]
 	return ok || f.denied[pid]
@@ -51,12 +49,6 @@ func (f *fakeProber) Zombie(pid int) bool {
 	f.zombieCalls = append(f.zombieCalls, pid)
 	f.mu.Unlock()
 	return f.zombies[pid]
-}
-func (f *fakeProber) Environ(pid int) (map[string]string, error) {
-	if env, ok := f.environ[pid]; ok {
-		return env, nil
-	}
-	return nil, errNoSuchProcess
 }
 func (f *fakeProber) Cmdline(pid int) ([]string, error) { return []string{"fake", "argv"}, nil }
 func (f *fakeProber) PPID(pid int) (int, bool) {
@@ -111,9 +103,7 @@ func ledgerPids(entries []map[string]any) map[int]bool {
 func approx(a, b, tol float64) bool { return math.Abs(a-b) <= tol }
 
 func TestSpawnTagRoundtrip(t *testing.T) {
-	identityFixture(t, map[int]float64{999: 1234.5}, 999)
-	raw := BuildSpawnTag("gateway", "/x/install")
-	tag := ParseSpawnTag(raw)
+	tag := ParseSpawnTag("v1:" + InstallID("/x/install") + ":gateway:999:1234.500")
 	if tag == nil {
 		t.Fatal("tag did not parse")
 	}
@@ -173,9 +163,6 @@ func writeLedgerFile(t *testing.T, path string, entries []map[string]any) {
 		t.Fatal(err)
 	}
 }
-
-func intp(v int) *int           { return &v }
-func floatp(v float64) *float64 { return &v }
 
 func TestRegisterSelfWritesAndPrunesDead(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{400: 2.0, 999: 50.0}, 999)
@@ -254,37 +241,6 @@ func TestLedgerEntriesFiltersDeadReusedAndForeign(t *testing.T) {
 	}
 	if pid, _ := entryInt(live[0], "pid"); pid != 100 {
 		t.Fatalf("pid %d", pid)
-	}
-}
-
-func TestSpawnerIsDeadTristate(t *testing.T) {
-	identityFixture(t, map[int]float64{500: 5.0}, 0)
-	check := func(entry map[string]any, wantDead, wantKnown bool) {
-		t.Helper()
-		dead, known := SpawnerIsDead(entry)
-		if dead != wantDead || known != wantKnown {
-			t.Fatalf("entry %v: dead=%v known=%v", entry, dead, known)
-		}
-	}
-	check(ledgerEntry(1, 1.0, "gateway", "", intp(500), floatp(5.0)), false, true)
-	check(ledgerEntry(1, 1.0, "gateway", "", intp(600), floatp(6.0)), true, true)
-	check(ledgerEntry(1, 1.0, "gateway", "", intp(500), floatp(999.0)), true, true)
-	check(ledgerEntry(1, 1.0, "gateway", "", nil, nil), false, false)
-}
-
-func TestSpawnedByThisProcessChecksTagAndBirth(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{999: 50.0, 1000: 60.0}, 999)
-	fake.environ[1000] = map[string]string{SpawnEnvVar: "v1:abc:gateway:999:50.000"}
-	if !SpawnedByThisProcess(1000) {
-		t.Fatal("tagged child not recognised")
-	}
-	fake.environ[1000][SpawnEnvVar] = "v1:abc:gateway:999:9999.000"
-	if SpawnedByThisProcess(1000) {
-		t.Fatal("stale spawner birth accepted")
-	}
-	fake.environ[1000][SpawnEnvVar] = "v1:abc:gateway:998:50.000"
-	if SpawnedByThisProcess(1000) || SpawnedByThisProcess(2000) {
-		t.Fatal("foreign or unreadable child accepted")
 	}
 }
 

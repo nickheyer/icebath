@@ -376,25 +376,11 @@ func (r *GatewayRunner) turnLeaseTokens() TurnLeaseTokenView {
 	return TurnLeaseTokenView{r}
 }
 
-// Live view of the run generation counter of each session
-func (r *GatewayRunner) sessionRunGeneration() SessionFieldView[int] {
-	return SessionFieldView[int]{r, comparableSpec("persistent", "run_generation",
-		func(s *SessionState) int { return s.persistent.runGeneration },
-		func(s *SessionState, v int) { s.persistent.runGeneration = v })}
-}
-
 // Live view of the /model override of each session
 func (r *GatewayRunner) sessionModelOverrides() SessionFieldView[map[string]any] {
 	return SessionFieldView[map[string]any]{r, mapSpec("conversation", "model_override",
 		func(s *SessionState) map[string]any { return s.conversation.modelOverride },
 		func(s *SessionState, v map[string]any) { s.conversation.modelOverride = v })}
-}
-
-// Live view of the /model --once snapshot of each session
-func (r *GatewayRunner) pendingOneTurnModelRestores() SessionFieldView[map[string]any] {
-	return SessionFieldView[map[string]any]{r, mapSpec("conversation", "one_turn_restore",
-		func(s *SessionState) map[string]any { return s.conversation.oneTurnRestore },
-		func(s *SessionState, v map[string]any) { s.conversation.oneTurnRestore = v })}
 }
 
 // Live view of the /reasoning override of each session
@@ -428,39 +414,11 @@ func (r *GatewayRunner) queuedEvents() SessionFieldView[[]*gateway.MessageEvent]
 		func(s *SessionState, v []*gateway.MessageEvent) { s.conversation.queuedEvents = v })}
 }
 
-// Live view of the one shot sidecar notes of each session
-func (r *GatewayRunner) pendingTurnSidecarNotes() SessionFieldView[[]string] {
-	return SessionFieldView[[]string]{r, listSpec("conversation", "sidecar_notes",
-		func(s *SessionState) []string { return s.conversation.sidecarNotes },
-		func(s *SessionState, v []string) { s.conversation.sidecarNotes = v })}
-}
-
 // Live view of the runner level pending command text of each session
 func (r *GatewayRunner) pendingMessages() SessionFieldView[*string] {
 	return SessionFieldView[*string]{r, comparableSpec("persistent", "pending_command_text",
 		func(s *SessionState) *string { return s.persistent.pendingCommandText },
 		func(s *SessionState, v *string) { s.persistent.pendingCommandText = v })}
-}
-
-// Live view of the native image paths waiting for the next turn of each session
-func (r *GatewayRunner) pendingNativeImagePathsBySession() SessionFieldView[[]string] {
-	return SessionFieldView[[]string]{r, listSpec("persistent", "native_image_paths",
-		func(s *SessionState) []string { return s.persistent.nativeImagePaths },
-		func(s *SessionState, v []string) { s.persistent.nativeImagePaths = v })}
-}
-
-// Live view of the pinned session context of each session
-func (r *GatewayRunner) sessionEphemeralPin() SessionFieldView[*ephemeralPin] {
-	return SessionFieldView[*ephemeralPin]{r, comparableSpec("conversation", "ephemeral_pin",
-		func(s *SessionState) *ephemeralPin { return s.conversation.ephemeralPin },
-		func(s *SessionState, v *ephemeralPin) { s.conversation.ephemeralPin = v })}
-}
-
-// Live view of the last voice channel context of each session
-func (r *GatewayRunner) sessionVCLast() SessionFieldView[*string] {
-	return SessionFieldView[*string]{r, comparableSpec("conversation", "vc_last",
-		func(s *SessionState) *string { return s.conversation.vcLast },
-		func(s *SessionState, v *string) { s.conversation.vcLast = v })}
 }
 
 // Live view of the pending dangerous command approval of each session

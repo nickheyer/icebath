@@ -43,7 +43,7 @@ func handlerOwner(adapter PlatformAdapter) any {
 	return b.messageHandlerOwner
 }
 
-// Consumer reply a post admission plugin handed back for the caller's own reply leg
+// Consumer reply a post admission plugin or the chat's in flight work handed back for the caller's own reply leg
 func (e *MessageEvent) ConsumerReply() *string { return e.consumerReply }
 
 // Whether admission resolved the delivery to an already committed provider receipt
@@ -207,20 +207,35 @@ func coalescedRouteRefusal(runner any, profile string, routeConfig map[string]an
 	return "refused", nil
 }
 
-// Commits a producer delivery, nil when a plugin skipped or consumed it
+// Commits a producer delivery, nil when a plugin skipped or consumed it or the chat's in flight work answered it
 func AdmitProducer(ctx context.Context, adapter PlatformAdapter, event *MessageEvent) (*AdmissionReceipt, error) {
 	scoped, authority, err := ProducerScope(ctx, adapter, event)
 	if err != nil {
 		return nil, err
 	}
 	webhook := adapter.Base().Platform == PlatformWebhook
+	if !webhook {
+		consumed, err := wasConsumed(event)
+		if err != nil {
+			return nil, err
+		}
+		if consumed {
+			return nil, nil
+		}
+	}
 	var hooks []string
 	for _, name := range []string{"pre_gateway_dispatch", PostAdmissionHook} {
 		if plugins.HasHook(scoped, name) {
 			hooks = append(hooks, name)
 		}
 	}
-	if !webhook && len(hooks) == 0 {
+	live := false
+	if !webhook {
+		if live, err = mayAnswerLiveTurn(scoped, authority.Runner, event); err != nil {
+			return nil, err
+		}
+	}
+	if !webhook && len(hooks) == 0 && !live {
 		return admitProducerNative(scoped, authority, event)
 	}
 	payload, principal, err := preparedDelivery(scoped, authority, event)
@@ -238,7 +253,7 @@ func AdmitProducer(ctx context.Context, adapter PlatformAdapter, event *MessageE
 		if err != nil {
 			return err
 		}
-		receipt, err = admitOnce(turnCtx, authority, event, webhook, hooks, payload, rows)
+		receipt, err = admitOnce(turnCtx, authority, event, webhook, hooks, live, payload, rows)
 		return err
 	})
 	if err != nil {
@@ -252,8 +267,8 @@ func AdmitProducer(ctx context.Context, adapter PlatformAdapter, event *MessageE
 	return receipt, nil
 }
 
-// Runs the retry check, the plugin hooks and the commit of one delivery
-func admitOnce(ctx context.Context, authority *SessionAuthority, event *MessageEvent, webhook bool, hooks []string,
+// Runs the retry check, the plugin hooks, the offer to the chat's in flight work and the commit of one delivery
+func admitOnce(ctx context.Context, authority *SessionAuthority, event *MessageEvent, webhook bool, hooks []string, live bool,
 	payload *pyjson.Object, rows []*pyjson.Object) (*AdmissionReceipt, error) {
 	if webhook {
 		prior, err := webhookRetry(ctx, authority, event, payload, rows)
@@ -261,42 +276,66 @@ func admitOnce(ctx context.Context, authority *SessionAuthority, event *MessageE
 			return prior, err
 		}
 	}
+	if !webhook && len(rows) > 0 {
+		return admitProducerNative(ctx, authority, event)
+	}
 	admitted := event
-	if len(hooks) > 0 && (webhook || len(rows) == 0) {
-		runner, ok := authority.Runner.(ProducerHooksRunner)
+	var runner ProducerHooksRunner
+	if len(hooks) > 0 {
+		hooked, ok := authority.Runner.(ProducerHooksRunner)
 		if !ok {
 			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no pre dispatch hook", authority.Runner)}
 		}
-		if slices.Contains(hooks, "pre_gateway_dispatch") {
-			rewritten := runner.HMPreGatewayDispatchHook(ctx, event, event.Source)
-			if rewritten == nil {
-				return nil, releasePreparation(ctx, authority, payload)
-			}
-			if rewritten != event {
-				fingerprint, err := ingressFingerprint(payload, event.RawMessage)
-				if err != nil {
-					return nil, err
-				}
-				rewritten.ingressSHA256 = fingerprint
-			}
-			admitted = rewritten
+		runner = hooked
+	}
+	if slices.Contains(hooks, "pre_gateway_dispatch") {
+		rewritten := runner.HMPreGatewayDispatchHook(ctx, event, event.Source)
+		if rewritten == nil {
+			return nil, releasePreparation(ctx, authority, payload)
 		}
-		if slices.Contains(hooks, PostAdmissionHook) {
-			key, err := runnerSessionKeyForSource(ctx, authority.Runner, admitted.Source)
+		if rewritten != event {
+			fingerprint, err := ingressFingerprint(payload, event.RawMessage)
 			if err != nil {
 				return nil, err
 			}
-			consumed, reply, err := runner.RunPostAdmissionHook(ctx, admitted, admitted.Source, key)
-			if err != nil {
-				return nil, err
-			}
-			event.consumerReply = reply
-			if consumed {
-				return nil, releasePreparation(ctx, authority, payload)
-			}
+			rewritten.ingressSHA256 = fingerprint
+		}
+		admitted = rewritten
+	}
+	if live {
+		answered, err := answersLiveTurnDelivery(ctx, authority.Runner, event, admitted)
+		if err != nil {
+			return nil, err
+		}
+		if answered {
+			return nil, releasePreparation(ctx, authority, payload)
+		}
+	}
+	if slices.Contains(hooks, PostAdmissionHook) {
+		key, err := runnerSessionKeyForSource(ctx, authority.Runner, admitted.Source)
+		if err != nil {
+			return nil, err
+		}
+		consumed, reply, err := runner.RunPostAdmissionHook(ctx, admitted, admitted.Source, key)
+		if err != nil {
+			return nil, err
+		}
+		event.consumerReply = reply
+		if consumed {
+			return nil, releasePreparation(ctx, authority, payload)
 		}
 	}
 	return admitProducerNative(ctx, authority, admitted)
+}
+
+// Whether the delivery as pre_gateway_dispatch left it was consumed by the chat's running turn or pending prompt, its reply riding the delivery as received
+func answersLiveTurnDelivery(ctx context.Context, runner AuthorityRunner, event, admitted *MessageEvent) (bool, error) {
+	answered, err := answersLiveTurn(ctx, runner, admitted)
+	if err != nil || !answered {
+		return false, err
+	}
+	event.consumerReply = admitted.consumerReply
+	return true, nil
 }
 
 // Admits a producer delivery whose adapter lifecycle the executor runs once the row starts

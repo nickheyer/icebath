@@ -15,9 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Descending probe tiers for unknown models, the first is also the default fallback
-var ContextProbeTiers = []int{256_000, 128_000, 64_000, 32_000, 16_000, 8_000}
-
 // DefaultFallbackContext is the window assumed when every detection source misses
 const DefaultFallbackContext = 256_000
 

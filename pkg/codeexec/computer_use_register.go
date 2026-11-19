@@ -14,6 +14,7 @@ const computerUseToolDescription = "Universal desktop control via cua-driver (ma
 func init() {
 	registerComputerUseTool()
 	tools.ReleaseComputerUseSession = ReleaseComputerUseSession
+	tools.RegisterPermissionModeReleaser(func(ctx context.Context, sessionKey string) { ReleaseComputerUseSession(ctx, sessionKey) })
 }
 
 // Registers computer_use in its own toolset with the schema, the active provider check and the handler

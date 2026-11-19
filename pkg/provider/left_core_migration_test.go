@@ -243,10 +243,6 @@ func TestLeftCoreFailedInstallsBackOffExponentially(t *testing.T) {
 	if LeftCoreFailedRecently(h, "homeassistant") {
 		t.Fatal("an empty stamp counts once")
 	}
-	NoteLeftCoreSuccess(h, "homeassistant")
-	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
-		t.Fatal("success clears the stamp")
-	}
 }
 
 func TestLeftCoreFirstCauseIsGitsOwnLine(t *testing.T) {

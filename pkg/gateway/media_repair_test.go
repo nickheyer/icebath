@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestRepairsExplicitComputerUseMediaPathFromJSONResult(t *testing.T) {
@@ -87,4 +89,13 @@ func TestCompressionFallbackSlicesFromLastUserMessage(t *testing.T) {
 	if got := RepairExplicitComputerUseMediaPathsAt(t.Context(), response, currentTurn[1:], 10); got != response {
 		t.Fatalf("got %q, want %q", got, response)
 	}
+}
+
+func pyDumps(t *testing.T, v any) string {
+	t.Helper()
+	s, err := pyjson.Dumps(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }

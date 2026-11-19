@@ -191,13 +191,6 @@ func ToolCallToDict(tc ToolCall) *pyjson.Object {
 	return orderedDict(structToDict(reflect.ValueOf(tc), nil), tc.Keys, toolCallKeyOrder)
 }
 
-// Tool call struct from an ordered dict entry, recording its key order when it differs from the agent build order
-func ToolCallFromObject(o *pyjson.Object) ToolCall {
-	tc := ToolCallFromDict(o.Vals)
-	tc.Keys = sourceKeyOrder(o.Keys, toolCallKeyOrder)
-	return tc
-}
-
 // Ordered dict of m, recorded keys first, then the build order, then any remaining key in sorted order
 func orderedDict(m map[string]any, recorded, build []string) *pyjson.Object {
 	o := pyjson.NewObject()

@@ -82,7 +82,6 @@ func TestReprStrTypeNameTruthy(t *testing.T) {
 		{ordered, "{'z': 1, 'a': [1.5, None, True]}", "{'z': 1, 'a': [1.5, None, True]}", "dict", true},
 		{orderedPairs{}, "{}", "{}", "dict", false},
 		{map[string]any{"b": 2, "a": "x"}, "{'a': 'x', 'b': 2}", "{'a': 'x', 'b': 2}", "dict", true},
-		{SortedMap(map[string]int{"y": 1, "x": 2}), "{'x': 2, 'y': 1}", "{'x': 2, 'y': 1}", "dict", true},
 	}
 	for _, c := range cases {
 		if got := Repr(c.v); got != c.repr {

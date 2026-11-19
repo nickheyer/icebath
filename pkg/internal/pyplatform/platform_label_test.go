@@ -59,7 +59,4 @@ func TestPlatformJoinsTheUnameFields(t *testing.T) {
 	if runtime.GOOS == "linux" && !strings.HasPrefix(label, "Linux-"+strings.ReplaceAll(Release(), " ", "_")+"-"+Machine()) {
 		t.Fatalf("label %q", label)
 	}
-	if Version() == "" || Node() == "" {
-		t.Fatalf("version %q node %q", Version(), Node())
-	}
 }

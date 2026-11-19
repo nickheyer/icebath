@@ -63,14 +63,6 @@ func (d TerminalEnvironmentProviderDefaults) CheckRequirements(*Env, map[string]
 	return ErrBackendRequirementsNotMet
 }
 
-// Picker health, ready when available and needs_setup otherwise
-func (d TerminalEnvironmentProviderDefaults) Probe() (string, string) {
-	if d.self().IsAvailable() {
-		return "ready", ""
-	}
-	return "needs_setup", d.self().DisplayName() + " is not configured."
-}
-
 // No lines after selection
 func (TerminalEnvironmentProviderDefaults) SetupInstructions(*Env) []string { return []string{} }
 

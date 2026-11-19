@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -22,12 +23,11 @@ import (
 
 // MainOptions carries the cli.py main keyword arguments
 type MainOptions struct {
-	Model, Reasoning, Toolsets, Query, Q, OutputFormat, Provider, Image, Resume, APIKey, BaseURL             string
-	Oneshot, IgnoreRules, IgnoreUserConfig, Compact, Verbose, Quiet, Worktree, W, Checkpoints, PassSessionID bool
-	ListTools, ListToolsets, Gateway                                                                         bool
-	RunBudget                                                                                                float64
-	Skills                                                                                                   []string
-	MaxTurns                                                                                                 *int
+	Model, Reasoning, Toolsets, Query, OutputFormat, Provider, Image, Resume, APIKey, BaseURL string
+	IgnoreRules, Verbose, Quiet, Worktree, Checkpoints, PassSessionID                         bool
+	RunBudget                                                                                 float64
+	Skills                                                                                    []string
+	MaxTurns                                                                                  *int
 }
 
 // ErrSetupCancelled reports a provider picker the user left with Ctrl+C, EOF or an exit
@@ -35,12 +35,8 @@ var ErrSetupCancelled = errors.New("provider setup cancelled")
 
 // Runs one query or image turn in process and returns the exit code with the error it raises
 func Main(ctx context.Context, o MainOptions) (code int, err error) {
-	defer runAtExit()
 	ConfigureWindowsStdio()
 	_ = os.Setenv("ICEBATH_INTERACTIVE", "1")
-	if o.Gateway {
-		return runLegacyGateway(ctx), nil
-	}
 	defer func() {
 		if r := recover(); r != nil {
 			if _, interrupted := r.(keyboardInterrupt); interrupted {
@@ -59,19 +55,15 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 			code = exit.code
 		}
 	}()
-	if !(o.ListTools || o.ListToolsets) {
-		tools.RegisterSelf(ctx, "cli", "")
-		if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
-			fmt.Fprintln(stderrWriter(), i18n.T(ctx, "cli.startup.warning", "", map[string]any{"warning": warning}))
-		}
+	tools.RegisterSelf(ctx, "cli", "")
+	if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
+		fmt.Fprintln(stderrWriter(), i18n.T(ctx, "cli.startup.warning", "", map[string]any{"warning": warning}))
 	}
+	config.InstallSkinColorFilter(maybeRemapForLightMode)
 	if c := console(); c.StdinIsTTY() && c.StdoutIsTTY() {
 		detectLightMode()
 	}
 	query := o.Query
-	if query == "" {
-		query = o.Q
-	}
 	quiet := o.Quiet
 	if o.OutputFormat == "stream-json" {
 		if query == "" {
@@ -79,26 +71,22 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 		}
 		quiet = true
 	}
-	if query == "" && o.Image == "" && !(o.ListTools || o.ListToolsets) {
+	if query == "" && o.Image == "" {
 		if code := QueryFromStdin(&query, ""); code != 0 {
 			return code, nil
 		}
 	}
-	joinWorktree := startWorktreeSetup(ctx, o.ListTools, o.ListToolsets, o.Worktree, o.W)
+	joinWorktree := startWorktreeSetup(ctx, o.Worktree)
 	maxTurns := o.MaxTurns
 	var runBudget *float64
 	if o.RunBudget > 0 {
 		v := o.RunBudget
 		runBudget = &v
 	}
-	compact := o.Compact
 	c, err := buildCLIFromArgs(ctx, CLIOptions{Model: o.Model, Toolsets: splitToolsetsArg(o.Toolsets), Provider: o.Provider, Reasoning: o.Reasoning,
-		APIKey: o.APIKey, BaseURL: o.BaseURL, MaxTurns: maxTurns, RunBudget: runBudget, Verbose: o.Verbose, Compact: &compact, Resume: o.Resume,
+		APIKey: o.APIKey, BaseURL: o.BaseURL, MaxTurns: maxTurns, RunBudget: runBudget, Verbose: o.Verbose, Compact: new(false), Resume: o.Resume,
 		Checkpoints: o.Checkpoints, PassSessionID: o.PassSessionID, IgnoreRules: o.IgnoreRules}, o.Toolsets != "", o.Skills)
 	if err != nil {
-		if home.EmitPartialUpdateHint(err, stderrWriter()) {
-			return 1, nil
-		}
 		return 1, err
 	}
 	if joinWorktree != nil {
@@ -106,19 +94,10 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 			return 0, nil
 		}
 	}
-	if o.ListTools || o.ListToolsets {
-		c.showBanner()
-		if o.ListTools {
-			c.showTools()
-		} else {
-			c.showToolsets()
-		}
-		return 0, nil
-	}
 	defer runCleanup(ctx, c.env, true)
 	installSingleQuerySignalHandlers(c)
 	defer c.signalStop()
-	runSingleQueryMode(c, query, o.Image, quiet, o.Oneshot, o.OutputFormat == "stream-json")
+	runSingleQueryMode(c, query, o.Image, quiet, o.OutputFormat == "stream-json")
 	return 0, nil
 }
 
@@ -158,7 +137,7 @@ func splitToolsetsArg(raw string) []string {
 	return out
 }
 
-// NewCLI builds the classic CLI with CLI args winning over config and resume restoring history from SQLite
+// NewCLI builds the one shot chat client with CLI args winning over config and resume restoring history from SQLite
 func NewCLI(ctx context.Context, o CLIOptions) (*CLI, error) {
 	ctx = tools.WithThreadLocals(ctx)
 	env := tools.ToolEnvFrom(ctx)
@@ -329,15 +308,6 @@ func (c *CLI) releaseActiveSession() {
 	c.activeSessionLease = nil
 }
 
-// Installs the tool callbacks that need the live prompt UI once per process
-func (c *CLI) installToolCallbacks() {
-	if c.toolCallbacksInstalled {
-		return
-	}
-	installInteractiveToolCallbacks(c)
-	c.toolCallbacksInstalled = true
-}
-
 // Prints the startup banner for unacked security advisories on stderr, never blocking startup
 func (c *CLI) showSecurityAdvisories() {
 	if banner := plugins.AdvisoryStartupBanner(c.ctx, plugins.DetectCompromised(c.ctx, plugins.Advisories)); banner != "" {
@@ -345,31 +315,10 @@ func (c *CLI) showSecurityAdvisories() {
 	}
 }
 
-// Warns about toolsets switched off at startup by missing API keys or an unusable terminal backend
-func (c *CLI) showToolAvailabilityWarnings() {
-	_, unavailable := tools.Default.CheckToolAvailability(c.ctx, c.env)
-	enabled := c.enabledToolsets
-	if enabled == nil {
-		enabled = []string{}
-	}
-	unavailable = tools.FilterToEnabledToolsets(unavailable, enabled, func(name string) ([]string, error) {
-		return tools.Default.ResolveToolset(c.ctx, "", name), nil
-	})
-	backend, _ := tools.CurrentTerminalBackend(c.env)
-	lines := tools.ToolAvailabilityWarningLines(unavailable, tools.TerminalBackendUnavailableReason(), backend)
-	if len(lines) == 0 {
-		return
-	}
-	c.consolePrint("")
-	for _, line := range lines {
-		c.consolePrint(line)
-	}
-}
-
-// Starts worktree creation and the tool prewarm in the background, nil for a listing or when no worktree is wanted
-func startWorktreeSetup(ctx context.Context, listTools, listToolsets, worktree, w bool) func() map[string]string {
+// Starts worktree creation and the tool prewarm in the background, nil when no worktree is wanted
+func startWorktreeSetup(ctx context.Context, worktree bool) func() map[string]string {
 	cfg := CLIConfig(ctx)
-	if listTools || listToolsets || !(worktree || w || cliTruthy(cfg["worktree"])) {
+	if !(worktree || cliTruthy(cfg["worktree"])) {
 		return nil
 	}
 	env := tools.ToolEnvFrom(ctx)

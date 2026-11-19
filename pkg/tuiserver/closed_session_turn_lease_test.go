@@ -21,7 +21,7 @@ const closingSID = "closing-sid"
 // Session record of the closing cases with the overrides
 func closingSession(extra map[string]any) *tuihost.Session {
 	fields := map[string]any{"agent": nil, "session_key": "closing-session-key", "history": []any{}, "history_lock": &sync.Mutex{},
-		"history_version": int64(0), "running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80, "slash_worker": nil,
+		"history_version": int64(0), "running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80,
 		"show_reasoning": false, "tool_progress_mode": "all"}
 	for key, value := range extra {
 		fields[key] = value

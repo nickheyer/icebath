@@ -591,24 +591,6 @@ func pyEqualsOne(v any) bool {
 	return false
 }
 
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case float64:
-		return "float"
-	case []any:
-		return "list"
-	case *pyjson.Object:
-		return "dict"
-	}
-	return "int"
-}
-
 // Bot API addresses from Google and Cloudflare DoH in order, the seed IPs when DoH yields nothing usable
 func DiscoverFallbackIPs(ctx context.Context) []string {
 	client := newDoHClient()

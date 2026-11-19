@@ -71,7 +71,7 @@ func (e *lineEditor) cut(from, to int) {
 	e.pos = from
 }
 
-// Applies one editing key with prompt_toolkit emacs bindings
+// Applies one editing key with emacs bindings
 func (e *lineEditor) key(k uv.Key) {
 	ctrl, alt := k.Mod&uv.ModCtrl != 0, k.Mod&uv.ModAlt != 0
 	switch {

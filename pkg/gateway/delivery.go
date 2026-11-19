@@ -160,32 +160,6 @@ type DeliveryTarget struct {
 	UnknownPlatform *string
 }
 
-// Target parsed from origin, local, a platform name or platform chat and thread
-func ParseDeliveryTarget(ctx context.Context, target string, origin *SessionSource) DeliveryTarget {
-	target = pystr.Strip(target)
-	if pystr.Lower(target) == "origin" {
-		if origin != nil {
-			return DeliveryTarget{Platform: origin.Platform, ChatID: origin.ChatID, ThreadID: origin.ThreadID, IsOrigin: true}
-		}
-		return DeliveryTarget{Platform: PlatformLocal, IsOrigin: true}
-	}
-	parts := strings.SplitN(target, ":", 3)
-	platform, err := ParsePlatform(ctx, pystr.Lower(parts[0]))
-	if err != nil {
-		raw := target
-		return DeliveryTarget{Platform: PlatformLocal, UnknownPlatform: &raw}
-	}
-	if len(parts) > 1 {
-		t := DeliveryTarget{Platform: platform, ChatID: parts[1], IsExplicit: true}
-		if len(parts) > 2 {
-			thread := parts[2]
-			t.ThreadID = &thread
-		}
-		return t
-	}
-	return DeliveryTarget{Platform: platform}
-}
-
 // Target in its parseable string form
 func (t DeliveryTarget) String() string {
 	if t.IsOrigin {

@@ -60,18 +60,9 @@ func offlineAgent(t *testing.T, c *CLI) *GatewayAgent {
 		ctx = context.Background()
 	}
 	a, err := newGatewayAgent(ctx, gatewayAgentOptions{Connection: connection, SessionID: c.sessionID, Model: "test/model", Provider: "openai",
-		BaseURL: "http://127.0.0.1:9/v1", MaxIterations: 90, QuietMode: true, ToolProgressMode: "all"})
+		BaseURL: "http://127.0.0.1:9/v1", MaxIterations: 90, ToolProgressMode: "all"})
 	if err != nil {
 		t.Fatalf("newGatewayAgent: %v", err)
 	}
 	return a
-}
-
-// Gateway session store over a double whose reads go to the state.db of the case's home
-func testGatewayStore(t *testing.T) *gatewaycli.GatewaySessionStore {
-	t.Helper()
-	connection, _ := fakeGatewayConnection(t, nil)
-	store := gatewaycli.NewGatewaySessionStore(connection)
-	t.Cleanup(func() { _ = store.CloseReader() })
-	return store
 }

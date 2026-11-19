@@ -93,16 +93,10 @@ func TestHeldOrphanIsKept(t *testing.T) {
 	installs := filepath.Join(tmp, "installs")
 	locked := sttState(t, installs, "dddd", filepath.Join(tmp, "gone-a"))
 	leasedState := sttState(t, installs, "eeee", filepath.Join(tmp, "gone-b"))
-	runtimeState := sttState(t, installs, "ffff", filepath.Join(tmp, "gone-c"))
 
 	files := []*os.File{sttHold(t, filepath.Join(locked, ".install.lock"))}
-	for _, leaseDir := range []string{
-		filepath.Join(leasedState, "environments", "gen", ".leases"),
-		filepath.Join(runtimeState, "pm-runtime", "generations", "gen", ".leases"),
-	} {
-		sttMkdir(t, leaseDir)
-		files = append(files, sttHold(t, filepath.Join(leaseDir, "reader")))
-	}
+	leaseDir := sttMkdir(t, filepath.Join(leasedState, "environments", "gen", ".leases"))
+	files = append(files, sttHold(t, filepath.Join(leaseDir, "reader")))
 	removed, err := CollectOrphanInstallStates(installs)
 	for _, f := range files {
 		f.Close()
@@ -111,7 +105,7 @@ func TestHeldOrphanIsKept(t *testing.T) {
 		t.Fatal(err)
 	}
 	sttSamePaths(t, removed, nil)
-	for _, p := range []string{locked, leasedState, runtimeState} {
+	for _, p := range []string{locked, leasedState} {
 		if !sttIsDir(p) {
 			t.Fatalf("held %s was reclaimed", p)
 		}
@@ -120,7 +114,7 @@ func TestHeldOrphanIsKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sttSamePaths(t, removed, []string{locked, leasedState, runtimeState})
+	sttSamePaths(t, removed, []string{locked, leasedState})
 }
 
 func TestPartlyRemovedOrphanKeepsItsRecordUntilRetried(t *testing.T) {

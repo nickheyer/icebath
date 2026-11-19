@@ -1,12 +1,7 @@
 package commands
 
 import (
-	"fmt"
-	"reflect"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 )
 
 // ShlexArgs splits the tokens after the command word, whitespace splitting on unbalanced quotes
@@ -142,54 +137,6 @@ type QuickCommand struct {
 	Type        string
 	Target      string
 	Description string
-}
-
-// Python exception a slash command raises, its message the str the slash worker answers
-type RaisedError struct{ Msg string }
-
-func (e *RaisedError) Error() string { return e.Msg }
-
-// Membership and lookup of bare in the raw quick_commands value with the TypeErrors in and indexing raise
-func QuickCommandEntry(cfg config.Tree, bare string) (any, bool, error) {
-	raw, ok := cfg.Lookup("quick_commands")
-	if !ok {
-		return nil, false, nil
-	}
-	if m := config.AsMap(raw); m != nil {
-		entry, found := m[bare]
-		return entry, found, nil
-	}
-	if s, ok := raw.(string); ok {
-		if strings.Contains(s, bare) {
-			return nil, false, &RaisedError{"string indices must be integers, not 'str'"}
-		}
-		return nil, false, nil
-	}
-	if rv := reflect.ValueOf(raw); rv.Kind() == reflect.Slice {
-		for i := 0; i < rv.Len(); i++ {
-			if s, ok := rv.Index(i).Interface().(string); ok && s == bare {
-				return nil, false, &RaisedError{"list indices must be integers or slices, not str"}
-			}
-		}
-		return nil, false, nil
-	}
-	return nil, false, &RaisedError{fmt.Sprintf("argument of type '%s' is not a container or iterable", config.PyTypeName(raw))}
-}
-
-// UnknownCommandLines returns the lead and pointer lines for a slash token with no handler
-func UnknownCommandLines(typed string, known []string) (string, string) {
-	base := typed
-	if fields := strings.Fields(typed); len(fields) > 0 {
-		base = fields[0]
-	}
-	if refusal, ok := SlashTierRefusal(base); ok {
-		return refusal + " — nothing was sent.", "Type /help for the full list."
-	}
-	hint := ""
-	if close := pydifflib.GetCloseMatches(base, known, 1, 0.6); len(close) > 0 {
-		hint = " Did you mean " + close[0] + "?"
-	}
-	return "Unknown command " + base + " — nothing was sent." + hint, "Type /help for the full list."
 }
 
 // DestructiveSkipTokens bypass the destructive slash confirmation inline

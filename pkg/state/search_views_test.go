@@ -216,3 +216,8 @@ func pyjsonText(text string) *pyjson.Object {
 	o.Set("text", text)
 	return o
 }
+
+// Anchored view defaults, a five message window, three bookends and user plus assistant roles
+func NewAnchoredViewOptions() AnchoredViewOptions {
+	return AnchoredViewOptions{Window: 5, Bookend: 3, KeepRoles: []string{"user", "assistant"}}
+}

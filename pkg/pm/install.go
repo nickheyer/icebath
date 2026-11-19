@@ -683,12 +683,6 @@ func logRepair(p Package, previous map[string]any, version string, artifacts []m
 	pkgLog().Info(fmt.Sprintf("repair: %s re-realized %s -> %s", p.Base().Name, old, fresh))
 }
 
-// Reports a pure pin package, one that stages no bytes because its consumers verify the digest
-func pinOnly(p Package) bool {
-	po, ok := p.(PinOnlyPackage)
-	return ok && po.PinOnly()
-}
-
 // Reports whether a package contributes PATH dirs, honoring a concrete package's own answer
 func onPath(p Package) bool {
 	if op, ok := p.(interface{ OnPath() bool }); ok {
@@ -800,7 +794,6 @@ type InstallPackageOptions struct {
 	DownloadProgress ProgressFunc
 	CopyFrom         *Location
 	LockHeld         bool
-	FreshCopy        bool
 }
 
 // Realizes one pin, host installs committing facts and cross target stages carrying a pin marker
@@ -815,9 +808,6 @@ func InstallPackage(ctx context.Context, p Package, lockfile *Lockfile, facts *F
 	}
 	entryName := p.StoreEntry(version, target)
 	entry := store.Entry(entryName)
-	if pinOnly(p) {
-		return entry, nil
-	}
 	artifacts := lockfile.Artifacts(name, target)
 	pin, err := stagePin(target, artifacts)
 	if err != nil {
@@ -853,7 +843,7 @@ func InstallPackage(ctx context.Context, p Package, lockfile *Lockfile, facts *F
 	if err != nil {
 		return "", err
 	}
-	if current && !opts.FreshCopy {
+	if current {
 		if facts != nil {
 			if err := refreshRecordedEnv(p, facts, store, entry, previous, target); err != nil {
 				return "", err

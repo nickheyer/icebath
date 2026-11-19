@@ -13,8 +13,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const pipCheckLock = `version = 1
@@ -109,18 +107,6 @@ func TestPipCheckUnrecognisedReportIsNeverReadAsClean(t *testing.T) {
 	}
 }
 
-func TestPipCheckOverridesRoundTripAsRequirementLines(t *testing.T) {
-	got, err := OverrideRequirements(pipCheckLockFile(t))
-	if err != nil || !reflect.DeepEqual(got, []string{"Shared_Dep==2.0", "unused ; sys_platform == 'never'"}) {
-		t.Fatalf("got %#v %v", got, err)
-	}
-	unsupported := filepath.Join(t.TempDir(), "uv.lock")
-	peWrite(t, unsupported, "[manifest]\noverrides = [{ name = \"x\", url = \"https://x\", specifier = \">1\" }]\n")
-	if _, err := OverrideRequirements(unsupported); err == nil || err.Error() != "unsupported uv.lock override: {\"name\":\"x\",\"url\":\"https://x\",\"specifier\":\">1\"}" {
-		t.Fatalf("unsupported override: %v", err)
-	}
-}
-
 // A real project whose dependency pins shared deps at 1.0, overridden to 2.0, locked offline
 func pipCheckOverriddenProject(t *testing.T, root string, overridden []string, extraWheels [][2]any, extraDependencies []string) (string, map[string]string) {
 	t.Helper()
@@ -194,49 +180,6 @@ func TestPipCheckBuildAcceptsTheOverrideAndCheckStillRejectsWhatItDoesNotCover(t
 				t.Fatalf("stale check: %v", err)
 			}
 		})
-	}
-}
-
-func TestPipCheckRequirementsBuildsFromAnOverriddenLockApplyItsOverrides(t *testing.T) {
-	isolateHome(t)
-	root := t.TempDir()
-	uv, python := peUV(t), peHostPython(t)
-	peToolchain(t, uv, python)
-	source, env := pipCheckOverriddenProject(t, root, []string{"shared_dep"}, nil, nil)
-	ctx := context.Background()
-	wheels, cache := filepath.Join(root, "wheels"), filepath.Join(root, "cache")
-	exported := filepath.Join(root, "requirements.txt")
-	if _, err := exportRequirements(ctx, ExportRequirementsOptions{Source: source, Out: exported, Cache: cache, Env: env, Explicit: true}); err != nil {
-		t.Fatal(err)
-	}
-	requirements := pystr.Splitlines(peRead(t, exported), false)
-	if !containsString(requirements, "shared-dep==2.0") {
-		t.Fatalf("export %q", requirements)
-	}
-	build := func(out, lock string) (string, error) {
-		return buildRequirementsEnvironment(ctx, BuildRequirementsEnvironmentOptions{Requirements: requirements, Out: filepath.Join(root, out),
-			Python: python, Wheelhouse: wheels, Cache: cache, Env: env, Offline: true, Explicit: true, Lock: lock})
-	}
-	var conflict *ResolutionConflict
-	if _, err := build("without-lock", ""); !errors.As(err, &conflict) || !strings.Contains(err.Error(), "shared-dep") {
-		t.Fatalf("without the lock: %v", err)
-	}
-	executable, err := build("with-lock", filepath.Join(source, "uv.lock"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := peRun(t, []string{executable, "-I", "-c", "import shared_dep; print(shared_dep.__version__)"}, root, env); got != "2.0" {
-		t.Fatalf("installed %q", got)
-	}
-	environment, err := ManagedEnvironment(ctx, filepath.Join(root, "wheelhouse-install"), ManagedEnvironmentOptions{Python: python, Cache: cache, Env: env, Offline: true, Explicit: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := environment.Create(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := environment.InstallWheelhouse(ctx, source, wheels, 0); err != nil {
-		t.Fatal(err)
 	}
 }
 

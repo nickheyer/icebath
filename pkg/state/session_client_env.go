@@ -302,11 +302,6 @@ func NormaliseClientEnv(value any, rules *ClientEnvRules) (map[string]string, er
 	return out, nil
 }
 
-// Gateway side map filtered by the session profile's current rules
-func AcceptClientEnv(value any, config any, local bool) (map[string]string, error) {
-	return NormaliseClientEnv(value, ClientEnvRulesFor(config, local))
-}
-
 // Whether a retried session.create carries the client environment the committed session froze
 func RetryMatches(committed, request *pyjson.Object) (bool, error) {
 	stored, _ := committed.Get("client_env_json")

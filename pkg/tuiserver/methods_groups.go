@@ -19,7 +19,7 @@ import (
 // Wire order of groups.capabilities methods, every one running on the RPC pool
 var groupsMethods = []string{"groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send",
 	"groups.rename", "groups.log", "groups.disband", "groups.replica_state", "groups.promote", "groups.stop",
-	"groups.retry", "groups.approve", "groups.attachment.upload", "groups.attachment.download"}
+	"groups.continue", "groups.retry", "groups.approve", "groups.attachment.upload", "groups.attachment.download"}
 
 // Refusal texts of a missing hosted room worker and driver
 const (
@@ -55,6 +55,7 @@ func init() {
 	roomMethod("groups.attachment.download", roomMethodSpec{code: 5123, roomCode: 4126, serviceCode: 4115}, groupsAttachmentDownload)
 	roomMethod("groups.disband", roomMethodSpec{code: 5114, roomCode: 4113, serviceCode: 4123, serviceMessage: groupsWorkerUnavailable}, groupsDisband)
 	roomMethod("groups.stop", roomMethodSpec{code: 5116, serviceCode: 4115}, groupsStop)
+	roomMethod("groups.continue", roomMethodSpec{code: 5126, roomCode: 4128, serviceCode: 4115}, groupsContinue)
 	roomMethod("groups.approve", roomMethodSpec{code: 5119, serviceCode: 4115}, groupsApprove)
 	roomMethod("groups.retry", roomMethodSpec{code: 5118, serviceCode: 4115}, groupsRetry)
 	roomMethod("groups.discard", roomMethodSpec{code: 5125}, groupsDiscard)
@@ -453,6 +454,15 @@ func groupsStop(_ context.Context, rid any, params map[string]any, service *gate
 		return nil, err
 	}
 	return ok(rid, map[string]any{"cancelled": count}), nil
+}
+
+// Grants a discussion paused at its cap one more budget of rounds and messages
+func groupsContinue(_ context.Context, rid any, params map[string]any, service *gateway.HostedRoomService, _ string) (map[string]any, error) {
+	event, err := service.ContinueRoom(relayString(params["room_id"]), relayString(params["discussion_event_id"]))
+	if err != nil {
+		return nil, err
+	}
+	return ok(rid, map[string]any{"continued": true, "event": event}), nil
 }
 
 // Answers one member task's pending approval

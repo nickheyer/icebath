@@ -21,8 +21,8 @@ func registerYoloServer(t *testing.T, cfg map[string]any) {
 // Enables yolo for one session key until the test ends
 func yoloSession(t *testing.T, sessionKey string) {
 	t.Helper()
-	tools.EnableSessionYolo(sessionKey)
-	t.Cleanup(func() { tools.DisableSessionYolo(sessionKey) })
+	tools.EnableSessionYolo(context.Background(), sessionKey)
+	t.Cleanup(func() { tools.DisableSessionYolo(context.Background(), sessionKey) })
 }
 
 var approvalsOff = config.Tree{"approvals": map[string]any{"mode": "off"}}

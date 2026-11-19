@@ -551,9 +551,6 @@ func TestWorkerLedgerPathsAreClosedAndProcessScoped(t *testing.T) {
 	if n, err := RestoreUndeliveredCompletions(nil, newEventQueue()); n != 0 || err != nil {
 		t.Fatalf("restore %d %v", n, err)
 	}
-	if _, err := MarkCompletionDelivered(nil, "deleg_owned"); err == nil || !strings.Contains(err.Error(), "owner_only") {
-		t.Fatalf("mark delivered %v", err)
-	}
 	if _, err := RecoverAbandonedDelegations(nil); err == nil || !strings.Contains(err.Error(), "owner_only") {
 		t.Fatalf("recover %v", err)
 	}

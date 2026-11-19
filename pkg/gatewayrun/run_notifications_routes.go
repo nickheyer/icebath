@@ -133,16 +133,6 @@ func orUnknown(v any) string {
 	return "?"
 }
 
-// Connected adapter whose platform value equals the name, native adapters only
-func (r *GatewayRunner) adapterByPlatformValue(platformName string) gateway.PlatformAdapter {
-	for p, adapter := range r.adapters.All() {
-		if string(p) == platformName {
-			return adapter
-		}
-	}
-	return nil
-}
-
 // Served profile whose own store holds the raw session id, empty for the default profile's self post
 func (r *GatewayRunner) servedAPIServerWakeProfile(ctx context.Context, evt map[string]any, rawSID string) (string, error) {
 	if r.config == nil || r.config.MultiplexProfiles == nil || !*r.config.MultiplexProfiles {

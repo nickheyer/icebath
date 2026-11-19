@@ -109,8 +109,6 @@ func TestPMFlagsParse(t *testing.T) {
 			"--tools-only", "--trust-recorded", "--target", "linux-arm64-bionic"}, install,
 			pm.InstallArgs{Names: []string{"node", "uv"}, Extra: []string{"matrix", "voice"}, Without: []string{"chromium"},
 				ToolsOnly: true, TrustRecorded: true, Target: ptr("linux-arm64-bionic")}},
-		{"pm install", []string{"pm", "install", "--test-environment"}, install, pm.InstallArgs{Names: []string{}, Extra: []string{}, Without: []string{}, TestEnvironment: ptr("")}},
-		{"pm install", []string{"pm", "install", "--test-environment", "dev,voice"}, install, pm.InstallArgs{Names: []string{}, Extra: []string{}, Without: []string{}, TestEnvironment: ptr("dev,voice")}},
 		{"pm install", []string{"pm", "install", "--target", ""}, install, pm.InstallArgs{Names: []string{}, Extra: []string{}, Without: []string{}, Target: ptr("")}},
 		{"pm env", []string{"pm", "env", "node", "python"}, env, []string{"node", "python"}},
 		{"pm doctor", []string{"pm", "doctor", "--repair"}, doctor, true},

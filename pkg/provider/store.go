@@ -1090,15 +1090,6 @@ func (s *Store) DeactivateProvider() error {
 	})
 }
 
-// tlsStateFromVerify renders the persistable tls block from a verify setting
-func tlsStateFromVerify(insecure bool, caBundle string) map[string]any {
-	var bundle any
-	if caBundle != "" {
-		bundle = caBundle
-	}
-	return map[string]any{"insecure": insecure, "ca_bundle": bundle}
-}
-
 // lastAuthErrorMarker builds the record persisted when dead OAuth material is quarantined
 func lastAuthErrorMarker(provider string, err *AuthError, reason, defaultCode string) map[string]any {
 	code := err.Code

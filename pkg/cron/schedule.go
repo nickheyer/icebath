@@ -450,14 +450,6 @@ func (s *Store) recordPersistedErrorRecovery(job *Job, previousNextRun string) {
 	s.appendTelemetryRecord("persisted_error_recoveries.jsonl", entry, &persistedErrorRecoveriesRecent)
 }
 
-// PersistedErrorRecoveryStats is the probe snapshot of stale error re-arms
-func PersistedErrorRecoveryStats() map[string]any {
-	telemetryMu.Lock()
-	defer telemetryMu.Unlock()
-	return map[string]any{"persisted_error_recoveries": persistedErrorRecoveries,
-		"recent": append([]map[string]any{}, persistedErrorRecoveriesRecent...)}
-}
-
 // Whether an instant is an occurrence of the schedule current expression, anything uncheckable matching
 func cronNextRunMatchesExpr(sched *Schedule, next time.Time) bool {
 	if sched == nil || sched.Kind != "cron" || sched.Expr == "" {
@@ -503,14 +495,6 @@ func (s *Store) recordTimezoneMigrationCatchup(job *Job, raw, next time.Time) {
 	defer telemetryMu.Unlock()
 	timezoneMigrationCatchups++
 	s.appendTelemetryRecord("timezone_migration_catchups.jsonl", entry, &timezoneMigrationCatchupsRecent)
-}
-
-// TimezoneMigrationCatchupStats is the probe snapshot of offset migration catch up fires
-func TimezoneMigrationCatchupStats() map[string]any {
-	telemetryMu.Lock()
-	defer telemetryMu.Unlock()
-	return map[string]any{"timezone_migration_catchups": timezoneMigrationCatchups,
-		"recent": append([]map[string]any{}, timezoneMigrationCatchupsRecent...)}
 }
 
 // Next run computation every caller reaches, the compute_next_run module attribute tests patch

@@ -62,12 +62,7 @@ func runStage(ctx context.Context, name string, args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		runtimes, err := pm.CollectRuntimeGenerations(filepath.Join(pm.InstallStateDir(ctx, root), "pm-runtime"))
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		fmt.Println("[stage2] collected", len(removed)+len(runtimes), "unused dependency generations")
+		fmt.Println("[stage2] collected", len(removed), "unused dependency generations")
 		return 0
 	case "skills-sync":
 		if err := skills.SyncSkillsMain(ctx); err != nil {

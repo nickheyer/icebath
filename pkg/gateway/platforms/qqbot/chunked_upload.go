@@ -86,32 +86,6 @@ func NewUploadDailyLimitExceededError(fileName string, fileSize int64, message s
 	return &UploadDailyLimitExceededError{UploadError{fileName, fileSize, message}}
 }
 
-// UploadFileTooLargeError is raised when a file exceeds the platform per file size limit
-type UploadFileTooLargeError struct {
-	UploadError
-	LimitBytes int64
-}
-
-// NewUploadFileTooLargeError defaults the message to the size and the optional limit
-func NewUploadFileTooLargeError(fileName string, fileSize, limitBytes int64, message string) *UploadFileTooLargeError {
-	if message == "" {
-		limitStr := ""
-		if limitBytes != 0 {
-			limitStr = " (" + FormatSize(limitBytes) + ")"
-		}
-		message = fmt.Sprintf("File %s (%s) exceeds platform limit%s", pyrepr.Repr(fileName), FormatSize(fileSize), limitStr)
-	}
-	return &UploadFileTooLargeError{UploadError{fileName, fileSize, message}, limitBytes}
-}
-
-// LimitHuman is the readable limit or unknown
-func (e *UploadFileTooLargeError) LimitHuman() string {
-	if e.LimitBytes != 0 {
-		return FormatSize(e.LimitBytes)
-	}
-	return "unknown"
-}
-
 type preparePart struct {
 	index        int64
 	presignedURL string

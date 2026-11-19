@@ -173,7 +173,7 @@ func TestSlackClarifyOtherFlowOtherFlipsToTextModeThenTypedReplyResolves(t *test
 	if len(updates) == 0 || !strings.Contains(strings.ToLower(updates[len(updates)-1].Args["text"].(string)), "awaiting") {
 		t.Fatalf("updates %v", updates)
 	}
-	if !tools.ResolveClarifyTextResponse("sk-other", "my custom answer") {
+	if tools.AttemptClarifyTextResponse("sk-other", "my custom answer") != tools.ClarifyTextResolved {
 		t.Fatal("typed reply must resolve the clarify")
 	}
 	if tools.GetPendingClarify("cidO") != nil {

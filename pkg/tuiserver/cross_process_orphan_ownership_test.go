@@ -368,7 +368,7 @@ func TestTakenOverRuntimeFinalizeSparesTheNewOwnersRow(t *testing.T) {
 	h, _ := ownershipHome(t)
 	key := "restored-tui-chat"
 	old := runtimeRecord(key, tuihost.DetachedWSTransport(), true)
-	old.Update(map[string]any{"source": "tui", "slash_worker": nil})
+	old.Update(map[string]any{"source": "tui"})
 	fresh := runtimeRecord(key, &orphanRacePeer{id: 15}, false)
 	fresh.Set("source", "tui")
 	swapSessions(t, map[string]*tuihost.Session{"old": old, "new": fresh})

@@ -92,26 +92,6 @@ func isAnthropicWireURL(url string) bool {
 	return provider.HostMandatedMode(url) == provider.ModeAnthropicMessages
 }
 
-// Explicit flag and api mode of a chain entry from its original base url before client resolution rewrites it
-func fallbackAPIModeHint(ctx context.Context, fb map[string]any, fbProvider, baseURLHint string) (bool, string) {
-	raw := fb["api_mode"]
-	if !pyrepr.Truthy(raw) {
-		raw = fb["transport"]
-	}
-	if explicit := provider.ParseConfigAPIMode(ctx, raw); explicit != "" {
-		return true, explicit
-	}
-	if fbProvider != "" && fbProvider != "custom" && fbProvider != "moa" {
-		if declared := provider.GetNamedCustomProvider(ctx, fbProvider)["api_mode"]; pyrepr.Truthy(declared) {
-			return true, pyrepr.Str(declared)
-		}
-	}
-	if fbProvider == "anthropic" || (baseURLHint != "" && isAnthropicWireURL(baseURLHint)) {
-		return false, "anthropic_messages"
-	}
-	return false, "chat_completions"
-}
-
 // Api mode re-detected from provider, resolved base url and model when the hint landed on the default
 func (a *AIAgent) fallbackAPIModeResolved(ctx context.Context, fbProvider, fbModel, fbBaseURL string) string {
 	if fbProvider == "openai-codex" {
@@ -157,7 +137,7 @@ func (a *AIAgent) rebindFallbackCredentialPool(ctx context.Context, fbProvider, 
 				pkgLog().Debug(fmt.Sprintf("Fallback to %s/%s: could not attach credential pool: %v", fbProvider, fbModel, r))
 			}
 		}()
-		if pool := agentLoadPool(agentPoolEnv(ctx), fbProvider); pool != nil && pool.HasCredentials() {
+		if pool := provider.LoadRoutePoolWith(agentPoolEnv(ctx), agentLoadPool, fbProvider, a.baseURL, ""); pool != nil && pool.HasCredentials() {
 			a.credentialPool = pool
 			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: attached fallback credential pool", fbProvider, fbModel))
 		}
@@ -371,21 +351,11 @@ func (a *AIAgent) armRateLimitCooldown(reason provider.FailoverReason, resetAt a
 
 // Binds a chain shaped entry onto the agent in place, the old model and provider, false when no client resolves
 func (a *AIAgent) bindRouteEntry(ctx context.Context, entry map[string]any, providerName, model string) (oldModel, oldProvider string, bound bool, err error) {
-	baseURLHint := pystr.Strip(pyrepr.Str(orEmpty(entry["base_url"])))
-	apiKeyHint := provider.ResolveFallbackEntryAPIKey(ctx, "", entry)
-	explicit, apiMode := fallbackAPIModeHint(ctx, entry, providerName, baseURLHint)
-	if baseURLHint != "" && hostMatches(baseURLHint, "ollama.com") && apiKeyHint == "" {
-		apiKeyHint = provider.GetSecretStr(ctx, "OLLAMA_API_KEY", "")
-	}
-	var keyHint any
-	if apiKeyHint != "" {
-		keyHint = apiKeyHint
-	}
-	client, _, err := agentResolveProviderClient(ctx, providerName, model, provider.ProviderClientOptions{
-		RawCodex: true, ExplicitBaseURL: baseURLHint, ExplicitAPIKey: keyHint, APIMode: apiMode})
+	route, err := provider.ResolveRouteEntryClient(ctx, agentResolveProviderClient, entry, providerName, model, true)
 	if err != nil {
 		return "", "", false, err
 	}
+	client, model, explicit, apiMode := route.Client, route.Model, route.APIModeExplicit, route.APIMode
 	if client == nil {
 		return "", "", false, nil
 	}
@@ -393,7 +363,6 @@ func (a *AIAgent) bindRouteEntry(ctx context.Context, entry map[string]any, prov
 	if providerName == "moa" {
 		baseURL, apiMode = "moa://local", "chat_completions"
 	} else {
-		model = provider.NormalizeModelForProviderCtx(ctx, model, providerName)
 		baseURL = client.BaseURL()
 		if provider.IsActualRoute(providerName, baseURL) {
 			apiMode = "chat_completions"

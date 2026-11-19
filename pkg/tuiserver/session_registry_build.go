@@ -559,7 +559,7 @@ func initSession(ctx context.Context, sid, key string, built any, history []any,
 			"agent": built, "session_key": key, "history": history, "history_lock": &sync.Mutex{},
 			"history_version": int64(0), "inflight_turn": nil, "created_at": now, "last_active": now,
 			"running": false, "attached_images": []any{}, "image_counter": 0, "cwd": cwd,
-			"explicit_cwd": explicitCwd, "cols": cols, "slash_worker": nil,
+			"explicit_cwd": explicitCwd, "cols": cols,
 			"show_reasoning": loadShowReasoning(ctx), "source": resolveSessionSource(source),
 			"tool_progress_mode": loadToolProgressMode(ctx), "edit_snapshots": map[string]any{}, "tool_started_at": map[string]any{},
 			"profile_home": profile, "model_override": nil, "transport": transport, "auth_user_id": authUserID})

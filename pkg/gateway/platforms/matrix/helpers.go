@@ -749,21 +749,3 @@ func pyTruthy(v any) bool {
 	}
 	return true
 }
-
-// Credentials and dependency answer for setup and status callers, credentials never gating the installer
-func checkMatrixRequirements(ctx context.Context) bool {
-	scoped := func(name string) string {
-		v, _ := gateway.GetScopedSecret(ctx, name, "", false)
-		return pystr.Strip(v)
-	}
-	if scoped("MATRIX_ACCESS_TOKEN") == "" && scoped("MATRIX_PASSWORD") == "" {
-		pkgLog().Debug("Matrix: neither MATRIX_ACCESS_TOKEN nor MATRIX_PASSWORD set")
-		return false
-	}
-	if scoped("MATRIX_HOMESERVER") == "" {
-		pkgLog().Warn("Matrix: MATRIX_HOMESERVER not set")
-		return false
-	}
-	ok, _ := ensureMatrixDeps(ctx)
-	return ok
-}

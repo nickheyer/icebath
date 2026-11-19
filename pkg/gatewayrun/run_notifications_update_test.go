@@ -472,3 +472,25 @@ func (w lockedWriter) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	return w.b.Write(p)
 }
+
+func TestExitCodeReaderParsesLikeTheGatewayWatcher(t *testing.T) {
+	paths := updatePaths{exitCode: filepath.Join(t.TempDir(), ".update_exit_code")}
+	for text, want := range map[string]int64{"0\n": 0, "": 1, " \t\n": 1, "\xef\xbb\xbf3": 3, "1_0": 10, "-2 ": -2, "+7": 7} {
+		os.WriteFile(paths.exitCode, []byte(text), 0o644)
+		if n, err := updateExitCode(paths); err != nil || n.Int64() != want {
+			t.Fatalf("%q read %v %v", text, n, err)
+		}
+	}
+	os.WriteFile(paths.exitCode, []byte("done"), 0o644)
+	if _, err := updateExitCode(paths); err == nil || err.Error() != "recorded update exit code done is not a whole number" {
+		t.Fatalf("bad text %v", err)
+	}
+	os.WriteFile(paths.exitCode, []byte{0xff}, 0o644)
+	if _, err := updateExitCode(paths); err == nil {
+		t.Fatal("undecodable text read as a code")
+	}
+	os.Remove(paths.exitCode)
+	if _, err := updateExitCode(paths); !os.IsNotExist(err) {
+		t.Fatalf("missing marker %v", err)
+	}
+}

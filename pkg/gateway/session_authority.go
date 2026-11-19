@@ -100,7 +100,6 @@ type SessionAuthority struct {
 	managedSpawning        map[string]any
 	sideAgents             map[any]sideAgentHolder
 	turnWorkers            map[TurnWorkerHandle]sideAgentInterruptible
-	oneshotPool            *oneshotPool
 	retiredLocal           map[string]bool
 	launchSources          map[string]any
 	executing              map[string]int64

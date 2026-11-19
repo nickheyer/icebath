@@ -551,7 +551,7 @@ func (c *CanonicalHostedRoomService) applyRoomOp(roomID, kind string, params, ac
 	case "rename":
 		_, err := RenameRoom(c.ctx, c.DBPath, roomID, params["event_id"], params["name"], nil)
 		return err
-	case "stop", "approve", "retry", "discard":
+	case "stop", "continue", "approve", "retry", "discard":
 		_, err := groupExecutionControl(c.ctx, c, "groups."+kind, verb)
 		return err
 	case "disband":

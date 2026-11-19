@@ -131,37 +131,6 @@ func BoundSessionKey(env *Env) string {
 	return v
 }
 
-// Inbound source whose scope and parent chat anchors outlive it in durable delivery metadata
-type RouteAnchorSource interface {
-	RouteScopeID() string
-	RouteParentChatID() string
-}
-
-// Metadata with the non empty route anchors of source merged over it, metadata itself when there are none
-func SourceRouteMetadata(source RouteAnchorSource, metadata map[string]any) map[string]any {
-	if source == nil {
-		return metadata
-	}
-	anchors := map[string]string{}
-	if v := source.RouteScopeID(); v != "" {
-		anchors["scope_id"] = v
-	}
-	if v := source.RouteParentChatID(); v != "" {
-		anchors["parent_chat_id"] = v
-	}
-	if len(anchors) == 0 {
-		return metadata
-	}
-	merged := make(map[string]any, len(metadata)+len(anchors))
-	for k, v := range metadata {
-		merged[k] = v
-	}
-	for k, v := range anchors {
-		merged[k] = v
-	}
-	return merged
-}
-
 // Session identity SetSessionVars binds, nil CronSession left unset and nil SessionHistoryDelivery never declared
 type SessionVars struct {
 	Platform, Source, ChatID, ChatType, ChatName, ThreadID string

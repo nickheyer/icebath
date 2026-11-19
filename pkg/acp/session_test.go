@@ -3,6 +3,7 @@ package acp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -565,11 +566,11 @@ func TestAssistantReasoningFieldsPersisted(t *testing.T) {
 		"reasoning_details":     `[{"type": "thinking", "thinking": "first thought"}]`,
 		"codex_reasoning_items": `[{"type": "reasoning", "id": "rs_123", "encrypted_content": "enc_blob"}]`,
 	} {
-		text, err := state.DumpsUnicode(msg[key])
+		raw, err := json.Marshal(msg[key])
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, _ := pyjson.Loads(text)
+		got, _ := pyjson.Loads(string(raw))
 		wanted, _ := pyjson.Loads(want)
 		gotText, _ := pyjson.Dumps(got, pyjson.SortKeys(true))
 		wantText, _ := pyjson.Dumps(wanted, pyjson.SortKeys(true))

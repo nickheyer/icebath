@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Root home whose logs directory holds update.log, swapped by tests
@@ -124,11 +123,7 @@ func openUpdateLog() (logFile *os.File, err error) {
 	if err != nil {
 		return nil, err
 	}
-	stage := "started"
-	if pm.IsPostSwapChild() {
-		stage = "continued on the pulled code"
-	}
-	if _, err := fmt.Fprintf(f, "\n=== icebath update %s %s ===\n", stage, time.Now().Format("2006-01-02T15:04:05")); err != nil {
+	if _, err := fmt.Fprintf(f, "\n=== icebath update started %s ===\n", time.Now().Format("2006-01-02T15:04:05")); err != nil {
 		f.Close()
 		return nil, err
 	}

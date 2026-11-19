@@ -73,6 +73,9 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.newCmd(fb, "add", "Pick a provider + model (same picker as `icebath model`) and append to the chain", "")
 	c.newCmd(fb, "remove", "Pick an entry to delete from the chain", "", "rm")
 	c.newCmd(fb, "clear", "Remove all fallback entries", "")
+	fbCheck := c.newCmd(fb, "check", "Check each fallback entry is usable, without starting an agent session (exit 1 if not)", "")
+	bf(fbCheck, "live", "", "Also send one minimal inference request per entry (on that entry's own provider/model)")
+	jsonFlag(fbCheck, "Print the results as JSON")
 
 	wt := c.newCmd(root, "worktree", "Audit and reclaim accumulated git worktrees and merged branches",
 		"Audit, reclaim and restore the .worktrees/ trees Icebath sessions accumulate. Idle trees with uncommitted changes or unpushed commits are archived to refs/icebath/archive/<tree> before removal (worktrees.archive_dirty); `restore` brings one back. In-use trees are never touched. See: cli-config.yaml.example, key worktrees")
@@ -249,7 +252,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	bf(status, "deep", "", "Run deep checks (implies --full; may take longer)")
 
 	pause := c.newCmd(root, "pause", "Emergency stop: pause cron/kanban dispatch and new gateway turns",
-		"Engage the global emergency stop. Halts NEW work only — cron dispatch, kanban dispatch, and new gateway turns — until `icebath resume`. Interactive CLI and TUI turns are gateway turns, so they are held too: each gets \"Icebath is paused\" with the reason. Turns already running finish; in-flight work is never killed.")
+		"Engage the global emergency stop. Halts NEW work only — cron dispatch, kanban dispatch, and new gateway turns — until `icebath resume`. Terminal UI and `icebath chat -q` turns are gateway turns, so they are held too: each gets \"Icebath is paused\" with the reason. Turns already running finish; in-flight work is never killed.")
 	sf(pause, "reason", "", "", "Optional reason stored in the sentinel and shown to users")
 	c.newCmd(root, "resume", "Lift the emergency stop set by `icebath pause`", "Remove the ESTOP sentinel; dispatch resumes on the next tick.")
 

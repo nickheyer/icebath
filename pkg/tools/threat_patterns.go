@@ -166,16 +166,3 @@ func MustScanForThreats(content, scope string) []string {
 	}
 	return findings
 }
-
-// FirstThreatMessage is the user facing error for the first threat found or empty
-func FirstThreatMessage(content, scope string) string {
-	findings := MustScanForThreats(content, scope)
-	if len(findings) == 0 {
-		return ""
-	}
-	pid := findings[0]
-	if len(pid) > len("invisible_unicode_") && pid[:len("invisible_unicode_")] == "invisible_unicode_" {
-		return fmt.Sprintf("Blocked: content contains invisible unicode character %s (possible injection).", pid[len("invisible_unicode_"):])
-	}
-	return fmt.Sprintf("Blocked: content matches threat pattern '%s'. Content is injected into the system prompt and must not contain injection or exfiltration payloads.", pid)
-}

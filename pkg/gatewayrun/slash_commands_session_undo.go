@@ -36,9 +36,6 @@ func (r *GatewayRunner) retryReadmissionReply(ctx context.Context, source *gatew
 	if notice, blocked := r.hmEstopGate(ctx, resend, source, false); blocked {
 		return notice, true, nil
 	}
-	if r.externalDrainActive {
-		return i18n.T(ctx, "gateway.busy.draining_maintenance", "", nil), true, nil
-	}
 	if reply, refused, err := r.retryAuthorityRefusal(ctx, source); err != nil || refused {
 		return reply, refused, err
 	}

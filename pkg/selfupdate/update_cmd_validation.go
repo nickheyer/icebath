@@ -107,15 +107,3 @@ func importHealthPayload(text string) ([]string, map[string][2]string, bool) {
 func probeFailure(kind, detail string) ([]string, map[string][2]string) {
 	return []string{"critical-module probe"}, map[string][2]string{"critical-module probe": {kind, detail}}
 }
-
-// The first critical module import failure, ok when every module loads
-func validateCriticalModulesImport(ctx context.Context, root string, reportRuntimeErrors bool) (bool, string, string, error) {
-	order, failures, err := criticalModuleImportFailures(ctx, root, reportRuntimeErrors)
-	if err != nil {
-		return false, "", "", err
-	}
-	if len(order) > 0 {
-		return false, order[0], failures[order[0]][1], nil
-	}
-	return true, "", "", nil
-}

@@ -1012,27 +1012,3 @@ func CountDBHolders(dbPath string) (int, bool) {
 	}
 	return len(pids), true
 }
-
-// Unique pids proven to hold the database or one of its sidecars, in first seen order
-func concreteStateDBHolderPIDs(dbPath string, holders []Holder) ([]int, error) {
-	abs, err := pyAbspath(dbPath)
-	if err != nil {
-		return nil, err
-	}
-	abs = normcase(abs)
-	watched := map[string]bool{abs: true, abs + "-wal": true, abs + "-shm": true}
-	pids := []int{}
-	for _, h := range holders {
-		if h.PID <= 0 {
-			continue
-		}
-		canonical, err := CanonicalSQLitePath(h.Target)
-		if err != nil {
-			return nil, err
-		}
-		if watched[canonical] && !slices.Contains(pids, h.PID) {
-			pids = append(pids, h.PID)
-		}
-	}
-	return pids, nil
-}

@@ -126,8 +126,8 @@ func TestBackendSelection(t *testing.T) {
 		{"", "macos", "metal"},
 	}
 	for _, c := range cases {
-		if got, err := SelectBackend(c.vendor, c.osName); err != nil || got != c.expected {
-			t.Errorf("SelectBackend(%q, %q) = %q, %v, want %q", c.vendor, c.osName, got, err, c.expected)
+		if got := selectBackendFor(c.vendor, c.osName); got != c.expected {
+			t.Errorf("selectBackendFor(%q, %q) = %q, want %q", c.vendor, c.osName, got, c.expected)
 		}
 	}
 }

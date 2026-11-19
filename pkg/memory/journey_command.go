@@ -59,14 +59,6 @@ type journeyRun struct{ Text, Style string }
 
 type journeyLine []journeyRun
 
-func (l journeyLine) plain() string {
-	var b strings.Builder
-	for _, r := range l {
-		b.WriteString(r.Text)
-	}
-	return b.String()
-}
-
 // Base ink faded toward the background by alpha, the rgba over bg blend
 func journeyFade(palette map[string]string, base string, alpha float64) string {
 	if base == "" {

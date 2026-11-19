@@ -2,8 +2,11 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -170,5 +173,150 @@ func TestBuildAPIKwargsChatCompletionsCarriesModelMessagesAndTools(t *testing.T)
 	}
 	if kwargs["model"] != "a/b" || len(kwargs["messages"].([]map[string]any)) != 1 || len(kwargs["tools"].([]map[string]any)) != 1 {
 		t.Fatalf("kwargs %v", kwargs)
+	}
+}
+
+// Agent on a primary route with one resolvable fallback entry, its config written to the fixture home
+func cooldownFallbackAgent(t *testing.T, configYAML string) *AIAgent {
+	t.Helper()
+	a := newRestoreAgent(t, configYAML, nil, "custom", "https://ollama.com/v1", nil)
+	a.provider, a.requestedProvider, a.model, a.apiMode = "ollama-cloud", "ollama-cloud", "glm-5.2", "chat_completions"
+	a.fallbackChain, a.fallbackIndex, a.fallbackActivated = []map[string]any{{"provider": "openai-codex", "model": "gpt-5.5"}}, 0, false
+	a.credentialPool = isolationPool(a, "ollama-cloud")
+	a.transportCache = map[string]provider.Transport{}
+	recordIsolationResolves(t, isolationClient{apiKey: "codex-key", baseURL: "https://chatgpt.com/backend-api/codex"}, "gpt-5.5")
+	recordIsolationPoolLoads(t, map[string]*provider.Pool{"openai-codex": isolationPool(a, "openai-codex")})
+	return a
+}
+
+func TestFallbackSwitchBenchesPrimaryUntilValidFutureProviderReset(t *testing.T) {
+	wall := func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+	for _, c := range []struct {
+		name    string
+		ahead   float64
+		whole   bool
+		literal any
+	}{
+		{name: "fractional seconds round up", ahead: 90.2},
+		{name: "whole seconds days ahead", ahead: 274_291, whole: true},
+		{name: "no reset"},
+		{name: "not a timestamp", literal: "not-a-timestamp"},
+		{name: "reset in the past", ahead: -1, whole: true},
+	} {
+		a := cooldownFallbackAgent(t, "")
+		a.rateLimitedUntil = 0
+		wallBefore := wall()
+		resetAt, reset := c.literal, 0.0
+		if c.ahead != 0 {
+			reset = wallBefore + c.ahead
+			resetAt = reset
+			if c.whole {
+				reset = math.Floor(reset)
+				resetAt = int(reset)
+			}
+		}
+		monoBefore := pythread.Monotonic()
+		activated := a.tryActivateFallbackAt(a.homeContext(), provider.ReasonRateLimit, resetAt)
+		monoAfter, wallAfter := pythread.Monotonic(), wall()
+		if !activated {
+			t.Fatalf("%s: fallback not activated", c.name)
+		}
+		if a.model != "gpt-5.5" {
+			t.Fatalf("%s: model %q", c.name, a.model)
+		}
+		low, high := 60.0, 60.0
+		if c.ahead > 0 {
+			low, high = math.Ceil(reset-wallAfter), math.Ceil(reset-wallBefore)
+		}
+		if a.rateLimitedUntil < monoBefore+low || a.rateLimitedUntil > monoAfter+high {
+			t.Fatalf("%s: cooldown %.3f s want %v..%v s", c.name, a.rateLimitedUntil-monoBefore, low, high)
+		}
+	}
+}
+
+func TestMinSwitchResetSecondsKeepsPrimaryWhenResetIsImminent(t *testing.T) {
+	for _, c := range []struct {
+		threshold int
+		switched  bool
+	}{{0, true}, {120, false}} {
+		a := cooldownFallbackAgent(t, fmt.Sprintf("fallback:\n  min_switch_reset_seconds: %d\n", c.threshold))
+		a.rateLimitedUntil = 0
+		resetAt := float64(time.Now().UnixNano())/1e9 + 30
+		activated := a.tryActivateFallbackAt(a.homeContext(), provider.ReasonRateLimit, resetAt)
+		if activated != c.switched {
+			t.Fatalf("threshold %d: activated %v want %v", c.threshold, activated, c.switched)
+		}
+		if (a.model == "gpt-5.5") != c.switched {
+			t.Fatalf("threshold %d: model %q", c.threshold, a.model)
+		}
+		if (a.rateLimitedUntil != 0) != c.switched {
+			t.Fatalf("threshold %d: cooldown armed %v", c.threshold, a.rateLimitedUntil != 0)
+		}
+	}
+}
+
+func TestRateLimitExhaustionKeeps60sCooldown(t *testing.T) {
+	a := cooldownFallbackAgent(t, "")
+	a.rateLimitedUntil = 0
+	before := pythread.Monotonic()
+	if !a.tryActivateFallback(a.homeContext(), provider.ReasonRateLimit) {
+		t.Fatal("first activation")
+	}
+	after := pythread.Monotonic()
+	armed := a.rateLimitedUntil
+	if armed < before+60 || armed > after+60 {
+		t.Fatalf("cooldown %.3f s want 60 s", armed-before)
+	}
+	if a.tryActivateFallback(a.homeContext(), provider.ReasonRateLimit) {
+		t.Fatal("chain should be exhausted")
+	}
+	if a.rateLimitedUntil != armed {
+		t.Fatalf("exhaustion moved the 60 s cooldown by %.3f s", a.rateLimitedUntil-armed)
+	}
+}
+
+func TestCooldownNeverShrinksExistingWindow(t *testing.T) {
+	a := cooldownFallbackAgent(t, "")
+	far := pythread.Monotonic() + 999
+	a.rateLimitedUntil = far
+	if !a.tryActivateFallback(a.homeContext(), "") || a.tryActivateFallback(a.homeContext(), "") {
+		t.Fatal("activation sequence")
+	}
+	if a.rateLimitedUntil != far {
+		t.Fatalf("cooldown shrank by %.3f s", far-a.rateLimitedUntil)
+	}
+}
+
+func TestBackoffCapsAtFourHours(t *testing.T) {
+	a := cooldownFallbackAgent(t, "")
+	a.rateLimitedUntil, a.rateLimitBackoffCount = 0, 10
+	before := pythread.Monotonic()
+	a.tryActivateFallback(a.homeContext(), provider.ReasonRateLimit)
+	after := pythread.Monotonic()
+	if a.rateLimitedUntil < before+14400 || a.rateLimitedUntil > after+14400 {
+		t.Fatalf("cooldown %.3f s want 14400 s", a.rateLimitedUntil-before)
+	}
+}
+
+func TestGeminiFastFallbackPoolRecovery(t *testing.T) {
+	a := isolationAgent(t, "ollama-cloud", "glm-5.2", "https://ollama.com/v1", "chat_completions", nil)
+	now := float64(time.Now().UnixNano()) / 1e9
+	live := func(i int) provider.PooledCredential {
+		return provider.PooledCredential{Provider: "gemini", ID: fmt.Sprintf("gemini-entry-%d", i), AccessToken: fmt.Sprintf("key-gemini-%d", i),
+			BaseURL: "https://gemini.example.com/v1"}
+	}
+	benched := func(i int) provider.PooledCredential {
+		e := live(i)
+		e.LastStatus, e.LastStatusAt, e.LastErrorResetAt = provider.StatusExhausted, now, now+3600
+		return e
+	}
+	if !poolMayRecoverFromRateLimit(isolationPool(a, "gemini", live(0), live(1), live(2))) {
+		t.Fatal("multi entry pool should recover")
+	}
+	if poolMayRecoverFromRateLimit(isolationPool(a, "gemini", benched(0), benched(1), benched(2))) {
+		t.Fatal("exhausted pool should skip rotation")
+	}
+	if poolMayRecoverFromRateLimit(isolationPool(a, "gemini", live(0))) || poolMayRecoverFromRateLimit(nil) {
+		t.Fatal("single entry or missing pool should fall back")
 	}
 }

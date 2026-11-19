@@ -22,20 +22,6 @@ func gatewayProgram(command string, _ bool) (quickProgram, error) {
 	return posixShellProgram([]any{command}, &syscall.SysProcAttr{Setsid: true})
 }
 
-// Shell argv for the CLI command in the caller's process group, any other value going through list
-func cliProgram(command any) (quickProgram, error) {
-	items := []any{command}
-	switch command.(type) {
-	case string, []byte:
-	default:
-		var err error
-		if items, err = pyListItems(command); err != nil {
-			return quickProgram{}, err
-		}
-	}
-	return posixShellProgram(items, &syscall.SysProcAttr{})
-}
-
 // Builds sh -c with the items, each checked for its type then an embedded NUL as fork_exec converts them
 func posixShellProgram(items []any, attr *syscall.SysProcAttr) (quickProgram, error) {
 	sh := pysubprocess.UnixShell()
@@ -122,11 +108,4 @@ func killShell(q *quickProc) error {
 // killpg of the group the shell led, ProcessLookupError and PermissionError suppressed
 func killQuickGroup(pid int) {
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
-}
-
-// After a timeout kill run waits for the shell and closes the pipes, leaving any grandchild running
-func reapAfterTimeoutKill(q *quickProc) {
-	<-q.exited
-	q.stdout.close()
-	q.stderr.close()
 }

@@ -189,7 +189,7 @@ func TestAuthorityTransferFencesLeaseAndLateSettlement(t *testing.T) {
 	hrOK(hrAdmit(db, identity, clock, nil))
 	hrOK(hrAdmit(db, queued, clock, nil))
 	oldAttempt := hrOK(hrStart(db, identity, oldLease, clock))
-	hrOK(ClaimAuthority(ctx, db, "room-1", "gateway-a", 1, "gateway-b", "claim-gateway-b", hrFloatPtr(100)))
+	hrTransferAuthority(db, "room-1", "gateway-a", 1, "gateway-b", "claim-gateway-b", hrFloatPtr(100))
 	_, err := DriverRenewLease(ctx, db, oldLease, 30, clock.now)
 	hrRequireErr[StaleLeaseError](t, err, "authority changed")
 	_, err = hrStart(db, queued, oldLease, clock)

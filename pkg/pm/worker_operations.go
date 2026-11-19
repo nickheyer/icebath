@@ -19,32 +19,16 @@ import (
 // Routes the package manager's worker operations beside the binary store's ensure
 func init() {
 	for name, op := range map[string]*workerOperation{
-		"stage_only":      {bootstrap: bootstrapAlways, run: runStageOnly},
-		"stage_tools":     {bootstrap: bootstrapNever, run: pathOperation("stage_tools", []string{"names"}, []string{"source_store", "out", "target"}, stageTools)},
-		"prepare_tools":   {bootstrap: bootstrapAlways, run: pathOperation("prepare_tools", []string{"names"}, []string{"out", "target"}, prepareTools)},
 		"sync_venv":       {packages: []string{"venv"}, bootstrap: bootstrapPolicy, run: runSyncVenv},
 		"venv_is_current": {packages: []string{"venv"}, bootstrap: bootstrapNever, run: runVenvIsCurrent},
-		"build_environment": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
-			run: pathOperation("build_environment", nil, []string{"source", "out"}, buildEnvironment)},
 		"lock_project": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
 			run: voidOperation("lock_project", []string{"source"}, nil, lockProject)},
 		"ensure_environment": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
 			run: pathOperation("ensure_environment", []string{"name", "requirements"}, nil, ensureEnvironment)},
-		"ensure_project_environment": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
-			run: pathOperation("ensure_project_environment", []string{"name", "project"}, nil, ensureProjectEnvironment)},
 		"ensure_python_tool": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
 			run: pathOperation("ensure_python_tool", []string{"name", "requirements", "executable"}, nil, ensurePythonTool)},
 		"check_project_lock": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
 			run: voidOperation("check_project_lock", []string{"source"}, nil, checkProjectLock)},
-		"export_requirements": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
-			run: voidOperation("export_requirements", []string{"source", "out"}, nil, func(ctx context.Context, opts ExportRequirementsOptions) error {
-				_, err := exportRequirements(ctx, opts)
-				return err
-			})},
-		"build_requirements_environment": {packages: []string{"uv"}, bootstrap: bootstrapPolicy,
-			run: pathOperation("build_requirements_environment", []string{"requirements"}, []string{"out"}, buildRequirementsEnvironment)},
-		"prune_cache": {packages: []string{"uv"}, bootstrap: bootstrapAlways,
-			run: voidOperation("prune_cache", []string{"cache"}, nil, pruneCache)},
 	} {
 		workerOperations[name] = op
 	}
@@ -219,26 +203,6 @@ func (k *kwargs) plugins() (PluginInput, error) {
 		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugins option must be a mapping, got %s", errchain.Kind(raw))}
 	}
 	return DecodePluginInput(encoded)
-}
-
-// Worker dispatch of a cross target stage
-func runStageOnly(ctx context.Context, args map[string]any, hooks workerHooks) (any, error) {
-	k := bindKwargs("stage_only", args, hooks, []string{"name", "target"}, nil)
-	if err := k.checkRequired(); err != nil {
-		return nil, err
-	}
-	if err := k.checkKnown(keywordSet("name", "target", "progress", "pause_event", "download_progress")); err != nil {
-		return nil, err
-	}
-	name, err := k.str("name")
-	if err != nil {
-		return nil, err
-	}
-	target, err := k.str("target")
-	if err != nil {
-		return nil, err
-	}
-	return stageOnly(ctx, name, target, StageOnlyOptions{Progress: hooks.progress, PauseEvent: hooks.pause, DownloadProgress: hooks.downloadProgress})
 }
 
 // Worker dispatch of a venv sync with its plugin input decoded

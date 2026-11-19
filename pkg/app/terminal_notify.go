@@ -81,20 +81,13 @@ func warpOSC777(event, detail, sessionID string) (string, error) {
 	return "\x1b]777;notify;warp://cli-agent;" + body + "\x07", nil
 }
 
-// OSC 9 plus the Warp OSC 777 payload when supported, for a blocking prompt or a turn end
-func notificationSequence(text string, prompt bool, sessionID, detail string) (string, error) {
+// OSC 9 plus the Warp OSC 777 payload when supported, for a turn end
+func notificationSequence(text, sessionID string) (string, error) {
 	seq := osc9("Icebath: " + text)
 	if !warpSupported(nil) {
 		return seq, nil
 	}
-	event := "stop"
-	if prompt {
-		event = "permission_request"
-	}
-	if detail == "" {
-		detail = text
-	}
-	warp, err := warpOSC777(event, detail, sessionID)
+	warp, err := warpOSC777("stop", text, sessionID)
 	if err != nil {
 		return "", err
 	}

@@ -605,21 +605,6 @@ func extractPreservedThinkingBlocks(message map[string]any, opts convertOptions)
 	return out
 }
 
-func safeText(v any) string {
-	s := ""
-	if v != nil {
-		if str, ok := v.(string); ok {
-			s = str
-		} else {
-			s = pyrepr.Str(v)
-		}
-	}
-	if strings.TrimSpace(s) == "" {
-		return emptyTextPlaceholder
-	}
-	return s
-}
-
 func replayText(b map[string]any) map[string]any {
 	if isBlankTextBlock(b) {
 		return nil

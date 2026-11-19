@@ -45,11 +45,6 @@ func layoutFromConfig(display map[string]any) bool {
 	return strings.ToLower(strings.TrimSpace(cliStr(display["cli_layout"], "modern"))) != "classic"
 }
 
-// Reads display.busy_input_mode, unset interrupting in both layouts
-func busyInputModeFromConfig(display map[string]any) string {
-	return strings.ToLower(strings.TrimSpace(cliStr(display["busy_input_mode"], "interrupt")))
-}
-
 // Color of the active skin for the key, the fallback when the skin holds none
 func skinHex(key, fallback string) string {
 	if skin := config.GetActiveSkin(context.Background()); skin != nil {

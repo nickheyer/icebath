@@ -984,9 +984,6 @@ func openBrowserWith(target string, mode int) error {
 // Opens a URL in the same window of the first registry browser that takes it
 func openBrowserURL(target string) error { return openBrowserWith(target, 0) }
 
-// Opens a URL through the browser registry for callers outside the package
-func OpenBrowserURL(target string) error { return openBrowserURL(target) }
-
 // Opens a URL in a new tab through the browser registry for callers outside the package
 func OpenBrowserTab(target string) error { return openBrowserWith(target, 2) }
 

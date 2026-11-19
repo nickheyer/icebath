@@ -32,8 +32,6 @@ import (
 
 const DeliveryDirName = "bot_live_delivery"
 
-const deliverySequenceFile = ".sequence"
-
 var deliveryOwnerKeys = []string{"profile_home", "session_id", "lease_id", "live_session_id"}
 
 var deliveryTerminal = map[string]bool{"settled": true, "failed": true, "cancelled": true, "ambiguous": true}
@@ -43,12 +41,11 @@ var deliveryIDRe = regexp.MustCompile(`\A[0-9a-f]{32,64}\z`)
 // Poll interval of a receipt waiter, a variable so tests can shorten it
 var deliveryPollInterval = 500 * time.Millisecond
 
-// Mailbox dirs and tickets already reported by this process, warned once and debug logged after
+// Mailbox dirs already reported by this process, warned once and debug logged after
 var (
-	deliveryWarnMu         sync.Mutex
-	warnedUnhardened       = map[string]bool{}
-	warnedUnusableMailbox  = map[string]bool{}
-	warnedUnreadableTicket = map[string]bool{}
+	deliveryWarnMu        sync.Mutex
+	warnedUnhardened      = map[string]bool{}
+	warnedUnusableMailbox = map[string]bool{}
 )
 
 // Logs at warning the first time a key is seen in a set and at debug after
@@ -355,71 +352,6 @@ func ticketShapeError(path string, record map[string]any) string {
 	return ""
 }
 
-// Bulk scan read where one unreadable or malformed ticket is skipped with a warning
-func scanReadTicket(path string) map[string]any {
-	record, err := readTicket(path)
-	problem := ""
-	if err != nil {
-		record, problem = nil, err.Error()
-	} else if record != nil {
-		problem = ticketShapeError(path, record)
-	}
-	if problem != "" {
-		deliveryWarn(warnedUnreadableTicket, path, fmt.Sprintf("bot_live_delivery: skipping unreadable ticket %s (%s)", filepath.Base(path), problem))
-		return nil
-	}
-	deliveryForget(warnedUnreadableTicket, path)
-	return record
-}
-
-func deliveryInt(v any) *big.Int {
-	switch x := v.(type) {
-	case int64:
-		return big.NewInt(x)
-	case int:
-		return big.NewInt(int64(x))
-	case *big.Int:
-		return x
-	}
-	return big.NewInt(0)
-}
-
-// Next admission sequence under the dir lock, persisted in a counter file beside the tickets
-func nextDeliverySequence(ctx context.Context, root string) (*big.Int, error) {
-	counter := filepath.Join(root, deliverySequenceFile)
-	persisted := big.NewInt(0)
-	if data, err := os.ReadFile(counter); err == nil {
-		if n, ok := new(big.Int).SetString(strings.TrimSpace(strings.TrimPrefix(string(data), "\ufeff")), 10); ok {
-			persisted = n
-		}
-	}
-	scanned := big.NewInt(0)
-	candidates, _ := filepath.Glob(filepath.Join(root, "*.json"))
-	for _, candidate := range candidates {
-		record := scanReadTicket(candidate)
-		if record == nil {
-			continue
-		}
-		seq, has := record["sequence"]
-		if !has {
-			seq = record["created_at"]
-		}
-		if v := deliveryInt(seq); v.Cmp(scanned) > 0 {
-			scanned = v
-		}
-	}
-	sequence := persisted
-	if scanned.Cmp(sequence) > 0 {
-		sequence = scanned
-	}
-	sequence = new(big.Int).Add(sequence, big.NewInt(1))
-	counterMode := os.FileMode(0o600)
-	if err := pyfs.AtomicWriteTextWith(ctx, counter, sequence.String(), pyfs.TextWrite{Mode: &counterMode, FsyncDir: true}); err != nil {
-		return nil, err
-	}
-	return sequence, nil
-}
-
 func writeTicket(ctx context.Context, path string, record map[string]any) error {
 	return config.AtomicJSONWriteMode(ctx, path, record, 0o600, pyjson.SortKeys(true))
 }
@@ -526,55 +458,6 @@ func deliveryTruthy(v any) bool {
 		return len(x) > 0
 	}
 	return true
-}
-
-// Persists an immutable terminal receipt where an identical duplicate completion is safe
-func CompleteDelivery(ctx context.Context, profileHome, deliveryID, status, reply, errText, reason string) (map[string]any, error) {
-	key, err := checkDeliveryID(deliveryID)
-	if err != nil {
-		return nil, err
-	}
-	if !deliveryTerminal[status] {
-		return nil, errors.New("invalid terminal delivery status")
-	}
-	outcome := map[string]any{"status": status, "reply": reply, "error": errText, "reason": reason}
-	var out map[string]any
-	err = lockedMailbox(ctx, profileHome, func(root string) error {
-		path := filepath.Join(root, key+".json")
-		record, err := readTicket(path)
-		if err != nil {
-			return err
-		}
-		if record == nil {
-			return fmt.Errorf("delivery not found: %s: %w", key, fs.ErrNotExist)
-		}
-		current, has := record["status"]
-		if !has {
-			return fmt.Errorf("delivery record %s has no status", deliveryID)
-		}
-		if s, _ := current.(string); deliveryTerminal[s] {
-			for k, v := range outcome {
-				if !pyjson.Equal(record[k], v) {
-					return errors.New("delivery already has a different terminal receipt")
-				}
-			}
-			out = record
-			return nil
-		}
-		if current != "claimed" {
-			return errors.New("delivery must be claimed before completion")
-		}
-		for k, v := range outcome {
-			record[k] = v
-		}
-		record["completed_at"] = time.Now().UnixNano()
-		if err := writeTicket(ctx, path, record); err != nil {
-			return err
-		}
-		out = record
-		return nil
-	})
-	return out, err
 }
 
 // Cancels an ownerless queued receipt, a claim or result that won the lock answered unchanged

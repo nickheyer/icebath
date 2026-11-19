@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var (
@@ -219,5 +220,13 @@ func warnInvalidConfigInt(ctx context.Context, what string, value any, requireme
 	if printFallback == "" {
 		printFallback = fallback
 	}
-	fmt.Fprintf(invalidConfigStderr, "\n⚠ Invalid %s: %s\n  %s.\n  Falling back to %s.\n\n", what, errchain.Show(value), pystr.Upper(requirement[:1])+requirement[1:], printFallback)
+	fmt.Fprintf(scopedInvalidConfigStderr(ctx), "\n⚠ Invalid %s: %s\n  %s.\n  Falling back to %s.\n\n", what, errchain.Show(value), pystr.Upper(requirement[:1])+requirement[1:], printFallback)
+}
+
+// Stderr of the invalid config warning as work under ctx sees it, the process stderr routed by ctx or the writer a redirect put in its place
+func scopedInvalidConfigStderr(ctx context.Context) io.Writer {
+	if invalidConfigStderr != pysys.Stderr {
+		return invalidConfigStderr
+	}
+	return tools.ScopedStderr(ctx)
 }

@@ -39,21 +39,3 @@ func NotifyProviderJobsChanged(h string) { openCronStore(h, nil).notifyProviderJ
 
 // Active scheduler provider of a home's store
 func ResolveCronScheduler(h string) CronScheduler { return resolveCronScheduler(openCronStore(h, nil)) }
-
-// Whether a provider claims and fires in separate steps
-func ProviderSupportsSplitFire(p CronScheduler) bool { return providerSupportsSplitFire(p) }
-
-// Claims then runs one job through a provider
-func SchedulerFireDue(ctx context.Context, p CronScheduler, jobID string, o FireOptions) (bool, error) {
-	return schedulerFireDue(ctx, p, jobID, o)
-}
-
-// Durably claims one fire through a provider
-func SchedulerClaimFire(ctx context.Context, p CronScheduler, jobID string) (*Job, error) {
-	return schedulerClaimFire(ctx, p, jobID, false, false)
-}
-
-// Runs a claimed job snapshot through a provider
-func SchedulerFireClaimed(ctx context.Context, p CronScheduler, job *Job, o FireOptions) (bool, error) {
-	return schedulerFireClaimed(ctx, p, job, o)
-}

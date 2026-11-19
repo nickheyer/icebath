@@ -142,16 +142,6 @@ func InvalidateCachedContextLength(ctx context.Context, model, baseURL string) {
 	invalidateCachedContextLength(ctx, model, baseURL)
 }
 
-// GetNextProbeTier returns the next lower probe tier, false at the minimum
-func GetNextProbeTier(current int) (int, bool) {
-	for _, tier := range ContextProbeTiers {
-		if tier < current {
-			return tier, true
-		}
-	}
-	return 0, false
-}
-
 var contextLimitPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`max_model_len\s*(?:is\s*)?[:=(]?\s*(\d{4,})`),
 	regexp.MustCompile(`maximum model length\s*(?:is\s*)?[:=(]?\s*(\d{4,})`),

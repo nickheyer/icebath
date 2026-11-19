@@ -677,15 +677,8 @@ func (m *memberFile) switchToZlib(p []byte) (int, error) {
 	return m.read1(p)
 }
 
-// ZipExtFile.read of n bytes, everything up to the end when n is negative
+// ZipExtFile.read of up to n bytes
 func (m *memberFile) read(n int) ([]byte, error) {
-	if n < 0 {
-		data, err := io.ReadAll(m)
-		if err != nil {
-			return nil, err
-		}
-		return data, nil
-	}
 	buf := make([]byte, n)
 	got, err := io.ReadFull(m, buf)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {

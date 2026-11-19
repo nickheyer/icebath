@@ -3,8 +3,6 @@
 package pm
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -97,35 +95,4 @@ func TestPrunerKeepsAWindowsCreatorBeforeItsFirstLock(t *testing.T) {
 		}
 	}()
 	sttSamePaths(t, sttChildren(t, filepath.Join(generation, ".leases")), nil)
-}
-
-func TestUnremovableLeaseKeepsItsGeneration(t *testing.T) {
-	t.Run("runtime", func(t *testing.T) {
-		isolateHome(t)
-		root := filepath.Join(t.TempDir(), "runtime")
-		generation := sttLeaseGenerationDir(t, filepath.Join(root, "generations", "obsolete"))
-		writeFile(t, filepath.Join(generation, "pm-runtime.json"), []byte("{}"), 0o666)
-		lease := sttTouch(t, filepath.Join(generation, ".leases", "abandoned"))
-		realUnlink := unlinkLease
-		t.Cleanup(func() { unlinkLease = realUnlink })
-		unlinkLease = func(path string) error {
-			if path == lease {
-				return &fs.PathError{Op: "unlink", Path: path, Err: errors.New("Synthetic lease deletion refusal")}
-			}
-			return realUnlink(path)
-		}
-		held, err := LeasesHeld(generation)
-		if err != nil || !held {
-			t.Fatalf("held %v err %v", held, err)
-		}
-		sttSamePaths(t, sttCollectRuntime(t, root), nil)
-		if !sttIsDir(generation) || !sttExists(lease) {
-			t.Fatal("a generation whose lease could not be removed was collected")
-		}
-		unlinkLease = realUnlink
-		sttSamePaths(t, sttCollectRuntime(t, root), []string{generation})
-		if sttExists(generation) {
-			t.Fatal("collected generation still exists")
-		}
-	})
 }

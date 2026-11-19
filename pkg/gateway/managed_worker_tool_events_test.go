@@ -81,7 +81,7 @@ func TestWorkerToolFramesPublishTheInProcessPayload(t *testing.T) {
 	}
 	argsObj, _ := pyjson.AsObject(args)
 	isError := true
-	want := []*pyjson.Object{toolLifecyclePayload("call-1", "terminal", argsObj), toolCompletePayload(ctx, "call-1", "terminal", argsObj, result, &isError, false)}
+	want := []*pyjson.Object{toolLifecyclePayload(ctx, "call-1", "terminal", argsObj), toolCompletePayload(ctx, "call-1", "terminal", argsObj, result, &isError, false)}
 	var kinds []string
 	for i, f := range frames {
 		params := f.GetOr("params", nil).(*pyjson.Object)

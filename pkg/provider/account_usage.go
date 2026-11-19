@@ -579,9 +579,6 @@ type CodexResetRedeemResult struct {
 	WindowsReset   int64
 }
 
-// Redeemed reports a reset that went through
-func (r CodexResetRedeemResult) Redeemed() bool { return r.Status == "reset" }
-
 func codexResetUnavailable(message string) CodexResetRedeemResult {
 	return CodexResetRedeemResult{Status: "unavailable", Message: message}
 }

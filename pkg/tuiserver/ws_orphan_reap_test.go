@@ -24,7 +24,7 @@ func (a interruptOnlyAgent) Interrupt(string) { a.fn() }
 func serverCaseSession(t *testing.T, sid string, extra map[string]any) *tuihost.Session {
 	t.Helper()
 	fields := map[string]any{"agent": &struct{}{}, "session_key": "session-key", "history": []any{}, "history_version": 0,
-		"running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80, "slash_worker": nil,
+		"running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80,
 		"show_reasoning": false, "tool_progress_mode": "all"}
 	transport, hasTransport := extra["transport"]
 	for key, value := range extra {
@@ -153,26 +153,6 @@ func TestWsOrphanReapWaitsForActiveDelegationThenReaps(t *testing.T) {
 	remove()
 	if tuihost.SessionRecord("delegating-sid") != nil || !truthy(session.Get("_finalized")) {
 		t.Fatal("session was not reaped after its delegation completed")
-	}
-}
-
-// Slash worker double counting its closes
-type countingWorker struct{ closes int }
-
-func (w *countingWorker) Close() { w.closes++ }
-
-func TestFinalizeSessionClosesSlashWorker(t *testing.T) {
-	ctx := context.Background()
-	worker := &countingWorker{}
-	session := serverCaseSession(t, "slash-worker-sid", map[string]any{"slash_worker": worker})
-	finalizeSession(ctx, session, "tui_close")
-	if worker.closes != 1 || session.Get("_finalized") != true {
-		t.Fatalf("closes %d finalized %v", worker.closes, session.Get("_finalized"))
-	}
-	finalizeSession(ctx, session, "tui_close")
-	teardownSession(ctx, session, "tui_close")
-	if worker.closes != 1 {
-		t.Fatalf("worker closed %d times", worker.closes)
 	}
 }
 
@@ -425,8 +405,8 @@ func (a *closingAgent) CloseContext(context.Context) error {
 func TestCloseSessionByIdIsIdempotentAndFull(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	worker, closer := &countingWorker{}, &closingAgent{}
-	session := tuihost.NewSession(map[string]any{"session_key": "k1", "agent": closer, "slash_worker": worker})
+	closer := &closingAgent{}
+	session := tuihost.NewSession(map[string]any{"session_key": "k1", "agent": closer})
 	swapSessions(t, map[string]*tuihost.Session{"sid-1": session})
 	tools.QueueGatewayApprovalForTests("k1", map[string]any{"command": "danger"})
 	t.Cleanup(func() { tools.UnregisterGatewayNotify("k1") })
@@ -436,39 +416,14 @@ func TestCloseSessionByIdIsIdempotentAndFull(t *testing.T) {
 	if closeSessionByID(ctx, "sid-1", "ws_disconnect", nil) {
 		t.Fatal("second close reported a close")
 	}
-	if worker.closes != 1 || closer.closes != 1 || session.Get("_finalized") != true {
-		t.Fatalf("worker %d agent %d finalized %v", worker.closes, closer.closes, session.Get("_finalized"))
+	if closer.closes != 1 || session.Get("_finalized") != true {
+		t.Fatalf("agent %d finalized %v", closer.closes, session.Get("_finalized"))
 	}
 	if tools.GetPendingGatewayApproval("k1") != nil {
 		t.Fatal("approval route was not unregistered")
 	}
 	if tuihost.SessionRecord("sid-1") != nil {
 		t.Fatal("session still registered")
-	}
-}
-
-func TestAttachWorkerClosesOrphanWhenSessionAlreadyTornDown(t *testing.T) {
-	swapSessions(t, map[string]*tuihost.Session{})
-	worker := &countingWorker{}
-	detached := tuihost.NewSession(map[string]any{"session_key": "k"})
-	attachWorker("gone", detached, worker)
-	if _, stored := detached.Lookup("slash_worker"); worker.closes != 1 || stored || tuihost.SessionRecord("gone") != nil {
-		t.Fatalf("closes %d stored %v", worker.closes, stored)
-	}
-}
-
-// Worker that fails the case when closed
-type mustStayOpenWorker struct{ t *testing.T }
-
-func (w mustStayOpenWorker) Close() { w.t.Error("must not close a worker for a live session") }
-
-func TestAttachWorkerStoresWorkerOnLiveSession(t *testing.T) {
-	live := tuihost.NewSession(map[string]any{"session_key": "k"})
-	swapSessions(t, map[string]*tuihost.Session{"live": live})
-	worker := mustStayOpenWorker{t}
-	attachWorker("live", live, worker)
-	if live.Get("slash_worker") != any(worker) {
-		t.Fatalf("worker %v", live.Get("slash_worker"))
 	}
 }
 

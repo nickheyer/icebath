@@ -42,6 +42,7 @@ var groupMethods = map[string]string{
 	"groups.attachment.upload":   "session:submit",
 	"groups.attachment.download": "session:read",
 	"groups.stop":                "session:control",
+	"groups.continue":            "session:control",
 	"groups.retry":               "session:control",
 	"groups.discard":             "session:control",
 	"groups.approve":             "session:approve",
@@ -55,8 +56,8 @@ var groupMethods = map[string]string{
 // Room verbs in their declaration order
 var groupMethodOrder = []string{"groups.capabilities", "groups.list", "groups.state", "groups.log", "groups.create",
 	"groups.rename", "groups.disband", "groups.send", "groups.attachment.upload", "groups.attachment.download",
-	"groups.stop", "groups.retry", "groups.discard", "groups.approve", "groups.peers", "groups.share", "groups.unshare",
-	"groups.replica_state", "groups.promote"}
+	"groups.stop", "groups.continue", "groups.retry", "groups.discard", "groups.approve", "groups.peers", "groups.share",
+	"groups.unshare", "groups.replica_state", "groups.promote"}
 
 // Params each room verb and profiles.list accept besides profile
 var groupFields = map[string][]string{
@@ -71,6 +72,7 @@ var groupFields = map[string][]string{
 	"groups.attachment.upload":   {"room_id", "upload_id", "kind", "name", "mime", "data_base64"},
 	"groups.attachment.download": {"room_id", "event_id", "attachment_id"},
 	"groups.stop":                {"room_id", "cancel_id"},
+	"groups.continue":            {"room_id", "discussion_event_id"},
 	"groups.retry":               {"room_id", "member_id", "task_id", "execution_generation"},
 	"groups.discard":             {"room_id", "member_id", "task_id", "execution_generation"},
 	"groups.approve":             {"room_id", "member_id", "task_id", "execution_generation", "choice", "request_id"},
@@ -348,15 +350,15 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 			}
 		}
 		return saved, err
-	case "groups.send", "groups.stop", "groups.retry", "groups.discard", "groups.approve":
+	case "groups.send", "groups.stop", "groups.continue", "groups.retry", "groups.discard", "groups.approve":
 		if !running {
 			return nil, runtimeRefusal("runtime_coordination_required")
 		}
 		if !pyTruthy(params["room_id"]) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		service, err := driver(map[string]string{"groups.send": "send", "groups.stop": "stop_room", "groups.retry": "retry_room_task",
-			"groups.discard": "discard_room_task", "groups.approve": "approve_room_task"}[method])
+		service, err := driver(map[string]string{"groups.send": "send", "groups.stop": "stop_room", "groups.continue": "continue_room",
+			"groups.retry": "retry_room_task", "groups.discard": "discard_room_task", "groups.approve": "approve_room_task"}[method])
 		if err != nil {
 			return nil, err
 		}
@@ -714,7 +716,7 @@ func groupDisband(ctx context.Context, running bool, driver func(attribute strin
 	return pyjson.ObjectOf("tombstone", tombstone), nil
 }
 
-// Send, stop, retry, discard and approve of a room through the canonical service
+// Send, stop, continue, retry, discard and approve of a room through the canonical service
 func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomService, method string, params map[string]any) (any, error) {
 	generation := func() (int64, bool) {
 		value := params["execution_generation"]
@@ -755,6 +757,16 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 			return nil, err
 		}
 		return pyjson.ObjectOf("cancelled", cancelled), nil
+	case "groups.continue":
+		roomID, err := groupRoomID(params["room_id"])
+		if err != nil {
+			return nil, err
+		}
+		event, err := service.ContinueRoom(roomID, pyrepr.Str(groupOr(params, "discussion_event_id", "")))
+		if err != nil {
+			return nil, err
+		}
+		return pyjson.ObjectOf("continued", true, "event", event), nil
 	case "groups.retry", "groups.discard":
 		if _, ok := generation(); !ok || !pyTruthy(params["member_id"]) || !pyTruthy(params["task_id"]) {
 			return nil, runtimeRefusal("invalid_params")

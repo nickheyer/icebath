@@ -142,12 +142,6 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		return refusalReply(rid, -32601, tuigateway.UnknownMethodMessage(method), map[string]any{"reason": "unknown_method"}), nil
 	default:
 		result, err = verbs[method](scoped, ref, params)
-		if deferred, isDeferred := result.(*DeferredReply); err == nil && isDeferred {
-			check := func(result any) error { checkCanonicalResult(typed, method, result); return nil }
-			if err = deferred.Start(scoped, c, rid, check); err == nil {
-				return nil, nil
-			}
-		}
 	}
 	if err != nil {
 		var refusal *state.RuntimeStoreError

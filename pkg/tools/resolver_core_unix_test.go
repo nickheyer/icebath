@@ -44,7 +44,8 @@ func TestPathHitComesFirstAndKnownDirsAreStillRecorded(t *testing.T) {
 func TestKnownDirHitWhenPathMisses(t *testing.T) {
 	inKnown := makeResolverExe(t, filepath.Join(t.TempDir(), "known", "tool"))
 	res := locateCommand("tool", &commandLookupContext{Path: strPtr("")}, []string{filepath.Dir(inKnown)})
-	if res.Kind != "known_path" || res.Source() != "known_dir:"+filepath.Dir(inKnown) || res.Candidates[0].Present {
+	present := res.PresentCandidates()
+	if res.Kind != "known_path" || len(present) != 1 || present[0].Source != "known_dir:"+filepath.Dir(inKnown) || res.Candidates[0].Present {
 		t.Fatalf("%+v", res)
 	}
 }

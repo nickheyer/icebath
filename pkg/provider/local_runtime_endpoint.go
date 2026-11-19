@@ -29,14 +29,6 @@ func childQuery(modelID string) string {
 	return "model=" + hfQuote(modelID) + "&autoload=false"
 }
 
-// Liveness of the state file's supervisor child pid, false for zero or negative pids
-func endpointPIDAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	return processPIDExists(pid)
-}
-
 // Recorded base URL and raw api_key of the managed server whose process identity still matches, err where Python propagates
 func stateEndpoint(h string) (string, any, bool, error) {
 	if home.RootOf(h) != home.Root() {

@@ -177,12 +177,6 @@ func parseBedrockOpenAIModelID(model string) (string, string, bool) {
 	return "", "", false
 }
 
-// Reports a Bedrock hosted OpenAI GPT model in any endpoint form
-func isOpenAIBedrockModel(model string) bool {
-	_, _, ok := parseBedrockOpenAIModelID(model)
-	return ok
-}
-
 // Reports a bare in region OpenAI id that Mantle's Responses endpoint serves
 func bedrockOpenAIUsesMantle(model string) bool {
 	_, prefix, ok := parseBedrockOpenAIModelID(model)

@@ -42,11 +42,6 @@ type resolverInspection struct {
 	Signer  observation[string]
 }
 
-// True unless the version or signer read errored
-func (i resolverInspection) OK() bool {
-	return i.Version.State != checkError && i.Signer.State != checkError
-}
-
 // resolverProbe is the fresh probe tier result, a struct that never reads as a boolean
 type resolverProbe struct {
 	Running   observation[bool]
@@ -711,23 +706,6 @@ type PlatformAvailability struct {
 // True for available and no_requirements
 func (a PlatformAvailability) Offerable() bool {
 	return a.State == "available" || a.State == "no_requirements"
-}
-
-// Ordered state, version, path and min_version mapping, None for unset values
-func (a PlatformAvailability) AsDict() *pyjson.Object {
-	o := pyjson.NewObject()
-	o.Set("state", a.State)
-	for _, kv := range []struct {
-		k string
-		v *string
-	}{{"version", a.Version}, {"path", a.Path}, {"min_version", a.MinVersion}} {
-		if kv.v == nil {
-			o.Set(kv.k, nil)
-		} else {
-			o.Set(kv.k, *kv.v)
-		}
-	}
-	return o
 }
 
 // platformRequirements is the slice of a catalog entry availability reads

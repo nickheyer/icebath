@@ -239,3 +239,8 @@ func TestSessionStoreAndRunnerReopenAfterFailedConstruction(t *testing.T) {
 	}
 	defer r.closeAllSessionDBHandles()
 }
+
+// Pins db for every later read of the session database, nil included
+func (r *GatewayRunner) pinSessionDB(db *state.AsyncSessionDB) {
+	r.sessionDBPinned = sessionDBPin{set: true, db: db}
+}

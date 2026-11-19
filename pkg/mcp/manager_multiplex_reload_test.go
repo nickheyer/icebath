@@ -105,14 +105,11 @@ func TestMultiplexServedProfileCheckFnVerdictDoesNotShadowLaunchProfile(t *testi
 	if got := tools.Default.Definitions(ctxB, envB, want, true); len(got) != 0 {
 		t.Fatalf("B sees the launch profile's connection %v", got)
 	}
-	if v, cached := tools.CachedCheckResult(envB, entry.Check); !cached || v {
-		t.Fatalf("B verdict %v cached %v", v, cached)
-	}
 	if got := tools.Default.Definitions(launch, env, want, true); len(got) != 1 {
 		t.Fatalf("B's verdict shadowed the launch profile %v", got)
 	}
-	if v, cached := tools.CachedCheckResult(env, entry.Check); !cached || !v {
-		t.Fatalf("launch verdict %v cached %v", v, cached)
+	if got := tools.Default.Definitions(ctxB, envB, want, true); len(got) != 0 {
+		t.Fatalf("the launch profile's verdict shadowed B %v", got)
 	}
 }
 

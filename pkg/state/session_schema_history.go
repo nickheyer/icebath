@@ -72,15 +72,6 @@ func DeclaredSnapshots(table string) ([][]string, error) {
 	return snapshots, nil
 }
 
-// Column order the table declares today
-func CurrentDeclaredColumns(table string) ([]string, error) {
-	snapshots, err := DeclaredSnapshots(table)
-	if err != nil {
-		return nil, err
-	}
-	return snapshots[len(snapshots)-1], nil
-}
-
 // Every physical layout an upgraded store of the table can have, accept pruning a branch when it returns false
 func ReachablePhysicalLayouts(table string, accept func(layout []string, firstNewIndex int) bool) (iter.Seq[[]string], error) {
 	snapshots, err := DeclaredSnapshots(table)

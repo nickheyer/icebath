@@ -43,13 +43,10 @@ type StartOptions struct {
 	ProfileBotPlatforms map[string]any
 }
 
-// Inputs of one fire, the keywords fire_due and fire_claimed take
+// Transport of one fire, the adapters and loop fire_claimed takes
 type FireOptions struct {
 	Adapters any
 	Loop     any
-	Force    bool
-	Manual   bool
-	Cancel   <-chan struct{}
 }
 
 // Inputs the ticker passes to one tick of a store
@@ -86,10 +83,6 @@ type (
 	registerJobHook  interface{ RegisterJob(job *Job) error }
 	recoverHook      interface {
 		RecoverInterrupted(ctx context.Context) (int, error)
-	}
-	reconcileHook interface{ Reconcile() error }
-	fireDueHook   interface {
-		FireDue(ctx context.Context, jobID string, o FireOptions) (bool, error)
 	}
 	claimFireHook interface {
 		ClaimFire(ctx context.Context, jobID string, force, manual bool) (*Job, error)
@@ -226,26 +219,6 @@ func schedulerRecoverInterrupted(ctx context.Context, p CronScheduler) (int, err
 	return recoverInterruptedExecutions(ctx, cronStoreFrom(ctx))
 }
 
-// Converges the external registry toward jobs.json, nothing by default
-func schedulerReconcile(p CronScheduler) error {
-	if h, ok := p.(reconcileHook); ok {
-		return h.Reconcile()
-	}
-	return nil
-}
-
-// Claims then runs one job now, false when the claim was lost or the job is gone
-func schedulerFireDue(ctx context.Context, p CronScheduler, jobID string, o FireOptions) (bool, error) {
-	if h, ok := p.(fireDueHook); ok {
-		return h.FireDue(ctx, jobID, o)
-	}
-	claimed, err := schedulerClaimFire(ctx, p, jobID, o.Force, o.Manual)
-	if err != nil || claimed == nil {
-		return false, err
-	}
-	return schedulerFireClaimed(ctx, p, claimed, FireOptions{Adapters: o.Adapters, Loop: o.Loop})
-}
-
 // Durably claims one fire and creates its audit attempt before the transport acknowledges
 func schedulerClaimFire(ctx context.Context, p CronScheduler, jobID string, force, manual bool) (*Job, error) {
 	if h, ok := p.(claimFireHook); ok {
@@ -336,24 +309,10 @@ func schedulerFireClaimed(ctx context.Context, p CronScheduler, job *Job, o Fire
 }
 
 func defaultFireClaimed(ctx context.Context, p CronScheduler, job *Job, o FireOptions) (bool, error) {
-	if _, err := runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: o.Adapters, Loop: o.Loop, Cancel: o.Cancel}); err != nil {
+	if _, err := runOneJobSeam(ctx, cronStoreFrom(ctx), job, runOneJobOptions{Adapters: o.Adapters, Loop: o.Loop}); err != nil {
 		return false, err
 	}
 	return true, nil
-}
-
-// Whether the provider implements the two phase fire contract instead of a legacy fire_due only override
-func providerSupportsSplitFire(p CronScheduler) bool {
-	if h, ok := p.(interface{ SupportsSplitFire() bool }); ok {
-		return h.SupportsSplitFire()
-	}
-	_, claim := p.(claimFireHook)
-	_, fired := p.(fireClaimedHook)
-	if claim || fired {
-		return true
-	}
-	_, due := p.(fireDueHook)
-	return !due
 }
 
 // Configured misfire grace in minutes, the default when unset or unreadable

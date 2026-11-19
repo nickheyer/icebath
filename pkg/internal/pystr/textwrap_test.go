@@ -57,7 +57,4 @@ func TestTextwrapWrapMatchesPythonTextWrapper(t *testing.T) {
 			t.Errorf("wrap(%q) = %q, want %q", tc.text, got, tc.want)
 		}
 	}
-	if ExpandTabs("x\ty", 4) != "x   y" {
-		t.Fatal(ExpandTabs("x\ty", 4))
-	}
 }

@@ -6,9 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // CPython 3.14 builtin modules on posix hosts, origin built-in
@@ -188,20 +185,4 @@ func FindOrigin(path []string, module string) string {
 		search = []string{next}
 	}
 	return ""
-}
-
-// First limit code points of a module source read as utf-8-sig with replacement, empty for non source origins
-func ReadSource(origin string, limit int) string {
-	if !strings.HasSuffix(origin, ".py") {
-		return ""
-	}
-	raw, err := os.ReadFile(origin)
-	if err != nil {
-		return ""
-	}
-	text := strings.TrimPrefix(pystr.DecodeUTF8Replace(raw), "\uFEFF")
-	if utf8.RuneCountInString(text) <= limit {
-		return text
-	}
-	return string([]rune(text)[:limit])
 }

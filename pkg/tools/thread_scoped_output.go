@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/mattn/go-isatty"
+
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // Shared silencing registry of one stream, kept across proxy generations so redirects never leak a sink
@@ -23,14 +25,12 @@ type threadRoutingStream struct {
 
 type silenceKey struct{}
 
-var errNoFileno = errors.New("fileno")
-
 var (
 	streamInstallLock sync.Mutex
 	installedStreams  = map[string]*threadRoutingStream{}
 	streamSinks       = map[string]io.Writer{}
 	routingStates     = map[string]*routingState{}
-	processStreams    = map[string]io.Writer{"stdout": os.Stdout, "stderr": os.Stderr}
+	processStreams    = map[string]io.Writer{"stdout": pysys.Stdout, "stderr": pysys.Stderr}
 	openStreamSink    = func() (io.Writer, error) { return os.OpenFile(os.DevNull, os.O_WRONLY, 0) }
 )
 
@@ -68,23 +68,10 @@ func (s *threadRoutingStream) flush(ctx context.Context) {
 	}
 }
 
-// Writes each line in order to the context target, a failing target swallows the rest
-func (s *threadRoutingStream) writelines(ctx context.Context, lines []string) {
-	t := s.target(ctx)
-	for _, line := range lines {
-		if _, err := io.WriteString(t, line); err != nil {
-			return
-		}
-	}
-}
-
 // Reports whether the context target is a terminal, false for any target that cannot tell
 func (s *threadRoutingStream) isatty(ctx context.Context) bool {
-	f, ok := s.target(ctx).(*os.File)
-	if !ok {
-		return false
-	}
-	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
+	f, ok := s.target(ctx).(interface{ Fd() uintptr })
+	return ok && isatty.IsTerminal(f.Fd())
 }
 
 // Reports whether a sink was closed, the file case through its descriptor and others through a Closed method
@@ -99,15 +86,6 @@ func sinkClosed(w io.Writer) bool {
 	return false
 }
 
-// Descriptor of the context target, an error when the target has none
-func (s *threadRoutingStream) fileno(ctx context.Context) (uintptr, error) {
-	f, ok := s.target(ctx).(interface{ Fd() uintptr })
-	if !ok {
-		return 0, errNoFileno
-	}
-	return f.Fd(), nil
-}
-
 // Writer bound to one context so fmt and io helpers route through the proxy
 type routedWriter struct {
 	stream *threadRoutingStream
@@ -119,10 +97,6 @@ func (w routedWriter) Write(p []byte) (int, error) { return w.stream.write(w.ctx
 func (w routedWriter) Flush() error { w.stream.flush(w.ctx); return nil }
 
 func (w routedWriter) IsTerminal() bool { return w.stream.isatty(w.ctx) }
-
-func (w routedWriter) Fd() (uintptr, error) { return w.stream.fileno(w.ctx) }
-
-func (w routedWriter) WriteLines(lines []string) { w.stream.writelines(w.ctx, lines) }
 
 // Installs the routing proxy as the process stream once, adopting a proxy a redirect restored
 func ensureStreamInstalled(attr string) *threadRoutingStream {
@@ -141,9 +115,9 @@ func ensureStreamInstalled(attr string) *threadRoutingStream {
 	passthrough := current
 	if passthrough == nil {
 		if attr == "stderr" {
-			passthrough = os.Stderr
+			passthrough = pysys.Stderr
 		} else {
-			passthrough = os.Stdout
+			passthrough = pysys.Stdout
 		}
 	}
 	sink := streamSinks[attr]

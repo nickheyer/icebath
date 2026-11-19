@@ -140,28 +140,6 @@ func (a *AIAgent) OllamaSupportsThinkingCached() bool {
 	return supported && known
 }
 
-func (a *AIAgent) CredentialPool() provider.PoolProbe {
-	if a.credentialPool == nil {
-		return nil
-	}
-	return a.credentialPool
-}
-
-func (a *AIAgent) SetCredentialPool(pool provider.PoolProbe) {
-	if pool == nil {
-		a.credentialPool = nil
-		return
-	}
-	a.credentialPool = pool.(*provider.Pool)
-}
-
-func (a *AIAgent) ClearCredentialPool() {
-	a.credentialPool = nil
-	a.credentialPoolEntryID = ""
-}
-
-func (a *AIAgent) CredentialPoolEnv() provider.PoolEnv { return agentPoolEnv(a.homeContext()) }
-
 func (a *AIAgent) IsHeadedMode() (bool, error) {
 	return tools.IsHeadedMode != nil && tools.IsHeadedMode(a.env), nil
 }

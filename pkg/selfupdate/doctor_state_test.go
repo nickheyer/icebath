@@ -3,8 +3,6 @@ package selfupdate
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -255,33 +253,6 @@ func TestUnprunedCacheHogsSkipsPrunedDirsAndSmallEntries(t *testing.T) {
 	}
 }
 
-// Writes one plugin dir with an optional sidecar row, git checkout and manifest update url
-func provenancePlugin(t *testing.T, pluginsDir, name string, sidecar map[string]any, git bool, manifestUpdateURL string) {
-	t.Helper()
-	pdir := filepath.Join(pluginsDir, name)
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if sidecar != nil {
-		side := filepath.Join(pluginsDir, ".install-metadata.json")
-		rows := map[string]any{}
-		if raw, err := os.ReadFile(side); err == nil {
-			if err := json.Unmarshal(raw, &rows); err != nil {
-				t.Fatal(err)
-			}
-		}
-		rows[name] = sidecar
-		raw, _ := json.Marshal(rows)
-		writeTestFile(t, side, string(raw), 0o644)
-	}
-	if git {
-		writeTestFile(t, filepath.Join(pdir, ".git", "config"), "[remote \"origin\"]\n\turl = https://example.com/x.git\n", 0o644)
-	}
-	if manifestUpdateURL != "" {
-		writeTestFile(t, filepath.Join(pdir, "plugin.yaml"), "name: "+name+"\nupdate_url: "+manifestUpdateURL+"\n", 0o644)
-	}
-}
-
 // Bytes of every regular file under a directory keyed by path
 func treeBytes(t *testing.T, root string) map[string]string {
 	t.Helper()
@@ -294,89 +265,6 @@ func treeBytes(t *testing.T, root string) map[string]string {
 		return nil
 	})
 	return files
-}
-
-func TestNoPluginsDirIsInfo(t *testing.T) {
-	rows := doctorPluginProvenanceRows(context.Background(), filepath.Join(t.TempDir(), "missing"))
-	if !reflect.DeepEqual(rows, []doctorStatRow{{"info", "No plugins directory yet (nothing to check provenance for)", ""}}) {
-		t.Fatalf("rows = %+v", rows)
-	}
-}
-
-func TestMixedProvenanceDiagnosticIsReadOnly(t *testing.T) {
-	d, out := toolsDoctor(t)
-	pluginsDir := filepath.Join(d.Home, "plugins")
-	url := "https://example.com/x"
-	cases := []struct {
-		name     string
-		sidecar  map[string]any
-		git      bool
-		manifest string
-		severity string
-		remedy   string
-	}{
-		{"drifty", map[string]any{"source": "git", "update_url": url}, false, "", "warn", "reinstall"},
-		{"dropped", nil, false, "", "info", "manually"},
-		{"cloned", nil, true, "", "info", "adopt"},
-		{"fine", map[string]any{"source": "git", "update_url": url}, true, url, "ok", "good standing"},
-		{"sneaky", map[string]any{"source": "git"}, true, "https://evil.example/x", "warn", "no url was saved"},
-		{"swapped", map[string]any{"source": "git", "update_url": url}, true, "https://evil.example/x", "warn", "update_url mismatch"},
-		{"removed", map[string]any{"source": "git", "update_url": url}, true, "", "warn", "update_url mismatch"},
-	}
-	for _, c := range cases {
-		provenancePlugin(t, pluginsDir, c.name, c.sidecar, c.git, c.manifest)
-	}
-	before := treeBytes(t, pluginsDir)
-	rows := doctorPluginProvenanceRows(context.Background(), pluginsDir)
-	for _, c := range cases {
-		found := false
-		for _, row := range rows {
-			found = found || (row.Kind == c.severity && strings.Contains(row.Text, c.name) && strings.Contains(row.Text+row.Detail, c.remedy))
-		}
-		if !found {
-			t.Fatalf("no %s row for %s naming %q in %+v", c.severity, c.name, c.remedy, rows)
-		}
-	}
-	if _, err := checkUpdateProvenance(context.Background(), d, false); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cases {
-		if !strings.Contains(out.String(), c.name) {
-			t.Fatalf("output lacks %s:\n%s", c.name, out.String())
-		}
-	}
-	if after := treeBytes(t, pluginsDir); !reflect.DeepEqual(before, after) {
-		t.Fatal("provenance check changed the plugins tree")
-	}
-}
-
-func TestCheckIsReadOnly(t *testing.T) {
-	d, out := toolsDoctor(t)
-	if _, err := checkUpdateProvenance(context.Background(), d, false); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "No plugins directory yet") || strings.Contains(out.String(), "⚠") {
-		t.Fatalf("output:\n%s", out.String())
-	}
-	if _, err := os.Lstat(filepath.Join(d.Home, "plugins")); err == nil {
-		t.Fatal("check created the plugins dir")
-	}
-}
-
-func TestCheckSwallowsProvenanceReadFailure(t *testing.T) {
-	d, out := toolsDoctor(t)
-	if err := os.Mkdir(filepath.Join(d.Home, "plugins"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	toolsSeam(t, &doctorPluginsProvenance, func(context.Context, string) ([]plugins.Provenance, error) {
-		return nil, errors.New("disk gone")
-	})
-	if _, err := checkUpdateProvenance(context.Background(), d, false); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "could not be read") || !strings.Contains(out.String(), "disk gone") {
-		t.Fatalf("output:\n%s", out.String())
-	}
 }
 
 // Session store seeded with one session of rows messages, checkpointed, with its page size and the sessions root page

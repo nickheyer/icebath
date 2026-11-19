@@ -429,7 +429,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 			if label == "" {
 				label = functionName
 			}
-			q.put(streamTagged{"__tool_progress__", pyjson.ObjectOf("tool", functionName, "emoji", tools.GetToolEmoji(env, functionName, ""),
+			q.put(streamTagged{"__tool_progress__", pyjson.ObjectOf("tool", functionName, "emoji", tools.GetToolEmoji(ctx, env, functionName, ""),
 				"label", label, "toolCallId", toolCallID, "status", "running")})
 		}
 		run.toolCompleteCallback = func(toolCallID, functionName string, functionArgs map[string]any, result string) {

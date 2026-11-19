@@ -128,7 +128,7 @@ func (r *GatewayRunner) handleYoloCommand(ctx context.Context, event *gateway.Me
 		}
 	}
 	key := "gateway.yolo.disabled"
-	if tools.ToggleSessionYolo(sessionKey, nil, persisted, persist) {
+	if tools.ToggleSessionYolo(ctx, sessionKey, nil, persisted, persist) {
 		key = "gateway.yolo.enabled"
 	}
 	return gateway.NewEphemeralReply(i18n.T(ctx, key, "", nil), nil), nil

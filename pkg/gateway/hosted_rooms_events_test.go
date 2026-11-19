@@ -92,8 +92,29 @@ func hrSeqs(page map[string]any) []any {
 	return out
 }
 
-func hrClaim(db, roomID, expected string, epoch int64, next, eventID string, now *float64) (map[string]any, error) {
-	return ClaimAuthority(context.Background(), db, roomID, expected, epoch, next, eventID, now)
+// Commits an authority transfer the way a verified claim leaves the store
+func hrTransferAuthority(db, roomID, expected string, epoch int64, next, eventID string, now *float64) {
+	ctx, timestamp := context.Background(), hostedClock(now)
+	err := hostedTransaction(ctx, db, true, func(conn state.SQLiteConn) error {
+		row, err := hostedRoomRow(ctx, conn, `SELECT authority_gateway_id, authority_epoch, next_seq, event_bytes
+                FROM hosted_rooms WHERE room_id=? AND disbanded_at IS NULL`, []any{roomID}, roomID)
+		if err != nil {
+			return err
+		}
+		claimBytes, err := hostedInsertEventRow(ctx, conn, row, roomID, hrInt(row, "next_seq"), eventID, "authority.claimed",
+			hostedSystemActorJSON("authority-control"), epoch+1, hostedClaimPayloadJSON(expected, next, epoch+1), timestamp, true)
+		if err != nil {
+			return err
+		}
+		return roomFencedUpdate(ctx, conn, `UPDATE hosted_rooms SET authority_gateway_id=?,
+            authority_epoch=authority_epoch+1, next_seq=next_seq+1,
+            event_bytes=event_bytes+?, revision=revision+1, updated_at=? WHERE room_id=?
+            AND disbanded_at IS NULL AND authority_gateway_id=? AND authority_epoch=?`,
+			[]any{next, claimBytes, timestamp, roomID, expected, epoch}, authorityConflict("hosted room authority changed"))
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestCreateRoomIsIdempotentButConflictsFailClosed(t *testing.T) {
@@ -140,30 +161,18 @@ func TestConcurrentFirstDatabaseOpenKeepsEveryRoom(t *testing.T) {
 	}
 }
 
-func TestAuthorityClaimFencesStaleGatewayEvents(t *testing.T) {
+func TestAuthorityTransferFencesStaleGatewayEvents(t *testing.T) {
 	db := hrDB(t)
 	hrOK(hrCreate(db, "room-1"))
 	turn := func(eventID string, actor any, gateway string, epoch int64, kind string, payload map[string]any) (map[string]any, error) {
 		return hrAppend(db, AppendEventInput{RoomID: "room-1", EventID: eventID, Kind: kind, Actor: actor, AuthorityGatewayID: gateway, AuthorityEpoch: epoch, Payload: payload})
 	}
 	first := hrOK(turn("turn-1", hrGatewayA, "gateway-a", 1, "turn.started", map[string]any{"member": "ops"}))
-	claimed := hrOK(hrClaim(db, "room-1", "gateway-a", 1, "gateway-b", "claim-gateway-b", hrFloatPtr(30)))
-	retried := hrOK(hrClaim(db, "room-1", "gateway-a", 1, "gateway-b", "claim-gateway-b", hrFloatPtr(40)))
-	claimEvent := claimed["claim_event"].(map[string]any)
-	if claimed["authority_gateway_id"] != "gateway-b" || claimed["authority_epoch"] != int64(2) || claimed["idempotent"] != false ||
-		claimEvent["kind"] != "authority.claimed" || claimEvent["authority_epoch"] != int64(2) {
-		t.Fatalf("claimed %v", claimed)
-	}
-	if !pyjson.Equal(claimEvent["payload"], map[string]any{"previous_gateway_id": "gateway-a", "authority_gateway_id": "gateway-b", "authority_epoch": 2}) {
-		t.Fatalf("claim payload %v", claimEvent["payload"])
-	}
-	retriedEvent := retried["claim_event"].(map[string]any)
-	if retried["authority_epoch"] != int64(2) || retried["idempotent"] != true || retriedEvent["seq"] != claimEvent["seq"] || retriedEvent["idempotent"] != true {
-		t.Fatalf("retried %v", retried)
-	}
+	hrTransferAuthority(db, "room-1", "gateway-a", 1, "gateway-b", "claim-gateway-b", hrFloatPtr(30))
 	roomState := hrOK(RoomState(context.Background(), db, "room-1", false))
 	authorityClaim := roomState["authority_claim"].(map[string]any)
-	if authorityClaim["event_id"] != "claim-gateway-b" || authorityClaim["payload"].(map[string]any)["previous_gateway_id"] != "gateway-a" {
+	if roomState["authority_gateway_id"] != "gateway-b" || roomState["authority_epoch"] != int64(2) ||
+		authorityClaim["event_id"] != "claim-gateway-b" || authorityClaim["payload"].(map[string]any)["previous_gateway_id"] != "gateway-a" {
 		t.Fatalf("state %v", roomState)
 	}
 	repeated := hrOK(turn("turn-1", hrGatewayA, "gateway-a", 1, "turn.started", map[string]any{"member": "ops"}))
@@ -179,48 +188,6 @@ func TestAuthorityClaimFencesStaleGatewayEvents(t *testing.T) {
 	if current["authority_epoch"] != int64(2) || member["authority_epoch"] != int64(2) {
 		t.Fatalf("current %v member %v", current, member)
 	}
-}
-
-func TestConcurrentAuthorityClaimHasOneWinner(t *testing.T) {
-	db := hrDB(t)
-	hrOK(hrCreate(db, "room-1"))
-	results := make([]map[string]any, 2)
-	var wg sync.WaitGroup
-	for i, gateway := range []string{"gateway-b", "gateway-c"} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			claimed, err := hrClaim(db, "room-1", "gateway-a", 1, gateway, "claim-"+gateway, nil)
-			var conflict *AuthorityConflictError
-			if err != nil && !errors.As(err, &conflict) {
-				t.Error(err)
-			}
-			results[i] = claimed
-		}()
-	}
-	wg.Wait()
-	var winners []map[string]any
-	for _, result := range results {
-		if result != nil {
-			winners = append(winners, result)
-		}
-	}
-	if len(winners) != 1 || winners[0]["authority_epoch"] != int64(2) {
-		t.Fatalf("winners %v", winners)
-	}
-	owner := hrOK(RoomState(context.Background(), db, "room-1", false))["authority_gateway_id"]
-	if owner != "gateway-b" && owner != "gateway-c" {
-		t.Fatalf("owner %v", owner)
-	}
-}
-
-func TestRetryOfSuccessfulButSupersededClaimIsDistinct(t *testing.T) {
-	db := hrDB(t)
-	hrOK(hrCreate(db, "room-1"))
-	hrOK(hrClaim(db, "room-1", "gateway-a", 1, "gateway-b", "claim-b", nil))
-	hrOK(hrClaim(db, "room-1", "gateway-b", 2, "gateway-c", "claim-c", nil))
-	_, err := hrClaim(db, "room-1", "gateway-a", 1, "gateway-b", "claim-b", nil)
-	hrRequireErr[AuthoritySupersededError](t, err, "later superseded")
 }
 
 func TestAuthorityScopedEventsRequireGatewayAndEpoch(t *testing.T) {
@@ -464,7 +431,7 @@ func TestDisbandIsIdempotentAndRoomIdCannotBeReused(t *testing.T) {
 func TestDisbandRejectsStaleAuthority(t *testing.T) {
 	db := hrDB(t)
 	hrOK(hrCreate(db, "room-1"))
-	hrOK(hrClaim(db, "room-1", "gateway-a", 1, "gateway-b", "claim-b", nil))
+	hrTransferAuthority(db, "room-1", "gateway-a", 1, "gateway-b", "claim-b", nil)
 	_, err := hrDisband(db, "room-1", nil, nil, nil)
 	hrRequireErr[AuthorityConflictError](t, err, "stale")
 	tombstone := hrOK(hrDisband(db, "room-1", "gateway-b", int64(2), nil))

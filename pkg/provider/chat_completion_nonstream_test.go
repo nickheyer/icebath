@@ -29,6 +29,11 @@ func (r *nsRecorder) sink(ev StreamEvent) {
 	}
 }
 
+// Context carrying the sink a blocking request reports wait notices, activity and status through
+func withNonStreamSurface(ctx context.Context, sink func(StreamEvent)) context.Context {
+	return context.WithValue(ctx, nonStreamSurfaceKey{}, sink)
+}
+
 func nsWaiter(rec *nsRecorder) *nonStreamWaiter {
 	wd := codexWatchdogs{stale: 600, ttfbEnabled: true, ttfb: 120, idleEnabled: true, idle: 180}
 	return newNonStreamWaiter("test-model", 1000, wd, rec.sink)

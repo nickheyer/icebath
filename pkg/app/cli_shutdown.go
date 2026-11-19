@@ -9,15 +9,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Keeps process local session id consumers aligned after CLI switches
-func syncProcessSessionID(ctx context.Context, env *tools.Env, sessionID string) {
-	tools.SetCurrentSessionID(ctx, env, sessionID)
-}
 
 // Flushes stdout and stderr before a hard exit
 func flushLoggingAndStdio() {
@@ -77,19 +71,6 @@ func shutdownAgentMemoryProvider(a cliAgent) {
 	a.gateway().shutdownMemoryProvider()
 }
 
-// Stops a wake word listener the CLI owns, set by the voice mode file and nil in a build without it
-var stopWakeListening func(owner any)
-
-// Stops the CLI's wake word listener when this process owns one
-func stopCLIWakeWord(ctx context.Context, env *tools.Env) {
-	if cliWakeOwner != nil && stopWakeListening != nil {
-		stopWakeListening(cliWakeOwner)
-	}
-}
-
-// Shuts down every MCP server of the process
-func shutdownMCPServers(ctx context.Context) { mcp.ShutdownMCPServers(ctx, nil, nil, 0) }
-
 // Shuts down the cached auxiliary provider clients
 func shutdownCachedAuxClients(ctx context.Context, env *tools.Env) {
 	provider.ShutdownCachedClients(ctx)
@@ -108,7 +89,7 @@ func cleanupAllBrowsers(ctx context.Context, env *tools.Env) {
 	}
 }
 
-var cleanupSteps = []func(context.Context, *tools.Env){stopCLIWakeWord, cleanupAllTerminals, cleanupAllBrowsers, shutdownCachedAuxClients}
+var cleanupSteps = []func(context.Context, *tools.Env){cleanupAllTerminals, cleanupAllBrowsers, shutdownCachedAuxClients}
 
 // Reports whether shutdown should fire the session finalize hook for the id
 func shouldEmitCleanupSessionFinalize(sessionID string) bool {
@@ -117,9 +98,6 @@ func shouldEmitCleanupSessionFinalize(sessionID string) bool {
 	}
 	sessionIDSetsMu.Lock()
 	defer sessionIDSetsMu.Unlock()
-	if sessionID != "" && handedOffSessionIDs[sessionID] {
-		return false
-	}
 	if len(singleQueryFinalizeAttemptedSessionIDs) == 0 {
 		return true
 	}
@@ -172,7 +150,7 @@ func notifySingleQuerySessionFinalize(c *CLI, reason string) {
 	sessionIDSetsMu.Lock()
 	attempted := singleQueryFinalizeAttemptedSessionIDs[sessionID]
 	sessionIDSetsMu.Unlock()
-	if attempted || sessionHandedOff(sessionID) || a != nil {
+	if attempted || a != nil {
 		return
 	}
 	defer func() {
@@ -188,7 +166,7 @@ func notifySingleQuerySessionFinalize(c *CLI, reason string) {
 // Ends the one shot gateway session with cli_close before exit, the gateway finalizing it
 func flushOneShotSessionStore(c *CLI) {
 	a, sessionID := oneshotAgentAndSession(c)
-	if a == nil || sessionID == "" || sessionHandedOff(sessionID) {
+	if a == nil || sessionID == "" {
 		return
 	}
 	if len(a.SessionMessages()) > 0 {

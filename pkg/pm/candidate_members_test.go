@@ -22,15 +22,23 @@ func TestCandidateMembersProposesTheSelectionOfOneHome(t *testing.T) {
 	peWrite(t, filepath.Join(extra, "pyproject.toml"), "[project]\ndependencies = [\"rich>=13\"]\n")
 	wsWriteConfig(t, root, "modern", "plain")
 	plugins := filepath.Join(root, "plugins")
-	got, err := CandidateMembers(context.Background(), []string{extra}, root, []string{"modern", "newbie"}, nil)
+	sources := func(extraDirs []string, proposedHome string, enabled, disabled []string) ([]string, error) {
+		members, err := candidateMembersFor(context.Background(), extraDirs, &EnabledPluginsOptions{ProposedHome: proposedHome, Enabled: enabled, Disabled: disabled})
+		out := make([]string, len(members))
+		for i, member := range members {
+			out[i] = member.Source
+		}
+		return out, err
+	}
+	got, err := sources([]string{extra}, root, []string{"modern", "newbie"}, nil)
 	if want := []string{filepath.Join(plugins, "modern"), filepath.Join(plugins, "newbie"), extra}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("proposed members %v %v", got, err)
 	}
-	got, err = CandidateMembers(context.Background(), nil, "", []string{"newbie"}, nil)
+	got, err = sources(nil, "", []string{"newbie"}, nil)
 	if want := []string{filepath.Join(plugins, "modern")}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("recorded members %v %v", got, err)
 	}
-	got, err = CandidateMembers(context.Background(), nil, root, []string{"modern", "newbie"}, []string{"modern"})
+	got, err = sources(nil, root, []string{"modern", "newbie"}, []string{"modern"})
 	if want := []string{filepath.Join(plugins, "newbie")}; err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("disabled members %v %v", got, err)
 	}

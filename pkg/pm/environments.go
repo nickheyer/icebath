@@ -8,11 +8,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -24,59 +22,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// ActivationInputs are the checkout files deciding the dependency set, a changed mtime triggering a resync
-var ActivationInputs = []string{"uv.lock", "pyproject.toml", "pkg/pm/lock.json"}
-
-// Stamp directory beside facts.json holding the input mtimes activation was verified against
-func ActivationInputsDir(ctx context.Context, projectRoot string) string {
-	return filepath.Join(InstallStateDir(ctx, projectRoot), "inputs")
-}
-
-// Nanosecond mtimes of the activation inputs present in the checkout, taken before an install
-func ActivationInputMtimes(projectRoot string) (map[string]int64, error) {
-	out := map[string]int64{}
-	for _, name := range ActivationInputs {
-		path := filepath.Join(projectRoot, filepath.FromSlash(name))
-		if !isRegularFile(path) {
-			continue
-		}
-		st, err := os.Stat(path)
-		if err != nil {
-			return nil, err
-		}
-		out[name] = st.ModTime().UnixNano()
-	}
-	return out, nil
-}
-
-// Rewrites the stamps so each carries the exact mtime of the input the install was verified against
-func RecordActivationInputs(stamps string, mtimes map[string]int64, projectRoot string, testEnvironment bool) error {
+// Records which checkout owns an install state, the root the orphan collector and the update owner lookup read
+func recordProjectRoot(ctx context.Context, projectRoot string) error {
+	stamps := filepath.Join(InstallStateDir(ctx, projectRoot), "inputs")
 	removeTreeQuiet(stamps)
 	if err := os.MkdirAll(stamps, 0o777); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(stamps, ".project-root"), []byte(resolvePath(projectRoot)), 0o666); err != nil {
-		return err
-	}
-	if testEnvironment {
-		if err := touchFile(filepath.Join(stamps, ".test-environment")); err != nil {
-			return err
-		}
-	}
-	for _, name := range sortedKeys(mtimes) {
-		stamp := filepath.Join(stamps, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(stamp), 0o777); err != nil {
-			return err
-		}
-		if err := touchFile(stamp); err != nil {
-			return err
-		}
-		at := time.Unix(0, mtimes[name])
-		if err := os.Chtimes(stamp, at, at); err != nil {
-			return err
-		}
-	}
-	return nil
+	return os.WriteFile(filepath.Join(stamps, ".project-root"), []byte(resolvePath(projectRoot)), 0o666)
 }
 
 // Directory holding a sealed payload's own launchers, empty for every other tree
@@ -413,7 +366,7 @@ func composeEnviron(diffs []EnvDiff) *environList {
 	return env
 }
 
-// Environment of the installed PM packages with the committed site packages and the activation sentinel
+// Environment of the installed PM packages with the committed site packages
 func managedActivationEnvironment(ctx context.Context, projectRoot string) ([]string, error) {
 	diffs, err := installedEnvDiffs(ctx, AllPackages())
 	if err != nil {
@@ -438,160 +391,7 @@ func managedActivationEnvironment(ctx context.Context, projectRoot string) ([]st
 		pythonPath += string(os.PathListSeparator) + site
 	}
 	env.set("PYTHONPATH", pythonPath)
-	env.set("__ICEBATH_ACTIVATED", EnvironmentRuntimeFactsPath(ctx, projectRoot))
-	testPython, err := TestenvPython(ctx, projectRoot)
-	if err != nil {
-		return nil, err
-	}
-	if testPython != "" {
-		env.set("__ICEBATH_TEST_PYTHON", testPython)
-	}
 	return env.entries(), nil
-}
-
-// Quotes a value for fish, where only backslash and the single quote are special inside quotes
-func fishQuote(value string) string {
-	return "'" + strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", `\'`) + "'"
-}
-
-// Names fish refuses to assign, each inherited unchanged or owned by fish itself
-var fishReadOnly = map[string]bool{
-	"PWD": true, "SHLVL": true, "_": true, "status": true, "version": true, "hostname": true, "fish_pid": true,
-	"history": true, "pipestatus": true, "status_generation": true, "umask": true, "FISH_VERSION": true,
-}
-
-// Export statement and unassignable names of each shell dialect
-var shellDialects = map[string]struct {
-	statement func(name, value string) string
-	readOnly  map[string]bool
-}{
-	"sh":   {func(name, value string) string { return "export " + name + "=" + shellQuote(value) }, map[string]bool{}},
-	"fish": {func(name, value string) string { return "set -gx " + name + " " + fishQuote(value) }, fishReadOnly},
-}
-
-var shellIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-// Environment entries as a script the dialect's shell evaluates, unassignable names passed over
-func ShellExports(env []string, dialect string) (string, error) {
-	shell, ok := shellDialects[dialect]
-	if !ok {
-		return "", &PyError{Class: "KeyError", Message: "unknown shell dialect " + dialect}
-	}
-	var lines []string
-	for _, kv := range env {
-		name, value, _ := strings.Cut(kv, "=")
-		if shellIdentifier.MatchString(name) && !shell.readOnly[name] {
-			lines = append(lines, shell.statement(name, value))
-		}
-	}
-	return strings.Join(lines, "\n"), nil
-}
-
-// Usage line of the activation environment printer
-func environmentsUsage(prog string, t argTheme) string {
-	return fmt.Sprintf("%susage: %s%s%s%s [%s-h%s] [%s--format%s %s{json,sh,fish}%s]\n", t.usage, t.reset, t.prog, prog, t.reset,
-		t.summaryShort, t.reset, t.summaryLong, t.reset, t.summaryLabel, t.reset)
-}
-
-// Help text of the activation environment printer in argparse layout
-func environmentsHelp(prog string, t argTheme) string {
-	return environmentsUsage(prog, t) + "\nPrint the composed activation environment.\n\n" +
-		fmt.Sprintf("%soptions:%s\n", t.heading, t.reset) +
-		fmt.Sprintf("  %s-h%s, %s--help%s            show this help message and exit\n", t.shortOption, t.reset, t.longOption, t.reset) +
-		fmt.Sprintf("  %s--format%s %s{json,sh,fish}%s\n", t.longOption, t.reset, t.label, t.reset)
-}
-
-// Parses the printer's arguments with argparse semantics, returning the format or an exit code
-func parseEnvironmentsArgs(argv []string, prog string, stdout, stderr io.Writer) (string, int, bool) {
-	t := argparseTheme(stdout)
-	fail := func(message string) (string, int, bool) {
-		io.WriteString(stderr, environmentsUsage(prog, argparseTheme(stderr)))
-		fmt.Fprintf(stderr, "%s: error: %s\n", prog, message)
-		return "", 2, false
-	}
-	format := "json"
-	var unknown []string
-	for i := 0; i < len(argv); i++ {
-		arg := argv[i]
-		if arg == "--" {
-			unknown = append(unknown, argv[i+1:]...)
-			break
-		}
-		if len(arg) < 2 || arg[0] != '-' {
-			unknown = append(unknown, arg)
-			continue
-		}
-		name, value, explicit := strings.Cut(arg, "=")
-		option := ""
-		switch {
-		case arg == "-h" || name == "--help" || strings.HasPrefix(arg, "--h") && strings.HasPrefix("--help", name):
-			option = "help"
-		case strings.HasPrefix(arg, "-h"):
-			return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyrepr.StrRepr(arg[2:])))
-		case strings.HasPrefix(name, "--f") && strings.HasPrefix("--format", name):
-			option = "format"
-		}
-		switch option {
-		case "help":
-			if explicit {
-				return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyrepr.StrRepr(value)))
-			}
-			io.WriteString(stdout, environmentsHelp(prog, t))
-			return "", 0, false
-		case "format":
-			if !explicit {
-				if i+1 >= len(argv) || len(argv[i+1]) > 1 && argv[i+1][0] == '-' && !negativeNumber.MatchString(argv[i+1]) {
-					return fail("argument --format: expected one argument")
-				}
-				i++
-				value = argv[i]
-			}
-			if _, ok := shellDialects[value]; !ok && value != "json" {
-				return fail(fmt.Sprintf("argument --format: invalid choice: %s (choose from json, sh, fish)", pyrepr.StrRepr(value)))
-			}
-			format = value
-		default:
-			unknown = append(unknown, arg)
-		}
-	}
-	if len(unknown) > 0 {
-		return fail("unrecognized arguments: " + strings.Join(unknown, " "))
-	}
-	return format, 0, true
-}
-
-// Prints the composed activation environment as JSON or a shell script, the pm env entry the CLI binds
-func EnvironmentsMain(ctx context.Context, argv []string, prog string, stdout, stderr io.Writer) int {
-	format, code, ok := parseEnvironmentsArgs(argv, prog, stdout, stderr)
-	if !ok {
-		return code
-	}
-	env, err := ActivationEnvironment(ctx, RepoRoot())
-	if err != nil {
-		fmt.Fprintln(stderr, pyTraceback(err))
-		return 1
-	}
-	if format != "json" {
-		script, err := ShellExports(env, format)
-		if err != nil {
-			fmt.Fprintln(stderr, pyTraceback(err))
-			return 1
-		}
-		fmt.Fprintln(stdout, script)
-		return 0
-	}
-	object := NewOrderedObject()
-	for _, kv := range env {
-		name, value, _ := strings.Cut(kv, "=")
-		object.Set(name, value)
-	}
-	data, err := dumpsJSON(object, false)
-	if err != nil {
-		fmt.Fprintln(stderr, pyTraceback(err))
-		return 1
-	}
-	fmt.Fprintln(stdout, string(data))
-	return 0
 }
 
 // Configs one journal row restores, each with its previous bytes and the digest written after publication
@@ -790,14 +590,9 @@ func isOSOrValueError(err error) bool {
 	return false
 }
 
-// Collects the dependency and PM runtime generations a publish superseded, never failing the committed update
+// Collects the dependency generations a publish superseded, never failing the committed update
 func CollectSupersededGenerations(ctx context.Context, projectRoot string) error {
 	removed, err := collectGenerations(ctx, projectRoot, 24*time.Hour)
-	if err == nil {
-		var runtimes []string
-		runtimes, err = CollectRuntimeGenerations(filepath.Join(InstallStateDir(ctx, projectRoot), "pm-runtime"))
-		removed = append(removed, runtimes...)
-	}
 	if err != nil {
 		if isOSOrValueError(err) {
 			pkgLog().Warn(fmt.Sprintf("dependency generation cleanup skipped: %s", pyExceptionText(err)))

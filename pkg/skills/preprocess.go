@@ -56,7 +56,7 @@ var findBash = tools.FindBash
 func (s *Scope) RunInlineShell(ctx context.Context, command, cwd string, timeout int) string {
 	bash := "bash"
 	if runtime.GOOS == "windows" {
-		found, err := findBash()
+		found, err := findBash(ctx)
 		if err != nil {
 			return fmt.Sprintf("[inline-shell error: %v]", err)
 		}

@@ -193,9 +193,6 @@ func TestTerminalEnvRegistry(t *testing.T) {
 		if !strings.Contains(p.EnvDescription(), "TestBox") {
 			t.Fatalf("env description %q", p.EnvDescription())
 		}
-		if status, detail := p.Probe(); status != "ready" || detail != "" {
-			t.Fatalf("probe %q %q", status, detail)
-		}
 		if lines := p.SetupInstructions(nil); len(lines) != 0 {
 			t.Fatalf("setup instructions %v", lines)
 		}
@@ -203,19 +200,11 @@ func TestTerminalEnvRegistry(t *testing.T) {
 			t.Fatalf("doctor rows %v", rows)
 		}
 	})
-	t.Run("test_probe_needs_setup_when_unavailable", func(t *testing.T) {
-		off := newRegistryTestProvider("offbox")
-		off.available = false
-		status, detail := off.Probe()
-		if status != "needs_setup" || detail == "" {
-			t.Fatalf("probe %q %q", status, detail)
-		}
-	})
 	t.Run("test_registry_generation_bumps", func(t *testing.T) {
 		clean(t)
-		g0 := TerminalEnvRegistryGeneration(ctx, "")
+		g0 := terminalEnvRegistry.RegistryGeneration(ctx, "")
 		register(t, newRegistryTestProvider("testbox"), "")
-		if g1 := TerminalEnvRegistryGeneration(ctx, ""); g1 == g0 {
+		if g1 := terminalEnvRegistry.RegistryGeneration(ctx, ""); g1 == g0 {
 			t.Fatalf("generation unchanged %v", g1)
 		}
 	})

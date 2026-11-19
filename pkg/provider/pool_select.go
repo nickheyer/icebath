@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -629,7 +628,7 @@ func (p *Pool) LimitState(models []string) *LimitState {
 	return &LimitState{Scope: "models", Models: cooled}
 }
 
-// ---- Rotator and CredentialSource contracts ----
+// ---- CredentialSource contract ----
 
 // Credential is the pool's current login for the provider when the pool serves it
 func (p *Pool) Credential(provider string) (Credential, bool) {
@@ -658,69 +657,6 @@ func (p *Pool) TokenBenchedForModel(provider, token, model string) bool {
 
 func poolCredential(pool *Pool, entry PooledCredential) Credential {
 	return Credential{APIKey: entry.RuntimeAPIKey(), BaseURL: entry.RuntimeBaseURL(), Source: "pool:" + entry.Source, Pool: pool}
-}
-
-// Rotate benches the route's credential for the classified failure and rebinds the route to the next entry
-func (p *Pool) Rotate(ctx context.Context, route Route, apiErr *APIError) (Route, bool) {
-	if apiErr == nil {
-		return route, false
-	}
-	provider := strings.ToLower(strings.TrimSpace(route.Provider))
-	if p.provider != "" && !CredentialPoolMatchesProviderIn(p.provider, provider, route.BaseURL, p.env.config()) {
-		p.env.log().Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", p.provider, provider))
-		return route, false
-	}
-	cl := ClassifyError(ClassifyInput{Err: apiErr, Provider: route.Provider, Model: route.Model, BaseURL: route.BaseURL, APIKey: route.APIKey})
-	if !cl.ShouldRotateCredential {
-		return route, false
-	}
-	errorContext := ExtractAPIErrorContext(apiErr)
-	status := apiErr.StatusCode
-	if status == 0 {
-		status = cl.StatusCode
-	}
-	req := RotationRequest{StatusCode: status, ErrorContext: errorContext, APIKeyHint: route.APIKey,
-		CredentialID: p.EntryIDForAPIKey(route.APIKey), Model: strings.TrimSpace(route.Model),
-		FailureReason: PoolFailureReason(cl.Reason, errorContext, cl.BillingUnverified())}
-	next, ok := p.MarkExhaustedAndRotate(req)
-	if !ok {
-		return route, false
-	}
-	if !CredentialPoolEntryServesEndpoint(next, route.BaseURL) {
-		p.env.log().Info(fmt.Sprintf("Credential %d (%s) — pool entry %s serves another endpoint; not swapping", status, cl.Reason, next.ID))
-		return route, false
-	}
-	p.env.log().Info(fmt.Sprintf("Credential %d (%s) — rotated to pool entry %s", status, cl.Reason, next.ID))
-	swapped, ok := SwapCredentialRoute(route, next)
-	return swapped, ok
-}
-
-// SwapCredentialRoute rebinds a route to a pool entry, refusing when the entry's route cannot serve the model
-func SwapCredentialRoute(route Route, entry PooledCredential) (Route, bool) {
-	runtimeKey := entry.RuntimeAPIKey()
-	if runtimeKey == "" {
-		runtimeKey = entry.AccessToken
-	}
-	runtimeBase := entry.RuntimeBaseURL()
-	if runtimeBase == "" {
-		runtimeBase = entry.BaseURL
-	}
-	if runtimeBase == "" {
-		runtimeBase = route.BaseURL
-	}
-	actual := IsActualRoute(route.Provider, runtimeBase)
-	if actual {
-		runtimeBase = NormalizeActualBaseURL(runtimeBase)
-	}
-	runtimeBase = strings.TrimRight(runtimeBase, "/")
-	next := route
-	if actual {
-		next.Mode = ModeChatCompletions
-	}
-	next.APIKey = runtimeKey
-	next.BaseURL = runtimeBase
-	next.TokenSource = nil
-	return next, true
 }
 
 // CredentialPoolEntryServesEndpoint reports whether a pooled credential may be bound to a session at baseURL

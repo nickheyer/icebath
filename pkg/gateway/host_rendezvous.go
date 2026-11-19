@@ -595,27 +595,6 @@ func HostCleanupOnExit(role string) {
 	installHostSignalCleanup()
 }
 
-// Whether this process multiplexes, the retired explicit false never narrowing the claim time record
-func multiplexProfilesEnabled() bool { return true }
-
-// Profiles this process multiplexes, empty when the roster cannot be read
-func HostServedProfiles(multiplex *bool) []string {
-	enabled := multiplexProfilesEnabled()
-	if multiplex != nil {
-		enabled = *multiplex
-	}
-	roster, err := hostProfilesToServe(context.Background(), enabled, false, false)
-	if err != nil {
-		pkgLog().Debug("served profile roster unavailable", "error", err)
-		return []string{}
-	}
-	names := make([]string, 0, len(roster))
-	for _, p := range roster {
-		names = append(names, p.Name)
-	}
-	return names
-}
-
 // One line human description used by attach messages and conflict logs, a gateway record binding no port
 func DescribeHostRecord(r *HostRecord) string {
 	ps := "unknown"

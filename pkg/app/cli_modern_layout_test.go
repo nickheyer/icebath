@@ -93,16 +93,15 @@ func TestOneLineReasoningIsShownOnce(t *testing.T) {
 	}
 }
 
-func TestLayoutAndBusyDefaultThroughTheConfigLoader(t *testing.T) {
+func TestLayoutDefaultsThroughTheConfigLoader(t *testing.T) {
 	cases := []struct {
 		yaml   string
 		modern bool
-		busy   string
 	}{
-		{"model: {}\n", true, "interrupt"},
-		{"display:\n  cli_layout: classic\n", false, "interrupt"},
-		{"display:\n  busy_input_mode: queue\n", true, "queue"},
-		{"display:\n  busy_input_mode: steer\n  cli_layout: classic\n", false, "steer"},
+		{"model: {}\n", true},
+		{"display:\n  cli_layout: classic\n", false},
+		{"display:\n  busy_input_mode: queue\n", true},
+		{"display:\n  busy_input_mode: steer\n  cli_layout: classic\n", false},
 	}
 	for _, tc := range cases {
 		h := filepath.Join(t.TempDir(), ".icebath")
@@ -114,8 +113,8 @@ func TestLayoutAndBusyDefaultThroughTheConfigLoader(t *testing.T) {
 			t.Fatal(err)
 		}
 		loaded, _ := LoadCLIConfig(context.Background())["display"].(map[string]any)
-		if layoutFromConfig(loaded) != tc.modern || busyInputModeFromConfig(loaded) != tc.busy {
-			t.Fatalf("%q gave layout %v busy %q", tc.yaml, layoutFromConfig(loaded), busyInputModeFromConfig(loaded))
+		if layoutFromConfig(loaded) != tc.modern {
+			t.Fatalf("%q gave layout %v", tc.yaml, layoutFromConfig(loaded))
 		}
 	}
 }
@@ -148,7 +147,7 @@ func TestRefusedSkillWriteReadsNeutralNotFailed(t *testing.T) {
 		`SKILL.md content is 100,193 characters (limit: 100,000).", ` +
 		`"file_preview": "Never ignore a ROLLBACK FAILED note."}`
 	row := toolRow(ctx, nil, "skill_manage", map[string]any{"operations": []any{map[string]any{"action": "patch", "name": "icebath-agent-dev"}}}, 1.1, refused, false)
-	if !strings.HasPrefix(plainSGR(row), tools.GetToolEmoji(nil, "skill_manage", "⚡")+" ") {
+	if !strings.HasPrefix(plainSGR(row), tools.GetToolEmoji(context.Background(), nil, "skill_manage", "⚡")+" ") {
 		t.Fatalf("row %q", row)
 	}
 	if !strings.Contains(plainSGR(row), "[operations[0]") || strings.Contains(row, modernRed) {

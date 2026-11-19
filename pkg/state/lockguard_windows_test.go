@@ -11,3 +11,6 @@ func TestWindowsNeverArmsTheGuard(t *testing.T) {
 	}
 	lockGuardRelease(lockGuardHeld{})
 }
+
+// Windows has no POSIX advisory locks, so the guard never arms
+func lockGuardSupported() bool { return false }

@@ -13,8 +13,6 @@ const (
 	hostedClientBase = "profile_client"
 	// Result base that hands object refs back undecoded, used to reload an attribute reached object
 	hostedRawRefBase = "raw_ref"
-	// Profile key prefix of the profiles a provider entry point registered in the host
-	entryPointProfileKey = "entrypoint:"
 )
 
 // Every profile a model provider plugin directory registers, a create_client override keeping its client in the host
@@ -96,13 +94,6 @@ func (o *HostedObject) attributeReload(name string) func(context.Context) (map[s
 		}
 		return o.host.stampGeneration(fresh), nil
 	}
-}
-
-// What loading a provider entry point did in the plugin host
-type ProviderEntryPointLoad struct {
-	Profiles          []*HostedProfile
-	Callable          bool
-	RequiresArguments bool
 }
 
 // Object ref marked with the child generation that issued it, so the slot addresses that child

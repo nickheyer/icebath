@@ -648,7 +648,7 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 }
 
 // Argv with an interpreter prepended for an existing Windows script whose suffix names one
-func windowsShellHookArgv(argv []string) ([]string, error) {
+func windowsShellHookArgv(ctx context.Context, argv []string) ([]string, error) {
 	kind, ok := shellHookWindowsInterp[strings.ToLower(filepath.Ext(argv[0]))]
 	if !ok || !isFile(argv[0]) {
 		return argv, nil
@@ -658,7 +658,7 @@ func windowsShellHookArgv(argv []string) ([]string, error) {
 	if kind == "python" {
 		interp, err = exec.LookPath("python")
 	} else {
-		interp, err = tools.FindBash()
+		interp, err = tools.FindBash(ctx)
 	}
 	if err != nil {
 		return nil, err
@@ -683,7 +683,7 @@ func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) 
 	}
 	t0 := time.Now()
 	if runtime.GOOS == "windows" {
-		if argv, err = windowsShellHookArgv(argv); err != nil {
+		if argv, err = windowsShellHookArgv(ctx, argv); err != nil {
 			return failed(err.Error())
 		}
 	}

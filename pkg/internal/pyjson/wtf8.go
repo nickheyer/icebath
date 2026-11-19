@@ -352,11 +352,11 @@ func (d *wtf8JSONDecoder) array() (any, bool) {
 }
 
 // Encodes like json.dumps with ensure_ascii false, encoding/json value shapes without HTML escaping and surrogates as code points
-func EncodeWTF8(v any) ([]byte, error) { return encodeWTF8(v, true) }
+func EncodeWTF8(v any) ([]byte, error) { return encodeWTF8(v) }
 
 // Text of json.dumps with ensure_ascii false and the default comma space and colon space separators
 func EncodeWTF8Python(v any) ([]byte, error) {
-	out, err := encodeWTF8(v, true)
+	out, err := encodeWTF8(v)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +365,7 @@ func EncodeWTF8Python(v any) ([]byte, error) {
 
 // Text of json.dumps with every default, characters outside space to tilde escaped and separators spaced
 func EncodeWTF8PythonASCII(v any) ([]byte, error) {
-	out, err := encodeWTF8(v, true)
+	out, err := encodeWTF8(v)
 	if err != nil {
 		return nil, err
 	}
@@ -392,24 +392,14 @@ func SpaceSeparators(compact []byte) []byte {
 	return res
 }
 
-// Pooled encode run, NaN and the infinities written when allowed and refused with the json.dumps ValueError otherwise
-func encodeWTF8(v any, allowNaN bool) ([]byte, error) {
+// Pooled encode run, NaN and the infinities written as json.dumps spells them
+func encodeWTF8(v any) ([]byte, error) {
 	e := wtf8EncodePool.Get().(*wtf8EncodeState)
 	defer wtf8EncodePool.Put(e)
-	e.allowNaN = allowNaN
 	if err := e.marshal(v); err != nil {
 		return nil, err
 	}
 	return append([]byte(nil), e.buf...), nil
-}
-
-// Encodes the requests json= wire form, every non ASCII character escaped and out of range floats refused
-func EncodeWTF8ASCII(v any) ([]byte, error) {
-	out, err := encodeWTF8(v, false)
-	if err != nil {
-		return nil, err
-	}
-	return EscapeNonASCII(out), nil
 }
 
 // Rewrites each non ASCII character of encoded JSON as backslash u escapes, astral ones as a surrogate pair
@@ -521,7 +511,6 @@ type wtf8EncodeState struct {
 	buf      []byte
 	ptrLevel uint
 	ptrSeen  map[any]struct{}
-	allowNaN bool
 }
 
 // Pointer depth past which the encoder starts checking for cycles, as encoding/json does
@@ -814,9 +803,6 @@ func wtf8EncodeFloat(e *wtf8EncodeState, v reflect.Value, quoted bool) {
 		text = "-Infinity"
 	default:
 		text = pyrepr.Float(f)
-	}
-	if text != pyrepr.Float(f) && !e.allowNaN {
-		e.fail(fmt.Errorf("%w: %s", ErrOutOfRange, pyrepr.Float(f)))
 	}
 	e.quote(quoted)
 	e.buf = append(e.buf, text...)

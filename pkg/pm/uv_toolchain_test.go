@@ -222,10 +222,17 @@ func TestUVToolchainProjectEnvironmentReplacesGenerationWhenPinnedPythonMoves(t 
 			t.Fatal(err)
 		}
 	}
+	ensure := func() (string, error) {
+		build := func(generation, basePython string) (string, error) {
+			return buildEnvironment(ctx, BuildEnvironmentOptions{Source: project, Out: filepath.Join(generation, "venv"), Python: basePython,
+				NoInstallProject: true, Frozen: true, Explicit: true})
+		}
+		return ensureGeneration(ctx, "test-environment", selectionRoot, map[string]any{"project": project}, build, map[string]any{}, true, "")
+	}
 	var chosen []string
 	for _, interpreter := range []string{interpreters[0], interpreters[1], interpreters[0]} {
 		record(interpreter)
-		selected, err := ensureProjectEnvironment(ctx, EnsureProjectEnvironmentOptions{Name: "test-environment", Project: project, Root: selectionRoot, Explicit: true})
+		selected, err := ensure()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +256,7 @@ func TestUVToolchainProjectEnvironmentReplacesGenerationWhenPinnedPythonMoves(t 
 		}
 		return u, p, found, err
 	})
-	if _, err := ensureProjectEnvironment(ctx, EnsureProjectEnvironmentOptions{Name: "test-environment", Project: project, Root: selectionRoot, Explicit: true}); err == nil || !strings.Contains(err.Error(), "build failed") {
+	if _, err := ensure(); err == nil || !strings.Contains(err.Error(), "build failed") {
 		t.Fatalf("failed replacement %v", err)
 	}
 	if peRead(t, filepath.Join(selectionRoot, "active.json")) != active {

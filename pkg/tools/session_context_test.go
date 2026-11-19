@@ -323,28 +323,6 @@ func TestScopedSessionIDAndKeyRestorePriorValues(t *testing.T) {
 	}
 }
 
-type routeSource struct{ scope, parent string }
-
-func (s routeSource) RouteScopeID() string      { return s.scope }
-func (s routeSource) RouteParentChatID() string { return s.parent }
-
-func TestSourceRouteMetadataKeepsInboundAnchors(t *testing.T) {
-	meta := map[string]any{"thread_id": "9", "scope_id": "stale"}
-	got := SourceRouteMetadata(routeSource{scope: "guild-1", parent: "chan-2"}, meta)
-	if got["scope_id"] != "guild-1" || got["parent_chat_id"] != "chan-2" || got["thread_id"] != "9" || meta["scope_id"] != "stale" {
-		t.Fatalf("merged %v original %v", got, meta)
-	}
-	if got := SourceRouteMetadata(routeSource{scope: "guild-1"}, nil); len(got) != 1 || got["scope_id"] != "guild-1" {
-		t.Fatalf("nil metadata %v", got)
-	}
-	if got := SourceRouteMetadata(routeSource{}, meta); got["scope_id"] != "stale" || len(got) != 2 {
-		t.Fatalf("anchorless source changed metadata %v", got)
-	}
-	if got := SourceRouteMetadata(nil, nil); got != nil {
-		t.Fatalf("nil source %v", got)
-	}
-}
-
 func TestSessionIsMessagingSurface(t *testing.T) {
 	isolateSessionContext(t, false)
 	t.Setenv("ICEBATH_PLATFORM", "")

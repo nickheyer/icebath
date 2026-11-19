@@ -125,7 +125,7 @@ func TestSyncSessionKeyAfterCompressReanchorsActiveSessionLease(t *testing.T) {
 	t.Cleanup(func() { _ = lease.Release() })
 	session := tuihost.NewSession(map[string]any{"active_session_lease": lease,
 		"agent": rotated, "session_key": "session-old"})
-	syncSessionKeyAfterCompress(ctx, "ui-1", session, true, false)
+	syncSessionKeyAfterCompress(ctx, "ui-1", session, true)
 	if session.Get("session_key") != "session-new" || lease.SessionID() != "session-new" {
 		t.Fatalf("session key %v lease %v", session.Get("session_key"), lease.SessionID())
 	}

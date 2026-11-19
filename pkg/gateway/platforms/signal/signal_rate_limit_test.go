@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+// Drops the cached scheduler so the next access builds a fresh one
+func resetScheduler() {
+	scheduler.Lock()
+	defer scheduler.Unlock()
+	scheduler.s = nil
+}
+
 func patchSleepAndTime(t *testing.T) *[]float64 {
 	var sleeps []float64
 	offset := 0.0

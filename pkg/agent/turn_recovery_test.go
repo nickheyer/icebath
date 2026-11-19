@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"strings"
 	"testing"
 
@@ -95,7 +96,7 @@ func TestPlinesPrintsEveryLineBehindTheLogPrefix(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var printed []string
 	prev := recoveryPrint
-	recoveryPrint = func(line string) { printed = append(printed, line) }
+	recoveryPrint = func(_ io.Writer, line string) { printed = append(printed, line) }
 	t.Cleanup(func() { recoveryPrint = prev })
 	plines(&AIAgent{logPrefix: "[w1] ", platform: "cli"}, "first", "second")
 	if strings.Join(printed, "|") != "[w1] first|[w1] second" {

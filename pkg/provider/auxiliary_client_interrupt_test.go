@@ -308,17 +308,10 @@ type auxDeclaringClient struct{ auxProbeClient }
 
 func (auxDeclaringClient) AuxDeclares(flag string) bool { return flag == "ICEBATH_SKIP_TRANSPORT_WRAP" }
 
-func TestClientDeclaresAndSafeIsInstance(t *testing.T) {
+func TestClientDeclares(t *testing.T) {
 	if !auxClientDeclares(auxDeclaringClient{}, "ICEBATH_SKIP_TRANSPORT_WRAP") || auxClientDeclares(auxDeclaringClient{}, "OTHER") ||
 		auxClientDeclares(&auxProbeClient{}, "ICEBATH_SKIP_TRANSPORT_WRAP") || auxClientDeclares(nil, "X") {
 		t.Fatal("declaration is opt in per flag")
-	}
-	auxClientType := reflect.TypeOf((*AuxClient)(nil)).Elem()
-	if !auxSafeIsInstance(&auxProbeClient{}, reflect.TypeOf(&auxProbeClient{})) || !auxSafeIsInstance(&auxProbeClient{}, nil, auxClientType) {
-		t.Fatal("matching type or interface")
-	}
-	if auxSafeIsInstance(nil, auxClientType) || auxSafeIsInstance("x", nil) || auxSafeIsInstance(auxProbeClient{}, reflect.TypeOf(&auxProbeClient{})) {
-		t.Fatal("nil values and non types match nothing")
 	}
 }
 

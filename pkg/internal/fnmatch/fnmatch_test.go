@@ -39,40 +39,12 @@ func TestFnmatchCase(t *testing.T) {
 			t.Errorf("FnmatchCase(%q, %q) = %v", c.name, c.pattern, got)
 		}
 	}
-	if !FnmatchCaseBytes([]byte{0xe9}, []byte("[\xe0-\xff]")) {
-		t.Errorf("latin-1 bytes range")
-	}
 }
 
-// Translate text equals CPython 3.14 fnmatch.translate
-func TestTranslateMatchesCPython(t *testing.T) {
-	cases := map[string]string{
-		"*.txt":   `(?s:.*\.txt)\z`,
-		"a*b*c":   `(?s:a(?>.*?b).*c)\z`,
-		"**":      `(?s:.*)\z`,
-		"[!a-c]":  `(?s:[^a-c])\z`,
-		"[z-a]":   `(?s:(?!))\z`,
-		"[!]":     `(?s:\[!\])\z`,
-		"[]]":     `(?s:[]])\z`,
-		"[a&&b]":  `(?s:[a\&\&b])\z`,
-		"# x?":    `(?s:\#\ x.)\z`,
-		"[^x]":    `(?s:[\^x])\z`,
-		"[a-c-e]": `(?s:[a-c\-e])\z`,
-	}
-	for pat, want := range cases {
-		if got := Translate(pat); got != want {
-			t.Errorf("Translate(%q) = %s, want %s", pat, got, want)
-		}
-	}
-}
-
-// Filter keeps input order and filterfalse returns the complement
+// Filter keeps input order
 func TestFilter(t *testing.T) {
 	names := []string{"a.py", "b.txt", "c.py"}
 	if got := Filter(names, "*.py"); len(got) != 2 || got[0] != "a.py" || got[1] != "c.py" {
 		t.Errorf("filter %v", got)
-	}
-	if got := FilterFalse(names, "*.py"); len(got) != 1 || got[0] != "b.txt" {
-		t.Errorf("filterfalse %v", got)
 	}
 }

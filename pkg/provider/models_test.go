@@ -152,26 +152,6 @@ func TestStaticCatalogProvidersKeepLadderOrder(t *testing.T) {
 	}
 }
 
-func TestPickSilentDefaultModel(t *testing.T) {
-	ctx := modelsTestHome(t)
-	if PickSilentDefaultModel(ctx, nil, "openrouter") != "" {
-		t.Fatal("empty list")
-	}
-	ids := []string{"anthropic/claude-fable-5", "anthropic/claude-opus-5", "qwen/qwen3.6-plus"}
-	if got := PickSilentDefaultModel(ctx, ids, "openrouter"); got != "qwen/qwen3.6-plus" {
-		t.Fatalf("first non frontier row expected, got %q", got)
-	}
-	if got := PickSilentDefaultModel(ctx, append([]string{PreferredSilentDefaultModel}, ids...), "openrouter"); got != PreferredSilentDefaultModel {
-		t.Fatalf("labeled default wins, got %q", got)
-	}
-	if got := PickSilentDefaultModel(ctx, ids[:2], "openrouter"); got != ids[0] {
-		t.Fatalf("all frontier falls back to the first row, got %q", got)
-	}
-	if !isAnthropicFrontierTier("anthropic/claude-opus-4-6") || isAnthropicFrontierTier("qwopus3.6-27b-coder") || isAnthropicFrontierTier("anthropic/claude-sonnet-4-6") {
-		t.Fatal("frontier tier predicate")
-	}
-}
-
 func TestMergeWithModelsDev(t *testing.T) {
 	ctx := modelsTestHome(t)
 	listAgenticModelsFn = func(context.Context, string, bool) []string { return nil }
@@ -1173,19 +1153,6 @@ func TestMergeProfileCatalog(t *testing.T) {
 	rows, _ = MergeProfileCatalog(ctx, "opencode-zen", Profile{Name: "opencode-zen"}, []string{"live-z", "ox-alpha-free", staticCatalogModels("opencode-zen")[0]})
 	if rows.IDs[0] != "live-z" || containsString(rows.IDs, "ox-alpha-free") {
 		t.Fatalf("live first pickers lead with live rows and drop delisted ids: %v", rows.IDs)
-	}
-}
-
-func TestCuratedModelsForProvider(t *testing.T) {
-	ctx := modelsTestHome(t)
-	providerModelIDsFn = func(context.Context, string, bool) CatalogRows { return CatalogRows{} }
-	rows := CuratedModelsForProvider(ctx, "deepseek", false)
-	if !modelsEqual(modelsIDs(rows), staticCatalogModels("deepseek")) {
-		t.Fatalf("static fallback: %v", rows)
-	}
-	providerModelIDsFn = func(context.Context, string, bool) CatalogRows { return plainRows([]string{"live"}) }
-	if rows = CuratedModelsForProvider(ctx, "deepseek", false); !modelsEqual(modelsIDs(rows), []string{"live"}) {
-		t.Fatalf("live rows: %v", rows)
 	}
 }
 

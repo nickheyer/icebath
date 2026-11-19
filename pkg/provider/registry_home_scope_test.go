@@ -83,8 +83,12 @@ func viewAmbientHome(t *testing.T, h string) ambientView {
 	creds, err := authResolver(env).apiKeyProviderCredentials(ambientSlug)
 	v.creds, v.credsErr = err == nil && creds.APIKey == ambientToken, err
 	runtime := func(requested string) ambientRuntime {
-		route, err := Resolve(ctx, config.Tree(map[string]any{}), config.NewSecrets(h), h, NewStore(h), Overrides{Provider: requested})
-		return ambientRuntime{route.Provider, route.BaseURL, route.APIKey == ambientToken, err}
+		rt, err := newResolver(ctx, config.Tree(map[string]any{}), config.NewSecrets(h), h, NewStore(h)).ResolveRuntime(requested, "", "", nil, "")
+		if err != nil {
+			return ambientRuntime{err: err}
+		}
+		route := rt.Route()
+		return ambientRuntime{route.Provider, route.BaseURL, route.APIKey == ambientToken, nil}
 	}
 	v.runtimeExplicit, v.runtimeAuto = runtime(ambientSlug), runtime("")
 	return v

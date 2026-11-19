@@ -306,7 +306,7 @@ func TestLiveTempHomeFixturePluginRoutesAndHardlineStaysCoreOwned(t *testing.T) 
 		}
 		return e
 	}
-	tools.ClearSession("local")
+	tools.ClearSession(context.Background(), "local")
 	cli := env(map[string]any{"interactive": true})
 	routed := tools.CheckAllCommandGuards(ctx, cli, "rm -rf /tmp/icebath-approval-transport-fixture", "local", false)
 	manager.DiscoverAndLoad(ctx, true)

@@ -263,7 +263,6 @@ type BackendProvider interface {
 	SupportsStreams() bool
 	IsAvailable() bool
 	CheckRequirements(env *Env, cfg map[string]any) error
-	Probe() (status string, detail string)
 	SetupInstructions(env *Env) []string
 	DoctorChecks() []DoctorCheck
 	CreateEnvironment(ctx context.Context, env *Env, opts CreateOptions) (Environment, error)

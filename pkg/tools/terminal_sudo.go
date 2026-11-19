@@ -138,7 +138,7 @@ func promptForSudoPassword(ctx context.Context, env *Env, command string, timeou
 		return callSudoPasswordCallback(ctx, env, cb, command, human)
 	}
 	if env == nil || env.Ask == nil {
-		password, done := readHiddenPasswordFromTTY(timeout)
+		password, done := readHiddenPasswordFromTTY(ctx, timeout)
 		switch {
 		case !done:
 			human.finish(ctx, env, "timeout")

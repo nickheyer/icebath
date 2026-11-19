@@ -39,11 +39,6 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.console = console()
 	c.config = CLIConfig(c.ctx)
 	display := config.LocalDisplayConfig(c.config["display"])
-	if compact != nil {
-		c.compact = *compact
-	} else {
-		c.compact = cliTruthy(display["compact"])
-	}
 	rawTP, ok := display["tool_progress"]
 	if !ok {
 		rawTP = "all"
@@ -60,19 +55,11 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 		c.focusSavedToolProgress = normalizeToolProgressMode(c.toolProgressMode, "all")
 		c.toolProgressMode = FocusToolProgressMode
 	}
-	c.resumeDisplay = cliStr(display["resume_display"], "full")
 	c.bellOnComplete = cliTruthy(display["bell_on_complete"])
-	c.bellOnPrompt = cliTruthy(display["bell_on_prompt"])
 	c.showReasoning = displayFlag(display, "show_reasoning", true)
 	c.reasoningFull = cliTruthy(display["reasoning_full"])
 	c.modernLayout = layoutFromConfig(display)
 	setLayoutActive(c.modernLayout)
-	bim := busyInputModeFromConfig(display)
-	if bim == "queue" || bim == "steer" {
-		c.busyInputMode = bim
-	} else {
-		c.busyInputMode = "interrupt"
-	}
 	c.verbose = verbose
 	c.streamingEnabled = cliTruthy(display["streaming"])
 	c.showTimestamps = cliTruthy(display["timestamps"])
@@ -84,7 +71,6 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 		c.finalResponseMarkdown = "strip"
 	}
 	c.inlineDiffsEnabled = displayFlag(display, "inline_diffs", true)
-	c.turnSummaryCollector = nil
 	c.streamBuf, c.reasoningPreviewBuf = "", ""
 	c.streamStarted, c.streamBoxOpened, c.streamBoxLive = false, false, false
 	c.streamedTextThisTurn = ""
@@ -174,7 +160,6 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 			c.modelIsDefault = false
 		}
 	}
-	c.providerSource = ""
 	c.provider = c.requestedProvider
 	c.apiMode = "chat_completions"
 	c.acpCommand = ""
@@ -263,7 +248,6 @@ func floatPtrOf(v any) *float64 {
 func (c *CLI) initToolsets(toolsets []string) {
 	c.enabledToolsets = toolsets
 	c.explicitToolsets = toolsets != nil
-	c.disabledToolsets = tools.ParseConfigStringList(cliMap(c.config, "agent")["disabled_toolsets"])
 }
 
 // Records the checkpoints and pass session id flags and the ignore rules opt in
@@ -280,7 +264,6 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 	if c.systemPrompt == "" {
 		c.systemPrompt = commands.ResolveEphemeralSystemPrompt(c.config)
 	}
-	c.personalities = commands.AvailablePersonalities(config.Tree(c.config))
 	c.prefillMessages = loadPrefillMessages(c.ctx, resolvePrefillMessagesFile(c.ctx, c.config), "")
 	c.reasoningConfig = config.ResolveReasoningConfig(c.config, c.model)
 	c.explicitReasoningConfig = nil
@@ -297,19 +280,6 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 	}
 	agentCfg := cliMap(c.config, "agent")
 	c.serviceTier = parseServiceTierConfig(cliStr(agentCfg["service_tier"], ""))
-	pr := cliMap(c.config, "provider_routing")
-	c.providerSort = pr["sort"]
-	c.providersOnly = pr["only"]
-	c.providersIgnore = pr["ignore"]
-	c.providersOrder = pr["order"]
-	c.providerRequireParams = cliTruthy(pr["require_parameters"])
-	c.providerDataCollection = pr["data_collection"]
-	c.openRouterMinCodingScore = nil
-	if rawScore := cliMap(c.config, "openrouter")["min_coding_score"]; rawScore != nil && rawScore != "" {
-		if f := floatPtrOf(rawScore); f != nil && *f >= 0 && *f <= 1 {
-			c.openRouterMinCodingScore = f
-		}
-	}
 	c.fallbackModel = provider.GetFallbackChain(c.config)
 }
 
@@ -318,14 +288,9 @@ func (c *CLI) initRuntimeState(resume string) {
 	provider.ServeNoticesOnStderr()
 	c.activeAgentRouteSignature = ""
 	c.setAgent(nil)
-	c.toolCallbacksInstalled = false
 	c.conversationHistory = []map[string]any{}
 	c.sessionStart = cliNow()
-	c.promptStartTime = nil
-	c.promptDuration = 0
-	c.lastTurnFinishedAt = nil
 	c.initSessionStore()
-	c.pendingTitle = ""
 	c.resumed = resume != ""
 	c.sessionID = resume
 	if c.sessionID == "" {
@@ -337,7 +302,7 @@ func (c *CLI) initRuntimeState(resume string) {
 
 // Opens the gateway session store early so a title works before the first message, the gateway the single writer
 func (c *CLI) initSessionStore() {
-	c.sessionDB, c.handoffDB = gatewaycli.SessionStore(), nil
+	c.sessionDB = gatewaycli.SessionStore()
 }
 
 // Mints main's local session id, replaced by the gateway's once the CLI opens its gateway session
@@ -347,22 +312,10 @@ func newSessionID(now time.Time) string { return state.NewSessionIDAt(now, 6) }
 func (c *CLI) initUIState() {
 	c.pendingInput = &inputQueue{}
 	c.interruptQueue = &inputQueue{}
-	c.agentRunning, c.shouldExit = false, false
 	c.lastTurnInterrupted = false
-	c.clarifyState = nil
-	c.clarifyFreetext = false
-	c.sudoState, c.approvalState = nil, nil
-	c.slashConfirmState, c.modelPickerState = nil, nil
-	c.clarifyDeadline = new(float64)
-	c.sudoDeadline, c.approvalDeadline = 0, 0
-	c.composerPlaceholder = getRandomComposerHint(c.ctx)
-	c.pendingAgentSeed = nil
 	c.pendingToolInfo = map[string][]map[string]any{}
 	c.spinnerText = ""
 	c.lastScrollbackTool = ""
-	c.commandRunning = false
-	c.attachedImages = []string{}
-	c.imageCounter = 0
 	c.preloadedSkills = []string{}
 	c.autoLoadSkillsResult = nil
 	c.preloadSkillsDone = nil
@@ -371,20 +324,5 @@ func (c *CLI) initUIState() {
 	c.preloadSkillsRequested = []string{}
 	c.preloadSkillsFinalized = false
 	c.activeSessionLease = nil
-	c.voiceMode, c.voiceTTS, c.voiceRecording = false, false, false
-	c.voiceProcessing, c.voiceContinuous = false, false
-	c.voiceRecorder, c.voiceTTSStop = nil, nil
-	c.voiceTTSDone = newSyncEvent()
-	c.voiceTTSDone.Set()
-	c.voiceBargeCapture = newSyncEvent()
-	c.voiceLastTTSText = ""
-	c.voiceBargePhase = ""
-	c.statusBarVisible = statusBarVisibleFromDisplayConfig(c.config["display"])
-	display := cliMap(c.config, "display")
-	c.batteryVisible = cliTruthy(display["battery"])
 	c.statusBarSuppressedAfterResize.Store(false)
-	c.backgroundTasks = map[string]chan struct{}{}
-	c.backgroundTaskCounter = 0
-	c.cacheHitBaselinePrompt, c.cacheHitBaselineRead, c.cacheHitBaselineCompressions = 0, 0, 0
-	c.cacheHitBaselineModel = ""
 }

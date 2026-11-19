@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -594,63 +593,6 @@ func (r *GatewayRunner) scaleToZeroHoldRedial(held bool) (took bool) {
 	}
 	releaser, ok := adapter.(relayRedialReleaser)
 	return ok && releaser.ReleaseRedial()
-}
-
-// Begins external drain, refusing new turns while in flight ones finish
-func (r *GatewayRunner) enterExternalDrain(ctx context.Context) {
-	if r.externalDrainActive {
-		return
-	}
-	r.externalDrainActive = true
-	pkgLog().Info(fmt.Sprintf("External drain ENGAGED (.drain_request.json present) — refusing "+
-		"new turns; %d in-flight turn(s) will finish. Process stays up.", r.activeWorkCount()))
-	r.updateRuntimeStatus(ctx, optStr("draining"), nil)
-}
-
-// Cancels external drain and re-accepts new turns, never resurrecting a stopping gateway
-func (r *GatewayRunner) exitExternalDrain(ctx context.Context) {
-	if !r.externalDrainActive {
-		return
-	}
-	r.externalDrainActive = false
-	if r.draining.Load() || !r.running.Load() {
-		pkgLog().Info("External drain marker cleared during shutdown — not reverting " +
-			"to running (shutdown takes precedence).")
-		return
-	}
-	pkgLog().Info(fmt.Sprintf("External drain RELEASED (.drain_request.json removed) — "+
-		"re-accepting new turns; gateway_state -> %s.", r.servingState()))
-	r.updateRuntimeStatus(ctx, optStr(r.servingState()), nil)
-}
-
-// Polls the drain marker every interval, entering drain while present and leaving it once absent
-func (r *GatewayRunner) drainControlWatcher(ctx context.Context, interval float64) error {
-	for r.running.Load() {
-		func() {
-			defer func() {
-				if rec := recover(); rec != nil {
-					pkgLog().Debug(fmt.Sprintf("Drain-control watcher tick error: %v", rec), "exc_info", rec)
-				}
-			}()
-			requested := make(chan bool, 1)
-			go func() { requested <- gateway.DrainRequested(ctx, home.Dir(ctx)) }()
-			select {
-			case <-ctx.Done():
-				return
-			case present := <-requested:
-				if present {
-					r.enterExternalDrain(ctx)
-					r.persistActiveAgents(ctx)
-				} else {
-					r.exitExternalDrain(ctx)
-				}
-			}
-		}()
-		if err := sleepCtx(ctx, interval); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // Pauses a queued platform with the reason, a manual platform pause only

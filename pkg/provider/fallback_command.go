@@ -19,6 +19,14 @@ var (
 	fallbackStoreForHome = NewStore
 )
 
+// Handler of icebath fallback check, installed by the package that links the support redactor and the parallel probe runner
+var fallbackCheckCommand func(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error)
+
+// SetFallbackCheckCommand installs the handler icebath fallback check dispatches to
+func SetFallbackCheckCommand(check func(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error)) {
+	fallbackCheckCommand = check
+}
+
 // FallbackEntryIdentity builds the backend identity of a provider, model and base_url chain entry
 func FallbackEntryIdentity(entry map[string]any) BackendIdentity {
 	return BuildBackendIdentity(stringField(entry, "provider"), stringField(entry, "model"), stringField(entry, "base_url"))
@@ -456,8 +464,10 @@ func FallbackCommand(ctx context.Context, h string, ns map[string]any, w, errw i
 		return 0, FallbackRemove(ctx, w, h, fallbackChooseFn)
 	case "clear":
 		return 0, FallbackClear(ctx, w, h, fallbackConfirmFn)
+	case "check":
+		return fallbackCheckCommand(ctx, h, ns, w)
 	}
 	fmt.Fprintf(w, "Unknown fallback subcommand: %s\n", sub)
-	fmt.Fprintln(w, "Use one of: list, add, remove, clear")
+	fmt.Fprintln(w, "Use one of: list, add, remove, clear, check")
 	return 2, nil
 }

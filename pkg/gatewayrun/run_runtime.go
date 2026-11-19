@@ -161,24 +161,6 @@ func (r *GatewayRunner) unparkProfile(ctx context.Context, name string) {
 	}
 }
 
-// Whether name is parked, unserved now but served again on a rescan
-func (r *GatewayRunner) profileParked(name string) bool {
-	if name == "" {
-		return false
-	}
-	_, ok := r.parkedProfiles()[name]
-	return ok
-}
-
-// Retryable refusal of a request under a parked profile's prefix
-func (r *GatewayRunner) refuseParkedScope(ctx context.Context) error {
-	name := gateway.ServedProfileName(home.Dir(ctx))
-	if r.profileParked(name) {
-		return gateway.NewParkedProfileRefusal(name)
-	}
-	return nil
-}
-
 // Persists the parked set, swallowing a failed write
 func recordParkedProfiles(ctx context.Context, parked map[string]any) {
 	snapshot := make(map[string]any, len(parked))

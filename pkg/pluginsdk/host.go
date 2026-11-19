@@ -500,6 +500,23 @@ func (h *host) HTTP(ctx context.Context, req HTTPRequest) (*HTTPResponse, error)
 	return resp, nil
 }
 
+func (h *host) ProviderRequest(ctx context.Context, req ProviderRequest) (*HTTPResponse, error) {
+	kwargs := map[string]any{"json": req.JSON, "headers": req.Headers, "timeout": req.TimeoutSeconds}
+	value, err := h.Call(ctx, "credentialed_provider_request", []any{req.Provider, req.Method, req.URL}, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	out, _ := value.(map[string]any)
+	status, _ := integer(out["status"])
+	resp := &HTTPResponse{Status: int(status), Headers: map[string]string{}}
+	resp.Body, _ = out["body"].([]byte)
+	headers, _ := out["headers"].(map[string]any)
+	for k, v := range headers {
+		resp.Headers[k] = text(v)
+	}
+	return resp, nil
+}
+
 func (h *host) Env(ctx context.Context, name string) (string, bool, error) {
 	out, err := h.io(ctx, "env", map[string]any{"name": name})
 	ok, _ := out["ok"].(bool)

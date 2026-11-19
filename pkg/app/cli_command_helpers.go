@@ -1,29 +1,10 @@
 package app
 
 import (
-	"context"
-	"os"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
-
-// Persists a dotted key into the home config.yaml with owner only permissions, false when the write fails
-func saveConfigValue(ctx context.Context, keyPath string, value any) bool {
-	configPath := home.ConfigPath(home.Dir(ctx))
-	if _, err := home.Mkdir(ctx, home.Dir(ctx)); err != nil {
-		pkgLog().Error("Failed to save config: " + err.Error())
-		return false
-	}
-	if err := config.WriteConfigKey(ctx, configPath, keyPath, value); err != nil {
-		pkgLog().Error("Failed to save config: " + err.Error())
-		return false
-	}
-	_ = os.Chmod(configPath, 0o600)
-	return true
-}
 
 // Ordered JSON object of a plain map, nested maps converted with their keys sorted
 func objectFromPlain(m map[string]any) *pyjson.Object {

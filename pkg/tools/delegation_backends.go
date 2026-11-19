@@ -6,11 +6,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -84,22 +81,6 @@ func ListDelegationBackends(ctx context.Context) []BackendInfo {
 // Backend config.yaml selects now, what a tool build reads
 func SavedDelegationBackend(ctx context.Context) string {
 	return ConfiguredBackend(LoadDelegationConfig(ctx))
-}
-
-func delegateDefinition(tools []map[string]any) map[string]any {
-	for _, t := range tools {
-		if fn, _ := pyjson.Dict(t["function"]); fn["name"] == "delegate_task" {
-			return t
-		}
-	}
-	return nil
-}
-
-// Records the backend as the session's when the agent carries the delegate_task the definitions hold
-func AdoptBuiltBackend(a DelegationBackendAgent, defs []map[string]any, backend string) {
-	if pyrepr.Equal(delegateDefinition(a.Tools()), delegateDefinition(defs)) {
-		a.SetDelegationBackend(backend)
-	}
 }
 
 // Backend the agent delegate_task was built from, empty for no agent or one never built

@@ -309,17 +309,6 @@ func TestCheckpointTerminalCheckpointFallsBackToScopedThenProcessCwd(t *testing.
 }
 
 func TestCheckpointOptionsFromConfig(t *testing.T) {
-	o, err := CheckpointOptionsFromConfig(map[string]any{"checkpoints": true})
-	if err != nil || !o.Enabled || o.MaxSnapshots != 20 || o.MaxTotalSizeMB != 500 || o.MaxFileSizeMB != 10 {
-		t.Fatalf("legacy bool wrong: %+v %v", o, err)
-	}
-	o, _ = CheckpointOptionsFromConfig(map[string]any{"checkpoints": map[string]any{"enabled": false, "max_snapshots": 3, "max_file_size_mb": "4"}})
-	if o.Enabled || o.MaxSnapshots != 3 || o.MaxFileSizeMB != 4 || o.MaxTotalSizeMB != 500 {
-		t.Fatalf("section wrong: %+v", o)
-	}
-	if _, err := CheckpointOptionsFromConfig(map[string]any{"checkpoints": map[string]any{"max_snapshots": "many"}}); err == nil {
-		t.Fatal("bad integer accepted")
-	}
 	m := NewCheckpointManager(nil, CheckpointManagerOptions{MaxSnapshots: 0, MaxTotalSizeMB: -5, MaxFileSizeMB: -1})
 	if m.MaxSnapshots != 1 || m.MaxTotalSizeMB != 0 || m.MaxFileSizeMB != 0 {
 		t.Fatalf("clamps wrong: %+v", m)

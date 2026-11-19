@@ -37,7 +37,7 @@ var (
 		"RuntimeError": true, "NotImplementedError": true, "RecursionError": true, "PythonFinalizationError": true,
 		"InstallError": true, "ResolutionConflict": true, "BuildFailure": true, "NoCommittedEnvironment": true,
 		"PinMismatch": true, "DownloadError": true, "_RangeError": true, "HashError": true, "DownloadPaused": true,
-		"DownloadTransportError": true, "FeatureProbeError": true, "OSError": true, "IOError": true,
+		"DownloadTransportError": true, "OSError": true, "IOError": true,
 		"EnvironmentError": true, "FileNotFoundError": true, "FileExistsError": true, "PermissionError": true,
 		"IsADirectoryError": true, "NotADirectoryError": true, "TimeoutError": true, "InterruptedError": true,
 		"BlockingIOError": true, "ChildProcessError": true, "ProcessLookupError": true, "ConnectionError": true,
@@ -63,8 +63,7 @@ func selectedEnvironmentPython(ctx context.Context) (string, error) {
 func pmRuntimeOrOSError(err error) bool {
 	var install *pm.InstallError
 	var download *pm.DownloadError
-	var probe *pm.FeatureProbeError
-	if errors.As(err, &install) || errors.As(err, &download) || errors.As(err, &probe) || pypath.IsOSError(err) {
+	if errors.As(err, &install) || errors.As(err, &download) || pypath.IsOSError(err) {
 		return true
 	}
 	var py *pm.PyError

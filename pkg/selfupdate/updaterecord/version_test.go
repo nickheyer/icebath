@@ -67,28 +67,12 @@ func TestDerivedVersionShowsPlusQuestionForDirtyUnknownDistance(t *testing.T) {
 	}
 }
 
-func TestDisplayVersionNamesTheDistanceWithoutTheCommit(t *testing.T) {
-	ahead := VersionInfo{BaseVersion: "0.21.5", DerivedVersion: "0.21.5+1913.gf83a9e9", Distance: vtInt(1913), Commit: vtStr("f83a9e9" + "000000000000000000000000000000000"), Branch: vtStr("main"), Source: "git"}
-	if ahead.DisplayVersion() != "0.21.5+1913" {
-		t.Fatal(ahead.DisplayVersion())
-	}
-	if got := (VersionInfo{BaseVersion: "0.21.5", DerivedVersion: "0.21.5", Distance: vtInt(0), Source: "git"}).DisplayVersion(); got != "0.21.5" {
-		t.Fatal(got)
-	}
-}
-
 func TestDisplayVersionKeepsTaglessStampIdentity(t *testing.T) {
 	vtStamp(t, map[string]any{"commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "baseVersion": "unknown", "displayVersion": "git.aaaaaaa",
 		"source": "git", "payload": "bootstrap", "updateMechanism": "self"})
 	info := vtInfo(t)
-	if info.BaseVersion != "unknown" || info.DisplayVersion() != "git.aaaaaaa" || *info.Commit != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+	if info.BaseVersion != "unknown" || info.DerivedVersion != "git.aaaaaaa" || *info.Commit != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("%+v", info)
-	}
-}
-
-func TestDisplayVersionKeepsUnknownWhenNoIdentity(t *testing.T) {
-	if got := (VersionInfo{BaseVersion: "unknown", DerivedVersion: "unknown", Source: "unknown"}).DisplayVersion(); got != "unknown" {
-		t.Fatal(got)
 	}
 }
 

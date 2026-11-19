@@ -148,14 +148,14 @@ func (a *AIAgent) promptFilledWindow(response any) (int, int, bool) {
 	return 0, 0, false
 }
 
-// One normalized response from the active transport, Anthropic stripping the OAuth tool prefix
-func (a *AIAgent) normalizeResponseForAgent(response any) (*provider.Response, error) {
+// One normalized response from the active transport, Anthropic stripping the OAuth tool prefix against the tool registry of the agent's profile and session
+func (a *AIAgent) normalizeResponseForAgent(ctx context.Context, response any) (*provider.Response, error) {
 	t := a.getTransport("")
 	if t == nil {
 		return nil, fmt.Errorf("no transport registered for api_mode %q", a.apiMode)
 	}
 	if a.apiMode == "anthropic_messages" {
-		return t.NormalizeResponse(response, map[string]any{"strip_tool_prefix": a.isAnthropicOAuth})
+		return t.NormalizeResponse(response, map[string]any{"strip_tool_prefix": a.isAnthropicOAuth, "ctx": tools.WithEnvHome(ctx, a.env)})
 	}
 	return t.NormalizeResponse(response, nil)
 }
@@ -539,7 +539,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 		})
 	}
 
-	truncMsg, err := a.normalizeResponseForAgent(r.Response)
+	truncMsg, err := a.normalizeResponseForAgent(ctx, r.Response)
 	if err != nil {
 		return TruncationVerdict{}, err
 	}
@@ -775,7 +775,7 @@ type RefusalRequest struct {
 
 // Never retries an HTTP 200 refusal, one configured fallback try else the refusal surfaces with its reasoning or stop details
 func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalRequest) (RefusalVerdict, error) {
-	refusal, err := a.normalizeResponseForAgent(r.Response)
+	refusal, err := a.normalizeResponseForAgent(ctx, r.Response)
 	if err != nil {
 		return RefusalVerdict{}, err
 	}

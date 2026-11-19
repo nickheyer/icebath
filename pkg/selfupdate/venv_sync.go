@@ -813,6 +813,3 @@ func TakeRelaunchMarker(args []string) []string {
 	}
 	return args
 }
-
-// Reports this process as the child a relaunch started
-func Relaunched() bool { return relaunched.Load() }

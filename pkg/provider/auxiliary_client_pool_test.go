@@ -30,12 +30,12 @@ func TestAnthropicSuffixHostCheckDirect(t *testing.T) {
 func TestCodexStallIsLadderTimeoutMessage(t *testing.T) {
 	guard := newAuxCodexStreamGuard(context.Background(), nil, 300.0, true, 0)
 	guard.sawContent.Store(true)
-	msg := guard.timeoutMessage()
+	msg := guard.timeoutError(nil).Message
 	if !strings.Contains(msg, CodexStreamStallMarker) || !strings.HasPrefix(msg, "Codex auxiliary Responses stream stalled: no new output for 60.0s (") {
 		t.Fatalf("stall message %q", msg)
 	}
 	fresh := newAuxCodexStreamGuard(context.Background(), nil, 300.0, true, 0)
-	if msg := fresh.timeoutMessage(); !strings.HasPrefix(msg, "Codex auxiliary Responses stream produced no output within 60.0s (no-progress timeout, ") {
+	if msg := fresh.timeoutError(nil).Message; !strings.HasPrefix(msg, "Codex auxiliary Responses stream produced no output within 60.0s (no-progress timeout, ") {
 		t.Fatalf("first token message %q", msg)
 	}
 }

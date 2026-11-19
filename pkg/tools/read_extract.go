@@ -40,7 +40,6 @@ var nativeDocumentExtensions = setOf(
 	".xls", ".xlsm", ".xlsb", ".odt", ".ods", ".odp", ".rtf", ".epub", ".pdf")
 
 const (
-	maxNativeDocBytes   = 50 * 1024 * 1024
 	maxDocumentBytes    = 50 * 1024 * 1024
 	maxXlsxRowsPerSheet = 5000
 	maxXlsxCols         = 256
@@ -130,28 +129,6 @@ var inHouseExtractors = map[string]func(p string) (string, error){
 	".db":      extractSqlite,
 	".sqlite":  extractSqlite,
 	".sqlite3": extractSqlite,
-}
-
-// Renders a document file on the host as text, its content naming the format before its extension
-func ExtractDocumentText(ctx context.Context, env *Env, p string) (string, error) {
-	if fn, ok := inHouseExtractors[strings.ToLower(pathSuffix(p))]; ok {
-		return fn(p)
-	}
-	fi, err := os.Stat(p)
-	if err != nil {
-		return "", &ExtractionError{Msg: err.Error()}
-	}
-	if err := checkDocumentSize(fi.Size(), maxNativeDocBytes); err != nil {
-		return "", err
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return "", &ExtractionError{Msg: err.Error()}
-	}
-	if isSQLiteBytes(data) {
-		return extractSqlite(p)
-	}
-	return convertDocument(ctx, env, data, p, func() string { return pdfCoverageNote(ctx, p, "") })
 }
 
 // Renders bytes fetched across a file backend boundary, the content naming the format before the extension

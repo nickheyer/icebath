@@ -285,7 +285,7 @@ func gemHop(text, finish, token string, prompt, out int) string {
 	return string(data)
 }
 
-func TestGeminiLongDecodeContinuesAcrossHopsAndReportsFirstHopPrompt(t *testing.T) {
+func TestGeminiLongDecodeContinuesAcrossHops(t *testing.T) {
 	hops := []string{gemHop("part one ", "CONTINUATION", "tok-1", 100, 32768), gemHop("part two", "STOP", "", 32868, 500)}
 	checkpoint := `{"candidates": [{"content": {"parts": [{"text": ""}]}, "continuationToken": "ckpt"}]}`
 	f := newGemFake(t, func(w http.ResponseWriter, r *http.Request, n int) {
@@ -312,8 +312,8 @@ func TestGeminiLongDecodeContinuesAcrossHopsAndReportsFirstHopPrompt(t *testing.
 	if resp.Message.Content != "part one part two" || resp.FinishReason != "stop" {
 		t.Fatalf("resp %v %s", resp.Message.Content, resp.FinishReason)
 	}
-	if prompt, _, ok := ResponseInitialPromptTokens(resp); !ok || resp.Usage.InputTokens != 32968 || resp.Usage.OutputTokens != 33268 || prompt != 100 {
-		t.Fatalf("usage %+v initial %d", resp.Usage, prompt)
+	if resp.Usage.InputTokens != 32968 || resp.Usage.OutputTokens != 33268 {
+		t.Fatalf("usage %+v", resp.Usage)
 	}
 	f.mu.Lock()
 	f.requests = nil
@@ -335,7 +335,7 @@ func TestGeminiLongDecodeContinuesAcrossHopsAndReportsFirstHopPrompt(t *testing.
 	if text.String() != "part one part two" || sresp.FinishReason != "stop" {
 		t.Fatalf("stream %q %s", text.String(), sresp.FinishReason)
 	}
-	if prompt, _, ok := ResponseInitialPromptTokens(sresp); !ok || sresp.Usage.InputTokens != 32968 || prompt != 100 {
-		t.Fatalf("stream usage %+v initial %d", sresp.Usage, prompt)
+	if sresp.Usage.InputTokens != 32968 {
+		t.Fatalf("stream usage %+v", sresp.Usage)
 	}
 }

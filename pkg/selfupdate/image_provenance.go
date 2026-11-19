@@ -30,27 +30,6 @@ type ImageProvenance struct {
 	Error          *string
 }
 
-// Provenance fields as an ordered JSON object
-func (p *ImageProvenance) ToDict() *pyjson.Object {
-	out := pyjson.NewObject()
-	optional := func(s *string) any {
-		if s == nil {
-			return nil
-		}
-		return *s
-	}
-	out.Set("schema", int64(p.Schema))
-	out.Set("deployment_kind", p.DeploymentKind)
-	out.Set("manager", p.Manager)
-	out.Set("image", optional(p.Image))
-	out.Set("version", optional(p.Version))
-	out.Set("revision", optional(p.Revision))
-	out.Set("marker_path", p.MarkerPath)
-	out.Set("valid", p.Valid)
-	out.Set("error", optional(p.Error))
-	return out
-}
-
 // Invalid provenance naming why the marker at path could not be trusted
 func invalidProvenance(path, reason string) *ImageProvenance {
 	return &ImageProvenance{Schema: imageProvenanceSchema, DeploymentKind: "image", Manager: "unknown", MarkerPath: path, Valid: false, Error: &reason}

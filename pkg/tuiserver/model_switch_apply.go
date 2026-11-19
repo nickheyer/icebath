@@ -132,7 +132,6 @@ func commitAgentSwitch(ctx context.Context, sid string, session *tuihost.Session
 		}
 		return fmt.Errorf("Model switch to %s failed (%s); staying on %s.", result.NewModel, err, staying)
 	}
-	restartSlashWorker(ctx, sid, session)
 	persistLiveSessionRuntime(ctx, session)
 	persistLiveSessionSystemPrompt(ctx, session)
 	appendModelSwitchMarker(ctx, session, result.NewModel, result.TargetProvider)

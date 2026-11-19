@@ -126,36 +126,6 @@ func TestRuntimePoolKeyPreservesNonCustomIdentity(t *testing.T) {
 	}
 }
 
-func TestPoolRotateIgnoresRouteOfAnotherProvider(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, authWithPool("openai-codex", codexDeviceEntry(1, "tok-a", "rf-a")))
-	pool := LoadPool(testEnv(t, h), "openai-codex")
-	route := Route{Provider: "deepseek", Model: "deepseek-chat", BaseURL: "https://api.deepseek.com/v1", APIKey: "deepseek-key"}
-	if _, ok := pool.Rotate(context.Background(), route, &APIError{Provider: "deepseek", StatusCode: 429, Message: "rate limited"}); ok {
-		t.Fatal("a pool must never act on another provider's failure")
-	}
-	if statusesOf(pool)["codex-1"] == StatusExhausted {
-		t.Fatal("the foreign failure must not bench the pool")
-	}
-}
-
-func TestPoolRotateRebindsRouteToNextEntry(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, authWithPool("openrouter",
-		row(map[string]any{"id": "k1", "label": "one", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-or-one", "base_url": "https://openrouter.ai/api/v1"}),
-		row(map[string]any{"id": "k2", "label": "two", "auth_type": "api_key", "priority": 1, "source": "manual", "access_token": "sk-or-two", "base_url": "https://openrouter.ai/api/v1"})))
-	pool := LoadPool(testEnv(t, h), "openrouter")
-	mustSelect(t, pool, "")
-	route := Route{Provider: "openrouter", Model: "m", BaseURL: "https://openrouter.ai/api/v1", APIKey: "sk-or-one", Mode: ModeChatCompletions}
-	next, ok := pool.Rotate(context.Background(), route, &APIError{Provider: "openrouter", StatusCode: 402, Message: "Insufficient credits", Body: `{"error":{"message":"Insufficient credits","code":402}}`})
-	if !ok || next.APIKey != "sk-or-two" || next.BaseURL != "https://openrouter.ai/api/v1" {
-		t.Fatalf("rotation must rebind the route, got %+v %t", next, ok)
-	}
-	if statusesOf(pool)["k1"] != StatusExhausted {
-		t.Fatal("the failed key must be benched")
-	}
-}
-
 // ---- test_credential_pool_plugin_seam.py ----
 
 func pluginEntry() PooledCredential {

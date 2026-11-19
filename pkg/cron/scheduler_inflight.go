@@ -228,37 +228,6 @@ func (s *Store) wedgedInflightKeys(ctx context.Context) map[inflightKey]bool {
 	return out
 }
 
-// RestartWaitCounts splits in flight runs into awaitable, wedged and restart safe for the restart wait
-type RestartWaitCounts struct {
-	Awaitable   int
-	Wedged      int
-	RestartSafe int
-}
-
-// Disjoint per key counts of runs a restart waits on, skips as wedged, or leaves to their own scope
-func (s *Store) getRestartWaitCronCounts(ctx context.Context) RestartWaitCounts {
-	wedged := s.wedgedInflightKeys(home.WithOverride(ctx, s.home))
-	inflight.Lock()
-	all := inflightKeysLocked()
-	restartSafe := map[inflightKey]bool{}
-	for k := range inflight.scopeIsolated {
-		if all[k] && !wedged[k] {
-			restartSafe[k] = true
-		}
-	}
-	inflight.Unlock()
-	counts := RestartWaitCounts{RestartSafe: len(restartSafe)}
-	for k := range all {
-		switch {
-		case wedged[k]:
-			counts.Wedged++
-		case !restartSafe[k]:
-			counts.Awaitable++
-		}
-	}
-	return counts
-}
-
 // Whether this process has an in flight run of the job for the store home
 func isJobRunning(s *Store, jobID string) bool {
 	return s.isJobRunningIn(jobID, "")

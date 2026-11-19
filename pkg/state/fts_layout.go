@@ -36,11 +36,6 @@ func expectedStoredSQL(ddl, kind, name string) (string, error) {
 	return storedForm(strings.Replace(ddl[start:start+end], " IF NOT EXISTS", "", 1)), nil
 }
 
-// Stored form of the virtual table statement for table in ddl
-func expectedVTableSQL(ddl, table string) (string, error) {
-	return expectedStoredSQL(ddl, "VIRTUAL TABLE", table)
-}
-
 // Every stored definition a released version created per FTS table, oldest first, the last one current
 var FTSVTableLayouts = map[string][]string{
 	"messages_fts": {

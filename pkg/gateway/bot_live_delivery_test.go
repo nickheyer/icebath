@@ -102,31 +102,6 @@ func TestAuthorityCallsBeforeTheDialArePreDialErrors(t *testing.T) {
 	}
 }
 
-func TestCompleteDeliveryIsImmutableOnceTerminal(t *testing.T) {
-	h := seedTicket(t, nil)
-	if _, err := CompleteDelivery(context.Background(), h, testDeliveryID, "settled", "r", "", ""); err == nil || !errors.Is(err, fs.ErrNotExist) {
-		t.Fatal(err)
-	}
-	if _, err := CompleteDelivery(context.Background(), h, testDeliveryID, "done", "", "", ""); err == nil || err.Error() != "invalid terminal delivery status" {
-		t.Fatal(err)
-	}
-	h = seedTicket(t, ticket("", "queued", nil))
-	if _, err := CompleteDelivery(context.Background(), h, testDeliveryID, "settled", "r", "", ""); err == nil || err.Error() != "delivery must be claimed before completion" {
-		t.Fatal(err)
-	}
-	h = seedTicket(t, ticket("", "claimed", nil))
-	rec, err := CompleteDelivery(context.Background(), h, testDeliveryID, "settled", "reply", "", "")
-	if err != nil || rec["status"] != "settled" || rec["completed_at"] == nil {
-		t.Fatal(rec, err)
-	}
-	if again, err := CompleteDelivery(context.Background(), h, testDeliveryID, "settled", "reply", "", ""); err != nil || again["reply"] != "reply" {
-		t.Fatal(again, err)
-	}
-	if _, err := CompleteDelivery(context.Background(), h, testDeliveryID, "failed", "", "x", ""); err == nil || err.Error() != "delivery already has a different terminal receipt" {
-		t.Fatal(err)
-	}
-}
-
 func TestCancelQueuedDeliveryLeavesAdmissionsAndClaims(t *testing.T) {
 	h := seedTicket(t, ticket("", "queued", nil))
 	rec, err := CancelQueuedDelivery(context.Background(), h, testDeliveryID, "no owner", "ownerless")
@@ -160,22 +135,9 @@ func TestReadDeliveryResultMapsTheTransitionalCanonicalStatus(t *testing.T) {
 	}
 }
 
-func TestNextSequenceSurvivesAnUnreadableTicket(t *testing.T) {
+func TestTicketShapeErrorNamesTheDefect(t *testing.T) {
 	h := seedTicket(t, ticket("", "queued", map[string]any{"sequence": int64(9)}))
 	root := deliveryRoot(h)
-	if err := os.WriteFile(filepath.Join(root, strings.Repeat("e", 32)+".json"), []byte("{broken"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	seq, err := nextDeliverySequence(context.Background(), root)
-	if err != nil || seq.Int64() != 10 {
-		t.Fatal(seq, err)
-	}
-	if err := os.Remove(filepath.Join(root, testDeliveryID+".json")); err != nil {
-		t.Fatal(err)
-	}
-	if seq, err := nextDeliverySequence(context.Background(), root); err != nil || seq.Int64() != 11 {
-		t.Fatal(seq, err)
-	}
 	if problem := ticketShapeError(filepath.Join(root, "x.json"), ticket("", "queued", nil)); problem != "id does not match filename" {
 		t.Fatal(problem)
 	}
@@ -224,7 +186,7 @@ func TestUnusableMailboxIsAPermissionError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(runtimeDir, 0o700) })
-	_, err := CompleteDelivery(context.Background(), h, testDeliveryID, "settled", "", "", "")
+	_, err := CancelQueuedDelivery(context.Background(), h, testDeliveryID, "", "")
 	var unusable *MailboxUnusable
 	if !errors.As(err, &unusable) || !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "bot mailbox directory is not usable: permission denied") {
 		t.Fatal(err)

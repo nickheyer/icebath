@@ -35,7 +35,7 @@ func hrIsIntegrityError(err error) bool {
 
 func hrTen() any { return 10.0 }
 
-func TestPendingAckSurvivesRestartAndFencesAuthority(t *testing.T) {
+func TestAuthorityChangeFencesPendingEvidence(t *testing.T) {
 	db := hrDB(t)
 	ctx := context.Background()
 	hrWorkCreate(db, "room")
@@ -44,32 +44,16 @@ func TestPendingAckSurvivesRestartAndFencesAuthority(t *testing.T) {
 	identity := hrOK(NewTaskIdentity("room", "task", "thread", "turn"))
 	hrOK(DriverAdmitTask(ctx, db, identity, map[string]any{"target_profile": "ops", "prompt": "private prompt", "source_event_seq": 1}, hrTen))
 	first := hrOK(CaptureWorkRecord(ctx, db, "room", "owner-a", nil))
-	if workList(first["tasks"])[0]["task_id"] != "task" || strings.Contains(hrOK(WorkEncode(first)), "private prompt") || first["version"] != int64(1) {
+	raw := hrOK(WorkEncode(first))
+	if workList(first["tasks"])[0]["task_id"] != "task" || strings.Contains(raw, "private prompt") || first["version"] != int64(1) {
 		t.Fatalf("first %v", first)
 	}
-	var pending map[string]any
-	var raw string
+	pendingInsert := "INSERT INTO " + WorkPendingTable + ` (room_id,producer_gateway_id,producer_epoch,revision,digest,record_json,disposition,
+        target_install_id,route_generation,status) VALUES ('room','owner-a',1,?,?,?,'current',?,'route-1',?)`
 	hrWithConn(t, db, func(conn state.SQLiteConn) {
-		pending = hrOK(PrepareWorkDeliveryLocked(ctx, conn, "room", "peer", "route-1", "owner-a", 100))
-		raw = hrStr(hrOK(state.QueryRowObject(ctx, conn, "SELECT record_json FROM "+WorkPendingTable)), "record_json")
-	})
-	hrWithConn(t, db, func(conn state.SQLiteConn) {
-		for _, change := range []struct {
-			key   string
-			value any
-		}{{"revision", first["revision"].(int64) + 1}, {"digest", strings.Repeat("0", 64)}, {"authority", map[string]any{"gateway_id": "owner-b", "epoch": 2}}} {
-			ack := WorkAcknowledgement(pending)
-			ack[change.key] = change.value
-			if hrOK(AcknowledgeWorkLocked(ctx, conn, "room", "peer", "route-1", pending, ack)) {
-				t.Fatalf("altered %s acknowledged", change.key)
-			}
-		}
-		if hrOK(AcknowledgeWorkLocked(ctx, conn, "room", "peer", "route-2", pending, WorkAcknowledgement(pending))) {
-			t.Fatal("wrong route acknowledged")
-		}
-		for _, statement := range []string{"UPDATE hosted_rooms SET authority_gateway_id='owner-b',authority_epoch=2 WHERE room_id='room'"} {
-			hrOK(conn.ExecContext(ctx, statement))
-		}
+		hrOK(conn.ExecContext(ctx, pendingInsert, first["revision"], first["digest"], raw, "peer", "pending"))
+		hrOK(conn.ExecContext(ctx, pendingInsert, first["revision"], first["digest"], raw, "peer-acked", "acked"))
+		hrOK(conn.ExecContext(ctx, "UPDATE hosted_rooms SET authority_gateway_id='owner-b',authority_epoch=2 WHERE room_id='room'"))
 		hrOK(conn.ExecContext(ctx, "INSERT INTO hosted_room_events VALUES ('room',2,'claim','authority.claimed',?,2,?,11)",
 			`{"kind": "system", "id": "authority-control"}`, `{"previous_gateway_id": "owner-a", "authority_gateway_id": "owner-b", "authority_epoch": 2}`))
 		hrOK(conn.ExecContext(ctx, "UPDATE hosted_rooms SET next_seq=3 WHERE room_id='room'"))
@@ -79,22 +63,19 @@ func TestPendingAckSurvivesRestartAndFencesAuthority(t *testing.T) {
 		t.Fatalf("successor %v", successor)
 	}
 	hrWithConn(t, db, func(conn state.SQLiteConn) {
-		if hrOK(AcknowledgeWorkLocked(ctx, conn, "room", "peer", "route-1", pending, WorkAcknowledgement(pending))) {
-			t.Fatal("superseded record acknowledged")
-		}
-		old := hrOK(state.QueryRowObject(ctx, conn, "SELECT * FROM "+WorkPendingTable))
+		old := hrOK(state.QueryRowObject(ctx, conn, "SELECT * FROM "+WorkPendingTable+" WHERE target_install_id='peer'"))
 		if hrStr(old, "record_json") != raw || hrStr(old, "status") != "pending" || hrStr(old, "disposition") != "superseded_authority" {
 			t.Fatalf("old %v", old)
 		}
-		current := hrOK(PrepareWorkDeliveryLocked(ctx, conn, "room", "peer", "route-3", "owner-b", 100))
-		ack := WorkAcknowledgement(current)
-		wrong := pyjson.Plain(ack).(map[string]any)
-		wrong["lineage_sha256"] = strings.Repeat("0", 64)
-		if hrOK(AcknowledgeWorkLocked(ctx, conn, "room", "peer", "route-3", current, wrong)) {
-			t.Fatal("wrong lineage acknowledged")
+		acked := hrOK(state.QueryRowObject(ctx, conn, "SELECT * FROM "+WorkPendingTable+" WHERE target_install_id='peer-acked'"))
+		if hrStr(acked, "record_json") != raw || hrStr(acked, "status") != "acked" || hrStr(acked, "disposition") != "historical" {
+			t.Fatalf("acked %v", acked)
 		}
-		if !hrOK(AcknowledgeWorkLocked(ctx, conn, "room", "peer", "route-3", current, ack)) {
-			t.Fatal("exact acknowledgement refused")
+		if _, err := conn.ExecContext(ctx, "UPDATE "+WorkPendingTable+" SET status='acked' WHERE target_install_id='peer'"); !hrIsIntegrityError(err) {
+			t.Fatalf("superseded delivery outcome changed: %v", err)
+		}
+		if _, err := conn.ExecContext(ctx, pendingInsert, first["revision"], first["digest"], raw, "peer", "pending"); !hrIsIntegrityError(err) {
+			t.Fatalf("superseded row replaced: %v", err)
 		}
 		if _, err := conn.ExecContext(ctx, "UPDATE "+WorkPendingTable+" SET room_id='other' WHERE producer_epoch=1"); !hrIsIntegrityError(err) {
 			t.Fatalf("historical row mutated: %v", err)
@@ -109,6 +90,7 @@ func TestMigrationPreservesBytesInvalidRowsAndCallerTransaction(t *testing.T) {
 	ctx := context.Background()
 	hrWorkCreate(db, "room")
 	hrWorkCreate(db, "healthy")
+	hrWorkCreate(db, "full")
 	record := hrOK(CaptureWorkRecord(ctx, db, "room", "owner-a", nil))
 	indented := hrOK(json.MarshalIndent(record, "", "   "))
 	raw := string(indented)
@@ -160,7 +142,11 @@ func TestMigrationPreservesBytesInvalidRowsAndCallerTransaction(t *testing.T) {
 	if err := workStorageInitialize(ctx, conn); err != nil {
 		t.Fatal(err)
 	}
-	_, err = PrepareWorkDeliveryLocked(ctx, conn, "healthy", "peer", "route", "owner-a", 100)
+	if _, err := conn.ExecContext(ctx, "INSERT INTO "+WorkPendingTable+` (room_id,producer_gateway_id,producer_epoch,revision,digest,record_json,disposition,
+        target_install_id,route_generation,status) VALUES ('healthy','owner-a',1,1,'digest','{}','current','peer','route','pending')`); !hrIsIntegrityError(err) {
+		t.Fatalf("pending row admitted past the shared budget: %v", err)
+	}
+	_, err = CaptureWorkRecordLocked(ctx, conn, "full", "owner-a", nil)
 	hrRequireErr[WorkRecordCapacityError](t, err, "")
 }
 

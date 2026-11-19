@@ -35,8 +35,6 @@ const OfficialRepository = "nickheyer/icebath"
 
 var canaryTagRE = regexp.MustCompile(`^v(?:0|[1-9]\p{Nd}{0,2})\.(?:0|[1-9]\p{Nd}*)\.(?:0|[1-9]\p{Nd}*)\+canary\.20\p{Nd}{6}T\p{Nd}{6}Z$`)
 
-var canaryStampRE = regexp.MustCompile(`^20\p{Nd}{6}T\p{Nd}{6}Z$`)
-
 var githubOriginRE = regexp.MustCompile(`(?i)^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$`)
 
 var channelNameRE = regexp.MustCompile(`^(?:[a-z0-9]+(?:-[a-z0-9]+)*)$`)
@@ -81,27 +79,6 @@ func ValidateChannelName(value any) (string, error) {
 func IsCanaryTag(tag any) bool {
 	text, ok := tag.(string)
 	return ok && canaryTagRE.MatchString(pystr.Strip(text))
-}
-
-// Returns the UTC build stamp of a canonical canary tag, nil for any other value
-func CanaryTimestamp(tag any) *string {
-	if !IsCanaryTag(tag) {
-		return nil
-	}
-	_, stamp, _ := strings.Cut(pystr.Strip(tag.(string)), "+canary.")
-	return &stamp
-}
-
-// Builds the canary identity of a stable version and a full UTC timestamp
-func CanaryTagForDate(version, dateUTC string) (string, error) {
-	core := strings.TrimPrefix(version, "v")
-	if !updaterecord.StableTagRE.MatchString("v" + core) {
-		return "", &ValueError{Msg: "invalid stable version for canary: " + errchain.Show(version)}
-	}
-	if !canaryStampRE.MatchString(dateUTC) {
-		return "", &ValueError{Msg: "invalid canary UTC timestamp: " + errchain.Show(dateUTC)}
-	}
-	return "v" + core + "+canary." + dateUTC, nil
 }
 
 // Sixteen hex digit key of the install at projectRoot, the running install when empty

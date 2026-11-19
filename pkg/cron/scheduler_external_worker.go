@@ -265,11 +265,6 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 	return waitOn(payloadPath, ackPath, stderrPath)
 }
 
-// Writes the handoff payload exclusively with owner only access, removing it when the write fails
-func writeWorkerPayload(path string, job *Job, profileHome string, multiplexActive bool) error {
-	return writeWorkerPayloadWith(path, job, profileHome, multiplexActive, nil)
-}
-
 // Context key of the per fire prompt a run hands to its restart safe worker
 type workerExtraPromptKey struct{}
 

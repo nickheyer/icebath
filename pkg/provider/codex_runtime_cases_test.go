@@ -253,8 +253,8 @@ func TestCodexAppServerIntegrationRuntime(t *testing.T) {
 			t.Fatalf("test_frozen_yolo_env_auto_approves_codex_server_requests routing %+v", r)
 		}
 		t.Setenv("ICEBATH_SESSION_KEY", "codex-yolo-session")
-		tools.EnableSessionYolo("codex-yolo-session")
-		t.Cleanup(func() { tools.DisableSessionYolo("codex-yolo-session") })
+		tools.EnableSessionYolo(context.Background(), "codex-yolo-session")
+		t.Cleanup(func() { tools.DisableSessionYolo(context.Background(), "codex-yolo-session") })
 		if r := approvalRouting(t, "manual", nil); !r.AutoApproveExec || !r.AutoApproveApplyPatch {
 			t.Fatalf("test_session_yolo_auto_approves_codex_server_requests routing %+v", r)
 		}

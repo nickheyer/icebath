@@ -979,24 +979,6 @@ func decodeClaim(raw json.RawMessage) *Claim {
 	return c
 }
 
-// Reports whether the completed counter was repaired while decoding
-func repeatNeedsRepair(raw json.RawMessage) bool {
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return false
-	}
-	c, ok := m["completed"]
-	if !ok {
-		return false
-	}
-	var v any
-	if err := json.Unmarshal(c, &v); err != nil {
-		return true
-	}
-	f, isNum := v.(float64)
-	return !isNum || f != math.Trunc(f) || f < 0 || math.IsInf(f, 0)
-}
-
 // Clone returns a deep copy of the record
 func (j *Job) Clone() *Job {
 	data, err := json.Marshal(j)
@@ -1042,8 +1024,6 @@ func (j *Job) scheduleOrEmpty() *Schedule {
 func strPtr(s string) *string { return &s }
 
 func intPtr(n int) *int { return &n }
-
-func boolPtr(b bool) *bool { return &b }
 
 func deref(p *string) string {
 	if p == nil {

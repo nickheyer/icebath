@@ -34,6 +34,8 @@ type DiscussionDecision struct {
 	SourceEventSeq    *int64
 	ThreadID          *string
 	Task              *DiscussionTaskPlan
+	// Budgets the user granted this discussion beyond its first
+	Continues int64
 }
 
 // One idempotent room event append
@@ -210,9 +212,10 @@ func discussionMakeTaskPlan(room DiscussionRoom, discussion discussionEvent, mem
 	return DiscussionTaskPlan{identity, payload, discussion.eventID, member, memberIndex, round, seenThrough}, nil
 }
 
-// Oldest latest per thread user message neither stopped nor completed
+// Oldest latest per thread user message neither stopped nor completed, a Continue reopening what earlier activity completed
 func discussionPending(validated []discussionEvent) *discussionEvent {
 	var stopped int64
+	continuedAt := discussionContinuedThrough(validated)
 	completed := map[string]bool{}
 	latest := map[string]discussionEvent{}
 	for _, event := range validated {
@@ -220,8 +223,9 @@ func discussionPending(validated []discussionEvent) *discussionEvent {
 		case "room.stop_requested":
 			stopped = max(stopped, event.seq)
 		case "room.activity":
-			if status := event.payload["status"]; status == "settled" || status == "bounded" {
-				completed[pyrepr.Str(event.payload["discussion_event_id"])] = true
+			discussionID := pyrepr.Str(event.payload["discussion_event_id"])
+			if status := event.payload["status"]; (status == "settled" || status == "bounded") && event.seq > continuedAt[discussionID] {
+				completed[discussionID] = true
 			}
 		case "message.user":
 			latest[pyrepr.Str(event.payload["thread_id"])] = event
@@ -349,12 +353,14 @@ func PlanNextTask(roomValue any, events []any, localProfiles []string, initialWa
 		return DiscussionDecision{Status: "idle", Reason: "no_pending_user_event"}, nil
 	}
 	threadID := pyrepr.Str(discussion.payload["thread_id"])
+	continues := discussionContinueCount(validated, discussion.eventID)
+	maxRounds, maxMessages := limits.MaxRounds*(continues+1), limits.MaxMessages*(continues+1)
 	decide := func(status, reason string, task *DiscussionTaskPlan) DiscussionDecision {
 		eventID, seq := discussion.eventID, discussion.seq
-		return DiscussionDecision{status, reason, &eventID, &seq, &threadID, task}
+		return DiscussionDecision{status, reason, &eventID, &seq, &threadID, task, continues}
 	}
 	threadMessages, discussionMessages, memberMessages := discussionThreadMessages(validated, *discussion)
-	if int64(len(memberMessages)) >= limits.MaxMessages {
+	if int64(len(memberMessages)) >= maxMessages {
 		return decide("bounded", "max_messages", nil), nil
 	}
 	terminals := map[string]bool{}
@@ -368,10 +374,14 @@ func PlanNextTask(roomValue any, events []any, localProfiles []string, initialWa
 	if err != nil {
 		return DiscussionDecision{}, err
 	}
-	for round := int64(0); round < limits.MaxRounds; round++ {
+	resumeRound, resumed := discussionResumeRound(validated, discussion.eventID, memberMessages)
+	for round := int64(0); round < maxRounds; round++ {
 		responders := discussionUnaddressedMentions(discussionMessages, room)
 		if round == 0 {
 			responders = ResolveMentions([]string{pyrepr.Str(discussion.payload["text"])}, room.Members, true)
+		}
+		if len(responders) == 0 && resumed && round == resumeRound {
+			responders = room.Members
 		}
 		for index, member := range discussionRotate(responders, round) {
 			watermark := watermarks[[2]string{threadID, member.MemberID}]
@@ -409,7 +419,7 @@ func PlanNextTask(roomValue any, events []any, localProfiles []string, initialWa
 		if !spoke {
 			return decide("settled", "silent_round", nil), nil
 		}
-		if round == limits.MaxRounds-1 {
+		if round == maxRounds-1 {
 			return decide("bounded", "max_rounds", nil), nil
 		}
 	}

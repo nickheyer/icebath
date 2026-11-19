@@ -100,14 +100,3 @@ func TestProgressStreamPrefersStdoutThenStderr(t *testing.T) {
 		t.Fatalf("stdout terminal gave %v", got)
 	}
 }
-
-func TestInteractiveTracksAnyTerminal(t *testing.T) {
-	ctx, _, stderr, ttys := cpTerminals(t)
-	if interactive(ctx) {
-		t.Fatal("interactive without a terminal")
-	}
-	ttys[stderr] = true
-	if !interactive(ctx) {
-		t.Fatal("not interactive with a stderr terminal")
-	}
-}

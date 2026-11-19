@@ -59,7 +59,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	impeccablePayloadRoot = filepath.Join(payloadTestDir, "impeccable")
 	code := m.Run()
 	os.RemoveAll(cache)
 	os.Exit(code)

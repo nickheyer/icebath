@@ -59,7 +59,7 @@ func LegacyAgentMain(ctx context.Context, argv []string, stdout, stderr io.Write
 	}
 	if query == nil && !args.ListTools {
 		parser.PrintHelp(stdout)
-		fmt.Fprintln(stdout, "\nNo query given: pass one with --query (or run `icebath` for the interactive CLI).")
+		fmt.Fprintln(stdout, "\nNo query given: pass one with --query (or run `icebath` for the terminal UI).")
 		return 0
 	}
 	if run == nil {

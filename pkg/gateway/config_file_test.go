@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"math/big"
 	"os"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -466,65 +464,4 @@ func resetExplicitDisableWarned(t *testing.T) {
 		explicitDisableWarned.set = saved
 		explicitDisableWarned.Unlock()
 	})
-}
-
-func status(t *testing.T, ctx context.Context, id string, cfg map[string]any) [2]bool {
-	t.Helper()
-	enabled, connected, ok, err := BuiltinPlatformStatus(ctx, id, cfg)
-	if err != nil || !ok {
-		t.Fatalf("%s status ok=%v err=%v", id, ok, err)
-	}
-	return [2]bool{enabled, connected}
-}
-
-func TestBuiltinPlatformStatus(t *testing.T) {
-	clearEnv(t, "GATEWAY_RELAY_URL", "GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS", "API_SERVER_KEY", "API_SERVER_ENABLED")
-	config.InvalidateManagedCache()
-	t.Cleanup(config.InvalidateManagedCache)
-	ctx, h := yamlHome(t, "")
-	t.Setenv("ICEBATH_HOME", h)
-	if _, _, ok, err := BuiltinPlatformStatus(ctx, "workchat", map[string]any{"platforms": map[string]any{"workchat": map[string]any{"enabled": true}}}); ok || err != nil {
-		t.Fatal("plugin only id judged")
-	}
-	callers := map[string]any{"platforms": map[string]any{"webhook": map[string]any{"extra": map[string]any{}}}, "webhook": map[string]any{"enabled": true, "port": 9}}
-	before := pyrepr.Repr(callers)
-	BuiltinPlatformStatus(ctx, "webhook", callers)
-	if after := pyrepr.Repr(callers); after != before {
-		t.Fatalf("caller config changed %s -> %s", before, after)
-	}
-	key := strings.Repeat("k", 32)
-	t.Setenv("API_SERVER_KEY", key)
-	off := map[string]any{"enabled": false}
-	for _, cfg := range []map[string]any{
-		{"platforms": map[string]any{"api_server": off}},
-		{"gateway": map[string]any{"platforms": map[string]any{"api_server": off}}},
-		{"api_server": off},
-	} {
-		if got := status(t, ctx, "api_server", cfg); got != [2]bool{false, true} {
-			t.Fatalf("%v -> %v", cfg, got)
-		}
-		if got := status(t, ctx, "api_server", map[string]any{}); got != [2]bool{true, true} {
-			t.Fatalf("env key alone -> %v", got)
-		}
-	}
-	clearEnv(t, "API_SERVER_KEY")
-
-	managed := t.TempDir()
-	writeBytes(t, filepath.Join(managed, "config.yaml"), `{"api_server": {"key": "`+key+`"}}`)
-	t.Setenv("ICEBATH_MANAGED_DIR", managed)
-	config.InvalidateManagedCache()
-	user := `{"platforms": {"api_server": {"enabled": true, "extra": {"key": ""}}}}`
-	var userDoc map[string]any
-	if err := json.Unmarshal([]byte(user), &userDoc); err != nil {
-		t.Fatal(err)
-	}
-	if got := status(t, ctx, "api_server", config.ApplyManagedOverlay(userDoc)); got != [2]bool{true, true} {
-		t.Fatalf("pinned key -> %v", got)
-	}
-	writeBytes(t, filepath.Join(h, "config.yaml"), user)
-	cfg := loadFull(t, ctx)
-	api := cfg.Platforms[PlatformAPIServer]
-	if !api.Enabled || !cfg.isPlatformConnected(ctx, PlatformAPIServer, api) {
-		t.Fatalf("loaded api_server %+v", api)
-	}
 }

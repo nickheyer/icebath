@@ -14,7 +14,7 @@ var (
 	appStderr  io.Writer
 )
 
-// Console every classic CLI print reaches, the process console unless SetStreams installed another
+// Console every print of the one shot chat reaches, the process console unless SetStreams installed another
 func console() *cliui.Console {
 	streamsMu.Lock()
 	defer streamsMu.Unlock()

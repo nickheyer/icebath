@@ -111,7 +111,6 @@ type resolver struct {
 	secrets  *config.Secrets
 	home     string
 	creds    CredentialSource
-	cfgError error
 	modelCfg map[string]any
 	http     *http.Client
 }
@@ -367,11 +366,6 @@ func (r *resolver) parseAPIMode(raw any) APIMode {
 	return ""
 }
 
-// ParseConfigAPIMode is the validated api_mode of a config value, empty when invalid
-func ParseConfigAPIMode(ctx context.Context, raw any) string {
-	return string(modelsResolver(ctx).parseAPIMode(raw))
-}
-
 // Api mode when no explicit mode applies, URL detection, then the declared transport, then chat
 func (r *resolver) fallbackAPIMode(provider, baseURL, model string) APIMode {
 	if isActualRouteCtx(r.ctx, provider, baseURL) {
@@ -493,11 +487,6 @@ func effectiveModel(modelCfg map[string]any, targetModel string) string {
 // PerModelAPIModeHook answers the wire for one model with a key or no key, empty for the declared mode
 type PerModelAPIModeHook func(model string, apiKey *string) APIMode
 
-var (
-	perModelHooksMu sync.RWMutex
-	perModelHooks   = map[string]PerModelAPIModeHook{}
-)
-
 // perModelHookProfile is a provider whose profile routes api mode per model through its hook
 type perModelHookProfile struct {
 	name string
@@ -515,12 +504,10 @@ func perModelProfileCtx(ctx context.Context, provider string) *perModelHookProfi
 	if provider == "" {
 		return nil
 	}
-	perModelHooksMu.RLock()
-	hook := perModelHooks[provider]
-	if p := getProviderProfile(ctx, provider); p != nil && p.APIModeForModelHook != nil {
+	var hook PerModelAPIModeHook
+	if p := getProviderProfile(ctx, provider); p != nil {
 		hook = p.APIModeForModelHook
 	}
-	perModelHooksMu.RUnlock()
 	if hook == nil {
 		return nil
 	}
@@ -558,11 +545,6 @@ func modelAPIMode(ctx context.Context, profile *perModelHookProfile, model strin
 // Per model wire of a profile, false when it answers none and the declared mode when its hook raises
 func ProfileModelAPIMode(ctx context.Context, profile Profile, model string) (string, bool) {
 	hook := profile.APIModeForModelHook
-	if hook == nil {
-		perModelHooksMu.RLock()
-		hook = perModelHooks[profile.Name]
-		perModelHooksMu.RUnlock()
-	}
 	if hook == nil && profile.PerModelMode != nil {
 		hook = func(m string, _ *string) APIMode { return profile.PerModelMode(m) }
 	}
@@ -1015,20 +997,12 @@ type APIKeySecretResolver func(ctx context.Context) (apiKey, source string, ok b
 // RuntimeBaseURLResolver is a provider owned base URL derived from the credential, empty for env or default
 type RuntimeBaseURLResolver func(ctx context.Context, apiKey, defaultURL, envURL string) string
 
-var (
-	credentialSeamsMu   sync.RWMutex
-	apiKeySecretSeams   = map[string]APIKeySecretResolver{}
-	runtimeBaseURLSeams = map[string]RuntimeBaseURLResolver{}
-)
-
 // Api key provider secret and its source, the profile seam, model.key_env, registry env vars, then the login store
 func (r *resolver) apiKeyProviderSecret(providerID string, pconfig Profile) (string, string, func(context.Context) (string, error)) {
-	credentialSeamsMu.RLock()
-	owned := apiKeySecretSeams[providerID]
-	if p := getProviderProfile(r.ctx, providerID); p != nil && p.ResolveAPIKeySecretHook != nil {
+	var owned APIKeySecretResolver
+	if p := getProviderProfile(r.ctx, providerID); p != nil {
 		owned = p.ResolveAPIKeySecretHook
 	}
-	credentialSeamsMu.RUnlock()
 	if owned != nil {
 		if key, source, ok := owned(r.hookCtx()); ok {
 			return key, source, nil
@@ -1122,12 +1096,10 @@ func (r *resolver) apiKeyProviderCredentials(providerID string) (apiKeyCreds, er
 		}
 	}
 	envURL := r.providerEnvBaseURL(pconfig)
-	credentialSeamsMu.RLock()
-	urlSeam := runtimeBaseURLSeams[providerID]
-	if p := getProviderProfile(r.ctx, providerID); p != nil && p.RuntimeBaseURLHook != nil {
+	var urlSeam RuntimeBaseURLResolver
+	if p := getProviderProfile(r.ctx, providerID); p != nil {
 		urlSeam = p.RuntimeBaseURLHook
 	}
-	credentialSeamsMu.RUnlock()
 	baseURL := ""
 	if urlSeam != nil {
 		baseURL = urlSeam(r.hookCtx(), apiKey, pconfig.BaseURL, envURL)
@@ -1228,13 +1200,13 @@ func (r *resolver) configBaseURLTrustworthyForBareCustom(cfgBaseURL, cfgProvider
 
 // Refuses env key auto adoption of openrouter while config.yaml is corrupt
 func (r *resolver) refuseEnvAdoptionIfConfigCorrupt() error {
-	if r.cfgError == nil {
+	failure, active := config.ActiveConfigParseFailure(r.home)
+	if !active || failure == "" {
 		return nil
 	}
-	path := r.home + "/config.yaml"
-	return newAuthErr("", fmt.Sprintf("config.yaml at %s is corrupt (%v) — refusing to auto-select "+
+	return newAuthErr("", fmt.Sprintf("config.yaml at %s is corrupt (%s) — refusing to auto-select "+
 		"an inference provider from environment keys. Fix the YAML (a backup "+
-		"was saved next to it), or start icebath and type /setup model.", path, r.cfgError), "corrupt_config", false)
+		"was saved next to it), or start icebath and type /setup model.", config.GetConfigPath(r.home), failure), "corrupt_config", false)
 }
 
 // True when an OpenRouter credential exists via env key or the login store
@@ -2197,7 +2169,6 @@ func (r *resolver) ResolveRuntimeWithFallback(requested, targetModel, explicitBa
 		baseURL := cfgString(entry["base_url"])
 		entryKey := r.ResolveEntryAPIKey(entry)
 		fb := newResolver(r.ctx, r.cfg, r.secrets, r.home, r.creds)
-		fb.cfgError = r.cfgError
 		runtime, err := fb.ResolveRuntime(provider, entryKey, baseURL, nil, model)
 		if err != nil {
 			if _, ok := err.(*AuthError); ok {
@@ -2213,24 +2184,6 @@ func (r *resolver) ResolveRuntimeWithFallback(requested, targetModel, explicitBa
 		return runtime, entry, nil
 	}
 	return nil, nil, primary
-}
-
-// ---- the three entry points resolve.go delegates to ----
-
-func resolveRuntimeLadder(ctx context.Context, cfg config.Tree, secrets *config.Secrets, h string, creds CredentialSource, over Overrides) (Route, error) {
-	r := newResolver(ctx, cfg, secrets, h, creds)
-	r.cfgError = over.ConfigError
-	rt, err := r.ResolveRuntime(over.Provider, over.APIKey, over.BaseURL, over.TokenSource, over.Model)
-	if err != nil {
-		return Route{}, err
-	}
-	if over.Mode != "" {
-		rt.APIMode = over.Mode
-	}
-	if rt.Model == "" {
-		rt.Model = effectiveModel(r.modelConfig(), over.Model)
-	}
-	return rt.Route(), nil
 }
 
 var localServerAliases = map[string]bool{"ollama": true, "vllm": true, "llamacpp": true, "llama.cpp": true, "llama-cpp": true}
@@ -2332,55 +2285,4 @@ func (r *resolver) resolveTaskProviderModel(task any, provider, model, baseURL, 
 		return auxRoute{cfgProvider, resolvedModel, cfgBaseURL, cfgAPIKey, resolvedMode}
 	}
 	return auxRoute{"auto", resolvedModel, "", "", resolvedMode}
-}
-
-func resolveAuxiliaryRoute(ctx context.Context, cfg config.Tree, secrets *config.Secrets, h string, creds CredentialSource, task string) (Route, error) {
-	r := newResolver(ctx, cfg, secrets, h, creds)
-	ar := r.resolveTaskProviderModel(task, "", "", "", "")
-	requested := ar.provider
-	if requested == "auto" {
-		requested = ""
-	}
-	rt, err := r.ResolveRuntime(requested, ar.apiKey, ar.baseURL, nil, ar.model)
-	if err != nil {
-		return Route{}, err
-	}
-	if ar.apiMode != "" {
-		rt.APIMode = ar.apiMode
-	}
-	if ar.model != "" {
-		rt.Model = ar.model
-	} else if rt.Model == "" {
-		rt.Model = effectiveModel(r.modelConfig(), "")
-	}
-	if ar.provider != "auto" && strings.ToLower(ar.provider) != "custom" && rt.Provider == "custom" {
-		rt.Provider = EffectiveRuntimeProvider(map[string]any{"provider": ar.provider}, rt)
-	}
-	return rt.Route(), nil
-}
-
-func resolveFallbackChain(ctx context.Context, cfg config.Tree, secrets *config.Secrets, h string, creds CredentialSource) ([]Route, error) {
-	r := newResolver(ctx, cfg, secrets, h, creds)
-	var routes []Route
-	var errs []string
-	for _, entry := range GetFallbackChain(r.cfg) {
-		provider := strings.ToLower(strings.TrimSpace(cfgString(entry["provider"])))
-		model := strings.TrimSpace(cfgString(entry["model"]))
-		if provider == "" || model == "" {
-			continue
-		}
-		fb := newResolver(ctx, cfg, secrets, h, creds)
-		rt, err := fb.ResolveRuntime(provider, r.ResolveEntryAPIKey(entry), cfgString(entry["base_url"]), nil, model)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("%s/%s: %v", provider, model, err))
-			continue
-		}
-		rt.Provider = EffectiveRuntimeProvider(entry, rt)
-		rt.Model = model
-		routes = append(routes, rt.Route())
-	}
-	if len(routes) == 0 && len(errs) > 0 {
-		return nil, fmt.Errorf("provider: no fallback entry resolved: %s", strings.Join(errs, "; "))
-	}
-	return routes, nil
 }

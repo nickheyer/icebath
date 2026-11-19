@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Registers the Anthropic Messages adapter
@@ -948,12 +949,12 @@ func anthRouteIsVertex(route Route) bool {
 
 // ---- client ----
 
-// Reports whether a tool name is registered with the agent, wired by the tools owner
-var anthRegisteredTool func(name string) bool
-
-// SetRegisteredToolLookup wires the tool registry membership check used to reverse OAuth wire names
-func SetRegisteredToolLookup(fn func(name string) bool) {
-	anthRegisteredTool = fn
+// Reports whether a tool name resolves in the tool registry through the session overlay, the profile overlay, then the global map
+func anthRegisteredTool(ctx context.Context, name string) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return tools.Default.Lookup(ctx, tools.ScopeKey(home.Dir(ctx)), name) != nil
 }
 
 // Client speaking the Anthropic Messages wire for one route
@@ -967,6 +968,7 @@ type anthropicClient struct {
 	nonStreaming     bool
 	oauthWire        bool
 	requestToolNames map[string]bool
+	registeredTool   func(name string) bool
 	transportsMu     sync.Mutex
 	transports       map[time.Duration]*http.Transport
 	mintedMu         sync.Mutex
@@ -1090,14 +1092,14 @@ func (c *anthropicClient) noteContext1MRejection(err error) bool {
 // Registered name of a tool_use block name arriving on the OAuth wire
 func (c *anthropicClient) inboundToolName(name string) string {
 	c.mu.Lock()
-	oauth, known := c.oauthWire, c.requestToolNames
+	oauth, known, registered := c.oauthWire, c.requestToolNames, c.registeredTool
 	c.mu.Unlock()
 	if !oauth || !strings.HasPrefix(name, anthMCPToolPrefix) {
 		return name
 	}
 	bare := name[len(anthMCPToolPrefix):]
 	for _, candidate := range []string{name, "mcp_" + bare, bare} {
-		if known[candidate] || (anthRegisteredTool != nil && anthRegisteredTool(candidate)) {
+		if known[candidate] || (registered != nil && registered(candidate)) {
 			return candidate
 		}
 	}
@@ -1392,6 +1394,7 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	c.mu.Lock()
 	c.oauthWire = oauth || isOAuth
 	c.requestToolNames = requestToolNames
+	c.registeredTool = func(name string) bool { return anthRegisteredTool(ctx, name) }
 	c.mu.Unlock()
 	return &anthPrepared{body: kwargs, headers: headers, betas: betas, oauth: oauth || isOAuth, settings: settings,
 		estTokens: EstimateRequestContextTokens(ctx, kwargs)}, nil

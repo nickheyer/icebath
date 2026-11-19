@@ -36,11 +36,7 @@ func (c *storeCaseClient) SendFrame(string) error          { return nil }
 func (c *storeCaseClient) Close() error                    { return nil }
 
 func TestNewSessionIdOffTheGatewayIsMainsMint(t *testing.T) {
-	host := &CLI{}
-	minted, err := host.newSessionID(time.Date(2026, 10, 12, 1, 2, 3, 0, time.Local), "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	minted := newSessionID(time.Date(2026, 10, 12, 1, 2, 3, 0, time.Local))
 	if !strings.HasPrefix(minted, "20261012_010203_") {
 		t.Fatalf("minted %q", minted)
 	}

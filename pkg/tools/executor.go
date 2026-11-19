@@ -280,7 +280,7 @@ type ExecutorHost interface {
 	MarkTrimAfterToolBatch()
 	RedactToolArgsForDisplay(name string, args map[string]any) map[string]any
 	BuildToolPreview(name string, args map[string]any) string
-	ToolRowEmoji(name string, args map[string]any) string
+	ToolRowEmoji(ctx context.Context, name string, args map[string]any) string
 	BuildToolLabel(name string, args map[string]any) string
 }
 
@@ -1748,7 +1748,7 @@ func (e *Executor) ExecuteToolCallsConcurrent(ctx context.Context, toolCalls []s
 	batch := e.newConcurrentBatch(messages, taskID, parsed, timeout)
 	host.SetCurrentTool(namesStr)
 	host.TouchActivity(fmt.Sprintf("executing %d tools concurrently: %s", numTools, namesStr))
-	spinner := e.startQuietToolSpinner("", nil, true, fmt.Sprintf("⚡ running %d tools concurrently", numTools))
+	spinner := e.startQuietToolSpinner(ctx, "", nil, true, fmt.Sprintf("⚡ running %d tools concurrently", numTools))
 	runErr := func() error {
 		defer func() {
 			if spinner != nil {
@@ -1781,7 +1781,7 @@ func (e *Executor) ExecuteToolCallsConcurrent(ctx context.Context, toolCalls []s
 // Sequential dispatch
 
 // Starts the quiet mode spinner for one call or returns nil
-func (e *Executor) startQuietToolSpinner(name string, args map[string]any, gate bool, label string) Spinner {
+func (e *Executor) startQuietToolSpinner(ctx context.Context, name string, args map[string]any, gate bool, label string) Spinner {
 	host := e.Host
 	if !host.ShouldEmitQuietToolMessages() || (gate && !host.ShouldStartQuietSpinner()) {
 		return nil
@@ -1795,7 +1795,7 @@ func (e *Executor) startQuietToolSpinner(name string, args map[string]any, gate 
 		if text == "" {
 			text = name
 		}
-		label = host.ToolRowEmoji(name, displayArgs) + " " + text
+		label = host.ToolRowEmoji(ctx, name, displayArgs) + " " + text
 	}
 	return host.StartSpinner(label)
 }
@@ -1859,7 +1859,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		}
 	}
 	if name == "delegate_task" {
-		spinner := e.startQuietToolSpinner(name, args, true, delegateSpinnerLabel(args))
+		spinner := e.startQuietToolSpinner(ctx, name, args, true, delegateSpinnerLabel(args))
 		host.SetDelegateSpinner(spinner)
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
 			return host.DispatchDelegateTask(ctx, orderedArgsObject(rawArgs, next).Vals)
@@ -1868,7 +1868,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 	}
 	if fn, ok := host.ContextEngineTool(name); ok {
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) { return fn(ctx, next, messages) },
-			spinner: e.startQuietToolSpinner(name, args, false, ""),
+			spinner: e.startQuietToolSpinner(ctx, name, args, false, ""),
 			errorResult: func(err error) string {
 				return dumpsASCII(map[string]any{"error": fmt.Sprintf("Context engine tool '%s' failed: %s", name, err.Error())})
 			},
@@ -1878,7 +1878,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
 			return mm.HandleToolCall(ctx, name, next, host.GatewaySessionKey()), nil
 		},
-			spinner: e.startQuietToolSpinner(name, args, true, ""),
+			spinner: e.startQuietToolSpinner(ctx, name, args, true, ""),
 			errorResult: func(err error) string {
 				return dumpsASCII(map[string]any{"error": fmt.Sprintf("Memory tool '%s' failed: %s", name, err.Error())})
 			},
@@ -1889,7 +1889,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 	}
 	var spinner Spinner
 	if host.QuietMode() {
-		spinner = e.startQuietToolSpinner(name, args, true, "")
+		spinner = e.startQuietToolSpinner(ctx, name, args, true, "")
 	}
 	return &sequentialDispatch{execute: execute, spinner: spinner, trace: trace,
 		errorResult: func(err error) string { return fmt.Sprintf("Error executing tool '%s': %s", name, err.Error()) },

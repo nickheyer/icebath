@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -162,21 +161,4 @@ func DecideSandboxImageSwitch(ctx context.Context, env *Env, sw *SandboxImageSwi
 		}
 	}
 	return image, nil
-}
-
-// Notice lines stating what the switch changes and what carries over
-func SandboxImageSwitchExplainLines(sw *SandboxImageSwitch) []string {
-	n := len(sw.Containers)
-	plural := ""
-	if n != 1 {
-		plural = "s"
-	}
-	return []string{
-		"Your Docker sandbox (" + strconv.Itoa(n) + " container" + plural + ") runs " + sw.CurrentImage + ".",
-		"The default sandbox image is now " + sw.TargetImage + ": Python 3.13, Node 26, and a desktop",
-		"so Bot Screen, computer_use and the browser run inside the sandbox instead of on this machine.",
-		"Switching recreates the container on the next terminal call. Files in /root and /workspace",
-		"stay (they live on this machine); packages installed with apt/pip/npm -g inside the container",
-		"are reinstalled on demand; Python 3.11 virtualenvs need a rebuild.",
-	}
 }

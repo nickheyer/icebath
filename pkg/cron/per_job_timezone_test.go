@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -388,4 +389,22 @@ func TestManualRunSettleRecomputesInTheJobZone(t *testing.T) {
 	if next := parseInstant(t, job.NextRunAt); !next.Equal(time.Date(2026, 10, 23, 9, 0, 0, 0, hk)) {
 		t.Fatalf("settled to %s", deref(job.NextRunAt))
 	}
+}
+
+// Fixed clock for tests that returns a settable instant
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (f *fakeClock) Now() time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.t
+}
+
+func (f *fakeClock) Set(t time.Time) {
+	f.mu.Lock()
+	f.t = t
+	f.mu.Unlock()
 }

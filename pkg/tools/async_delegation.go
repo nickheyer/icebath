@@ -1075,16 +1075,6 @@ func updateDelivery(env *Env, query string, args ...any) (bool, error) {
 	return changed, err
 }
 
-// Acknowledges a durable completion as delivered
-func MarkCompletionDelivered(env *Env, delegationID string) (bool, error) {
-	if err := requireLedgerOwner(); err != nil {
-		return false, err
-	}
-	now := asyncTimeNow()
-	return updateDelivery(env, `UPDATE async_delegations SET delivery_state='delivered', delivered_at=?, updated_at=?
-           WHERE delegation_id=? AND delivery_state!='delivered'`, now, now, delegationID)
-}
-
 func asyncRemoteBool(v any, err error) (bool, error) {
 	if err != nil {
 		return false, err

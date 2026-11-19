@@ -349,13 +349,13 @@ func TestCronBoundaryBindsAndResets(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
 	h := scopeProfile(t, tmp, "dash", "terminal:\n  backend: local\n", "")
 	parent := context.Background()
-	ctx := WithPreparedTerminalScope(parent, h, nil)
+	ctx := WithProfileTerminalScope(parent, h, nil)
 	policy := scopedPolicy(t, ctx, h)
 	if policy.Get("TERMINAL_ENV", "") != "local" || policy.Get("TERMINAL_SSH_HOST", "") != "" {
 		t.Fatalf("policy = %v", policy)
 	}
 	prepared := PrepareProfileTerminalScope(parent, h, nil)
-	if got := GetTerminalScope(WithPreparedTerminalScope(parent, h, prepared)); got != prepared {
+	if got := GetTerminalScope(SetTerminalScope(parent, prepared)); got != prepared {
 		t.Fatal("prepared scope not installed")
 	}
 	if GetTerminalScope(parent) != nil {

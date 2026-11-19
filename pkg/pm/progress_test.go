@@ -88,15 +88,6 @@ func TestProgressDecodesLikePythonReplace(t *testing.T) {
 			t.Fatalf("decode %q = %q rest %q, want %q", raw, got, rest, want)
 		}
 	}
-	label := "Installing things"
-	var stream bytes.Buffer
-	tail := NewLiveTail(&label, &stream, nil, "")
-	tail.Write([]byte("\xe2\x9c"))
-	tail.Write([]byte("\x93 ok\r\ntail\xe2"))
-	tail.Close(false)
-	if strings.Join(tail.Tail, "|") != "✓ ok|tail�" {
-		t.Fatalf("tail %q", tail.Tail)
-	}
 	if got := universalNewlines("a\r\nb\rc\n"); got != "a\nb\nc\n" {
 		t.Fatalf("newlines %q", got)
 	}

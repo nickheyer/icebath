@@ -20,12 +20,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
-// Process wide router singleton, the engine it serves and whether the exit hook is armed
+// Process wide router singleton and the engine it serves
 var (
 	bootMu             sync.Mutex
 	localSupervisor    *LlamaServerSupervisor
 	localServingEngine *Engine
-	localExitHooked    bool
 )
 
 // Router statuses that hold GPU memory, presets change only while every model is out of them
@@ -594,28 +593,9 @@ func bootServe(ctx context.Context, section map[string]any) (*LlamaServerSupervi
 	bootMu.Lock()
 	localSupervisor = sup
 	bootMu.Unlock()
-	stopAtExit()
 	pkgLog().Info(fmt.Sprintf("managed llama-server up at %s (backend=%s tag=%s)", sup.BaseURL(), engine.Backend, engine.Tag))
 	startIdleSweeper(sup)
 	return sup, nil
-}
-
-// Arms the exit hook so the process that boots the server stops it on a clean exit
-func stopAtExit() {
-	bootMu.Lock()
-	defer bootMu.Unlock()
-	localExitHooked = true
-}
-
-// Clean exit hook of the process, stopping the server this process booted and nothing it only adopted
-func LocalRuntimeAtExit() error {
-	bootMu.Lock()
-	hooked := localExitHooked
-	bootMu.Unlock()
-	if !hooked {
-		return nil
-	}
-	return ShutdownLocalRuntime()
 }
 
 // Stops the process local server and forgets the engine it served

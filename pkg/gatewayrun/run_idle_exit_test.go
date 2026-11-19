@@ -83,7 +83,7 @@ func TestAProfileStillStartingLeavesTheServedLedgersReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	queueAdmission(t, db, "queued while another profile starts")
-	if got := busyReason(context.Background(), r, 0.2, true); !strings.Contains(got, "admissions pending") {
+	if got := busyReason(context.Background(), r, 0.2); !strings.Contains(got, "admissions pending") {
 		t.Fatalf("busy %q", got)
 	}
 }
@@ -97,19 +97,19 @@ func TestAProfileStillStartingKeepsAnOtherwiseIdleGatewayUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := "starting"
-	if got := busyReason(ctx, r, 0.2, true); got != "" {
+	if got := busyReason(ctx, r, 0.2); got != "" {
 		t.Fatalf("idle runner busy: %s", got)
 	}
 	if err := registry.Add(starting, nil, &name); err != nil {
 		t.Fatal(err)
 	}
-	if got := busyReason(ctx, r, 0.2, true); !strings.Contains(got, "profile starting") {
+	if got := busyReason(ctx, r, 0.2); !strings.Contains(got, "profile starting") {
 		t.Fatalf("starting profile: %q", got)
 	}
 	if _, err := registry.Remove(starting); err != nil {
 		t.Fatal(err)
 	}
-	if got := busyReason(ctx, r, 0.2, true); got != "" {
+	if got := busyReason(ctx, r, 0.2); got != "" {
 		t.Fatalf("failed start still holds: %s", got)
 	}
 	if err := registry.Add(starting, nil, &name); err != nil {
@@ -123,7 +123,7 @@ func TestAProfileStillStartingKeepsAnOtherwiseIdleGatewayUp(t *testing.T) {
 	if err := registry.Replace(starting, &gateway.SessionAuthority{ProfileID: starting, DB: startingDB}); err != nil {
 		t.Fatal(err)
 	}
-	if got := busyReason(ctx, r, 0.2, true); got != "" {
+	if got := busyReason(ctx, r, 0.2); got != "" {
 		t.Fatalf("filled start still holds: %s", got)
 	}
 }
@@ -145,12 +145,12 @@ func TestSecondaryLocalSessionAdapterDoesNotCountAsMessaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.profileAdapters.Set("secondary", adapterDict(gateway.PlatformLocal, newRestartTestAdapter()))
-	if got := busyReason(ctx, r, 0.2, true); got != "" {
+	if got := busyReason(ctx, r, 0.2); got != "" {
 		t.Fatalf("local adapter counted: %s", got)
 	}
 	secondaryAdapters, _ := r.profileAdapters.Get("secondary")
 	secondaryAdapters.Set(gateway.PlatformTelegram, newRestartTestAdapter())
-	if got := busyReason(ctx, r, 0.2, true); !strings.Contains(got, "telegram") {
+	if got := busyReason(ctx, r, 0.2); !strings.Contains(got, "telegram") {
 		t.Fatalf("telegram adapter: %q", got)
 	}
 }

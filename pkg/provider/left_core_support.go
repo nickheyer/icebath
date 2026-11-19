@@ -96,13 +96,6 @@ func LeftCoreFailedRecently(h, plugin string) bool {
 	return age < math.Min(leftCoreRetrySeconds*math.Pow(2, float64(failures-1)), leftCoreRetryMaxSeconds)
 }
 
-// NoteLeftCoreSuccess clears the failure stamp so a later miss backs off from an hour again
-func NoteLeftCoreSuccess(h, plugin string) {
-	if err := os.Remove(leftCoreFailureStamp(h, plugin)); err != nil && !os.IsNotExist(err) {
-		pkgLog().Debug("left-core retry stamp not removed", "home", h, "error", err)
-	}
-}
-
 // PluginInstallCommand is the exact command installing a plugin into a home, bare only for the sticky default
 func PluginInstallCommand(name, h string) string {
 	profile := home.ProfileNameFor(h)

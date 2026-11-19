@@ -84,30 +84,7 @@ func TestToolsConfigPluginFailureFallsBackToBuiltIns(t *testing.T) {
 	}
 }
 
-func TestToolsConfigGUIToolsetLabelAndConfigurationPlatform(t *testing.T) {
-	for in, want := range map[string]string{"🔌 My Plugin ": "My Plugin", "Web Search": "Web Search", "  x": "x", "": "", "🔍　Search": "Search", "a🔌 Tool": "a🔌 Tool"} {
-		if got := GUIToolsetLabel(in); got != want {
-			t.Errorf("%q: %q", in, got)
-		}
-	}
-	if got := ToolsetConfigurationPlatform("discord", "cli"); got != "discord" {
-		t.Fatal(got)
-	}
-	if got := ToolsetConfigurationPlatform("web", "cli"); got != "cli" {
-		t.Fatal(got)
-	}
-	if got := ToolsetConfigurationPlatform("discord", "discord"); got != "discord" {
-		t.Fatal(got)
-	}
-}
-
 func TestToolsConfigCategoriesListEveryProviderEnvKey(t *testing.T) {
-	keys := ToolProviderEnvKeys()
-	for _, want := range []string{"VOICE_TOOLS_OPENAI_KEY", "ELEVENLABS_API_KEY", "MISTRAL_API_KEY", "GEMINI_API_KEY", "DEEPINFRA_API_KEY", "GROQ_API_KEY", "FIRECRAWL_API_URL", "XAI_API_KEY"} {
-		if !slices.Contains(keys, want) {
-			t.Errorf("missing %s", want)
-		}
-	}
 	if got := ToolCategories.Keys; !slices.Equal(got, []string{"tts", "stt", "web", "image_gen", "video_gen", "x_search", "browser", "computer_use"}) {
 		t.Fatal(got)
 	}

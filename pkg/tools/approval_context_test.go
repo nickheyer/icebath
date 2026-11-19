@@ -149,12 +149,10 @@ func TestFireApprovalHookForwardsCorrelationIDs(t *testing.T) {
 	defer func() { ApprovalHookInvoker = nil }()
 	ctx := context.Background()
 	env := &Env{Values: &sync.Map{}}
-	SetCurrentObservabilityContext(env, "turn-1", "call-1", "sess-1")
-	fireApprovalHook(ctx, env, "pre_approval_request", map[string]any{"command": "ls"})
+	fireApprovalHook(ctx, WithObservabilityContext(env, "turn-1", "call-1", "sess-1"), "pre_approval_request", map[string]any{"command": "ls"})
 	if len(got) != 1 || got[0]["turn_id"] != "turn-1" || got[0]["tool_call_id"] != "call-1" || got[0]["session_id"] != "sess-1" || got[0]["hook"] != "pre_approval_request" {
 		t.Fatalf("hook payload %v", got)
 	}
-	ResetCurrentObservabilityContext(env)
 	fireApprovalHook(ctx, env, "post_approval_response", map[string]any{"turn_id": "explicit"})
 	if got[1]["turn_id"] != "explicit" || got[1]["tool_call_id"] != "" {
 		t.Fatalf("hook payload %v", got[1])
@@ -169,55 +167,55 @@ func TestSessionYoloContract(t *testing.T) {
 	persist := func(key string) func(bool) error {
 		return func(on bool) error { stored[key] = on; return nil }
 	}
-	defer ClearSession("s1")
-	defer ClearSession("s2")
-	if !ToggleSessionYolo("s1", nil, false, persist("s1")) || !stored["s1"] {
+	defer ClearSession(context.Background(), "s1")
+	defer ClearSession(context.Background(), "s2")
+	if !ToggleSessionYolo(context.Background(), "s1", nil, false, persist("s1")) || !stored["s1"] {
 		t.Fatal("toggle on persists before the flip")
 	}
 	cfg := WithSessionYolo(map[string]any{"max_iterations": 5}, "s1")
 	if cfg["yolo_mode"] != true || cfg["max_iterations"] != 5 {
 		t.Fatalf("row config %v", cfg)
 	}
-	ClearSession("s1")
-	if !RestoreSessionYolo("s1", stored["s1"]) || !IsSessionYoloEnabled("s1") {
+	ClearSession(context.Background(), "s1")
+	if !RestoreSessionYolo(context.Background(), "s1", stored["s1"]) || !IsSessionYoloEnabled("s1") {
 		t.Fatal("restore re arms the bypass")
 	}
-	TransferSessionYolo("s1", "s2")
+	TransferSessionYolo(context.Background(), "s1", "s2")
 	if !IsSessionYoloEnabled("s2") || IsSessionYoloEnabled("s1") {
 		t.Fatal("transfer moves the flag")
 	}
-	ClearSession("s2")
-	if ToggleSessionYolo("s2", nil, true, persist("s2")) || stored["s2"] {
+	ClearSession(context.Background(), "s2")
+	if ToggleSessionYolo(context.Background(), "s2", nil, true, persist("s2")) || stored["s2"] {
 		t.Fatal("toggle after restart switches the stored on flag off")
 	}
-	if RestoreSessionYolo("s2", false) || IsSessionYoloEnabled("s2") {
+	if RestoreSessionYolo(context.Background(), "s2", false) || IsSessionYoloEnabled("s2") {
 		t.Fatal("stored off never re arms")
 	}
 	broken := func(bool) error { return errors.New("disk full") }
-	if !ToggleSessionYolo("s2", nil, false, broken) || !IsSessionYoloEnabled("s2") {
+	if !ToggleSessionYolo(context.Background(), "s2", nil, false, broken) || !IsSessionYoloEnabled("s2") {
 		t.Fatal("failed write never blocks the live flip")
 	}
-	ClearSession("s2")
+	ClearSession(context.Background(), "s2")
 	if WithSessionYolo(nil, "s2") != nil {
 		t.Fatal("no bypass leaves the config untouched")
 	}
 	on := true
-	RestoreGatewayYolo("s2", &on, false)
+	RestoreGatewayYolo(context.Background(), "s2", &on, false)
 	if !IsSessionYoloEnabled("s2") {
 		t.Fatal("gateway restore arms the persisted value")
 	}
 	off := false
-	RestoreGatewayYolo("s2", &off, false)
+	RestoreGatewayYolo(context.Background(), "s2", &off, false)
 	if !IsSessionYoloEnabled("s2") {
 		t.Fatal("after restoration the live toggle stays authoritative")
 	}
-	ClearSession("s2")
-	RestoreGatewayYolo("s2", nil, true)
+	ClearSession(context.Background(), "s2")
+	RestoreGatewayYolo(context.Background(), "s2", nil, true)
 	if !IsSessionYoloEnabled("s2") {
 		t.Fatal("launch policy seeds once per boundary")
 	}
-	DisableSessionYolo("s2")
-	ApplyLaunchYolo("s2")
+	DisableSessionYolo(context.Background(), "s2")
+	ApplyLaunchYolo(context.Background(), "s2")
 	if IsSessionYoloEnabled("s2") {
 		t.Fatal("a later off sticks")
 	}

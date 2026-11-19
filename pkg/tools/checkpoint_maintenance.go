@@ -427,11 +427,6 @@ type CheckpointAutoPruneOptions struct {
 	MaxTotalSizeMB   int
 }
 
-// Keeps a week of history, runs at most daily and deletes orphans
-func DefaultCheckpointAutoPruneOptions() CheckpointAutoPruneOptions {
-	return CheckpointAutoPruneOptions{RetentionDays: 7, MinIntervalHours: 24, DeleteOrphans: true}
-}
-
 // Prunes at most once per interval, claiming the interval in the marker before it runs
 func MaybeAutoPruneCheckpoints(env *Env, o CheckpointAutoPruneOptions) CheckpointAutoPruneOutcome {
 	base := o.Base

@@ -172,9 +172,6 @@ func TestEventStreamExceptionFramesBecomeTypedErrors(t *testing.T) {
 	if exc == nil || exc.MessageType != "error" || exc.ExceptionType != "InternalFailure" || exc.Message != "boom" {
 		t.Fatalf("error frame: %#v", exc)
 	}
-	if !strings.Contains(exc.Error(), "InternalFailure") {
-		t.Fatalf("error text: %s", exc.Error())
-	}
 }
 
 func TestBedrockInvokeEventsSkipPingAndNonChunkFrames(t *testing.T) {

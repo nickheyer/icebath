@@ -205,11 +205,6 @@ func removeForce(dir string) error {
 	return retry(dir, func() error { return os.Remove(dir) })
 }
 
-// Rolls back or settles a shipped caller's plugin publication row
-func RecoverPluginPublication(ctx context.Context, project string, row map[string]any, journal string) error {
-	return recoverPluginPublication(ctx, project, row, journal)
-}
-
 // Rolls back or settles an interrupted plugin code publication from its journal row
 func recoverPluginPublication(ctx context.Context, project string, row map[string]any, journal string) error {
 	target, err := rowPath(row, "target")

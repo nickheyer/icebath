@@ -11,7 +11,6 @@ func init() {
 	registerMemoryProviderRegistry()
 	registerByteRoverProvider()
 	registerRetainDBProvider()
-	registerMemoryQueryRewrite()
 	registerMemoryPromptBlocks()
 	registerMemorySetupCommands()
 	registerMemoryProviderMigration()

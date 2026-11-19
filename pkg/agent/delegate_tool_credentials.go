@@ -138,6 +138,13 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		}
 		return provider.EntryScopedPool(loadedPoolFn(ctx, childKey), childKey, owner)
 	}
+	if env := agentPoolEnv(ctx); provider.IsCustomRuntime(env, effectiveProvider, effectiveRequestedProvider, effectiveBaseURL) {
+		loaded := provider.LoadRuntimePoolWith(env, agentLoadPool, effectiveProvider, effectiveBaseURL, effectiveRequestedProvider, nil)
+		if loaded == nil || !loaded.HasCredentials() {
+			return nil
+		}
+		return loaded
+	}
 	if effectiveProvider == parentProvider {
 		if parentPool == nil {
 			return nil

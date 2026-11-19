@@ -130,11 +130,6 @@ func writeBootRecord(path, identity string, results map[string]map[string]any) e
 	return os.Rename(tmp, path)
 }
 
-// WriteBootRecord exports writeBootRecord
-func WriteBootRecord(path, identity string, results map[string]map[string]any) error {
-	return writeBootRecord(path, identity, results)
-}
-
 // The new identity when this install changed since its last bootstrap, empty otherwise or for a broken tree
 func NeedsBootstrap(ctx context.Context, projectRoot string) string {
 	identity := CurrentInstallIdentity(ctx, projectRoot)

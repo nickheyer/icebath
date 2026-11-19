@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -285,6 +286,17 @@ func dgBuild(t *testing.T, version string) {
 	t.Cleanup(func() { updaterecord.SetBuildVersion(previous) })
 }
 
+// Plan of a release install on the stable channel a user chose, moving it back to the official repository's release of tag
+func dgMoveBack(t *testing.T, tag string) *releaseUpdate {
+	t.Helper()
+	repo, err := install.ParseRepo("https://github.com/" + OfficialRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &releaseUpdate{channel: ChannelStable, follows: ChannelStable, pinned: true,
+		plan: &install.ReleasePlan{Target: &install.ReleaseTarget{Tag: tag, Repo: repo}, Order: install.ReleaseOlder}}
+}
+
 func TestDowngradeBinaryReleaseAtOrAboveTheRunningBuildIsForward(t *testing.T) {
 	dgBuild(t, "v1.5.0")
 	var requests atomic.Int32
@@ -292,14 +304,13 @@ func TestDowngradeBinaryReleaseAtOrAboveTheRunningBuildIsForward(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "home")
 	t.Setenv("ICEBATH_HOME", h)
 	dgLedgered(t, h)
-	root := t.TempDir()
 	for _, tag := range []string{"v1.5.0", "v1.6.0"} {
-		refuses, err := downgradeWouldRefuse(context.Background(), root, &Release{Tag: tag})
-		if err != nil || refuses {
-			t.Fatalf("%s refused %v %v", tag, refuses, err)
+		u := dgMoveBack(t, tag)
+		if u.held(context.Background()) {
+			t.Fatalf("%s held", tag)
 		}
-		if out, err := downgradeRefusal(context.Background(), root, &Release{Tag: tag}); err != nil || out != nil {
-			t.Fatalf("%s refusal %v %v", tag, out, err)
+		if out := u.refusal(context.Background()); out != nil {
+			t.Fatalf("%s refusal %v", tag, *out)
 		}
 	}
 	if requests.Load() != 0 {
@@ -339,30 +350,29 @@ func TestDowngradeBinaryOlderReleaseIsJudgedFromItsStateSchemaSources(t *testing
 	}))
 	h := filepath.Join(t.TempDir(), "home")
 	t.Setenv("ICEBATH_HOME", h)
-	root := t.TempDir()
 	ctx := context.Background()
-	if refuses, _ := downgradeWouldRefuse(ctx, root, &Release{Tag: "v1.2.0"}); refuses || len(paths()) != 0 {
+	if dgMoveBack(t, "v1.2.0").held(ctx) || len(paths()) != 0 {
 		t.Fatalf("no ledgered store must refuse nothing and ask nothing, asked %v", paths())
 	}
 	dgLedgered(t, h)
-	if refuses, err := downgradeWouldRefuse(ctx, root, &Release{Tag: "v1.2.0"}); err != nil || !refuses {
-		t.Fatalf("a pre runtime release was offered %v %v", refuses, err)
+	if !dgMoveBack(t, "v1.2.0").held(ctx) {
+		t.Fatal("a pre runtime release was offered")
 	}
-	out, err := downgradeRefusal(ctx, root, &Release{Tag: "v1.2.0"})
-	if err != nil || out == nil || !strings.Contains(*out, "Refusing to move this install to v1.2.0") {
-		t.Fatalf("refusal %v %v", out, err)
+	out := dgMoveBack(t, "v1.2.0").refusal(ctx)
+	if out == nil || !strings.Contains(*out, "Refusing to move this install to v1.2.0") {
+		t.Fatalf("refusal %v", out)
 	}
-	if refuses, _ := downgradeWouldRefuse(ctx, root, &Release{Tag: "v1.4.0"}); refuses {
+	if dgMoveBack(t, "v1.4.0").held(ctx) {
 		t.Fatal("a release whose schema defines the runtime must not be refused")
 	}
 	asked := len(paths())
-	if refuses, _ := downgradeWouldRefuse(ctx, root, &Release{Tag: "v1.3.0"}); refuses {
+	if dgMoveBack(t, "v1.3.0").held(ctx) {
 		t.Fatal("an unreadable schema proves nothing")
 	}
-	if refuses, _ := downgradeWouldRefuse(ctx, root, &Release{Tag: "v1.3.0"}); refuses || len(paths()) != asked+1 {
+	if dgMoveBack(t, "v1.3.0").held(ctx) || len(paths()) != asked+1 {
 		t.Fatalf("an unknown verdict must wait for its retry time, asked %v", paths()[asked:])
 	}
-	if refuses, _ := downgradeWouldRefuse(ctx, root, &Release{Tag: "v1.2.0"}); !refuses || len(paths()) != asked+1 {
+	if !dgMoveBack(t, "v1.2.0").held(ctx) || len(paths()) != asked+1 {
 		t.Fatalf("a definite verdict must come from the cache, asked %v", paths()[asked:])
 	}
 	data, _ := os.ReadFile(filepath.Join(h, "source-checks", "release-runtime.json"))
@@ -393,14 +403,14 @@ func TestDowngradeCheckHoldsAReleaseThatUpdateWouldRefuse(t *testing.T) {
 			srGit(t, repo, "tag", tag)
 			srGit(t, repo, "checkout", "-q", "main")
 		}
-		saved := resolveCheckTarget
-		resolveCheckTarget = func(context.Context, string, bool) (ReleaseTarget, error) {
-			return ReleaseTarget{RequestedChannel: "stable", Channel: "stable", Repository: OfficialRepository,
-				Release: &Release{Tag: tag}, Version: strings.TrimPrefix(tag, "v")}, nil
+		saved := checkResolveSourceTarget
+		checkResolveSourceTarget = func(context.Context, string, []string, string, string, bool) (SourceTarget, error) {
+			return SourceTarget{RequestedChannel: "stable", Channel: "stable", Repository: OfficialRepository,
+				Commit: srGit(t, repo, "rev-parse", tag+"^{commit}"), Version: strings.TrimPrefix(tag, "v")}, nil
 		}
 		var out strings.Builder
-		if err := CheckChannel(context.Background(), &out, "stable", repo); err != nil {
-			t.Fatal(err)
+		if _, isBranch, err := channelCompareBranch(context.Background(), &out, "stable", []string{"git"}, repo); err != nil || isBranch {
+			t.Fatalf("divergent %v check %v %v", divergent, isBranch, err)
 		}
 		want := "moves it back"
 		if divergent {
@@ -411,13 +421,13 @@ func TestDowngradeCheckHoldsAReleaseThatUpdateWouldRefuse(t *testing.T) {
 		}
 		dgLedgered(t, h)
 		out.Reset()
-		if err := CheckChannel(context.Background(), &out, "stable", repo); err != nil {
-			t.Fatal(err)
+		if _, isBranch, err := channelCompareBranch(context.Background(), &out, "stable", []string{"git"}, repo); err != nil || isBranch {
+			t.Fatalf("divergent %v check %v %v", divergent, isBranch, err)
 		}
 		if got := out.String(); !strings.Contains(got, "Holding at this build") || strings.Contains(got, "Selected release available") ||
 			strings.Contains(got, "moves it back") {
 			t.Fatalf("divergent %v with runtime history printed %q", divergent, got)
 		}
-		resolveCheckTarget = saved
+		checkResolveSourceTarget = saved
 	}
 }

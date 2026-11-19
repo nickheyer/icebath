@@ -11,8 +11,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mattn/go-isatty"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -111,9 +109,9 @@ type statusSpinner struct {
 	out         io.Writer
 }
 
-// Unstarted spinner that writes to print fn or the stdout captured now
+// Unstarted spinner that writes to print fn or the stdout ctx sees, captured now
 func newStatusSpinner(ctx context.Context, message string, printFn func(string)) *statusSpinner {
-	return &statusSpinner{ctx: ctx, message: message, frames: spinnerFrames, printFn: printFn, out: statusStdout}
+	return &statusSpinner{ctx: ctx, message: message, frames: spinnerFrames, printFn: printFn, out: scopedStatusStdout(ctx)}
 }
 
 // Started spinner for the call sites that show one while a request or tool runs
@@ -142,10 +140,7 @@ func (s *statusSpinner) write(text, end string, flush bool) {
 	}
 }
 
-func (s *statusSpinner) isTTY() bool {
-	f, ok := s.out.(interface{ Fd() uintptr })
-	return ok && isatty.IsTerminal(f.Fd())
-}
+func (s *statusSpinner) isTTY() bool { return stdoutIsTTY(s.out) }
 
 func (s *statusSpinner) isPatchStdoutProxy() bool {
 	_, ok := s.out.(StdoutProxy)

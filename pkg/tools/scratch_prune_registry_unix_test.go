@@ -100,9 +100,6 @@ func TestPruneOwnerLookupSurvivesSymlinkedScratchAndDropsOrphanedMcpHelpers(t *t
 	scratchWaitUntil(t, 20*time.Second, "spawner registered the mcp-helper", func() bool { return helperRow() != nil })
 	_ = spawner.Process.Kill()
 	_ = spawner.Wait()
-	if dead, known := SpawnerIsDead(helperRow()); !dead || !known {
-		t.Fatalf("spawner dead=%v known=%v, want a provably dead spawner", dead, known)
-	}
 	scratchAge(t, ownedDir, helperDir)
 	if got, err := home.PruneScratchDir(ctx, scratch, home.ScratchMaxIdleHours); err != nil || got != 1 {
 		t.Fatalf("PruneScratchDir = %d, %v, want 1", got, err)

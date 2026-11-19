@@ -678,43 +678,7 @@ func (c *geminiNativeClient) completeOnce(ctx context.Context, req *Request, p *
 		merged = mergeHopResponses(hops)
 	}
 	payload := translateGeminiResponse(merged, p.model)
-	resp, err := c.chat.normalizeResponse(payload, status, headers, time.Since(start))
-	if err != nil {
-		return nil, err
-	}
-	usage, _ := payload["usage"].(map[string]any)
-	markGeminiInitialUsage(resp, usage)
-	return resp, nil
-}
-
-// Raw keys carrying the first hop prompt and cached tokens of a long decode turn
-const (
-	geminiRawInitialPrompt = "_initial_prompt_tokens"
-	geminiRawInitialCached = "_initial_cached_tokens"
-)
-
-// Records the first hop prompt counts of a multi hop turn on the response
-func markGeminiInitialUsage(resp *Response, usage map[string]any) {
-	if resp == nil || usage == nil {
-		return
-	}
-	prompt, ok := anyInt(usage["initial_prompt_tokens"])
-	if !ok {
-		return
-	}
-	cached, _ := anyInt(usage["initial_cached_tokens"])
-	anthMarkRaw(resp, geminiRawInitialPrompt, prompt)
-	anthMarkRaw(resp, geminiRawInitialCached, cached)
-}
-
-// ResponseInitialPromptTokens reports the first hop prompt and cached tokens of a long decode turn
-func ResponseInitialPromptTokens(resp *Response) (int, int, bool) {
-	prompt, ok := anyInt(rawResponseField(resp, geminiRawInitialPrompt))
-	if !ok {
-		return 0, 0, false
-	}
-	cached, _ := anyInt(rawResponseField(resp, geminiRawInitialCached))
-	return prompt, cached, true
+	return c.chat.normalizeResponse(payload, status, headers, time.Since(start))
 }
 
 // CountTokens estimates the context of the chat completions arguments the request is built from
@@ -755,14 +719,7 @@ func (c *geminiNativeClient) Stream(ctx context.Context, req *Request, fn Stream
 		defer close(readerDone)
 		c.produceStream(attemptCtx, p, t.connect, msgs)
 	}()
-	resp, err := c.consumeGeminiStream(ctx, attemptCtx, cancel, kill, msgs, readerDone, s, t)
-	if err != nil {
-		return nil, err
-	}
-	if u, ok := s.usage["initial_prompt_tokens"]; ok && u != nil {
-		markGeminiInitialUsage(resp, s.usage)
-	}
-	return resp, nil
+	return c.consumeGeminiStream(ctx, attemptCtx, cancel, kill, msgs, readerDone, s, t)
 }
 
 // Streams every hop of one turn, sending translated chunks per event and resuming drops from a committed token

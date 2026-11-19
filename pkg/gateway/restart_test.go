@@ -91,7 +91,7 @@ func TestRestartTimeoutParsersAndBudgets(t *testing.T) {
 		t.Fatal("cron drain budget")
 	}
 	for _, c := range []struct{ drain, cron, want float64 }{{0, 30, 70}, {0, 0, 60}, {100, 30, 130}, {0, 50, 90}} {
-		got, err := DefaultSystemdTimeoutStopSec(c.drain)
+		got, err := ResolveSystemdTimeoutStopSec(c.drain, DefaultGatewayCronDrainTimeout, CronDrainCleanupReserveS, SystemdStopHeadroomS, SystemdTimeoutStopSecFloor)
 		if c.cron != DefaultGatewayCronDrainTimeout {
 			got, err = ResolveSystemdTimeoutStopSec(c.drain, c.cron, CronDrainCleanupReserveS, SystemdStopHeadroomS, SystemdTimeoutStopSecFloor)
 		}
@@ -111,9 +111,6 @@ func TestRestartTimeoutParsersAndBudgets(t *testing.T) {
 }
 
 func TestRestartSupervisorAndExitHelpers(t *testing.T) {
-	if MapFatalConfigExitForLaunchd(78) != 0 || MapFatalConfigExitForLaunchd(75) != 75 || MapFatalConfigExitForLaunchd(1) != 1 {
-		t.Fatal("launchd exit map")
-	}
 	if p := ParseLaunchdExitTimeout("state = running\n\texit timeout = 45 \n"); p == nil || *p != 45 {
 		t.Fatalf("parse %v", p)
 	}

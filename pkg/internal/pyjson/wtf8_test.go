@@ -313,7 +313,7 @@ func TestJSONEncodeWTF8MatchesEnsureASCIIFalse(t *testing.T) {
 }
 
 func TestJSONEncodeWTF8ASCIIAndIndent(t *testing.T) {
-	if got, err := EncodeWTF8ASCII("\xc3\xa9\xed\xa0\x80\xf0\x9f\x98\x80\x80"); err != nil || string(got) != `"\u00e9\ud800\ud83d\ude00\udc80"` {
+	if got, err := EncodeWTF8PythonASCII("\xc3\xa9\xed\xa0\x80\xf0\x9f\x98\x80\x80"); err != nil || string(got) != `"\u00e9\ud800\ud83d\ude00\udc80"` {
 		t.Fatalf("ascii %q %v", got, err)
 	}
 	got, err := EncodeWTF8Indent(map[string]any{"a": []any{1, "\xed\xa0\x80"}}, "", "  ")
@@ -631,14 +631,6 @@ func TestJSONEncodeWTF8FloatsMatchJSONDumps(t *testing.T) {
 			t.Fatalf("%#v: %s %v, want %s", tc.v, got, err, tc.want)
 		}
 	}
-	for _, v := range []any{math.NaN(), math.Inf(1), []any{math.Inf(-1)}} {
-		if _, err := EncodeWTF8ASCII(v); !errors.Is(err, ErrOutOfRange) {
-			t.Fatalf("%#v ascii wire form %v", v, err)
-		}
-	}
-	if got, err := EncodeWTF8ASCII(map[string]any{"x": 2.5, "s": "\u00e9"}); err != nil || string(got) != `{"s":"\u00e9","x":2.5}` {
-		t.Fatalf("ascii %s %v", got, err)
-	}
 }
 
 func TestEncodeWTF8PythonMatchesJSONDumpsText(t *testing.T) {
@@ -660,8 +652,5 @@ func TestEncodeWTF8PythonMatchesJSONDumpsText(t *testing.T) {
 	}
 	if got, err := EncodeWTF8PythonASCII(v); err != nil || string(got) != asciiWant {
 		t.Fatalf("defaults\n%s\n%s %v", got, asciiWant, err)
-	}
-	if got, err := EncodeWTF8ASCII("\x7f"); err != nil || string(got) != `"\u007f"` {
-		t.Fatalf("DEL %q %v", got, err)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type fieldKind uint8
@@ -27,7 +26,6 @@ const (
 type fieldSpec struct {
 	name string
 	kind fieldKind
-	typ  string
 }
 
 type nodeSpec struct {
@@ -198,10 +196,9 @@ func buildSpecs() map[string]*nodeSpec {
 	for _, r := range schemaRows {
 		s := &nodeSpec{name: r[0], base: r[1], attrs: r[3] == "true"}
 		if r[2] != "" {
-			types := strings.Split(fieldTypes[r[0]], ",")
-			for i, f := range strings.Split(r[2], ",") {
+			for _, f := range strings.Split(r[2], ",") {
 				name, k, _ := strings.Cut(f, ":")
-				s.fields = append(s.fields, fieldSpec{name, kinds[k], types[i]})
+				s.fields = append(s.fields, fieldSpec{name, kinds[k]})
 			}
 		}
 		specs[s.name] = s
@@ -230,9 +227,6 @@ func NewNode(typ string, vals ...any) *Node {
 	}
 	return &Node{Type: typ, vals: vals, spec: s}
 }
-
-// Base names the abstract ASDL class of the node such as stmt, expr or pattern
-func (n *Node) Base() string { return n.spec.base }
 
 // HasLocation reports whether the class carries lineno and col_offset attributes
 func (n *Node) HasLocation() bool { return n.spec.attrs }
@@ -347,85 +341,6 @@ func Walk(n *Node) []*Node {
 	return queue
 }
 
-// DocstringError is the TypeError get_docstring raises for a node that cannot hold a docstring
-type DocstringError struct{ Type string }
-
-func (e *DocstringError) Error() string { return pyrepr.StrRepr(e.Type) + " can't have docstrings" }
-
-// GetDocstring returns the docstring of a module, class or function, cleaned like inspect.cleandoc when clean is set
-func GetDocstring(n *Node, clean bool) (string, bool, error) {
-	if !n.Is("AsyncFunctionDef", "FunctionDef", "ClassDef", "Module") {
-		return "", false, &DocstringError{n.Type}
-	}
-	body := n.Children("body")
-	if len(body) == 0 || body[0].Type != "Expr" {
-		return "", false, nil
-	}
-	v := body[0].Child("value")
-	if !v.Is("Constant") {
-		return "", false, nil
-	}
-	text, ok := v.Get("value").(string)
-	if !ok {
-		return "", false, nil
-	}
-	if clean {
-		text = Cleandoc(text)
-	}
-	return text, true, nil
-}
-
-// Cleandoc strips the uniform indentation and blank edge lines of a docstring as inspect.cleandoc
-func Cleandoc(doc string) string {
-	lines := strings.Split(expandTabs(doc), "\n")
-	margin := math.MaxInt
-	for _, line := range lines[1:] {
-		content := pystr.Len(strings.TrimLeft(line, " "))
-		if content > 0 {
-			margin = min(margin, pystr.Len(line)-content)
-		}
-	}
-	lines[0] = strings.TrimLeft(lines[0], " ")
-	if margin < math.MaxInt {
-		for i := 1; i < len(lines); i++ {
-			r := pystr.Runes(lines[i])
-			if margin < len(r) {
-				lines[i] = pystr.FromRunes(r[margin:])
-			} else {
-				lines[i] = ""
-			}
-		}
-	}
-	for len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	for len(lines) > 0 && lines[0] == "" {
-		lines = lines[1:]
-	}
-	return strings.Join(lines, "\n")
-}
-
-// Replaces tabs with spaces up to the next multiple of eight columns as str.expandtabs
-func expandTabs(s string) string {
-	var b strings.Builder
-	col := 0
-	for _, r := range pystr.Runes(s) {
-		switch r {
-		case '\t':
-			n := 8 - col%8
-			b.WriteString(strings.Repeat(" ", n))
-			col += n
-		case '\n', '\r':
-			b.WriteRune(r)
-			col = 0
-		default:
-			pystr.WriteRune(&b, r)
-			col++
-		}
-	}
-	return b.String()
-}
-
 // IntDigitsError is the ValueError CPython raises converting an int over 4300 decimal digits to text
 type IntDigitsError struct{}
 
@@ -447,7 +362,7 @@ func ConstantRepr(v any) (string, error) {
 		return fmt.Sprint(x), nil
 	case float64:
 		return pyrepr.Float(x), nil
-	case pyrepr.Tuple, FrozenSet:
+	case pyrepr.Tuple:
 		return objRepr(v)
 	}
 	return pyrepr.Repr(v), nil

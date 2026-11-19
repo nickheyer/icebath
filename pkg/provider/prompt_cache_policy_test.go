@@ -150,7 +150,7 @@ func TestPlanCacheSectionsStripsOnNonCachingRoute(t *testing.T) {
 func TestConfiguredCacheTTLReadsValidTiers(t *testing.T) {
 	for _, tier := range []string{"1h", "5m"} {
 		cacheTestHome(t, tier)
-		if got := ConfiguredCacheTTL(context.Background()); got != tier {
+		if got := configuredCacheTTL(context.Background()); got != tier {
 			t.Fatalf("tier %s got %q", tier, got)
 		}
 	}

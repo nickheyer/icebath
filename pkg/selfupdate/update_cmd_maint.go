@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pytoml"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -281,28 +280,6 @@ func formatTimeAgo(isoTS any) string {
 // Prints the outcome with branch and sha
 func printUpdateCompletion(ctx context.Context, w io.Writer, message string) {
 	fmt.Fprintf(w, "%s%s\n", message, branchHeadSuffix(ctx, nil, ""))
-}
-
-// Version field of the checkout's pyproject.toml, nil on any failure
-func readProjectVersion(ctx context.Context) *string {
-	raw, err := os.ReadFile(filepath.Join(fleetProjectRoot(), "pyproject.toml"))
-	if err != nil {
-		return nil
-	}
-	text, err := pystr.DecodeUTF8(raw)
-	if err != nil {
-		return nil
-	}
-	document, err := pytoml.Loads(text)
-	if err != nil {
-		return nil
-	}
-	project, _ := document["project"].(map[string]any)
-	if version := project["version"]; pyrepr.Truthy(version) {
-		shown := pyrepr.Str(version)
-		return &shown
-	}
-	return nil
 }
 
 // Runtime identity of the checkout as the source stamp publishes it, nil without a commit

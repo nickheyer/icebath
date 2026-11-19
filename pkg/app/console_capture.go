@@ -30,7 +30,7 @@ var consoleRuntimeErrorClasses = map[string]bool{
 	"ConfigLockedError": true, "ConfigValueError": true, "ConfigWriteError": true, "ConsoleCommandError": true, "CredentialDestinationError": true, "CredentialNotSavedError": true,
 	"CredentialPersistError": true, "CronExecutionUnknown": true, "CronSchedulerRegistrationError": true, "CronTickYielded": true, "DeclarativeDriftError": true, "DeletedWalGenerationError": true,
 	"DependencyConflict": true, "DownloadError": true, "DownloadPaused": true, "DownloadTransportError": true, "EmptyStreamError": true, "EnvelopeRefusedError": true,
-	"EnvironmentConnectionError": true, "FeatureProbeError": true, "FileFetchError": true, "GatewayAuthError": true, "GatewayNotRegisteredError": true, "GatewayUnavailable": true,
+	"EnvironmentConnectionError": true, "FileFetchError": true, "GatewayAuthError": true, "GatewayNotRegisteredError": true, "GatewayUnavailable": true,
 	"GenerationError": true, "GitError": true, "HashError": true, "HealthReportUnavailable": true, "HeldRowRewrittenError": true, "HomeInitializationError": true,
 	"HostedRoomSessionError": true, "HumanHasControl": true, "IdempotencyConflict": true, "IdentityUnresolved": true, "InstallBusy": true, "InstallError": true,
 	"InvalidUserConfigError": true, "KanbanDbCorruptError": true, "KeylessMCPError": true, "LiveConnectionError": true, "LiveTargetHeldError": true, "LiveTargetUnavailableError": true,

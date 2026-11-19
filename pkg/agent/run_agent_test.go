@@ -347,7 +347,7 @@ func TestShouldParallelizeToolBatchRejectsSameFileWithMixedPathSpellings(t *test
 		batchToolCall("write_file", `{"path":"notes.txt","content":"one"}`, "c1"),
 		batchToolCall("write_file", `{"path":"`+filepath.Join(dir, "notes.txt")+`","content":"two"}`, "c2"),
 	}
-	if tools.ShouldParallelizeToolBatch(context.Background(), nil, batch) {
+	if segments := tools.PlanToolBatchSegments(context.Background(), nil, batch, ""); len(segments) == 1 && segments[0].Mode == "parallel" {
 		t.Fatal("two writes of one file under different spellings ran in parallel")
 	}
 }
@@ -357,16 +357,18 @@ func TestMCPToolsDefaultSequential(t *testing.T) {
 		batchToolCall("mcp__github__list_repos", `{"org":"openai"}`, "c1"),
 		batchToolCall("mcp__github__search_code", `{"q":"test"}`, "c2"),
 	}
-	if tools.ShouldParallelizeToolBatch(context.Background(), nil, batch) {
+	if segments := tools.PlanToolBatchSegments(context.Background(), nil, batch, ""); len(segments) == 1 && segments[0].Mode == "parallel" {
 		t.Fatal("MCP tools without supports_parallel_tool_calls ran in parallel")
 	}
 }
 
 func TestAPIResponsePayloadForHookNormalizesToolCalls(t *testing.T) {
-	resp := &provider.Response{Model: "anthropic.claude-3", Message: &state.Message{Role: "assistant", ToolCalls: []state.ToolCall{
+	a := runAgentFixture(t)
+	assistant := &provider.Response{Message: &state.Message{Role: "assistant", Content: "", ToolCalls: []state.ToolCall{
 		batchToolCall("web_search", `{"q": "hi"}`, "call_1"),
 	}}}
-	raw, err := json.Marshal(provider.ResponsePayloadForHook(resp, "tool_calls"))
+	response := map[string]any{"model": "anthropic.claude-3", "usage": nil}
+	raw, err := json.Marshal(a.apiResponsePayloadForHook(response, assistant, "tool_calls"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,11 +406,14 @@ func TestIsAzureOpenAIURLDetection(t *testing.T) {
 
 func TestQuietSpinnerAllowedWithExplicitPrintFn(t *testing.T) {
 	a := runAgentFixture(t)
-	prev := statusStdoutIsTTY
-	t.Cleanup(func() { statusStdoutIsTTY = prev })
-	statusStdoutIsTTY = func() bool { return false }
+	prev := statusStdout
+	t.Cleanup(func() { statusStdout = prev })
+	statusStdout = &strings.Builder{}
+	if a.shouldStartQuietSpinner(context.Background()) {
+		t.Fatal("a stdout that is not a terminal must refuse the quiet spinner")
+	}
 	a.printFn = func(string) {}
-	if !a.shouldStartQuietSpinner() {
+	if !a.shouldStartQuietSpinner(context.Background()) {
 		t.Fatal("injected printer must allow the quiet spinner")
 	}
 }

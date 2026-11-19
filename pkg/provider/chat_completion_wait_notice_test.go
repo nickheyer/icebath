@@ -245,7 +245,8 @@ func TestPrefillNoticeForManagedModel(t *testing.T) {
 
 func TestStaleBreakerShortCircuitsCountsKillsAndResetsOnSuccess(t *testing.T) {
 	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "2")
-	session := &RetrySession{}
+	agent := cronChatAgent(30.0)
+	session := agent.RetrySession()
 	ctx := withStaleStreak(context.Background(), session)
 	bumpStaleStreak(ctx)
 	bumpStaleStreak(ctx)
@@ -253,13 +254,16 @@ func TestStaleBreakerShortCircuitsCountsKillsAndResetsOnSuccess(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "2 consecutive stale attempts") || !strings.Contains(err.Error(), "aborting this call") {
 		t.Fatalf("breaker error %v", err)
 	}
-	client := &fakeClient{route: Route{Provider: "openrouter", Model: "m"}}
-	if _, err := Do(context.Background(), client, &Request{Model: "m"}, DoOptions{Session: session, MaxRetries: 0}); err == nil || client.calls != 0 {
-		t.Fatalf("open breaker reached the network calls=%d err=%v", client.calls, err)
+	client := &fakeChatClient{create: func(context.Context, map[string]any) (any, error) { return map[string]any{"id": "ok"}, nil }}
+	agent.create = func(string, map[string]any) (any, error) { return client, nil }
+	kwargs := map[string]any{"model": "m", "messages": []any{}}
+	if _, err := InterruptibleAPICall(context.Background(), agent, kwargs); err == nil || client.calls.Load() != 0 {
+		t.Fatalf("open breaker reached the network calls=%d err=%v", client.calls.Load(), err)
 	}
 	session.ResetStaleStreak()
-	if _, err := Do(context.Background(), client, &Request{Model: "m"}, DoOptions{Session: session}); err != nil || session.StaleStreak() != 0 {
-		t.Fatalf("success path err=%v streak=%d", err, session.StaleStreak())
+	bumpStaleStreak(ctx)
+	if _, err := InterruptibleAPICall(context.Background(), agent, kwargs); err != nil || client.calls.Load() != 1 || session.StaleStreak() != 0 {
+		t.Fatalf("success path err=%v calls=%d streak=%d", err, client.calls.Load(), session.StaleStreak())
 	}
 	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "0")
 	bumpStaleStreak(ctx)

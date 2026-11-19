@@ -168,26 +168,6 @@ func gatewayCommandSubcommand(command string) (string, bool) {
 	return "", false
 }
 
-// Gateway subcommand a command line eventually launches, peeling an inline source wrapper token wise
-func GatewaySpawnIntentSubcommand(command string) (string, bool) {
-	if direct, ok := gatewayCommandSubcommand(command); ok || command == "" {
-		return direct, ok
-	}
-	raw := gatewayRawTokens(command)
-	start := restartWatcherEntryIndex(lowerAll(casedTokens(raw))) + 1
-	if flagIndex, ok := InlineSourceFlagIndex(casedTokens(raw)); ok {
-		start = flagIndex + 2
-	} else if start == 0 {
-		return "", false
-	}
-	for i := start; i < len(raw); i++ {
-		if nested, ok := gatewayCommandSubcommand(strings.Join(raw[i:], " ")); ok {
-			return nested, true
-		}
-	}
-	return "", false
-}
-
 // Whether a command line is a real gateway run process
 func LooksLikeGatewayCommandLine(command string) bool {
 	sub, ok := gatewayCommandSubcommand(command)

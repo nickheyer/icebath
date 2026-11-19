@@ -467,22 +467,6 @@ func (sshBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	return errors.New("the SSH host and user are not configured (TERMINAL_SSH_HOST / TERMINAL_SSH_USER); start `icebath` and type `/setup terminal` to enter them or pick the 'local' backend")
 }
 
-// Probe reports whether the configured host answers
-func (sshBackend) Probe() (string, string) {
-	if err := ensureSSHAvailable(); err != nil {
-		return "unavailable", err.Error()
-	}
-	host := strings.TrimSpace(os.Getenv("TERMINAL_SSH_HOST"))
-	if host == "" {
-		return "needs_setup", "SSH host is not configured."
-	}
-	ok, detail := sshProbeConnection(host, os.Getenv("TERMINAL_SSH_USER"), os.Getenv("TERMINAL_SSH_PORT"), os.Getenv("TERMINAL_SSH_KEY"))
-	if !ok {
-		return "unavailable", detail
-	}
-	return "ready", "SSH connection to " + host
-}
-
 // Runs echo ok over a fresh batch mode connection with the doctor flags
 func sshProbeConnection(host, user, port, key string) (bool, string) {
 	cmd := []string{"ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes"}

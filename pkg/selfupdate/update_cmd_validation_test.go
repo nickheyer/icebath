@@ -239,3 +239,15 @@ func TestImportGuardUsesTheSelectedRuntimeCommand(t *testing.T) {
 		t.Fatalf("cwd = %q", seenCwd)
 	}
 }
+
+// The first critical module import failure, ok when every module loads
+func validateCriticalModulesImport(ctx context.Context, root string, reportRuntimeErrors bool) (bool, string, string, error) {
+	order, failures, err := criticalModuleImportFailures(ctx, root, reportRuntimeErrors)
+	if err != nil {
+		return false, "", "", err
+	}
+	if len(order) > 0 {
+		return false, order[0], failures[order[0]][1], nil
+	}
+	return true, "", "", nil
+}

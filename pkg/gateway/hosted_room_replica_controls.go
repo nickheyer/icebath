@@ -139,6 +139,11 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 			return nil, err
 		}
 		return pyjson.ObjectOf("cancelled", int64(0), "queued", true), nil
+	case "groups.continue":
+		if err := queue("continue", map[string]any{"discussion_event_id": pyrepr.Str(groupOr(params, "discussion_event_id", ""))}); err != nil {
+			return nil, err
+		}
+		return pyjson.ObjectOf("continued", true, "event", nil, "queued", true), nil
 	case "groups.disband":
 		if err := queue("disband", map[string]any{"cancel_id": groupOr(params, "cancel_id", "room-disbanded")}); err != nil {
 			return nil, err

@@ -99,9 +99,9 @@ func TestCLIMemoryApproveWithoutLiveAgentUsesFreshStore(t *testing.T) {
 	if r["pending_id"] == nil || tools.PendingCount(env, "memory") != 1 {
 		t.Fatal(r)
 	}
-	out, err := MemoryCommand(context.Background(), env, []string{"approve", "all"}, nil)
-	if err != nil || strings.Contains(out, "memory store unavailable") || !strings.Contains(out, "Approved 1") {
-		t.Fatal(out, err)
+	out := approve(t, env, onDisk(t, env), "all")
+	if strings.Contains(out, "memory store unavailable") || !strings.Contains(out, "Approved 1") {
+		t.Fatal(out)
 	}
 	if tools.PendingCount(env, "memory") != 0 {
 		t.Fatal("record kept")
@@ -286,15 +286,6 @@ func TestHandleApprovalOnAndOff(t *testing.T) {
 	}
 }
 
-func TestConfigModeSetterPersistsTheGate(t *testing.T) {
-	env := waEnv(t)
-	out, _, _ := HandlePendingSubcommand(context.Background(), env, tools.WriteApprovalMemory, []string{"approval", "on"}, PendingOptions{SetMode: ConfigModeSetter(context.Background(), env, "memory")})
-	config.ResetCache()
-	if out != "memory.write_approval set to 'on'." || !tools.WriteApprovalEnabled(env, "memory") {
-		t.Fatal(out)
-	}
-}
-
 func TestMemoryInlineApproveWritesThroughTheTool(t *testing.T) {
 	env := waEnv(t)
 	setGate(t, env, "memory", true)
@@ -409,10 +400,6 @@ func TestEachReviewSubcommandTheCLIServesIsHandled(t *testing.T) {
 func TestMemoryHasNoDiffLikeTheCLI(t *testing.T) {
 	if _, handled, _ := HandlePendingSubcommand(context.Background(), waEnv(t), "memory", []string{"diff", "x"}, PendingOptions{}); handled {
 		t.Fatal("memory diff handled")
-	}
-	out, err := MemoryCommand(context.Background(), waEnv(t), []string{"diff", "x"}, nil)
-	if err != nil || out != memoryUnknownSubcommand {
-		t.Fatal(out, err)
 	}
 }
 

@@ -208,7 +208,7 @@ func TestOpenDBRetriesOnlyTheTransientLockedJournalSetup(t *testing.T) {
 	upper.Close()
 }
 
-func TestAddColumnIfMissingAndWriteTxn(t *testing.T) {
+func TestAddColumnIfMissing(t *testing.T) {
 	ctx := context.Background()
 	conn, err := OpenDB(ctx, filepath.Join(t.TempDir(), "a.db"), "a.db", WithWAL(false))
 	if err != nil {
@@ -224,29 +224,6 @@ func TestAddColumnIfMissingAndWriteTxn(t *testing.T) {
 	}
 	if _, err := AddColumnIfMissing(ctx, conn, "missing", "y", "y INTEGER"); !isOperationalError(err) {
 		t.Fatalf("missing table = %v", err)
-	}
-	failed := errors.New("body failed")
-	if err := WriteTxn(ctx, conn, func() error {
-		mustExecConn(t, conn, "INSERT INTO t (x) VALUES (1)")
-		return failed
-	}); !errors.Is(err, failed) {
-		t.Fatalf("WriteTxn = %v", err)
-	}
-	if err := WriteTxn(ctx, conn, func() error {
-		mustExecConn(t, conn, "ROLLBACK")
-		return failed
-	}); !errors.Is(err, failed) {
-		t.Fatalf("auto rolled back WriteTxn = %v", err)
-	}
-	if err := WriteTxn(ctx, conn, func() error {
-		mustExecConn(t, conn, "INSERT INTO t (x) VALUES (2)")
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	row, err := fetchOne(ctx, conn, "SELECT count(*), max(x) FROM t")
-	if err != nil || row[0].(int64) != 1 || row[1].(int64) != 2 {
-		t.Fatalf("rows = %v %v", row, err)
 	}
 }
 

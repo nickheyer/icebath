@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -72,6 +73,24 @@ func TestLegacyCheckpointsBoolCarriesDefaultsForTheOtherKeys(t *testing.T) {
 	}
 	if !reflect.DeepEqual(checkpointEntries(legacy), checkpointEntries(explicit)) {
 		t.Fatalf("legacy %#v explicit %#v", checkpointEntries(legacy), checkpointEntries(explicit))
+	}
+}
+
+func TestCheckpointOptionsFromConfig(t *testing.T) {
+	options := func(cfg map[string]any) (tools.CheckpointManagerOptions, error) {
+		kwargs := CheckpointAgentKwargs(cfg)
+		return tools.CheckpointManagerOptionsFromKwargs(pyrepr.Truthy(kwargs["checkpoints_enabled"]), kwargs)
+	}
+	o, err := options(map[string]any{"checkpoints": true})
+	if err != nil || !o.Enabled || o.MaxSnapshots != 20 || o.MaxTotalSizeMB != 500 || o.MaxFileSizeMB != 10 {
+		t.Fatalf("legacy bool wrong: %+v %v", o, err)
+	}
+	o, err = options(map[string]any{"checkpoints": map[string]any{"enabled": false, "max_snapshots": 3, "max_file_size_mb": "4"}})
+	if err != nil || o.Enabled || o.MaxSnapshots != 3 || o.MaxFileSizeMB != 4 || o.MaxTotalSizeMB != 500 {
+		t.Fatalf("section wrong: %+v %v", o, err)
+	}
+	if _, err := options(map[string]any{"checkpoints": map[string]any{"max_snapshots": "many"}}); err == nil {
+		t.Fatal("bad integer accepted")
 	}
 }
 

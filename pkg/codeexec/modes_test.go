@@ -93,7 +93,12 @@ func TestProjectStaleCwdFallsThroughThenUsesProcessCwd(t *testing.T) {
 	if err := tools.RegisterTaskEnvOverrides(env, "stale", map[string]any{"cwd": dir}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { tools.ClearTaskEnvOverrides(env, "stale") })
+	t.Cleanup(func() {
+		if err := tools.RegisterTaskEnvOverrides(env, "stale", nil); err != nil {
+			t.Error(err)
+		}
+		tools.ClearSessionCwd(env, "stale")
+	})
 	tools.RecordSessionCwd(env, "stale", filepath.Join(dir, "deleted"))
 	t.Setenv("TERMINAL_CWD", filepath.Join(dir, "missing"))
 	if got, err := resolveChildCwd(env, "project", "staging", "stale"); err != nil || got != dir {

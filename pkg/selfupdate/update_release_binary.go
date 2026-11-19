@@ -88,6 +88,25 @@ func (u *releaseUpdate) rollback() bool {
 // Whether the update replaces the binary, a newer release or a consented move back
 func (u *releaseUpdate) moves() bool { return u.plan.Order == install.ReleaseNewer || u.rollback() }
 
+// Repository GitHub serves the planned release's sources under
+func (u *releaseUpdate) sourceRepository() string {
+	return u.plan.Target.Repo.Owner + "/" + u.plan.Target.Repo.Name
+}
+
+// Whether the update holds at this build, a channel's release it would refuse because it predates the gateway runtime
+func (u *releaseUpdate) held(ctx context.Context) bool {
+	return u.pinned && u.moves() && downgradeWouldRefuse(ctx, u.sourceRepository(), u.plan.Target.Tag, home.Dir(ctx))
+}
+
+// Why the update must not swap in the planned release, nil when it moves nowhere or no ledgered store would meet a pre runtime release
+func (u *releaseUpdate) refusal(ctx context.Context) *string {
+	if !u.moves() {
+		return nil
+	}
+	h, tag := home.Dir(ctx), u.plan.Target.Tag
+	return downgradeRefusalFor(ctx, tag, h, func() bool { return releasePredatesRuntime(ctx, u.sourceRepository(), h, tag) })
+}
+
 // Release, its version and commit, the way release channels name their target
 func (u *releaseUpdate) label() string {
 	label := u.follows + " " + u.plan.Target.Tag
@@ -174,6 +193,12 @@ func checkReleaseUpdate(ctx context.Context, w io.Writer, branch string, branchE
 		return &pm.SystemExit{Code: 1}
 	}
 	fmt.Fprintf(w, "→ Update channel: %s\n", u.channel)
+	if u.held(ctx) {
+		fmt.Fprintf(w, "→ Holding at this build: %s predates the gateway runtime your sessions use.\n", u.label())
+		fmt.Fprintln(w, "  `icebath update` stays on this build; the next release that includes the runtime"+
+			" installs normally (`icebath update --set-channel main` follows every commit).")
+		return nil
+	}
 	if u.plan.Order != install.ReleaseNewer {
 		fmt.Fprintln(w, u.heldLine())
 		return nil
@@ -193,7 +218,7 @@ func checkReleaseUpdate(ctx context.Context, w io.Writer, branch string, branchE
 	return nil
 }
 
-// Swaps in the planned release when it moves, then hands the completion to the binary in place
+// Swaps in the planned release when it moves, holds or refuses one that predates the runtime, then hands the completion to the binary in place
 func updateViaRelease(ctx context.Context, w io.Writer, args map[string]any, completionRequest map[string]any) error {
 	if completionRequest == nil {
 		return pm.StopForRelaunchIncomplete(ctx)
@@ -205,12 +230,26 @@ func updateViaRelease(ctx context.Context, w io.Writer, args map[string]any, com
 		channelArg = &text
 	}
 	u, err := planReleaseUpdate(ctx, root, channelArg, resolveUpdateBranch(args), pyrepr.Truthy(args["branch"]))
+	heldMessage := ""
 	if err == nil {
 		fmt.Fprintf(w, "→ Update channel: %s\n", u.channel)
 		if u.source != nil {
 			noteChannelRetirement(w, args, completionRequest, u.record, u.channel, *u.source)
 		}
-		if u.moves() {
+		refusal := u.refusal(ctx)
+		switch {
+		case refusal != nil && !u.pinned:
+			fmt.Fprintln(w, *refusal)
+			fmt.Fprintln(w, "  No update was applied; your install is unchanged.")
+			recordStop(ctx, "downgrade_refused")
+			return updateExit(1)
+		case refusal != nil:
+			fmt.Fprintf(w, "→ This build is newer than the %s release %s: that release predates the "+
+				"gateway runtime your sessions use, so there is nothing to update to yet.\n", u.channel, u.plan.Target.Tag)
+			fmt.Fprintf(w, "  Icebath stays on %s until a newer %s release ships. "+
+				"To follow every commit instead: `icebath update --set-channel main`.\n", updaterecord.BuildVersion(), u.channel)
+			heldMessage = fmt.Sprintf("✓ Holding at this build until a newer %s release ships.", u.channel)
+		case u.moves():
 			fmt.Fprintf(w, "→ Release: %s\n", u.label())
 			err = releaseApply(ctx, root, u.plan.Target, w)
 		}
@@ -228,9 +267,12 @@ func updateViaRelease(ctx context.Context, w io.Writer, args map[string]any, com
 		return &pm.SystemExit{Code: 1}
 	}
 	commit := u.plan.Installed.Commit
-	if u.moves() {
+	switch {
+	case heldMessage != "":
+		completionRequest["completion_message"] = heldMessage
+	case u.moves():
 		commit = u.plan.Target.Commit
-	} else {
+	default:
 		fmt.Fprintln(w, u.heldLine())
 		completionRequest["completion_message"] = "✓ Already up to date!"
 	}
@@ -257,18 +299,27 @@ func sourceCheckoutBuildsBinary(root string) bool {
 	return err == nil && st.IsDir()
 }
 
-// Rebuilds the checkout binary from the pulled source as setup-icebath does
+// Rebuilds the checkout binary from the pulled source as setup-icebath does, the build kept in the update's custody
 func buildCheckoutBinary(ctx context.Context, w io.Writer, root string) error {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		return fmt.Errorf("Go is required to rebuild %s (see go.mod for the version)", root)
 	}
 	run := func(env []string, args ...string) error {
-		cmd := exec.CommandContext(ctx, gobin, args...)
+		contained, err := ContainedCommand(ctx, append([]string{gobin}, args...), true, root)
+		if err != nil {
+			return err
+		}
+		cmd := exec.CommandContext(ctx, contained.Argv[0], contained.Argv[1:]...)
 		cmd.Dir, cmd.Stdout, cmd.Stderr = root, w, w
 		cmd.Env = append(os.Environ(), env...)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("go %s: %w", strings.Join(args, " "), err)
+		cmd.ExtraFiles, cmd.SysProcAttr = contained.ExtraFiles, contained.Attr
+		runErr := cmd.Run()
+		if err := contained.Close(); err != nil {
+			return err
+		}
+		if runErr != nil {
+			return fmt.Errorf("go %s: %w", strings.Join(args, " "), runErr)
 		}
 		return nil
 	}

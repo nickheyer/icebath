@@ -307,19 +307,6 @@ func GaugeBarSegments(text string) []Segment {
 	return segs
 }
 
-// ColorizeGaugeBarsANSI colors usage gauges in a header or legend line
-func (c *Console) ColorizeGaugeBarsANSI(text string) string {
-	var b strings.Builder
-	for _, s := range GaugeBarSegments(text) {
-		if code, ok := ansiStyle[s.Style]; ok {
-			b.WriteString(c.Color(s.Text, code))
-		} else {
-			b.WriteString(s.Text)
-		}
-	}
-	return b.String()
-}
-
 // FormatRadioItemANSI applies ANSI colors to a styled radiolist row
 func (c *Console) FormatRadioItemANSI(item RadioItem) string {
 	var b strings.Builder

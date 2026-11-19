@@ -238,26 +238,3 @@ func TestReceiptReconcileInterruptedRunNamesItsLastStage(t *testing.T) {
 		t.Fatalf("latest not reconciled: %s", out)
 	}
 }
-
-func TestReceiptSettleLatestReceiptFleetRewritesOnlyWhenDischarged(t *testing.T) {
-	ctx, h := rcHome(t)
-	BeginUpdateReceipt(ctx, nil, "")
-	RecordGatewayRestart(ctx, GatewayRestart{Incomplete: true, PhaseError: "boom"})
-	FinalizeUpdateReceipt(ctx, "failed", nil, "")
-	latest := filepath.Join(h, "logs", "update_receipts", "latest.json")
-	before, _ := os.ReadFile(latest)
-	fleet := []any{map[string]any{"profile": "default", "state": "current"}}
-	if SettleLatestReceiptFleet(ctx, fleet, func(map[string]any) bool { return false }) {
-		t.Fatal("undischarged settle reported true")
-	}
-	if after, _ := os.ReadFile(latest); string(after) != string(before) {
-		t.Fatal("undischarged settle rewrote latest")
-	}
-	if !SettleLatestReceiptFleet(ctx, fleet, func(r map[string]any) bool { return r["gateway_restart"].(map[string]any)["incomplete"] == false }) {
-		t.Fatal("discharged settle reported false")
-	}
-	gr := ReadLatestReceipt(ctx)["gateway_restart"].(map[string]any)
-	if gr["incomplete"] != false || gr["phase_error"] != "" || gr["settled_from_live_fleet_at"] == nil {
-		t.Fatalf("gateway restart %v", gr)
-	}
-}

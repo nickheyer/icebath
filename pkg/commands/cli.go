@@ -137,6 +137,7 @@ const rootEpilog = `Examples:
     icebath fallback [list]        Show fallback provider chain
     icebath fallback add           Add a fallback provider (same picker as ` + "`icebath model`" + `)
     icebath fallback remove        Remove a fallback provider from the chain
+    icebath fallback check [--live]  Check each fallback entry can be used (exit 1 if not)
     icebath config                 View configuration
     icebath config edit            Edit config in $EDITOR
     icebath config set model gpt-4 Set a config value
@@ -271,14 +272,15 @@ func ProfileNames() []string {
 func (c *CLI) addChat(root *cobra.Command) {
 	chat := c.newCmd(root, "chat", "Interactive chat with the agent", "Start an interactive chat session with Icebath Agent")
 	f := chat.Flags()
-	f.StringP("query", "q", "", "Query to run. On a real TTY the prompt seeds an interactive session (submitted literally as the first turn); combined with --oneshot or -Q, or on a non-TTY, it answers and exits.")
+	f.StringP("query", "q", "", "Run one query, print the answer and exit.")
 	f.String("query-file", "", "Read the single query from a file instead of the command line ('-' reads stdin). Safe for arbitrary text: nothing is shell-interpreted, so quotes, $(...), and backticks are preserved verbatim. Mutually exclusive with -q.")
 	chat.MarkFlagsMutuallyExclusive("query", "query-file")
-	f.Bool("oneshot", false, "With -q/--query-file: answer the query and exit (legacy single-query behavior) instead of seeding an interactive session. Implied on non-TTY stdio and by -Q/--quiet.")
 	f.String("image", "", "Optional local image path to attach to a single query")
 	f.StringP("model", "m", "", "Model to use (e.g., anthropic/claude-sonnet-4)")
 	c.inherited(chat, "model")
 	f.StringP("toolsets", "t", "", "Comma-separated toolsets to enable")
+	f.Bool("list-tools", false, "List every tool of the enabled toolsets with its description and exit (honors --toolsets)")
+	f.Bool("list-toolsets", false, "List every toolset, marking the enabled ones, and exit (honors --toolsets)")
 	f.String("reasoning", "", "Reasoning effort for this session: none, minimal, low, medium, high, xhigh, max, or ultra. Overrides agent.reasoning_effort for this run only (same levels as the /reasoning slash command).")
 	c.inherited(chat, "reasoning")
 	f.StringArrayP("skills", "s", nil, "Preload one or more skills for the session (repeat flag or comma-separate)")
@@ -383,7 +385,7 @@ func (c *CLI) argparseAbbrev(cmd *cobra.Command) {
 		}
 		var hits []string
 		f.VisitAll(func(fl *pflag.Flag) {
-			if _, removed := fl.Value.(removedHelp); !removed && strings.HasPrefix(fl.Name, name) {
+			if strings.HasPrefix(fl.Name, name) {
 				hits = append(hits, fl.Name)
 			}
 		})
@@ -637,39 +639,6 @@ func (c *CLI) Bind(path string, h CLIHandler) bool {
 		return false
 	}
 	c.handlers[path] = h
-	return true
-}
-
-// Set failure of the help option on a parser built without add_help, reported as an unrecognized argument
-var errHelpRemoved = errors.New("help option removed")
-
-// Value a bare --help hands the removed help option, telling it apart from --help=value
-const removedHelpBare = "\x00bare"
-
-// Occupies the help flag name so cobra adds no -h or --help to the command
-type removedHelp struct{}
-
-func (removedHelp) String() string   { return "false" }
-func (removedHelp) Set(string) error { return errHelpRemoved }
-func (removedHelp) Type() string     { return "bool" }
-
-// Reports whether the help flag of cmd is the removed help an add_help=False parser carries
-func helpRemoved(cmd *cobra.Command) bool {
-	fl := cmd.Flags().Lookup("help")
-	if fl == nil {
-		return false
-	}
-	_, ok := fl.Value.(removedHelp)
-	return ok
-}
-
-// DisableHelp drops -h and --help from the command at path the way argparse add_help=False builds it
-func (c *CLI) DisableHelp(path string) bool {
-	cmd := c.find(path)
-	if cmd == nil {
-		return false
-	}
-	cmd.Flags().AddFlag(&pflag.Flag{Name: "help", Shorthand: "h", Value: removedHelp{}, DefValue: "false", NoOptDefVal: removedHelpBare, Hidden: true})
 	return true
 }
 

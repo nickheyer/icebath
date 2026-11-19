@@ -31,12 +31,6 @@ func TestReaderValidMarker(t *testing.T) {
 	if provenance == nil || !provenance.Valid || provenance.Manager != "docker" || provenance.Version == nil || *provenance.Version != "1.0.0" {
 		t.Fatalf("provenance %+v", provenance)
 	}
-	if text, _ := json.Marshal(provenance.ToDict().Vals); !strings.Contains(string(text), `"deployment_kind":"image"`) {
-		t.Fatalf("dict %s", text)
-	}
-	if got := provenance.ToDict().Keys; strings.Join(got, ",") != "schema,deployment_kind,manager,image,version,revision,marker_path,valid,error" {
-		t.Fatalf("field order %v", got)
-	}
 }
 
 func TestReaderFailsClosedOnMalformed(t *testing.T) {

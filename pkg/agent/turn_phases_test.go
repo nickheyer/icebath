@@ -97,6 +97,16 @@ func TestScriptedPreludeCallIDIsUniquePerChat(t *testing.T) {
 	}
 }
 
+func TestBuildToolCallDictArgumentsSerialized(t *testing.T) {
+	tc, err := buildPreludeToolCall("call_1", "terminal", map[string]any{"cmd": "ls"})
+	if err != nil || tc.Function.Arguments != `{"cmd": "ls"}` {
+		t.Fatalf("arguments %q err %v", tc.Function.Arguments, err)
+	}
+	if tc.Extra != nil {
+		t.Fatalf("provider data %v", tc.Extra)
+	}
+}
+
 func TestNeutraliseReplayEchoGhostsCopiesHazardRows(t *testing.T) {
 	ghost := &state.Message{Role: "assistant", DisplayKind: "hidden", Content: "  " + LegacyInterruptedPlaceholder + " "}
 	current := &state.Message{Role: "assistant", DisplayKind: "hidden", Content: InterruptedPlaceholder}

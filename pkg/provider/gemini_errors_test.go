@@ -233,31 +233,6 @@ func TestGeminiAliasesPreserveNativeEndpointSelection(t *testing.T) {
 	}
 }
 
-// Pool probe double reporting availability and entry count
-type gemPoolProbe struct {
-	available bool
-	entries   int
-}
-
-func (p gemPoolProbe) Provider() string                         { return "gemini" }
-func (p gemPoolProbe) HasCredentials() bool                     { return p.entries > 0 }
-func (p gemPoolProbe) HasAvailable(string) bool                 { return p.available }
-func (p gemPoolProbe) NextAvailableAt(string) (time.Time, bool) { return time.Time{}, false }
-func (p gemPoolProbe) EntryCount() int                          { return p.entries }
-func (p gemPoolProbe) LiftReopenedCooldowns(string) bool        { return false }
-
-func TestGeminiFastFallbackPoolRecovery(t *testing.T) {
-	if !PoolMayRecoverFromRateLimit(gemPoolProbe{available: true, entries: 3}) {
-		t.Fatal("multi entry pool should recover")
-	}
-	if PoolMayRecoverFromRateLimit(gemPoolProbe{available: false, entries: 3}) {
-		t.Fatal("exhausted pool should skip rotation")
-	}
-	if PoolMayRecoverFromRateLimit(gemPoolProbe{available: true, entries: 1}) || PoolMayRecoverFromRateLimit(nil) {
-		t.Fatal("single entry or missing pool should fall back")
-	}
-}
-
 func TestGeminiDisabledReasoningBoundsThinkingWhereSupported(t *testing.T) {
 	off := false
 	for model, field := range map[string][2]any{

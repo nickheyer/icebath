@@ -10,13 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 const hostChildEnv = "ICEBATH_TEST_HOST_CHILD"
@@ -295,28 +293,5 @@ func TestDiscardDeadRecordRetractsALiveLookingPidOnlyOnceTheHostLockIsFree(t *te
 	ReleaseHostLock(RoleGateway)
 	if !DiscardDeadHostRecord(RoleGateway) || exists(HostRecordPath(RoleGateway)) {
 		t.Fatal("record kept after the lock went free")
-	}
-}
-
-func TestServedProfilesIgnoresTheRetiredOptOutButHonoursAnExplicitArgument(t *testing.T) {
-	var asked []bool
-	prev := hostProfilesToServe
-	hostProfilesToServe = func(_ context.Context, multiplex, _, _ bool) ([]profiles.ServedProfile, error) {
-		asked = append(asked, multiplex)
-		if multiplex {
-			return []profiles.ServedProfile{{Name: "default", Home: "/x"}, {Name: "other", Home: "/y"}}, nil
-		}
-		return []profiles.ServedProfile{{Name: "default", Home: "/x"}}, nil
-	}
-	t.Cleanup(func() { hostProfilesToServe = prev })
-	off := false
-	if got := HostServedProfiles(nil); !slices.Equal(got, []string{"default", "other"}) {
-		t.Fatal(got)
-	}
-	if got := HostServedProfiles(&off); !slices.Equal(got, []string{"default"}) {
-		t.Fatal(got)
-	}
-	if !slices.Equal(asked, []bool{true, false}) {
-		t.Fatal(asked)
 	}
 }

@@ -48,14 +48,6 @@ type StampError struct{ Msg string }
 
 func (e *StampError) Error() string { return e.Msg }
 
-// Release plus distance when a release is known, else the derived identity
-func (v VersionInfo) DisplayVersion() string {
-	if v.BaseVersion == "unknown" {
-		return v.DerivedVersion
-	}
-	return derivedVersion(v.BaseVersion, v.Distance, false, "")
-}
-
 // Base version with the distance, short commit and dirty markers git describe would add
 func derivedVersion(base string, distance *int64, dirty bool, shortCommit string) string {
 	if distance != nil && *distance > 0 {

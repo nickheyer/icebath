@@ -8,10 +8,8 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyversion"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Site copy of the shipped catalog document the refresh fetches
@@ -181,18 +180,9 @@ func InTreeCatalogTime() *float64 {
 // In-tree catalog time the live merge consults, swapped by tests
 var inTreeCatalogTime = InTreeCatalogTime
 
-// Last commit time of the catalog path with lazy fetch disabled, empty on any failure or after ten seconds
+// Last commit time of the catalog path through the shared bounded git probe, empty on any failure or after ten seconds
 func catalogGitProbe(root, rel string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "log", "-1", "--format=%ct", "--", rel)
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=")
-	cmd.WaitDelay = time.Second
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return tools.BoundedGitProbe([]string{"git", "-C", root, "log", "-1", "--format=%ct", "--", rel}, 10*time.Second, nil)
 }
 
 // Newest mtime of any file under the checked out catalog, nil when nothing is checked out

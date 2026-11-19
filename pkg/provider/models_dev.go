@@ -51,8 +51,6 @@ var (
 	modelsDevWarnMu          sync.Mutex
 	modelsDevToProviderOnce  sync.Once
 	modelsDevToProvider      map[string][]string
-	modelCapabilitiesMu      sync.Mutex
-	registeredModelCaps      = map[string]map[string]map[string]any{}
 )
 
 // Network seam returning status, payload and ETag for one registry download
@@ -768,11 +766,6 @@ func FetchModelsDev(ctx context.Context, forceRefresh bool) map[string]any {
 	return fetchModelsDevWith(home.Dir(ctx), forceRefresh, true)
 }
 
-// ModelsDevOffline returns any memory or disk copy of the registry without a request
-func ModelsDevOffline(ctx context.Context) map[string]any {
-	return fetchModelsDevIn(home.Dir(ctx), false)
-}
-
 // Raw models.dev provider entry or nil
 func modelsDevRegistryProvider(h, mdevID string, allowNetwork bool) map[string]any {
 	registry := fetchModelsDevWith(h, false, allowNetwork)
@@ -1191,26 +1184,6 @@ func relayVisionMarkerMetadata(provider, model string) map[string]any {
 	return base
 }
 
-// RegisterModelCapabilities records a plugin profile's exact model declarations in the canonical override schema
-func RegisterModelCapabilities(provider string, caps map[string]map[string]any) {
-	modelCapabilitiesMu.Lock()
-	defer modelCapabilitiesMu.Unlock()
-	key := NormalizeProvider(provider)
-	if caps == nil {
-		delete(registeredModelCaps, key)
-		return
-	}
-	copied := make(map[string]map[string]any, len(caps))
-	for model, decl := range caps {
-		entry := make(map[string]any, len(decl))
-		for k, v := range decl {
-			entry[k] = v
-		}
-		copied[model] = entry
-	}
-	registeredModelCaps[key] = copied
-}
-
 // Exact model declaration of the provider profile registered for a home, then of a direct registration
 func providerModelCapabilitiesIn(h, provider, model string) map[string]any {
 	ctx := context.Background()
@@ -1220,11 +1193,6 @@ func providerModelCapabilitiesIn(h, provider, model string) map[string]any {
 	var decl map[string]any
 	if profile := getProviderProfile(ctx, provider); profile != nil {
 		decl = profile.ModelCapabilities[model]
-	}
-	if decl == nil {
-		modelCapabilitiesMu.Lock()
-		decl = registeredModelCaps[NormalizeProvider(provider)][model]
-		modelCapabilitiesMu.Unlock()
 	}
 	out := make(map[string]any, len(decl))
 	for k, v := range decl {

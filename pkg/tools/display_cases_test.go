@@ -198,7 +198,7 @@ func TestBuildStatusPhraseRespectsFriendlyLabelsToggle(t *testing.T) {
 
 func TestGetToolEmojiCustomDefault(t *testing.T) {
 	SetSkinToolEmojis(nil)
-	if got := GetToolEmoji(&Env{Home: t.TempDir()}, "x", "\u2699\ufe0f"); got != "\u2699\ufe0f" {
+	if got := GetToolEmoji(context.Background(), &Env{Home: t.TempDir()}, "x", "\u2699\ufe0f"); got != "\u2699\ufe0f" {
 		t.Fatalf("emoji %q", got)
 	}
 }
@@ -210,10 +210,10 @@ func TestGetToolEmojiSkinOverrideOnlyForMatchingTool(t *testing.T) {
 	}
 	SetSkinToolEmojis(func() map[string]string { return map[string]string{"terminal": "\u2694"} })
 	t.Cleanup(func() { SetSkinToolEmojis(nil) })
-	if got := GetToolEmoji(env, "terminal", "\u26a1"); got != "\u2694" {
+	if got := GetToolEmoji(context.Background(), env, "terminal", "\u26a1"); got != "\u2694" {
 		t.Fatalf("skin override %q", got)
 	}
-	if got := GetToolEmoji(env, "web_search", "\u26a1"); got != "\U0001f50d" {
+	if got := GetToolEmoji(context.Background(), env, "web_search", "\u26a1"); got != "\U0001f50d" {
 		t.Fatalf("registry fallback %q", got)
 	}
 }

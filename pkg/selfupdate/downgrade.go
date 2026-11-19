@@ -225,53 +225,16 @@ func downgradeRefusalGit(ctx context.Context, gitCmd []string, root, targetRef, 
 	})
 }
 
-// Reports whether an install root holds a git checkout, a directory or a worktree gitfile
-func holdsGitCheckout(root string) bool {
-	_, err := os.Stat(filepath.Join(root, ".git"))
-	return err == nil
-}
-
 // Binary form of the schema question, a tag at or above the running build is a forward update
-func releasePredatesRuntime(ctx context.Context, h, tag string) bool {
+func releasePredatesRuntime(ctx context.Context, repository, h, tag string) bool {
 	if CompareVersions(tag, updaterecord.BuildVersion()) >= 0 {
 		return false
 	}
-	verdict := githubPredatesRuntime(ctx, OfficialRepository, tag, filepath.Join(h, "source-checks", "release-runtime.json"))
+	verdict := githubPredatesRuntime(ctx, repository, tag, filepath.Join(h, "source-checks", "release-runtime.json"))
 	return verdict != nil && *verdict
 }
 
-// Read only probe git of the update check, 20 second bound, -1 when git cannot run
-func checkProbeGit(ctx context.Context, root string) func(args ...string) int {
-	return func(args ...string) int {
-		result, err := sourceGitRun(ctx, gitArgs([]string{updaterecord.GitExecutable(ctx)}, args...), root, 20*time.Second)
-		if err != nil {
-			return -1
-		}
-		return result.ReturnCode
-	}
-}
-
-// Whether the update would refuse rel here, the check's read only twin of downgradeRefusal
-func downgradeWouldRefuse(ctx context.Context, root string, rel *Release) (bool, error) {
-	h := home.Dir(ctx)
-	if holdsGitCheckout(root) {
-		repository, err := sourceRepository(ctx, []string{updaterecord.GitExecutable(ctx)}, root)
-		if err != nil {
-			return false, err
-		}
-		remote := func(sha string) *bool {
-			return githubPredatesRuntime(ctx, repository, sha, filepath.Join(h, "source-checks", "release-runtime.json"))
-		}
-		return wouldRefuse(ctx, root, rel.Tag, h, checkProbeGit(ctx, root), remote), nil
-	}
-	return len(ledgeredProfiles(ctx, h)) > 0 && releasePredatesRuntime(ctx, h, rel.Tag), nil
-}
-
-// Why the update must not install rel, nil when no ledgered store would meet a pre runtime release
-func downgradeRefusal(ctx context.Context, root string, rel *Release) (*string, error) {
-	h := home.Dir(ctx)
-	if holdsGitCheckout(root) {
-		return downgradeRefusalGit(ctx, []string{updaterecord.GitExecutable(ctx)}, root, rel.Tag, h), nil
-	}
-	return downgradeRefusalFor(ctx, rel.Tag, h, func() bool { return releasePredatesRuntime(ctx, h, rel.Tag) }), nil
+// Whether a release install's update would refuse the release tag names, the store scan first so GitHub is asked only when needed
+func downgradeWouldRefuse(ctx context.Context, repository, tag, h string) bool {
+	return len(ledgeredProfiles(ctx, h)) > 0 && releasePredatesRuntime(ctx, repository, h, tag)
 }

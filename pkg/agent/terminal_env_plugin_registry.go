@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -22,6 +23,11 @@ func adaptHostedTerminalEnvProvider(p any) any {
 	return hostedTerminalEnvProvider{obj: obj}
 }
 
+// Contract defaults bound to this provider for every member the plugin object does not declare
+func (h hostedTerminalEnvProvider) defaults() tools.TerminalEnvironmentProviderDefaults {
+	return tools.TerminalEnvironmentProviderDefaults{Self: h}
+}
+
 // Attribute of the hosted object, a failing read raising like the Python attribute access
 func (h hostedTerminalEnvProvider) mustGet(name string) any {
 	v, err := h.obj.Get(context.Background(), name)
@@ -29,6 +35,19 @@ func (h hostedTerminalEnvProvider) mustGet(name string) any {
 		panic(err)
 	}
 	return v
+}
+
+// Attribute of the hosted object and whether the object declares it, any other failing read raising like mustGet
+func (h hostedTerminalEnvProvider) declared(name string) (any, bool) {
+	v, err := h.obj.Get(context.Background(), name)
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "AttributeError" {
+		return nil, false
+	}
+	if err != nil {
+		panic(err)
+	}
+	return v, true
 }
 
 // Method call of the hosted object, a failing call raising like the Python call
@@ -40,29 +59,59 @@ func (h hostedTerminalEnvProvider) mustCall(method string, args ...any) any {
 	return v
 }
 
-// String attribute, empty for None
-func (h hostedTerminalEnvProvider) text(name string) string {
-	s, _ := h.mustGet(name).(string)
+// Declared string attribute, empty for None, def when the object does not declare it
+func (h hostedTerminalEnvProvider) text(name string, def func() string) string {
+	v, declared := h.declared(name)
+	if !declared {
+		return def()
+	}
+	s, _ := v.(string)
 	return s
 }
 
-func (h hostedTerminalEnvProvider) Name() string           { return h.text("name") }
-func (h hostedTerminalEnvProvider) DisplayName() string    { return h.text("display_name") }
-func (h hostedTerminalEnvProvider) Description() string    { return h.text("description") }
-func (h hostedTerminalEnvProvider) EnvDescription() string { return h.text("env_description") }
-func (h hostedTerminalEnvProvider) IsRemote() bool         { return config.PyTruthy(h.mustGet("is_remote")) }
+// Truth of a declared attribute, def when the object does not declare it
+func (h hostedTerminalEnvProvider) flag(name string, def func() bool) bool {
+	v, declared := h.declared(name)
+	if !declared {
+		return def()
+	}
+	return config.PyTruthy(v)
+}
+
+func (h hostedTerminalEnvProvider) Name() string {
+	s, _ := h.mustGet("name").(string)
+	return s
+}
+func (h hostedTerminalEnvProvider) DisplayName() string {
+	return h.text("display_name", h.defaults().DisplayName)
+}
+func (h hostedTerminalEnvProvider) Description() string {
+	return h.text("description", h.defaults().Description)
+}
+func (h hostedTerminalEnvProvider) EnvDescription() string {
+	return h.text("env_description", h.defaults().EnvDescription)
+}
+func (h hostedTerminalEnvProvider) IsRemote() bool { return h.flag("is_remote", h.defaults().IsRemote) }
 func (h hostedTerminalEnvProvider) IsContainer() bool {
-	return config.PyTruthy(h.mustGet("is_container"))
+	return h.flag("is_container", h.defaults().IsContainer)
 }
 func (h hostedTerminalEnvProvider) SkipContainerGuards() bool {
-	return config.PyTruthy(h.mustGet("skip_container_guards"))
+	return h.flag("skip_container_guards", h.defaults().SkipContainerGuards)
 }
-func (h hostedTerminalEnvProvider) CachePathBase() string { return h.text("cache_path_base") }
-func (h hostedTerminalEnvProvider) DefaultCwd() string    { return h.text("default_cwd") }
+func (h hostedTerminalEnvProvider) CachePathBase() string {
+	return h.text("cache_path_base", h.defaults().CachePathBase)
+}
+func (h hostedTerminalEnvProvider) DefaultCwd() string {
+	return h.text("default_cwd", h.defaults().DefaultCwd)
+}
 
 // Vendor credential names of the plugin, a frozenset crossing the wire as a list
 func (h hostedTerminalEnvProvider) StripEnvKeys() []string {
-	items, _ := h.mustGet("strip_env_keys").([]any)
+	v, declared := h.declared("strip_env_keys")
+	if !declared {
+		return h.defaults().StripEnvKeys()
+	}
+	items, _ := v.([]any)
 	keys := make([]string, 0, len(items))
 	for _, item := range items {
 		if s, ok := item.(string); ok {
@@ -73,17 +122,20 @@ func (h hostedTerminalEnvProvider) StripEnvKeys() []string {
 }
 
 func (h hostedTerminalEnvProvider) SessionIsolatedWhenNonpersistent() bool {
-	return config.PyTruthy(h.mustGet("session_isolated_when_nonpersistent"))
+	return h.flag("session_isolated_when_nonpersistent", h.defaults().SessionIsolatedWhenNonpersistent)
 }
 func (h hostedTerminalEnvProvider) SupportsStreams() bool {
-	return config.PyTruthy(h.mustGet("supports_streams"))
+	return h.flag("supports_streams", h.defaults().SupportsStreams)
 }
 func (h hostedTerminalEnvProvider) IsAvailable() bool {
 	return config.PyTruthy(h.mustCall("is_available"))
 }
 
-// Requirements verdict of the plugin, a False answer reading as the requirements not met
-func (h hostedTerminalEnvProvider) CheckRequirements(_ *tools.Env, cfg map[string]any) error {
+// Requirements verdict of the plugin, a False answer reading as the requirements not met and the availability probe without the method
+func (h hostedTerminalEnvProvider) CheckRequirements(env *tools.Env, cfg map[string]any) error {
+	if !h.obj.HasMethod("check_requirements") {
+		return h.defaults().CheckRequirements(env, cfg)
+	}
 	v, err := h.obj.Call(context.Background(), "check_requirements", []any{cfg}, nil)
 	if err != nil {
 		return err
@@ -94,20 +146,11 @@ func (h hostedTerminalEnvProvider) CheckRequirements(_ *tools.Env, cfg map[strin
 	return nil
 }
 
-// Health status and detail pair the plugin reports
-func (h hostedTerminalEnvProvider) Probe() (string, string) {
-	pair, _ := h.mustCall("probe").([]any)
-	var status, detail string
-	if len(pair) > 0 {
-		status, _ = pair[0].(string)
+// Setup lines of the plugin, none when it declares no setup_instructions
+func (h hostedTerminalEnvProvider) SetupInstructions(env *tools.Env) []string {
+	if !h.obj.HasMethod("setup_instructions") {
+		return h.defaults().SetupInstructions(env)
 	}
-	if len(pair) > 1 {
-		detail, _ = pair[1].(string)
-	}
-	return status, detail
-}
-
-func (h hostedTerminalEnvProvider) SetupInstructions(*tools.Env) []string {
 	items, _ := h.mustCall("setup_instructions").([]any)
 	lines := make([]string, 0, len(items))
 	for _, item := range items {
@@ -118,16 +161,22 @@ func (h hostedTerminalEnvProvider) SetupInstructions(*tools.Env) []string {
 	return lines
 }
 
-// Runs the hosted provider's interactive post_setup hook once the setup wizard selects it
+// Runs the hosted provider's interactive post_setup hook once the setup wizard selects it, nothing when it declares none
 func (h hostedTerminalEnvProvider) PostSetup(ctx context.Context, _ *tools.Env) error {
+	if !h.obj.HasMethod("post_setup") {
+		return nil
+	}
 	_, err := h.obj.Call(ctx, "post_setup", nil, nil)
 	return err
 }
 
 var _ tools.TerminalBackendPostSetup = hostedTerminalEnvProvider{}
 
-// Doctor rows of the plugin, each wire tuple read as ok, label and detail
+// Doctor rows of the plugin, each wire tuple read as ok, label and detail, the availability row when it declares no doctor_checks
 func (h hostedTerminalEnvProvider) DoctorChecks() []tools.DoctorCheck {
+	if !h.obj.HasMethod("doctor_checks") {
+		return h.defaults().DoctorChecks()
+	}
 	rows, _ := h.mustCall("doctor_checks").([]any)
 	out := make([]tools.DoctorCheck, 0, len(rows))
 	for _, r := range rows {

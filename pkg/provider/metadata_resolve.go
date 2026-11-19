@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -18,26 +17,15 @@ type ProfileContextLengthHook func(model string) int
 // ProfileLiveContextLengthHook reads a profile's credentialed live catalog, zero declines
 type ProfileLiveContextLengthHook func(ctx context.Context, model, apiKey, baseURL string) int
 
-var (
-	profileContextHooksMu     sync.RWMutex
-	profileContextLengthHooks = map[string]ProfileContextLengthHook{}
-	profileLiveContextHooks   = map[string]ProfileLiveContextLengthHook{}
-)
-
 func profileContextLength(providerName, model string) int {
 	if _, ok := ProfileFor(providerName); !ok {
 		return 0
 	}
-	profileContextHooksMu.RLock()
-	fn := profileContextLengthHooks[NormalizeProvider(providerName)]
-	if p := getProviderProfile(context.Background(), NormalizeProvider(providerName)); p != nil && p.GetModelContextLengthHook != nil {
-		fn = p.GetModelContextLengthHook
-	}
-	profileContextHooksMu.RUnlock()
-	if fn == nil {
+	p := getProviderProfile(context.Background(), NormalizeProvider(providerName))
+	if p == nil || p.GetModelContextLengthHook == nil {
 		return 0
 	}
-	return fn(model)
+	return p.GetModelContextLengthHook(model)
 }
 
 func profileLiveContextLength(ctx context.Context, providerName, model, apiKey, baseURL string) int {
@@ -47,16 +35,11 @@ func profileLiveContextLength(ctx context.Context, providerName, model, apiKey, 
 	if _, ok := ProfileFor(providerName); !ok {
 		return 0
 	}
-	profileContextHooksMu.RLock()
-	fn := profileLiveContextHooks[NormalizeProvider(providerName)]
-	if p := getProviderProfile(context.Background(), NormalizeProvider(providerName)); p != nil && p.LiveContextLengthHook != nil {
-		fn = p.LiveContextLengthHook
-	}
-	profileContextHooksMu.RUnlock()
-	if fn == nil {
+	p := getProviderProfile(context.Background(), NormalizeProvider(providerName))
+	if p == nil || p.LiveContextLengthHook == nil {
 		return 0
 	}
-	return fn(ctx, model, apiKey, baseURL)
+	return p.LiveContextLengthHook(ctx, model, apiKey, baseURL)
 }
 
 // MiniMax M3 on any surface

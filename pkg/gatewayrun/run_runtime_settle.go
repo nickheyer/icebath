@@ -13,9 +13,6 @@ import (
 func (r *GatewayRunner) settleGatewayRuntime(ctx context.Context, budget float64, reason *string) error {
 	authorities := gateway.AllAuthorities(r)
 	gateway.StopManagedTurns(r, reason)
-	for _, a := range authorities {
-		gateway.StopOneshots(a)
-	}
 	var tasks []<-chan struct{}
 	for _, a := range authorities {
 		tasks = append(tasks, gateway.AuthorityTasks(a)...)

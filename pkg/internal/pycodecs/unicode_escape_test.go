@@ -13,8 +13,8 @@ func TestUnicodeEscapeMatchesCPython(t *testing.T) {
 		"emoji \U0001f600": `emoji \U0001f600`,
 		`quotes ' and "`:   `quotes ' and "`,
 	} {
-		if got := UnicodeEscape(in); got != want {
-			t.Fatalf("%q escaped %q want %q", in, got, want)
+		if got, err := Encode(in, "unicode_escape"); err != nil || got != want {
+			t.Fatalf("%q escaped %q %v want %q", in, got, err, want)
 		}
 	}
 }

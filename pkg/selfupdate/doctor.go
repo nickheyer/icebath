@@ -138,7 +138,7 @@ func checkAPIConnectivity(ctx context.Context, d *Doctor, shouldFix bool) (*Find
 func doctorPrintProbes(ctx context.Context, d *Doctor, f *Finding, probes []doctorProbe) error {
 	c := &cliui.Console{Out: d.W}
 	fmt.Fprint(d.W, "  "+c.Color(fmt.Sprintf("Running %d connectivity checks in parallel…", len(probes)), cliui.Dim))
-	results, err := doctorRunProbes(probes)
+	results, err := doctorRunProbes(probes, false)
 	if err != nil {
 		return err
 	}

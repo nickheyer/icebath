@@ -1,19 +1,19 @@
 package app
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -40,13 +40,8 @@ func init() {
 		"review.summary":      (*GatewayAgent).onReviewSummary,
 		"approval.request":    (*GatewayAgent).onApproval,
 		"clarify.request":     (*GatewayAgent).onClarify,
-		"connection.request":  (*GatewayAgent).onConnectionRequest,
-		"connection.update":   (*GatewayAgent).onConnectionUpdate,
 	}
 }
-
-// Serializes the save swap of a secret request so only one capture runs at a time
-var gatewaySecretLock sync.Mutex
 
 func (a *GatewayAgent) dispatch(kind string, payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
 	if handler := gatewayHandlers[kind]; handler != nil {
@@ -176,7 +171,6 @@ func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback fun
 	a.mu.Lock()
 	a.usageStale = true
 	a.mu.Unlock()
-	gatewayToolsMarkDirty()
 	if name == "todo" {
 		a.todoFromResult(result)
 	}
@@ -296,28 +290,20 @@ func (a *GatewayAgent) emitPrint(text string) {
 	fmt.Fprintln(pysys.Stdout, text)
 }
 
-// Answers a dangerous command approval through the CLI's approval panel, deny when it has none
+// One dim status line for a prompt this run answered at once, no user being there to ask
+func (a *GatewayAgent) noteUnanswered(text string) {
+	a.emitPrint("\n" + dimANSI + "  " + text + resetANSI)
+}
+
+// Label, subject and outcome of a prompt this run answered at once, as one status line
+func (a *GatewayAgent) noteUnansweredPrompt(label, detail, outcome string) {
+	a.emitPrint("\n" + dimANSI + i18n.T(a.ctx, "cli.session.persist_prompt_summary", "", map[string]any{
+		"icon": "⚠", "label": label, "detail": squash(detail, 120), "outcome": outcome}) + resetANSI)
+}
+
+// Denies a dangerous command approval at once and says so, a one shot run having no user to ask
 func (a *GatewayAgent) onApproval(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
-	choices, _ := payload["choices"].([]any)
-	has := func(name string) bool {
-		for _, c := range choices {
-			if c == name {
-				return true
-			}
-		}
-		return false
-	}
-	choice := "deny"
-	if cb := a.opts.ApprovalCallback; cb != nil {
-		answer, err := cb(a.ctx, strOrEmpty(payload["command"]), strOrEmpty(payload["description"]), has("always"), has("session"), false)
-		if err != nil {
-			panic(err)
-		}
-		choice = answer
-	}
-	if !has(choice) {
-		choice = "deny"
-	}
+	a.noteUnansweredPrompt(i18n.T(a.ctx, "cli.approval.label", "", nil), strOrEmpty(payload["command"]), i18n.T(a.ctx, "cli.approval.outcome_deny", "", nil))
 	a.mu.Lock()
 	generation := a.generation
 	a.mu.Unlock()
@@ -325,7 +311,7 @@ func (a *GatewayAgent) onApproval(payload map[string]any, streamCallback func(st
 		generation = g
 	}
 	if _, err := a.connection.Call(a.ctx, "approval.respond", map[string]any{"session_id": a.SessionID(), "execution_generation": generation,
-		"prompt_id": payload["prompt_id"], "choice": choice}); err != nil {
+		"prompt_id": payload["prompt_id"], "choice": "deny"}); err != nil {
 		panic(err)
 	}
 }
@@ -372,47 +358,9 @@ func (a *GatewayAgent) onClarify(payload map[string]any, streamCallback func(str
 	}
 }
 
-func (a *GatewayAgent) onConnectionRequest(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
-	if cb := a.opts.ConnectionCallback; cb != nil {
-		cb(payload)
-	}
-}
-
-func (a *GatewayAgent) onConnectionUpdate(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
-	if cb := a.opts.ConnectionUpdateCallback; cb != nil {
-		cb(payload)
-	}
-}
-
-// Reopens the connection card from a resume snapshot's open operation, or closes a stale card
-func (a *GatewayAgent) restoreConnectionCard(pending map[string]any) {
-	if len(pending) > 0 {
-		if cb := a.opts.ConnectionCallback; cb != nil {
-			cb(pending)
-		}
-	} else if cb := a.opts.ConnectionUpdateCallback; cb != nil {
-		cb(map[string]any{"settled": true})
-	}
-}
-
-// Sends the connection card's answer to the gateway's open operation
-func (a *GatewayAgent) ConnectionRespond(opID string, result any) (any, error) {
-	return a.connection.Call(a.ctx, "connection.respond", map[string]any{"op_id": opID, "result": result,
-		"owner": map[string]any{"type": "session", "session_id": a.SessionID()}})
-}
-
-// Asks the gateway to run a failed MCP row of the open operation again
-func (a *GatewayAgent) ConnectionRetry(name string) (any, error) {
-	return a.connection.Call(a.ctx, "connectors.connect", map[string]any{"connectors": []any{name}, "reconnect": true,
-		"owner": map[string]any{"type": "session", "session_id": a.SessionID()}})
-}
-
-// Answers a server request through the CLI's modal, the answer travelling only in the response frame
+// Answers a server request, the answer travelling only in the response frame
 func (a *GatewayAgent) answerRequest(frame *pyjson.Object, method string, params map[string]any) {
 	id := frame.Vals["id"]
-	a.mu.Lock()
-	a.openRequest = &gatewayOpenRequest{id: id, method: method}
-	a.mu.Unlock()
 	answer := func() (answer any) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -426,9 +374,6 @@ func (a *GatewayAgent) answerRequest(frame *pyjson.Object, method string, params
 		}()
 		return gatewayServerRequests[method](a, params)
 	}()
-	a.mu.Lock()
-	a.openRequest = nil
-	a.mu.Unlock()
 	if method == "clarify" {
 		a.connection.Reply(id, answer)
 		return
@@ -437,93 +382,46 @@ func (a *GatewayAgent) answerRequest(frame *pyjson.Object, method string, params
 	a.connection.Reply(id, map[string]any{"value": value})
 }
 
-// Releases the modal answering a request the gateway settled or withdrew meanwhile
-func (a *GatewayAgent) onRequestWithdrawn(payload map[string]any) {
-	a.mu.Lock()
-	current := a.openRequest
-	a.mu.Unlock()
-	if current == nil || !pyjson.Equal(payload["id"], current.id) || a.opts.ModalWithdrawCallback == nil {
-		return
-	}
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			pkgLog().Debug(fmt.Sprintf("modal withdraw for %s failed: %v", current.method, recovered))
-		}
-	}()
-	a.opts.ModalWithdrawCallback(current.method)
-}
-
 func (a *GatewayAgent) askClarify(params map[string]any) any {
 	return clarifyReply(a.opts.ClarifyCallback, params)
 }
 
-// Sudo password from the CLI's masked panel, empty when it has none
+// Skips a sudo password request at once and says so
 func (a *GatewayAgent) askSudo(params map[string]any) any {
-	if cb := a.opts.SudoPasswordCallback; cb != nil {
-		return cb(a.ctx)
-	}
+	a.noteUnansweredPrompt(i18n.T(a.ctx, "cli.secret.bell_sudo", "", nil), strOrEmpty(params["command"]), i18n.T(a.ctx, "cli.secret.sudo_skipped", "", nil))
 	return ""
 }
 
-// Secret from the CLI's skill setup panel with its save captured, the gateway saving the value itself
+// Secret a skill asks for, read at the masked console prompt for the gateway to store, empty when skipped or when no terminal can be asked
 func (a *GatewayAgent) askSecret(params map[string]any) any {
-	callback := skills.SecretCaptureCallback()
-	if callback == nil {
-		return ""
-	}
-	var captured []string
-	capture := func(_ context.Context, _, key, value string) (config.SecureSaveResult, error) {
-		captured = append(captured, value)
-		return config.SecureSaveResult{Success: true, StoredAs: key, Validated: false}, nil
-	}
-	gatewaySecretLock.Lock()
-	defer gatewaySecretLock.Unlock()
-	saver := swapSecretSaver(capture)
-	defer swapSecretSaver(saver)
-	metadata, _ := params["metadata"].(map[string]any)
-	if _, err := callback(strOrEmpty(params["env_var"]), strOrEmpty(params["prompt"]), metadata); err != nil {
+	value, err := console().MaskedSecret(strOrEmpty(params["prompt"]) + " (hidden, ESC or empty Enter to skip): ")
+	if err != nil && !errors.Is(err, cliui.ErrInterrupt) && !errors.Is(err, cliui.ErrEOF) {
 		panic(err)
 	}
-	if len(captured) > 0 {
-		return captured[0]
+	if err != nil || value == "" {
+		a.noteUnanswered("⏭ Secret entry skipped")
+		return ""
 	}
+	a.noteUnanswered("✓ Stored secret in " + home.Display(home.Dir(a.ctx)) + "/.env as " + strOrEmpty(params["env_var"]))
+	return value
+}
+
+// Leaves a password manager locked at once and says so
+func (a *GatewayAgent) askVaultUnlock(params map[string]any) any {
+	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.stays_locked", "", map[string]any{"name": pyStrOr(params["display_name"])}))
 	return ""
 }
 
-// Password manager unlock answer from the CLI's masked panel
-func (a *GatewayAgent) askVaultUnlock(params map[string]any) any {
-	callback := tools.GetUnlockPromptCallback(a.threadCtx())
-	if callback == nil {
-		return ""
-	}
-	return callback(pyStrOr(params["backend"]), pyStrOr(params["display_name"]))
-}
-
-// Login to save as one JSON string of identifier and password, empty without a password
+// Declines to save a login at once and says so
 func (a *GatewayAgent) askVaultSaveLogin(params map[string]any) any {
-	callback := tools.GetSaveLoginPromptCallback(a.threadCtx())
-	if callback == nil {
-		return ""
-	}
-	answer := callback(pyStrOr(params["origin"]), pyStrOr(params["site"]))
-	if answer == nil || answer["password"] == "" {
-		return ""
-	}
-	defer clear(answer)
-	dumped, err := pyjson.Dumps(pyjson.ObjectOf("identifier", answer["identifier"], "password", answer["password"]))
-	if err != nil {
-		panic(err)
-	}
-	return dumped
+	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.login_not_saved", "", map[string]any{"site": pyStrOr(params["site"])}))
+	return ""
 }
 
-// One time code from the CLI's code panel
+// Enters no one time code at once and says so
 func (a *GatewayAgent) askVaultCode(params map[string]any) any {
-	callback := tools.GetCodePromptCallback(a.threadCtx())
-	if callback == nil {
-		return ""
-	}
-	return callback(pyStrOr(params["site"]), pyStrOr(params["hint"]))
+	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.code_not_entered", "", map[string]any{"site": pyStrOr(params["site"])}))
+	return ""
 }
 
 // Python str of a value with None and falsy values reading as empty

@@ -96,6 +96,7 @@ var cliChoiceI18n = map[string]string{"once": "approval.allowed_once", "session"
 func askTerminal(ctx context.Context, env *Env, o promptOptions, displayCommand, displayDescription string, onceOnly bool) promptChoice {
 	os.Setenv("ICEBATH_SPINNER_PAUSE", "1")
 	defer os.Unsetenv("ICEBATH_SPINNER_PAUSE")
+	out := ScopedStdout(ctx)
 	tctx := WithEnvHome(ctx, env)
 	t := func(key string, kwargs map[string]any) string { return i18n.T(tctx, key, "", kwargs) }
 	shape := "short"
@@ -108,7 +109,7 @@ func askTerminal(ctx context.Context, env *Env, o promptOptions, displayCommand,
 	if header == "" {
 		header = t("approval.dangerous_header", map[string]any{"description": displayDescription})
 	}
-	fmt.Printf("\n  %s\n      %s\n\n%s\n\n", header, displayCommand, t("approval.choose_"+shape, nil))
+	fmt.Fprintf(out, "\n  %s\n      %s\n\n%s\n\n", header, displayCommand, t("approval.choose_"+shape, nil))
 	flushStdout()
 	prompt := t("approval.prompt_"+shape, nil)
 	answered := make(chan string, 1)
@@ -117,10 +118,10 @@ func askTerminal(ctx context.Context, env *Env, o promptOptions, displayCommand,
 	select {
 	case choice = <-answered:
 	case <-time.After(o.timeout):
-		fmt.Println("\n" + t("approval.timeout", approvalTimeoutNoticeKwargs(env)))
+		fmt.Fprintln(out, "\n"+t("approval.timeout", approvalTimeoutNoticeKwargs(env)))
 		return promptChoice{value: "timeout"}
 	case <-ctx.Done():
-		fmt.Println("\n" + t("approval.cancelled", nil))
+		fmt.Fprintln(out, "\n"+t("approval.cancelled", nil))
 		return unanswered("the prompt was interrupted before an answer was given")
 	}
 	decision := "deny"
@@ -141,7 +142,7 @@ func askTerminal(ctx context.Context, env *Env, o promptOptions, displayCommand,
 			decision = "session"
 		}
 	}
-	fmt.Println(t(cliChoiceI18n[decision], nil))
+	fmt.Fprintln(out, t(cliChoiceI18n[decision], nil))
 	return promptChoice{value: decision}
 }
 

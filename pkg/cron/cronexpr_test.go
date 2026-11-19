@@ -82,12 +82,12 @@ func TestPrevTable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %q: %v", c.expr, err)
 		}
-		got, err := e.Prev(c.from)
+		got, err := e.PrevAt(c.from)
 		if err != nil {
 			t.Fatalf("prev %q: %v", c.expr, err)
 		}
 		if !got.Equal(c.want) {
-			t.Errorf("Prev(%q, %v) = %v, want %v", c.expr, c.from, got, c.want)
+			t.Errorf("PrevAt(%q, %v) = %v, want %v", c.expr, c.from, got, c.want)
 		}
 	}
 }

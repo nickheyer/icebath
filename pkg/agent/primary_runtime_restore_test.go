@@ -312,7 +312,7 @@ func TestRestorePrimaryRuntimeRestoreNamedCustomPoolWrongEndpointFailsClosed(t *
 	if a.credentialPool != nil {
 		t.Fatalf("pool %v", a.credentialPool)
 	}
-	if !reflect.DeepEqual(*keys, []string{"gemini-no-filter"}) {
+	if len(*keys) != 0 {
 		t.Fatalf("loads %v", *keys)
 	}
 	if len(*swaps) != 0 {

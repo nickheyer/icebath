@@ -567,7 +567,7 @@ func refuseUnconfiguredHeadlessChat() int {
 
 // Stdin text becomes the query of a chat launch that names none and opens no TUI, code 2 when blank without an image
 func adoptStdinQuery(a *chatArgs) int {
-	if (a.Command != "" && a.Command != "chat") || a.Query != "" || a.QueryFile != "" || a.Oneshot != "" || isTUIChatLaunch(a) {
+	if (a.Command != "" && a.Command != "chat") || a.Query != "" || a.QueryFile != "" || a.Oneshot != "" || a.ListTools || a.ListToolsets || isTUIChatLaunch(a) {
 		return 0
 	}
 	if a.Image != "" && isatty.IsTerminal(os.Stdin.Fd()) {
@@ -630,16 +630,8 @@ func syncBundledSkillsForStartup() bool {
 	return true
 }
 
-func termuxShouldPrefetchUpdateCheck() bool {
-	return !isTermuxStartupEnvironment() || os.Getenv("ICEBATH_TERMUX_PREFETCH_UPDATES") == "1"
-}
-
-// Kicks off the update check and banner prefetch and the bundled skills sync
-func startChatBackgroundPrefetch() {
-	if termuxShouldPrefetchUpdateCheck() {
-		app.PrefetchUpdateCheck()
-		app.PrefetchBannerData()
-	}
+// Syncs the bundled skills for a chat launch, in the background once the home holds any skill
+func startBundledSkillsSync() {
 	unseeded := func() bool {
 		dir := filepath.Join(home.Dir(context.Background()), "skills")
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
@@ -661,7 +653,6 @@ func startChatBackgroundPrefetch() {
 	}
 	if unseeded() {
 		sync()
-		app.ResetAvailableSkillsCache()
 		return
 	}
 	go sync()
@@ -677,7 +668,7 @@ func cmdChat(a *chatArgs) int {
 		return code
 	}
 	useTUI := isTUIChatLaunch(a)
-	if streamJSON || bypassChatLaunch(a) {
+	if streamJSON || bypassChatLaunch(a) || a.ListTools || a.ListToolsets {
 		return launchGatewayChat(a)
 	}
 	applySafeMode(a)
@@ -689,7 +680,7 @@ func cmdChat(a *chatArgs) int {
 	if !useTUI && !providerConfigured {
 		return refuseUnconfiguredHeadlessChat()
 	}
-	startChatBackgroundPrefetch()
+	startBundledSkillsSync()
 	if a.Yolo {
 		os.Setenv("ICEBATH_YOLO_MODE", "1")
 	}
@@ -715,8 +706,8 @@ func cmdChat(a *chatArgs) int {
 			MaxTurns: a.MaxTurns})
 	}
 	readQueryFile(a)
-	return app.ChatMain(ctx, app.MainOptions{Model: a.Model, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Query: a.Query, Oneshot: a.OneshotExit,
-		RunBudget: a.RunBudget, OutputFormat: a.OutputFormat, IgnoreRules: a.IgnoreRules || a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig || a.SafeMode,
+	return app.ChatMain(ctx, app.MainOptions{Model: a.Model, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Query: a.Query,
+		RunBudget: a.RunBudget, OutputFormat: a.OutputFormat, IgnoreRules: a.IgnoreRules || a.SafeMode,
 		Provider: a.Provider, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Image: a.Image, Resume: a.Resume,
 		Worktree: a.Worktree, Checkpoints: a.Checkpoints, PassSessionID: a.PassSessionID, MaxTurns: a.MaxTurns, APIKey: a.APIKey, BaseURL: a.BaseURL})
 }
@@ -809,7 +800,6 @@ func gatewayChatNamespace(a *chatArgs) map[string]any {
 	if a.RunBudget != 0 {
 		ns["run_budget"] = a.RunBudget
 	}
-	flag("oneshot_exit", a.OneshotExit)
 	flag("create_if_missing", a.CreateIfMissing)
 	flag("safe_mode", a.SafeMode)
 	flag("ignore_user_config", a.IgnoreUserConfig)
@@ -822,13 +812,15 @@ func gatewayChatNamespace(a *chatArgs) map[string]any {
 	flag("pass_session_id", a.PassSessionID)
 	flag("worktree", a.Worktree)
 	flag("no_restore_cwd", a.NoRestoreCWD)
+	flag("list_tools", a.ListTools)
+	flag("list_toolsets", a.ListToolsets)
 	return ns
 }
 
 // The transport launcher of a gateway run chat
 func launchGatewayChat(a *chatArgs) int {
 	ns := gatewayChatNamespace(a)
-	if !app.BypassLaunch(ns) {
+	if !app.BypassLaunch(ns) && !a.ListTools && !a.ListToolsets {
 		confirmStartupExpensiveModelOverride(a)
 	}
 	return app.LaunchFromArgs(context.Background(), ns, func() (bool, error) { return ensureLaunchProvider(a) })

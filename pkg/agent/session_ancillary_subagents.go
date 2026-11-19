@@ -264,9 +264,3 @@ func ControlSnapshotOrRefusal(ctx context.Context, getMeta func(ctx context.Cont
 	}
 	return snapshot, err
 }
-
-// Whether a one shot template name is one the prompt template table holds
-func OneshotTemplateKnown(name string) bool {
-	_, ok := promptTemplates[name]
-	return ok
-}

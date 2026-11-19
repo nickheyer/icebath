@@ -73,6 +73,17 @@ func init() {
 			"update-finish": updateFinishGroup, "update-restart-recovery": updateRestartRecoveryGroup,
 			"update-completion": updateCompletionGroup, "venv-sync": venvSyncGroup, "source-completion": sourceCompletionGroup,
 			"import-health": importHealthGroup, "pets": petsGroup})
+		selfupdate.SetHolderValueFlags(func() []string {
+			required, optional := cli.TopLevelValueFlagSets()
+			flags := make([]string, 0, len(required)+len(optional))
+			for flag := range required {
+				flags = append(flags, flag)
+			}
+			for flag := range optional {
+				flags = append(flags, flag)
+			}
+			return flags
+		})
 	})
 	tierAtExit = append(tierAtExit, func() { browser.AtexitCleanup(context.Background()) }, codeexec.ShutdownAllKernels,
 		codeexec.ShutdownAllRemoteKernels, codeexec.ShutdownComputerUseBackends, cron.ShutdownParallelPools, lsp.AtExitShutdown)

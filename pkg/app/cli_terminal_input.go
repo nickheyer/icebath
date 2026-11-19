@@ -17,26 +17,6 @@ var imageExtensions = map[string]bool{
 	".bmp": true, ".tiff": true, ".tif": true, ".svg": true, ".ico": true,
 }
 
-// Reads the initial status bar visibility, YAML off and strings like hidden both meaning off
-func statusBarVisibleFromDisplayConfig(displayConfig any) bool {
-	display, _ := displayConfig.(map[string]any)
-	statusbar, ok := display["statusbar"]
-	if !ok {
-		statusbar, ok = display["tui_statusbar"]
-	}
-	if !ok {
-		statusbar = "top"
-	}
-	if s, isStr := statusbar.(string); isStr {
-		switch strings.ToLower(strings.TrimSpace(s)) {
-		case "0", "false", "hidden", "no", "off":
-			return false
-		}
-		return true
-	}
-	return statusbar != false
-}
-
 // Resolves a user supplied attachment path with quotes, tilde, env vars and file URLs, empty unless an existing file
 func resolveAttachmentPath(rawPath string) string {
 	token := strings.TrimSpace(rawPath)

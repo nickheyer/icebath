@@ -341,21 +341,6 @@ func TestChannelCanaryTags(t *testing.T) {
 	if !IsCanaryTag(" v1.2.3+canary.20260819T171926Z\n") || IsCanaryTag("v1.2.3-canary.20260818") || IsCanaryTag(7) || IsCanaryTag("v1000.0.0+canary.20260819T171926Z") {
 		t.Fatal("canary shape misjudged")
 	}
-	if stamp := CanaryTimestamp("v1.2.3+canary.20260819T171926Z"); stamp == nil || *stamp != "20260819T171926Z" {
-		t.Fatal("canary stamp not extracted")
-	}
-	if CanaryTimestamp("v1.2.3") != nil {
-		t.Fatal("stable tag gave a canary stamp")
-	}
-	if tag, err := CanaryTagForDate("v1.2.3", "20260819T171926Z"); err != nil || tag != "v1.2.3+canary.20260819T171926Z" {
-		t.Fatalf("%q %v", tag, err)
-	}
-	if _, err := CanaryTagForDate("2026.7.20", "20260819T171926Z"); err == nil || err.Error() != "invalid stable version for canary: 2026.7.20" {
-		t.Fatalf("got %v", err)
-	}
-	if _, err := CanaryTagForDate("1.2.3", "2026-08-19"); err == nil || err.Error() != "invalid canary UTC timestamp: 2026-08-19" {
-		t.Fatalf("got %v", err)
-	}
 }
 
 func TestChannelAdoptRetiredNoneOriginalAndMissingKeys(t *testing.T) {

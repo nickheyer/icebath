@@ -6,24 +6,22 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestRetryAfterDropReportsTheAttemptThatDropped(t *testing.T) {
-	agent := &diagAgent{}
-	l := &doLoop{ctx: context.Background(), opts: DoOptions{DiagAgent: agent}, session: &RetrySession{},
-		sleep: func(context.Context, time.Duration) error { return nil }}
+	recordStreamBackoff(t)
+	agent := &fakeChatAgent{provider: "openrouter", apiMode: "chat_completions", baseURL: "https://openrouter.ai/api/v1", model: "m"}
+	c := backoffTestCall(agent)
 	drop := &causedError{name: "ConnectionError", msg: "drop"}
-	if err := l.retryAfterDrop(drop, 0, 2, false, nil); err != nil {
-		t.Fatal(err)
+	c.retryAfterDrop(drop, 0, 2, false, "stream_retry_cleanup")
+	statuses, activity := agent.snapshotStrings(&agent.statuses), agent.snapshotStrings(&agent.touches)
+	if len(statuses) != 1 || !strings.Contains(statuses[0], "attempt 1/3 dropped") {
+		t.Fatalf("statuses %q", statuses)
 	}
-	if len(agent.statuses) != 1 || !strings.Contains(agent.statuses[0], "attempt 1/3 dropped") {
-		t.Fatalf("statuses %q", agent.statuses)
-	}
-	if len(agent.activity) != 1 || agent.activity[0] != "stream retry 1/3 after "+pyrepr.TypeName(drop) {
-		t.Fatalf("activity %q", agent.activity)
+	if len(activity) != 1 || activity[0] != "stream retry 1/3 after "+pyrepr.TypeName(drop) {
+		t.Fatalf("activity %q", activity)
 	}
 }
 
@@ -34,8 +32,7 @@ func TestChatStreamFillsTheAttemptDiagnostics(t *testing.T) {
 			chunk(map[string]any{}, "stop", nil), "data: [DONE]\n\n")
 	})
 	c := newTestClient(t, ws.route("openrouter"))
-	call := &streamCall{}
-	call.start()
+	call := &streamCall{attempt: 1}
 	var activity []string
 	_, err := c.Stream(withStreamCall(context.Background(), call), userRequest("hi"), func(ev StreamEvent) error {
 		if ev.Kind == EventActivity {
@@ -46,7 +43,7 @@ func TestChatStreamFillsTheAttemptDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := call.currentDiag()
+	d := call.diag
 	if d == nil || d.Chunks != 3 || d.FirstChunkAt == nil || d.Bytes != 3*40+len([]rune("héllo"))+1 {
 		t.Fatalf("diag %+v", d)
 	}

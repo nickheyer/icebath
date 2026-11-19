@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"regexp"
@@ -279,7 +280,7 @@ func failureHintFor(code *int64, apiDuration float64) string {
 }
 
 var (
-	recoveryPrint       = func(line string) { fmt.Fprintln(statusStdout, line) }
+	recoveryPrint       = func(out io.Writer, line string) { fmt.Fprintln(out, line) }
 	recoveryLocaleEnv   = os.Getenv
 	imagePatchLimitRe   = regexp.MustCompile(`exceeding the limit of\s*(\p{Nd}{2,7})`)
 	imageMaxAllowedRe   = regexp.MustCompile(`max allowed size(?:\s+for [^:]+)?:\s*(\p{Nd}{3,5})\s*pixels?`)
@@ -314,7 +315,7 @@ func plines(a *AIAgent, lines ...string) {
 	}
 	_, _ = config.RenderNotification(a.homeContext(), func() error {
 		for _, line := range lines {
-			recoveryPrint(a.logPrefix + line)
+			recoveryPrint(a.stdout(), a.logPrefix+line)
 		}
 		return nil
 	}, platform, false, a.notificationConfig)

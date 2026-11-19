@@ -6,14 +6,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -21,9 +19,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 )
-
-// PKCEPoolSource marks loopback PKCE rows as manual so load_pool reseeding never prunes them
-const PKCEPoolSource = "manual:loopback_pkce"
 
 var pkceLoopbackLiterals = map[string]bool{"127.0.0.1": true, "::1": true}
 
@@ -59,16 +54,6 @@ var (
 	pluginSignInEnv *PoolEnv
 )
 
-// Env a plugin sign in reads and writes, the hosted flow env while the TUI runs one
-func pkceAuthEnv() PoolEnv {
-	pluginSignInMu.Lock()
-	defer pluginSignInMu.Unlock()
-	if pluginSignInEnv != nil {
-		return *pluginSignInEnv
-	}
-	return pkceEnvFn()
-}
-
 // Context a plugin auth handler runs under, the hosted flow context so stopping the flow cancels it
 func pluginSignInCtx(fallback context.Context) context.Context {
 	pluginSignInMu.Lock()
@@ -91,9 +76,6 @@ func withPluginSignInEnv(env PoolEnv, fn func() error) error {
 	}()
 	return fn()
 }
-
-// Console the login and handler messages print to
-var pkceOut io.Writer = os.Stdout
 
 func pkceErr(provider, message, code string) *AuthError {
 	return &AuthError{Message: provider + ": " + message, Provider: provider, Code: code}
@@ -279,15 +261,6 @@ func pkceTokenHTTPError(provider string, resp *oauthHTTPResponse, fallbackCode s
 	return pkceErr(provider, fmt.Sprintf("OAuth token request failed with HTTP %d.", resp.Status), fallbackCode)
 }
 
-// Canonical profile name for the credential pool when the typed provider is an alias
-func pkcePoolProvider(provider string) string {
-	raw := strings.ToLower(strings.TrimSpace(provider))
-	if profile, ok := ProfileFor(raw); ok {
-		return profile.Name
-	}
-	return raw
-}
-
 func pkceTokenURLSafe(n int) string {
 	raw := make([]byte, n)
 	fillRandom(raw)
@@ -309,11 +282,6 @@ func orderedQuery(pairs [][2]string) string {
 		parts[i] = url.QueryEscape(k) + "=" + url.QueryEscape(values[k])
 	}
 	return strings.Join(parts, "&")
-}
-
-// LoginOAuthPKCE runs the browser authorization code plus PKCE flow and returns the pool fields of the new grant
-func LoginOAuthPKCE(provider string, cfg OAuthPKCEConfig, openBrowser bool) (map[string]any, error) {
-	return pkceLogin(pkceAuthEnv(), pkceOut, provider, cfg, openBrowser)
 }
 
 func pkceLogin(env PoolEnv, out io.Writer, provider string, cfg OAuthPKCEConfig, openBrowser bool) (map[string]any, error) {
@@ -392,131 +360,4 @@ func pkceLogin(env PoolEnv, out io.Writer, provider string, cfg OAuthPKCEConfig,
 	return pkcePostToken(env, provider, cfg, map[string]string{
 		"grant_type": "authorization_code", "code": code, "redirect_uri": redirectURI, "code_verifier": verifier,
 	}, "oauth_token_exchange_failed")
-}
-
-// A non blank access token whose expiry is unset or still ahead of now
-func pkceIsUsable(accessToken, expiresAtMS any, nowMS int64) bool {
-	if strings.TrimSpace(orEmptyStr(accessToken)) == "" {
-		return false
-	}
-	if expiresAtMS == nil {
-		return true
-	}
-	ts, ok := anyFloat(expiresAtMS)
-	return ok && int64(ts) > nowMS
-}
-
-func pkceEntryExpiry(entry PooledCredential) any {
-	if entry.ExpiresAtMS == 0 {
-		return nil
-	}
-	return entry.ExpiresAtMS
-}
-
-// PKCEAuthHandler owns add, status and logout for the provider and declines refresh to the pool's generic refresh
-func PKCEAuthHandler(cfg OAuthPKCEConfig) func(action string, args []string, provider string) (bool, error) {
-	return func(action string, args []string, provider string) (bool, error) {
-		env := pkceAuthEnv()
-		out := pkceOut
-		provider = pkcePoolProvider(provider)
-		label := cfg.Label
-		if label == "" {
-			label = provider
-		}
-		switch action {
-		case "add":
-			noBrowser := false
-			for _, a := range args {
-				noBrowser = noBrowser || a == "--no-browser"
-			}
-			tokens, err := pkceLogin(env, out, provider, cfg, !noBrowser)
-			if err != nil {
-				return false, err
-			}
-			idBytes := make([]byte, 3)
-			fillRandom(idBytes)
-			entry := PooledCredential{Provider: provider, ID: hex.EncodeToString(idBytes), Label: label, AuthType: AuthTypeOAuth, Priority: 0, Source: PKCEPoolSource,
-				Extra: map[string]any{"oauth_pkce": map[string]any{"client_id": cfg.ClientID, "scope": strings.Join(cfg.Scopes, " ")}}}
-			entry = ApplyPluginRefreshResult(entry, tokens)
-			added, err := LoadPool(env, provider).AddEntry(entry)
-			if err != nil {
-				return false, err
-			}
-			fmt.Fprintf(out, "Signed in to %s; credential %s added to the pool.\n", label, added.ID)
-			return true, nil
-		case "status":
-			entries := LoadPool(env, provider).Entries()
-			nowMS := time.Now().UnixMilli()
-			usable := false
-			for _, e := range entries {
-				usable = usable || pkceIsUsable(e.AccessToken, pkceEntryExpiry(e), nowMS)
-			}
-			switch {
-			case len(entries) == 0:
-				fmt.Fprintf(out, "%s: logged out\n", provider)
-			case usable:
-				fmt.Fprintf(out, "%s: logged in\n  auth_type: oauth (pkce)\n  credentials: %d\n", provider, len(entries))
-			default:
-				fmt.Fprintf(out, "%s: expired (needs refresh) — run `icebath auth refresh %s`\n", provider, provider)
-			}
-			return true, nil
-		case "logout":
-			pool := LoadPool(env, provider)
-			count := len(pool.Entries())
-			for index := count; index >= 1; index-- {
-				pool.RemoveIndex(index)
-			}
-			fmt.Fprintf(out, "Logged out of %s (%d credential(s) removed)\n", provider, count)
-			return true, nil
-		}
-		return false, nil
-	}
-}
-
-// PKCERefreshCredential rotates one pooled row through the refresh grant, adopting a peer rotation found on disk
-func PKCERefreshCredential(cfg OAuthPKCEConfig) func(entry PooledCredential) (map[string]any, error) {
-	return func(entry PooledCredential) (map[string]any, error) {
-		return pkceRefresh(pkceEnvFn(), cfg, entry)
-	}
-}
-
-func pkceRefresh(env PoolEnv, cfg OAuthPKCEConfig, entry PooledCredential) (map[string]any, error) {
-	provider := entry.Provider
-	if err := ValidateOAuthPKCEConfig(provider, cfg); err != nil {
-		return nil, err
-	}
-	unlock, err := env.Store.Lock(AuthLockTimeout)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	rows, err := env.Store.ReadCredentialPool(provider)
-	if err != nil {
-		return nil, err
-	}
-	onDisk := map[string]any{}
-	for _, row := range rows {
-		if row != nil && row["id"] == entry.ID {
-			onDisk = row
-			break
-		}
-	}
-	diskRefresh := strings.TrimSpace(orEmptyStr(onDisk["refresh_token"]))
-	if diskRefresh != "" && diskRefresh != entry.RefreshToken && pkceIsUsable(onDisk["access_token"], onDisk["expires_at_ms"], time.Now().UnixMilli()) {
-		env.log().Debug(fmt.Sprintf("%s entry %s: adopting a peer's rotation, refresh token not spent", provider, entry.ID))
-		return map[string]any{"access_token": onDisk["access_token"], "refresh_token": onDisk["refresh_token"],
-			"expires_at_ms": onDisk["expires_at_ms"], "last_refresh": onDisk["last_refresh"]}, nil
-	}
-	refreshToken := diskRefresh
-	if refreshToken == "" {
-		refreshToken = strings.TrimSpace(entry.RefreshToken)
-	}
-	if refreshToken == "" {
-		return nil, pkceErr(provider, "no refresh_token on the pooled credential.", "oauth_refresh_no_token")
-	}
-	data := map[string]string{"grant_type": "refresh_token", "refresh_token": refreshToken}
-	if len(cfg.Scopes) > 0 {
-		data["scope"] = strings.Join(cfg.Scopes, " ")
-	}
-	return pkcePostToken(env, provider, cfg, data, "oauth_refresh_failed")
 }

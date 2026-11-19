@@ -199,25 +199,15 @@ func currentSetupNavigation() *setupNavigationState {
 	return setupNavigation
 }
 
-// Setup navigation raised as a panic so provider error handlers never swallow it, marked for the metrics classifiers
-type setupControlFlow interface {
-	error
-	setupControlFlow()
-}
-
-// Control flow of a cancelled setup wizard
+// Control flow of a cancelled setup wizard, raised as a panic so provider error handlers never swallow it
 type setupCancelled struct{}
 
-func (setupCancelled) Error() string     { return "" }
-func (setupCancelled) SetupCancelled()   {}
-func (setupCancelled) setupControlFlow() {}
+func (setupCancelled) Error() string { return "" }
 
-// Control flow returning to an earlier setup choice
+// Control flow returning to an earlier setup choice, raised as a panic like the cancel
 type setupGoBack struct{ promptIndex int }
 
-func (e setupGoBack) Error() string   { return strconv.Itoa(e.promptIndex) }
-func (setupGoBack) SetupGoBack()      {}
-func (setupGoBack) setupControlFlow() {}
+func (e setupGoBack) Error() string { return strconv.Itoa(e.promptIndex) }
 
 // Translates the shared prompt events into setup control flow, replaying an answer only to the prompt that gave it
 func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*cliui.MenuNavigationStart, error) {

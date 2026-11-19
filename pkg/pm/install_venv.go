@@ -321,49 +321,23 @@ func venvIsCurrent(ctx context.Context, extras []string, plugins PluginInput, pr
 	return selectionCurrent(ctx, fact, stamp, root, bare)
 }
 
-// Refuses extras the platform or a frozen bundle cannot carry and returns the shipped and frozen lists
-func featurePolicy(ctx context.Context, extras []string, repair bool) (shipped, frozen []string, err error) {
-	if len(extras) > 0 {
-		var unsupported []string
-		for _, extra := range extras {
-			supported, err := extraSupported(ctx, extra, nil, func(string) bool { return false })
-			if err != nil {
-				return nil, nil, err
-			}
-			if !supported {
-				unsupported = append(unsupported, extra)
-			}
+// Refuses extras this Python or platform cannot carry
+func featurePolicy(ctx context.Context, extras []string) error {
+	var unsupported []string
+	for _, extra := range extras {
+		supported, err := extraSupported(ctx, extra, nil, func(string) bool { return false })
+		if err != nil {
+			return err
 		}
-		if len(unsupported) > 0 {
-			return nil, nil, NewInstallError("venv", fmt.Sprintf("extras %s are not supported by this Python/platform", errchain.Show(unsupported)),
-				"choose a supported provider; no dependency environment was changed")
+		if !supported {
+			unsupported = append(unsupported, extra)
 		}
 	}
-	shipped, err = readFeatures(ctx)
-	if err != nil {
-		return nil, nil, err
+	if len(unsupported) > 0 {
+		return NewInstallError("venv", fmt.Sprintf("extras %s are not supported by this Python/platform", errchain.Show(unsupported)),
+			"choose a supported provider; no dependency environment was changed")
 	}
-	frozen = shipped
-	if frozen != nil && !repair && LazyInstallsAllowedFor(ctx) {
-		frozen = nil
-	}
-	if frozen != nil && len(extras) > 0 {
-		allowed := map[string]bool{}
-		for _, extra := range frozen {
-			allowed[extra] = true
-		}
-		var outside []string
-		for _, extra := range sortedUnion(extras) {
-			if !allowed[extra] {
-				outside = append(outside, extra)
-			}
-		}
-		if len(outside) > 0 {
-			return nil, nil, RefuseLazyFor(ctx, "venv", fmt.Sprintf(
-				"extras %s are outside this bundle's frozen feature set (security.allow_lazy_installs is false)", errchain.Show(outside)))
-		}
-	}
-	return shipped, frozen, nil
+	return nil
 }
 
 // Holds the dependency lock, an impatient caller refusing instead of queueing behind a rebuild
@@ -471,7 +445,7 @@ func publishInactive(ctx context.Context, change *StagedPlugin) error {
 }
 
 // Enabled extras, expected stamp and package inputs a sync must reach
-func targetSelection(ctx context.Context, p VenvState, fact map[string]any, extras []string, inputs VenvApplyOptions, repair bool, shipped, frozen []string) ([]string, string, VenvApplyOptions, error) {
+func targetSelection(ctx context.Context, p VenvState, fact map[string]any, extras []string, inputs VenvApplyOptions, repair bool) ([]string, string, VenvApplyOptions, error) {
 	if repair {
 		if len(fact) > 0 {
 			if _, _, err := recordedSelection(fact); err != nil {
@@ -485,8 +459,6 @@ func targetSelection(ctx context.Context, p VenvState, fact map[string]any, extr
 				return nil, "", VenvApplyOptions{}, err
 			}
 			enabled = list
-		} else if frozen != nil {
-			enabled = append([]string{}, frozen...)
 		} else {
 			enabled = []string{"all"}
 		}
@@ -500,7 +472,7 @@ func targetSelection(ctx context.Context, p VenvState, fact map[string]any, extr
 		}
 		return enabled, stamp, VenvApplyOptions{Repair: true}, nil
 	}
-	recorded := shipped
+	var recorded []string
 	if raw, present := fact["extras"]; present {
 		list, err := pyIterStrings(raw)
 		if err != nil {
@@ -700,8 +672,6 @@ type venvSync struct {
 	plugins  PluginInput
 	repair   bool
 	explicit bool
-	shipped  []string
-	frozen   []string
 	evict    bool
 }
 
@@ -723,7 +693,7 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 		if err != nil {
 			return err
 		}
-		return syncEvicting(ctx, s.pkg, facts, fact, EvictingSync{Extras: extras, Shipped: s.shipped, Frozen: s.frozen, Explicit: s.explicit})
+		return syncEvicting(ctx, s.pkg, facts, fact, EvictingSync{Extras: extras, Explicit: s.explicit})
 	}
 	var inputs VenvApplyOptions
 	if change != nil {
@@ -739,7 +709,7 @@ func (s *venvSync) locked(ctx context.Context, extras []string) error {
 	if err != nil {
 		return err
 	}
-	enabled, stamp, inputs, err := selectTarget(ctx, s.pkg, fact, extras, inputs, s.repair, s.shipped, s.frozen)
+	enabled, stamp, inputs, err := selectTarget(ctx, s.pkg, fact, extras, inputs, s.repair)
 	if err != nil {
 		return err
 	}
@@ -821,8 +791,7 @@ func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
 	if err := validateSyncVenv(opts); err != nil {
 		return err
 	}
-	shipped, frozen, err := syncFeaturePolicy(ctx, opts.Extras, opts.Repair)
-	if err != nil {
+	if err := syncFeaturePolicy(ctx, opts.Extras); err != nil {
 		return err
 	}
 	venv, err := venvPackage()
@@ -830,7 +799,7 @@ func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
 		return err
 	}
 	sync := &venvSync{pkg: venv, plugins: opts.Plugins, repair: opts.Repair, explicit: opts.Explicit,
-		shipped: shipped, frozen: frozen, evict: opts.EvictIncompatiblePlugins}
+		evict: opts.EvictIncompatiblePlugins}
 	automatic := append(append([]string{}, opts.Automatic...), opts.Carried...)
 	release, err := dependencyLock(ctx, opts.Explicit || opts.Repair)
 	if err != nil {
@@ -860,7 +829,7 @@ func syncVenvBody(ctx context.Context, opts SyncVenvOptions) error {
 			return err
 		}
 		failing, err := failingCarried(ctx, venv, failure, CarriedTrial{
-			Extras: extras, Carried: opts.Carried, Fact: fact, Shipped: shipped, Frozen: frozen, Explicit: opts.Explicit,
+			Extras: extras, Carried: opts.Carried, Fact: fact, Explicit: opts.Explicit,
 		})
 		if err != nil {
 			return err

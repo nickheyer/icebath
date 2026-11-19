@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net"
 	"net/http"
@@ -41,6 +42,14 @@ type Error struct {
 func (e *Error) Error() string { return e.Text }
 
 func (e *Error) Unwrap() error { return e.Err }
+
+// OSError is an OSError requests raises itself, outside the RequestException family its callers catch
+type OSError struct{ Text string }
+
+func (e *OSError) Error() string { return e.Text }
+
+// Python exception class name the error stands for
+func (e *OSError) PyTypeName() string { return "OSError" }
 
 // Timeout is a requests timeout, each limit with the Python str of the value passed
 type Timeout struct {
@@ -148,10 +157,24 @@ var transports sync.Map
 type transportKey struct {
 	base          *http.Transport
 	connect, read time.Duration
+	verify        verifyPath
 }
 
-func transportFor(base *http.Transport, t Timeout) *http.Transport {
-	key := transportKey{base, t.Connect, t.Read}
+// Verify path a transport trusts with the stat identity that tells a replaced bundle apart, zero for none
+type verifyPath struct {
+	path          string
+	dir           bool
+	size, modTime int64
+}
+
+// Transport of one call, the base with the timeouts and a verify bundle that is on disk applied
+func transportFor(base *http.Transport, t Timeout, bundle string) *http.Transport {
+	key := transportKey{base: base, connect: t.Connect, read: t.Read}
+	if bundle != "" {
+		if info, err := os.Stat(bundle); err == nil {
+			key.verify = verifyPath{bundle, info.IsDir(), info.Size(), info.ModTime().UnixNano()}
+		}
+	}
 	if v, ok := transports.Load(key); ok {
 		return v.(*http.Transport)
 	}
@@ -159,22 +182,46 @@ func transportFor(base *http.Transport, t Timeout) *http.Transport {
 	tr.DialContext = (&net.Dialer{Timeout: t.Connect, KeepAlive: 30 * time.Second}).DialContext
 	tr.TLSHandshakeTimeout = t.Connect
 	tr.ResponseHeaderTimeout = t.Read
+	if key.verify.path != "" {
+		tr.TLSClientConfig = VerifyTLSConfig(base.TLSClientConfig, key.verify.path, key.verify.dir)
+	}
 	v, _ := transports.LoadOrStore(key, tr)
 	return v.(*http.Transport)
 }
 
 // Send performs one requests call, every transport failure raised as the requests exception it maps to
 func Send(ctx context.Context, base *http.Transport, t Timeout, req *http.Request) (*Response, error) {
-	return sendWith(ctx, base, t, req, checkRedirect)
+	return sendWith(ctx, base, t, req, true, checkRedirect)
 }
 
 // SendNoRedirects is Send with allow_redirects False, a redirect answer returned as the response
 func SendNoRedirects(ctx context.Context, base *http.Transport, t Timeout, req *http.Request) (*Response, error) {
-	return sendWith(ctx, base, t, req, func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse })
+	return sendWith(ctx, base, t, req, true, func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse })
 }
 
-// One requests call following redirects as redirect decides
-func sendWith(ctx context.Context, base *http.Transport, t Timeout, req *http.Request, redirect func(*http.Request, []*http.Request) error) (*Response, error) {
+// SendNoEnv is Send for a client that is not a requests session trusting its environment, the verify bundle variables left unread
+func SendNoEnv(ctx context.Context, base *http.Transport, t Timeout, req *http.Request) (*Response, error) {
+	return sendWith(ctx, base, t, req, false, checkRedirect)
+}
+
+// One requests call following redirects as redirect decides, trustEnv merging the environment verify bundle into default verification
+func sendWith(ctx context.Context, base *http.Transport, t Timeout, req *http.Request, trustEnv bool, redirect func(*http.Request, []*http.Request) error) (*Response, error) {
+	bundle := ""
+	if trustEnv && (base.TLSClientConfig == nil || !base.TLSClientConfig.InsecureSkipVerify) {
+		bundle = EnvCABundle()
+	}
+	if err := certVerify(req.URL, bundle); err != nil {
+		return nil, err
+	}
+	follow := redirect
+	if bundle != "" {
+		follow = func(next *http.Request, via []*http.Request) error {
+			if err := redirect(next, via); err != nil {
+				return err
+			}
+			return certVerify(next.URL, bundle)
+		}
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var at atomic.Int32
@@ -184,18 +231,22 @@ func sendWith(ctx context.Context, base *http.Transport, t Timeout, req *http.Re
 		GotConn:           func(httptrace.GotConnInfo) { at.Store(int32(phaseExchange)) },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
-	tr := transportFor(base, t)
+	tr := transportFor(base, t, bundle)
 	var proxy *url.URL
 	if tr.Proxy != nil {
 		proxy, _ = tr.Proxy(req)
 	}
-	resp, err := (&http.Client{Transport: tr, CheckRedirect: redirect}).Do(req)
+	resp, err := (&http.Client{Transport: tr, CheckRedirect: follow}).Do(req)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return nil, err
 		}
 		if errors.Is(err, errTooManyRedirects) {
 			return nil, &Error{Class: "TooManyRedirects", Text: "Exceeded 30 redirects.", Err: err}
+		}
+		var missing *OSError
+		if errors.As(err, &missing) {
+			return nil, missing
 		}
 		target := req.URL
 		var ue *url.Error
@@ -414,6 +465,10 @@ func selfSigned(c *x509.Certificate) bool {
 
 // repr of the ssl module exception a failed handshake raises
 func sslErrorRepr(target *url.URL, err error) string {
+	var load *bundleLoadError
+	if errors.As(err, &load) {
+		return load.repr
+	}
 	verify := func(reason string) string {
 		return "SSLCertVerificationError(1, " + pyrepr.Repr("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "+reason+" "+sslLine) + ")"
 	}
@@ -493,36 +548,73 @@ func EnvCABundle() string {
 	return os.Getenv("CURL_CA_BUNDLE")
 }
 
+// cert_verify of one hop, the OSError requests raises before an https request whose verify path is not on disk
+func certVerify(u *url.URL, bundle string) error {
+	if bundle == "" || !strings.EqualFold(u.Scheme, "https") {
+		return nil
+	}
+	if _, err := os.Stat(bundle); err != nil {
+		return &OSError{"Could not find a suitable TLS CA certificate bundle, invalid path: " + bundle}
+	}
+	return nil
+}
+
+// Line of the CPython 3.14 _ssl.c load_verify_locations call a bundle OpenSSL cannot use names
+const sslLoadLine = "(_ssl.c:4419)"
+
+// Failure to load a verify bundle, repr the exception load_verify_locations raises for it
+type bundleLoadError struct{ repr string }
+
+func (e *bundleLoadError) Error() string { return e.repr }
+
 // OpenSSL capath entry names, a subject hash and a sequence number
 var hashedCertName = regexp.MustCompile(`^[0-9a-f]{8}\.[0-9]+$`)
 
-// TLS config verifying against a bundle file or hashed capath directory, the OSError requests raises for a missing path
-func VerifyTLSConfig(bundle string) (*tls.Config, error) {
-	info, err := os.Stat(bundle)
-	if bundle == "" || err != nil {
-		return nil, fmt.Errorf("Could not find a suitable TLS CA certificate bundle, invalid path: %s", bundle)
+// TLS config verifying with a bundle file or hashed capath directory on top of the roots base trusts, an unusable file failing every handshake with its load error
+func VerifyTLSConfig(base *tls.Config, bundle string, dir bool) *tls.Config {
+	cfg := &tls.Config{}
+	if base != nil {
+		cfg = base.Clone()
 	}
-	pool := x509.NewCertPool()
-	if !info.IsDir() {
-		raw, err := os.ReadFile(bundle)
-		if err != nil {
-			return nil, err
-		}
-		if !pool.AppendCertsFromPEM(raw) {
-			return nil, errors.New("[X509: NO_CERTIFICATE_OR_CRL_FOUND] no certificate or crl found " + sslLine)
-		}
-		return &tls.Config{RootCAs: pool}, nil
+	var pool *x509.CertPool
+	if cfg.RootCAs != nil {
+		pool = cfg.RootCAs.Clone()
+	} else if pool, _ = x509.SystemCertPool(); pool == nil {
+		pool = x509.NewCertPool()
 	}
-	entries, err := os.ReadDir(bundle)
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range entries {
-		if hashedCertName.MatchString(entry.Name()) {
-			if raw, err := os.ReadFile(filepath.Join(bundle, entry.Name())); err == nil {
-				pool.AppendCertsFromPEM(raw)
+	if dir {
+		entries, _ := os.ReadDir(bundle)
+		for _, entry := range entries {
+			if hashedCertName.MatchString(entry.Name()) {
+				if raw, err := os.ReadFile(filepath.Join(bundle, entry.Name())); err == nil {
+					pool.AppendCertsFromPEM(raw)
+				}
 			}
 		}
+		cfg.RootCAs = pool
+		return cfg
 	}
-	return &tls.Config{RootCAs: pool}, nil
+	failed := ""
+	raw, err := os.ReadFile(bundle)
+	switch {
+	case errors.Is(err, fs.ErrPermission):
+		failed = "PermissionError(13, 'Permission denied')"
+	case errors.Is(err, fs.ErrNotExist):
+		failed = "FileNotFoundError(2, 'No such file or directory')"
+	case err != nil:
+		if repr, ok := osErrorRepr(err); ok {
+			failed = repr
+		} else {
+			failed = "OSError(" + pyrepr.Repr(err.Error()) + ")"
+		}
+	case !pool.AppendCertsFromPEM(raw):
+		failed = "SSLError(136, " + pyrepr.Repr("[X509: NO_CERTIFICATE_OR_CRL_FOUND] no certificate or crl found "+sslLoadLine) + ")"
+	}
+	if failed != "" {
+		cfg.InsecureSkipVerify = true
+		cfg.VerifyConnection = func(tls.ConnectionState) error { return &bundleLoadError{failed} }
+		return cfg
+	}
+	cfg.RootCAs = pool
+	return cfg
 }

@@ -907,8 +907,7 @@ func TestCheckpointMaybeAutoPrunePrunesOnceThenSkipsWithinInterval(t *testing.T)
 	os.MkdirAll(base, 0o755)
 	os.WriteFile(filepath.Join(base, ".last_prune"), []byte("not-a-timestamp"), 0o644)
 	cpSeedLegacyRepo(t, base, strings.Repeat("0000", 4), filepath.Join(tmp, "gone"), nil)
-	o := DefaultCheckpointAutoPruneOptions()
-	o.Base = base
+	o := CheckpointAutoPruneOptions{RetentionDays: 7, MinIntervalHours: 24, DeleteOrphans: true, Base: base}
 	out := MaybeAutoPruneCheckpoints(nil, o)
 	if out.Skipped || out.Result == nil || out.Result.DeletedOrphan != 1 {
 		t.Fatalf("first run wrong: %+v", out)

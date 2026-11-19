@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -18,22 +17,19 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
 // Pins the browser heuristics to a scripted environment and PATH for one test
 func scriptBrowserEnv(t *testing.T, env map[string]string, onPath ...string) {
 	t.Helper()
-	prevGetenv, prevLook := oauthGetenv, oauthLookPath
+	prevGetenv := oauthGetenv
 	oauthGetenv = func(key string) string { return env[key] }
-	oauthLookPath = func(name string) (string, error) {
-		for _, p := range onPath {
-			if p == name {
-				return "/usr/bin/" + name, nil
-			}
-		}
-		return "", errors.New("not found")
-	}
-	t.Cleanup(func() { oauthGetenv, oauthLookPath = prevGetenv, prevLook })
+	restoreRegistry := pywebbrowser.ScriptForTests(env, onPath...)
+	t.Cleanup(func() {
+		oauthGetenv = prevGetenv
+		restoreRegistry()
+	})
 }
 
 func TestHeadlessLinuxNoDisplayRefuses(t *testing.T) {
@@ -237,7 +233,8 @@ func genericPoll(t *testing.T, poster *scriptedPoster, expiresIn int, cancelled 
 		},
 		onNonJSONError: func(*oauthHTTPResponse) error { return errors.New("non json") },
 		onError: func(_ *oauthHTTPResponse, payload map[string]any) error {
-			return DeviceFlowError(anyString(payload["error"]), anyString(payload["error_description"]), "icebath model")
+			code, description := anyString(payload["error"]), anyString(payload["error_description"])
+			return &SignInCopyError{Message: "Sign-in did not complete.\n  Details: " + code + ": " + description, OAuthErrorCode: code}
 		},
 		onTimeout: func(cause error) error { return &DeviceCodeExpiredError{Message: "expired", Cause: cause} },
 		cancelled: cancelled,
@@ -300,8 +297,8 @@ func TestPollDeviceTokenGenericTimeoutAndCancel(t *testing.T) {
 	if !errors.As(err, &expired) {
 		t.Fatalf("expected the device code to expire: %v", err)
 	}
-	if !IsDeviceCodeExpired(err) {
-		t.Fatal("expired error not recognised")
+	if expired.Code() != DeviceCodeExpiredCode {
+		t.Fatalf("expired error carries code %q", expired.Code())
 	}
 	poster = &scriptedPoster{steps: []scriptedStep{{status: 400, payload: map[string]any{"error": "authorization_pending"}}, {status: 200, payload: map[string]any{"access_token": "tok"}}}}
 	cancelled := false
@@ -394,34 +391,5 @@ func TestOfferExistingOAuthCredentials(t *testing.T) {
 		func() (map[string]any, error) { return map[string]any{"api_key": "tok"}, nil }, always, "Codex", DefaultCodexBaseURL, "expired notice")
 	if err != nil || accepted || !strings.Contains(out.String(), "expired notice") {
 		t.Fatalf("expired token must print the notice: %v %v %q", accepted, err, out.String())
-	}
-}
-
-func TestResolveOAuthVerify(t *testing.T) {
-	h, env := codexTestEnv(t)
-	for _, key := range []string{"ICEBATH_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"} {
-		t.Setenv(key, "")
-	}
-	insecure := true
-	if v := resolveOAuthVerify(env, &insecure, "", nil); !v.Insecure || v.TLS == nil || !v.TLS.InsecureSkipVerify {
-		t.Fatalf("insecure %+v", v)
-	}
-	if v := resolveOAuthVerify(env, nil, "", map[string]any{"tls": map[string]any{"insecure": true}}); !v.Insecure {
-		t.Fatal("stored insecure flag ignored")
-	}
-	logs := &recordingHandler{}
-	env.Log = newRecordingLogger(logs)
-	if v := resolveOAuthVerify(env, nil, filepath.Join(h, "missing.pem"), nil); v.Insecure || v.CABundle != "" || len(logs.containing("CA bundle path does not exist")) != 1 {
-		t.Fatalf("missing bundle %+v logs %v", v, logs.messages)
-	}
-	bundle := filepath.Join(h, "ca.pem")
-	if err := os.WriteFile(bundle, []byte("-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if v := resolveOAuthVerify(env, nil, "", map[string]any{"tls": map[string]any{"ca_bundle": bundle}}); v.CABundle != bundle || v.TLS == nil {
-		t.Fatalf("stored bundle %+v", v)
-	}
-	if state := tlsStateFromVerify(false, bundle); state["ca_bundle"] != bundle || state["insecure"] != false {
-		t.Fatalf("tls state %v", state)
 	}
 }

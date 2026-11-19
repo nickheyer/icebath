@@ -59,11 +59,19 @@ type SessionInfo struct {
 	ToolAvailability         map[string]any              `json:"tool_availability,omitzero"`
 	ToolAvailabilityWarnings []string                    `json:"tool_availability_warnings,omitzero"`
 	UnknownToolsets          []string                    `json:"unknown_toolsets,omitzero"`
+	ProjectSkillsLoaded      *int64                      `json:"project_skills_loaded,omitzero"`
+	ProjectSkillsUntrusted   *UntrustedProjectSkills     `json:"project_skills_untrusted,omitzero"`
 	AuthorityEpoch           *int64                      `json:"authority_epoch,omitzero"`
 	Revision                 *int64                      `json:"revision,omitzero"`
 	ExecutionGeneration      *int64                      `json:"execution_generation,omitzero"`
 	Pending                  []CanonicalPendingAdmission `json:"pending,omitzero"`
 	PendingSubmissions       []PendingSubmission         `json:"pending_submissions,omitzero"`
+}
+
+// Skills found under a project root the user has not trusted, left unloaded until it is
+type UntrustedProjectSkills struct {
+	Root  string `json:"root"`
+	Count int64  `json:"count"`
 }
 
 // One prompt a forwarding owner queued for the session, shown as a user bubble once it starts

@@ -3,7 +3,6 @@ package cron
 import (
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"path/filepath"
 	"strings"
@@ -338,17 +337,4 @@ func (i *IncidentStore) GetIncident(id string) (*Incident, error) {
 		return err
 	})
 	return inc, err
-}
-
-// Number of incidents, optionally in one state, zero for an unknown state
-func (i *IncidentStore) CountIncidents(st *string) (int, error) {
-	if st != nil && !validIncidentState(*st) {
-		return 0, nil
-	}
-	where, args := incidentStateFilter(st)
-	var n sql.NullInt64
-	err := i.transaction(func(ctx context.Context, conn state.SQLiteConn) error {
-		return conn.QueryRowContext(ctx, "SELECT COUNT(*) AS n FROM cron_incidents"+where, args...).Scan(&n)
-	})
-	return int(n.Int64), err
 }

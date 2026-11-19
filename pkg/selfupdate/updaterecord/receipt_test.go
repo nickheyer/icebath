@@ -582,3 +582,12 @@ func TestExportedReceiptStoreWrappersAnswerLikeTheirPrivateForms(t *testing.T) {
 		t.Fatal("cleared")
 	}
 }
+
+// Context inheriting the open receipt and terminal cell of ctx whose later records stay local to it
+func CopyReceiptContext(ctx context.Context) context.Context {
+	parent := stateOf(ctx)
+	parent.mu.Lock()
+	st := &receiptState{current: parent.current, terminal: parent.terminal}
+	parent.mu.Unlock()
+	return withState(ctx, st)
+}

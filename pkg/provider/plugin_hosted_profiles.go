@@ -822,7 +822,7 @@ func (c *hostedSDKClient) prepare(ctx context.Context, req *Request, stream bool
 	c.cc.mu.Unlock()
 	if stream {
 		kwargs["stream"] = true
-		if c.cc.includeUsage(req, rejected) {
+		if c.cc.includeUsage(rejected) {
 			kwargs["stream_options"] = map[string]any{"include_usage": true}
 		}
 	}

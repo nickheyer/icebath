@@ -334,6 +334,9 @@ func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 		}
 	}
 	row("loaded", strings.Join(counts, " · "))
+	if notice := updateNotice(info); notice != "" {
+		lines = append(lines, pad+toneStyle(c.t.Color.Warn).Bold(true).Render(truncateEnd(notice, max(c.width-transcriptIndent*2, 8))))
+	}
 	span := 0
 	for _, line := range lines {
 		span = max(span, ansi.StringWidth(line)-transcriptIndent)

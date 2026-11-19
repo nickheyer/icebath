@@ -44,16 +44,28 @@ func leftCoreRowsHome(t *testing.T, root, env, cfg string, auth map[string]any, 
 	return h
 }
 
+// Reports a home with a model route through the acme provider
+func acmeRouted(h string, _ bool) bool {
+	for _, slot := range leftCoreRouteSlots(h) {
+		if strings.EqualFold(strings.TrimSpace(pyOrStr(slot["provider"])), "acme") {
+			return true
+		}
+	}
+	return false
+}
+
 // Fake row for a provider plugin, the generic seams run through it
 func acmeRow() LeftCoreFeature {
 	return LeftCoreFeature{
-		Plugin: "acme-llm", Label: "Acme LLM", Unchanged: "your ACME_KEY is unchanged",
-		InUse: func(h string, processEnv bool) bool {
-			return ProvidersSelected(h, []string{"acme", "acme-acp"}, processEnv)["acme"]
-		},
+		Plugin: "acme-llm", Label: "Acme LLM", Unchanged: "your ACME_KEY is unchanged", InUse: acmeRouted,
 		Providers: []string{"acme", "acme-acp"}, ProfileEnv: []string{"ACME_CLI_PATH"}, Notice: noLeftCoreNotice,
 	}
 }
+
+// Import failure of a named module, what a provider plugin whose dependency is missing raises on load
+type ModuleNotFoundError struct{ Name string }
+
+func (e *ModuleNotFoundError) Error() string { return "No module named '" + e.Name + "'" }
 
 // Home choosing the acme provider bound as the process home with the table reduced to the acme row
 func acmeHome(t *testing.T, row LeftCoreFeature) (string, context.Context) {

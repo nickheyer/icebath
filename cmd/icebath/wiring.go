@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -222,6 +223,9 @@ func installProcessWiring() {
 	state.CanonicalHome = gateway.CanonicalHome
 	state.ProfileLabelForHome = gateway.ProfileLabelForHome
 	state.ReadGatewayLockRecord = gateway.ReadGatewayLockRecord
+	state.SetLifecycleHookInvoker(func(ctx context.Context, name string, kwargs map[string]any) ([]any, error) {
+		return agent.LifecycleInvokeHook(ctx, name, kwargs), nil
+	})
 	gateway.ResolvePrefillMessagesFile = app.ResolvePrefillMessagesFile
 	gateway.AncillaryAgent.SubagentRecords = agent.SubagentRecords
 	gateway.AncillaryAgent.SteerSubagent = agent.SteerOwnedSubagent
@@ -229,7 +233,6 @@ func installProcessWiring() {
 	gateway.AncillaryAgent.ControlSnapshot = agent.ControlSnapshotOrRefusal
 	gateway.AncillaryAgent.SetSpawnPaused = agent.SetSpawnPaused
 	gateway.PathCompletionItems = tuiserver.PathCompletionItems
-	gateway.OneshotAgent.TemplateKnown = agent.OneshotTemplateKnown
 	gateway.ContextAgent.UsageStats = agent.SessionUsageStats
 	gateway.ContextAgent.Breakdown = agent.SessionContextBreakdown
 	gateway.ContextAgent.StoredBreakdown = agent.SessionStoredContextBreakdown
@@ -252,7 +255,6 @@ func installProcessWiring() {
 	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
 	}
-	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
 	tools.AsyncDelegationOwnerProbes.PidExists = gateway.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
 	tools.ProfileSecrets = provider.ProfileSecretSource()
@@ -355,6 +357,14 @@ func pluginServices() *plugins.Services {
 			}
 			return out
 		},
+		CredentialedProviderRequest: func(ctx context.Context, pluginDir, name, method, url string, json any, headers map[string]string, timeout time.Duration) (*plugins.ProviderRequestAnswer, error) {
+			resp, err := provider.CredentialedProviderRequest(name, method, url, provider.ProviderRequestOptions{JSON: json, Headers: headers, Timeout: timeout,
+				Caller: []string{filepath.Join(pluginDir, "plugin.yaml")}})
+			if err != nil {
+				return nil, err
+			}
+			return &plugins.ProviderRequestAnswer{Status: resp.Status, Headers: resp.Headers, Body: resp.Body}, nil
+		},
 	}
 	for _, extend := range tierServices {
 		extend(s)
@@ -413,12 +423,13 @@ func runAtExit() {
 		return
 	}
 	atExitDone = true
+	tools.BeginInterpreterShutdown()
 	run := func(fn func()) {
 		defer func() { recover() }()
 		fn()
 	}
 	run(state.RunTokenExitHooks)
-	run(func() { tools.CleanupAllEnvironments(processToolsEnv(context.Background())) })
+	run(func() { tools.ShutdownTerminalEnvironments(processToolsEnv(context.Background())) })
 	run(tools.SweepBackendScratchAtExit)
 	run(func() { tools.CleanupSafeSkillsCopy() })
 	for _, fn := range tierAtExit {
@@ -435,6 +446,7 @@ func runAtExit() {
 	}
 	run(gatewayrun.BootstrapAtExit)
 	run(gateway.HostRendezvousAtExit)
+	run(pm.ReleaseAllLeases)
 	run(logging.Shutdown)
 	for _, s := range []*os.File{os.Stdout, os.Stderr} {
 		s.Sync()

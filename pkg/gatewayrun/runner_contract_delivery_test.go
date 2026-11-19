@@ -226,6 +226,24 @@ func TestPostThenEditTargetsTheCallingSession(t *testing.T) {
 }
 
 // test_plugin_post_message.py test_no_bound_session_is_refused_without_sending, the refusal and the adapter that never sent anything both checked through a real runner
+func TestSourceRouteMetadataKeepsInboundAnchors(t *testing.T) {
+	scope, parent, empty := "guild-1", "chan-2", ""
+	meta := map[string]any{"thread_id": "9", "scope_id": "stale"}
+	got := sourceRouteMetadata(&gateway.SessionSource{ScopeID: &scope, ParentChatID: &parent}, meta)
+	if got["scope_id"] != "guild-1" || got["parent_chat_id"] != "chan-2" || got["thread_id"] != "9" || meta["scope_id"] != "stale" {
+		t.Fatalf("merged %v original %v", got, meta)
+	}
+	if got := sourceRouteMetadata(&gateway.SessionSource{ScopeID: &scope}, nil); len(got) != 1 || got["scope_id"] != "guild-1" {
+		t.Fatalf("nil metadata %v", got)
+	}
+	if got := sourceRouteMetadata(&gateway.SessionSource{ScopeID: &empty}, meta); got["scope_id"] != "stale" || len(got) != 2 {
+		t.Fatalf("anchorless source changed metadata %v", got)
+	}
+	if got := (&GatewayRunner{}).threadMetadataForSource(nil, nil); got != nil {
+		t.Fatalf("nil source %v", got)
+	}
+}
+
 func TestNoBoundSessionIsRefusedWithoutSending(t *testing.T) {
 	adapter := &contractEditingAdapter{newContractAdapter(gateway.PlatformTelegram)}
 	adapter.BasePlatformAdapter = contractBase(adapter, gateway.PlatformTelegram)

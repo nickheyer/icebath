@@ -143,7 +143,7 @@ func TestSlashExecFallbackPolicy(t *testing.T) {
 	t.Run(`falls back to command.dispatch only for the two "slash.exec does not own this" 4018 refusals`, func(t *testing.T) {
 		if !shouldFallbackToDispatch(refusal("skill command: use command.dispatch for /x", 4018)) ||
 			!shouldFallbackToDispatch(refusal("snapshot restore mutates live config/state; use command.dispatch for /snapshot restore", 4018)) ||
-			shouldFallbackToDispatch(refusal("slash worker timed out", 5030)) || shouldFallbackToDispatch(refusal("session not found", 4001)) {
+			shouldFallbackToDispatch(refusal("moa unavailable: boom", 5030)) || shouldFallbackToDispatch(refusal("session not found", 4001)) {
 			t.Fatal("policy")
 		}
 	})
@@ -156,19 +156,6 @@ func TestSlashExecFallbackPolicy(t *testing.T) {
 		if shouldFallbackToDispatch(refusal("unknown command: zzz", 4011)) {
 			t.Fatal("4011 falls back")
 		}
-	})
-	t.Run("names the command and the helper failure instead of the fallback refusal", func(t *testing.T) {
-		timeout := describeSlashExecError("status", refusal("slash worker timed out", 5030))
-		if !strings.HasPrefix(timeout, "/status did not finish") {
-			t.Fatalf("%q", timeout)
-		}
-		mustContain(t, timeout, "timed out", "/logs")
-		mustLack(t, timeout, "quick/plugin/bundle/skill")
-		crash := describeSlashExecError("journey", refusal("slash worker closed pipe: ValueError: bad", 5030))
-		if !strings.HasPrefix(crash, "/journey did not finish") {
-			t.Fatalf("%q", crash)
-		}
-		mustContain(t, crash, "Details: ValueError: bad")
 	})
 }
 

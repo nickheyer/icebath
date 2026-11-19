@@ -30,7 +30,6 @@ const devFlagHelp = "Run the TUI built from the icebath Go sources of this check
 
 // Gives the chat flags their argparse dests and the SUPPRESS defaults that keep top level values alive
 func (c *CLI) chatArgparseShape(chat *cobra.Command) {
-	dest(chat, "oneshot", "oneshot_exit")
 	dest(chat, "format", "output_format")
 	dest(chat, "in", "in_dir")
 	dest(chat, "continue", "continue_last")

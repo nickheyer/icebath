@@ -176,9 +176,6 @@ var linkedSQLiteVersionInfo = func() VersionTuple {
 	return info
 }()
 
-// Version tuple of the linked SQLite library as sqlite3.sqlite_version_info
-func LinkedSQLiteVersionInfo() VersionTuple { return linkedSQLiteVersionInfo }
-
 // Reports the WAL reset bug for a version, nil meaning the SQLite library linked into this binary
 func WALResetVulnerable(versionInfo *VersionTuple) bool {
 	if versionInfo == nil {

@@ -360,15 +360,6 @@ func killChildOnly(c *startedChild) {
 	}
 }
 
-// Starts argv in the update tree's custody, bound to the update job on Windows before it runs
-func Popen(ctx context.Context, argv []string, inheritLock bool, opts ChildOptions) (*exec.Cmd, error) {
-	child, err := popenCustody(ctx, argv, inheritLock, opts)
-	if err != nil {
-		return nil, err
-	}
-	return child.cmd, nil
-}
-
 func popenCustody(ctx context.Context, argv []string, inheritLock bool, opts ChildOptions) (*startedChild, error) {
 	if custodyWindows() && custodyHeld() {
 		opts.Attr = suspendedAttr(opts.Attr)

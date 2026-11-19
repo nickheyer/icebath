@@ -130,16 +130,9 @@ func TestEntraBearerTransportStripsAuthHeadersAndWarnsWhenProviderFails(t *testi
 	}
 }
 
-func TestEntraIdentityConfigToDictRoundTrip(t *testing.T) {
-	cfg := NewEntraIdentityConfig("https://cognitiveservices.azure.com/.default", false)
-	if back := EntraIdentityConfigFromDict(cfg.ToDict(), ""); back != cfg {
-		t.Fatalf("round trip = %+v", back)
-	}
+func TestNewEntraIdentityConfigBlankScopeIsTheDefault(t *testing.T) {
 	if got := NewEntraIdentityConfig("  ", true); got.Scope != ScopeAIAzureDefault {
 		t.Fatalf("blank scope = %q", got.Scope)
-	}
-	if got := EntraIdentityConfigFromDict(nil, "https://x/.default"); got.Scope != "https://x/.default" || !got.ExcludeInteractiveBrowser {
-		t.Fatalf("default scope = %+v", got)
 	}
 }
 
@@ -197,16 +190,26 @@ func TestEntraScopedCredentialTwoHomesMultiplexRefusesAmbientChain(t *testing.T)
 
 func TestBuildEntraTokenProviderReturnsCallableForScope(t *testing.T) {
 	entraIsolate(t)
-	src := BuildEntraTokenProvider(nil, "https://cognitiveservices.azure.com/.default", true)
+	src, err := BuildEntraTokenProviderIn(context.Background(), nil, "https://cognitiveservices.azure.com/.default", true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tok, err := src(context.Background()); err != nil || tok != "jwt-for-https://cognitiveservices.azure.com/.default" {
 		t.Fatalf("tok %q err %v", tok, err)
 	}
 	cfg := NewEntraIdentityConfig("https://from-config/.default", true)
-	if tok, _ := BuildEntraTokenProvider(&cfg, "https://from-kwarg/.default", true)(context.Background()); tok != "jwt-for-https://from-config/.default" {
+	src, err = BuildEntraTokenProviderIn(context.Background(), &cfg, "https://from-kwarg/.default", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, _ := src(context.Background()); tok != "jwt-for-https://from-config/.default" {
 		t.Fatalf("config object must win, tok %q", tok)
 	}
-	src, err := entraTokenProvider("https://ai.azure.com/.default")
-	if tok, _ := src(context.Background()); err != nil || tok != "jwt-for-https://ai.azure.com/.default" {
+	src, err = entraTokenProviderIn(context.Background(), "https://ai.azure.com/.default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := src(context.Background()); err != nil || tok != "jwt-for-https://ai.azure.com/.default" {
 		t.Fatalf("azure foundry scope tok %q err %v", tok, err)
 	}
 }
@@ -215,7 +218,10 @@ func TestEntraProviderReusesTokenUntilRefreshWindow(t *testing.T) {
 	entraIsolate(t)
 	fake := &fakeEntraCredential{expires: time.Now().Unix() + 3600}
 	entraBuildDefaultFn = func(EntraIdentityConfig) (entraCredential, error) { return fake, nil }
-	src := BuildEntraTokenProvider(nil, "", true)
+	src, err := BuildEntraTokenProviderIn(context.Background(), nil, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	src(context.Background())
 	src(context.Background())
 	if atomic.LoadInt32(&fake.calls) != 1 {
@@ -223,7 +229,9 @@ func TestEntraProviderReusesTokenUntilRefreshWindow(t *testing.T) {
 	}
 	fake.expires = time.Now().Unix() + 100
 	ResetEntraCredentialCache()
-	src = BuildEntraTokenProvider(nil, "", true)
+	if src, err = BuildEntraTokenProviderIn(context.Background(), nil, "", true); err != nil {
+		t.Fatal(err)
+	}
 	src(context.Background())
 	src(context.Background())
 	if atomic.LoadInt32(&fake.calls) != 3 {
@@ -239,16 +247,10 @@ func TestEntraChainNeedsNoInstall(t *testing.T) {
 	}
 }
 
-func TestHasAzureIdentityCredentialsReturnsFalseOnTimeout(t *testing.T) {
+func TestDescribeActiveEntraCredentialReportsAProbeTimeout(t *testing.T) {
 	entraIsolate(t)
 	entraBuildDefaultFn = func(EntraIdentityConfig) (entraCredential, error) {
 		return &fakeEntraCredential{delay: 300 * time.Millisecond}, nil
-	}
-	if HasAzureIdentityCredentials(context.Background(), nil, "", 20*time.Millisecond) {
-		t.Fatal("a probe past its deadline must report false")
-	}
-	if !HasAzureIdentityCredentials(context.Background(), nil, "", 5*time.Second) {
-		t.Fatal("a probe inside its deadline must report true")
 	}
 	info := DescribeActiveEntraCredential(context.Background(), nil, "", 20*time.Millisecond)
 	if info["error"] != "Token probe timed out after 0s" || info["hint"] != entraProbeTimeoutHint {

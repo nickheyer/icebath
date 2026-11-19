@@ -1024,67 +1024,6 @@ func (r *resolver) endpointIdentity(baseURL string) string {
 	return ""
 }
 
-// CanonicalCustomIdentity recovers the durable menu identity for a bare custom provider
-func (r *resolver) CanonicalCustomIdentity(baseURL, configProvider, model, requested string) string {
-	identity := "custom"
-	if baseURL != "" {
-		identity = r.SessionProviderIdentity("custom", requested, baseURL, "")
-	}
-	if identity != "custom" {
-		return identity
-	}
-	if model != "" {
-		if id := FindCustomProviderIdentityByModel(model, r.cfg); id != "" {
-			return id
-		}
-	}
-	candidate := strings.TrimSpace(configProvider)
-	if candidate == "" {
-		candidate = strings.TrimSpace(cfgString(r.modelConfig()["provider"]))
-	}
-	if candidate == "" {
-		candidate = strings.TrimSpace(os.Getenv("ICEBATH_INFERENCE_PROVIDER"))
-	}
-	candidateNorm := normalizeCustomProviderName(candidate)
-	if candidateNorm == "" || candidateNorm == "custom" || candidateNorm == "auto" || candidateNorm == "openrouter" {
-		return ""
-	}
-	entry := r.getNamedCustomProvider(candidate, nil, true)
-	if entry == nil {
-		return ""
-	}
-	if identity := FindCustomProviderIdentity(cfgString(entry["base_url"]), r.cfg); identity != "" {
-		return identity
-	}
-	return CustomProviderSlug(candidateNorm, "")
-}
-
-// SessionProviderIdentity is the requested entry while it still serves the URL, else the endpoint owner, else the adapter
-func (r *resolver) SessionProviderIdentity(provider, requestedProvider, baseURL, model string) string {
-	adapter := clean(provider)
-	if strings.ToLower(adapter) != "custom" {
-		return adapter
-	}
-	requested := clean(requestedProvider)
-	u := routeKey(baseURL)
-	lowered := strings.ToLower(requested)
-	if u != "" && lowered != "" && lowered != "custom" && lowered != "auto" {
-		if entry := r.getNamedCustomProvider(requested, r.cfg, false); entry != nil && routeKey(entryURL(entry)) == u {
-			return requested
-		}
-	}
-	if u != "" {
-		if id := r.endpointIdentity(clean(baseURL)); id != "" {
-			return id
-		}
-		return adapter
-	}
-	if id := r.CanonicalCustomIdentity("", "", clean(model), ""); id != "" {
-		return id
-	}
-	return adapter
-}
-
 // IsRoutableProvider reports whether a provider name currently resolves to a routable route
 func (r *resolver) IsRoutableProvider(provider string) bool {
 	name := strings.TrimSpace(provider)

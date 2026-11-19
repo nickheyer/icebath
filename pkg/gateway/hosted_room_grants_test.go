@@ -74,7 +74,7 @@ func requireGrantError(t *testing.T, err error, fragment string) {
 	}
 }
 
-func TestGatewayRoomGrantSecretIsPrivatePersistentAndNotAnAPIKey(t *testing.T) {
+func TestGatewayRoomGrantSecretIsPrivateAndPersistent(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".icebath")
 	profileHome := filepath.Join(root, "profiles", "reviewer")
 	if err := os.MkdirAll(profileHome, 0o755); err != nil {
@@ -93,11 +93,7 @@ func TestGatewayRoomGrantSecretIsPrivatePersistentAndNotAnAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	derived, err := DeriveRoomGrantSecret("gateway-api-key-1234567890")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(first, second) || len(first) != 32 || bytes.Equal(stored, first) || bytes.Equal(first, derived) {
+	if !bytes.Equal(first, second) || len(first) != 32 || bytes.Equal(stored, first) {
 		t.Fatalf("secret not private, persistent and distinct: first=%x second=%x stored=%x", first, second, stored)
 	}
 }

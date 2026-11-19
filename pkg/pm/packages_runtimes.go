@@ -168,36 +168,6 @@ func (p *Nodejs) RepairStagedVerification(entry, target, reason string) (string,
 	return retried, ""
 }
 
-// TermuxDocker is the termux docker image pinned by registry digest, a pin pm never downloads
-type TermuxDocker struct {
-	BasePackage
-}
-
-func newTermuxDocker() *TermuxDocker {
-	p := &TermuxDocker{BasePackage{Name: "termux-docker", Optional: true}}
-	p.bind(p)
-	return p
-}
-
-func (p *TermuxDocker) PinOnly() bool { return true }
-
-func (p *TermuxDocker) MissingReason(target string) string {
-	if target == bionicTarget {
-		return ""
-	}
-	return "docker image target is linux-arm64-bionic"
-}
-
-func (p *TermuxDocker) FetchURL(version, target string) (string, error) {
-	return "docker://termux/termux-docker@" + version, nil
-}
-
-func (p *TermuxDocker) Unpack(archive, staged, target string) error {
-	return NewInstallError(p.Name, "a docker image digest is a pin, not a downloadable artifact", "")
-}
-
-func (p *TermuxDocker) Verify(entry, target string) string { return "" }
-
 // Environment for PM's npm child with ambient Node and npm options removed and its cache pinned
 func NpmEnv(cacheDir string, base map[string]string) map[string]string {
 	if base == nil {

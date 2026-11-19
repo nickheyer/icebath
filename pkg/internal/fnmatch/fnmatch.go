@@ -34,18 +34,8 @@ func FnmatchCase(name, pat string) bool {
 	return Compile(pat).MatchString(name)
 }
 
-// Names matching the pattern after normcase, keeping input order
+// Names matching the pattern after normcase, keeping input order, with normcase applied to names only off posix
 func Filter(names []string, pat string) []string {
-	return filter(names, pat, true)
-}
-
-// Names not matching the pattern after normcase, keeping input order
-func FilterFalse(names []string, pat string) []string {
-	return filter(names, pat, false)
-}
-
-// Shared body of filter and filterfalse with normcase applied to names only off posix
-func filter(names []string, pat string, want bool) []string {
 	re := Compile(normcase(pat))
 	out := []string{}
 	for _, name := range names {
@@ -53,25 +43,11 @@ func filter(names []string, pat string, want bool) []string {
 		if runtime.GOOS == "windows" {
 			subject = normcase(name)
 		}
-		if re.MatchString(subject) == want {
+		if re.MatchString(subject) {
 			out = append(out, name)
 		}
 	}
 	return out
-}
-
-// Bytes form of fnmatchcase where every byte is the ISO-8859-1 character of its value
-func FnmatchCaseBytes(name, pat []byte) bool {
-	return Compile(latin1(pat)).MatchString(latin1(name))
-}
-
-// Text of each byte read as an ISO-8859-1 code point
-func latin1(b []byte) string {
-	r := make([]rune, len(b))
-	for i, c := range b {
-		r[i] = rune(c)
-	}
-	return string(r)
 }
 
 // Windows ntpath.normcase lowers and turns slashes into backslashes, posix leaves the text alone
@@ -90,7 +66,7 @@ func Compile(pat string) *regexp.Regexp {
 		cacheOrder.MoveToFront(el)
 		return el.Value.(*cacheEntry).re
 	}
-	re := regexp.MustCompile(`\A` + join(translate(pat, false), false))
+	re := regexp.MustCompile(`\A` + join(translate(pat)))
 	cacheIndex[pat] = cacheOrder.PushFront(&cacheEntry{pat, re})
 	if cacheOrder.Len() > cacheSize {
 		last := cacheOrder.Back()
@@ -100,18 +76,13 @@ func Compile(pat string) *regexp.Regexp {
 	return re
 }
 
-// CPython 3.14 fnmatch.translate text with atomic star groups and the trailing \z anchor
-func Translate(pat string) string {
-	return join(translate(pat, true), true)
-}
-
 type parts struct {
 	res   []string
 	stars []int
 }
 
-// Splits the pattern into regex pieces and star positions, escaping literals for CPython re or RE2
-func translate(pat string, python bool) parts {
+// Splits the pattern into regex pieces and star positions, escaping literals for RE2
+func translate(pat string) parts {
 	var out parts
 	p := []rune(pat)
 	n := len(p)
@@ -146,31 +117,21 @@ func translate(pat string, python bool) parts {
 			i = j + 1
 			switch {
 			case stuff == "":
-				if python {
-					out.res = append(out.res, "(?!)")
-				} else {
-					out.res = append(out.res, `[^\x00-\x{10FFFF}]`)
-				}
+				out.res = append(out.res, `[^\x00-\x{10FFFF}]`)
 			case stuff == "!":
 				out.res = append(out.res, ".")
 			default:
 				stuff = setOps.ReplaceAllString(stuff, `\$1`)
-				if !python {
-					stuff = strings.ReplaceAll(stuff, "[", `\[`)
-				}
+				stuff = strings.ReplaceAll(stuff, "[", `\[`)
 				if stuff[0] == '!' {
 					stuff = "^" + stuff[1:]
-				} else if stuff[0] == '^' || (python && stuff[0] == '[') {
+				} else if stuff[0] == '^' {
 					stuff = `\` + stuff
 				}
 				out.res = append(out.res, "["+stuff+"]")
 			}
 		default:
-			if python {
-				out.res = append(out.res, ReEscape(string(c)))
-			} else {
-				out.res = append(out.res, regexp.QuoteMeta(string(c)))
-			}
+			out.res = append(out.res, regexp.QuoteMeta(string(c)))
 		}
 	}
 	return out
@@ -221,15 +182,11 @@ func bracket(p []rune, i, j int) string {
 	return strings.Join(text, "-")
 }
 
-// Joins pieces so each interior star and its fixed run match minimally, atomic in CPython text
-func join(t parts, python bool) string {
+// Joins pieces so each interior star and its fixed run match minimally
+func join(t parts) string {
 	open, end := "(?s:", `)\z`
 	if len(t.stars) == 0 {
 		return open + strings.Join(t.res, "") + end
-	}
-	group := "(?:.*?"
-	if python {
-		group = "(?>.*?"
 	}
 	var b strings.Builder
 	b.WriteString(open)
@@ -237,7 +194,7 @@ func join(t parts, python bool) string {
 	b.WriteString(strings.Join(t.res[:j], ""))
 	i := j + 1
 	for _, j := range t.stars[1:] {
-		b.WriteString(group)
+		b.WriteString("(?:.*?")
 		b.WriteString(strings.Join(t.res[i:j], ""))
 		b.WriteString(")")
 		i = j + 1

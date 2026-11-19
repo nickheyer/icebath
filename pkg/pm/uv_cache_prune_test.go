@@ -5,7 +5,6 @@ package pm
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -13,93 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-// Lock fixture directory with the given uv.lock text
-func peLockRepo(t *testing.T, root, text string) string {
-	t.Helper()
-	repo := filepath.Join(root, "repo")
-	peWrite(t, filepath.Join(repo, "uv.lock"), text)
-	return repo
-}
-
-func TestUVCachePruneStagedCachePrunesArchiveBucketsOutsideTheLock(t *testing.T) {
-	root := t.TempDir()
-	lock := peLockRepo(t, root, "[[package]]\nname = \"keep-me\"\nversion = \"1.0.0\"\nsource = { registry = \"https://pypi.org/simple\" }\n\n"+
-		"[[package]]\nname = \"also-keep\"\nversion = \"2.0.0\"\nsource = { registry = \"https://pypi.org/simple\" }\n")
-	cache := filepath.Join(root, "cache")
-	for bucket, info := range map[string]string{"keep-me": "keep_me-1.0.0.dist-info", "also-keep": "also_keep-2.0.0.dist-info",
-		"superseded-pin": "superseded_pin-0.9.9.dist-info", "old-dependency": "old_dependency-3.2.1.dist-info"} {
-		peWrite(t, filepath.Join(cache, "archive-v0", bucket, info), "")
-	}
-	writeFile(t, filepath.Join(cache, "archive-v0", "unknownbucket", "data.bin"), []byte("x"), 0o644)
-	pruned, err := PruneUVCacheToLock(cache, lock)
-	if err != nil || pruned != 2 {
-		t.Fatalf("pruned %d %v", pruned, err)
-	}
-	for bucket, kept := range map[string]bool{"keep-me": true, "also-keep": true, "superseded-pin": false, "old-dependency": false} {
-		if isDirectory(filepath.Join(cache, "archive-v0", bucket)) != kept {
-			t.Fatalf("%s kept %v", bucket, !kept)
-		}
-	}
-	if !isRegularFile(filepath.Join(cache, "archive-v0", "unknownbucket", "data.bin")) {
-		t.Fatal("unidentifiable bucket pruned")
-	}
-}
-
-func TestUVCachePruneStagedCachePrunesWheelIndexEntriesOutsideTheLock(t *testing.T) {
-	root := t.TempDir()
-	lock := peLockRepo(t, root, "[[package]]\nname = \"keep-me\"\nversion = \"1.0.0\"\nsource = { registry = \"https://pypi.org/simple\" }\n")
-	cache := filepath.Join(root, "cache")
-	for _, entry := range []string{"keep-me", "superseded-pin"} {
-		writeFile(t, filepath.Join(cache, "wheels-v6", "pypi", entry, "metadata.msgpack"), nil, 0o644)
-	}
-	writeFile(t, filepath.Join(cache, "sdists-v9", "pypi", "old-sdist-only", "metadata.msgpack"), nil, 0o644)
-	if _, err := PruneUVCacheToLock(cache, lock); err != nil {
-		t.Fatal(err)
-	}
-	if !isDirectory(filepath.Join(cache, "wheels-v6", "pypi", "keep-me")) || existsOrLink(filepath.Join(cache, "wheels-v6", "pypi", "superseded-pin")) ||
-		existsOrLink(filepath.Join(cache, "sdists-v9", "pypi", "old-sdist-only")) {
-		t.Fatal("index entries pruned wrongly")
-	}
-}
-
-func TestUVCachePruneStagedCacheKeepsADottedDistTheLockResolves(t *testing.T) {
-	root := t.TempDir()
-	lock := peLockRepo(t, root, "[[package]]\nname = \"ruamel-yaml\"\nversion = \"0.18.16\"\nsource = { registry = \"https://pypi.org/simple\" }\n")
-	cache := filepath.Join(root, "cache")
-	bucket := filepath.Join(cache, "archive-v0", "bucket")
-	os.MkdirAll(filepath.Join(bucket, "ruamel.yaml-0.18.16.dist-info"), 0o777)
-	index := filepath.Join(cache, "wheels-v6", "pypi", "ruamel-yaml")
-	os.MkdirAll(index, 0o777)
-	if pruned, err := PruneUVCacheToLock(cache, lock); err != nil || pruned != 0 || !isDirectory(bucket) || !isDirectory(index) {
-		t.Fatalf("pruned %d %v", pruned, err)
-	}
-}
-
-func TestUVCachePrunePruneDropsAURLWheelLinkWhoseArchiveItPruned(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("platforms posix")
-	}
-	root := t.TempDir()
-	lock := peLockRepo(t, root, "[[package]]\nname = \"keep-me\"\nversion = \"1.0\"\n")
-	cache := filepath.Join(root, "cache")
-	os.MkdirAll(filepath.Join(cache, "archive-v0", "gone", "gone_dep-1.0.dist-info"), 0o777)
-	os.MkdirAll(filepath.Join(cache, "archive-v0", "kept", "keep_me-1.0.dist-info"), 0o777)
-	url := filepath.Join(cache, "wheels-v7", "url", "d87c3d39b3c6ef8c")
-	os.MkdirAll(filepath.Join(url, "gone-dep"), 0o777)
-	os.MkdirAll(filepath.Join(url, "keep-me"), 0o777)
-	os.Symlink("../../../../archive-v0/gone", filepath.Join(url, "gone-dep", "1.0-py3-none-any"))
-	os.Symlink("../../../../archive-v0/kept", filepath.Join(url, "keep-me", "1.0-py3-none-any"))
-	if _, err := PruneUVCacheToLock(cache, lock); err != nil {
-		t.Fatal(err)
-	}
-	if existsOrLink(filepath.Join(url, "gone-dep", "1.0-py3-none-any")) {
-		t.Fatal("a dangling wheel link survived the prune")
-	}
-	if resolvePath(filepath.Join(url, "keep-me", "1.0-py3-none-any")) != resolvePath(filepath.Join(cache, "archive-v0", "kept")) {
-		t.Fatal("a resolvable wheel link was dropped")
-	}
-}
 
 // A venv whose interpreter must never run, holding a module and a pth added directory
 func peTrapVenv(t *testing.T, root string) (string, string) {

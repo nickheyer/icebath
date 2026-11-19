@@ -424,17 +424,6 @@ func delegationBackendRoutes(delegation map[string]any) []map[string]any {
 	return out
 }
 
-// Every provider a home routes through plus the auth.json active provider
-func leftCoreProviderChoices(h string) map[string]bool {
-	chosen := map[string]bool{}
-	for _, slot := range leftCoreRouteSlots(h) {
-		chosen[strings.ToLower(strings.TrimSpace(pyOrStr(slot["provider"])))] = true
-	}
-	chosen[strings.ToLower(strings.TrimSpace(pyOrStr(leftCoreAuthStore(h)["active_provider"])))] = true
-	delete(chosen, "")
-	return chosen
-}
-
 // RoutesAtHosts reports a configured route whose base url is at one of the hosts or a subdomain
 func RoutesAtHosts(h string, hosts []string) bool {
 	if len(hosts) == 0 {
@@ -453,34 +442,6 @@ func RoutesAtHosts(h string, hosts []string) bool {
 		}
 	}
 	return false
-}
-
-// ProvidersSelected returns the names a home routes through or names in ICEBATH_INFERENCE_PROVIDER, minus its own custom endpoints
-func ProvidersSelected(h string, names []string, processEnv bool) map[string]bool {
-	chosen := leftCoreProviderChoices(h)
-	chosen[strings.ToLower(leftCoreHomeEnv(h, "ICEBATH_INFERENCE_PROVIDER", processEnv))] = true
-	wanted := map[string]bool{}
-	for _, n := range names {
-		wanted[strings.ToLower(n)] = true
-	}
-	out := map[string]bool{}
-	for name := range chosen {
-		if wanted[name] && !namesCustomEndpoint(h, name) {
-			out[name] = true
-		}
-	}
-	return out
-}
-
-// Reports a name resolving to one of the home's own providers or custom_providers entries
-func namesCustomEndpoint(h, name string) bool {
-	cfg, err := leftCoreYAMLLayers(h)
-	if err != nil {
-		pkgLog().Debug("left-core: unreadable config", "home", h, "error", err)
-		return false
-	}
-	r := newResolver(context.Background(), config.Tree(cfg), config.NewSecrets(h), h, nil)
-	return r.NamedCustomProviderConfigPath(name, cfg) != nil
 }
 
 func leftCoreInstallSentence(ctx context.Context, f *LeftCoreFeature) string {

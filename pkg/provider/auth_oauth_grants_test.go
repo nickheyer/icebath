@@ -1013,16 +1013,7 @@ func TestOAuthGrantsMergeSnapshotKeepsLiveGenerations(t *testing.T) {
 }
 
 func TestOAuthGrantsIdentityAndCounterpart(t *testing.T) {
-	codex := jwtWithClaims(map[string]any{"sub": "s", "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": " acct "}})
-	if got := oauthIdentity(map[string]any{"access_token": codex}); got != "acct" {
-		t.Fatalf("identity %q", got)
-	}
-	if got := oauthIdentity(map[string]any{"access_token": "sk-ant-oat01-x", "id_token": jwtWithClaims(map[string]any{"email": "a@b"})}); got != "a@b" {
-		t.Fatalf("identity %q", got)
-	}
-	if got := oauthIdentity(map[string]any{"access_token": "sk-ant-oat01-x"}); got != "" {
-		t.Fatalf("identity %q", got)
-	}
+
 	rootRows := []any{map[string]any{"id": "k", "auth_type": "api_key", "access_token": "shared"}, map[string]any{"id": "o", "auth_type": "oauth", "access_token": "a1", "refresh_token": "r1"}}
 	if findRootCounterpart(map[string]any{"id": "x", "refresh_token": "r1"}, rootRows) != 1 || findRootCounterpart(map[string]any{"access_token": "shared"}, rootRows) != -1 {
 		t.Fatal("counterpart lineage")

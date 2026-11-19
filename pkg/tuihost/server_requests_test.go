@@ -161,6 +161,13 @@ func TestTheRuleItself(t *testing.T) {
 	if settleBatch(locked, nil, "timed_out").GetOr("answers", nil).(*pyjson.Object) == locked {
 		t.Fatal("the locked answers were aliased into the result")
 	}
+	if got := objText(t, settleBatch(locked, nil, "weird")); got != kept {
+		t.Fatalf("unknown ending = %s", got)
+	}
+	extra := pyjson.ObjectOf("answers", pyjson.ObjectOf("q1", "red"), "outcome", "bogus", "extra", 1)
+	if got := objText(t, settleBatch(locked, extra, "")); got != `{"answers": {"q0": "blue", "q1": "red"}, "outcome": "submitted", "extra": 1}` {
+		t.Fatalf("extra frame keys = %s", got)
+	}
 }
 
 func TestSendReturnsAnAnswerCommittedAfterTheDeadlineExpired(t *testing.T) {

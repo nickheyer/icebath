@@ -13,8 +13,8 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -487,14 +487,14 @@ func TestFinishedTurnLeaseDoesNotKeepTheAgentAliveWithoutGc(t *testing.T) {
 	}
 }
 
-type tickOwner struct{ handle *cron.ScheduledHandle }
+type tickOwner struct{ handle *periodic.ScheduledHandle }
 
 func (o *tickOwner) tick(context.Context) bool { return true }
 
 func TestCancelledHandleReleasesItsOwnerWithoutGc(t *testing.T) {
 	ref := func() weak.Pointer[tickOwner] {
 		owner := &tickOwner{}
-		owner.handle = cron.SchedulePeriodic(context.Background(), owner.tick, time.Hour)
+		owner.handle = periodic.SchedulePeriodic(context.Background(), owner.tick, time.Hour)
 		owner.handle.Cancel(0)
 		return weak.Make(owner)
 	}()

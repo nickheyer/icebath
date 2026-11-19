@@ -542,13 +542,6 @@ func emitSessionInfoForSession(ctx context.Context, sid string, session *tuihost
 	}
 }
 
-// Re-emits session info to every live session of this process, for approvals writers outside config.set
-func BroadcastSessionInfo(ctx context.Context) {
-	for _, live := range tuihost.LiveSessions() {
-		emitSessionInfoForSession(ctx, live.SID, live.Session)
-	}
-}
-
 // Live agent a session record holds, nil before its build
 func sessionAgent(session *tuihost.Session) *agent.AIAgent {
 	a, _ := session.Get("agent").(*agent.AIAgent)

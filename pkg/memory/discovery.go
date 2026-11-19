@@ -170,16 +170,6 @@ func iterEntryPoints() []pyimport.EntryPoint {
 	return pyimport.EntryPoints(entryPointImportPath(), MemoryProviderEntryPointsGroup)
 }
 
-// Entry point a provider name resolves to, nil when none is installed
-func FindProviderEntryPoint(name string) *pyimport.EntryPoint {
-	for _, ep := range iterEntryPoints() {
-		if ep.Name == name {
-			return &ep
-		}
-	}
-	return nil
-}
-
 // Package directory of an entry point module resolved without importing it, empty for a bare module
 func entryPointPackageDir(ep *pyimport.EntryPoint) string {
 	if ep == nil {

@@ -578,14 +578,6 @@
       },
       "version": "15.2.0"
     },
-    "termux-docker": {
-      "artifacts": {
-        "linux-arm64-bionic": {
-          "url": "docker://termux/termux-docker@sha256:c14ffb703abf44f2d3bf7fdffdcc50df7d1454d09c705be190e0342a0b47f303"
-        }
-      },
-      "version": "sha256:c14ffb703abf44f2d3bf7fdffdcc50df7d1454d09c705be190e0342a0b47f303"
-    },
     "uv": {
       "artifacts": {
         "darwin-arm64": {

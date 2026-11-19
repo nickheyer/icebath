@@ -61,7 +61,14 @@ func fireOccurrenceChild(ctx context.Context, s *Store, mode string) error {
 	}
 	for _, job := range jobs {
 		if mode != "worker" {
-			if _, err := schedulerFireDue(ctx, provider, job.ID, FireOptions{Force: mode == "manual"}); err != nil {
+			claimed, err := schedulerClaimFire(ctx, provider, job.ID, mode == "manual", false)
+			if err != nil {
+				return err
+			}
+			if claimed == nil {
+				continue
+			}
+			if _, err := schedulerFireClaimed(ctx, provider, claimed, FireOptions{}); err != nil {
 				return err
 			}
 			continue
@@ -78,7 +85,7 @@ func fireOccurrenceChild(ctx context.Context, s *Store, mode string) error {
 		}
 		payload := filepath.Join(s.Home(), *claim.ExecutionID+".json")
 		ack := filepath.Join(s.Home(), *claim.ExecutionID+".ready")
-		if err := writeWorkerPayload(payload, claim, s.Home(), false); err != nil {
+		if err := writeWorkerPayloadWith(payload, claim, s.Home(), false, nil); err != nil {
 			return err
 		}
 		wctx, cancel := context.WithTimeout(ctx, 60*time.Second)

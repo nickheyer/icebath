@@ -51,7 +51,12 @@ func TestExtractTarDataKeepsSafeMembersAndFiltersModes(t *testing.T) {
 	if err := os.Mkdir(out, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	if err := ExtractTarData(archive, out); err != nil {
+	f, err := os.Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := ExtractTarDataReader(f, out); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(filepath.Join(out, "pkg", "run.sh"))
@@ -84,8 +89,14 @@ func TestExtractTarDataRefusesUnsafeMembers(t *testing.T) {
 		writeTarMembers(t, archive, []*tar.Header{tc.header}, nil)
 		out := filepath.Join(dir, "out")
 		os.Mkdir(out, 0o777)
+		f, err := os.Open(archive)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var refused *TarFilterError
-		if err := ExtractTarData(archive, out); !errors.As(err, &refused) || refused.Class != tc.class {
+		err = ExtractTarDataReader(f, out)
+		f.Close()
+		if !errors.As(err, &refused) || refused.Class != tc.class {
 			t.Fatalf("%s: %v", tc.header.Name, err)
 		}
 	}

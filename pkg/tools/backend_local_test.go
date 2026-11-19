@@ -856,7 +856,7 @@ func TestMsysHelpersAreNoOpsOffWindows(t *testing.T) {
 	if windowsToMsysPath(`C:\Users\x`) != `C:\Users\x` || bashSafePath(`C:\Users\x`) != `C:\Users\x` || msysToWindowsPath("/c/Users/x") != "/c/Users/x" {
 		t.Fatal("translations must be no ops off Windows")
 	}
-	if len(gitBashBinDirs()) != 0 {
+	if len(gitBashBinDirs(context.Background())) != 0 {
 		t.Fatal("no Git Bash dirs off Windows")
 	}
 	run := mustRunEnv(t, newTestToolEnv(t))

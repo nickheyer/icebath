@@ -679,24 +679,6 @@ var reasoningCarrierRoutes = []carrierRoute{
 	{carrierSet(carrierRC, carrierR), carrierSet("ollama-cloud", "custom", "lmstudio", "upstage"), []string{"ollama.com", "upstage.ai"}},
 }
 
-// Process memory of reasoning keys a provider host model triple rejected
-var rejectedReasoningMu sync.Mutex
-var rejectedReasoningRoutes = map[string]map[string]bool{}
-
-func reasoningRouteKey(provider, baseURL, model string) string {
-	return strings.ToLower(strings.TrimSpace(provider)) + "|" + ccHostname(baseURL) + "|" + strings.TrimSpace(model)
-}
-
-func rejectedReasoningCarriers(route Route) map[string]bool {
-	rejectedReasoningMu.Lock()
-	defer rejectedReasoningMu.Unlock()
-	out := map[string]bool{}
-	for k := range rejectedReasoningRoutes[reasoningRouteKey(route.Provider, route.BaseURL, route.Model)] {
-		out[k] = true
-	}
-	return out
-}
-
 // ---- think block stripping ----
 
 // Reasoning tag names every surface hides
@@ -904,9 +886,6 @@ func qwenNormalizeContent(content any) any {
 // Wire copies of the request messages for the chat completions route
 func (c *ccRoute) convertMessages(msgs []*state.Message, echoOptIn bool) []*omap {
 	carriers := routeReasoningCarriers(c.provider, c.baseURL)
-	for k := range rejectedReasoningCarriers(c.route) {
-		delete(carriers, k)
-	}
 	pad := (echoOptIn || NeedsReasoningEcho(c.route.Provider, c.route.Model, c.baseURL)) && carriers[carrierRC]
 	keepSig := modelConsumesThoughtSignature(c.route.Model, c.baseURL, c.provider)
 	mistral := routeRequiresMistralToolIDs(c.provider, c.route.Model, c.baseURL)
@@ -1885,8 +1864,14 @@ func looksLikeOllamaEndpoint(baseURL string) bool {
 	if err != nil {
 		return false
 	}
-	if u.Port() == "11434" {
-		return true
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n > 65535 {
+			return false
+		}
+		if n == 11434 {
+			return true
+		}
 	}
 	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	if host == "" {

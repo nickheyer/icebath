@@ -41,9 +41,6 @@ const HeldNotSent = "runtime_coordination_required"
 var AutoRetryable = map[string]bool{ReasonRuntimeOffline: true, ReasonDeliveryTimeout: true,
 	ReasonProviderRateLimit: true, ReasonProviderServerError: true}
 
-// Whether reason may be retried without human intervention
-func IsAutoRetryable(reason string) bool { return AutoRetryable[reason] }
-
 // Bot turn retry actions
 const (
 	RetryResume             = "resume"

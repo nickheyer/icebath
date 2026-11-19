@@ -675,11 +675,13 @@ func (e *doctorProbeEnv) doctorBuildProbes() []doctorProbe {
 		doctorProbe{"GitHub token", e.probeGitHubToken})
 }
 
-// Runs every probe on at most eight workers and returns the results in submission order
-func doctorRunProbes(probes []doctorProbe) ([]doctorProbeResult, error) {
+// Runs every probe on at most eight workers and returns the results in submission order, awsIMDS keeping the instance metadata lookup for probes that must see an EC2 role
+func doctorRunProbes(probes []doctorProbe, awsIMDS bool) ([]doctorProbeResult, error) {
 	config.NormalizeProxyEnvVars()
 	imdsPrev, imdsSet := os.LookupEnv("AWS_EC2_METADATA_DISABLED")
-	os.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	if !awsIMDS {
+		os.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	}
 	defer func() {
 		if imdsSet {
 			os.Setenv("AWS_EC2_METADATA_DISABLED", imdsPrev)

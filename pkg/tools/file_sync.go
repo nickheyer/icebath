@@ -418,7 +418,7 @@ func (m *FileSyncManager) syncBackTransaction(icebathHome string) {
 		return
 	}
 	if icebathHome == "" {
-		icebathHome = m.env.Home
+		icebathHome = m.homeDir()
 	}
 	lockPath := filepath.Join(icebathHome, ".sync.lock")
 	os.MkdirAll(filepath.Dir(lockPath), 0o755)

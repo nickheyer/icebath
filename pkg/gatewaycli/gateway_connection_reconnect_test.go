@@ -290,21 +290,6 @@ func TestEndingASessionAfterAReconnectDetachesItsCurrentSubscription(t *testing.
 	}
 }
 
-func TestADeletedSessionIsNotResumedByLaterReconnects(t *testing.T) {
-	gw, conn := reconnectFixture(t)
-	store := reconnectStore(t, conn)
-	gw.hangUp(t, conn)
-	wantStatus(t, conn, 2)
-	if _, err := store.DeleteSession(context.Background(), reconnectSID); err != nil {
-		t.Fatal(err)
-	}
-	gw.hangUp(t, conn)
-	wantStatus(t, conn, 3)
-	if resumes := gw.life(2).resumes(); len(resumes) != 0 {
-		t.Fatalf("resumed %v", resumes)
-	}
-}
-
 func TestASessionGoneDuringTheRestartIsSkippedAndNotRetried(t *testing.T) {
 	gw, conn := reconnectFixture(t)
 	gw.resumeErrors = append(gw.resumeErrors, &gateway.GatewayClientError{Msg: "not_found"})
@@ -412,14 +397,14 @@ func TestAHungUpStoreStaysOpenAndItsNextCallRedials(t *testing.T) {
 	gw, conn := reconnectFixture(t)
 	store := reconnectStore(t, conn)
 	gw.hangUp(t, conn)
-	if !store.Bool() {
+	if store.Connection.Final() {
 		t.Fatal("a hung up store reads as closed")
 	}
 	result, err := store.Call(context.Background(), "status", map[string]any{})
 	if err != nil || !reflect.DeepEqual(result, map[string]any{"status": "ok", "life": 2}) {
 		t.Fatal(result, err)
 	}
-	if !store.Bool() {
+	if store.Connection.Final() {
 		t.Fatal("the store closed after its redial")
 	}
 }

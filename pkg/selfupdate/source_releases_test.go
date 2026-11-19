@@ -226,20 +226,6 @@ func srEachEncoding(t *testing.T, run func(t *testing.T, f *srReleases)) {
 	}
 }
 
-func TestSourceStableResolutionUsesPromotedPointerNotHighestTag(t *testing.T) {
-	srEachEncoding(t, func(t *testing.T, f *srReleases) {
-		for _, gitCmd := range [][]string{{"git"}, nil} {
-			tag, sha := ResolveSourceRelease(context.Background(), "stable", gitCmd, f.root, "", true)
-			if tag != f.tags["stable"] || sha != f.commits[1] {
-				t.Fatalf("git %v resolved %q %q", gitCmd, tag, sha)
-			}
-		}
-		if len(f.paths()) == 0 {
-			t.Fatal("no release request was made")
-		}
-	})
-}
-
 func TestSourceForkOriginUsesItsOwnPublishedRelease(t *testing.T) {
 	srEachEncoding(t, func(t *testing.T, f *srReleases) {
 		url := "https://github.com/Fixture/icebath.git"
@@ -249,9 +235,9 @@ func TestSourceForkOriginUsesItsOwnPublishedRelease(t *testing.T) {
 		srGit(t, f.origin, "tag", "-f", tag, f.commits[3])
 		f.set("/repos/Fixture/icebath/releases/latest", map[string]any{"tag_name": tag, "draft": false, "prerelease": false})
 		f.set("/repos/Fixture/icebath/commits/"+tag, map[string]any{"sha": f.commits[3]})
-		gotTag, sha := ResolveSourceRelease(context.Background(), "stable", []string{"git"}, f.root, "", true)
-		if gotTag != tag || sha != f.commits[3] {
-			t.Fatalf("resolved %q %q", gotTag, sha)
+		target, err := ResolveSourceTarget(context.Background(), "stable", []string{"git"}, f.root, "", false)
+		if err != nil || "v"+target.Version != tag || target.Commit != f.commits[3] || target.Repository != "Fixture/icebath" {
+			t.Fatalf("resolved %+v %v", target, err)
 		}
 		for _, path := range f.paths() {
 			if !strings.HasPrefix(path, "/repos/Fixture/icebath/") {
@@ -261,55 +247,35 @@ func TestSourceForkOriginUsesItsOwnPublishedRelease(t *testing.T) {
 	})
 }
 
-func TestSourceSelectedDraftNeverFallsBackToOtherTags(t *testing.T) {
-	srEachEncoding(t, func(t *testing.T, f *srReleases) {
-		f.set("/repos/"+OfficialRepository+"/releases/tags/"+f.tags["stable"], map[string]any{"tag_name": f.tags["stable"], "draft": true, "prerelease": false})
-		for _, gitCmd := range [][]string{{"git"}, nil} {
-			if tag, sha := ResolveSourceRelease(context.Background(), "stable", gitCmd, f.root, "", true); tag != "" || sha != "" {
-				t.Fatalf("git %v resolved a draft to %q %q", gitCmd, tag, sha)
-			}
-		}
-		for _, path := range f.paths() {
-			if strings.Contains(path, "/tags?") {
-				t.Fatalf("draft fell back through %s", path)
-			}
-		}
-	})
-}
-
 func TestSourceOriginTagCannotSubstituteAForkCommit(t *testing.T) {
 	srEachEncoding(t, func(t *testing.T, f *srReleases) {
-		for i, channel := range []string{"stable", "canary"} {
-			srGit(t, f.origin, "tag", "-f", f.tags[channel], f.commits[3])
-			if tag, sha := ResolveSourceRelease(context.Background(), channel, []string{"git"}, f.root, "", true); tag != "" || sha != "" {
-				t.Fatalf("%s accepted a moved origin tag %q %q", channel, tag, sha)
-			}
-			tag, sha := ResolveSourceRelease(context.Background(), channel, nil, "", "", true)
-			if tag != f.tags[channel] || sha != f.commits[1+i] {
-				t.Fatalf("%s without git resolved %q %q", channel, tag, sha)
-			}
+		srGit(t, f.origin, "tag", "-f", f.tags["stable"], f.commits[3])
+		if target, err := ResolveSourceTarget(context.Background(), "stable", []string{"git"}, f.root, "", false); err == nil {
+			t.Fatalf("stable accepted a moved origin tag %+v", target)
+		}
+		target, err := ResolveSourceTarget(context.Background(), "stable", nil, "", "", false)
+		if err != nil || "v"+target.Version != f.tags["stable"] || target.Commit != f.commits[1] {
+			t.Fatalf("stable without git resolved %+v %v", target, err)
 		}
 	})
 }
 
 func TestSourceMissingPointersFallBackOnlyToPublishedReleases(t *testing.T) {
 	srEachEncoding(t, func(t *testing.T, f *srReleases) {
-		for i, channel := range []string{"stable", "canary"} {
-			repo := "/repos/" + OfficialRepository
-			f.drop("/releases/stable/release-candidates.json")
-			f.drop("/releases/" + channel + "/index.html")
-			published := map[string]any{"tag_name": f.tags[channel], "draft": false, "prerelease": channel == "canary"}
-			f.set(repo+"/releases/latest", published)
-			f.set(repo+"/releases?per_page=100&page=1", []any{
-				map[string]any{"tag_name": "v99.0.1+canary.20260912T125822Z", "draft": true, "prerelease": true}, published})
-			tag, sha := ResolveSourceRelease(context.Background(), channel, []string{"git"}, f.root, "", true)
-			if tag != f.tags[channel] || sha != f.commits[1+i] {
-				t.Fatalf("%s resolved %q %q", channel, tag, sha)
-			}
-			for _, path := range f.paths() {
-				if strings.Contains(path, "/tags?") || path == repo+"/releases/tags/"+f.tags[channel] {
-					t.Fatalf("%s asked %s", channel, path)
-				}
+		repo := "/repos/" + OfficialRepository
+		f.drop("/releases/stable/release-candidates.json")
+		f.drop("/releases/stable/index.html")
+		published := map[string]any{"tag_name": f.tags["stable"], "draft": false, "prerelease": false}
+		f.set(repo+"/releases/latest", published)
+		f.set(repo+"/releases?per_page=100&page=1", []any{
+			map[string]any{"tag_name": "v99.0.1+canary.20260912T125822Z", "draft": true, "prerelease": true}, published})
+		target, err := ResolveSourceTarget(context.Background(), "stable", []string{"git"}, f.root, "", false)
+		if err != nil || "v"+target.Version != f.tags["stable"] || target.Commit != f.commits[1] {
+			t.Fatalf("stable resolved %+v %v", target, err)
+		}
+		for _, path := range f.paths() {
+			if strings.Contains(path, "/tags?") || path == repo+"/releases/tags/"+f.tags["stable"] {
+				t.Fatalf("stable asked %s", path)
 			}
 		}
 	})

@@ -258,7 +258,7 @@ func (t *TurnRunner) progressTerminalBlocks(adapter gateway.PlatformAdapter, too
 // Progress line for a started tool, nil in verbose mode where the line is queued directly
 func (t *TurnRunner) progressBuildMessage(toolName string, preview string, args map[string]any) *string {
 	tc := t.ctx
-	emoji := tools.GetToolEmoji(t.toolsEnv(), toolName, "⚙️")
+	emoji := tools.GetToolEmoji(t.turnCtx, t.toolsEnv(), toolName, "⚙️")
 	adapter, err := t.runner.deliveryAdapterFor(t.turnCtx, tc.source)
 	if err != nil {
 		adapter = nil

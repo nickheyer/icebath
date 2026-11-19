@@ -68,6 +68,15 @@ func jv(t *testing.T, v any) any {
 	return out
 }
 
+// Sorted compact ASCII JSON with a trailing newline, the byte form every channel digest covers
+func canonicalJSON(value any) ([]byte, error) {
+	text, err := pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(true), pyjson.AllowNaN(false))
+	if err != nil {
+		return nil, err
+	}
+	return []byte(text + "\n"), nil
+}
+
 func chCanon(t *testing.T, v any) []byte {
 	t.Helper()
 	body, err := canonicalJSON(jv(t, v))

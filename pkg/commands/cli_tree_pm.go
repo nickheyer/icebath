@@ -37,8 +37,6 @@ func (c *CLI) addPM(root *cobra.Command) {
 	af(install, "without", "", "leave an optional default package (chromium, cua-driver) or a recorded extra outside [all] (matrix, ...) out of this and every later default install and update; `icebath pm install NAME` / `--extra NAME` opts back in (repeatable)")
 	bf(install, "tools-only", "", "install the tool closure, put it on PATH, and stop before the venv sync")
 	bf(install, "trust-recorded", "", "trust the recorded tool digest instead of re-hashing every entry. shell activation only. a deliberate install re-checks the bytes")
-	sf(install, "test-environment", "", "", "also make this checkout's isolated test environment current (activation). EXTRAS is comma-separated; omitted selects [all]")
-	noOpt(install, "test-environment", FlagPresent)
 	sf(install, "target", "", "", "stage for a cross target (e.g. linux-arm64-bionic on a glibc CI host); requires explicit package names")
 
 	env := c.newCmd(pmCmd, "env", "print composed env of installed packages", "")
@@ -120,7 +118,7 @@ func pmParsers(pmCmd, lock, install, environment, update *cobra.Command) {
 		{Kind: 'p', Dest: "version", Nargs: "?", Metavar: []string{"VERSION"}, Help: "the tool version (only with --bump)"}}})
 	argparseOwn.Store(install, &apParser{Acts: []apAction{apHelpActionTemplate, {Kind: 'p', Dest: "names", Nargs: "*"},
 		opt("extra", "extra", "NAME", ""), opt("without", "without", "NAME", ""), opt("tools-only", "tools_only", "", "0"),
-		opt("trust-recorded", "trust_recorded", "", "0"), opt("test-environment", "test_environment", "EXTRAS", "?"),
+		opt("trust-recorded", "trust_recorded", "", "0"),
 		opt("target", "target", "", "")}})
 	argparseOwn.Store(environment, &apParser{Desc: true, Acts: []apAction{apHelpActionTemplate, {Kind: 'p', Dest: "name"},
 		opt("extra", "extra", "EXTRA", ""), opt("requirement", "requirement", "REQ", "")}})

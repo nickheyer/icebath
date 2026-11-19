@@ -268,7 +268,7 @@ func TestQuietGatesAndRetryBuffer(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var printed []string
 	a := &AIAgent{platform: "cli", quietMode: true, printFn: func(s string) { printed = append(printed, s) }}
-	if !a.shouldEmitQuietToolMessages() || !a.shouldStartQuietSpinner() {
+	if !a.shouldEmitQuietToolMessages() || !a.shouldStartQuietSpinner(context.Background()) {
 		t.Fatal("quiet CLI with a printer emits tool messages and spinners")
 	}
 	a.suppressStatusOutput = true

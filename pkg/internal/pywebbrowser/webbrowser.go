@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -83,6 +84,53 @@ var (
 	osPreferred string
 )
 
+// Lookups the registry is built from, the process environment, the search path and the default browser of the desktop
+var (
+	lookupEnv      = os.LookupEnv
+	which          = func(cmd string) bool { _, ok := pyshutil.Which(cmd, nil); return ok }
+	desktopDefault = xdgDefaultBrowser
+)
+
+// Value of an environment variable, empty when it is unset
+func getenv(name string) string {
+	value, _ := lookupEnv(name)
+	return value
+}
+
+// Desktop file xdg-settings names as the default web browser, empty when the query fails
+func xdgDefaultBrowser() string {
+	out, err := exec.Command("xdg-settings", "get", "default-web-browser").Output()
+	if err != nil {
+		return ""
+	}
+	return pystr.Strip(string(out))
+}
+
+// ScriptForTests builds the registry anew from a scripted environment and search path until the returned restore runs
+func ScriptForTests(env map[string]string, onPath ...string) (restore func()) {
+	lock.Lock()
+	defer lock.Unlock()
+	prevEnv, prevWhich, prevDefault := lookupEnv, which, desktopDefault
+	lookupEnv = func(name string) (string, bool) {
+		value, ok := env[name]
+		return value, ok
+	}
+	which = func(cmd string) bool { return slices.Contains(onPath, cmd) }
+	desktopDefault = func() string { return "" }
+	forget()
+	return func() {
+		lock.Lock()
+		defer lock.Unlock()
+		lookupEnv, which, desktopDefault = prevEnv, prevWhich, prevDefault
+		forget()
+	}
+}
+
+// Empties the registry so the next use registers again
+func forget() {
+	browsers, tryorder, registered, osPreferred = map[string]entry{}, nil, false, ""
+}
+
 // Name and basename of a resolved controller
 type Controller struct {
 	Name     string
@@ -136,7 +184,7 @@ func synthesize(name string, preferred bool) (entry, error) {
 		return entry{}, &IndexError{Msg: "list index out of range"}
 	}
 	cmd := words[0]
-	if _, ok := pyshutil.Which(cmd, nil); !ok {
+	if !which(cmd) {
 		return entry{}, nil
 	}
 	base := pypath.Basename(cmd)
@@ -188,7 +236,7 @@ func ensureRegistered() error {
 	}
 	registered = true
 	registerPlatformBrowsers()
-	value, ok := os.LookupEnv("BROWSER")
+	value, ok := lookupEnv("BROWSER")
 	if !ok {
 		return nil
 	}

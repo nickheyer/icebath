@@ -453,10 +453,9 @@ func TestOpenRouterAndRequestCostPricing(t *testing.T) {
 
 func TestUsageCostHook(t *testing.T) {
 	f := newPricingFixture(t)
-	RegisterUsageCostHook("acme", func(model string, usage CanonicalUsage) (CostResult, bool) {
+	registerTestProfile(t, Profile{Name: "acme", AuthType: AuthTypeAPIKey, GetUsageCostHook: func(model string, usage CanonicalUsage) (CostResult, bool) {
 		return CostResult{AmountUSD: rat("0.5"), Status: "actual", Source: "provider_cost_api", Label: "~$0.50"}, true
-	})
-	t.Cleanup(func() { RegisterUsageCostHook("acme", nil) })
+	}})
 	result := EstimateUsageCost(f.ctx, "acme-1", CanonicalUsage{RequestCount: 1}, "acme", "", "")
 	if result.Status != "actual" || !ratEq(result.AmountUSD, "0.5") {
 		t.Fatalf("%+v", result)
@@ -467,11 +466,6 @@ func TestCompactFormatters(t *testing.T) {
 	for in, want := range map[float64]string{30: "30s", 90: "2m", 3600: "1h", 3660: "1h 1m", 90000: "1.0d"} {
 		if got := FormatDurationCompact(in); got != want {
 			t.Fatalf("%v -> %q", in, got)
-		}
-	}
-	for in, want := range map[int]string{999: "999", 1000: "1K", 1500: "1.5K", 12345: "12.3K", 123456: "123K", 2_500_000: "2.5M", -1500: "-1.5K", 3_000_000_000: "3B"} {
-		if got := FormatTokenCountCompact(in); got != want {
-			t.Fatalf("%d -> %q", in, got)
 		}
 	}
 }
@@ -549,31 +543,6 @@ func TestAnonymousAndAuthenticatedReadsAreSeparate(t *testing.T) {
 	}
 }
 
-func TestPeekCachedPricing(t *testing.T) {
-	f := newPricingFixture(t)
-	if got := PeekCachedPricing(pricingBase); len(got) != 0 {
-		t.Fatal("empty expected")
-	}
-	requests := servePricing(f, func(auth string) []string {
-		if auth != "" {
-			return []string{"vendor/allowed"}
-		}
-		return []string{"vendor/allowed", "vendor/blocked"}
-	})
-	PeekCachedPricing(pricingBase)
-	if len(*requests) != 0 {
-		t.Fatal("peek fetched")
-	}
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: pricingBase})
-	if got := pricingIDs(PeekCachedPricing(pricingBase)); !reflect.DeepEqual(got, []string{"vendor/allowed", "vendor/blocked"}) {
-		t.Fatalf("anonymous fallback %v", got)
-	}
-	FetchModelsWithPricing(context.Background(), PricingFetchOptions{APIKey: "sk-test", BaseURL: pricingBase})
-	if got := pricingIDs(PeekCachedPricing(pricingBase + "/v1")); !reflect.DeepEqual(got, []string{"vendor/allowed"}) {
-		t.Fatalf("authenticated preferred through /v1 %v", got)
-	}
-}
-
 func TestPricingCacheWriteDropsCatalogsPastTheirDeadline(t *testing.T) {
 	newPricingFixture(t)
 	now := time.Unix(100, 0)
@@ -616,13 +585,10 @@ func TestFailedCatalogFetchIsNotCachedForever(t *testing.T) {
 		t.Fatal("expected empty")
 	}
 	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"})
-	if calls != 1 || !PricingFetchSuppressed("https://example.test/v1") {
-		t.Fatalf("calls %d suppressed %v", calls, PricingFetchSuppressed("https://example.test"))
+	if calls != 1 {
+		t.Fatalf("calls %d", calls)
 	}
 	pricingClock = func() time.Time { return now.Add(failedCatalogTTL + time.Second) }
-	if PricingFetchSuppressed("https://example.test") {
-		t.Fatal("still suppressed after the window")
-	}
 	FetchModelsWithPricing(context.Background(), PricingFetchOptions{BaseURL: "https://example.test"})
 	if calls != 2 {
 		t.Fatalf("calls %d", calls)

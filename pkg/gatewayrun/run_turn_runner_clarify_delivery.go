@@ -87,11 +87,6 @@ func abortForOutcome(outcome, sessionKey string) string {
 	return ""
 }
 
-// Abort sentinel of a clarify prompt send, empty when the caller proceeds to the wait
-func clarifySendDisposition(fut *concurrentFuture, sessionKey string) string {
-	return abortForOutcome(approvalSendOutcome(fut, clarifySendAckWindow), sessionKey)
-}
-
 // Resolves a clarify prompt through its send disposition, the text fallback and the bounded wait, true when answered
 func clarifySendThenWait(ctx context.Context, env *tools.Env, fut *concurrentFuture, clarifyID, sessionKey string, fallback func() *concurrentFuture) (string, bool) {
 	outcome := approvalSendOutcome(fut, clarifySendAckWindow)

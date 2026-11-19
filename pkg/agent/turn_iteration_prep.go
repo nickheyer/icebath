@@ -259,7 +259,7 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 		status := faced(faces, verbs[rand.IntN(len(verbs))]+"...")
 		if a.thinkingCallback != nil {
 			a.callThinking(status)
-		} else if !a.hasStreamConsumers() && a.shouldStartQuietSpinner() {
+		} else if !a.hasStreamConsumers() && a.shouldStartQuietSpinner(ctx) {
 			s.ThinkingSpinner = startStatusSpinner(ctx, status, a.printFn)
 		}
 	}

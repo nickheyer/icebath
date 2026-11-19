@@ -1,31 +1,15 @@
 package gateway
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"time"
-	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-const (
-	RestartWaitReason         = "restart_wait"
-	drainRequestFilename      = ".drain_request.json"
-	DrainRequestMaxAgeSeconds = 3600.0
-)
+const RestartWaitReason = "restart_wait"
 
 // DrainRunner is the runner state the restart wait checks read and the descriptor they stamp
 type DrainRunner interface {
@@ -71,12 +55,9 @@ func WSMethodRefusedWhileDraining(runner DrainRunner, method string) bool {
 }
 
 var (
-	epochMu       sync.Mutex
-	epochCached   *string
-	procReadFile  = os.ReadFile
-	expiryLogMu   sync.Mutex
-	expiryLogged  *string
-	drainEpochNow = func() time.Time { return time.Now().UTC() }
+	epochMu      sync.Mutex
+	epochCached  *string
+	procReadFile = os.ReadFile
 )
 
 // Container or VM instantiation identity of boot id and PID 1 start time, empty when neither is readable
@@ -103,120 +84,4 @@ var CurrentInstantiationEpoch = func() string {
 	}
 	epochCached = &epoch
 	return epoch
-}
-
-// Drain request marker inside the home, the active profile home when empty
-func DrainRequestPath(ctx context.Context, h string) string {
-	if h == "" {
-		h = home.Dir(ctx)
-	}
-	return filepath.Join(h, drainRequestFilename)
-}
-
-// Writes the begin drain marker atomically stamped with the epoch, a rewrite refreshes its clock
-func WriteDrainRequest(ctx context.Context, principal string, suppressNotification bool, h string) (*pyjson.Object, error) {
-	payload := pyjson.NewObject()
-	payload.Set("action", "drain")
-	payload.Set("requested_at", pydatetime.ISOFormat(drainEpochNow()))
-	payload.Set("principal", principal)
-	payload.Set("epoch", CurrentInstantiationEpoch())
-	payload.Set("suppress_notification", suppressNotification)
-	if err := config.AtomicJSONWrite(ctx, DrainRequestPath(ctx, h), payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-// Removes the drain marker, true when one existed
-func ClearDrainRequest(ctx context.Context, h string) bool {
-	path := DrainRequestPath(ctx, h)
-	err := os.Remove(path)
-	if err == nil {
-		return true
-	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		pkgLog().Warn(fmt.Sprintf("drain-control: failed to remove %s: %s", path, errchain.OSText(err)))
-	}
-	return false
-}
-
-// True when requested_at parses and is past the max age, warning once per marker
-func markerIsExpired(body *pyjson.Object) bool {
-	raw, _ := body.Get("requested_at")
-	requestedAt, ok := memoryParseISO(raw)
-	if !ok {
-		return false
-	}
-	age := float64(drainEpochNow().Sub(requestedAt).Microseconds()) / 1e6
-	if age <= DrainRequestMaxAgeSeconds {
-		return false
-	}
-	rawText := raw.(string)
-	expiryLogMu.Lock()
-	first := expiryLogged == nil || *expiryLogged != rawText
-	if first {
-		expiryLogged = &rawText
-	}
-	expiryLogMu.Unlock()
-	if first {
-		principal, _ := body.Get("principal")
-		pkgLog().Warn(fmt.Sprintf("drain-control: ignoring expired drain marker (requested_at=%s, age=%.0fs > max %.0fs, principal=%s) "+
-			"— the drain that wrote it was never cancelled; treating as stale so the gateway keeps accepting turns.",
-			rawText, age, DrainRequestMaxAgeSeconds, pyrepr.Str(principal)))
-	}
-	return true
-}
-
-// Marker body when present, same epoch and unexpired
-func activeDrainBody(ctx context.Context, h string) *pyjson.Object {
-	body := ReadDrainRequest(ctx, h)
-	if body == nil {
-		return nil
-	}
-	current := CurrentInstantiationEpoch()
-	markerEpoch, _ := body.Get("epoch")
-	if s, isStr := markerEpoch.(string); current != "" && pyrepr.Truthy(markerEpoch) && (!isStr || s != current) {
-		return nil
-	}
-	if markerIsExpired(body) {
-		return nil
-	}
-	return body
-}
-
-// True when an active begin drain marker exists
-func DrainRequested(ctx context.Context, h string) bool { return activeDrainBody(ctx, h) != nil }
-
-// True when an active marker asks to suppress the shutdown broadcast
-func DrainNotificationSuppressed(ctx context.Context, h string) bool {
-	body := activeDrainBody(ctx, h)
-	if body == nil || body.Len() == 0 {
-		return false
-	}
-	v, _ := body.Get("suppress_notification")
-	return pyrepr.Truthy(v)
-}
-
-// Marker payload, an empty object when unparseable or not a dict, nil when absent or unreadable
-func ReadDrainRequest(ctx context.Context, h string) *pyjson.Object {
-	path := DrainRequestPath(ctx, h)
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			pkgLog().Warn(fmt.Sprintf("drain-control: failed to read %s: %s", path, errchain.OSText(err)))
-		}
-		return nil
-	}
-	b = []byte(strings.TrimPrefix(string(b), "\xef\xbb\xbf"))
-	if !utf8.Valid(b) {
-		return pyjson.NewObject()
-	}
-	data, err := pyjson.Loads(string(b))
-	if err != nil {
-		return pyjson.NewObject()
-	}
-	if obj, ok := data.(*pyjson.Object); ok {
-		return obj
-	}
-	return pyjson.NewObject()
 }

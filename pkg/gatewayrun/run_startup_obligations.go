@@ -229,11 +229,6 @@ func (r *GatewayRunner) obligationAdapter(ctx context.Context, row gateway.Claim
 	return adapter
 }
 
-// Claims and redelivers in one call
-func (r *GatewayRunner) redeliverPendingObligations(ctx context.Context) int {
-	return r.redeliverClaimedObligations(ctx, r.claimPendingObligations(ctx))
-}
-
 // Replays one adapter identity's transient delivery failures after it reconnected
 func (r *GatewayRunner) redeliverFailedObligationsForPlatform(ctx context.Context, platform gateway.Platform, profile *string) int {
 	if !gateway.LedgerEnabled(ctx, nil) {

@@ -212,7 +212,7 @@ func anthropicSummaryAttempt(ctx context.Context, agent ChatCompletionAgent, api
 		if err != nil {
 			return "", err
 		}
-		return summaryText(agent, response, map[string]any{"strip_tool_prefix": agent.IsAnthropicOAuth()})
+		return summaryText(agent, response, map[string]any{"strip_tool_prefix": agent.IsAnthropicOAuth(), "ctx": ctx})
 	}, nil
 }
 

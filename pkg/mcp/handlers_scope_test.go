@@ -72,7 +72,10 @@ func TestTrustScopeSessionAndAlwaysStopNextPromptForThatToolOnly(t *testing.T) {
 		t.Run(choice, func(t *testing.T) {
 			home := isolateHome(t)
 			resetHandlerLedgers(t)
-			t.Cleanup(func() { tools.ClearSession("tg:chat-a-" + choice); tools.ClearSession("tg:chat-b-" + choice) })
+			t.Cleanup(func() {
+				tools.ClearSession(context.Background(), "tg:chat-a-"+choice)
+				tools.ClearSession(context.Background(), "tg:chat-b-"+choice)
+			})
 			serverTrustLevels[ServerKey{Name: "srv"}] = TrustUntrusted
 			chat := openScopeChat(t, home, "tg:chat-a-"+choice, choice)
 			for _, tool := range []string{"write", "write", "other"} {

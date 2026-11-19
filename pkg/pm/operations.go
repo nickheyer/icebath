@@ -122,47 +122,6 @@ func lockProject(ctx context.Context, opts LockProjectOptions) error {
 	return environment.Lock(ctx, source, opts.Upgrade, 0)
 }
 
-// StageManagerRuntimeOptions are stage_manager_runtime's keywords
-type StageManagerRuntimeOptions struct {
-	Python      string
-	Destination string
-	Project     string
-	Offline     bool
-	Wheelhouse  string
-	Cache       string
-}
-
-// Stages a manager runtime's independent dependency graph with tools staged beforehand
-func stageManagerRuntime(ctx context.Context, opts StageManagerRuntimeOptions) (string, error) {
-	destination, python := absoluteUnresolved(opts.Destination), absoluteUnresolved(opts.Python)
-	if existsOrLink(destination) {
-		return "", &DestinationExistsError{Path: destination}
-	}
-	uv, _, found, err := uvToolchain(ctx, false, false)
-	if err != nil {
-		return "", err
-	}
-	if !found {
-		return "", NewInstallError("pm-runtime", "stage pinned tools before building the manager runtime", "")
-	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0o777); err != nil {
-		return "", err
-	}
-	if err := os.Mkdir(destination, 0o777); err != nil {
-		return "", err
-	}
-	executable, err := StageRuntime(ctx, uv, python, destination, StageRuntimeOptions{Project: opts.Project, Offline: opts.Offline,
-		Wheelhouse: opts.Wheelhouse, Cache: opts.Cache})
-	if err == nil {
-		err = writeLockDocument(filepath.Join(destination, "pm-runtime.json"), map[string]any{})
-	}
-	if err != nil {
-		removeTreeQuiet(destination)
-		return "", err
-	}
-	return executable, nil
-}
-
 // Root of a named side environment, an explicit root or the home's environments directory
 func environmentRoot(ctx context.Context, name, root string) (string, error) {
 	if !simplePackageName.MatchString(name) {
@@ -432,49 +391,13 @@ func ensureEnvironment(ctx context.Context, opts EnsureEnvironmentOptions) (stri
 		map[string]any{"requirements": requirements}, opts.Explicit, opts.Executable)
 }
 
-// EnsureProjectEnvironmentOptions are ensure_project_environment's arguments, empty Root for None
-type EnsureProjectEnvironmentOptions struct {
-	Name     string
-	Project  string
-	Extras   []string
-	Groups   []string
-	Root     string
-	Explicit bool
-	Timeout  time.Duration
-}
-
-// Makes an isolated environment of a project's locked dependencies current, keyed by its manifest and lock bytes
-func ensureProjectEnvironment(ctx context.Context, opts EnsureProjectEnvironmentOptions) (string, error) {
-	root, err := environmentRoot(ctx, opts.Name, opts.Root)
+// Copies a file's bytes the way shutil copyfile does, without metadata
+func copyFileBytes(src, dst string) error {
+	data, err := os.ReadFile(src)
 	if err != nil {
-		return "", err
+		return err
 	}
-	project := absoluteUnresolved(opts.Project)
-	extras, groups := sortedSet(opts.Extras), sortedSet(opts.Groups)
-	if extras == nil {
-		extras = []string{}
-	}
-	if groups == nil {
-		groups = []string{}
-	}
-	manifests := map[string]any{}
-	for _, manifest := range []string{"pyproject.toml", "uv.lock"} {
-		data, err := os.ReadFile(filepath.Join(project, manifest))
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", NewInstallError("venv", "locked project environment needs "+filepath.Join(project, manifest), "")
-		}
-		if err != nil {
-			return "", err
-		}
-		sum := sha256.Sum256(data)
-		manifests[manifest] = hex.EncodeToString(sum[:])
-	}
-	build := func(generation, basePython string) (string, error) {
-		return buildEnvironment(ctx, BuildEnvironmentOptions{Source: project, Out: filepath.Join(generation, "venv"), Python: basePython,
-			Extras: extras, Groups: groups, NoInstallProject: true, Frozen: true, Explicit: opts.Explicit, Timeout: opts.Timeout})
-	}
-	return ensureGeneration(ctx, opts.Name, root, map[string]any{"manifests": manifests, "extras": extras, "groups": groups},
-		build, map[string]any{"extras": extras, "groups": groups}, opts.Explicit, "")
+	return os.WriteFile(dst, data, 0o666)
 }
 
 // Pinned interpreter resolved through links, empty when the toolchain is not installed

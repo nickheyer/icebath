@@ -78,7 +78,7 @@ func parkedSubmitSession(t *testing.T, sid string, fields map[string]any) *tuiho
 	ready := &pythread.Event{}
 	base := map[string]any{"agent": nil, "session_key": "session-key", "history": []any{}, "history_lock": &sync.Mutex{},
 		"history_version": int64(0), "running": false, "attached_images": []any{}, "image_counter": 0, "cols": 80,
-		"slash_worker": nil, "show_reasoning": false, "tool_progress_mode": "all", "agent_ready": ready, "agent_build_started": true}
+		"show_reasoning": false, "tool_progress_mode": "all", "agent_ready": ready, "agent_build_started": true}
 	for key, value := range fields {
 		base[key] = value
 	}

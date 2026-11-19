@@ -881,7 +881,7 @@ func appendUnconfiguredRows(ctx context.Context, rows []map[string]any, pc Picke
 		namesFor[c] = append(namesFor[c], strings.ToLower(alias))
 	}
 	extras := []map[string]any{}
-	for _, entry := range ListedCanonicalProviders() {
+	for _, entry := range listedCanonicalProviders(ctx) {
 		slug := strings.ToLower(entry.Slug)
 		if seen[slug] {
 			continue

@@ -11,27 +11,12 @@ import (
 	"time"
 )
 
-// PM runtime generation, published with a marker and lease managed unless told otherwise
-func sttRuntimeGeneration(t *testing.T, root, name string, published, leaseManaged bool) string {
+// Lease managed generation directory under a root
+func sttLeasedGeneration(t *testing.T, root, name string) string {
 	t.Helper()
 	generation := sttMkdir(t, filepath.Join(root, "generations", name))
-	if leaseManaged {
-		sttTouch(t, filepath.Join(generation, ".lease-managed"))
-	}
-	if published {
-		writeFile(t, filepath.Join(generation, "pm-runtime.json"), []byte(`{"inputs": "`+name+`"}`), 0o666)
-	}
+	sttTouch(t, filepath.Join(generation, ".lease-managed"))
 	return generation
-}
-
-// Collects runtime generations failing the test on error
-func sttCollectRuntime(t *testing.T, root string) []string {
-	t.Helper()
-	removed, err := CollectRuntimeGenerations(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return removed
 }
 
 // Takes a lease failing the test on error
@@ -44,48 +29,9 @@ func sttLease(t *testing.T, generation string) func() {
 	return release
 }
 
-func TestCollectorKeepsSelectedLeasedAndPreLeaseGenerations(t *testing.T) {
-	isolateHome(t)
-	root := filepath.Join(t.TempDir(), "pm-runtime")
-	selected := sttRuntimeGeneration(t, root, "selected", true, true)
-	busy := sttRuntimeGeneration(t, root, "busy", true, true)
-	idle := sttRuntimeGeneration(t, root, "idle", true, true)
-	legacy := sttRuntimeGeneration(t, root, "legacy", true, false)
-	aborted := sttRuntimeGeneration(t, root, "aborted", false, true)
-	writeFile(t, filepath.Join(root, "selected.json"), []byte(`{"generation": "generations/selected"}`), 0o666)
-	release := sttLease(t, busy)
-	defer release()
-	sttLease(t, idle)()
-
-	removed := sttCollectRuntime(t, root)
-	slices.Sort(removed)
-	sttSamePaths(t, removed, []string{aborted, idle})
-	for _, p := range []string{selected, busy, legacy} {
-		if !sttIsDir(p) {
-			t.Fatalf("%s was collected", p)
-		}
-	}
-	release()
-	sttSamePaths(t, sttCollectRuntime(t, root), []string{busy})
-}
-
-func TestCollectorYieldsToAnInFlightStage(t *testing.T) {
-	isolateHome(t)
-	root := filepath.Join(t.TempDir(), "pm-runtime")
-	aborted := sttRuntimeGeneration(t, root, "aborted", false, true)
-	lock := sttHold(t, filepath.Join(root, ".prepare.lock"))
-	removed := sttCollectRuntime(t, root)
-	lock.Close()
-	sttSamePaths(t, removed, nil)
-	if !sttIsDir(aborted) {
-		t.Fatal("collector removed a generation while a stage held the prepare lock")
-	}
-	sttSamePaths(t, sttCollectRuntime(t, root), []string{aborted})
-}
-
 func TestNextReaderRemovesLeaseLeftByHardExit(t *testing.T) {
 	isolateHome(t)
-	generation := sttRuntimeGeneration(t, filepath.Join(t.TempDir(), "pm-runtime"), "selected", true, true)
+	generation := sttLeasedGeneration(t, filepath.Join(t.TempDir(), "runtime"), "selected")
 	if out, err := sttHelperCommand("lease", generation).CombinedOutput(); err != nil {
 		t.Fatalf("hard exit child failed: %v\n%s", err, out)
 	}
@@ -112,7 +58,7 @@ func TestPruneKeepsUnopenableSiblingLease(t *testing.T) {
 		t.Skip("root opens mode-0 files")
 	}
 	isolateHome(t)
-	generation := sttRuntimeGeneration(t, filepath.Join(t.TempDir(), "pm-runtime"), "selected", true, true)
+	generation := sttLeasedGeneration(t, filepath.Join(t.TempDir(), "runtime"), "selected")
 	leases := sttMkdir(t, filepath.Join(generation, ".leases"))
 	foreign := sttTouch(t, filepath.Join(leases, "foreign"))
 	if err := os.Chmod(foreign, 0); err != nil {
@@ -134,7 +80,7 @@ func TestLeaseTakenWhileAPeerPrunedItIsRetaken(t *testing.T) {
 		t.Skip("platforms posix")
 	}
 	isolateHome(t)
-	generation := sttRuntimeGeneration(t, filepath.Join(t.TempDir(), "pm-runtime"), "selected", true, true)
+	generation := sttLeasedGeneration(t, filepath.Join(t.TempDir(), "runtime"), "selected")
 	leases := filepath.Join(generation, ".leases")
 	realLock := leaseLock
 	t.Cleanup(func() { leaseLock = realLock })

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -27,9 +25,6 @@ var gatewayInterruptSettleSeconds = 10.0
 
 // Poll interval of the turn pump
 const gatewayAgentPoll = 100 * time.Millisecond
-
-// Reply of steer and redirect when the owner consumed the text as a typed voice stop
-const gatewayVoiceStopped = "voice_stopped"
 
 // Session usage keys mapped onto the counters the status bar, spinner and usage command read
 var gatewayCounterFromUsage = [][2]string{
@@ -49,15 +44,6 @@ func gatewayResultDefaults() map[string]any {
 		"response_transformed": false, "pre_transform_response": nil, "billing_block": nil,
 		"auxiliary_usage": map[string]any{},
 	}
-}
-
-// Context compressor figures as the status bar and banner read them
-type gatewayCompressorView struct {
-	lastPromptTokens     int
-	lastRealPromptTokens *int
-	contextLength        int
-	compressionCount     int
-	configContextLength  *int
 }
 
 // One run of a conversation and what each consumer got of the reply's current segment
@@ -86,7 +72,7 @@ func (t *gatewayTurn) closeSegment() {
 	t.shown, t.spoken = nil, nil
 }
 
-// Callbacks and launch values the classic CLI hands the gateway backed agent
+// Callbacks and launch values the one shot chat hands the gateway backed agent
 type gatewayAgentOptions struct {
 	SessionDB                *gatewaycli.GatewaySessionStore
 	Connection               *gatewaycli.GatewayConnection
@@ -96,17 +82,10 @@ type gatewayAgentOptions struct {
 	BaseURL                  string
 	APIMode                  string
 	MaxIterations            int
-	QuietMode                bool
 	ToolProgressMode         string
 	ReasoningConfig          map[string]any
 	ServiceTier              string
-	PushReasoning            bool
-	OneTurn                  bool
-	OneTurnReasoning         string
-	OneTurnAlias             string
 	ClarifyCallback          func(questions []any) map[string]any
-	ConnectionCallback       func(args ...any)
-	ConnectionUpdateCallback func(snapshot map[string]any)
 	ReasoningCallback        func(text string)
 	ThinkingCallback         func(text any)
 	ToolProgressCallback     func(eventType, functionName, preview string, functionArgs map[string]any, extra map[string]any)
@@ -116,11 +95,7 @@ type gatewayAgentOptions struct {
 	NoticeCallback           func(notice provider.AgentNotice)
 	NoticeClearCallback      func(key string)
 	InterimAssistantCallback func(text any, alreadyStreamed bool)
-	ModelConfirmCallback     func(refusal map[string]any) bool
-	ModalWithdrawCallback    func(method string)
 	ToolEnv                  *tools.Env
-	ApprovalCallback         func(ctx context.Context, command, description string, allowPermanent, allowSession, smartDenied bool) (string, error)
-	SudoPasswordCallback     func(ctx context.Context) string
 }
 
 // Gateway backed stand in for the in process agent, the turn runs in the gateway and this replays its events
@@ -137,47 +112,27 @@ type GatewayAgent struct {
 	baseURL               string
 	apiMode               string
 	maxIterations         int
-	quietMode             bool
 	serviceTier           string
 	reasoningCallback     func(text string)
 	showReasoningSent     *gatewayShowReasoning
 	suppressStatusOutput  bool
 	printFn               func(string)
-	finite                bool
-	openRequest           *gatewayOpenRequest
 	sessionMessages       []map[string]any
 	pendingCLIUserMessage map[string]any
 	interruptRequested    bool
-	turnAskIndex          *int
 	usageStale            bool
-	compressor            gatewayCompressorView
 	counters              map[string]int
-	contextTokens         int
-	turnCallsBase         int
-	turnBaseUsageAnchor   *provider.UsageAnchor
-	turnAPICalls          *int
-	apiLatencyHistory     []float64
-	apiOutputHistory      []float64
 	todoStore             *tools.TodoStore
-	compressionSummary    map[string]any
 	generation            any
 	admission             any
 	turn                  *gatewayTurn
-	turnCtx               context.Context
 	epoch                 int
 	interruptSentAt       *time.Time
 	rateLimitState        *provider.RateLimitState
-	configContextLength   *int
 	toolProgressMode      string
 	reasoningConfig       map[string]any
-	reasoningPushed       bool
 	moaPreset             string
-	turnRoute             map[string]any
-	takenTurnRoute        *gatewayTakenRoute
-	turnReasoning         string
 	usageListener         *gatewaycli.SessionListener
-	requestListener       *gatewaycli.SessionListener
-	headerCapture         *provider.HeaderCapture
 	notificationConfig    map[string]any
 	muteNotificationReply bool
 }
@@ -187,18 +142,6 @@ type gatewayShowReasoning struct {
 	sessionID string
 	show      bool
 	epoch     int
-}
-
-// Request id and method of the server request a modal is answering
-type gatewayOpenRequest struct {
-	id     any
-	method string
-}
-
-// One turn model pick and its effort taken by the admission being sent
-type gatewayTakenRoute struct {
-	route     map[string]any
-	reasoning string
 }
 
 // Builds the agent over the session store's connection, refusing when there is no gateway session
@@ -212,40 +155,22 @@ func newGatewayAgent(ctx context.Context, o gatewayAgentOptions) (*GatewayAgent,
 	}
 	a := &GatewayAgent{ctx: ctx, connection: conn, sessionDB: o.SessionDB, opts: o, sessionID: o.SessionID,
 		model: o.Model, provider: o.Provider, baseURL: o.BaseURL, apiMode: o.APIMode, maxIterations: o.MaxIterations,
-		quietMode: o.QuietMode, counters: map[string]int{}, todoStore: tools.NewTodoStore(), toolProgressMode: "all"}
+		counters: map[string]int{}, todoStore: tools.NewTodoStore(), toolProgressMode: "all"}
 	a.resetSessionFigures()
 	a.setTodoStore(a.todoStore)
 	a.SetToolProgressMode(o.ToolProgressMode)
-	if o.PushReasoning {
-		a.reasoningPushed = a.PinReasoning(o.ReasoningConfig)
-	} else {
-		a.reasoningConfig = o.ReasoningConfig
-	}
+	a.reasoningConfig = o.ReasoningConfig
 	if o.Provider == "moa" {
 		a.moaPreset = o.Model
 	}
-	if o.OneTurn {
-		a.turnRoute = a.routeOffSession(o.Model, o.Provider, o.OneTurnAlias)
-		a.turnReasoning = o.OneTurnReasoning
-	}
 	a.applyInfo(a.stateInfo())
-	if a.turnRoute != nil {
-		a.mu.Lock()
-		a.model = o.Model
-		if p, _ := a.turnRoute["provider"].(string); p != "" {
-			a.provider = p
-		}
-		a.mu.Unlock()
-	}
 	a.SetReasoningCallback(o.ReasoningCallback)
 	a.SetServiceTier(o.ServiceTier)
 	onUsage := gatewaycli.SessionListener(func(ctx context.Context, usage map[string]any) { a.applySessionUsage(ctx, usage) })
-	onWithdrawn := gatewaycli.SessionListener(func(_ context.Context, payload map[string]any) { a.onRequestWithdrawn(payload) })
-	a.usageListener, a.requestListener = &onUsage, &onWithdrawn
+	a.usageListener = &onUsage
 	state := a.state()
 	state.Lock()
 	state.UsageListeners = append(state.UsageListeners, a.usageListener)
-	state.RequestListeners = append(state.RequestListeners, a.requestListener)
 	state.Unlock()
 	state.Lock()
 	usage := state.Usage
@@ -254,28 +179,6 @@ func newGatewayAgent(ctx context.Context, o gatewayAgentOptions) (*GatewayAgent,
 		a.applySessionUsage(ctx, usage)
 	}
 	return a, nil
-}
-
-// Registers the usage and request listeners on a session's state unless they are already there
-func (a *GatewayAgent) listen(sessionID string) {
-	state := a.connection.State(sessionID)
-	state.Lock()
-	defer state.Unlock()
-	if !slices.Contains(state.UsageListeners, a.usageListener) {
-		state.UsageListeners = append(state.UsageListeners, a.usageListener)
-	}
-	if !slices.Contains(state.RequestListeners, a.requestListener) {
-		state.RequestListeners = append(state.RequestListeners, a.requestListener)
-	}
-}
-
-// Removes the listeners from the state of a session the agent left, so its later frames repaint nothing here
-func (a *GatewayAgent) unlisten(sessionID string) {
-	state := a.connection.State(sessionID)
-	state.Lock()
-	defer state.Unlock()
-	state.UsageListeners = gatewaycli.WithoutListener(state.UsageListeners, a.usageListener)
-	state.RequestListeners = gatewaycli.WithoutListener(state.RequestListeners, a.requestListener)
 }
 
 // Current tool progress display mode
@@ -310,76 +213,6 @@ func (a *GatewayAgent) ReasoningConfig() map[string]any {
 	return a.reasoningConfig
 }
 
-// Sets the reasoning config, writing the session effort only when it differs from what the session runs
-func (a *GatewayAgent) SetReasoningConfig(config map[string]any) { a.setReasoning(config, false) }
-
-// Makes the effort the session's own choice, true when the owner committed it
-func (a *GatewayAgent) PinReasoning(config map[string]any) bool { return a.setReasoning(config, true) }
-
-// Whether a user picked effort was committed at build
-func (a *GatewayAgent) ReasoningPushed() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.reasoningPushed
-}
-
-// Holds a one turn effort for the next admission only, sending nothing to the session
-func (a *GatewayAgent) StageTurnReasoning(config map[string]any) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.reasoningConfig = config
-	a.turnReasoning = effortWord(config)
-}
-
-// Puts a reasoning level back on this agent after a one turn pick, the session never written
-func (a *GatewayAgent) RestoreReasoning(config map[string]any) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.reasoningConfig = config
-	a.turnReasoning = ""
-}
-
-func (a *GatewayAgent) setReasoning(config map[string]any, explicit bool) bool {
-	a.mu.Lock()
-	a.reasoningConfig = config
-	a.mu.Unlock()
-	effort := effortWord(config)
-	if effort == "" {
-		return false
-	}
-	state := a.state()
-	state.Lock()
-	current := state.Info["reasoning_effort"]
-	state.Unlock()
-	if !explicit && pyjson.Equal(current, effort) {
-		return true
-	}
-	sessionID := a.SessionID()
-	snapshot, err := a.connection.Call(a.ctx, "session.resume", map[string]any{"session_id": sessionID})
-	if err == nil {
-		var revision, generation any
-		revision, generation, err = snapshotFence(snapshot)
-		if err == nil {
-			_, err = a.connection.Call(a.ctx, "session.mutate", map[string]any{"session_id": sessionID, "request_id": uuidHex(),
-				"expected_revision": revision, "expected_generation": generation, "operation": "reasoning",
-				"payload": map[string]any{"effort": effort}})
-		}
-	}
-	if err != nil {
-		if isGatewayClientError(err) || errors.Is(err, errSnapshotFence) {
-			pkgLog().Debug(fmt.Sprintf("session.mutate reasoning failed: %s", err.Error()))
-			return false
-		}
-		panic(err)
-	}
-	state.Lock()
-	info := copyMap(state.Info)
-	info["reasoning_effort"] = effort
-	state.Info = info
-	state.Unlock()
-	return true
-}
-
 // Raised when a resume snapshot lacks its revision or generation fence
 var errSnapshotFence = errors.New("snapshot carries no revision or execution_generation")
 
@@ -397,47 +230,18 @@ func snapshotFence(snapshot any) (any, any, error) {
 	return revision, generation, nil
 }
 
-// Model and provider a turn sends when the session runs another route, nil when it runs this one
-func (a *GatewayAgent) routeOffSession(model, provider, alias string) map[string]any {
+// Whether the session runs a route other than the given model and provider
+func (a *GatewayAgent) routeOffSession(model, provider string) bool {
 	state := a.state()
 	state.Lock()
 	sessionModel := pyrepr.Truthy(state.Info["model"])
 	state.Unlock()
-	if model == "" || !sessionModel || (state.RunsRoute(model, provider) && alias == "") {
-		return nil
-	}
-	route := map[string]any{"model": firstNonEmpty(alias, model)}
-	if provider != "" {
-		route["provider"] = provider
-	}
-	return route
+	return model != "" && sessionModel && !state.RunsRoute(model, provider)
 }
 
-// Commits a session scoped model switch, or stages and restores a one turn pick without writing the session
-func (a *GatewayAgent) SwitchModel(newModel, newProvider string, once, restore bool, alias string) (bool, error) {
-	if once || restore {
-		var route map[string]any
-		if !restore {
-			route = a.routeOffSession(newModel, newProvider, alias)
-		}
-		a.mu.Lock()
-		a.turnRoute = route
-		if restore {
-			a.turnReasoning = ""
-		}
-		if newModel != "" {
-			a.model = newModel
-		}
-		if newProvider != "" {
-			a.provider = newProvider
-		}
-		a.mu.Unlock()
-		return true, nil
-	}
-	if newModel == a.Model() && (newProvider == "" || newProvider == a.Provider()) && a.routeOffSession(newModel, newProvider, "") == nil {
-		a.mu.Lock()
-		a.turnRoute = nil
-		a.mu.Unlock()
+// Commits a session scoped model switch
+func (a *GatewayAgent) SwitchModel(newModel, newProvider string) (bool, error) {
+	if newModel == a.Model() && (newProvider == "" || newProvider == a.Provider()) && !a.routeOffSession(newModel, newProvider) {
 		return true, nil
 	}
 	sessionID := a.SessionID()
@@ -470,20 +274,7 @@ func (a *GatewayAgent) SwitchModel(newModel, newProvider string, once, restore b
 		return false, err
 	}
 	if result["status"] == "confirmation_required" {
-		if a.opts.ModelConfirmCallback == nil {
-			return false, &gateway.GatewayClientError{Msg: modelRefusalText(result, false)}
-		}
-		if !a.opts.ModelConfirmCallback(result) {
-			return false, nil
-		}
-		confirmed := copyMap(payload)
-		confirmed["confirm"] = requireKey(result, "confirm")
-		if result, err = mutate(confirmed); err != nil {
-			return false, err
-		}
-		if result["status"] == "confirmation_required" {
-			return false, &gateway.GatewayClientError{Msg: modelRefusalText(result, true)}
-		}
+		return false, &gateway.GatewayClientError{Msg: modelRefusalText(result, false)}
 	}
 	state := a.state()
 	if after, err := a.connection.Call(a.ctx, "session.resume", map[string]any{"session_id": sessionID}); err != nil {
@@ -510,9 +301,6 @@ func (a *GatewayAgent) SwitchModel(newModel, newProvider string, once, restore b
 	}
 	state.Info = info
 	state.Unlock()
-	a.mu.Lock()
-	a.turnRoute = nil
-	a.mu.Unlock()
 	a.applyInfo(info)
 	return true, nil
 }
@@ -543,44 +331,6 @@ func (a *GatewayAgent) SessionID() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.sessionID
-}
-
-// Repoints the agent at another gateway session, attaching this viewer and reading that session's state
-func (a *GatewayAgent) SetSessionID(value string) {
-	a.mu.Lock()
-	previous := a.sessionID
-	a.sessionID = value
-	a.mu.Unlock()
-	if previous == "" || value == previous || value == "" {
-		return
-	}
-	a.unlisten(previous)
-	if a.sessionDB != nil {
-		if _, err := a.sessionDB.Attach(a.ctx, value, false); err != nil {
-			if !isGatewayClientError(err) {
-				panic(err)
-			}
-			pkgLog().Debug(fmt.Sprintf("session.resume %s failed: %s", value, err.Error()))
-		}
-	} else if _, err := a.connection.Call(a.ctx, "session.resume", map[string]any{"session_id": value}); err != nil {
-		if !isGatewayClientError(err) {
-			panic(err)
-		}
-		pkgLog().Debug(fmt.Sprintf("session.resume %s failed: %s", value, err.Error()))
-	}
-	a.listen(value)
-	a.applyInfo(a.stateInfo())
-	state := a.state()
-	state.Lock()
-	usage := state.Usage
-	state.Unlock()
-	if len(usage) > 0 {
-		a.applySessionUsage(a.ctx, usage)
-	}
-	a.syncShowReasoning()
-	if notice := a.lostTurnNotice(); notice != "" {
-		a.emitPrint(notice)
-	}
 }
 
 // Reasoning sink the CLI installed, nil when reasoning is not shown
@@ -658,23 +408,14 @@ func (a *GatewayAgent) SetServiceTier(tier string) {
 	state.Unlock()
 }
 
-// Writes nothing, the gateway persists the transcript of its own session
-func (a *GatewayAgent) flushMessagesToSessionDB() {}
-
 // Writes nothing, the gateway owns the session log
 func (a *GatewayAgent) persistSession() {}
-
-// Creates nothing, the gateway created the session row before this agent attached
-func (a *GatewayAgent) ensureDBSession() {}
 
 // Releases nothing, the LLM clients live in the gateway
 func (a *GatewayAgent) releaseClients() {}
 
 // Stops nothing, the gateway runs the memory providers of its session
 func (a *GatewayAgent) shutdownMemoryProvider() {}
-
-// Restores nothing and reports false, the gateway owns the primary runtime of its session
-func (a *GatewayAgent) restorePrimaryRuntime() bool { return false }
 
 // Cached gateway state of the current session
 func (a *GatewayAgent) state() *gatewaycli.SessionState { return a.connection.State(a.SessionID()) }
@@ -696,9 +437,6 @@ func (a *GatewayAgent) applyInfo(info map[string]any) {
 	}
 	if p, _ := info["provider"].(string); p != "" {
 		a.provider = p
-	}
-	if n, ok := pyIntValue(info["context_length"]); ok && n != 0 {
-		a.compressor.contextLength = n
 	}
 }
 
@@ -737,41 +475,6 @@ func (a *GatewayAgent) MaxIterations() int {
 	return a.maxIterations
 }
 
-// Whether status output stays quiet
-func (a *GatewayAgent) QuietMode() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.quietMode
-}
-
-// Tool schemas the gateway session loads, one per name of its info tools groups in toolset order
-func (a *GatewayAgent) Tools() []map[string]any {
-	groups, _ := a.stateInfo()["tools"].(map[string]any)
-	keys := make([]string, 0, len(groups))
-	for key := range groups {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	var out []map[string]any
-	for _, key := range keys {
-		members, _ := groups[key].([]any)
-		for _, name := range members {
-			out = append(out, map[string]any{"type": "function", "function": map[string]any{"name": name}})
-		}
-	}
-	return out
-}
-
-// Names of the tools the gateway session loads
-func (a *GatewayAgent) ValidToolNames() map[string]bool {
-	names := map[string]bool{}
-	for _, tool := range a.Tools() {
-		fn, _ := pyjson.Dict(tool["function"])
-		names[pyrepr.Str(fn["name"])] = true
-	}
-	return names
-}
-
 // Rate limit state the gateway last reported for this session
 func (a *GatewayAgent) RateLimitState() *provider.RateLimitState {
 	a.mu.Lock()
@@ -790,41 +493,6 @@ func (a *GatewayAgent) applySessionUsage(ctx context.Context, usage map[string]a
 			a.counters[pair[0]] = n
 		}
 	}
-	if n, ok := pyIntValue(usage["last_prompt_tokens"]); ok {
-		a.compressor.lastPromptTokens = n
-	}
-	if n, ok := pyIntValue(usage["context_length"]); ok && n != 0 {
-		a.compressor.contextLength = n
-	}
-	if pin, has := usage["config_context_length"]; has {
-		var held *int
-		if n, ok := pyIntValue(pin); ok {
-			held = &n
-		}
-		a.compressor.configContextLength, a.configContextLength = held, held
-	}
-	if n, ok := pyIntValue(usage["compression_count"]); ok {
-		a.compressor.compressionCount = n
-	}
-	if source, has := usage["context_source"]; has && source != nil {
-		if source == "provider_usage" {
-			a.compressor.lastRealPromptTokens = nil
-		} else {
-			shownPlusOne := a.compressor.lastPromptTokens + 1
-			a.compressor.lastRealPromptTokens = &shownPlusOne
-		}
-	}
-	anchor := false
-	if n, ok := pyIntValue(usage["context_tokens"]); ok {
-		a.contextTokens = n
-		anchor = true
-	}
-	latency, latencyOK := pyNumber(usage["avg_latency_s"])
-	tps, tpsOK := pyNumber(usage["tokens_per_s"])
-	if latencyOK && latency > 0 && tpsOK {
-		a.apiLatencyHistory = []float64{latency}
-		a.apiOutputHistory = []float64{tps * latency}
-	}
 	if raw, has := usage["rate_limit"]; has {
 		a.rateLimitState = rateLimitStateOf(raw)
 	}
@@ -835,9 +503,6 @@ func (a *GatewayAgent) applySessionUsage(ctx context.Context, usage map[string]a
 		a.provider = p
 	}
 	a.mu.Unlock()
-	if anchor {
-		a.anchorDisplay(ctx)
-	}
 }
 
 // Zeroes the per session figures the bar, spinner and usage command read, the context length staying
@@ -847,10 +512,6 @@ func (a *GatewayAgent) resetSessionFigures() {
 	for _, pair := range gatewayCounterFromUsage {
 		a.counters[pair[0]] = 0
 	}
-	a.compressor.lastPromptTokens, a.compressor.lastRealPromptTokens, a.compressor.compressionCount = 0, nil, 0
-	a.contextTokens, a.turnCallsBase = 0, 0
-	a.turnBaseUsageAnchor, a.turnAPICalls = nil, nil
-	a.apiLatencyHistory, a.apiOutputHistory = nil, nil
 }
 
 // Drops the previous session's figures and shows the gateway's for the current one
@@ -906,59 +567,6 @@ func (a *GatewayAgent) Interrupt() {
 		pkgLog().Debug(fmt.Sprintf("session.interrupt failed: %s", err.Error()))
 	}
 }
-
-// Context of the goroutine running the turn, where the CLI registered its prompt callbacks
-func (a *GatewayAgent) threadCtx() context.Context {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.turnCtx != nil {
-		return a.turnCtx
-	}
-	return a.ctx
-}
-
-// Explicit stop of the running generation, the same session.interrupt
-func (a *GatewayAgent) HardInterrupt() { a.Interrupt() }
-
-// Sends a steer or redirect for the running generation, the voice stop word when the owner took it as one
-func (a *GatewayAgent) correct(verb, text string) any {
-	a.mu.Lock()
-	generation := a.generation
-	a.mu.Unlock()
-	if generation == nil {
-		return false
-	}
-	raw, err := a.connection.Call(a.ctx, "session."+verb, map[string]any{"session_id": a.SessionID(), "text": text, "execution_generation": generation})
-	if err != nil {
-		if isGatewayClientError(err) {
-			return false
-		}
-		panic(err)
-	}
-	result, _ := pyjson.Plain(raw).(map[string]any)
-	if result["voice_stopped"] == true {
-		a.emitPrint(i18n.T(a.ctx, "cli.voice.stop_phrase_typed", "", nil))
-		return gatewayVoiceStopped
-	}
-	return result["status"] == "queued" || result["status"] == "redirected"
-}
-
-// Steers the running turn, true when queued, the voice stop word when consumed as one
-func (a *GatewayAgent) Steer(text string) any { return a.correct("steer", text) }
-
-// Redirects the running turn, the redirect row becoming the turn's ask when accepted
-func (a *GatewayAgent) Redirect(text string) any {
-	accepted := a.correct("redirect", text)
-	if accepted == true {
-		a.mu.Lock()
-		a.turnAskIndex = nil
-		a.mu.Unlock()
-	}
-	return accepted
-}
-
-// Whether the owner took the text as a typed voice stop
-func gatewayCorrectionVoiceStopped(answer any) bool { return answer == gatewayVoiceStopped }
 
 // Integer value of a decoded JSON number that is not a bool
 func pyIntValue(v any) (int, bool) {

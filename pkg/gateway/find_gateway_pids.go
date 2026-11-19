@@ -599,7 +599,7 @@ func IcebathHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool)
 			return "", false, nil
 		}
 	}
-	if !hasProfile && envHome != "" && (filepath.Base(pypath.PathParent(envHome)) == "profiles" || env["ICEBATH_UPDATE_POST_SWAP"] == "1") {
+	if !hasProfile && envHome != "" && filepath.Base(pypath.PathParent(envHome)) == "profiles" {
 		return envHome, true, nil
 	}
 	var defaultHome string

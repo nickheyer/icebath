@@ -32,9 +32,7 @@ var (
 	invalidParamsRe     = regexp.MustCompile(`^invalid params for (\S+): ([^:]+): (.+)$`)
 	jsWhitespaceRunRe   = regexp.MustCompile(`[\t\n\v\f\r \x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]+`)
 	notMineRefusalRe    = regexp.MustCompile(`^skill command: use command\.dispatch for /|use command\.dispatch for /snapshot restore`)
-	slashFallbackStopRe = regexp.MustCompile(`slash worker|timed out|not connected|not running`)
-	slashCrashRe        = regexp.MustCompile(`slash worker (?:exited|closed pipe|start failed)`)
-	slashCrashPrefixRe  = regexp.MustCompile(`^slash worker (?:exited|closed pipe:?|start failed:?)[\t\n\v\f\r \x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]*`)
+	slashFallbackStopRe = regexp.MustCompile(`timed out|not connected|not running`)
 	missingKeyRe        = regexp.MustCompile(`^No API key configured for provider '([^']*)'`)
 	bareErrorPrefixRe   = regexp.MustCompile(`^Error:[\t\n\v\f\r \x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]*`)
 )
@@ -271,13 +269,19 @@ func describeRPCError(err error) string {
 	return describeWireText(s, text)
 }
 
-// Copy of the first known wire pattern the text matches, the text itself otherwise
+// Refusal sent as its bare reason code, whose meaning rides in the detail beside it
+var refusalCodeRe = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)+$`)
+
+// Copy of the first known wire pattern the text matches, else the text itself with the detail a bare refusal code carries
 func describeWireText(s rpcShape, text string) string {
 	for _, row := range rpcErrorRows {
 		if m := row.match(s, text); m != nil {
 			logReplacedWireText(s, text)
 			return row.render(m)
 		}
+	}
+	if detail, _ := s.data["detail"].(string); refusalCodeRe.MatchString(text) {
+		return joinPresent(text, detailLine(detail))
 	}
 	return text
 }
@@ -303,7 +307,7 @@ func describeShellExecError(err error) string {
 	return describeRPCError(err)
 }
 
-// Copy of a slash command failure, an unsupported refusal, a helper timeout or crash, or the general copy
+// Copy of a slash command failure, an unsupported refusal or the general copy
 func describeSlashExecError(command string, err error) string {
 	s := shapeOf(err)
 	if isUnsupportedCommand(err) {
@@ -312,12 +316,6 @@ func describeSlashExecError(command string, err error) string {
 			return refusal + "\n" + strings.TrimFunc(detail, isJSSpace)
 		}
 		return refusal
-	}
-	if strings.Contains(s.message, "slash worker timed out") {
-		return tr("userMessages.rpc.slashTimedOut", command)
-	}
-	if slashCrashRe.MatchString(s.message) {
-		return joinPresent(tr("userMessages.rpc.slashCrashed", command), detailLine(slashCrashPrefixRe.ReplaceAllString(s.message, "")))
 	}
 	return describeRPCError(err)
 }

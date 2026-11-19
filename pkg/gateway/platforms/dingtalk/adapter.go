@@ -200,16 +200,6 @@ func credentials(ctx context.Context, extra map[string]any) (any, any, error) {
 	return clientID, clientSecret, nil
 }
 
-// Whether the clients are available and the scoped env carries both credentials
-func CheckDingTalkRequirements(ctx context.Context) bool {
-	ok, err := EnsureDingTalkDeps(ctx)
-	if err != nil || !ok {
-		return false
-	}
-	clientID, clientSecret, err := credentials(ctx, nil)
-	return err == nil && pyrepr.Truthy(clientID) && pyrepr.Truthy(clientSecret)
-}
-
 // Session webhook of a chat with its expiry in milliseconds
 type sessionWebhook struct {
 	url       string

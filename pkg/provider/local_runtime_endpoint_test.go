@@ -353,9 +353,6 @@ func TestLocalRuntimeResolveEndpointDetectsThenWaitsOnlyWhenBooting(t *testing.T
 	if _, _, ok := managedLocalStateEndpoint(filepath.Join(t.TempDir(), "elsewhere")); ok {
 		t.Fatal("foreign installation endpoint")
 	}
-	if endpointPIDAlive(0) || endpointPIDAlive(-1) || !endpointPIDAlive(os.Getpid()) {
-		t.Fatal("pid liveness")
-	}
 	_, routerPid := lr4Sleeper(t)
 	record := lr4ModernRecord(t, routerPid)
 	record["base_url"], record["api_key"] = "http://127.0.0.1:18001/v1", "key-a"

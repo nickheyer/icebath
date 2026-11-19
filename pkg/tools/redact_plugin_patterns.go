@@ -79,6 +79,16 @@ func pluginPatterns() []string {
 	return out
 }
 
+// Every builtin and plugin prefix pattern the matcher runs in registration order, the corpus egress callers test against
+func RedactPrefixPatterns() []string {
+	pluginPatternsMu.Lock()
+	defer pluginPatternsMu.Unlock()
+	return append(append([]string{}, prefixPatterns...), pluginPatterns()...)
+}
+
+// Leading literal characters of a prefix pattern, the text a synthetic token starts with
+func RedactLiteralPrefix(pattern string) string { return literalPrefix(pattern) }
+
 // Recompiles the prefix alternation and pre screen substrings from builtins plus plugin patterns
 func rebuildPrefixMatcher() error {
 	plugin := pluginPatterns()

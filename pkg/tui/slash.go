@@ -214,9 +214,6 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			if body == "" {
 				body = "/" + name + ": no output"
 			}
-			if r.Warning != "" {
-				body = "warning: " + r.Warning + "\n" + body
-			}
 			return a.showOutput(body, name)
 		}
 		if isUnsupportedCommand(err) {

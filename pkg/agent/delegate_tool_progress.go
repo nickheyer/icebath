@@ -222,7 +222,7 @@ func buildChildSystemPrompt(ctx context.Context, env *tools.Env, contextText, wo
 		ctxFiles := ""
 		delegateQuiet("subagent: workspace context-files load failed", func() {
 			cwd := workspacePath
-			out, err := BuildContextFilesPrompt(ctx, env, ContextFilesOptions{Cwd: &cwd, SkipSoul: true})
+			out, err := BuildContextFilesPrompt(tools.CopyTruncationWarningsContext(ctx), env, ContextFilesOptions{Cwd: &cwd, SkipSoul: true})
 			if err != nil {
 				pkgLog().Debug("subagent: workspace context-files load failed", "error", err)
 				return
@@ -507,7 +507,7 @@ func (r *childProgressRelay) onToolStarted(name, preview string, args map[string
 		activeSubagentsMu.Unlock()
 	}
 	if r.spinner != nil {
-		line := tools.GetToolEmoji(nil, name, "⚡") + " " + name
+		line := tools.GetToolEmoji(context.Background(), nil, name, "⚡") + " " + name
 		short := ""
 		if preview != "" {
 			short = shortText(preview, 35)

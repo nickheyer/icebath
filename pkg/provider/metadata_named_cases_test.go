@@ -114,18 +114,6 @@ func TestEndpointPricingPerTokenQuotesPassThroughUnchanged(t *testing.T) {
 	}
 }
 
-func TestGetNextProbeTierFrom256k(t *testing.T) {
-	if next, ok := GetNextProbeTier(ContextProbeTiers[0]); !ok || next != ContextProbeTiers[1] {
-		t.Fatal("next tier from the top")
-	}
-}
-
-func TestGetNextProbeTierFrom8kReturnsNone(t *testing.T) {
-	if _, ok := GetNextProbeTier(ContextProbeTiers[len(ContextProbeTiers)-1]); ok {
-		t.Fatal("no tier below the minimum")
-	}
-}
-
 func TestFetchEndpointModelMetadataAuthFailureEmptyResultIsCached(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.handle = func(*http.Request) (*http.Response, error) { return jsonResponse(nil, 401, map[string]any{}, nil), nil }

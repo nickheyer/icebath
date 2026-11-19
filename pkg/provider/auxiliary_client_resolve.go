@@ -61,12 +61,6 @@ func auxStampEffectiveProvider(client AuxClient, provider string) bool {
 	return false
 }
 
-// Set once at startup so collected async clients never close their transport on a dead loop
-var auxAsyncHTTPXDelNeutered atomic.Bool
-
-// NeuterAsyncHTTPXDel makes the collection time transport close of every async auxiliary client a no op
-func NeuterAsyncHTTPXDel() { auxAsyncHTTPXDelNeutered.Store(true) }
-
 // Transport of an async client with its closed state, the httpx client wrapper of AsyncOpenAI
 type auxAsyncTransport struct {
 	closed atomic.Bool
@@ -74,9 +68,9 @@ type auxAsyncTransport struct {
 	owns   bool
 }
 
-// Collection time close of an async transport unless neutered or already closed
+// Collection time close of an async transport unless already closed
 func auxAsyncTransportCollected(t *auxAsyncTransport) {
-	if auxAsyncHTTPXDelNeutered.Load() || !t.closed.CompareAndSwap(false, true) {
+	if !t.closed.CompareAndSwap(false, true) {
 		return
 	}
 	if t.owns {

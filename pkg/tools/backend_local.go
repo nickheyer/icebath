@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // ProfileSecretSource is the secret scope and dotenv bookkeeping of pkg/provider the child env builders read
@@ -578,7 +579,7 @@ type envPart struct {
 }
 
 // Filters every part into one env, resolving passthrough through the bound scope when asked, then applies the shared guards
-func scrubbedEnv(ctx context.Context, env *Env, parts []envPart, pluginStrip map[string]bool, fixPath func(string) string, order *envOrder, resolve bool) (map[string]string, error) {
+func scrubbedEnv(ctx context.Context, env *Env, parts []envPart, pluginStrip map[string]bool, fixPath func(string) (string, error), order *envOrder, resolve bool) (map[string]string, error) {
 	out := map[string]string{}
 	for _, p := range parts {
 		if err := filterSecretEnv(ctx, env, p.items, out, p.unwrapForce, pluginStrip, resolve); err != nil {
@@ -599,7 +600,11 @@ func scrubbedEnv(ctx context.Context, env *Env, parts []envPart, pluginStrip map
 	}
 	order.note(out)
 	if pathKey, ok := pathEnvKey(out); ok {
-		out[pathKey] = prependIcebathBinDir(fixPath(out[pathKey]))
+		fixed, err := fixPath(out[pathKey])
+		if err != nil {
+			return nil, err
+		}
+		out[pathKey] = prependIcebathBinDir(fixed)
 		order.note(out, pathKey)
 	}
 	return finalizeChildEnv(env, out, order)
@@ -607,15 +612,19 @@ func scrubbedEnv(ctx context.Context, env *Env, parts []envPart, pluginStrip map
 
 // SanitizeSubprocessEnv filters managed secrets from a background, PTY, worker or script child environment
 func SanitizeSubprocessEnv(ctx context.Context, env *Env, base, extra map[string]string) (map[string]string, error) {
-	return scrubbedEnv(ctx, env, []envPart{{base, false}, {extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, nil, true)
+	return scrubbedEnv(ctx, env, []envPart{{base, false}, {extra, true}}, pluginTerminalEnvStripKeys(), func(p string) (string, error) { return p, nil }, nil, true)
 }
 
 // Env with the user's tools first on PATH for background commands
-func terminalEnv(child map[string]string) map[string]string {
+func terminalEnv(ctx context.Context, child map[string]string) (map[string]string, error) {
 	if pathKey, ok := pathEnvKey(child); ok {
-		child[pathKey] = userToolsFirst(child[pathKey])
+		ordered, err := userToolsFirst(ctx, child[pathKey])
+		if err != nil {
+			return nil, err
+		}
+		child[pathKey] = ordered
 	}
-	return child
+	return child, nil
 }
 
 // IcebathSubprocessEnv sanitizes a non terminal child environment and panics with the damaged runtime record error
@@ -741,7 +750,7 @@ func BuildSubprocessEnvOrdered(ctx context.Context, env *Env, o SubprocessEnvOpt
 		order.note(child)
 	}
 	if o.ScrubSecrets {
-		out, err := scrubbedEnv(ctx, env, []envPart{{child, false}, {o.Extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, order, !o.SeparateProcess)
+		out, err := scrubbedEnv(ctx, env, []envPart{{child, false}, {o.Extra, true}}, pluginTerminalEnvStripKeys(), func(p string) (string, error) { return p, nil }, order, !o.SeparateProcess)
 		if err != nil {
 			return nil, err
 		}
@@ -1026,19 +1035,9 @@ func StripProfileGateEnv(child map[string]string) map[string]string {
 	return child
 }
 
-// Credential keys owned by plugin registered terminal backends
+// Credential keys owned by plugin registered terminal backends of every scope
 func pluginTerminalEnvStripKeys() map[string]bool {
-	keys := map[string]bool{}
-	for _, name := range TerminalBackendNames() {
-		p := GetTerminalBackend(name)
-		if p == nil {
-			continue
-		}
-		for _, k := range p.StripEnvKeys() {
-			keys[k] = true
-		}
-	}
-	return keys
+	return PluginStripEnvKeys()
 }
 
 // Tier one secrets stripped from every spawned subprocess even under inherited credentials
@@ -1076,36 +1075,20 @@ func alwaysStripFolded() map[string]bool {
 
 // Shell discovery
 
-// Resolves the bash binary commands run with
-func findBash() (string, error) {
-	if p, err := exec.LookPath("bash"); err == nil {
-		return p, nil
+// Resolves the bash binary commands run with, the package manager's shell lookup owning the answer
+func findBash(ctx context.Context) (string, error) {
+	bash, err := pm.Bash(ctx)
+	if err != nil {
+		return "", err
 	}
-	if isWindowsHost {
-		for _, c := range gitForWindowsBashCandidates() {
-			if st, err := os.Stat(c); err == nil && !st.IsDir() {
-				return c, nil
-			}
-		}
+	if bash == "" {
+		return "", fmt.Errorf("No shell found. icebath needs bash (Git for Windows on Windows). Run `icebath pm install` or reinstall the bundle.")
 	}
-	return "", fmt.Errorf("No shell found. icebath needs bash (Git for Windows on Windows). Install bash or Git for Windows and retry.")
+	return bash, nil
 }
 
 // Bash executable the local backend runs
-func FindBash() (string, error) { return findBash() }
-
-// Well known Git for Windows bash locations
-func gitForWindowsBashCandidates() []string {
-	var out []string
-	for _, root := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LocalAppData")} {
-		if root == "" {
-			continue
-		}
-		out = append(out, filepath.Join(root, "Git", "bin", "bash.exe"), filepath.Join(root, "Git", "usr", "bin", "bash.exe"),
-			filepath.Join(root, "Programs", "Git", "bin", "bash.exe"))
-	}
-	return out
-}
+func FindBash(ctx context.Context) (string, error) { return findBash(ctx) }
 
 // Git Bash coreutils dirs in profile order, cached once
 var gitBashBinDirsCache struct {
@@ -1114,18 +1097,18 @@ var gitBashBinDirsCache struct {
 }
 
 // Git Bash coreutils dirs on Windows, empty elsewhere
-func gitBashBinDirs() []string {
+func gitBashBinDirs(ctx context.Context) []string {
 	gitBashBinDirsCache.Do(func() {
 		if isWindowsHost {
-			gitBashBinDirsCache.dirs = computeGitBashBinDirs()
+			gitBashBinDirsCache.dirs = computeGitBashBinDirs(ctx)
 		}
 	})
 	return gitBashBinDirsCache.dirs
 }
 
-// Resolves mingw and usr bin dirs beside the bash binary
-func computeGitBashBinDirs() []string {
-	bash, err := findBash()
+// Resolves the ucrt, clang, mingw and usr bin dirs beside the bash binary
+func computeGitBashBinDirs(ctx context.Context) []string {
+	bash, err := findBash(ctx)
 	if err != nil {
 		return nil
 	}
@@ -1136,7 +1119,7 @@ func computeGitBashBinDirs() []string {
 	}
 	seen := map[string]bool{}
 	var dirs []string
-	for _, sub := range []string{"mingw64/bin", "mingw32/bin", "usr/local/bin", "usr/bin", "bin"} {
+	for _, sub := range []string{"ucrt64/bin", "clangarm64/bin", "mingw64/bin", "mingw32/bin", "usr/local/bin", "usr/bin", "bin"} {
 		d := filepath.Join(root, filepath.FromSlash(sub))
 		if st, err := os.Stat(d); err == nil && st.IsDir() && !seen[d] {
 			seen[d] = true
@@ -1169,11 +1152,15 @@ func prependMissingPathEntries(existing string, dirs []string) string {
 	return strings.Join(append(missing, entries...), sep)
 }
 
-// Path with Git Bash dirs first on Windows so coreutils beat System32 lookalikes
-func userToolsFirst(existing string) string {
-	bashDirs := gitBashBinDirs()
+// Path with the user's tools before the store's and Git Bash dirs first on Windows so coreutils beat System32 lookalikes
+func userToolsFirst(ctx context.Context, existing string) (string, error) {
+	path, err := pm.UserFacingPath(ctx, existing)
+	if err != nil {
+		return "", err
+	}
+	bashDirs := gitBashBinDirs(ctx)
 	if len(bashDirs) == 0 {
-		return existing
+		return path, nil
 	}
 	keys := map[string]bool{}
 	for _, d := range bashDirs {
@@ -1181,19 +1168,19 @@ func userToolsFirst(existing string) string {
 	}
 	sep := string(os.PathListSeparator)
 	var rest []string
-	for _, p := range strings.Split(existing, sep) {
+	for _, p := range strings.Split(path, sep) {
 		if p != "" && !keys[normHomePath(p)] {
 			rest = append(rest, p)
 		}
 	}
-	return strings.Join(append(append([]string{}, bashDirs...), rest...), sep)
+	return strings.Join(append(append([]string{}, bashDirs...), rest...), sep), nil
 }
 
 // POSIX sh family shells that understand the background spawn invocation
 var spawnCompatibleShells = map[string]bool{"bash": true, "zsh": true, "sh": true, "dash": true, "ksh": true, "mksh": true}
 
 // FindShell is the user's login shell for background spawning when it is an sh family shell, else bash
-func FindShell() (string, error) {
+func FindShell(ctx context.Context) (string, error) {
 	userShell := ""
 	if !isWindowsHost {
 		userShell = os.Getenv("SHELL")
@@ -1203,7 +1190,7 @@ func FindShell() (string, error) {
 			return userShell, nil
 		}
 	}
-	return findBash()
+	return findBash(ctx)
 }
 
 // PATH completion for the terminal subshell
@@ -1352,8 +1339,8 @@ func makeRunEnv(ctx context.Context, env *Env, childEnv map[string]string) (map[
 	for k, v := range childEnv {
 		base[k] = v
 	}
-	runEnv, err := scrubbedEnv(ctx, env, []envPart{{base, true}}, map[string]bool{}, func(p string) string {
-		return userToolsFirst(appendMissingSanePathEntries(env, p))
+	runEnv, err := scrubbedEnv(ctx, env, []envPart{{base, true}}, map[string]bool{}, func(p string) (string, error) {
+		return userToolsFirst(ctx, appendMissingSanePathEntries(env, p))
 	}, nil, true)
 	if err != nil {
 		return nil, err
@@ -1588,7 +1575,7 @@ func (l *localEnv) recoverCwd() {
 
 // Spawns bash in its own session with the scrubbed run env and the owner death supervisor covering its group
 func (l *localEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdinData *string) (ProcessHandle, error) {
-	bash, err := findBash()
+	bash, err := findBash(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1723,26 +1710,11 @@ func (localBackend) StripEnvKeys() []string                 { return nil }
 func (localBackend) SessionIsolatedWhenNonpersistent() bool { return false }
 func (localBackend) SupportsStreams() bool                  { return false }
 
-// IsAvailable reports whether a bash binary can be found
-func (localBackend) IsAvailable() bool {
-	_, err := findBash()
-	return err == nil
-}
+// IsAvailable is always true, the host backend having no requirement
+func (localBackend) IsAvailable() bool { return true }
 
-// CheckRequirements fails when no bash is available
-func (localBackend) CheckRequirements(env *Env, cfg map[string]any) error {
-	_, err := findBash()
-	return err
-}
-
-// Probe reports the bash binary in use
-func (localBackend) Probe() (string, string) {
-	bash, err := findBash()
-	if err != nil {
-		return "unavailable", err.Error()
-	}
-	return "ok", bash
-}
+// CheckRequirements never fails, the shell being resolved when a command runs
+func (localBackend) CheckRequirements(env *Env, cfg map[string]any) error { return nil }
 
 // SetupInstructions explains how to make the host backend usable
 func (localBackend) SetupInstructions(env *Env) []string {
@@ -1751,7 +1723,7 @@ func (localBackend) SetupInstructions(env *Env) []string {
 
 // DoctorChecks reports the bash lookup
 func (localBackend) DoctorChecks() []DoctorCheck {
-	bash, err := findBash()
+	bash, err := findBash(context.Background())
 	if err != nil {
 		return []DoctorCheck{{OK: false, Label: "bash", Detail: err.Error()}}
 	}

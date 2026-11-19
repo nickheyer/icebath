@@ -45,7 +45,7 @@ func (r *GatewayRunner) parkLastFatalPlatform(ctx context.Context, adapter gatew
 		return false
 	}
 	r.startupParkedPlatforms = true
-	if !(r.externalDrainActive || r.draining.Load() || !r.running.Load()) {
+	if !r.draining.Load() && r.running.Load() {
 		state := r.servingState()
 		r.updateRuntimeStatus(ctx, &state, nil)
 	}

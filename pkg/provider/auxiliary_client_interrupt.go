@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -350,23 +349,6 @@ type auxFlagDeclarer interface {
 func auxClientDeclares(client any, flag string) bool {
 	d, ok := client.(auxFlagDeclarer)
 	return ok && d.AuxDeclares(flag)
-}
-
-// Whether the value is of one of the types or implements one of the interfaces, a nil type matching nothing
-func auxSafeIsInstance(obj any, types ...reflect.Type) bool {
-	t := reflect.TypeOf(obj)
-	if t == nil {
-		return false
-	}
-	for _, want := range types {
-		if want == nil {
-			continue
-		}
-		if want.Kind() == reflect.Interface && t.Implements(want) || t == want {
-			return true
-		}
-	}
-	return false
 }
 
 // URL without its query and the first value of each non blank query parameter, nil when the URL has no query

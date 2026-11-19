@@ -45,12 +45,12 @@ func TestPickerReadsCachedUsageAndRefreshesWithoutWaiting(t *testing.T) {
 	release, called := make(chan struct{}), make(chan struct{})
 	var answered sync.WaitGroup
 	answered.Add(1)
-	var once sync.Once
+	var once, answeredOnce sync.Once
 	saved := accountUsageFetchers["openrouter"]
 	accountUsageFetchers["openrouter"] = func(context.Context, string, string) (*AccountUsageSnapshot, error) {
 		once.Do(func() { close(called) })
 		<-release
-		defer answered.Done()
+		defer answeredOnce.Do(answered.Done)
 		used, reset := 92.0, time.Now().UTC().Add(2*time.Hour)
 		return &AccountUsageSnapshot{Provider: "openrouter", Source: "test", FetchedAt: time.Now().UTC(),
 			Windows: []AccountUsageWindow{{Label: "Current session", UsedPercent: &used, ResetAt: &reset}}}, nil

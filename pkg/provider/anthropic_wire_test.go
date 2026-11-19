@@ -65,14 +65,6 @@ func TestAnthropicMessageStopAcceptsCompletedStreamWithoutRetry(t *testing.T) {
 	}
 }
 
-func TestAnthropicSafeText(t *testing.T) {
-	for _, v := range []any{nil, "   ", "\n", "\t", " \n\t "} {
-		if got := safeText(v); got != emptyTextPlaceholder {
-			t.Fatalf("safeText(%q) = %q", v, got)
-		}
-	}
-}
-
 func TestAnthropicSanitizeReplayBlockWhitespace(t *testing.T) {
 	if sanitizeReplayBlock(map[string]any{"type": "text", "text": "   \n"}) != nil || sanitizeReplayBlock(map[string]any{"type": "text", "text": nil}) != nil {
 		t.Fatal("blank replay text must drop")

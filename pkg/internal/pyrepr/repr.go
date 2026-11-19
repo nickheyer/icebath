@@ -263,13 +263,6 @@ func sortedItems(rv reflect.Value) iter.Seq2[any, any] {
 	}
 }
 
-// Sorted items of a string keyed map as a Mapping
-func SortedMap[V any](m map[string]V) Mapping { return sortedMapping{reflect.ValueOf(m)} }
-
-type sortedMapping struct{ rv reflect.Value }
-
-func (m sortedMapping) PyItems() iter.Seq2[any, any] { return sortedItems(m.rv) }
-
 // Python str() of a Go value, the text itself for str and the repr otherwise
 func Str(v any) string {
 	switch x := v.(type) {

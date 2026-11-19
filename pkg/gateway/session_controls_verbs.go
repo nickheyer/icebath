@@ -298,7 +298,6 @@ func (c *AuthorityConnection) Close(ctx context.Context) error {
 	c.mu.Lock()
 	c.siblings = map[string]*AuthorityConnection{}
 	c.mu.Unlock()
-	forgetOneshots(c)
 	a := c.authority
 	scoped := ownerScope(ctx, a, false)
 	c.mu.Lock()

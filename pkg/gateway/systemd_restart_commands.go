@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -25,13 +24,4 @@ func SystemdRestartCommands(unit string, scope any) ([]string, error) {
 		}
 	}
 	return []string{userCmd, systemCmd}, nil
-}
-
-// Restart commands as a hint, each in backticks and joined by or
-func FormatRestartCommands(commands []string) string {
-	quoted := make([]string, len(commands))
-	for i, c := range commands {
-		quoted[i] = "`" + c + "`"
-	}
-	return strings.Join(quoted, " or ")
 }

@@ -619,22 +619,6 @@ func TestPinnedClientsShareTransportNotCloseState(t *testing.T) {
 	}
 }
 
-type failingWriter struct{}
-
-func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
-
-func TestSafeWriterSwallowsBrokenPipe(t *testing.T) {
-	n, err := safeWriter{inner: failingWriter{}}.Write([]byte("hello"))
-	if err != nil || n != 5 {
-		t.Fatalf("n=%d err=%v", n, err)
-	}
-	var buf bytes.Buffer
-	if n, err := (safeWriter{inner: &buf}).Write([]byte("hi")); err != nil || n != 2 || buf.String() != "hi" {
-		t.Fatal("healthy writes pass through")
-	}
-	installSafeStdio()
-}
-
 func TestBuildKeepaliveHTTPClientIsTheKeepaliveBuilder(t *testing.T) {
 	keepaliveNoProxyEnv(t)
 	a := BuildKeepaliveHTTPClient("https://api.example.com/v1", false, TLSVerify{})

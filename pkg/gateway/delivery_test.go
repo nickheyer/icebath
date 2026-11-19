@@ -82,30 +82,22 @@ func TestResolveDeliveryTransportPrefersNativeAndOnlyAFrontingRelay(t *testing.T
 	}
 }
 
-func TestDeliveryTargetParseAndString(t *testing.T) {
-	ctx := context.Background()
+func TestDeliveryTargetString(t *testing.T) {
 	thread := "9"
-	origin := &SessionSource{Platform: PlatformTelegram, ChatID: "42", ThreadID: &thread}
 	for _, c := range []struct {
-		in, out string
-		want    DeliveryTarget
+		out    string
+		target DeliveryTarget
 	}{
-		{"origin", "origin", DeliveryTarget{Platform: PlatformTelegram, ChatID: "42", ThreadID: &thread, IsOrigin: true}},
-		{" local ", "local", DeliveryTarget{Platform: PlatformLocal}},
-		{"Telegram", "telegram", DeliveryTarget{Platform: PlatformTelegram}},
-		{"telegram:123:Ops", "telegram:123:Ops", DeliveryTarget{Platform: PlatformTelegram, ChatID: "123", ThreadID: strPtr("Ops"), IsExplicit: true}},
+		{"origin", DeliveryTarget{Platform: PlatformTelegram, ChatID: "42", ThreadID: &thread, IsOrigin: true}},
+		{"origin", DeliveryTarget{Platform: PlatformLocal, IsOrigin: true}},
+		{"local", DeliveryTarget{Platform: PlatformLocal}},
+		{"telegram", DeliveryTarget{Platform: PlatformTelegram}},
+		{"telegram:123:Ops", DeliveryTarget{Platform: PlatformTelegram, ChatID: "123", ThreadID: strPtr("Ops"), IsExplicit: true}},
+		{"nosuchplatform:1", DeliveryTarget{Platform: PlatformLocal, UnknownPlatform: strPtr("nosuchplatform:1")}},
 	} {
-		got := ParseDeliveryTarget(ctx, c.in, origin)
-		if !reflect.DeepEqual(got, c.want) || got.String() != c.out {
-			t.Fatalf("%q: %+v %q", c.in, got, got.String())
+		if got := c.target.String(); got != c.out {
+			t.Fatalf("%+v: %q", c.target, got)
 		}
-	}
-	unknown := ParseDeliveryTarget(ctx, "nosuchplatform:1", nil)
-	if unknown.Platform != PlatformLocal || unknown.UnknownPlatform == nil || unknown.String() != "nosuchplatform:1" {
-		t.Fatalf("%+v", unknown)
-	}
-	if o := ParseDeliveryTarget(ctx, "ORIGIN", nil); o.Platform != PlatformLocal || !o.IsOrigin {
-		t.Fatalf("%+v", o)
 	}
 }
 
@@ -189,7 +181,7 @@ func TestDeliverTracksDeadTargetsAndSavesLocal(t *testing.T) {
 	ctx := context.Background()
 	native := &deliveryAdapter{results: []SendResult{{Success: false, Error: "Forbidden: bot was blocked by the user"}}}
 	r := NewDeliveryRouterIn(ctx, deliveryConfig(), map[string]any{"telegram": native}, nil)
-	targets := []DeliveryTarget{{Platform: PlatformTelegram, ChatID: "42"}, {Platform: PlatformLocal}, ParseDeliveryTarget(ctx, "bogus", nil)}
+	targets := []DeliveryTarget{{Platform: PlatformTelegram, ChatID: "42"}, {Platform: PlatformLocal}, {Platform: PlatformLocal, UnknownPlatform: strPtr("bogus")}}
 	res := r.Deliver(ctx, "hello", targets, "job9", "Nightly", [][2]any{{"k", "v"}})
 	if res["telegram:42"]["success"] != false || !r.DeadTargets.IsDead("Telegram", " 42") {
 		t.Fatalf("%v", res)

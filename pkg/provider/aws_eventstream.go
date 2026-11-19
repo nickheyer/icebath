@@ -78,10 +78,6 @@ type AWSEventStreamException struct {
 	Headers       []awsEventStreamHeader
 }
 
-func (e *AWSEventStreamException) Error() string {
-	return fmt.Sprintf("An error occurred (%s) when processing the event stream: %s", e.ExceptionType, e.Message)
-}
-
 // Typed exception of an exception or error frame, nil for an event frame
 func awsEventStreamFrameException(m *awsEventStreamMessage) *AWSEventStreamException {
 	switch m.header(":message-type") {

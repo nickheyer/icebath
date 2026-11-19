@@ -64,11 +64,6 @@ func (d *DB) write(fn func(tx *Tx) error) error {
 	return d.retryWrite(fn, sessionWritePatienceS)
 }
 
-// Runs a transcript write with the longer patience
-func (d *DB) transcriptWrite(fn func(tx *Tx) error) error {
-	return d.retryWrite(fn, sessionTranscriptWritePatienceS)
-}
-
 // Runs an idempotent read on a pooled reader or the writer, replaying a transient disk IO error
 func (d *DB) read(fn func(q querier) error) error {
 	ctx := d.openCtx

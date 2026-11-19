@@ -51,35 +51,13 @@ func TestExitCodeFleetWriterNeverExposesAnEmptyExitCode(t *testing.T) {
 func TestExitCodeCommittedSuccessIsNeverReportedFailed(t *testing.T) {
 	ctx, _ := rcHome(t)
 	WriteGatewayUpdateExitCode(ctx, false)
-	if n, err := ReadGatewayExitCode(home.Dir(ctx)); err != nil || n.Int64() != 1 {
-		t.Fatalf("an open failure %v %v", n, err)
+	if data, err := os.ReadFile(GatewayExitCodePath(home.Dir(ctx))); err != nil || string(data) != "1" {
+		t.Fatalf("an open failure %q %v", data, err)
 	}
 	BeginUpdateReceipt(ctx, nil, "")
 	FinalizeUpdateReceipt(ctx, "success", nil, "")
 	WriteGatewayUpdateExitCode(ctx, false)
-	if n, err := ReadGatewayExitCode(home.Dir(ctx)); err != nil || n.Int64() != 0 {
-		t.Fatalf("a committed success read failed %v %v", n, err)
-	}
-}
-
-func TestExitCodeReaderParsesLikeTheGatewayWatcher(t *testing.T) {
-	h := t.TempDir()
-	for text, want := range map[string]int64{"0\n": 0, "": 1, " \t\n": 1, "\xef\xbb\xbf3": 3, "1_0": 10, "-2 ": -2, "+7": 7} {
-		os.WriteFile(GatewayExitCodePath(h), []byte(text), 0o644)
-		if n, err := ReadGatewayExitCode(h); err != nil || n.Int64() != want {
-			t.Fatalf("%q read %v %v", text, n, err)
-		}
-	}
-	os.WriteFile(GatewayExitCodePath(h), []byte("done"), 0o644)
-	if _, err := ReadGatewayExitCode(h); err == nil || err.Error() != "recorded gateway exit code done is not a whole number" {
-		t.Fatalf("bad text %v", err)
-	}
-	os.WriteFile(GatewayExitCodePath(h), []byte{0xff}, 0o644)
-	if _, err := ReadGatewayExitCode(h); err == nil {
-		t.Fatal("undecodable text read as a code")
-	}
-	os.Remove(GatewayExitCodePath(h))
-	if _, err := ReadGatewayExitCode(h); !os.IsNotExist(err) {
-		t.Fatalf("missing marker %v", err)
+	if data, err := os.ReadFile(GatewayExitCodePath(home.Dir(ctx))); err != nil || string(data) != "0" {
+		t.Fatalf("a committed success read failed %q %v", data, err)
 	}
 }

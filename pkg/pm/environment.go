@@ -164,6 +164,13 @@ func projectName(source string) (string, error) {
 	return s, nil
 }
 
+// Entries a glob pattern matches under root, sorted
+func globUnder(root, pattern string) []string {
+	matches, _ := filepath.Glob(filepath.Join(globEscape(root), pattern))
+	sort.Strings(matches)
+	return matches
+}
+
 // Drops the pth files that must never run inside a shipped payload, keeping every other one
 func PruneSitePth(venv string) {
 	var sites []string
@@ -1029,105 +1036,6 @@ func (e *PythonEnvironment) PurgeCachedPackages(ctx context.Context, names []str
 		set[n] = true
 	}
 	return RemoveCorruptEntries(e.Cache, set)
-}
-
-// Exports locked runtime requirements to a requirements file
-func (e *PythonEnvironment) ExportRequirements(ctx context.Context, source, out string, extras []string, timeout time.Duration) error {
-	command := []string{"export", "--frozen", "--python", e.Python, "--no-default-groups", "--no-emit-project", "--no-hashes",
-		"--no-annotate", "--no-header", "--format", "requirements-txt", "--output-file", out}
-	for _, extra := range sortedSet(extras) {
-		command = append(command, "--extra", extra)
-	}
-	result, err := e.run(ctx, command, source, uvTimeout(timeout))
-	if err != nil {
-		return err
-	}
-	if result.Code != 0 {
-		return ClassifyUVFailure("export", result.Code, result.diagnostic())
-	}
-	return nil
-}
-
-// Installs requirement lines through a requirements file, a lock's overrides applied
-func (e *PythonEnvironment) InstallRequirements(ctx context.Context, requirements []string, wheelhouse, lock string) error {
-	if len(requirements) == 0 {
-		return nil
-	}
-	temporary, err := os.MkdirTemp("", "pm-requirements-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(temporary)
-	file := filepath.Join(temporary, "requirements.txt")
-	if err := os.WriteFile(file, []byte(strings.Join(requirements, "\n")+"\n"), 0o666); err != nil {
-		return err
-	}
-	return e.installRequirementsFile(ctx, file, wheelhouse, lock, defaultUVTimeout)
-}
-
-// Installs a requirements file, restoring the lock's manifest overrides the export would otherwise lose
-func (e *PythonEnvironment) installRequirementsFile(ctx context.Context, requirements, wheelhouse, lock string, timeout time.Duration) error {
-	command := []string{"pip", "install", "--no-config", "--python", e.Executable(), "--requirements", requirements}
-	if lock != "" {
-		overrides, err := OverrideRequirements(lock)
-		if err != nil {
-			return err
-		}
-		if len(overrides) > 0 {
-			file := filepath.Join(filepath.Dir(requirements), "overrides.txt")
-			if err := os.WriteFile(file, []byte(strings.Join(overrides, "\n")+"\n"), 0o666); err != nil {
-				return err
-			}
-			command = append(command, "--overrides", file)
-		}
-	}
-	if wheelhouse != "" {
-		command = append(command, "--no-index", "--only-binary", ":all:", "--find-links", absoluteUnresolved(wheelhouse))
-	}
-	result, err := e.withCacheRecovery(ctx, "pip", func() (uvResult, error) {
-		return e.run(ctx, command, filepath.Dir(requirements), timeout)
-	})
-	if err != nil {
-		return err
-	}
-	if result.Code != 0 {
-		return ClassifyUVFailure("pip", result.Code, result.diagnostic())
-	}
-	return nil
-}
-
-// Installs rebuilt wheels a bundle manifest owns, then checks the result against the lock
-func (e *PythonEnvironment) InstallWheelhouse(ctx context.Context, source, wheelhouse string, timeout time.Duration) error {
-	timeout = uvTimeout(timeout)
-	requirements := filepath.Join(source, "requirements.txt")
-	if err := e.ExportRequirements(ctx, source, requirements, nil, timeout); err != nil {
-		return err
-	}
-	lock := filepath.Join(source, "uv.lock")
-	if err := e.installRequirementsFile(ctx, requirements, wheelhouse, lock, timeout); err != nil {
-		return err
-	}
-	return e.Check(ctx, lock)
-}
-
-// Prunes unused cache entries, CI mode also discarding downloaded wheels
-func (e *PythonEnvironment) PruneCache(ctx context.Context, ci bool) error {
-	command := []string{"cache", "prune", "--no-config"}
-	if ci {
-		command = append(command, "--ci", "--force")
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	result, err := e.run(ctx, command, cwd, defaultUVTimeout)
-	if err != nil {
-		return err
-	}
-	if result.Code != 0 {
-		return NewInstallError("uv", "cache pruning failed: "+lastChars(result.Stderr, 600), "")
-	}
-	return nil
 }
 
 // Validates installed dependencies with uv pip check, the lock's deliberate override mismatches excused

@@ -14,19 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
-// DeviceFlowErrorCopy maps RFC 8628 device flow error codes onto plain copy that names the retry command
-var DeviceFlowErrorCopy = map[string]string{
-	"expired_token":  "The sign-in code expired before it was approved in the browser. Run `{retry}` to get a new code.",
-	"access_denied":  "Sign-in was declined in the browser. Run `{retry}` to try again, or `icebath model` to pick a different provider.",
-	"invalid_grant":  "The sign-in code was not accepted by the server. Run `{retry}` to get a new code.",
-	"invalid_client": "The server did not recognize this copy of Icebath. Run `icebath update`, then `{retry}` again.",
-}
-
 // DeviceCodeExpiredCode is the code a device code poller carries when the code ran out
 const DeviceCodeExpiredCode = "device_code_timeout"
-
-// Codes the device code pollers raise when the code runs out
-var deviceCodeExpiredCodes = map[string]bool{DeviceCodeExpiredCode: true, "timeout": true}
 
 // DeviceCodeExpiredError is a device code that ran out before the browser approved it
 type DeviceCodeExpiredError struct {
@@ -84,23 +73,6 @@ func IsNetworkError(err error) bool {
 	return errors.As(err, &netErr) || errors.As(err, &urlErr) || errors.As(err, &opErr) || errors.As(err, &dnsErr)
 }
 
-// IsDeviceCodeExpired is true when a device code sign in ended because its code ran out
-func IsDeviceCodeExpired(err error) bool {
-	if err == nil {
-		return false
-	}
-	var expired *DeviceCodeExpiredError
-	if errors.As(err, &expired) {
-		return true
-	}
-	var authErr *AuthError
-	if errors.As(err, &authErr) && deviceCodeExpiredCodes[authErr.Code] {
-		return true
-	}
-	var copyErr *SignInCopyError
-	return errors.As(err, &copyErr) && copyErr.OAuthErrorCode == "expired_token"
-}
-
 // IsCancelled is true for an interrupted prompt, a closed stdin, or a clean exit
 func IsCancelled(err error) bool {
 	if err == nil {
@@ -115,30 +87,6 @@ func IsCancelled(err error) bool {
 	}
 	var flowCancelled *DeviceFlowCancelledError
 	return errors.As(err, &flowCancelled)
-}
-
-// DeviceFlowError builds the user facing error for an OAuth device flow error code
-func DeviceFlowError(code, description, retryCommand string) *SignInCopyError {
-	if retryCommand == "" {
-		retryCommand = "icebath model"
-	}
-	lead := strings.ReplaceAll(DeviceFlowErrorCopy[code], "{retry}", retryCommand)
-	if lead == "" {
-		reason := description
-		if reason == "" {
-			reason = "the server rejected the request"
-		}
-		lead = fmt.Sprintf("Sign-in did not complete: %s. Run `%s` to try again.", reason, retryCommand)
-	}
-	details := description
-	if code != "" {
-		details = code + ": " + description
-	}
-	message := lead
-	if details != "" {
-		message = lead + "\n  Details: " + details
-	}
-	return &SignInCopyError{Message: message, OAuthErrorCode: code}
 }
 
 func signInDetailsLine(err error) string {

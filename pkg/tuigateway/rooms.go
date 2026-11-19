@@ -119,6 +119,18 @@ type GroupsStopParams struct {
 	CancelID *string `json:"cancel_id,omitzero"`
 }
 
+type GroupsContinueResult struct {
+	Continued *bool      `json:"continued,omitzero"`
+	Event     *RoomEvent `json:"event,omitzero"`
+	Queued    *bool      `json:"queued,omitzero"`
+}
+
+type GroupsContinueParams struct {
+	Profile           *string `json:"profile,omitzero"`
+	RoomID            string  `json:"room_id"`
+	DiscussionEventID string  `json:"discussion_event_id"`
+}
+
 type GroupsDisbandResult struct {
 	Tombstone *RoomTombstone `json:"tombstone,omitzero"`
 	Queued    *bool          `json:"queued,omitzero"`
@@ -234,6 +246,7 @@ type RoomDriverStatus struct {
 	PendingActions []RoomPendingAction  `json:"pending_actions"`
 	MemberActivity []RoomMemberActivity `json:"member_activity,omitzero"`
 	LastError      *string              `json:"last_error,omitzero"`
+	MaxContinues   *int64               `json:"max_continues,omitzero"`
 	PeerRoutes     []PeerRouteStatus    `json:"peer_routes"`
 }
 
@@ -564,6 +577,9 @@ var GroupsDisband = NewMethod[GroupsDisbandParams, GroupsDisbandResult]("groups.
 
 // Cancels the queued and running work of a room
 var GroupsStop = NewMethod[GroupsStopParams, GroupsStopResult]("groups.stop")
+
+// Grants a discussion paused at its cap one more budget of rounds and messages
+var GroupsContinue = NewMethod[GroupsContinueParams, GroupsContinueResult]("groups.continue")
 
 // Answers one pending approval of a local or peer member
 var GroupsApprove = NewMethod[GroupsApproveParams, GroupsApproveResult]("groups.approve")

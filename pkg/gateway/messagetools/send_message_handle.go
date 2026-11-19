@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -701,50 +700,4 @@ func maybeSkipCronDuplicateSend(ctx context.Context, platformName, chatID string
 		"note": fmt.Sprintf("Skipped send_message to %s. This cron job will already auto-deliver "+
 			"its final response to that same target. Put the intended user-facing content in "+
 			"your final response instead, or use a different target if you want an additional message.", label)}
-}
-
-// Prints a send result as the send command does and returns its exit code
-func EmitSendResult(stdout, stderr io.Writer, resultJSON string, jsonMode, quiet bool) (int, error) {
-	var payload any = pyjson.NewObject()
-	if resultJSON != "" {
-		v, err := pyjson.Loads(resultJSON)
-		if err != nil {
-			v = pyjson.ObjectOf("error", "invalid JSON from send_message_tool", "raw", resultJSON)
-		}
-		payload = v
-	}
-	obj, ok := payload.(*pyjson.Object)
-	if jsonMode {
-		text, err := pyjson.Dumps(payload, pyjson.Indent(2))
-		if err != nil {
-			return 1, err
-		}
-		fmt.Fprintln(stdout, text)
-	}
-	if !ok || obj == nil {
-		return 1, fmt.Errorf("the send result must be a JSON object, got %s", errchain.Kind(payload))
-	}
-	get := func(k string) any { v, _ := obj.Get(k); return v }
-	if !jsonMode && !quiet {
-		switch {
-		case pyrepr.Truthy(get("error")):
-			fmt.Fprintf(stderr, "icebath send: %s\n", pyrepr.Str(get("error")))
-		case pyrepr.Truthy(get("success")):
-			note := get("note")
-			if !pyrepr.Truthy(note) {
-				note = "sent"
-			}
-			fmt.Fprintln(stdout, pyrepr.Str(note))
-		default:
-			text, err := pyjson.Dumps(payload, pyjson.Indent(2))
-			if err != nil {
-				return 1, err
-			}
-			fmt.Fprintln(stdout, text)
-		}
-	}
-	if !pyrepr.Truthy(get("error")) && (pyrepr.Truthy(get("skipped")) || pyrepr.Truthy(get("success"))) {
-		return 0, nil
-	}
-	return 1, nil
 }

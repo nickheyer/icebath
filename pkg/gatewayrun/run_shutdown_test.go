@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -366,28 +365,6 @@ func TestMissingAPIAdapterIsNotWork(t *testing.T) {
 	r.adapters = adapterDict()
 	if !r.scaleToZeroIsIdle(context.Background()) {
 		t.Fatal("no api adapter is not work")
-	}
-}
-
-func TestDrainSuppressSkipsHomeChannelKeepsSessionPing(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv(home.EnvHome, dir)
-	r, adapter := makeRestartRunner(t)
-	r.config.Platforms[gateway.PlatformTelegram].HomeChannel = &gateway.HomeChannel{Platform: gateway.PlatformTelegram, ChatID: "home-42", Name: "Ops Home"}
-	r.sessionState("agent:main:telegram:dm:999").turn.agent = &agent.AIAgent{}
-	if _, err := gateway.WriteDrainRequest(context.Background(), "nas", true, dir); err != nil {
-		t.Fatal(err)
-	}
-	r.notifyActiveSessionsOfShutdown(context.Background())
-	calls := adapter.calls()
-	if len(calls) != 1 {
-		t.Fatalf("sent %d notices: %v", len(calls), calls)
-	}
-	if calls[0].chatID != "999" {
-		t.Fatalf("sent to %s", calls[0].chatID)
-	}
-	if !strings.Contains(calls[0].content, "shutting down") {
-		t.Fatalf("content = %q", calls[0].content)
 	}
 }
 

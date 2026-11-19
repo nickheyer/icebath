@@ -387,7 +387,7 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 		args = call.args
 	}
 	argsDict := toolArgsDict(args)
-	labels := BridgedToolLabels(name, argsDict)
+	labels := BridgedToolLabels(ctx, name, argsDict)
 	row := map[string]any{"role": "tool", "name": name, "context": ToolCtx(name, argsDict)}
 	if content, isText := m["content"].(string); isText {
 		if failed, refused, reason := tools.ToolOutcome(ctx, name, content); failed {

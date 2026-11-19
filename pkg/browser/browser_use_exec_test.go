@@ -173,7 +173,7 @@ func TestVaultEgressRedactionExecRedactsRegisteredVaultSecretFromOutputAndStderr
 	f.runner(t, func(execRun) execProc {
 		return execProc{returnCode: 1, stdout: "output=" + secret, stderr: "failure=" + secret}
 	})
-	tools.RegisterVaultRedactionValue(secret)
+	tools.RegisterVaultRedactionValueIn(context.Background(), secret)
 	out := f.raw(t, pageInfo, "", execDefaultTimeoutS, "", false)
 	tools.ClearVaultRedactionValues(context.Background())
 	if strings.Contains(out, secret) || strings.Count(out, "«redacted-vault-secret»") != 2 {

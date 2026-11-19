@@ -5,10 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
-	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -205,13 +202,9 @@ func NewRegistry() *Registry {
 	return &Registry{tools: map[string]*Def{}}
 }
 
-// Register adds a builtin tool to the default registry recording the source module that registered it
+// Register adds a builtin tool to the default registry
 func Register(d Def) {
-	module := ""
-	if _, file, _, ok := runtime.Caller(1); ok {
-		module = filepath.Base(filepath.Dir(file)) + "." + strings.TrimSuffix(filepath.Base(file), ".go")
-	}
-	Default.registerBuiltin(d, module)
+	Default.registerBuiltin(d)
 }
 
 // Register adds a process global tool, panicking on a malformed schema and logging a refused shadow

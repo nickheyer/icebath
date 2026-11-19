@@ -91,7 +91,7 @@ var hostDeclaredReturns = map[string]map[string]string{
 		"close_session": "bool", "emergency_cleanup": "None"}),
 	"agent.terminal_env_provider:TerminalEnvironmentProvider": returnsOf(providerBaseReturns, map[string]string{"description": "str",
 		"skip_container_guards": "bool", "cache_path_base": "Optional[str]", "default_cwd": "Optional[str]", "strip_env_keys": "frozenset",
-		"env_description": "str", "check_requirements": "bool", "probe": "tuple[str, str]", "setup_instructions": "list[str]",
+		"env_description": "str", "check_requirements": "bool", "setup_instructions": "list[str]",
 		"post_setup": "None", "doctor_checks": "list[tuple[bool, str, str]]"}),
 	"agent.secret_sources.base:SecretSource": {"fetch": "FetchResult", "is_enabled": "bool", "override_existing": "bool",
 		"token_env": "str", "protected_env_vars": "frozenset[str]", "fetch_timeout_seconds": "float", "config_schema": "dict",

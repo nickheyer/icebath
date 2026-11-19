@@ -21,7 +21,7 @@ func TestUnconfiguredPlatformIsNotProbedForInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := DefaultGatewayConfig(ctx)
-	applyEnvOverrides(ctx, cfg, "")
+	applyEnvOverrides(ctx, cfg)
 	if checks != 0 {
 		t.Fatalf("check_fn called %d times", checks)
 	}

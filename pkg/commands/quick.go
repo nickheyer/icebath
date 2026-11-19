@@ -2,9 +2,7 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"reflect"
 	"sync"
 	"syscall"
 	"time"
@@ -20,32 +18,10 @@ import (
 // Time a gateway exec quick command may run before its whole process tree is stopped
 var execQuickCommandTimeout = 30 * time.Second
 
-// Time subprocess.run gives a local exec quick command before its shell is killed
-var cliQuickCommandTimeout = 30 * time.Second
-
 const (
 	stopExecTreeReap = 5 * time.Second
-	sigintWaitSecs   = 250 * time.Millisecond
 	streamPauseBytes = 2 * 65536
 )
-
-// Print style of one local quick command reply
-type CLIQuickStyle int
-
-const (
-	// CLIQuickOutput is redacted command output printed through the ANSI to Rich text conversion
-	CLIQuickOutput CLIQuickStyle = iota
-	// CLIQuickDim is the no output notice printed dim
-	CLIQuickDim
-	// CLIQuickFailure is a timeout or error notice printed bold red
-	CLIQuickFailure
-)
-
-// Text one local exec quick command prints and its style
-type CLIQuickReply struct {
-	Text  string
-	Style CLIQuickStyle
-}
 
 // Runs a gateway exec quick command with a sanitized env and redacted output, its tree stopped on timeout or cancellation
 func RunGatewayExecQuickCommand(ctx context.Context, env *tools.Env, execCmd any, cwd string) (string, error) {
@@ -112,63 +88,6 @@ func RunGatewayExecQuickCommand(ctx context.Context, env *tools.Env, execCmd any
 	return output, nil
 }
 
-// Runs a local exec quick command like subprocess.run with shell, capture, utf-8 replace text and a 30 second timeout
-func RunCLIExecQuickCommand(ctx context.Context, env *tools.Env, command any) (CLIQuickReply, error) {
-	if err := ctx.Err(); err != nil {
-		return CLIQuickReply{}, err
-	}
-	childEnv, err := quickChildEnv(ctx, env)
-	if err != nil {
-		return cliQuickError(ctx, err.Error()), nil
-	}
-	q, err := startQuickProc(func() (quickProgram, error) { return cliProgram(command) }, "", childEnv)
-	if err != nil {
-		return cliQuickError(ctx, err.Error()), nil
-	}
-	deadline := time.Now().Add(cliQuickCommandTimeout)
-	timer := time.NewTimer(cliQuickCommandTimeout)
-	defer timer.Stop()
-	finished := q.finished()
-	select {
-	case <-finished:
-	case <-timer.C:
-		if !closed(finished) {
-			if err := killShell(q); err != nil {
-				q.stdout.close()
-				q.stderr.close()
-				<-q.exited
-				return cliQuickError(ctx, pyOSErrorText(err)), nil
-			}
-			reapAfterTimeoutKill(q)
-			return CLIQuickReply{Text: i18n.T(ctx, "cli.quick.timed_out", "", nil), Style: CLIQuickFailure}, nil
-		}
-	case <-ctx.Done():
-		if !closed(finished) {
-			wait := min(sigintWaitSecs, max(time.Until(deadline), 0))
-			select {
-			case <-q.exited:
-			case <-time.After(wait):
-			}
-			err := killShell(q)
-			q.stdout.close()
-			q.stderr.close()
-			if err != nil {
-				<-q.exited
-				return cliQuickError(ctx, pyOSErrorText(err)), nil
-			}
-			return CLIQuickReply{}, ctx.Err()
-		}
-	}
-	output := pystr.Strip(cliText(q.stdout.bytes()))
-	if output == "" {
-		output = pystr.Strip(cliText(q.stderr.bytes()))
-	}
-	if output == "" {
-		return CLIQuickReply{Text: i18n.T(ctx, "cli.quick.no_output", "", nil), Style: CLIQuickDim}, nil
-	}
-	return CLIQuickReply{Text: tools.RedactSensitiveTextWith(env, output, tools.RedactOptions{}), Style: CLIQuickOutput}, nil
-}
-
 // Child env of build_subprocess_env with its defaults, secrets scrubbed and the profile home bridged
 func quickChildEnv(ctx context.Context, env *tools.Env) (*tools.ChildEnv, error) {
 	return tools.BuildSubprocessEnvOrdered(ctx, env, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
@@ -176,15 +95,6 @@ func quickChildEnv(ctx context.Context, env *tools.Env) (*tools.ChildEnv, error)
 
 func gatewayQuickError(ctx context.Context, msg string) string {
 	return i18n.T(ctx, "gateway.quick_command.error", "", map[string]any{"error": msg})
-}
-
-func cliQuickError(ctx context.Context, msg string) CLIQuickReply {
-	return CLIQuickReply{Text: i18n.T(ctx, "cli.quick.error", "", map[string]any{"error": msg}), Style: CLIQuickFailure}
-}
-
-// Text mode stream, utf-8 with errors replace and universal newlines
-func cliText(raw []byte) string {
-	return pystr.TranslateNewlines(pystr.DecodeUTF8Replace(raw))
 }
 
 func isBytes(v any) bool {
@@ -362,26 +272,6 @@ func (s *quickStream) close() { _ = s.f.Close() }
 type pyError string
 
 func (e pyError) Error() string { return string(e) }
-
-// Items list() yields for a config value that is neither str nor bytes, mapping keys in file order
-func pyListItems(v any) ([]any, error) {
-	if m := config.AsMap(v); m != nil {
-		keys := config.MappingKeys(m)
-		items := make([]any, len(keys))
-		for i, k := range keys {
-			items[i] = k
-		}
-		return items, nil
-	}
-	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice {
-		items := make([]any, rv.Len())
-		for i := range items {
-			items[i] = rv.Index(i).Interface()
-		}
-		return items, nil
-	}
-	return nil, pyError(fmt.Sprintf("'%s' object is not iterable", config.PyTypeName(v)))
-}
 
 // TypeError os.fsencode and os.fsdecode raise for an argument that is neither str nor bytes
 func notPathLike(v any) error {

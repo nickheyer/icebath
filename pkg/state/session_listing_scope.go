@@ -2,15 +2,11 @@ package state
 
 import (
 	"context"
-	"slices"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// SubagentSource is the session source of delegate runs
-const SubagentSource = "subagent"
 
 var listingTruthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
@@ -35,21 +31,4 @@ func ShowSubagentSessions(ctx context.Context, storeHome string) bool {
 	}
 	cfg, ok := sessions.(map[string]any)
 	return ok && listingTruthyValue(cfg["show_subagents"])
-}
-
-// Whether delegate runs join one human facing list and the exclusions that list keeps, nil when none remain
-func SubagentListingScope(ctx context.Context, storeHome, source string, sources, excludeSources []string) (bool, []string) {
-	if source != "" || len(sources) > 0 || (len(excludeSources) > 0 && !slices.Contains(excludeSources, SubagentSource)) {
-		return false, excludeSources
-	}
-	if !ShowSubagentSessions(ctx, storeHome) {
-		return false, excludeSources
-	}
-	var kept []string
-	for _, s := range excludeSources {
-		if s != SubagentSource {
-			kept = append(kept, s)
-		}
-	}
-	return true, kept
 }

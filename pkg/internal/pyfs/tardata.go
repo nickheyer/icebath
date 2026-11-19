@@ -75,16 +75,6 @@ func dataFilter(h *tar.Header, dest string) (string, int64, error) {
 	return name, mode, nil
 }
 
-// Extracts an uncompressed tar into destination like TarFile.extractall with filter data
-func ExtractTarData(archive, destination string) error {
-	f, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return ExtractTarDataReader(f, destination)
-}
-
 // Extracts a tar stream into destination like TarFile.extractall with filter data
 func ExtractTarDataReader(f io.Reader, destination string) error {
 	dest := realpathNonStrict(destination)

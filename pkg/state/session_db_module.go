@@ -72,11 +72,6 @@ type SessionResumeTooLargeError struct {
 	Scope               string
 }
 
-// Resume refusal with the default limit and scope of the Python constructor
-func NewSessionResumeTooLargeError(messageCount int) *SessionResumeTooLargeError {
-	return &SessionResumeTooLargeError{MessageCount: messageCount, Limit: maxSafeMessages, Scope: "across its lineage"}
-}
-
 func (e *SessionResumeTooLargeError) Error() string {
 	return fmt.Sprintf("This session is too long to reload safely (%d messages; limit %d). "+
 		"Start a fresh chat and keep a copy with "+

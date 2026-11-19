@@ -227,11 +227,6 @@ func trailingAmpBackgroundCommandFor(env *Env, command string) string {
 	return stripped
 }
 
-// Trailing ampersand conversion keyed on the process wide approval policy
-func trailingAmpBackgroundCommand(command string) string {
-	return trailingAmpBackgroundCommandFor(nil, command)
-}
-
 // Bounded script read, host filesystem first then head -c through the environment, empty when unreadable
 func readScriptForGuard(ctx context.Context, e Environment, guardCwd, scriptPath string, maxBytes int) (string, bool) {
 	if e == nil {

@@ -6,11 +6,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -37,31 +35,11 @@ func auxResolveHome(t *testing.T, configYAML string) context.Context {
 	return ctx
 }
 
-func TestNeuterAsyncHTTPXDelMakesCollectionCloseANoOp(t *testing.T) {
-	t.Cleanup(func() { auxAsyncHTTPXDelNeutered.Store(false) })
+func TestAsyncTransportCollectionClosesAnOwnedTransportOnce(t *testing.T) {
 	live := &auxCountingCloseTransport{}
 	auxAsyncTransportCollected(&auxAsyncTransport{http: &http.Client{Transport: live}, owns: true})
 	if live.closes.Load() != 1 {
-		t.Fatalf("collection close before neuter ran %d times", live.closes.Load())
-	}
-	NeuterAsyncHTTPXDel()
-	neutered := &auxCountingCloseTransport{}
-	state := &auxAsyncTransport{http: &http.Client{Transport: neutered}, owns: true}
-	auxAsyncTransportCollected(state)
-	if neutered.closes.Load() != 0 || state.closed.Load() {
-		t.Fatal("neutered collection close touched the transport")
-	}
-	collected := &auxCountingCloseTransport{}
-	func() {
-		c := newAuxAsyncOpenAIClient("k", "http://127.0.0.1:1/v1", auxOpenAIOptions{HTTPClient: &http.Client{Transport: collected}})
-		runtime.KeepAlive(c)
-	}()
-	for i := 0; i < 5; i++ {
-		runtime.GC()
-		time.Sleep(10 * time.Millisecond)
-	}
-	if collected.closes.Load() != 0 {
-		t.Fatal("collected async client closed its transport after neuter")
+		t.Fatalf("collection close ran %d times", live.closes.Load())
 	}
 }
 

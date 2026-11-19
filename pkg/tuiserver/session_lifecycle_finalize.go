@@ -115,16 +115,6 @@ func historyDicts(history []any) []map[string]any {
 	return out
 }
 
-// Closes a session's slash worker, any worker shape with a close method
-func closeSlashWorker(worker any) {
-	switch w := worker.(type) {
-	case interface{ Close() error }:
-		_ = w.Close()
-	case interface{ Close() }:
-		w.Close()
-	}
-}
-
 // Runs the end of session hooks, the memory commit and the row end once, mirroring the CLI exit path
 func finalizeSession(ctx context.Context, session *tuihost.Session, endReason string) {
 	if session == nil || len(session.Fields()) == 0 || truthy(session.Get("_finalized")) {
@@ -225,16 +215,11 @@ func finalizeSession(ctx context.Context, session *tuihost.Session, endReason st
 		tools.InterruptAsyncDelegationsForSession(key, lifecycleOwnSID(session, ""), "", endReason)
 	})
 	if tuiOwnsLifecycle && truthy(sessionKey) {
-		suppress(func() { tools.ClearSession(pyrepr.Str(sessionKey)) })
+		suppress(func() { tools.ClearSession(ctx, pyrepr.Str(sessionKey)) })
 	}
 	if a != nil {
 		suppress(func() { a.CancelBackgroundReview(fmt.Sprintf("session ended (%s)", endReason), "session ended") })
 	}
-	suppress(func() {
-		if worker := session.Get("slash_worker"); truthy(worker) {
-			closeSlashWorker(worker)
-		}
-	})
 }
 
 // End reasons where the backend reclaimed a session its client never asked to close
@@ -319,18 +304,6 @@ type agentCloser interface {
 }
 
 var _ agentCloser = (*agent.AIAgent)(nil)
-
-// Stores a worker on a session that is still live under sid, else closes it
-func attachWorker(sid string, session *tuihost.Session, worker any) {
-	sessionsLock.Lock()
-	if tuihost.SessionRecord(sid) == session {
-		session.Set("slash_worker", worker)
-		sessionsLock.Unlock()
-		return
-	}
-	sessionsLock.Unlock()
-	closeSlashWorker(worker)
-}
 
 // Whether a live UI session still owns background delegations by its sid or, when it owns the row, its key
 func sessionHasActiveDelegations(ctx context.Context, sid string, session *tuihost.Session) (active bool) {

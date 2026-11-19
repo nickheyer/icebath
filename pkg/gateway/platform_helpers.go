@@ -687,12 +687,6 @@ func TextHasUnclosedFence(text string) bool {
 	return n%2 == 1
 }
 
-// True when the last non empty line starts and ends with a pipe
-func TextEndsWithTableRow(text string) bool {
-	lines := strings.Split(pystr.Rstrip(text), "\n")
-	return isPipeRow(lines[len(lines)-1])
-}
-
 // True when an atomic block is a code block
 func IsFenceAtom(text string) bool { return strings.HasPrefix(pystr.Lstrip(text), "```") }
 
@@ -797,32 +791,6 @@ func SplitMarkdownAtoms(text string) []string {
 	}
 	flush()
 	return atoms
-}
-
-// One newline at a fence or a continued table boundary, a blank line otherwise
-func InferBlockSeparator(prevChunk, nextChunk string) string {
-	prevTrimmed, nextTrimmed := pystr.Rstrip(prevChunk), pystr.Lstrip(nextChunk)
-	if strings.HasSuffix(prevTrimmed, "```") || strings.HasPrefix(nextTrimmed, "```") {
-		return "\n"
-	}
-	if TextEndsWithTableRow(prevChunk) && nextTrimmed != "" && isPipeRow(strings.Split(nextTrimmed, "\n")[0]) {
-		return "\n"
-	}
-	return "\n\n"
-}
-
-// Chunks cut inside a fence rejoined with their successors
-func MergeStreamingFences(chunks []string) []string {
-	var result []string
-	for i := 0; i < len(chunks); i++ {
-		current := chunks[i]
-		for TextHasUnclosedFence(current) && i+1 < len(chunks) {
-			current = current + InferBlockSeparator(current, chunks[i+1]) + chunks[i+1]
-			i++
-		}
-		result = append(result, current)
-	}
-	return result
 }
 
 // Every chunk fence balanced alone, an orphaned fence closed and reopened with its language

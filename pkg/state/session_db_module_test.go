@@ -191,3 +191,8 @@ func TestResolveDefaultDBPathFollowsRepointedPath(t *testing.T) {
 		t.Fatalf("got %q want %q", got, DefaultDBPath)
 	}
 }
+
+// Resume refusal with the default limit and scope of the Python constructor
+func NewSessionResumeTooLargeError(messageCount int) *SessionResumeTooLargeError {
+	return &SessionResumeTooLargeError{MessageCount: messageCount, Limit: maxSafeMessages, Scope: "across its lineage"}
+}

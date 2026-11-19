@@ -258,7 +258,7 @@ func (c *ddgsHTTPClient) request(ctx context.Context, method, target string, par
 	for _, ck := range c.jar.Cookies(req.URL) {
 		req.AddCookie(ck)
 	}
-	resp, err := pyrequests.Send(ctx, c.transport, c.timeout, req)
+	resp, err := pyrequests.SendNoEnv(ctx, c.transport, c.timeout, req)
 	if err != nil {
 		if e, ok := err.(*pyrequests.Error); ok {
 			if e.Class == "ConnectTimeout" || e.Class == "ReadTimeout" || e.Class == "Timeout" {

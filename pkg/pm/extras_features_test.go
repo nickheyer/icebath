@@ -7,11 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Replaces the cached gate table until the test ends, nil rereading the checkout pyproject
@@ -154,98 +151,6 @@ func svRooted(t *testing.T) string {
 	t.Setenv(EnvRuntimeDir, sttMkdir(t, filepath.Join(tmp, "tools")))
 	svGates(t, nil)
 	return tmp
-}
-
-func TestSVFeaturesWriteThenReadRoundtrip(t *testing.T) {
-	svRooted(t)
-	ctx := context.Background()
-	if got, err := readFeatures(ctx); got != nil || err != nil {
-		t.Fatalf("absent file gave %v %v", got, err)
-	}
-	path, err := WriteFeatures(ctx, []string{"web", "acp", "web"}, "")
-	if err != nil || !isRegularFile(path) {
-		t.Fatalf("write gave %q %v", path, err)
-	}
-	if got, _ := readFeatures(ctx); !reflect.DeepEqual(got, []string{"acp", "web"}) {
-		t.Fatalf("features %v", got)
-	}
-	writeFile(t, path, []byte("{ not json"), 0o666)
-	if got, err := readFeatures(ctx); got != nil || err != nil {
-		t.Fatalf("invalid file gave %v %v", got, err)
-	}
-}
-
-func TestSVFeaturesPathInBundleUsesPayloadRoot(t *testing.T) {
-	payload := sttMkdir(t, filepath.Join(svRooted(t), "payload"))
-	if got, _ := FeaturesPath(context.Background(), payload); got != filepath.Join(payload, "enabled-features.json") {
-		t.Fatalf("path %q", got)
-	}
-}
-
-func TestSVSyncVenvRefusesOutsideFrozenExtras(t *testing.T) {
-	svRooted(t)
-	ctx := context.Background()
-	if _, err := WriteFeatures(ctx, []string{"web", "acp"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvDisableLazyInstalls, "1")
-	err := syncVenv(ctx, SyncVenvOptions{Extras: []string{"slack"}, Explicit: true})
-	var ie *InstallError
-	if !errors.As(err, &ie) || !(strings.Contains(err.Error(), "frozen") || strings.Contains(err.Error(), "outside")) {
-		t.Fatalf("frozen refusal gave %v", err)
-	}
-	saved := LatestReceipt(ctx)
-	refusal, _ := saved["refusal"].(map[string]any)
-	if refusal["code"] != "lazy-install" || saved["outcome"] != "failed" || pyrepr.Str(saved["exit_code"]) == "0" {
-		t.Fatalf("receipt %v", saved)
-	}
-	steps, _ := saved["steps"].([]any)
-	if len(steps) == 0 {
-		t.Fatalf("receipt without steps %v", saved)
-	}
-	last := steps[len(steps)-1].(map[string]any)
-	detail := pyrepr.Str(last["detail"])
-	if last["ok"] != false || !strings.Contains(detail, "slack") || !strings.Contains(detail, "icebath pm install") {
-		t.Fatalf("last step %v", last)
-	}
-}
-
-func TestSVSyncVenvAllowsFrozenExtrasWhenLazyOff(t *testing.T) {
-	tmp := svRooted(t)
-	ctx := context.Background()
-	if _, err := WriteFeatures(ctx, []string{"web"}, ""); err != nil {
-		t.Fatal(err)
-	}
-	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
-	peSwap(t, &repoRoot, func() string { return repo })
-	environment := sttMkdir(t, filepath.Join(InstallStateDir(ctx, repo), "environments", "frozen", "venv"))
-	writeFile(t, filepath.Join(environment, "pyvenv.cfg"), []byte("home = fixture\n"), 0o666)
-	facts, err := NewFacts(EnvironmentRuntimeFactsPath(ctx, repo), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := facts.RecordState("venv", "stamp", []string{"web"}, environment, ""); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvDisableLazyInstalls, "1")
-	pubSwapVenv(t, &pubVenv{
-		stamp: func(context.Context, []string, []MemberDir) (string, error) { return "stamp", nil },
-		prepare: func(context.Context, []string, VenvApplyOptions) (*VenvGeneration, error) {
-			t.Fatal("current frozen environment rebuilt")
-			return nil, nil
-		},
-	})
-	if err := syncVenv(ctx, SyncVenvOptions{Extras: []string{"web"}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(environment, "pyvenv.cfg")); err != nil {
-		t.Fatal(err)
-	}
-	err = syncVenv(ctx, SyncVenvOptions{Extras: []string{"web"}})
-	var ie *InstallError
-	if !errors.As(err, &ie) || !strings.Contains(err.Error(), "lazy installs are disabled") {
-		t.Fatalf("vanished environment gave %v", err)
-	}
 }
 
 func TestSVLazySyncNeverCreatesTheFirstSelectionForAForeignInterpreter(t *testing.T) {

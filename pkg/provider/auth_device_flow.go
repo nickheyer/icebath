@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
 // Console browsers the system opener would launch inside the terminal, hijacking the TTY
@@ -36,9 +36,6 @@ var remoteIDEEnvVars = []string{"CLOUD_SHELL", "CODESPACES", "CODESPACE_NAME", "
 
 // Process environment reader the browser heuristics consult, swappable so tests control the shell
 var oauthGetenv = os.Getenv
-
-// Executable lookup the browser resolution uses, swappable so tests control the PATH
-var oauthLookPath = exec.LookPath
 
 // Browser opener every interactive flow goes through, swappable so tests never launch one
 var openBrowserFn = openBrowserURL
@@ -78,53 +75,6 @@ func namesConsoleBrowser(value string) bool {
 	return consoleBrowserNames[strings.ToLower(filepath.Base(fields[0]))]
 }
 
-func browserOnPath(names ...string) string {
-	for _, name := range names {
-		if _, err := oauthLookPath(name); err == nil {
-			return name
-		}
-	}
-	return ""
-}
-
-// Name of the browser the platform opener resolves in the stdlib registration order, empty when none
-func resolvedBrowserName() string {
-	if browserEnv := oauthGetenv("BROWSER"); browserEnv != "" {
-		choices := strings.Split(browserEnv, string(os.PathListSeparator))
-		for _, cmdline := range choices {
-			if cmdline != "" {
-				return cmdline
-			}
-		}
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		return "MacOSX"
-	case "windows":
-		return "windows-default"
-	}
-	if oauthGetenv("DISPLAY") != "" || oauthGetenv("WAYLAND_DISPLAY") != "" {
-		if found := browserOnPath("xdg-open", "gio"); found != "" {
-			return found
-		}
-		desktop := strings.Split(oauthGetenv("XDG_CURRENT_DESKTOP"), ":")
-		if (containsString(desktop, "GNOME") || oauthGetenv("GNOME_DESKTOP_SESSION_ID") != "") && browserOnPath("gvfs-open") != "" {
-			return "gvfs-open"
-		}
-		if (containsString(desktop, "KDE") || oauthGetenv("KDE_FULL_SESSION") != "") && browserOnPath("kfmclient") != "" {
-			return "kfmclient"
-		}
-		if found := browserOnPath("x-www-browser", "firefox", "iceweasel", "seamonkey", "mozilla-firefox", "mozilla", "kfm", "konqueror",
-			"epiphany", "google-chrome", "chrome", "chromium", "chromium-browser", "opera", "microsoft-edge"); found != "" {
-			return found
-		}
-	}
-	if oauthGetenv("TERM") != "" {
-		return browserOnPath("www-browser", "links", "elinks", "lynx", "w3m")
-	}
-	return ""
-}
-
 // True only when a graphical browser is likely to open rather than a console one taking the terminal
 func canOpenGraphicalBrowser() bool {
 	browserEnv := oauthGetenv("BROWSER")
@@ -137,9 +87,13 @@ func canOpenGraphicalBrowser() bool {
 			return false
 		}
 	}
-	candidate := resolvedBrowserName()
-	if candidate == "" {
+	controller, err := pywebbrowser.Get()
+	if err != nil {
 		return false
+	}
+	candidate := controller.Name
+	if candidate == "" {
+		candidate = controller.Basename
 	}
 	return !namesConsoleBrowser(candidate)
 }
@@ -317,9 +271,7 @@ func printLoopbackSSHHint(out io.Writer, redirectURI, providerHelp string) {
 
 // oauthVerify is the TLS verification an interactive OAuth client runs with
 type oauthVerify struct {
-	Insecure bool
-	CABundle string
-	TLS      *tls.Config
+	TLS *tls.Config
 }
 
 // Platform aware default verification, the resolved bundle pinned on macOS
@@ -332,39 +284,6 @@ func defaultOAuthVerify() oauthVerify {
 		return oauthVerify{TLS: sharedTLSConfig(bundle, false)}
 	}
 	return oauthVerify{TLS: PlatformTLSConfig()}
-}
-
-// Verification from explicit flags, then the stored tls block, then the CA bundle env names
-func resolveOAuthVerify(env PoolEnv, insecure *bool, caBundle string, authState map[string]any) oauthVerify {
-	tlsState, _ := authState["tls"].(map[string]any)
-	effectiveInsecure := false
-	if insecure != nil {
-		effectiveInsecure = *insecure
-	} else if tlsState != nil {
-		effectiveInsecure = truthyAny(tlsState["insecure"])
-	}
-	effectiveCA := caBundle
-	if effectiveCA == "" && tlsState != nil {
-		effectiveCA = anyString(tlsState["ca_bundle"])
-	}
-	for _, name := range []string{"ICEBATH_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"} {
-		if effectiveCA != "" {
-			break
-		}
-		effectiveCA = GetEnvPreferDotenv(env, name)
-	}
-	if effectiveInsecure {
-		return oauthVerify{Insecure: true, TLS: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
-	}
-	if effectiveCA != "" {
-		info, err := os.Stat(effectiveCA)
-		if err != nil || info.IsDir() {
-			env.log().Warn(fmt.Sprintf("CA bundle path does not exist: %s — falling back to default certificates", effectiveCA))
-			return defaultOAuthVerify()
-		}
-		return oauthVerify{CABundle: effectiveCA, TLS: sharedTLSConfig(effectiveCA, false)}
-	}
-	return defaultOAuthVerify()
 }
 
 // Transport adding default headers to every request it carries

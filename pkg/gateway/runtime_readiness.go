@@ -103,12 +103,7 @@ func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileS
 	if !anyConfigured && providerName == "bedrock" && (source == "iam-role" || source == "aws-sdk-default-chain") {
 		return fail("No Icebath provider is configured.", source), nil
 	}
-	callable := runtime.TokenSource != nil
-	apiKeyText := ""
-	if !callable {
-		apiKeyText = strings.TrimSpace(runtime.APIKey)
-	}
-	if !(callable || apiKeyText == "aws-sdk" || apiKeyText == "no-key-required" || provider.HasUsableSecret(apiKeyText, 4) || runtime.Command != "") {
+	if !provider.RuntimeHasCredentials(runtime) {
 		var src any
 		if runtime.Source != "" {
 			src = runtime.Source

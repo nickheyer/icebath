@@ -213,40 +213,6 @@ func TestLastPlatformLostNonRetryablyMidRunKeepsTheGatewayUpDegraded(t *testing.
 	assertPlatformStatus(t, state, "telegram", map[string]any{"state": "fatal", "error_code": "telegram_auth_error"})
 }
 
-// Waits until the runtime status reports the gateway state
-func waitGatewayState(t *testing.T, r *GatewayRunner, want string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if runtimeStatusField(flushedStatus(t, r), "gateway_state") == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("gateway_state never became %s", want)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
-// test_startup_failed_platform_reports_degraded.py test_last_platform_parked_during_an_external_drain_keeps_draining_until_release
-func TestLastPlatformParkedDuringAnExternalDrainKeepsDrainingUntilRelease(t *testing.T) {
-	r, adapter := startOnlyTelegram(t)
-	ctx := context.Background()
-	h := filepath.Dir(r.config.SessionsDir)
-	if _, err := gateway.WriteDrainRequest(ctx, "operator", false, h); err != nil {
-		t.Fatal(err)
-	}
-	waitGatewayState(t, r, "draining")
-	if err := adapter.fail(ctx, "telegram_auth_error"); err != nil {
-		t.Fatal(err)
-	}
-	if got := runtimeStatusField(flushedStatus(t, r), "gateway_state"); got != "draining" {
-		t.Fatalf("gateway_state = %v", got)
-	}
-	gateway.ClearDrainRequest(ctx, h)
-	waitGatewayState(t, r, "degraded")
-}
-
 // test_startup_failed_platform_reports_degraded.py test_mid_run_ownership_conflict_on_the_last_platform_still_stops
 func TestMidRunOwnershipConflictOnTheLastPlatformStillStops(t *testing.T) {
 	r, adapter := startOnlyTelegram(t)

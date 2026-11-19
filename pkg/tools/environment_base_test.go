@@ -753,7 +753,7 @@ func (p *prefixEnv) ExecPrefix(user string, interactive bool) ([]string, error) 
 
 func TestExecPrefixAndStreamsSupport(t *testing.T) {
 	plain := newFakeBaseEnv(t, newTestToolEnv(t))
-	if SupportsStreams(plain) || ExecPrefix(plain, "", true) != nil {
+	if ExecPrefix(plain, "", true) != nil {
 		t.Fatal("backend without a prefix cannot stream")
 	}
 	if _, err := OpenStream(plain, []string{"true"}, nil, "", nil); err == nil || !strings.Contains(err.Error(), "cannot host a long-lived stdio stream") {
@@ -761,7 +761,7 @@ func TestExecPrefixAndStreamsSupport(t *testing.T) {
 	}
 	p := &prefixEnv{prefix: []string{"env"}}
 	initBaseEnv(&p.baseEnv, p, newTestToolEnv(t), "/tmp", 10, nil, true)
-	if !SupportsStreams(p) {
+	if ExecPrefix(p, "", true) == nil {
 		t.Fatal("prefix backend must stream")
 	}
 	res, err := RunIn(context.Background(), p, []string{"sh", "-c", "cat; echo tail"}, map[string]string{"X": "1"}, "", 10*time.Second, []byte("in"))

@@ -876,7 +876,7 @@ func BundledProfiles() []Profile {
 	return out
 }
 
-// Populates the process wide registry once, entry points first and bundled plugins winning collisions
+// Populates the process wide registry once from the bundled profiles
 func discoverProviders(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()

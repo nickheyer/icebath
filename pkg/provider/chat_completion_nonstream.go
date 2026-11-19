@@ -18,11 +18,6 @@ const (
 
 type nonStreamSurfaceKey struct{}
 
-// Context carrying the sink a blocking request reports wait notices, activity and status through
-func withNonStreamSurface(ctx context.Context, sink func(StreamEvent)) context.Context {
-	return context.WithValue(ctx, nonStreamSurfaceKey{}, sink)
-}
-
 // Event sink of one request, the stream callback when streaming else the blocking request sink of the context
 func nonStreamEmitter(ctx context.Context, fn StreamFunc) func(StreamEvent) {
 	if fn != nil {
@@ -213,9 +208,6 @@ type nonStreamResult struct {
 
 // Runs one blocking request on a worker polled for wait notices, the stale kill and interrupts
 func runNonStreamRequest(ctx context.Context, model string, estTokens int, stale float64, call func(context.Context) (*Response, error)) (*Response, error) {
-	if inlineNonStream(ctx) {
-		return runInlineNonStreamRequest(ctx, model, estTokens, stale, call)
-	}
 	surface := nonStreamEmitter(ctx, nil)
 	w := newNonStreamWaiter(model, epochSeconds(time.Now()), codexWatchdogs{stale: stale, estTokens: estTokens}, surface)
 	w.touch("waiting for non-streaming API response")

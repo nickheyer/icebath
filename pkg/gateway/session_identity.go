@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -400,14 +398,4 @@ func IsAuthenticatedIdentity(identity any) bool {
 		return false
 	}
 	return !(userID == wsInternalUserID && provider == wsInternalProvider)
-}
-
-// Server derived principal id of a sign in, the first 32 hex digits of the subject digest
-func AuthenticatedPrincipalDigest(identity map[string]any) (string, error) {
-	raw, err := AuthenticatedSubject(identity)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256([]byte(raw))
-	return "principal:auth:" + hex.EncodeToString(sum[:])[:32], nil
 }

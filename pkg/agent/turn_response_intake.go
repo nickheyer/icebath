@@ -248,7 +248,7 @@ func contentHasIncompleteScratchpad(content any) (bool, error) {
 
 // Normalizes the response into a text assistant message then runs the post response hooks and continuation guards in order
 func normalizeModelResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, error) {
-	assistantMessage, err := a.normalizeResponseForAgent(s.Response)
+	assistantMessage, err := a.normalizeResponseForAgent(ctx, s.Response)
 	if err != nil {
 		return PhaseVerdict{}, err
 	}

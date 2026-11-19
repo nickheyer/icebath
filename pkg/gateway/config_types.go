@@ -1014,7 +1014,7 @@ func LoadGatewayConfig(ctx context.Context) (*GatewayConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	applyEnvOverrides(ctx, cfg, "")
+	applyEnvOverrides(ctx, cfg)
 	if err := validateGatewayConfig(cfg); err != nil {
 		return nil, err
 	}

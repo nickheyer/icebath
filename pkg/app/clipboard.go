@@ -113,7 +113,6 @@ var (
 	clipWaylandSave     = waylandSave
 	clipXclipSave       = xclipSave
 	clipMacosHasImage   = macosHasImage
-	clipSaveImage       = saveClipboardImage
 )
 
 // Linux backends in fallthrough order of WSL, Wayland then X11
@@ -172,62 +171,6 @@ func hasClipboardImage() bool {
 	}
 	for _, b := range linuxClipBackends() {
 		if b.enabled && b.has() {
-			return true
-		}
-	}
-	return false
-}
-
-// clipWriteCommand is one text write candidate, stdin carrying the bytes when pipe is set
-type clipWriteCommand struct {
-	argv []string
-	pipe bool
-}
-
-// Text write candidates in platform fallback order, PowerShell decoding base64 of the UTF8 bytes
-func writeClipboardCommands(data []byte) []clipWriteCommand {
-	b64 := base64.StdEncoding.EncodeToString(data)
-	psArgv := append(append([]string{}, psFlags...), "-Command",
-		"Set-Clipboard -Value ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('"+b64+"')))")
-	linux := clipboardPlatform != "darwin" && clipboardPlatform != "windows"
-	candidates := []struct {
-		enabled bool
-		cmd     clipWriteCommand
-	}{
-		{clipboardPlatform == "darwin", clipWriteCommand{[]string{"pbcopy"}, true}},
-		{clipboardPlatform == "windows", clipWriteCommand{append([]string{"powershell"}, psArgv...), false}},
-		{linux && hostinfo.IsWSL(), clipWriteCommand{append([]string{"powershell.exe"}, psArgv...), false}},
-		{linux && os.Getenv("WAYLAND_DISPLAY") != "", clipWriteCommand{[]string{"wl-copy", "--type", "text/plain"}, true}},
-		{linux, clipWriteCommand{[]string{"xclip", "-selection", "clipboard", "-in"}, true}},
-		{linux, clipWriteCommand{[]string{"xsel", "--clipboard", "--input"}, true}},
-	}
-	var out []clipWriteCommand
-	for _, c := range candidates {
-		if c.enabled {
-			out = append(out, c.cmd)
-		}
-	}
-	return out
-}
-
-// Reports an SSH session, where native tools would write the remote clipboard
-func isRemoteShellSession(getenv func(string) string) bool {
-	if getenv == nil {
-		getenv = os.Getenv
-	}
-	return getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" || getenv("SSH_CLIENT") != ""
-}
-
-// Writes text to the clipboard through the first native tool that succeeds
-func writeClipboardText(text string) bool {
-	data := []byte(text)
-	for _, cmd := range writeClipboardCommands(data) {
-		o := pysubprocess.Options{Timeout: 10 * time.Second}
-		if cmd.pipe {
-			o.Input = data
-		}
-		res, err := clipRun(nil, cmd.argv, o)
-		if err == nil && res.Returncode == 0 {
 			return true
 		}
 	}

@@ -254,21 +254,6 @@ func AddColumnIfMissing(ctx context.Context, conn SQLiteConn, table, column, ddl
 	return false, err
 }
 
-// Runs body in an IMMEDIATE transaction on a long lived connection, a failed ROLLBACK never hiding the body error
-func WriteTxn(ctx context.Context, conn SQLiteConn, body func() error) error {
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		return err
-	}
-	if err := body(); err != nil {
-		if _, rerr := conn.ExecContext(ctx, "ROLLBACK"); rerr != nil && !isOperationalError(rerr) {
-			return rerr
-		}
-		return err
-	}
-	_, err := conn.ExecContext(ctx, "COMMIT")
-	return err
-}
-
 // Lowercases ASCII letters only, the PyOS_strnicmp comparison
 func asciiLower(s string) string {
 	b := []byte(s)

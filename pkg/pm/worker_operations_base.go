@@ -10,9 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Prerequisite policies of worker operations, always, policy, state and never
+// Prerequisite policies of worker operations, policy, state and never
 const (
-	bootstrapAlways = "always"
 	bootstrapPolicy = "policy"
 	bootstrapState  = "state"
 	bootstrapNever  = "never"

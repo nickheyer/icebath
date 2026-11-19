@@ -672,15 +672,6 @@ func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, 
 	clientKwargs["default_headers"] = pyhttpx.MergeHeaderMaps(existing, extra)
 }
 
-// MergeExtraHeaders layers route headers over default headers with the route winning
-func MergeExtraHeaders(defaults map[string]string, baseURL string, customProviders []map[string]any, cfg map[string]any) map[string]string {
-	extra := CustomProviderExtraHeaders(baseURL, customProviders, cfg)
-	if len(extra) == 0 {
-		return defaults
-	}
-	return pyhttpx.MergeHeaderMaps(defaults, extra)
-}
-
 // CustomProviderSessionAffinityHeader is the header name a route matching entry opted into or empty
 func CustomProviderSessionAffinityHeader(baseURL string, customProviders []map[string]any, cfg map[string]any) string {
 	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
@@ -1092,7 +1083,7 @@ func splitEnvVars(envVars []string) ([]string, string) {
 func ProviderCatalog() []ProviderDescriptor {
 	FillProviderEnvVars()
 	var out []ProviderDescriptor
-	for order, entry := range listedCanonicalProviders() {
+	for order, entry := range listedCanonicalProviders(context.Background()) {
 		prof, hasProf := ProfileFor(entry.Slug)
 		authType := ""
 		if hasProf {

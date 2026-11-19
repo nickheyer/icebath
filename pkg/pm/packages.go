@@ -237,11 +237,6 @@ func PackageEnv(p Package, entry, target string) (EnvDiff, error) {
 	return p.Env(entry, target), nil
 }
 
-// PinOnlyPackage is a pin whose bytes pm never stages, its consumers verifying the digest themselves
-type PinOnlyPackage interface {
-	PinOnly() bool
-}
-
 // processSpec is one child run the way subprocess.run runs it
 type processSpec struct {
 	Argv      []string
@@ -381,7 +376,7 @@ func osNormcase(path string) string {
 // Registers every catalogue tool package of the binary store, the package manager registering the project venv
 func init() {
 	for _, p := range []Package{
-		newUv(), newPython(), newNodejs(), newTermuxDocker(), newNpm(), newGit(), newGh(),
+		newUv(), newPython(), newNodejs(), newNpm(), newGit(), newGh(),
 		newFfmpeg(), newRipgrep(), newCuaDriver(), newChromium(), newWhisperCppCpu(),
 	} {
 		MustRegister(p)

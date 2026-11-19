@@ -13,28 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
-func TestDeviceFlowErrorCopy(t *testing.T) {
-	err := DeviceFlowError("expired_token", "code expired", "icebath model")
-	want := "The sign-in code expired before it was approved in the browser. Run `icebath model` to get a new code.\n  Details: expired_token: code expired"
-	if err.Message != want || err.OAuthErrorCode != "expired_token" {
-		t.Fatalf("known code %q", err.Message)
-	}
-	if !IsDeviceCodeExpired(err) {
-		t.Fatal("expired_token copy must read as a device code expiry")
-	}
-	err = DeviceFlowError("weird_code", "server said no", "icebath auth add xai-oauth")
-	if !strings.HasPrefix(err.Message, "Sign-in did not complete: server said no. Run `icebath auth add xai-oauth` to try again.\n  Details: weird_code: server said no") {
-		t.Fatalf("unknown code %q", err.Message)
-	}
-	err = DeviceFlowError("", "", "")
-	if err.Message != "Sign-in did not complete: the server rejected the request. Run `icebath model` to try again." {
-		t.Fatalf("empty code %q", err.Message)
-	}
-	if DeviceFlowError("invalid_client", "nope", "icebath model").Message[:len("The server did not recognize this copy of Icebath.")] != "The server did not recognize this copy of Icebath." {
-		t.Fatal("invalid_client copy")
-	}
+// declinedSignInCopy is the copy error a device flow builds when the browser declines the sign in
+func declinedSignInCopy() *SignInCopyError {
+	lead := "Sign-in was declined in the browser. Run `icebath model` to try again, or `icebath model` to pick a different provider."
+	return &SignInCopyError{Message: lead + "\n" + "  Details: access_denied: declined", OAuthErrorCode: "access_denied"}
 }
-
 func TestErrorClassifiers(t *testing.T) {
 	if !IsNetworkError(&url.Error{Op: "Post", URL: "https://p", Err: errors.New("dial tcp: connection refused")}) {
 		t.Fatal("url errors are network errors")
@@ -45,12 +28,7 @@ func TestErrorClassifiers(t *testing.T) {
 	if IsNetworkError(&SignInCopyError{Message: "x"}) || IsNetworkError(&DeviceCodeExpiredError{Message: "x"}) || IsNetworkError(errors.New("bug")) {
 		t.Fatal("copy, expiry, auth, and plain errors are not network errors")
 	}
-	if !IsDeviceCodeExpired(&DeviceCodeExpiredError{Message: "x"}) || !IsDeviceCodeExpired(xaiErr("x", "timeout", false)) || !IsDeviceCodeExpired(xaiErr("x", DeviceCodeExpiredCode, false)) {
-		t.Fatal("device code expiry shapes")
-	}
-	if IsDeviceCodeExpired(xaiErr("x", "access_denied", false)) || IsDeviceCodeExpired(nil) {
-		t.Fatal("other codes are not expiry")
-	}
+
 	if !IsCancelled(context.Canceled) || !IsCancelled(io.EOF) || !IsCancelled(&SignInCancelledError{ExitCode: 130, HasCode: true}) || !IsCancelled(&SignInCancelledError{}) || !IsCancelled(&DeviceFlowCancelledError{}) {
 		t.Fatal("cancellation shapes")
 	}
@@ -75,7 +53,7 @@ func TestSignInFailureLines(t *testing.T) {
 	if len(lines) != 2 || lines[0] != "Could not sign in. Run `icebath auth add xai-oauth` to try again, or `icebath model` to pick a different provider." || lines[1] != "  Details: boom" {
 		t.Fatalf("other %v", lines)
 	}
-	lines = SignInFailureLines(DeviceFlowError("access_denied", "declined", "icebath model"), "", "")
+	lines = SignInFailureLines(declinedSignInCopy(), "", "")
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "Sign-in was declined in the browser.") || lines[1] != "  Details: access_denied: declined" {
 		t.Fatalf("copy %v", lines)
 	}
@@ -83,7 +61,7 @@ func TestSignInFailureLines(t *testing.T) {
 
 func TestProviderSetupFailureLines(t *testing.T) {
 	nothingSaved := "Your provider settings were not changed. Continue the wizard now and run `icebath model` afterwards to try again."
-	lines := ProviderSetupFailureLines(DeviceFlowError("access_denied", "declined", "icebath model"), "")
+	lines := ProviderSetupFailureLines(declinedSignInCopy(), "")
 	if len(lines) != 3 || !strings.HasPrefix(lines[0], "Could not finish connecting a provider: sign-in was declined in the browser.") || lines[1] != nothingSaved || lines[2] != "  Details: access_denied: declined" {
 		t.Fatalf("copy %v", lines)
 	}

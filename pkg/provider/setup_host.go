@@ -428,11 +428,11 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 		stdinTTY                      func() bool
 		console                       func() *cliui.Console
 		setupToken                    func(PoolEnv) (string, error)
-		pkce, pluginOAuth, assignment io.Writer
+		pluginOAuth, assignment       io.Writer
 	}{flowLineInputFn, pickerLineInputFn, authCmdLineInputFn, flowSecretInputFn, authCmdMaskedSecretPromptFn, secretGetpass,
 		flowRawInputFn, pickerInputFn, authCmdInputFn, flowCursesChoiceFn, flowRadiolistFn, pickerRadiolistFn, setupRadiolist,
 		setupChecklist, secretFieldFn, oauthPromptFn, flowStdinIsTTYFn, pickerConsoleFn, anthRunOAuthSetupTokenFn,
-		pkceOut, pluginOAuthOut, assignmentOut}
+		pluginOAuthOut, assignmentOut}
 	menus := hostedConsole(trail, ask, true)
 	plain := hostedConsole(trail, ask, false)
 	flowLineInputFn, pickerLineInputFn, authCmdLineInputFn = line, line, line
@@ -458,7 +458,7 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 	flowStdinIsTTYFn = func() bool { return true }
 	pickerConsoleFn = func() *cliui.Console { return menus }
 	anthRunOAuthSetupTokenFn = func(env PoolEnv) (string, error) { return hostedSetupToken(env, ask) }
-	pkceOut, pluginOAuthOut, assignmentOut = trail, trail, trail
+	pluginOAuthOut, assignmentOut = trail, trail
 	openBrowser := openBrowserFn
 	openBrowserFn = func(target string) error {
 		if !canOpenGraphicalBrowser() {
@@ -491,7 +491,7 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 		setupRadiolist, setupChecklist = saved.setupRadio, saved.setupCheck
 		secretFieldFn, oauthPromptFn, flowStdinIsTTYFn, pickerConsoleFn = saved.field, saved.oauthPrompt, saved.stdinTTY, saved.console
 		anthRunOAuthSetupTokenFn, openBrowserFn = saved.setupToken, openBrowser
-		pkceOut, pluginOAuthOut, assignmentOut = saved.pkce, saved.pluginOAuth, saved.assignment
+		pluginOAuthOut, assignmentOut = saved.pluginOAuth, saved.assignment
 	}()
 	return fn()
 }

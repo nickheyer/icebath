@@ -19,17 +19,12 @@ import (
 // Tools the agent loop intercepts because they need live agent state
 var AgentLoopTools = map[string]bool{"todo_list": true, "memory": true, "session_search": true, "delegate_task": true}
 
-var (
-	legacyAliasMu     sync.RWMutex
-	legacyToolAliases = map[string]string{
-		"todo": "todo_list", "cronjob": "cronjob_manage", "process": "process_manage",
-	}
-)
+var legacyToolAliases = map[string]string{
+	"todo": "todo_list", "cronjob": "cronjob_manage", "process": "process_manage",
+}
 
 // CanonicalToolName maps a legacy alias to the advertised name
 func CanonicalToolName(name string) string {
-	legacyAliasMu.RLock()
-	defer legacyAliasMu.RUnlock()
 	if c, ok := legacyToolAliases[name]; ok {
 		return c
 	}

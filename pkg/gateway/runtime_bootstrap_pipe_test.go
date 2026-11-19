@@ -183,9 +183,6 @@ func TestDiscoveryReportsTheNamedRefusalWithoutAnyOwnerRecord(t *testing.T) {
 		result.Detail != RefusedOwnerRemedy("gateway_elevated", pipeServerPID, u32(1)) {
 		t.Fatalf("%+v", result)
 	}
-	if code, err := EnsureExitCode(result); err != nil || code != 4 {
-		t.Fatalf("exit %d %v", code, err)
-	}
 }
 
 // A named profile under root that the default multiplexer serves, with the root query raising refusal

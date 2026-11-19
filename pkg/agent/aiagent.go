@@ -530,6 +530,7 @@ func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
 		o.CheckpointMaxFileSizeMB = new(10)
 	}
 	a := &AIAgent{}
+	a.outputCtx.Store(&ctx)
 	if err := initAgent(ctx, a, o); err != nil {
 		return nil, err
 	}

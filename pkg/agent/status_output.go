@@ -8,8 +8,8 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync/atomic"
 
-	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -22,10 +22,21 @@ type processStdout struct{}
 
 func (processStdout) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
 
-// Descriptor of the process stdout at the call, what sys.stdout.isatty() asks about
-func (processStdout) Fd() uintptr { return os.Stdout.Fd() }
-
 var statusStdout io.Writer = processStdout{}
+
+// Agent stdout as work under ctx sees it, the process stdout routed by ctx or the writer a redirect put in its place
+func scopedStatusStdout(ctx context.Context) io.Writer {
+	if _, process := statusStdout.(processStdout); !process {
+		return statusStdout
+	}
+	return tools.ScopedStdout(ctx)
+}
+
+// Reports whether a stdout writer is a terminal, the routed process stdout answering for its context
+func stdoutIsTTY(w io.Writer) bool {
+	t, ok := w.(interface{ IsTerminal() bool })
+	return ok && t.IsTerminal()
+}
 
 // Routes agent stdout through w until the returned restore runs, the patch_stdout swap of sys.stdout
 func PatchStatusStdout(w io.Writer) (restore func()) {
@@ -33,9 +44,6 @@ func PatchStatusStdout(w io.Writer) (restore func()) {
 	statusStdout = w
 	return func() { statusStdout = prev }
 }
-
-// Reports whether stdout is a terminal, swapped by tests
-var statusStdoutIsTTY = func() bool { return isatty.IsTerminal(os.Stdout.Fd()) }
 
 type retryStatusLine struct {
 	kind    string
@@ -47,8 +55,9 @@ type ctxOverflowWarnKey struct {
 	contextLength int
 }
 
-// Startup notices, overflow dedup and the buffered retry chatter the status rail keeps
+// Startup notices, overflow dedup, the buffered retry chatter the status rail keeps and the context its prints resolve stdout under
 type statusOutputState struct {
+	outputCtx             atomic.Pointer[context.Context]
 	notificationPlatform  *string
 	notificationConfig    map[string]any
 	pendingStartupPrints  []string
@@ -89,6 +98,23 @@ func (a *AIAgent) SetNotificationPresentation(platform string, userConfig map[st
 // Queues the one shot fallback switch lines surfaced on recovery or folded into the flushed trace
 func (a *AIAgent) SetPendingFallbackNotice(lines []string) { a.pendingFallbackNotice = lines }
 
+// Context the agent prints under, the one of its running turn, else the one it was built under
+func (a *AIAgent) outputContext() context.Context {
+	if ctx := a.outputCtx.Load(); ctx != nil {
+		return *ctx
+	}
+	return context.Background()
+}
+
+// Makes ctx the context the agent prints under and returns the restore of the previous one
+func (a *AIAgent) bindOutputContext(ctx context.Context) (restore func()) {
+	prev := a.outputCtx.Swap(&ctx)
+	return func() { a.outputCtx.Store(prev) }
+}
+
+// Stdout of the agent as its output context sees it
+func (a *AIAgent) stdout() io.Writer { return scopedStatusStdout(a.outputContext()) }
+
 func statusText(message any) string {
 	if d, ok := message.(config.DiagnosticText); ok {
 		return string(d)
@@ -109,7 +135,7 @@ func (a *AIAgent) safePrint(text string, diagnostic bool) {
 		a.printFn(text)
 		return
 	}
-	_, _ = fmt.Fprintln(statusStdout, text)
+	_, _ = fmt.Fprintln(a.stdout(), text)
 }
 
 func (a *AIAgent) SafePrint(text string, diagnostic bool) { a.safePrint(text, diagnostic) }
@@ -127,12 +153,12 @@ func (a *AIAgent) vprint(text string, force, diagnostic bool) {
 	}
 }
 
-// True when quiet spinner output has a safe sink, an injected printer or a real terminal
-func (a *AIAgent) shouldStartQuietSpinner() bool {
+// True when quiet spinner output has a safe sink, an injected printer or a real terminal as ctx sees stdout
+func (a *AIAgent) shouldStartQuietSpinner(ctx context.Context) bool {
 	if a.printFn != nil {
 		return true
 	}
-	return statusStdoutIsTTY()
+	return stdoutIsTTY(scopedStatusStdout(ctx))
 }
 
 // True when quiet tool summaries print directly on the CLI with no callback owning rendering

@@ -4,14 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
 // Unpacked copy of the embedded payload archive the cases read as a tree, set by TestMain
 var payloadTestDir string
-
-// Payload copy of the impeccable checkout holding its shipped skill and plugin subtrees, set by TestMain
-var impeccablePayloadRoot string
 
 func writeTestFile(t *testing.T, p, content string) {
 	t.Helper()
@@ -23,13 +21,29 @@ func writeTestFile(t *testing.T, p, content string) {
 	}
 }
 
-func readTestFile(t *testing.T, p string) string {
+func wantContains(t *testing.T, text string, parts ...string) {
 	t.Helper()
-	data, err := os.ReadFile(p)
-	if err != nil {
-		t.Fatal(err)
+	for _, part := range parts {
+		if !strings.Contains(text, part) {
+			t.Errorf("missing %q in\n%s", part, text)
+		}
 	}
-	return string(data)
+}
+
+func wantLacks(t *testing.T, text string, parts ...string) {
+	t.Helper()
+	for _, part := range parts {
+		if strings.Contains(text, part) {
+			t.Errorf("unexpected %q in\n%s", part, text)
+		}
+	}
+}
+
+func writeAt(t *testing.T, dir, name, contents string) string {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(name))
+	writeTestFile(t, p, contents)
+	return p
 }
 
 func sortedKeys[V any](m map[string]V) []string {

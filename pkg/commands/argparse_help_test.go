@@ -21,9 +21,9 @@ func TestArgparseHelpPause(t *testing.T) {
 	}
 	want := "usage: icebath pause [-h] [--reason REASON]\n\n" +
 		"Engage the global emergency stop. Halts NEW work only — cron dispatch, kanban dispatch, and new\n" +
-		"gateway turns — until `icebath resume`. Interactive CLI and TUI turns are gateway turns, so they\n" +
-		"are held too: each gets \"Icebath is paused\" with the reason. Turns already running finish; in-\n" +
-		"flight work is never killed.\n\n" +
+		"gateway turns — until `icebath resume`. Terminal UI and `icebath chat -q` turns are gateway turns,\n" +
+		"so they are held too: each gets \"Icebath is paused\" with the reason. Turns already running finish;\n" +
+		"in-flight work is never killed.\n\n" +
 		"options:\n" +
 		"  -h, --help       show this help message and exit\n" +
 		"  --reason REASON  Optional reason stored in the sentinel and shown to users\n"

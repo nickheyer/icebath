@@ -124,9 +124,8 @@ func TestGeminiLongDecodeHopCeilingEndsAsLength(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, _, ok := ResponseInitialPromptTokens(sresp)
-	if len(f.all()) != 3 || sresp.FinishReason != "length" || sresp.Usage.InputTokens != 30 || !ok || prompt != 10 {
-		t.Fatalf("sent %d finish %s usage %+v initial %d", len(f.all()), sresp.FinishReason, sresp.Usage, prompt)
+	if len(f.all()) != 3 || sresp.FinishReason != "length" || sresp.Usage.InputTokens != 30 {
+		t.Fatalf("sent %d finish %s usage %+v", len(f.all()), sresp.FinishReason, sresp.Usage)
 	}
 }
 

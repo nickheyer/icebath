@@ -361,14 +361,6 @@ func (daytonaBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	return errors.New("the 'daytona' backend is missing its API key or SDK")
 }
 
-// Probe reports whether the API key is configured
-func (daytonaBackend) Probe() (string, string) {
-	if os.Getenv("DAYTONA_API_KEY") == "" {
-		return "needs_setup", "DAYTONA_API_KEY is not configured."
-	}
-	return "ready", "Daytona API key configured"
-}
-
 // SetupInstructions explains the Daytona account and key
 func (daytonaBackend) SetupInstructions(env *Env) []string {
 	return []string{

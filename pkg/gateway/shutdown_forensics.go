@@ -230,15 +230,6 @@ func FormatContextForLog(ctx *pyjson.Object) string {
 		signal, underSystemd, orUnknown(recGet(parent, "pid")), orUnknown(recGet(parent, "name")), loadStr, extrasStr)
 }
 
-// Sorted JSON of a shutdown context, values JSON cannot carry rendered as text
-func ContextAsJSON(ctx any) string {
-	out, err := pyjson.Dumps(ctx, pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
-	if err != nil {
-		return "{}"
-	}
-	return out
-}
-
 // Whether systemd's TimeoutStopSec covers the stop budget, nil when aligned facts cannot be read
 func CheckSystemdTimingAlignment(ctx context.Context, drainTimeout, cronDrainTimeout float64) (*pyjson.Object, error) {
 	if os.Getenv("INVOCATION_ID") == "" {

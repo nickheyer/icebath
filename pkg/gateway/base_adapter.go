@@ -491,7 +491,7 @@ func (b *BasePlatformAdapter) FormatToolEvent(ctx context.Context, event StreamE
 		return "", false
 	}
 	env := mediaToolsEnv(ctx)
-	emoji, tool := tools.GetToolEmoji(env, ev.ToolName, "⚙️"), ev.ToolName
+	emoji, tool := tools.GetToolEmoji(ctx, env, ev.ToolName, "⚙️"), ev.ToolName
 	if mode == "verbose" && len(ev.Args) > 0 {
 		keys := []any{}
 		ordered := pyjson.NewObject()

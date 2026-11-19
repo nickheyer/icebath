@@ -88,19 +88,3 @@ func TestSiteDirDecodesNonUTF8LinesThroughTheLocale(t *testing.T) {
 		t.Fatalf("import path before the failure %v", sdRelative(base, got))
 	}
 }
-
-func TestAdoptedSitePackagesSkipTheNamesThePreviousGenerationHad(t *testing.T) {
-	base := resolvePath(t.TempDir())
-	sdMkdirs(t, base, "old", "new/x.pth", "e1", "e2", "e3")
-	ed := func(name string) string { return filepath.Join(base, name) }
-	writeFile(t, filepath.Join(base, "old", "a.pth"), []byte(ed("e1")+"\n"), 0o666)
-	writeFile(t, filepath.Join(base, "new", "a.pth"), []byte(ed("e1")+"\n"), 0o666)
-	writeFile(t, filepath.Join(base, "new", "B.pth"), []byte(ed("e2")+"\n"+ed("e3")+"\n"), 0o666)
-	writeFile(t, filepath.Join(base, "new", ".c.pth"), []byte(ed("e2")+"\n"), 0o666)
-	got, err := addAdoptedSitePackages([]string{ed("new")}, ed("old"), ed("new"))
-	sep := string(filepath.Separator)
-	want := []string{sep + "new", sep + "e2", sep + "e3"}
-	if err != nil || !reflect.DeepEqual(sdRelative(base, got), want) {
-		t.Fatalf("adopted import path %v err %v, want %v", sdRelative(base, got), err, want)
-	}
-}

@@ -6,20 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -266,110 +261,6 @@ func requestSequence(request *pyjson.Object) int64 {
 	return n
 }
 
-// Text of a published tree object, found false for a 404 when missingOK
-func sourceRead(ctx context.Context, target string, missingOK bool) (string, bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return "", false, err
-	}
-	req.Header.Set("User-Agent", "icebath-update")
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Accept", "application/json, text/html")
-	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: sourceUrlopenProxy}}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", false, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if missingOK && resp.StatusCode == 404 {
-			return "", false, nil
-		}
-		reason := http.StatusText(resp.StatusCode)
-		if _, text, ok := strings.Cut(resp.Status, " "); ok && text != "" {
-			reason = text
-		}
-		return "", false, &pm.HTTPError{Code: resp.StatusCode, Reason: reason, Header: resp.Header, URL: target}
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
-	if err != nil {
-		return "", false, err
-	}
-	text, err := pystr.DecodeUTF8Sig(body)
-	if err != nil {
-		return "", false, err
-	}
-	return text, true, nil
-}
-
-// Content of every meta tag named icebath-build, skipping raw text bodies HTMLParser skips but reading noscript and self closed tags
-func buildMetadataTags(page string) []any {
-	var tags []any
-	z := html.NewTokenizer(strings.NewReader(page))
-	for {
-		kind := z.Next()
-		if kind == html.ErrorToken {
-			return tags
-		}
-		if kind != html.StartTagToken && kind != html.SelfClosingTagToken {
-			continue
-		}
-		token := z.Token()
-		if kind == html.SelfClosingTagToken || token.Data == "noscript" {
-			z.NextIsNotRawText()
-		}
-		if token.Data != "meta" {
-			continue
-		}
-		fields := map[string]*string{}
-		for _, attr := range token.Attr {
-			value := attr.Val
-			fields[attr.Key] = &value
-		}
-		if name := fields["name"]; name != nil && *name == "icebath-build" {
-			if content := fields["content"]; content != nil {
-				tags = append(tags, *content)
-			} else {
-				tags = append(tags, nil)
-			}
-		}
-	}
-}
-
-// Promoted tag and pinned commit of a release channel, stable from its candidates file and every channel from its index meta
-func releasePointer(ctx context.Context, channel string) (string, string, bool, error) {
-	if channel == ChannelStable {
-		text, found, err := sourceRead(ctx, sourcePublicBase+"/releases/stable/release-candidates.json", true)
-		if err != nil {
-			return "", "", false, err
-		}
-		if found {
-			data, err := pyjson.Loads(text)
-			if err != nil {
-				return "", "", false, &ValueError{Msg: err.Error()}
-			}
-			obj, isObj := data.(*pyjson.Object)
-			if !isObj || !validReleaseTag(obj.Vals["tag"], channel) {
-				return "", "", false, &ValueError{Msg: "Invalid stable release pointer"}
-			}
-			commit, isStr := obj.Vals["commit"].(string)
-			if !isStr || !sourceSHARE.MatchString(commit) {
-				return "", "", false, &ValueError{Msg: "Invalid stable release pointer"}
-			}
-			return obj.Vals["tag"].(string), commit, true, nil
-		}
-	}
-	text, found, err := sourceRead(ctx, sourcePublicBase+"/releases/"+channel+"/index.html", true)
-	if err != nil || !found {
-		return "", "", false, err
-	}
-	tags := buildMetadataTags(text)
-	if len(tags) != 1 || !validReleaseTag(tags[0], channel) {
-		return "", "", false, &ValueError{Msg: fmt.Sprintf("Invalid %s release pointer", channel)}
-	}
-	return tags[0].(string), "", true, nil
-}
-
 // Names a transport failure's cause, so a rate limit never reads as a missing release
 func describeReleaseFailure(failure error) string {
 	var httpErr *plugins.GithubHTTPError
@@ -384,7 +275,7 @@ func describeReleaseFailure(failure error) string {
 
 // Stable is the repository's latest published GitHub release, verified against origin when git is given
 func resolveStable(ctx context.Context, repository string, gitCmd []string, cwd string) (SourceTarget, error) {
-	tag, commit, err := resolveRelease(ctx, ChannelStable, gitCmd, cwd, repository, false)
+	tag, commit, err := resolveRelease(ctx, gitCmd, cwd, repository)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Could not resolve the stable source release: %v", err))
 		return SourceTarget{}, &ValueError{Msg: describeReleaseFailure(err)}
@@ -393,98 +284,43 @@ func resolveStable(ctx context.Context, repository string, gitCmd []string, cwd 
 		Commit: commit, Version: strings.TrimPrefix(tag, "v")}, nil
 }
 
-// Reports whether tag is a strict stable tag, or for canary an unpadded canary tag
-func validReleaseTag(tag any, channel string) bool {
+// Reports whether tag is a strict stable tag
+func validReleaseTag(tag any) bool {
 	text, ok := tag.(string)
-	if !ok {
-		return false
-	}
-	if channel == ChannelStable {
-		return updaterecord.StableTagRE.MatchString(text)
-	}
-	return text == pystr.Strip(text) && IsCanaryTag(text)
+	return ok && updaterecord.StableTagRE.MatchString(text)
 }
 
-// Reports whether a release document is published on channel, never a draft and prerelease only for canary
-func publishedRelease(release any, channel string) bool {
+// Reports whether a release document is a published stable release, never a draft or a prerelease
+func publishedRelease(release any) bool {
 	obj, ok := release.(*pyjson.Object)
 	if !ok {
 		return false
 	}
 	draft, draftOK := stampGet(obj, "draft").(bool)
 	prerelease, preOK := stampGet(obj, "prerelease").(bool)
-	return draftOK && !draft && preOK && prerelease == (channel == ChannelCanary) &&
-		validReleaseTag(stampGet(obj, "tag_name"), channel)
+	return draftOK && !draft && preOK && !prerelease && validReleaseTag(stampGet(obj, "tag_name"))
 }
 
-// Published release of channel from GitHub, latest for stable and a bounded newest first scan otherwise
-func publishedFallback(ctx context.Context, channel, base string) (*pyjson.Object, error) {
-	if channel == ChannelStable {
-		release, err := sourceJSON(ctx, base+"/releases/latest")
-		if err != nil {
-			return nil, err
-		}
-		if publishedRelease(release, channel) {
-			return release.(*pyjson.Object), nil
-		}
-	} else {
-		for page := 1; page <= 10; page++ {
-			entries, err := sourceJSON(ctx, fmt.Sprintf("%s/releases?per_page=100&page=%d", base, page))
-			if err != nil {
-				return nil, err
-			}
-			list, ok := entries.([]any)
-			if !ok {
-				break
-			}
-			for _, release := range list {
-				if publishedRelease(release, channel) {
-					return release.(*pyjson.Object), nil
-				}
-			}
-			if len(list) < 100 {
-				break
-			}
-		}
+// Latest published stable release of a repository from GitHub
+func publishedFallback(ctx context.Context, base string) (*pyjson.Object, error) {
+	release, err := sourceJSON(ctx, base+"/releases/latest")
+	if err != nil {
+		return nil, err
 	}
-	return nil, &ValueError{Msg: fmt.Sprintf("No published %s release", channel)}
+	if publishedRelease(release) {
+		return release.(*pyjson.Object), nil
+	}
+	return nil, &ValueError{Msg: "No published stable release"}
 }
 
-// Published stable or canary tag and commit, the failure returned instead of empty values
-func resolveRelease(ctx context.Context, channel string, gitCmd []string, cwd, repository string, pointer bool) (string, string, error) {
-	if channel != ChannelStable && channel != ChannelCanary {
-		return "", "", &ValueError{Msg: "Not a release channel: " + channel}
-	}
-	if repository == "" {
-		var err error
-		if repository, err = sourceRepository(ctx, gitCmd, cwd); err != nil {
-			return "", "", err
-		}
-	}
+// Published stable tag and commit of a repository, the failure returned instead of empty values
+func resolveRelease(ctx context.Context, gitCmd []string, cwd, repository string) (string, string, error) {
 	base := sourceGitHubAPI + "/repos/" + repository
-	tag, pinnedSHA, pointed := "", "", false
-	if pointer && strings.EqualFold(repository, OfficialRepository) {
-		var err error
-		if tag, pinnedSHA, pointed, err = releasePointer(ctx, channel); err != nil {
-			return "", "", err
-		}
+	release, err := publishedFallback(ctx, base)
+	if err != nil {
+		return "", "", err
 	}
-	var release any
-	if !pointed {
-		found, err := publishedFallback(ctx, channel, base)
-		if err != nil {
-			return "", "", err
-		}
-		release, tag = found, stampGet(found, "tag_name").(string)
-	} else {
-		var err error
-		if release, err = sourceJSON(ctx, base+"/releases/tags/"+tag); err != nil {
-			return "", "", err
-		}
-	}
-	if !publishedRelease(release, channel) || release.(*pyjson.Object).Vals["tag_name"] != tag {
-		return "", "", &ValueError{Msg: fmt.Sprintf("%s is not a published %s release", tag, channel)}
-	}
+	tag := stampGet(release, "tag_name").(string)
 	commit, err := sourceJSON(ctx, base+"/commits/"+tag)
 	if err != nil {
 		return "", "", err
@@ -520,18 +356,5 @@ func resolveRelease(ctx context.Context, channel string, gitCmd []string, cwd, r
 			return "", "", &ValueError{Msg: fmt.Sprintf("Origin tag %s does not match the published release commit", tag)}
 		}
 	}
-	if pinnedSHA != "" && sha != pinnedSHA {
-		return "", "", &ValueError{Msg: fmt.Sprintf("Release %s no longer matches its published commit", tag)}
-	}
 	return tag, sha, nil
-}
-
-// Published stable or canary release tag and commit, the channel pointers outranking GitHub when pointer is set
-func ResolveSourceRelease(ctx context.Context, channel string, gitCmd []string, cwd, repository string, pointer bool) (string, string) {
-	tag, sha, err := resolveRelease(ctx, channel, gitCmd, cwd, repository, pointer)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not resolve the %s source release: %v", channel, err))
-		return "", ""
-	}
-	return tag, sha
 }

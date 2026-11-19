@@ -1,7 +1,6 @@
 package messagetools
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -129,7 +128,7 @@ func TestSendMessageToolMediaTagOutsideAllowedRootsIsNotSent(t *testing.T) {
 	assertOneSend(t, *calls, sendCall{platform: gateway.PlatformTelegram, pconfig: tg, chatID: "12345", message: "hello", opts: SendOptions{MediaFiles: []gateway.MediaRef{}}})
 }
 
-func TestSendMessageToolMissingMediaIsReportedToTheCallerAndIcebathSendExitsNonzero(t *testing.T) {
+func TestSendMessageToolMissingMediaIsReportedToTheCaller(t *testing.T) {
 	cfg, tg := telegramConfig()
 	calls := installSendSeams(t, cfg, nil)
 	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "0")
@@ -159,10 +158,6 @@ func TestSendMessageToolMissingMediaIsReportedToTheCallerAndIcebathSendExitsNonz
 	resolved, _ := filepath.EvalSymlinks(report)
 	resolved, _ = filepath.Abs(resolved)
 	assertOneSend(t, *calls, sendCall{platform: gateway.PlatformTelegram, pconfig: tg, chatID: "12345", message: "report", opts: SendOptions{MediaFiles: []gateway.MediaRef{{Path: resolved}}}})
-	var out, errw bytes.Buffer
-	if code, err := EmitSendResult(&out, &errw, raw, true, true); err != nil || code == 0 {
-		t.Fatalf("code=%d err=%v", code, err)
-	}
 }
 
 func TestSendMessageToolTopLevelSendFailureRedactsQueryToken(t *testing.T) {

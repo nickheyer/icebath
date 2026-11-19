@@ -321,7 +321,7 @@ func cuteRow(ctx context.Context, emoji, verb, detail string) CuteRow {
 // Row for a tool without a dedicated renderer, its emoji, its name and its preview
 func cuteFallbackRow(ctx context.Context, env *Env, toolName string, args map[string]any) CuteRow {
 	detail := cuteTrunc(BuildToolPreview(env, toolName, args, nil))
-	emoji := GetToolEmoji(env, toolName, "⚡")
+	emoji := GetToolEmoji(ctx, env, toolName, "⚡")
 	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(pystr.Slice(toolName, 0, 9), 9) + " " + detail, Emoji: pystr.Strip(emoji), Verb: toolName, Detail: detail}
 }
 
@@ -664,8 +664,8 @@ func init() {
 }
 
 // One row per bridge label, ok false when the call has no bridge labels
-func cuteBridgeRows(env *Env, toolName string, args map[string]any) ([]string, bool) {
-	labels := BridgeToolLabels(env, toolName, args)
+func cuteBridgeRows(ctx context.Context, env *Env, toolName string, args map[string]any) ([]string, bool) {
+	labels := BridgeToolLabels(ctx, env, toolName, args)
 	if len(labels) == 0 {
 		return nil, false
 	}
@@ -765,7 +765,7 @@ func cuteToolMessage(ctx context.Context, env *Env, toolName string, args map[st
 		callSuffix = failureSuffix
 	}
 	render := cuteLines[toolName]
-	rows, bridged := cuteBridgeRows(env, toolName, args)
+	rows, bridged := cuteBridgeRows(ctx, env, toolName, args)
 	var suffixes []string
 	if !bridged {
 		body := cuteFallbackRow
@@ -875,7 +875,7 @@ func GetToolRowParts(ctx context.Context, env *Env, toolName string, args map[st
 		empty := ""
 		callFailure = &empty
 	}
-	if labels := BridgeToolLabels(env, toolName, args); len(labels) > 0 {
+	if labels := BridgeToolLabels(ctx, env, toolName, args); len(labels) > 0 {
 		callSuffix := ""
 		if isFailure {
 			callSuffix = suffix

@@ -69,27 +69,12 @@ func pactl(check bool, args ...string) (string, error) {
 
 // Virtual audio device Chrome's fake mic reads, set up before launch and torn down after
 type audioBridge struct {
-	namePrefix  string
-	platform    string
-	deviceName  string
-	writeTarget string
-	moduleIDs   []int
+	namePrefix string
+	moduleIDs  []int
 }
 
 // Bridge whose Linux sink and source names start with prefix
 func newAudioBridge(prefix string) *audioBridge { return &audioBridge{namePrefix: prefix} }
-
-// Value of a property that exists only after setup
-func ready(value string) (string, error) {
-	if value == "" {
-		return "", errors.New("AudioBridge not set up yet")
-	}
-	return value, nil
-}
-
-func (b *audioBridge) device() (string, error) { return ready(b.deviceName) }
-
-func (b *audioBridge) target() (string, error) { return ready(b.writeTarget) }
 
 // Provisions the device, refusing unsupported platforms and missing tools
 func (b *audioBridge) setup() (map[string]any, error) {
@@ -113,9 +98,9 @@ func (b *audioBridge) teardown() {
 	b.moduleIDs = nil
 }
 
-// Records the provisioned device and returns its description
+// Records the loaded modules and returns the description of the provisioned device
 func (b *audioBridge) finish(tag, device, writeTarget string, moduleIDs []int) map[string]any {
-	b.platform, b.deviceName, b.writeTarget, b.moduleIDs = tag, device, writeTarget, moduleIDs
+	b.moduleIDs = moduleIDs
 	ids := make([]any, len(moduleIDs))
 	for i, id := range moduleIDs {
 		ids[i] = id

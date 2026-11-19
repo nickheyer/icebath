@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -28,44 +27,27 @@ type cliAgent interface {
 	APIMode() string
 	BaseURL() string
 	ClearInterrupt()
-	ConfigContextLength() *int
-	ConnectionRespond(opID string, result any) (any, error)
-	ConnectionRetry(name string) (any, error)
-	HeaderCapture() *provider.HeaderCapture
 	Interrupt()
 	InterruptRequested() bool
 	MaxIterations() int
 	Model() string
 	MuteNotificationReply() bool
 	NotificationConfig() map[string]any
-	PinReasoning(config map[string]any) bool
 	Provider() string
-	QuietMode() bool
-	ReasoningConfig() map[string]any
-	Redirect(text string) any
-	ResetSessionState()
 	RunConversation(ctx context.Context, userMessage any, o agent.RunConversationOptions) (map[string]any, error)
 	SessionID() string
 	SessionMessages() []map[string]any
 	SetPendingCLIUserMessage(row map[string]any)
 	StagePendingCLIUserMessage(staged map[string]any, appendToTranscript func())
 	SetReasoningCallback(callback func(text string))
-	SetReasoningConfig(config map[string]any)
-	SetSessionID(value string)
 	SetToolProgressMode(mode string)
-	StageTurnReasoning(config map[string]any)
-	StatusBarUsage(ctx context.Context) agent.StatusBarUsage
-	Steer(text string) any
-	SwitchModel(newModel, newProvider string, once, restore bool, alias string) (bool, error)
-	HardInterrupt()
+	SwitchModel(newModel, newProvider string) (bool, error)
 	NotificationPolicySnapshot(cfg map[string]any) func()
 	NotificationTurn(ctx context.Context, muted bool, sessionID string) (context.Context, func())
-	RestoreReasoning(config map[string]any)
 	SummarizeAPIError(err error) string
 	TodoStore() *tools.TodoStore
 	gateway() *GatewayAgent
 	refreshStats(turn *gatewayTurn) bool
-	setSessionMessages(messages []map[string]any)
 	setTodoStore(store *tools.TodoStore)
 }
 
@@ -89,11 +71,4 @@ func agentGateway(a cliAgent) *GatewayAgent {
 		return nil
 	}
 	return a.gateway()
-}
-
-// Replaces the transcript the agent mirrors with a rewound history
-func (a *GatewayAgent) setSessionMessages(messages []map[string]any) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.sessionMessages = messages
 }

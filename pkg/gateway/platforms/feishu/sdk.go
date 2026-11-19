@@ -197,22 +197,6 @@ func outcomeOf(resp any) apiOutcome {
 
 func (o apiOutcome) success() bool { return o.present && o.code == 0 }
 
-// Code of the response, unknown when there is none
-func (o apiOutcome) codeOr() any {
-	if !o.present {
-		return "unknown"
-	}
-	return o.code
-}
-
-// Message of the response, def when there is none
-func (o apiOutcome) msgOr(def string) string {
-	if !o.present {
-		return def
-	}
-	return o.msg
-}
-
 // First value of a response header, lowercased and cut at the first semicolon
 func (o apiOutcome) header(name string) string {
 	if o.raw == nil {

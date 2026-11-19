@@ -108,9 +108,6 @@ func TestRepeatedContextsNeverWriteToAClosedSink(t *testing.T) {
 		if _, err := io.WriteString(ScopedStdout(ctx), "hidden\n"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ScopedStdout(ctx).(routedWriter).Fd(); err != nil {
-			t.Fatalf("silenced fileno failed %v", err)
-		}
 	}
 }
 

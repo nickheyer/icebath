@@ -227,28 +227,6 @@ func TestPidRecordNamesTheEntryPointUnderAnInlineLauncher(t *testing.T) {
 	}
 }
 
-func TestRetainedGatewayState(t *testing.T) {
-	watchdog := func(extra ...any) *pyjson.Object {
-		return rec(append([]any{"gateway_state", "degraded", "exit_reason", "loop_liveness_watchdog"}, extra...)...)
-	}
-	cases := []struct {
-		r    any
-		want string
-	}{
-		{watchdog(), "degraded"},
-		{rec("gateway_state", "degraded", "exit_reason", "shutdown_watchdog"), "degraded"},
-		{watchdog("desired_state", "stopped"), "stopped"},
-		{rec("gateway_state", "degraded", "exit_reason", nil), "stopped"},
-		{rec("gateway_state", "startup_failed", "exit_reason", "x"), "startup_failed"},
-		{nil, "stopped"},
-	}
-	for _, c := range cases {
-		if got := RetainedGatewayState(c.r); got != c.want {
-			t.Errorf("%v = %s", c.r, got)
-		}
-	}
-}
-
 func TestGatewayCommandLineMatching(t *testing.T) {
 	cases := map[string]string{
 		"icebath gateway run":                                    "run",
@@ -268,9 +246,6 @@ func TestGatewayCommandLineMatching(t *testing.T) {
 		if got, _ := gatewayCommandSubcommand(cmd); got != want {
 			t.Errorf("%q = %q want %q", cmd, got, want)
 		}
-	}
-	if got, ok := GatewaySpawnIntentSubcommand("python -c src 1 python -m icebath_cli.main gateway run"); !ok || got != "run" {
-		t.Fatalf("spawn intent %q", got)
 	}
 	if got, ok := ProfileFlagValue("icebath -p OPS gateway run"); !ok || got != "ops" {
 		t.Fatal(got)

@@ -309,17 +309,20 @@ func auxCurrentEventLoop(ctx context.Context) any {
 	return nil
 }
 
-// Stores a client under a key closing the different client it replaces, probe clients never cached
-func auxStoreCachedClient(key auxClientCacheKey, client AuxClient, defaultModel string, boundLoop any, retained []any) {
-	if _, probe := client.(*auxProbeClient); probe {
-		return
+// Process lifetime event loop, never closed
+type auxProcessLoop struct{ name string }
+
+func (*auxProcessLoop) IsClosed() bool { return false }
+
+// Loop async auxiliary work runs on when its context binds none
+var auxProcessEventLoop = &auxProcessLoop{name: "process"}
+
+// Event loop the work under the context runs on, the process loop when none is bound
+func auxRunningEventLoop(ctx context.Context) any {
+	if loop := auxCurrentEventLoop(ctx); loop != nil {
+		return loop
 	}
-	auxClientCacheMu.Lock()
-	defer auxClientCacheMu.Unlock()
-	if old, ok := auxClientCache[key]; ok && !auxSameObject(old.Client, client) {
-		auxCloseCachedClient(old.Client, false)
-	}
-	auxClientCacheSetLocked(key, auxCachedClient{Client: client, DefaultModel: defaultModel, BoundLoop: boundLoop, Retained: retained})
+	return auxProcessEventLoop
 }
 
 // ShutdownCachedClients closes and clears every cached client outside the lock, a live foreign loop's clients only neutered
@@ -334,7 +337,7 @@ func ShutdownCachedClients(ctx context.Context) {
 	clear(auxClientCache)
 	auxClientCacheOrder = nil
 	auxClientCacheMu.Unlock()
-	running := auxCurrentEventLoop(ctx)
+	running := auxRunningEventLoop(ctx)
 	for _, e := range entries {
 		loop, _ := e.BoundLoop.(auxBoundLoop)
 		auxCloseCachedClient(e.Client, loop != nil && (loop.IsClosed() || auxSameObject(e.BoundLoop, running)))
@@ -468,17 +471,6 @@ func auxCachedClientPool(ctx context.Context, provider string) (*Pool, error) {
 	return PoolForAuxProvider(provider, auxNormalizeAuxProvider(ctx, provider), cfg, func(k string) *Pool {
 		return auxLoadPoolWithCredentials(ctx, k, " (peek)")
 	}), nil
-}
-
-// Explicit provider moa resolved to its preset aggregator slot, unchanged when the preset does not resolve
-func auxUnwrapMoaProvider(ctx context.Context, prov, mdl string) (string, string) {
-	if strings.ToLower(strings.TrimSpace(prov)) != "moa" {
-		return prov, mdl
-	}
-	if aggProvider, aggModel := auxResolveMoaAggregator(ctx, mdl); aggProvider != "" && aggModel != "" {
-		return aggProvider, aggModel
-	}
-	return prov, mdl
 }
 
 // True when a first class provider keeps its identity alongside an explicit base URL

@@ -522,7 +522,7 @@ func TestReceiptWorkerReceiptIsAttributedOnlyToItsInvokingUpdate(t *testing.T) {
 		token := BeginReceipt(w, "sync")
 		RecordStep(w, "dependency-sync", false, "candidate refused")
 		FinalizeReceipt(w, "failed", 1, token)
-		return LastCompleted(w)
+		return receiptPlain(LastCompletedObject(w))
 	}
 	data := worker()
 	if data["update_id"] != "update-a" || data["outcome"] != "failed" {

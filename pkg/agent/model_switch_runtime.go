@@ -188,7 +188,10 @@ func swapSwitchRuntime(ctx context.Context, a *AIAgent, newModel, newProvider, a
 	}
 	if oldNorm != newNorm || a.credentialPool == nil {
 		a.credentialPool, a.credentialPoolEntryID = nil, ""
-		if err := guardPhase(func() error { a.credentialPool = agentLoadPool(agentPoolEnv(ctx), newProvider); return nil }); err != nil {
+		if err := guardPhase(func() error {
+			a.credentialPool = provider.LoadRoutePoolWith(agentPoolEnv(ctx), agentLoadPool, newProvider, a.baseURL, "")
+			return nil
+		}); err != nil {
 			pkgLog().Warn(fmt.Sprintf("switch_model: credential pool reload failed for %s (%s); continuing without pool rotation this turn", newProvider, err.Error()))
 		}
 	}

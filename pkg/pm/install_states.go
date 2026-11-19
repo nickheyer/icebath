@@ -31,15 +31,14 @@ func provablyDeleted(root, dataRoot string) bool {
 // Newest mtime among what a sync or a launch moves, never the state dir itself
 func lastUsed(state string) (float64, error) {
 	paths := []string{filepath.Join(state, "inputs"), filepath.Join(state, "facts.json")}
-	for _, generations := range []string{filepath.Join(state, "environments"), filepath.Join(state, "pm-runtime", "generations")} {
-		if st, err := os.Stat(generations); err == nil && st.IsDir() {
-			entries, err := os.ReadDir(generations)
-			if err != nil {
-				return 0, err
-			}
-			for _, e := range entries {
-				paths = append(paths, filepath.Join(generations, e.Name(), ".leases"))
-			}
+	generations := filepath.Join(state, "environments")
+	if st, err := os.Stat(generations); err == nil && st.IsDir() {
+		entries, err := os.ReadDir(generations)
+		if err != nil {
+			return 0, err
+		}
+		for _, e := range entries {
+			paths = append(paths, filepath.Join(generations, e.Name(), ".leases"))
 		}
 	}
 	newest := 0.0
@@ -146,32 +145,31 @@ var removeStateTree = removeTreeQuiet
 // Unlinks one file of a reclaimed state
 var unlinkStateFile = os.Remove
 
-// Reports whether a dependency environment or PM runtime generation lease is held
+// Reports whether a dependency environment generation lease is held
 var leased = func(state string) (bool, error) {
-	for _, generations := range []string{filepath.Join(state, "environments"), filepath.Join(state, "pm-runtime", "generations")} {
-		st, err := os.Stat(generations)
-		if err != nil || !st.IsDir() {
+	generations := filepath.Join(state, "environments")
+	st, err := os.Stat(generations)
+	if err != nil || !st.IsDir() {
+		return false, nil
+	}
+	entries, err := os.ReadDir(generations)
+	if err != nil {
+		return false, err
+	}
+	for _, e := range entries {
+		generation := filepath.Join(generations, e.Name())
+		if gst, err := os.Stat(generation); err != nil || !gst.IsDir() {
 			continue
 		}
-		entries, err := os.ReadDir(generations)
+		if lst, err := os.Stat(filepath.Join(generation, ".leases")); err != nil || !lst.IsDir() {
+			continue
+		}
+		held, err := LeasesHeld(generation)
 		if err != nil {
 			return false, err
 		}
-		for _, e := range entries {
-			generation := filepath.Join(generations, e.Name())
-			if gst, err := os.Stat(generation); err != nil || !gst.IsDir() {
-				continue
-			}
-			if lst, err := os.Stat(filepath.Join(generation, ".leases")); err != nil || !lst.IsDir() {
-				continue
-			}
-			held, err := LeasesHeld(generation)
-			if err != nil {
-				return false, err
-			}
-			if held {
-				return true, nil
-			}
+		if held {
+			return true, nil
 		}
 	}
 	return false, nil

@@ -185,8 +185,10 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
 	env := pyEnviron()
 	delete(env, "AR")
 	delete(env, "CC")
-	executable, err := BuildRequirementsEnvironment(context.Background(), BuildRequirementsEnvironmentOptions{
-		Requirements: []string{"native-archive-probe @ file://" + filepath.ToSlash(archive)}, Out: filepath.Join(root, "built"),
+	project := filepath.Join(root, "project")
+	peWrite(t, filepath.Join(project, "pyproject.toml"), "[project]\nname = \"native-archive-root\"\nversion = \"0\"\nrequires-python = \">=3.11\"\n"+
+		"dependencies = [\"native-archive-probe @ file://"+filepath.ToSlash(archive)+"\"]\n[tool.uv]\npackage = false\n")
+	executable, err := buildEnvironment(context.Background(), BuildEnvironmentOptions{Source: project, Out: filepath.Join(root, "built"),
 		Python: peHostPython(t), Env: env, Cache: filepath.Join(root, "cache"), Offline: true, Explicit: true})
 	if err != nil {
 		t.Fatal(err)

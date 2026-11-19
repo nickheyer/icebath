@@ -930,28 +930,6 @@ func (l *Ledger) Latest(ctx context.Context, jobID string) (map[string]any, erro
 	return rows[0], nil
 }
 
-// Job's latest non missed attempt while it is claimed or running under a live owner
-func (l *Ledger) LiveInflight(ctx context.Context, jobID string) (map[string]any, error) {
-	var record map[string]any
-	err := l.transaction(ctx, func(conn state.SQLiteConn) error {
-		var err error
-		record, err = queryRecord(ctx, conn, `SELECT * FROM executions WHERE job_id=? AND status != 'missed'
-               ORDER BY julianday(claimed_at) DESC, claimed_at DESC, id DESC LIMIT 1`, jobID)
-		return err
-	})
-	if err != nil || record == nil {
-		return nil, err
-	}
-	if st := recText(record, "status"); st != "claimed" && st != "running" {
-		return nil, nil
-	}
-	live, err := ownerIsLive(recInt(record, "pid"), record["process_started_at"])
-	if err != nil || !live {
-		return nil, err
-	}
-	return record, nil
-}
-
 // Job's newest claimed or running attempt under a live owner even when a newer row exists
 func (l *Ledger) Cancellable(ctx context.Context, jobID string) (map[string]any, error) {
 	live, err := l.Live(ctx, []string{jobID})

@@ -17,7 +17,7 @@ func TestCLIPMRepairReportsUnwritableRuntimeWithoutTraceback(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "home"))
 	ctx := context.Background()
 	root := RepoRoot()
-	target := filepath.Join(InstallStateDir(ctx, root), "pm-runtime", ".prepare.lock")
+	target := filepath.Join(InstallStateDir(ctx, root), ".install.lock")
 	var stderr bytes.Buffer
 	code, err := Main(WithCLIStderr(ctx, &stderr), func(context.Context) (int, error) {
 		return 0, &fs.PathError{Op: "open", Path: target, Err: syscall.EACCES}

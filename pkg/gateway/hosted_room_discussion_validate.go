@@ -534,6 +534,8 @@ func discussionValidatePayload(kind string, payload, actor map[string]any, room 
 		return discussionValidateMemberMessage(payload, actor, room)
 	case discussionTerminalExtras[kind] != nil:
 		return discussionValidateTerminal(kind, payload, actor, room)
+	case kind == continuedEventKind:
+		return discussionValidateContinued(kind, payload, actor, room)
 	}
 	spec := discussionGatewayEvents[kind]
 	if _, err := discussionExactFields(payload, kind+" payload", spec.fields); err != nil {
@@ -698,6 +700,7 @@ func discussionValidateEvent(raw any, room DiscussionRoom, previousSeq int64) (d
 		return discussionEvent{}, discussionInvalid("event payload must be an object")
 	}
 	_, gatewayKind := discussionGatewayEvents[kind]
+	gatewayKind = gatewayKind || kind == continuedEventKind
 	if stamped := discussionTerminalExtras[kind] != nil || kind == "message.member" || gatewayKind; stamped && !pyjson.Equal(fields["authority_epoch"], room.AuthorityEpoch) {
 		return discussionEvent{}, discussionInvalid(kind + " authority epoch does not match the room")
 	}

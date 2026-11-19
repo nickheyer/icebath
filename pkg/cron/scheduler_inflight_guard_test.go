@@ -2,10 +2,13 @@ package cron
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Store with an empty registry and a 30 minute floor, every claim it seeds removed on cleanup
@@ -156,4 +159,29 @@ func TestInterruptedFlags(t *testing.T) {
 	if !s.consumeInterruptedFlag("j-int", "tok") || s.consumeInterruptedFlag("j-int", "tok") {
 		t.Fatal("consume")
 	}
+}
+
+// InflightGuardStats is the in flight guard snapshot for health reporting
+type InflightGuardStats struct {
+	Running              []string
+	RunningAgesSeconds   map[string]float64
+	ForcedReleases       int
+	RecentForcedReleases []*pyjson.Object
+}
+
+// Running job ids, their ages, the forced release count and the recent forced releases
+func getInflightGuardStats() InflightGuardStats {
+	now := inflightEpoch()
+	inflight.Lock()
+	defer inflight.Unlock()
+	out := InflightGuardStats{Running: []string{}, RunningAgesSeconds: map[string]float64{}, ForcedReleases: inflightGuard.forcedReleaseCount}
+	for k := range inflight.running {
+		out.Running = append(out.Running, k.JobID)
+	}
+	sort.Strings(out.Running)
+	for k, started := range inflight.since {
+		out.RunningAgesSeconds[k.JobID] = pyint.Round(now-started, 1)
+	}
+	out.RecentForcedReleases = append([]*pyjson.Object(nil), inflightGuard.forcedReleases...)
+	return out
 }

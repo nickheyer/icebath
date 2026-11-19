@@ -71,14 +71,3 @@ func StorageCorruptReason(dbPath string) (string, bool) {
 	reason, ok := storageCorrupt[key]
 	return reason, ok
 }
-
-// Forgets the latch for the path, or for every path when the path is empty
-func ResetStorageState(dbPath string) {
-	storageHealthMu.Lock()
-	defer storageHealthMu.Unlock()
-	if dbPath == "" {
-		clear(storageCorrupt)
-		return
-	}
-	delete(storageCorrupt, storageKey(dbPath))
-}

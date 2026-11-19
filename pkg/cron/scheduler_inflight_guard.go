@@ -24,31 +24,6 @@ var inflightGuard = struct {
 	interrupted        map[any]bool
 }{restartSafeWaiters: map[inflightKey]bool{}, interrupted: map[any]bool{}}
 
-// InflightGuardStats is the in flight guard snapshot for health reporting
-type InflightGuardStats struct {
-	Running              []string
-	RunningAgesSeconds   map[string]float64
-	ForcedReleases       int
-	RecentForcedReleases []*pyjson.Object
-}
-
-// Running job ids, their ages, the forced release count and the recent forced releases
-func getInflightGuardStats() InflightGuardStats {
-	now := inflightEpoch()
-	inflight.Lock()
-	defer inflight.Unlock()
-	out := InflightGuardStats{Running: []string{}, RunningAgesSeconds: map[string]float64{}, ForcedReleases: inflightGuard.forcedReleaseCount}
-	for k := range inflight.running {
-		out.Running = append(out.Running, k.JobID)
-	}
-	sort.Strings(out.Running)
-	for k, started := range inflight.since {
-		out.RunningAgesSeconds[k.JobID] = pyint.Round(now-started, 1)
-	}
-	out.RecentForcedReleases = append([]*pyjson.Object(nil), inflightGuard.forcedReleases...)
-	return out
-}
-
 // Keeps a bounded history of one forced release and appends it to the profile's jsonl record
 func (s *Store) recordForcedRelease(jobID, name string, ageSeconds, allowanceSeconds float64) {
 	entry := pyjson.NewObject()

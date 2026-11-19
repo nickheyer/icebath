@@ -573,12 +573,6 @@ func (e *CronExpr) Next(t time.Time) (time.Time, error) {
 	return got.wall, err
 }
 
-// Prev returns the last match before the wall clock of t, read as a naive datetime and returned in UTC
-func (e *CronExpr) Prev(t time.Time) (time.Time, error) {
-	got, err := e.calcNext(pyDT{wall: microTrunc(wallOf(t))}, nil, true)
-	return got.wall, err
-}
-
 // NextAt returns the first match after instant t with the zone of t attached the way an aware start works
 func (e *CronExpr) NextAt(t time.Time) (time.Time, error) {
 	loc := t.Location()

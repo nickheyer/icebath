@@ -16,11 +16,6 @@ type AnchoredViewOptions struct {
 	KeepRoles []string
 }
 
-// Anchored view defaults, a five message window, three bookends and user plus assistant roles
-func NewAnchoredViewOptions() AnchoredViewOptions {
-	return AnchoredViewOptions{Window: 5, Bookend: 3, KeepRoles: []string{"user", "assistant"}}
-}
-
 // Anchored message window plus the first and last non empty messages outside it, empty when the anchor is foreign
 func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, aroundMessageID int64, o AnchoredViewOptions) (*pyjson.Object, error) {
 	bookend := max(o.Bookend, 0)

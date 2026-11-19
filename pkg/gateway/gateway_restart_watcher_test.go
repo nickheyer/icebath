@@ -179,9 +179,6 @@ func TestSpawnedRestartWatcherIsNotIdentifiedAsAGateway(t *testing.T) {
 	if LooksLikeGatewayCommandLine(cmdline) || LooksLikeGatewayRuntimeCommandLine(cmdline) {
 		t.Fatalf("%q", cmdline)
 	}
-	if sub, found := GatewaySpawnIntentSubcommand(cmdline); !found || sub != "run" {
-		t.Fatalf("spawn intent %q %v", sub, found)
-	}
 }
 
 func TestRespawnSourceCompiles(t *testing.T) {

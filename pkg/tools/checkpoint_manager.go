@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
@@ -76,39 +75,6 @@ func CheckpointManagerOptionsFromKwargs(enabled bool, kwargs map[string]any) (Ch
 			return CheckpointManagerOptions{}, err
 		}
 		*field.limit = n
-	}
-	return o, nil
-}
-
-// Reads the checkpoints section of a config document, accepting the legacy boolean form
-func CheckpointOptionsFromConfig(cfg map[string]any) (CheckpointManagerOptions, error) {
-	var section map[string]any
-	switch v := cfg["checkpoints"].(type) {
-	case bool:
-		section = map[string]any{"enabled": v}
-	case map[string]any:
-		section = v
-	default:
-		section = map[string]any{}
-	}
-	defaults := config.Defaults().Map("checkpoints")
-	merged := map[string]any{}
-	for k, v := range defaults {
-		merged[k] = v
-	}
-	for k, v := range section {
-		merged[k] = v
-	}
-	o := CheckpointManagerOptions{Enabled: truthy(merged["enabled"])}
-	var err error
-	if o.MaxSnapshots, err = checkpointConfigInt(merged, "max_snapshots", 20); err != nil {
-		return o, err
-	}
-	if o.MaxTotalSizeMB, err = checkpointConfigInt(merged, "max_total_size_mb", 500); err != nil {
-		return o, err
-	}
-	if o.MaxFileSizeMB, err = checkpointConfigInt(merged, "max_file_size_mb", 10); err != nil {
-		return o, err
 	}
 	return o, nil
 }

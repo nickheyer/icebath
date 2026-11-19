@@ -1,6 +1,9 @@
 package provider
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // SnapshotOwnerKey is the primary runtime field holding the owning entry's provenance
 const SnapshotOwnerKey = "custom_entry"
@@ -54,24 +57,87 @@ func PoolForAuxProvider(provider, poolKey string, cfg map[string]any, load func(
 	return EntryScopedPool(pool, poolKey, entry)
 }
 
-// Whether a provider and requested provider pair names a custom runtime, with its custom name when pinned
-func customIdentity(provider, requestedProvider string) (bool, string) {
-	custom, name := false, ""
-	for _, v := range []string{provider, requestedProvider} {
-		id := strings.ToLower(strings.TrimSpace(v))
-		if id == "custom" || strings.HasPrefix(id, CustomPoolPrefix) {
-			custom = true
-		}
-		if name == "" && strings.HasPrefix(id, CustomPoolPrefix) {
-			name = id
+// Built-in provider's own address when poolKey is a built-in's pool id, false when the pool belongs to a custom entry alone
+func builtinPoolAddress(ctx context.Context, poolKey string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(poolKey))
+	if key == "" || strings.HasPrefix(key, CustomPoolPrefix) {
+		return "", false
+	}
+	if key == "openrouter" {
+		return OpenRouterBaseURL, true
+	}
+	row := providerRegistry().get(ctx, key)
+	if row == nil {
+		return "", false
+	}
+	return registryInferenceBaseURL(row), true
+}
+
+// Configured custom endpoint a provider identity names the way the runtime resolves it, nil for a built-in, bare custom and auto
+func customEntryForIdentity(ctx context.Context, provider string, cfg map[string]any) *namedEntry {
+	name := strings.ToLower(strings.TrimSpace(provider))
+	if name == "" || name == "auto" || name == "custom" || name == "main" {
+		return nil
+	}
+	if strings.HasPrefix(name, CustomPoolPrefix) {
+		return namedCustomEntry(name, cfg)
+	}
+	path := NamedCustomProviderPath(ctx, name, cfg)
+	if path == nil {
+		return nil
+	}
+	if path.Section != "providers" {
+		return namedCustomEntry(name, cfg)
+	}
+	key := normalizeCustomPoolName(path.Key)
+	for _, ne := range iterCustomProviders(cfg) {
+		if normalizeCustomPoolName(cfgString(ne.entry["provider_key"])) == key {
+			found := ne
+			return &found
 		}
 	}
-	return custom, name
+	return nil
+}
+
+// Whether a provider and requested provider pair names a custom runtime at baseURL, with the entry's identity when one names it
+func customIdentity(ctx context.Context, provider, requestedProvider, baseURL string, cfg map[string]any) (bool, string) {
+	identities := []string{strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(requestedProvider))}
+	namesEntry := func(v string) bool {
+		if customEntryForIdentity(ctx, v, cfg) == nil {
+			return false
+		}
+		if _, builtin := builtinPoolAddress(ctx, v); !builtin {
+			return true
+		}
+		return customEntryForEndpoint(baseURL, v, cfg) != nil
+	}
+	name := ""
+	for _, v := range identities {
+		if strings.HasPrefix(v, CustomPoolPrefix) {
+			name = v
+			break
+		}
+	}
+	if name == "" {
+		for _, v := range identities {
+			if namesEntry(v) {
+				name = v
+				break
+			}
+		}
+	}
+	return name != "" || identities[0] == "custom" || identities[1] == "custom", name
+}
+
+// IsCustomRuntime reports a runtime identity that is a custom entry's, whose pool comes from LoadRuntimePool and never a raw LoadPool of a slug a built-in may share
+func IsCustomRuntime(env PoolEnv, provider, requestedProvider, baseURL string) bool {
+	custom, _ := customIdentity(env.hookContext(), provider, requestedProvider, baseURL, env.config())
+	return custom
 }
 
 // RuntimeEntryOwner is the credential provenance of the entry owning a custom runtime, names only
-func RuntimeEntryOwner(provider, requestedProvider, baseURL string, cfg map[string]any) map[string]any {
-	custom, name := customIdentity(provider, requestedProvider)
+func RuntimeEntryOwner(ctx context.Context, provider, requestedProvider, baseURL string, cfg map[string]any) map[string]any {
+	custom, name := customIdentity(ctx, provider, requestedProvider, baseURL, cfg)
 	if !custom {
 		return nil
 	}
@@ -94,7 +160,7 @@ func LoadRuntimePool(env PoolEnv, provider, baseURL, requestedProvider string, s
 // LoadRuntimePoolWith is LoadRuntimePool reading the resolved pool key through load
 func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider, baseURL, requestedProvider string, snapshot map[string]any) *Pool {
 	cfg := env.config()
-	custom, name := customIdentity(provider, requestedProvider)
+	custom, name := customIdentity(env.hookContext(), provider, requestedProvider, baseURL, cfg)
 	if !custom {
 		key := ResolveRuntimePoolKey(provider, baseURL, cfg)
 		if key == "" {
@@ -115,6 +181,9 @@ func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider
 	} else {
 		match = customEntryForEndpoint(baseURL, name, cfg)
 	}
+	if name != "" && match == nil {
+		return nil
+	}
 	key := ""
 	if match != nil && (name != "" || owner != nil) {
 		if keys := poolKeysForCustomEntry(match.name, match.entry); len(keys) > 0 {
@@ -131,4 +200,20 @@ func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider
 		entry = match.entry
 	}
 	return EntryScopedPool(load(env, key), key, entry)
+}
+
+// LoadRoutePool is the pool to attach when a live agent moves onto a route, a custom identity's entry scoped view or a built-in's own pool
+func LoadRoutePool(env PoolEnv, provider, baseURL, requestedProvider string) *Pool {
+	if IsCustomRuntime(env, provider, requestedProvider, baseURL) {
+		return LoadRuntimePool(env, provider, baseURL, requestedProvider, nil)
+	}
+	return LoadPool(env, strings.ToLower(strings.TrimSpace(provider)))
+}
+
+// LoadRoutePoolWith is LoadRoutePool reading every pool through load
+func LoadRoutePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider, baseURL, requestedProvider string) *Pool {
+	if IsCustomRuntime(env, provider, requestedProvider, baseURL) {
+		return LoadRuntimePoolWith(env, load, provider, baseURL, requestedProvider, nil)
+	}
+	return load(env, strings.ToLower(strings.TrimSpace(provider)))
 }

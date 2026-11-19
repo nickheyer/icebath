@@ -5,13 +5,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,66 +28,6 @@ func signRS256(t *testing.T, key *rsa.PrivateKey, header, claims map[string]any)
 		t.Fatal(err)
 	}
 	return signing + "." + enc.EncodeToString(sig)
-}
-
-func publicPEM(t *testing.T, key *rsa.PrivateKey) string {
-	t.Helper()
-	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
-}
-
-func TestDecodeChecksSignatureAlgorithmAndClaims(t *testing.T) {
-	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	other, _ := rsa.GenerateKey(rand.Reader, 2048)
-	pub := publicPEM(t, key)
-	now := time.Now().Unix()
-	base := func(over map[string]any) map[string]any {
-		c := map[string]any{"aud": "agent:a", "iss": "https://iss", "iat": now, "nbf": now - 5, "exp": now + 300}
-		for k, v := range over {
-			if v == nil {
-				delete(c, k)
-			} else {
-				c[k] = v
-			}
-		}
-		return c
-	}
-	hdr := map[string]any{"alg": "RS256", "typ": "JWT"}
-	opts := DecodeOptions{Algorithms: []string{"RS256", "ES256"}, Audience: "agent:a", Issuer: "https://iss", Leeway: 30 * time.Second, Require: []string{"exp", "aud"}}
-	claims, err := Decode(signRS256(t, key, hdr, base(nil)), pub, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if aud, _ := claims.Get("aud"); aud != "agent:a" {
-		t.Fatalf("claims %v", claims)
-	}
-	cases := []struct {
-		name  string
-		token string
-		class string
-	}{
-		{"wrong audience", signRS256(t, key, hdr, base(map[string]any{"aud": "agent:b"})), "InvalidAudienceError"},
-		{"audience list", signRS256(t, key, hdr, base(map[string]any{"aud": []any{"x", 1}})), "InvalidAudienceError"},
-		{"missing exp", signRS256(t, key, hdr, base(map[string]any{"exp": nil})), "MissingRequiredClaimError"},
-		{"expired past leeway", signRS256(t, key, hdr, base(map[string]any{"exp": now - 31})), "ExpiredSignatureError"},
-		{"future iat", signRS256(t, key, hdr, base(map[string]any{"iat": now + 600})), "ImmatureSignatureError"},
-		{"wrong issuer", signRS256(t, key, hdr, base(map[string]any{"iss": "https://other"})), "InvalidIssuerError"},
-		{"tampered", signRS256(t, other, hdr, base(nil)), "InvalidSignatureError"},
-		{"alg not allowed", signRS256(t, key, map[string]any{"alg": "RS512"}, base(nil)), "InvalidAlgorithmError"},
-		{"segments", "a.b", "DecodeError"},
-	}
-	for _, tc := range cases {
-		_, err := Decode(tc.token, pub, opts)
-		if e, ok := err.(*Error); !ok || e.Class != tc.class {
-			t.Errorf("%s: %v", tc.name, err)
-		}
-	}
-	if _, err := Decode(signRS256(t, key, hdr, base(map[string]any{"exp": now - 10})), pub, opts); err != nil {
-		t.Fatalf("expiry inside leeway refused %v", err)
-	}
 }
 
 func TestJWKClientMatchesKidRefetchesAndSendsHeaders(t *testing.T) {
@@ -114,8 +53,14 @@ func TestJWKClientMatchesKidRefetchesAndSendsHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Decode(token, jwk.Key, DecodeOptions{Algorithms: []string{"RS256"}, Audience: "a"}); err != nil {
+	parts := strings.Split(token, ".")
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
 		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	if pub, ok := jwk.Key.(*rsa.PublicKey); !ok || rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], sig) != nil {
+		t.Fatalf("fetched key %T does not verify the token signature", jwk.Key)
 	}
 	if accept.Load() != "application/json" || agent.Load() != "icebath-agent/1.0" || hits.Load() != 1 {
 		t.Fatalf("request %v %v %d", accept.Load(), agent.Load(), hits.Load())

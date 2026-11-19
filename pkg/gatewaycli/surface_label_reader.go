@@ -26,7 +26,7 @@ type SearchSessionsOptions struct {
 	SkipLaunchStubs bool
 }
 
-// Wraps a session store so its listings read the labels the classic CLI wrote
+// Wraps a session store so its listings read the labels CLI sessions were stored under
 func NewSurfaceLabelReader(db *state.SessionDB) *SurfaceLabelReader {
 	return &SurfaceLabelReader{wrapped: db}
 }

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/state"
 )
 
 type nested struct {
@@ -96,31 +94,5 @@ func TestSanitizeHookPayloadRespectsCap(t *testing.T) {
 	small := SanitizeHookPayload(map[string]any{"a": 1})
 	if small.(map[string]any)["a"] != 1 {
 		t.Fatal("small payload returned as is")
-	}
-}
-
-func TestUsageAndResponsePayloads(t *testing.T) {
-	resp := &Response{Model: "m", Provider: "upstream", FinishReason: "tool_calls", Usage: Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 2, CacheWriteTokens: 1, ReasoningTokens: 3},
-		Message: &state.Message{Role: "assistant", Content: "", ToolCalls: []state.ToolCall{{ID: "call_1", Type: "function", Function: state.ToolCallFunction{Name: "web_search", Arguments: `{"q": "hi"}`}}}}}
-	usage := UsageSummaryForHook(resp)
-	if usage["prompt_tokens"] != 13 || usage["total_tokens"] != 18 || usage["request_count"] != 1 {
-		t.Fatalf("usage %v", usage)
-	}
-	if UsageSummaryForHook(&Response{}) != nil || UsageSummaryForHook(nil) != nil {
-		t.Fatal("empty usage is nil")
-	}
-	payload := ResponsePayloadForHook(resp, "tool_calls").(map[string]any)
-	if payload["model"] != "m" || payload["upstream_provider"] != "upstream" || payload["finish_reason"] != "tool_calls" {
-		t.Fatalf("payload %v", payload)
-	}
-	msg := payload["assistant_message"].(map[string]any)
-	calls := msg["tool_calls"].([]any)
-	if len(calls) != 1 || calls[0].(map[string]any)["function"].(map[string]any)["name"] != "web_search" {
-		t.Fatalf("tool calls %v", calls)
-	}
-	req := RequestPayloadForHook(&Request{Model: "m", Messages: []*state.Message{{Role: "user", Content: "hi"}}, Tools: []map[string]any{{"type": "function"}}, MaxTokens: 5, Stream: true}).(map[string]any)
-	body := req["body"].(map[string]any)
-	if req["method"] != "POST" || body["model"] != "m" || body["max_tokens"] != 5 || body["stream"] != true || len(body["messages"].([]any)) != 1 {
-		t.Fatalf("request payload %v", req)
 	}
 }

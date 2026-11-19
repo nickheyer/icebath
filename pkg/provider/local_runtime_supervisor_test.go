@@ -155,7 +155,7 @@ func lr5Models(entries ...[2]string) map[string]any {
 func lr5ResetBoot(t *testing.T) {
 	t.Helper()
 	bootMu.Lock()
-	prevSup, prevEngine, prevHooked := localSupervisor, localServingEngine, localExitHooked
+	prevSup, prevEngine := localSupervisor, localServingEngine
 	localSupervisor, localServingEngine = nil, nil
 	bootMu.Unlock()
 	prevInstalled, prevStart, prevState := bootInstalledEngine, bootStartSupervisor, bootStateEndpoint
@@ -163,7 +163,7 @@ func lr5ResetBoot(t *testing.T) {
 	prevNvidia, prevClass, prevSweepSleep := bootNvidiaQuery, bootGPUClass, bootSweeperSleep
 	t.Cleanup(func() {
 		bootMu.Lock()
-		localSupervisor, localServingEngine, localExitHooked = prevSup, prevEngine, prevHooked
+		localSupervisor, localServingEngine = prevSup, prevEngine
 		bootMu.Unlock()
 		bootInstalledEngine, bootStartSupervisor, bootStateEndpoint = prevInstalled, prevStart, prevState
 		bootPresetsStaleFn, bootAdmittedModelsMax, bootGeneratePresets = prevStale, prevMax, prevGen

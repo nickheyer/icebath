@@ -8,12 +8,10 @@ import (
 	"io"
 	"math/big"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -21,18 +19,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var (
 	// Mutations the owner refuses without the execution generation they were read at
 	generationFenced = map[string]bool{"delete": true, "rewind": true, "reset": true, "branch": true, "model": true,
 		"compress": true, "workspace": true, "launch": true}
-	// Launch options of the classic CLI that are creation policy on the gateway session
+	// Launch options of the one shot chat that are creation policy on the gateway session
 	launchPolicyFields = []string{"model", "provider", "toolsets", "reasoning", "api_key", "base_url", "max_turns",
 		"ignore_rules", "checkpoints", "pass_session_id", "skills"}
-	canonicalLocalID = regexp.MustCompile(`^local-([0-9a-f]{8})[0-9a-f]{56}$`)
-	// Tree the classic CLI recorded for its worktree flag, assigned by the CLI package
+	// Tree the one shot chat recorded for its worktree flag, assigned by the CLI package
 	RecordedWorktree = func() map[string]string { return nil }
 )
 
@@ -46,7 +42,7 @@ func (e *TitleInUseError) Error() string      { return e.Msg }
 func (e *TitleInUseError) Unwrap() error      { return e.Cause }
 func (e *TitleInUseError) PyTypeName() string { return "ValueError" }
 
-// What a session open reads off the classic CLI
+// What a session open reads off the one shot chat
 type OpenSessionCLI struct {
 	SessionID           string
 	Resumed             bool
@@ -55,14 +51,7 @@ type OpenSessionCLI struct {
 	ExplicitIgnoreRules any
 }
 
-// What a workspace move reads off the classic CLI
-type WorkspaceCLI struct {
-	SessionDB          any
-	GatewaySessionOpen bool
-	SessionID          string
-}
-
-// Session store of the classic CLI backed by the shared gateway session, reads local and writes gateway verbs
+// Session store of the one shot chat backed by the shared gateway session, reads local and writes gateway verbs
 type GatewaySessionStore struct {
 	Connection *GatewayConnection
 	// Destination of the config warning a create prints
@@ -85,9 +74,6 @@ func NewGatewaySessionStore(connection *GatewayConnection) *GatewaySessionStore 
 
 // Store over the process wide connection
 func SessionStore() *GatewaySessionStore { return NewGatewaySessionStore(nil) }
-
-// True until the viewer's gateway connection is final, a gateway hang up staying true
-func (s *GatewaySessionStore) Bool() bool { return !s.Connection.Final() }
 
 // Snapshot of the opened session, nil until one is open
 func (s *GatewaySessionStore) Current() *pyjson.Object {
@@ -125,24 +111,6 @@ func (s *GatewaySessionStore) Reader(ctx context.Context) *SurfaceLabelReader {
 		s.reader = NewSurfaceLabelReader(db)
 	}
 	return s.reader
-}
-
-// Python GatewayClientError carrying a message
-func gatewayClientError(msg string) error { return &gateway.GatewayClientError{Msg: msg} }
-
-// Refusal of a session store write the gateway does not carry
-func (s *GatewaySessionStore) Refused(name string) error {
-	return gatewayClientError(fmt.Sprintf("%s is not on the gateway session yet; nothing was written", name))
-}
-
-// Refuses marking a handoff, a write the gateway session does not carry
-func (s *GatewaySessionStore) RequestHandoff(context.Context, string, string) (bool, error) {
-	return false, s.Refused("request_handoff")
-}
-
-// Refuses failing a handoff, a write the gateway session does not carry
-func (s *GatewaySessionStore) FailHandoff(context.Context, string, string, []string) (bool, error) {
-	return false, s.Refused("fail_handoff")
 }
 
 // One gateway request on this store's connection
@@ -304,43 +272,6 @@ func (s *GatewaySessionStore) ClientEnv(ctx context.Context) (map[string]any, er
 		s.mu.Unlock()
 	}
 	return ClientEnvPolicy(ctx, parameters)
-}
-
-// Forks the active transcript into a child the gateway attaches this viewer to, returning the child id
-func (s *GatewaySessionStore) Branch(ctx context.Context, sessionID, title string) (string, error) {
-	snapshot, err := s.callObject(ctx, "session.resume", map[string]any{"session_id": sessionID})
-	if err != nil {
-		return "", err
-	}
-	revision, err := snapshotField(snapshot, "revision")
-	if err != nil {
-		return "", err
-	}
-	generation, err := snapshotField(snapshot, "execution_generation")
-	if err != nil {
-		return "", err
-	}
-	payload := map[string]any{}
-	if title != "" {
-		payload["title"] = title
-	}
-	receipt, err := s.callObject(ctx, "session.mutate", map[string]any{"session_id": sessionID, "request_id": uuid4Hex(),
-		"expected_revision": revision, "expected_generation": generation, "operation": "branch", "payload": payload})
-	if err != nil {
-		return "", err
-	}
-	child, _ := receipt.Vals["branched_session_id"].(string)
-	if child == "" {
-		return "", gatewayClientError("branch_failed")
-	}
-	attached, err := s.Attach(ctx, child, false)
-	if err != nil {
-		return "", err
-	}
-	if _, err := s.adopt(attached); err != nil {
-		return "", err
-	}
-	return child, nil
 }
 
 // Required snapshot member, a KeyError when the owner left it out
@@ -511,16 +442,6 @@ func (s *GatewaySessionStore) RewindUserTurn(ctx context.Context, sessionID stri
 		RewoundCount: pyIntOf(receipt.Vals["rewound_count"]), TurnsUndone: len(durableUser) - userOrdinal}, nil
 }
 
-// Persists the session's own approval bypass on the gateway route, where approvals run
-func (s *GatewaySessionStore) SetSessionYolo(ctx context.Context, sessionID string, enabled bool) error {
-	value := "0"
-	if enabled {
-		value = "1"
-	}
-	_, err := s.Call(ctx, "config.set", map[string]any{"session_id": sessionID, "key": "yolo", "value": value})
-	return err
-}
-
 // Id of another session holding a title, empty without a reader, a title or a holder
 func (s *GatewaySessionStore) titleHolder(ctx context.Context, sessionID, title string) (string, error) {
 	db := s.Reader(ctx)
@@ -545,41 +466,6 @@ func (s *GatewaySessionStore) leave(sessionID string) any {
 	subscription := cached.SubscriptionID
 	cached.SubscriptionID = nil
 	return subscription
-}
-
-// Deletes a session on the gateway, a refusal handing back only the attachment its own read made
-func (s *GatewaySessionStore) DeleteSession(ctx context.Context, sessionID string) (bool, error) {
-	s.mu.Lock()
-	delete(s.snapshots, sessionID)
-	s.mu.Unlock()
-	snapshot, err := s.callObject(ctx, "session.resume", map[string]any{"session_id": sessionID})
-	if err != nil {
-		return false, err
-	}
-	resolved := sessionID
-	if pyrepr.Truthy(snapshot.Vals["session_id"]) {
-		resolved = pyrepr.Str(snapshot.Vals["session_id"])
-	}
-	held := false
-	if cached := s.Connection.LookupState(resolved); cached != nil {
-		cached.Lock()
-		held = cached.SubscriptionID != nil
-		cached.Unlock()
-	}
-	if _, err := s.Mutate(ctx, sessionID, "delete", map[string]any{}, snapshot); err != nil {
-		if isClientError(err) && !held && pyrepr.Truthy(snapshot.Vals["subscription_id"]) {
-			_, derr := s.Call(ctx, "session.detach", map[string]any{"session_id": resolved, "subscription_id": snapshot.Vals["subscription_id"]})
-			if derr != nil {
-				if !isClientError(derr) {
-					return false, derr
-				}
-				pkgLog().Debug(fmt.Sprintf("session.detach after a refused delete failed: %s", derr.Error()))
-			}
-		}
-		return false, err
-	}
-	s.leave(sessionID)
-	return true, nil
 }
 
 // Detaches this viewer with an end reason, the owner ending the idle row once no viewer is left
@@ -635,107 +521,6 @@ func (s *GatewaySessionStore) EndSession(ctx context.Context, sessionID, reason 
 	return nil
 }
 
-// Deletes a session only when its row has no messages, no title and no children, never on doubt
-func (s *GatewaySessionStore) DeleteSessionIfEmpty(ctx context.Context, sessionID string) (bool, error) {
-	db := s.Reader(ctx)
-	if db == nil {
-		return false, nil
-	}
-	rows, err := db.DB().ReadAll(ctx, "SELECT 1 FROM sessions WHERE id = ? AND title IS NULL"+
-		" AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.session_id = sessions.id)"+
-		" AND NOT EXISTS (SELECT 1 FROM sessions child WHERE child.parent_session_id = sessions.id)", sessionID)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("empty-session probe failed: %s", err.Error()))
-		return false, nil
-	}
-	if len(rows) == 0 {
-		return false, nil
-	}
-	deleted, err := s.DeleteSession(ctx, sessionID)
-	if err != nil {
-		if !isClientError(err) {
-			return false, err
-		}
-		pkgLog().Debug(fmt.Sprintf("empty session prune refused: %s", err.Error()))
-		return false, nil
-	}
-	return deleted, nil
-}
-
-// Banner fields of the current session snapshot as welcome banner arguments, nil until a session is open
-func (s *GatewaySessionStore) BannerInventory() map[string]any {
-	var info *pyjson.Object
-	if current := s.Current(); current != nil {
-		info, _ = pyjson.AsObject(current.Vals["info"])
-	}
-	if info == nil {
-		return nil
-	}
-	if _, ok := info.Get("tools"); !ok {
-		return nil
-	}
-	grouped, _ := pyjson.AsObject(info.Vals["tools"])
-	if grouped == nil {
-		grouped = pyjson.NewObject()
-	}
-	toolsetOf := map[string]any{}
-	tools := []any{}
-	for _, toolset := range grouped.Keys {
-		names, _ := grouped.Vals[toolset].([]any)
-		for _, name := range names {
-			toolsetOf[pyrepr.Str(name)] = toolset
-			tools = append(tools, map[string]any{"type": "function", "function": map[string]any{"name": name}})
-		}
-	}
-	availability, _ := plainDict(info.Vals["tool_availability"])
-	if len(availability) == 0 {
-		availability = map[string]any{"available_toolsets": []any{}, "unavailable_toolsets": []any{}, "lazy_tools": []any{},
-			"disabled_tools": []any{}}
-	}
-	unavailable, _ := availability["unavailable_toolsets"].([]any)
-	for _, raw := range unavailable {
-		item, _ := raw.(map[string]any)
-		names, _ := item["tools"].([]any)
-		for _, name := range names {
-			if _, known := toolsetOf[pyrepr.Str(name)]; known {
-				continue
-			}
-			label, ok := item["id"]
-			if !ok {
-				label, ok = item["name"]
-			}
-			if !ok {
-				label = ""
-			}
-			toolsetOf[pyrepr.Str(name)] = label
-		}
-	}
-	skills, _ := pyjson.AsObject(info.Vals["skills"])
-	if skills == nil {
-		skills = pyjson.NewObject()
-	}
-	servers, _ := info.Vals["mcp_servers"].([]any)
-	return map[string]any{
-		"tools":                      tools,
-		"get_toolset_for_tool":       func(name string) any { return toolsetOf[name] },
-		"availability":               availability,
-		"skills_by_category":         skills,
-		"mcp_status":                 append([]any{}, servers...),
-		"enabled_toolsets":           info.Vals["enabled_toolsets"],
-		"context_length":             info.Vals["context_length"],
-		"cwd":                        info.Vals["cwd"],
-		"tool_availability_warnings": info.Vals["tool_availability_warnings"],
-	}
-}
-
-// Eight character banner label of a canonical durable id, every other id as is
-func SessionLabel(sessionID string) string {
-	if match := canonicalLocalID.FindStringSubmatch(sessionID); match != nil {
-		return match[1]
-	}
-	return sessionID
-}
-
 // Explicit launch flags as session.create policy, unset flags leaving the gateway to resolve the profile default
 func creationPolicy(launch map[string]any) map[string]any {
 	fields := map[string]any{}
@@ -746,7 +531,7 @@ func creationPolicy(launch map[string]any) map[string]any {
 	requested := RequestedPolicy(fields)
 	requested.Delete("source")
 	policy, _ := pyjson.Plain(requested).(map[string]any)
-	for k, v := range classicOnlyPolicy(launch) {
+	for k, v := range launchOnlyPolicy(launch) {
 		policy[k] = v
 	}
 	env := EnvLaunchFlags()
@@ -808,8 +593,8 @@ func launchCwd() (string, error) {
 	return pypath.Realpath(chosen, pypath.Lax)
 }
 
-// Run budget and verbose flags of the classic CLI as session policy
-func classicOnlyPolicy(launch map[string]any) map[string]any {
+// Run budget and verbose flags of the one shot chat as session policy
+func launchOnlyPolicy(launch map[string]any) map[string]any {
 	policy := map[string]any{}
 	if launch["run_budget"] != nil {
 		policy["run_budget"] = pyFloatOf(launch["run_budget"])
@@ -852,7 +637,7 @@ func (s *GatewaySessionStore) relaunch(ctx context.Context, sessionID string, la
 	if info, ok := pyjson.AsObject(snapshot.Vals["info"]); ok {
 		frozen, _ = plainDict(info.Vals["launch_request"])
 	}
-	for key, value := range classicOnlyPolicy(launch) {
+	for key, value := range launchOnlyPolicy(launch) {
 		if !pyjson.Equal(frozen[key], value) {
 			overrides[key] = value
 		}
@@ -864,24 +649,6 @@ func (s *GatewaySessionStore) relaunch(ctx context.Context, sessionID string, la
 		return nil, err
 	}
 	return s.callObject(ctx, "session.resume", map[string]any{"session_id": sessionID})
-}
-
-// Moves the gateway session's frozen cwd into a new worktree first, then this process and TERMINAL_CWD follow
-func MoveCLIWorkspace(ctx context.Context, cli WorkspaceCLI, wtInfo map[string]string) error {
-	cwd, ok := wtInfo["path"]
-	if !ok {
-		return &pyrepr.FormatError{Class: "KeyError", Msg: "'path'"}
-	}
-	if store, ok := cli.SessionDB.(*GatewaySessionStore); ok && store != nil && cli.GatewaySessionOpen {
-		if _, err := store.Mutate(ctx, cli.SessionID, "workspace", map[string]any{"cwd": cwd}, nil); err != nil {
-			return err
-		}
-		tools.RecordTUIWorktree(ctx, wtInfo)
-	}
-	if err := os.Chdir(cwd); err != nil {
-		return err
-	}
-	return os.Setenv("TERMINAL_CWD", cwd)
 }
 
 // Thirty two random hex digits the way uuid4 renders

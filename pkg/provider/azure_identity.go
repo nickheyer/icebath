@@ -82,24 +82,6 @@ func NewEntraIdentityConfig(scope string, excludeInteractiveBrowser bool) EntraI
 	return EntraIdentityConfig{Scope: scope, ExcludeInteractiveBrowser: excludeInteractiveBrowser}
 }
 
-// ToDict is the config as the model.entra block stores it
-func (c EntraIdentityConfig) ToDict() map[string]any {
-	return map[string]any{"scope": c.Scope, "exclude_interactive_browser": c.ExcludeInteractiveBrowser}
-}
-
-// EntraIdentityConfigFromDict reads a model.entra block, the scope falling back to defaultScope then the default
-func EntraIdentityConfigFromDict(data map[string]any, defaultScope string) EntraIdentityConfig {
-	scope := strings.TrimSpace(cfgString(data["scope"]))
-	if scope == "" {
-		scope = defaultScope
-	}
-	exclude := true
-	if v, ok := data["exclude_interactive_browser"]; ok {
-		exclude = pyTruthy(v)
-	}
-	return NewEntraIdentityConfig(scope, exclude)
-}
-
 // Bearer token with its epoch expiry and the epoch after which a refresh is due
 type EntraAccessToken struct {
 	Token     string
@@ -1403,22 +1385,9 @@ func BuildEntraTokenProviderIn(ctx context.Context, cfg *EntraIdentityConfig, sc
 	return TagCredentialSource(src, CredentialSourceEntraID).Func(), nil
 }
 
-// BuildEntraTokenProvider is the process profile minter, a credential build failure answered by every mint
-func BuildEntraTokenProvider(cfg *EntraIdentityConfig, scope string, excludeInteractiveBrowser bool) func(context.Context) (string, error) {
-	src, err := BuildEntraTokenProviderIn(context.Background(), cfg, scope, excludeInteractiveBrowser)
-	if err != nil {
-		return TagCredentialSource(func(context.Context) (string, error) { return "", err }, CredentialSourceEntraID).Func()
-	}
-	return src
-}
-
 // Bearer minter of a scope with the default chain settings, built for the context profile
 func entraTokenProviderIn(ctx context.Context, scope string) (func(context.Context) (string, error), error) {
 	return BuildEntraTokenProviderIn(ctx, nil, scope, true)
-}
-
-func entraTokenProvider(scope string) (func(context.Context) (string, error), error) {
-	return entraTokenProviderIn(context.Background(), scope)
 }
 
 // Token or error from one chain walk, the context error on a cancel, nil when the deadline passes first
@@ -1453,21 +1422,6 @@ func entraProbeToken(ctx context.Context, cfg EntraIdentityConfig, timeout time.
 	case <-t.C:
 		return nil
 	}
-}
-
-// HasAzureIdentityCredentials reports whether the chain mints a token before the deadline, never failing loudly
-func HasAzureIdentityCredentials(ctx context.Context, cfg *EntraIdentityConfig, scope string, timeout time.Duration) bool {
-	result := entraProbeToken(ctx, resolveEntraConfig(cfg, scope, true), timeout)
-	if result == nil {
-		pkgLog().Debug(fmt.Sprintf("Entra token service probe timed out after %vs", timeout.Seconds()))
-		return false
-	}
-	if e, ok := result["error"]; ok {
-		pkgLog().Debug(fmt.Sprintf("Entra credential probe failed: %v", e))
-		return false
-	}
-	tok, _ := result["token"].(EntraAccessToken)
-	return tok.Token != ""
 }
 
 // Env driven credential sources in chain order with their presence checks

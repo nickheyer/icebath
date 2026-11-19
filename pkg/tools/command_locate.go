@@ -68,16 +68,6 @@ func (r commandResolution) Command() []string {
 	return nil
 }
 
-// Label of the first present candidate, none when nothing was found
-func (r commandResolution) Source() string {
-	for _, c := range r.Candidates {
-		if c.Present {
-			return c.Source
-		}
-	}
-	return "none"
-}
-
 // Candidates that were found, in probe order
 func (r commandResolution) PresentCandidates() []commandCandidate {
 	var out []commandCandidate
@@ -139,6 +129,11 @@ func locateCommand(name string, ctx *commandLookupContext, knownDirs []string) c
 
 // Argv of the first present PATH candidate for a command name, nil when it is not found
 func LocateCommand(name string) []string { return locateCommand(name, nil, nil).Command() }
+
+// Argv of the first present candidate for a command on PATH and then in the per user bin directory, nil when it is not found
+func LocateUserCommand(name string) []string {
+	return locateCommand(name, nil, userLocalBin()).Command()
+}
 
 // PATH hit for a bare name honouring an explicit search path and, on Windows, an explicit PATHEXT
 func commandWhich(name string, ctx *commandLookupContext) (string, bool) {

@@ -99,26 +99,6 @@ func TestRoundTripMarkBothFlagsIndependently(t *testing.T) {
 	}
 }
 
-func TestDetectOpenclawResidueReturnsTrueWhenOpenclawDirPresent(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".openclaw"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if !DetectOpenclawResidue(dir) {
-		t.Fatal("residue directory not detected")
-	}
-}
-
-func TestDetectOpenclawResidueReturnsFalseWhenPathIsAFile(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".openclaw"), []byte("oops"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if DetectOpenclawResidue(dir) {
-		t.Fatal("stray file detected as residue")
-	}
-}
-
 func TestProfileBuildModeNonMappingConfigSafe(t *testing.T) {
 	if ProfileBuildMode("not a dict") != "ask" {
 		t.Fatal("string config is not ask")

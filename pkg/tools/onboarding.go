@@ -3,20 +3,17 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Stable config.yaml keys under onboarding.seen
 const (
-	OnboardingBusyInputFlag       = "busy_input_prompt"
-	OnboardingToolProgressFlag    = "tool_progress_prompt"
-	OnboardingOpenclawResidueFlag = "openclaw_residue_cleanup"
-	OnboardingProfileBuildFlag    = "profile_build_offered"
+	OnboardingBusyInputFlag    = "busy_input_prompt"
+	OnboardingToolProgressFlag = "tool_progress_prompt"
+	OnboardingProfileBuildFlag = "profile_build_offered"
 )
 
 // Busy input hints keyed by the busy_input_mode just applied, interrupt being the default branch
@@ -34,18 +31,6 @@ var busyInputHintsGateway = map[string]string{
 const busyInputHintGatewayDefault = "\U0001F4A1 First-time tip — I just interrupted my current task to answer you. Send `/busy queue` to queue " +
 	"follow-ups for after the current task instead, `/busy steer` to inject them mid-run without " +
 	"interrupting, or `/busy status` to check. This notice won't appear again."
-
-var busyInputHintsCLI = map[string]string{
-	"queue": "(tip) Your message was queued for the next turn. Use /busy interrupt to make Enter stop the current " +
-		"run instead, or /busy steer to inject mid-run. This tip only shows once.",
-	"steer": "(tip) Your message was steered into the current run; it arrives after the next tool call. Use /busy " +
-		"interrupt or /busy queue to change this. This tip only shows once.",
-	"redirect": "(tip) Your correction redirected the current run without discarding completed work. Use /stop to " +
-		"cancel or /busy queue to wait for a separate turn. This tip only shows once.",
-}
-
-const busyInputHintCLIDefault = "(tip) Your message interrupted the current run. Use /busy queue to queue messages for the next turn " +
-	"instead, or /busy steer to inject mid-run. This tip only shows once."
 
 // Markdown hint shown the first time a user messages while the agent is busy
 func BusyInputHintGateway(mode string) string {
@@ -65,19 +50,6 @@ func ToolProgressHintGateway() string {
 func ToolProgressHintCLI() string {
 	return "(tip) That tool ran for a while. Use /verbose to cycle tool-progress " +
 		"display modes (all -> new -> off -> verbose). This tip only shows once."
-}
-
-// True when the home, the user's by default, holds an .openclaw directory
-func DetectOpenclawResidue(home string) bool {
-	if home == "" {
-		h, err := pypath.PathHome()
-		if err != nil {
-			return false
-		}
-		home = h
-	}
-	st, err := os.Stat(filepath.Join(home, ".openclaw"))
-	return err == nil && st.IsDir()
 }
 
 // The onboarding mapping of a config, empty for anything else

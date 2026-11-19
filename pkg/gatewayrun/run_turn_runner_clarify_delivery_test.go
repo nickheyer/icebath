@@ -131,3 +131,8 @@ func TestNoResponseReturnsTimeoutSentinel(t *testing.T) {
 		t.Fatalf("got %q %v", response, answered)
 	}
 }
+
+// Abort sentinel of a clarify prompt send, empty when the caller proceeds to the wait
+func clarifySendDisposition(fut *concurrentFuture, sessionKey string) string {
+	return abortForOutcome(approvalSendOutcome(fut, clarifySendAckWindow), sessionKey)
+}

@@ -922,15 +922,6 @@ func (vercelSandboxBackend) CheckRequirements(env *Env, cfg map[string]any) erro
 	return fmt.Errorf("Vercel Sandbox backend %s VERCEL_OIDC_TOKEN is supported for one-off local development only.", head)
 }
 
-// Probe reports the auth status for the picker
-func (vercelSandboxBackend) Probe() (string, string) {
-	status := DescribeVercelAuth(nil)
-	if status.OK {
-		return "ready", status.Label
-	}
-	return "needs_setup", "Vercel auth " + status.Label
-}
-
 // SetupInstructions explains the image, persistence and auth settings
 func (vercelSandboxBackend) SetupInstructions(env *Env) []string {
 	return []string{

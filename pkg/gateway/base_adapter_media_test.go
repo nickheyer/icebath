@@ -161,7 +161,7 @@ func TestRenderMessageEventMapsOntoSink(t *testing.T) {
 	a := newBaseFake(PlatformTelegram)
 	sink := &sinkRecorder{}
 	for _, ev := range []StreamEvent{MessageChunk{Text: "hi"}, MessageChunk{}, MessageStop{}, MessageStop{Final: true},
-		Commentary{Text: "c"}, Commentary{}, NewToolCallFinished("t")} {
+		Commentary{Text: "c"}, Commentary{}, ToolCallFinished{ToolName: "t", OK: true}} {
 		a.RenderMessageEvent(ev, sink)
 	}
 	if len(sink.calls) != 3 || sink.calls[0] != "delta:hi" || sink.calls[1] != "break" || sink.calls[2] != "commentary:c" {

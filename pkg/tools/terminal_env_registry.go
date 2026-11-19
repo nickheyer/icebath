@@ -96,8 +96,3 @@ func safeStripEnvKeys(p BackendProvider) (keys []string) {
 	}()
 	return p.StripEnvKeys()
 }
-
-// Generation pair of the plugin terminal backend registry for a scope
-func TerminalEnvRegistryGeneration(ctx context.Context, scope string) providerregistry.Generation {
-	return terminalEnvRegistry.RegistryGeneration(ctx, scope)
-}

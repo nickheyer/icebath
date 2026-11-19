@@ -507,7 +507,7 @@ func absorbTurnResult(ctx context.Context, sid string, session *tuihost.Session,
 		if hasMessages {
 			statusNote = commitTurnHistory(session, messages, st.history, st.historyVersion)
 		}
-		syncSessionKeyAfterCompress(ctx, sid, session, false, true)
+		syncSessionKeyAfterCompress(ctx, sid, session, false)
 	}
 	return statusNote
 }
@@ -695,7 +695,6 @@ func releaseTurnScopes(ctx context.Context, sid string, session *tuihost.Session
 	if st.oneTurnRestore != nil {
 		if failure := catchPanic(func() {
 			restoreAgentModelRuntime(ctx, st.agent, st.oneTurnRestore)
-			restartSlashWorker(ctx, sid, session)
 			persistLiveSessionRuntime(ctx, session)
 			persistLiveSessionSystemPrompt(ctx, session)
 		}); failure != nil {

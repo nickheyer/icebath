@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
@@ -134,39 +133,11 @@ func TestGatewayExecQuickCommandReplies(t *testing.T) {
 	}
 }
 
-func TestCLIExecQuickCommandReplies(t *testing.T) {
-	ctx := quickTestContext(t)
-	env := quickToolEnv()
-	cases := []struct {
-		cmd  any
-		want CLIQuickReply
-	}{
-		{"echo daily-note", CLIQuickReply{"daily-note", CLIQuickOutput}},
-		{"echo out; echo err >&2; exit 3", CLIQuickReply{"out", CLIQuickOutput}},
-		{"echo only-err >&2", CLIQuickReply{"only-err", CLIQuickOutput}},
-		{"true", CLIQuickReply{"Command returned no output", CLIQuickDim}},
-		{[]byte("echo bytes"), CLIQuickReply{"bytes", CLIQuickOutput}},
-		{"printf 'a\\r\\nb\\rc\\r\\n'", CLIQuickReply{"a\nb\nc", CLIQuickOutput}},
-		{"printf 'ok\\377\\342\\202x'", CLIQuickReply{"ok��x", CLIQuickOutput}},
-		{[]any{"echo", "hi"}, CLIQuickReply{"Command returned no output", CLIQuickDim}},
-		{[]any{"echo $0", "zero"}, CLIQuickReply{"zero", CLIQuickOutput}},
-		{map[string]any{"echo from-key": 1}, CLIQuickReply{"from-key", CLIQuickOutput}},
-	}
-	for _, c := range cases {
-		if got, err := RunCLIExecQuickCommand(ctx, env, c.cmd); err != nil || got != c.want {
-			t.Fatalf("%v replied %+v err %v want %+v", c.cmd, got, err, c.want)
-		}
-	}
-}
-
-func TestQuickWhitespaceStdoutFallsThroughOnlyOnTheCLI(t *testing.T) {
+func TestQuickWhitespaceStdoutIsNoOutputOnTheGateway(t *testing.T) {
 	ctx := quickTestContext(t)
 	cmd := "printf ' \\n\\t'; echo from-stderr >&2"
 	if got, err := RunGatewayExecQuickCommand(ctx, quickToolEnv(), cmd, ""); err != nil || got != "Command returned no output." {
 		t.Fatalf("gateway %q %v", got, err)
-	}
-	if got, err := RunCLIExecQuickCommand(ctx, quickToolEnv(), cmd); err != nil || got != (CLIQuickReply{"from-stderr", CLIQuickOutput}) {
-		t.Fatalf("cli %+v %v", got, err)
 	}
 }
 
@@ -177,66 +148,9 @@ func TestQuickExecScrubsCredentialsAndRedactsOutput(t *testing.T) {
 	if err != nil || strings.Contains(got, "sk-or-secret-12345") || !strings.Contains(got, "PATH=") {
 		t.Fatalf("gateway env leaked or did not run %v %q", err, got)
 	}
-	cli, err := RunCLIExecQuickCommand(ctx, quickToolEnv(), "env")
-	if err != nil || strings.Contains(cli.Text, "sk-or-secret-12345") || !strings.Contains(cli.Text, "PATH=") {
-		t.Fatalf("cli env leaked or did not run %v %q", err, cli.Text)
-	}
 	secret := "echo sk-ant-api03-supersecretkey1234567890"
 	if got, _ = RunGatewayExecQuickCommand(ctx, quickToolEnv(), secret, ""); strings.Contains(got, "supersecretkey1234567890") || got == "" {
 		t.Fatalf("gateway output not redacted %q", got)
-	}
-	if cli, _ = RunCLIExecQuickCommand(ctx, quickToolEnv(), secret); strings.Contains(cli.Text, "supersecretkey1234567890") || cli.Style != CLIQuickOutput {
-		t.Fatalf("cli output not redacted %+v", cli)
-	}
-}
-
-func TestCLIExecQuickCommandTimeoutLeavesTheGrandchild(t *testing.T) {
-	ctx := quickTestContext(t)
-	setQuickTimeout(t, &cliQuickCommandTimeout, time.Second)
-	dir := t.TempDir()
-	tree := fmt.Sprintf("echo $$ > %s/shell.pid; sleep 120 & echo $! > %s/child.pid; wait", dir, dir)
-	start := time.Now()
-	got, err := RunCLIExecQuickCommand(ctx, quickToolEnv(), tree)
-	if err != nil || got != (CLIQuickReply{"Quick command timed out (30s)", CLIQuickFailure}) || time.Since(start) > 20*time.Second {
-		t.Fatalf("reply %+v err %v after %s", got, err, time.Since(start))
-	}
-	shell, child := quickPid(filepath.Join(dir, "shell.pid")), quickPid(filepath.Join(dir, "child.pid"))
-	killLeftover(t, child)
-	if shell == 0 || child == 0 || quickAlive(shell) {
-		t.Fatalf("shell %d alive %v child %d", shell, quickAlive(shell), child)
-	}
-	time.Sleep(300 * time.Millisecond)
-	if !quickAlive(child) {
-		t.Fatal("the local quick command killed the grandchild, subprocess.run kills only the shell")
-	}
-}
-
-func TestCLIExecQuickCommandCancellationKillsOnlyTheShell(t *testing.T) {
-	base := quickTestContext(t)
-	ctx, cancel := context.WithCancel(base)
-	defer cancel()
-	dir := t.TempDir()
-	tree := fmt.Sprintf("echo $$ > %s/shell.pid; sleep 120 & echo $! > %s/child.pid; wait", dir, dir)
-	done := make(chan error, 1)
-	go func() {
-		_, err := RunCLIExecQuickCommand(ctx, quickToolEnv(), tree)
-		done <- err
-	}()
-	child := quickWaitUntil(t, func() int { return quickPid(filepath.Join(dir, "child.pid")) }, 10*time.Second, "the child pid")
-	shell := quickPid(filepath.Join(dir, "shell.pid"))
-	killLeftover(t, child)
-	cancel()
-	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("interrupted run returned %v", err)
-	}
-	quickWaitUntil(t, func() int {
-		if quickAlive(shell) {
-			return 0
-		}
-		return 1
-	}, 10*time.Second, "the shell to stop")
-	if !quickAlive(child) {
-		t.Fatal("the interrupt killed the grandchild, run kills only the shell")
 	}
 }
 
@@ -292,40 +206,16 @@ func TestQuickSpawnFailures(t *testing.T) {
 			t.Fatalf("gateway %q in %q replied %q err %v want %q", c.cmd, c.cwd, got, err, c.want)
 		}
 	}
-	cli := []struct {
-		cmd  any
-		want string
-	}{
-		{5, "Quick command error: 'int' object is not iterable"},
-		{true, "Quick command error: 'bool' object is not iterable"},
-		{2.5, "Quick command error: 'float' object is not iterable"},
-		{[]any{"echo", 5}, "Quick command error: expected str, bytes or os.PathLike object, not int"},
-		{[]any{"echo\x00", 5}, "Quick command error: embedded null byte"},
-		{[]any{"echo", nil}, "Quick command error: expected str, bytes or os.PathLike object, not NoneType"},
-		{"echo\x00hi", "Quick command error: embedded null byte"},
-	}
-	for _, c := range cli {
-		if got, err := RunCLIExecQuickCommand(ctx, env, c.cmd); err != nil || got != (CLIQuickReply{c.want, CLIQuickFailure}) {
-			t.Fatalf("cli %q replied %+v err %v want %q", c.cmd, got, err, c.want)
-		}
-	}
 }
 
 func TestQuickReplyKeysPerLocale(t *testing.T) {
 	ctx := quickTestContext(t)
 	setQuickTimeout(t, &execQuickCommandTimeout, 50*time.Millisecond)
-	setQuickTimeout(t, &cliQuickCommandTimeout, 50*time.Millisecond)
 	env := quickToolEnv()
 	english := map[string]string{
 		"gateway.quick_command.no_output": "Command returned no output.",
 		"gateway.quick_command.timed_out": "Quick command timed out (30s).",
 		"gateway.quick_command.error":     "Quick command error: {error}",
-		"cli.quick.no_target":             "Quick command '{command}' has no target defined",
-		"cli.quick.unsupported_type":      "Quick command '{command}' has unsupported type (supported: 'exec', 'alias')",
-		"cli.quick.no_command":            "Quick command '{command}' has no command defined",
-		"cli.quick.no_output":             "Command returned no output",
-		"cli.quick.timed_out":             "Quick command timed out (30s)",
-		"cli.quick.error":                 "Quick command error: {error}",
 	}
 	for lang := range i18n.BundledLanguageInfo {
 		t.Setenv("ICEBATH_LANGUAGE", lang)
@@ -351,51 +241,16 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 			}
 			return got
 		}
-		cl := func(cmd any) CLIQuickReply {
-			got, err := RunCLIExecQuickCommand(ctx, env, cmd)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return got
-		}
 		checks := []struct{ got, want string }{
 			{gw("true"), want("gateway.quick_command.no_output", nil)},
 			{gw("sleep 5"), want("gateway.quick_command.timed_out", nil)},
 			{gw(5), want("gateway.quick_command.error", map[string]any{"error": "cmd must be a string"})},
-			{cl("true").Text, want("cli.quick.no_output", nil)},
-			{cl("sleep 5").Text, want("cli.quick.timed_out", nil)},
-			{cl(5).Text, want("cli.quick.error", map[string]any{"error": "'int' object is not iterable"})},
-		}
-		for _, key := range []string{"cli.quick.no_target", "cli.quick.unsupported_type", "cli.quick.no_command"} {
-			want(key, map[string]any{"command": "/qa"})
 		}
 		for i, c := range checks {
 			if c.got != c.want {
 				t.Fatalf("%s check %d got %q want %q", lang, i, c.got, c.want)
 			}
 		}
-	}
-}
-
-func TestCLIExecQuickCommandMappingRunsItsKeysInFileOrder(t *testing.T) {
-	ctx := quickTestContext(t)
-	env := quickToolEnv()
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	text := "quick_commands:\n  shout:\n    type: exec\n    command:\n      echo zeta-first: 1\n      alpha: 2\n"
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	doc, err := config.LoadYAMLFileReadonly(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	command := config.AsMap(config.AsMap(config.AsMap(config.AsMap(doc)["quick_commands"])["shout"])["command"])
-	if keys := config.MappingKeys(command); len(keys) != 2 || keys[0] != "echo zeta-first" || keys[1] != "alpha" {
-		t.Fatalf("mapping keys %v", keys)
-	}
-	got, err := RunCLIExecQuickCommand(ctx, env, command)
-	if err != nil || got != (CLIQuickReply{"zeta-first", CLIQuickOutput}) {
-		t.Fatalf("reply %+v err %v", got, err)
 	}
 }
 

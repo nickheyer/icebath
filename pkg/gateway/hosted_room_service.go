@@ -24,6 +24,8 @@ const (
 	hostedRoomIdleFallbackSeconds  = 5.0
 	hostedRoomActivePollSeconds    = 0.25
 	hostedRoomTerminalGraceSeconds = 30.0
+	// Rereads of the log a Continue takes when an event lands between its read and its write
+	hostedFencedAppendAttempts = 3
 )
 
 var (
@@ -186,7 +188,7 @@ func (s *HostedRoomService) init(ctx context.Context, self hostedRoomServiceHook
 		return err
 	}
 	s.pendingActions = map[[2]string]map[string]any{}
-	if s.PolicyCheckpoint, err = NewHostedRoomPolicyCheckpoint(ctx, s.DBPath, 1+2*MaxDiscussionMembers*limits.MaxRounds); err != nil {
+	if s.PolicyCheckpoint, err = NewHostedRoomPolicyCheckpoint(ctx, s.DBPath, (1+2*MaxDiscussionMembers*limits.MaxRounds+2)*(MaxDiscussionContinues+1)); err != nil {
 		return err
 	}
 	if s.RPC, err = o.MakeRPC(s.DBPath); err != nil {
@@ -849,8 +851,12 @@ func (s *HostedRoomService) appendRoomStatus(room map[string]any, decision Discu
 	if decision.ThreadID != nil {
 		threadID = *decision.ThreadID
 	}
+	suffix := ""
+	if decision.Continues > 0 {
+		suffix = fmt.Sprintf(":c%d", decision.Continues)
+	}
 	_, err = AppendEvent(s.ctx, s.DBPath, AppendEventInput{
-		RoomID: pyrepr.Str(room["room_id"]), EventID: fmt.Sprintf("dactivity:%s:%s", *decision.DiscussionEventID, decision.Reason),
+		RoomID: pyrepr.Str(room["room_id"]), EventID: fmt.Sprintf("dactivity:%s:%s%s", *decision.DiscussionEventID, decision.Reason, suffix),
 		Kind: "room.activity", Actor: map[string]any{"kind": "gateway", "id": gatewayID},
 		Payload: map[string]any{"status": decision.Status, "reason_code": decision.Reason, "thread_id": threadID,
 			"discussion_event_id": *decision.DiscussionEventID},
@@ -970,6 +976,71 @@ func (s *HostedRoomService) admitPlannedTask(binding HostedRoomBinding, room map
 		}
 	}
 	return nil
+}
+
+// Grants a discussion paused at its cap one more budget of rounds and messages, answering the event that records it
+func (s *HostedRoomService) ContinueRoom(roomID, discussionEventID string) (map[string]any, error) {
+	gatewayID, epoch, err := s.ownedAuthority(roomID)
+	if err != nil {
+		return nil, err
+	}
+	s.policyLock.Lock()
+	event, err := s.appendContinue(roomID, discussionEventID, gatewayID, epoch)
+	s.policyLock.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	s.prepareStalls.Clear(roomID)
+	binding, err := s.bindingFor(roomID)
+	if err != nil {
+		return nil, err
+	}
+	if binding != nil {
+		_ = s.prepareTracked(*binding, false)
+	}
+	s.runtime.Wakeup()
+	return event, nil
+}
+
+// Appends room.continued only onto the exact log the pause was read from, rereading when a Stop or a Send landed first
+func (s *HostedRoomService) appendContinue(roomID, discussionEventID, gatewayID string, epoch int64) (map[string]any, error) {
+	for range hostedFencedAppendAttempts {
+		events, err := s.events(roomID)
+		if err != nil {
+			return nil, err
+		}
+		paused, err := pausedDiscussion(events, discussionEventID)
+		if err != nil {
+			return nil, err
+		}
+		if paused == nil {
+			return nil, hostedRoomError("This discussion is not paused.")
+		}
+		if paused.grant > MaxDiscussionContinues {
+			return nil, hostedRoomError("This discussion already used every Continue.")
+		}
+		var latest int64
+		for _, event := range events {
+			seq, err := pyint.Int64(event["seq"])
+			if err != nil {
+				return nil, err
+			}
+			latest = max(latest, seq)
+		}
+		event, err := AppendEvent(s.ctx, s.DBPath, AppendEventInput{
+			RoomID: roomID, EventID: fmt.Sprintf("dcontinue:%s:%d", discussionEventID, paused.grant),
+			Kind: continuedEventKind, Actor: map[string]any{"kind": "gateway", "id": gatewayID},
+			Payload:            map[string]any{"discussion_event_id": discussionEventID, "thread_id": paused.threadID, "grant": paused.grant},
+			AuthorityGatewayID: gatewayID, AuthorityEpoch: epoch, ExpectedLatestSeq: latest,
+		})
+		if err == nil {
+			return event, nil
+		}
+		if !errAs[*EventCursorConflictError](err) {
+			return nil, err
+		}
+	}
+	return nil, hostedRoomError("The room kept changing; try Continue again.")
 }
 
 // Room preparation with failures counted per room, a stalled room skipped until the next Send or Retry
@@ -1287,6 +1358,6 @@ func (s *HostedRoomService) Status(roomID *string) (map[string]any, error) {
 		"running": runtime["running"], "working": len(activity) > 0,
 		"blocked": blocked || pyrepr.Truthy(counts["indeterminate"]) || pyrepr.Truthy(counts["stopping"]),
 		"counts":  counts, "pending_actions": pendingActions, "member_activity": activity,
-		"last_error": lastError, "peer_routes": s.routeStatuses(roomID),
+		"last_error": lastError, "max_continues": int64(MaxDiscussionContinues), "peer_routes": s.routeStatuses(roomID),
 	}, nil
 }

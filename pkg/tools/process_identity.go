@@ -39,11 +39,9 @@ var errNoSuchProcess = proc.ErrNoSuchProcess
 // Process facts the identity layer reads, swapped by tests
 type processProber interface {
 	Birth(pid int) (float64, error)
-	WorkerBirth(pid int) (float64, error)
 	BootStart(pid int) (float64, bool)
 	Running(pid int) bool
 	Zombie(pid int) bool
-	Environ(pid int) (map[string]string, error)
 	Cmdline(pid int) ([]string, error)
 	PPID(pid int) (int, bool)
 	Children(pid int, recursive bool) []int
@@ -55,9 +53,6 @@ var identityProber processProber = osProcessProber{}
 
 // Pid of this process, swapped by tests that stamp another spawner
 var currentPid = os.Getpid
-
-// Ledger read the reapers consult, swapped by tests
-var ledgerEntriesFn = func(opts LedgerOptions) []map[string]any { return LedgerEntries(opts) }
 
 // Group existence probe the supervisor bookkeeping uses, swapped by tests
 var processGroupGoneFn = func(pgid int) bool { return processGroupGone(pgid) }
@@ -175,15 +170,6 @@ type SpawnTag struct {
 	SpawnerCreate *float64
 }
 
-// BuildSpawnTag is the value for the child's spawn env var, stamped by the spawner
-func BuildSpawnTag(purpose, projectRoot string) string {
-	createPart := "-"
-	if create := processCreateTime(0); create != nil {
-		createPart = strconv.FormatFloat(*create, 'f', 3, 64)
-	}
-	return strings.Join([]string{spawnTagVersion, InstallID(projectRoot), purpose, strconv.Itoa(currentPid()), createPart}, ":")
-}
-
 // ParseSpawnTag parses a spawn env value, nil for anything malformed
 func ParseSpawnTag(raw any) *SpawnTag {
 	text, ok := raw.(string)
@@ -214,20 +200,6 @@ func ParseSpawnTag(raw any) *SpawnTag {
 		return nil
 	}
 	return &SpawnTag{Install: install, Purpose: purpose, SpawnerPid: pid, SpawnerCreate: create}
-}
-
-// SpawnedByThisProcess reports whether pid carries a spawn tag naming this process by pid and create time
-func SpawnedByThisProcess(pid int) bool {
-	environ, err := identityProber.Environ(pid)
-	if err != nil {
-		return false
-	}
-	tag := ParseSpawnTag(environ[SpawnEnvVar])
-	if tag == nil || tag.SpawnerPid != currentPid() {
-		return false
-	}
-	mine := processCreateTime(0)
-	return tag.SpawnerCreate == nil || mine == nil || math.Abs(*tag.SpawnerCreate-*mine) < 2.0
 }
 
 // LedgerEntry is one spawn ledger row
@@ -641,110 +613,6 @@ func EntryStillRunning(entry map[string]any) bool {
 	}
 	alive, known := pidAliveMatches(pid, entryFloat(entry, "create_time"), false, entryBoot(entry, "boot_start"))
 	return !(known && !alive)
-}
-
-// SpawnerIsDead reports whether the recorded spawner is provably gone, known false when unprovable
-func SpawnerIsDead(entry map[string]any) (dead bool, known bool) {
-	spawnerPid, ok := entryInt(entry, "spawner_pid")
-	if !ok || spawnerPid <= 0 {
-		return false, false
-	}
-	alive, known := pidAliveMatches(spawnerPid, entryFloat(entry, "spawner_create"), false, entryBoot(entry, "spawner_boot"))
-	if !known {
-		return false, false
-	}
-	return !alive, true
-}
-
-// Polls until pid is gone or a zombie, false at the timeout
-func waitProcessGone(pid int, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for {
-		if !identityProber.Running(pid) || identityProber.Zombie(pid) {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-// ReapOrphanedMCPHelpers kills ledger registered stdio MCP helpers whose spawner is provably dead
-func ReapOrphanedMCPHelpers(projectRoot string, killFn func(int) error) []int {
-	reaped := []int{}
-	var entries []map[string]any
-	func() {
-		defer func() { recover() }()
-		entries = ledgerEntriesFn(LedgerOptions{ProjectRoot: projectRoot})
-	}()
-	own := currentPid()
-	for _, entry := range entries {
-		pid, ok := entryInt(entry, "pid")
-		if entry["purpose"] != "mcp-helper" || !ok || pid <= 0 || pid == own {
-			continue
-		}
-		dead, known := SpawnerIsDead(entry)
-		if !(known && dead) {
-			continue
-		}
-		if killFn != nil {
-			if err := killFn(pid); err != nil {
-				pkgLog().Debug(fmt.Sprintf("mcp-helper orphan reap failed for %v", entry), "error", err)
-				continue
-			}
-		} else {
-			if !identityProber.Running(pid) || !sameIncarnation(pid, entryFloat(entry, "create_time"), entryBoot(entry, "boot_start")) {
-				continue
-			}
-			if isWindowsHost {
-				killProcessTreeWindows(pid)
-			} else {
-				if err := identityProber.Terminate(pid); err != nil {
-					pkgLog().Debug(fmt.Sprintf("mcp-helper orphan reap failed for %v", entry), "error", err)
-					continue
-				}
-				if !waitProcessGone(pid, 2*time.Second) {
-					identityProber.Kill(pid)
-				}
-			}
-		}
-		reaped = append(reaped, pid)
-	}
-	if len(reaped) > 0 {
-		pkgLog().Info(fmt.Sprintf("reaped %d orphaned stdio MCP helper(s): %v", len(reaped), reaped))
-	}
-	return reaped
-}
-
-// Terminates pid and every still alive descendant, then kills the survivors after 2s
-func killProcessTreeWindows(pid int) {
-	descendants := identityProber.Children(pid, true)
-	for _, child := range descendants {
-		identityProber.Terminate(child)
-	}
-	identityProber.Terminate(pid)
-	all := append(append([]int{}, descendants...), pid)
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		alive := all[:0]
-		for _, p := range all {
-			if identityProber.Running(p) {
-				alive = append(alive, p)
-			}
-		}
-		all = alive
-		if len(all) == 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	for _, survivor := range all {
-		identityProber.Kill(survivor)
-	}
 }
 
 //go:embed process_supervisor.sh

@@ -110,17 +110,6 @@ func registerTickedHomes(homes []string) {
 	ForgetStores(forget)
 }
 
-// Snapshot of home key to home for the profiles this process ticks
-func tickedHomes() map[string]string {
-	ticked.Lock()
-	defer ticked.Unlock()
-	out := make(map[string]string, len(ticked.homes))
-	for k, v := range ticked.homes {
-		out[k] = v
-	}
-	return out
-}
-
 // True when this process's cron ticker owns the home, the active scope when empty
 func servesProfile(h string) bool {
 	key := home.Key(ownershipHome(h))

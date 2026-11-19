@@ -1,11 +1,5 @@
 package memory
 
-import (
-	"context"
-
-	"github.com/nickheyer/icebath/pkg/tools"
-)
-
 // Store and skill write guidance adapted to the enabled stores without widening what belongs in memory
 func BuildMemoryGuidance(memoryEnabled, profileEnabled, skillManageAvailable bool) string {
 	if !memoryEnabled && !profileEnabled {
@@ -44,39 +38,6 @@ var MemoryGuidance = BuildMemoryGuidance(true, true, true)
 
 // Guidance for a session whose only store is the user profile
 var UserProfileGuidance = BuildMemoryGuidance(false, true, true)
-
-// Tool aware memory guidance, empty unless the memory tool is loaded
-func MemoryGuidanceFor(validToolNames map[string]bool, memoryEnabled, profileEnabled bool) string {
-	if !validToolNames["memory"] {
-		return ""
-	}
-	return BuildMemoryGuidance(memoryEnabled, profileEnabled, validToolNames["skill_manage"])
-}
-
-// Built in MEMORY.md and USER.md blocks plus the external provider block, gated like the provider tool injection
-func MemoryParts(ctx context.Context, env *tools.Env, store *Store, memoryEnabled, profileEnabled bool, manager *MemoryManager, surface []map[string]any) []string {
-	var parts []string
-	if store != nil {
-		for _, kind := range []struct {
-			enabled bool
-			target  string
-		}{{memoryEnabled, "memory"}, {profileEnabled, "user"}} {
-			if !kind.enabled {
-				continue
-			}
-			if block := store.FormatForSystemPrompt(kind.target); block != "" {
-				parts = append(parts, block)
-			}
-		}
-	}
-	if manager != nil && MemoryProviderToolsExposed(ctx, env, surface) {
-		var block string
-		if err := callProvider(func() error { block = manager.BuildSystemPrompt(ctx); return nil }); err == nil && block != "" {
-			parts = append(parts, block)
-		}
-	}
-	return parts
-}
 
 // Memory prompt blocks register nothing at import
 func registerMemoryPromptBlocks() {}

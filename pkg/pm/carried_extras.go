@@ -23,8 +23,6 @@ type CarriedTrial struct {
 	Extras   []string
 	Carried  []string
 	Fact     map[string]any
-	Shipped  []string
-	Frozen   []string
 	Explicit bool
 }
 
@@ -52,7 +50,7 @@ func failingCarried(ctx context.Context, p VenvState, failure error, trial Carri
 			required = append(required, extra)
 		}
 	}
-	base, _, _, err := selectTarget(ctx, p, trial.Fact, required, VenvApplyOptions{PluginDirs: []MemberDir{}}, false, trial.Shipped, trial.Frozen)
+	base, _, _, err := selectTarget(ctx, p, trial.Fact, required, VenvApplyOptions{PluginDirs: []MemberDir{}}, false)
 	if err != nil {
 		return nil, err
 	}

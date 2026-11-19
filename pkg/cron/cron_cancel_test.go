@@ -226,7 +226,7 @@ func TestAMissedRowDoesNotHideALiveRun(t *testing.T) {
 	live := recText(mustLedger(t)(ledger.Create(ctx, job.ID, "test", nil)), "id")
 	mustLedger(t)(ledger.MarkRunning(ctx, live))
 	mustLedger(t)(ledger.RecordMissed(ctx, job.ID, 3, nil, "slept"))
-	inflight := mustLedger(t)(ledger.LiveInflight(ctx, job.ID))
+	inflight := mustLedger(t)(ledger.Cancellable(ctx, job.ID))
 	if inflight == nil || recText(inflight, "id") != live {
 		t.Fatalf("live run hidden behind the missed row, got %v want %s", inflight, live)
 	}

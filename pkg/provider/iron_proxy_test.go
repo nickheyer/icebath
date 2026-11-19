@@ -109,16 +109,6 @@ func TestLoadMappingsHandlesCorruptJSON(t *testing.T) {
 	}
 }
 
-func TestVerifyChecksumsSignatureSkipsWithoutGPG(t *testing.T) {
-	_, p := ironHome(t)
-	dir := t.TempDir()
-	cks := filepath.Join(dir, "checksums.txt")
-	_ = os.WriteFile(cks, []byte("abc  iron-proxy.tar.gz\n"), 0o600)
-	if ok, err := p.VerifyChecksumsSignature(dir, cks); ok || err != nil {
-		t.Fatalf("no gpg degrades to false: %t %v", ok, err)
-	}
-}
-
 // Spawns a process whose argv0 reads as iron-proxy so the pid probes treat it as ours
 func fakeIronProcess(t *testing.T) int {
 	t.Helper()

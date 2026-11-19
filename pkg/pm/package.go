@@ -543,21 +543,6 @@ func (r *Runner) Command(ctx context.Context, name string, args ...string) *exec
 	return cmd
 }
 
-// Runs a command with inherited stdio under the runner's environment and returns its exit code
-func (r *Runner) Run(ctx context.Context, name string, args ...string) (int, error) {
-	cmd := r.Command(ctx, name, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	err := cmd.Run()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), nil
-	}
-	if err != nil {
-		return -1, err
-	}
-	return 0, nil
-}
-
 // Environment map as sorted KEY=VALUE entries for exec
 func EnvList(env map[string]string) []string {
 	out := make([]string, 0, len(env))

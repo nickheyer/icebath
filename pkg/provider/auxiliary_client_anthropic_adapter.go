@@ -156,7 +156,7 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 	if err != nil {
 		return nil, err
 	}
-	normalized, err := anthropicMessagesTransport{}.NormalizeResponse(response, map[string]any{"strip_tool_prefix": a.isOAuth})
+	normalized, err := anthropicMessagesTransport{}.NormalizeResponse(response, map[string]any{"strip_tool_prefix": a.isOAuth, "ctx": ctx})
 	if err != nil {
 		return nil, err
 	}

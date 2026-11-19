@@ -157,7 +157,7 @@ func TestLegacyAgentRunsOneQuery(t *testing.T) {
 func TestLegacyAgentBareInvocationPrintsHelp(t *testing.T) {
 	for _, argv := range [][]string{nil, {"--query="}, {"  "}, {"--verbose"}} {
 		code, out, errText, calls := runLegacy(t, argv...)
-		want := legacyAgentHelp + "\nNo query given: pass one with --query (or run `icebath` for the interactive CLI).\n"
+		want := legacyAgentHelp + "\nNo query given: pass one with --query (or run `icebath` for the terminal UI).\n"
 		if code != 0 || out != want || errText != "" || calls != nil {
 			t.Fatalf("%q: code %d stderr %q calls %v stdout\n%s", argv, code, errText, calls, out)
 		}

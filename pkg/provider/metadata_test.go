@@ -97,14 +97,14 @@ func TestKnownModelFromAPI(t *testing.T) {
 func TestAPIMissingContextLengthKey(t *testing.T) {
 	ctx, _, _ := metaTest(t)
 	seedOpenRouterCatalog(map[string]map[string]any{"test/model": {"name": "Test"}})
-	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "test/model"}), ContextProbeTiers[0], "missing key")
+	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "test/model"}), DefaultFallbackContext, "missing key")
 }
 
 func TestNoBaseURLSkipsCache(t *testing.T) {
 	ctx, ft, _ := metaTest(t)
 	ft.on("GET", OpenRouterModelsURL, 200, map[string]any{"data": []any{}})
 	SaveContextLength(ctx, "custom/model", "http://local", 32768, "")
-	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "custom/model"}), ContextProbeTiers[0], "no base url")
+	mustEqual(t, GetModelContextLength(ctx, ContextLengthRequest{Model: "custom/model"}), DefaultFallbackContext, "no base url")
 }
 
 func TestStaleMinimaxCache32kIsInvalidated(t *testing.T) {
@@ -271,21 +271,6 @@ func TestFetchModelMetadataCanonicalSlugAliasing(t *testing.T) {
 		t.Fatal("original id")
 	}
 	mustEqual(t, intOrDefault(got["anthropic/claude-3.5-sonnet"]["context_length"], 0), 200000, "canonical")
-}
-
-func TestContextProbeTiersTiersDescending(t *testing.T) {
-	for i := 0; i+1 < len(ContextProbeTiers); i++ {
-		if ContextProbeTiers[i] <= ContextProbeTiers[i+1] {
-			t.Fatal("tiers must descend")
-		}
-	}
-	next, ok := GetNextProbeTier(ContextProbeTiers[0])
-	if !ok || next != ContextProbeTiers[1] {
-		t.Fatal("next tier from the top")
-	}
-	if _, ok := GetNextProbeTier(ContextProbeTiers[len(ContextProbeTiers)-1]); ok {
-		t.Fatal("no tier below the minimum")
-	}
 }
 
 func TestParseContextLimitFromErrorVllmDelimiterVariants(t *testing.T) {

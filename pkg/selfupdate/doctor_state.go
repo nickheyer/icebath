@@ -63,11 +63,6 @@ var (
 	doctorStateDBSizeWarnBytes        int64 = 1 * 1024 * 1024 * 1024
 )
 
-// Plugin provenance of a plugins dir, the error an unreadable directory tree raises
-var doctorPluginsProvenance = func(ctx context.Context, pluginsDir string) ([]plugins.Provenance, error) {
-	return plugins.PluginsProvenance(ctx, pluginsDir), nil
-}
-
 // Effective memory section of a home config, empty when the config is absent or cannot be read
 func doctorMemoryConfig(ctx context.Context, icebathHome string) (section map[string]any) {
 	defer func() {
@@ -810,56 +805,6 @@ func checkCheckpointStore(ctx context.Context, d *Doctor, shouldFix bool) (*Find
 	return doctorCheck(func(f *Finding) error {
 		if notice := doctorCheckpointFootprintNotice(doctorToolsEnv(ctx, d)); notice != "" {
 			doctorCheckWarn(d.W, notice, "")
-		}
-		return nil
-	})
-}
-
-// Local provenance rows of a plugins dir under the update checker's admission rules
-func doctorPluginProvenanceRows(ctx context.Context, pluginsDir string) []doctorStatRow {
-	if info, err := os.Stat(pluginsDir); pluginsDir == "" || err != nil || !info.IsDir() {
-		return []doctorStatRow{{"info", "No plugins directory yet (nothing to check provenance for)", ""}}
-	}
-	provenances, err := doctorPluginsProvenance(ctx, pluginsDir)
-	if err != nil {
-		return []doctorStatRow{{"warn", "Plugin provenance could not be read", err.Error()}}
-	}
-	rows := []doctorStatRow{}
-	for _, provenance := range provenances {
-		result := plugins.CheckLocalProvenance(provenance)
-		detail := result.NeedsFixing
-		if detail == "" {
-			detail = result.Reason
-		}
-		switch {
-		case result.NeedsFixing != "" || provenance.Class == plugins.ProvenanceDrift:
-			rows = append(rows, doctorStatRow{"warn", "Plugin '" + provenance.Name + "': " + detail, ""})
-		case provenance.Class == plugins.ProvenanceManual:
-			rows = append(rows, doctorStatRow{"info", "Plugin '" + provenance.Name + "' installed manually", detail})
-		case provenance.Class == plugins.ProvenanceSelfCloned:
-			rows = append(rows, doctorStatRow{"info", "Plugin '" + provenance.Name + "': self-cloned", detail})
-		default:
-			rows = append(rows, doctorStatRow{"ok", "Plugin '" + provenance.Name + "': provenance in good standing", detail})
-		}
-	}
-	if len(rows) == 0 {
-		return []doctorStatRow{{"info", "No provenanced plugins found", ""}}
-	}
-	return rows
-}
-
-// Prints the local plugin update provenance rows without network or writes
-func checkUpdateProvenance(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
-	return doctorCheckGuarded(d.W, "", "", func(f *Finding) error {
-		for _, row := range doctorPluginProvenanceRows(ctx, filepath.Join(d.Home, "plugins")) {
-			switch row.Kind {
-			case "warn":
-				doctorCheckWarn(d.W, row.Text, row.Detail)
-			case "ok":
-				doctorCheckOK(d.W, row.Text, row.Detail)
-			default:
-				doctorCheckInfo(d.W, strings.TrimRight(row.Text+" "+row.Detail, " \t\n\r\x0b\x0c"))
-			}
 		}
 		return nil
 	})

@@ -52,19 +52,18 @@ type fakeChatAgent struct {
 	ephemeralOff, effortRej, disableRej, flr bool
 	ollamaCtx                                int
 	ollamaThinks                             bool
-	pool                                     PoolProbe
-	poolCleared                              bool
-	browserErr                               error
-	browserCleaned                           []string
-	hint                                     func(model any) (string, error)
-	codexStream                              func(ctx context.Context, kw map[string]any) (any, error)
-	anthropicCreate                          func(reason string) (any, error)
-	codexToken                               any
-	notices, diagWaits                       []string
-	warnings, bufferedStatuses               []string
-	aAborts, aCloses                         []clientCall
-	sum                                      *summaryFake
-	strm                                     *streamFake
+
+	browserErr                 error
+	browserCleaned             []string
+	hint                       func(model any) (string, error)
+	codexStream                func(ctx context.Context, kw map[string]any) (any, error)
+	anthropicCreate            func(reason string) (any, error)
+	codexToken                 any
+	notices, diagWaits         []string
+	warnings, bufferedStatuses []string
+	aAborts, aCloses           []clientCall
+	sum                        *summaryFake
+	strm                       *streamFake
 }
 
 func (a *fakeChatAgent) StreamProvider() string { return a.provider }
@@ -110,10 +109,6 @@ func (a *fakeChatAgent) ReasoningFloorRequired() bool              { return a.fl
 func (a *fakeChatAgent) SetWireReasoningConfig(cfg map[string]any) { a.wire = cfg }
 func (a *fakeChatAgent) OllamaNumCtx() int                         { return a.ollamaCtx }
 func (a *fakeChatAgent) OllamaSupportsThinkingCached() bool        { return a.ollamaThinks }
-func (a *fakeChatAgent) CredentialPool() PoolProbe                 { return a.pool }
-func (a *fakeChatAgent) SetCredentialPool(pool PoolProbe)          { a.pool = pool }
-func (a *fakeChatAgent) ClearCredentialPool()                      { a.pool, a.poolCleared = nil, true }
-func (a *fakeChatAgent) CredentialPoolEnv() PoolEnv                { return PoolEnv{} }
 func (a *fakeChatAgent) ToolEnv() *tools.Env                       { return nil }
 func (a *fakeChatAgent) IsHeadedMode() (bool, error)               { return a.headed, nil }
 func (a *fakeChatAgent) CleanupBrowser(ctx context.Context, taskID string) error {
@@ -378,29 +373,6 @@ func TestReasoningConfigForWireAppliesTheRejectionRules(t *testing.T) {
 	a = &fakeChatAgent{apiMode: "anthropic_messages"}
 	if ReasoningConfigForWire(t.Context(), a) != nil {
 		t.Fatal("an unset effort off chat completions sends no config")
-	}
-}
-
-type probePool struct {
-	PoolProbe
-	provider string
-}
-
-func (p probePool) Provider() string { return p.provider }
-
-func TestRebindFallbackCredentialPoolClearsOnlyAnotherProvidersPool(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	logs := captureLogs(t)
-	same := probePool{provider: " OpenRouter "}
-	a := &fakeChatAgent{pool: same}
-	RebindFallbackCredentialPool(a, "openrouter", "m")
-	if a.poolCleared || a.pool != same {
-		t.Fatal("same provider pool must be kept")
-	}
-	a = &fakeChatAgent{pool: probePool{provider: "anthropic"}}
-	RebindFallbackCredentialPool(a, "openrouter", "m")
-	if !a.poolCleared || logCount(logs, "Fallback to openrouter/m: clearing primary credential pool (pool_provider=anthropic)") != 1 {
-		t.Fatalf("cleared %v", a.poolCleared)
 	}
 }
 

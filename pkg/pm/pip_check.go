@@ -9,7 +9,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -103,54 +102,6 @@ func readUTF8(path string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
-}
-
-// The lock's manifest overrides as requirement lines for uv pip install overrides
-func OverrideRequirements(lock string) ([]string, error) {
-	text, err := readUTF8(lock)
-	if err != nil {
-		return nil, err
-	}
-	entries, _, err := parseUVLock(text)
-	if err != nil {
-		return nil, err
-	}
-	var lines []string
-	for _, entry := range entries {
-		obj, ok := entry.(*OrderedObject)
-		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override must be a table, got %s", tomlKind(entry))}
-		}
-		for _, k := range obj.Keys {
-			if k != "name" && k != "specifier" && k != "marker" {
-				return nil, &PyError{Class: "ValueError", Message: "unsupported uv.lock override: " + errchain.Show(obj)}
-			}
-		}
-		name, err := tomlIndex(obj, "name")
-		if err != nil {
-			return nil, err
-		}
-		line, ok := name.(string)
-		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override name must be text, got %s", tomlKind(name))}
-		}
-		if spec, has := obj.Values["specifier"]; has {
-			s, ok := spec.(string)
-			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override specifier must be text, got %s", tomlKind(spec))}
-			}
-			line += s
-		}
-		if marker, has := obj.Values["marker"]; has && tomlTruthy(marker) {
-			s, ok := marker.(string)
-			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override marker must be text, got %s", tomlKind(marker))}
-			}
-			line += " ; " + s
-		}
-		lines = append(lines, line)
-	}
-	return lines, nil
 }
 
 // Locked versions of every dependency the lock's manifest overrides, keyed by normalized name

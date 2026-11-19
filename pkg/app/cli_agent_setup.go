@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
@@ -18,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // turnRoute is the effective model and runtime one turn's agent is built from
@@ -37,7 +34,7 @@ func singleQueryClarifyCallback(questions []any) map[string]any {
 
 // Snapshots the CLI's resolved provider routing as the runtime an agent is built from
 func currentRuntime(c *CLI) *cliRuntime {
-	return &cliRuntime{APIKey: c.apiKey, BaseURL: c.baseURL, Provider: c.provider, RequestedProvider: c.requestedProvider,
+	return &cliRuntime{BaseURL: c.baseURL, Provider: c.provider, RequestedProvider: c.requestedProvider,
 		APIMode: c.apiMode, Command: c.acpCommand, Args: append([]string{}, c.acpArgs...), CredentialPool: c.credentialPool, Resolved: c.resolvedRuntime}
 }
 
@@ -103,59 +100,6 @@ func gatewayOpen(ctx context.Context, db *gatewaycli.GatewaySessionStore, sessio
 	return sessionID, ""
 }
 
-// Returns the recap text of a user row, multimodal lists becoming text parts and image markers
-func userDisplayText(content any) string {
-	if parts, ok := content.([]any); ok {
-		var out []string
-		for _, p := range parts {
-			m, ok := p.(map[string]any)
-			if !ok {
-				continue
-			}
-			switch m["type"] {
-			case "text":
-				out = append(out, cliStr(m["text"], ""))
-			case "image_url":
-				out = append(out, "[image]")
-			}
-		}
-		return strings.Join(out, " ")
-	}
-	if content == nil {
-		return ""
-	}
-	return cliStr(content, "")
-}
-
-// Summarizes tool calls as a count with up to four distinct names
-func toolCallsSummary(c *CLI, toolCalls []any) string {
-	var names []string
-	for _, tc := range toolCalls {
-		name := "unknown"
-		if m, ok := pyjson.Dict(tc); ok {
-			if fn, ok := pyjson.Dict(m["function"]); ok {
-				name = cliStr(fn["name"], "unknown")
-			}
-		}
-		if !containsString(names, name) {
-			names = append(names, name)
-		}
-	}
-	shown := names
-	if len(shown) > 4 {
-		shown = shown[:4]
-	}
-	namesStr := strings.Join(shown, ", ")
-	if len(names) > 4 {
-		namesStr += ", ..."
-	}
-	key := "cli.resume.tool_calls_other"
-	if len(toolCalls) == 1 {
-		key = "cli.resume.tool_calls_one"
-	}
-	return i18n.T(c.ctx, key, "", map[string]any{"count": len(toolCalls), "names": namesStr})
-}
-
 func containsString(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {
@@ -163,105 +107,6 @@ func containsString(list []string, s string) bool {
 		}
 	}
 	return false
-}
-
-var resumeEventKeys = map[string]string{
-	"model_switch": "cli.resume.event_model_changed", "async_delegation_complete": "cli.resume.event_delegation_completed",
-	"process_complete": "cli.resume.event_process_finished", "auto_continue": "cli.resume.event_resumed_interrupted",
-}
-
-// resumeEntry is one displayable recap row of a resumed session
-type resumeEntry struct {
-	Role string
-	Text string
-}
-
-// Builds the recap entries of stored history, truncated per display.resume_* with system and tool rows skipped
-func collectResumeEntries(c *CLI, displayHistory []map[string]any, disp map[string]any, cleanAssistant func(string) string) ([]resumeEntry, int, string) {
-	maxUserLen := intOr(mapValueOr(disp, "resume_max_user_chars", 300), 300)
-	maxAsstLen := intOr(mapValueOr(disp, "resume_max_assistant_chars", 200), 200)
-	maxAsstLines := intOr(mapValueOr(disp, "resume_max_assistant_lines", 3), 3)
-	skipToolOnly := displayFlag(disp, "resume_skip_tool_only", true)
-	var entries []resumeEntry
-	lastAsstIdx := -1
-	lastAsstFull := ""
-	for _, msg := range displayHistory {
-		role := cliStr(msg["role"], "")
-		displayKind := cliStr(msg["display_kind"], "")
-		content := msg["content"]
-		toolCalls, _ := msg["tool_calls"].([]any)
-		if displayKind == "hidden" {
-			continue
-		}
-		if key, ok := resumeEventKeys[displayKind]; ok {
-			metadata, _ := msg["display_metadata"].(map[string]any)
-			label := ""
-			if displayKind == "async_delegation_complete" || displayKind == "process_complete" {
-				label = cliStr(metadata["display_text"], "")
-			}
-			if label == "" {
-				label = i18n.T(c.ctx, key, "", nil)
-			}
-			entries = append(entries, resumeEntry{"event", tools.SanitizeDisplayText(label)})
-			continue
-		}
-		switch role {
-		case "user":
-			text, _ := state.WithheldPromptText(msg)
-			if text == "" {
-				text = userDisplayText(content)
-			}
-			text = tools.SanitizeDisplayText(text)
-			if len([]rune(text)) > maxUserLen {
-				text = string([]rune(text)[:maxUserLen]) + "..."
-			}
-			entries = append(entries, resumeEntry{"user", text})
-		case "assistant":
-			text := ""
-			if content != nil {
-				text = cleanAssistant(cliStr(content, ""))
-			}
-			var parts, fullParts []string
-			if text != "" {
-				fullParts = append(fullParts, text)
-				lines := strings.Split(text, "\n")
-				if len(lines) > maxAsstLines {
-					text = strings.Join(lines[:maxAsstLines], "\n") + " ..."
-				}
-				if len([]rune(text)) > maxAsstLen {
-					text = string([]rune(text)[:maxAsstLen]) + "..."
-				}
-				parts = append(parts, text)
-			}
-			if len(toolCalls) > 0 {
-				summary := toolCallsSummary(c, toolCalls)
-				parts = append(parts, summary)
-				fullParts = append(fullParts, summary)
-			}
-			if text == "" && (skipToolOnly || len(toolCalls) == 0) {
-				continue
-			}
-			entries = append(entries, resumeEntry{"assistant", strings.Join(parts, " ")})
-			lastAsstIdx = len(entries) - 1
-			lastAsstFull = strings.Join(fullParts, " ")
-		}
-	}
-	return entries, lastAsstIdx, lastAsstFull
-}
-
-var resumeSkinColors = [][2]string{{"banner_text", "#dfe9f2"}, {"session_label", "#6c7f92"}, {"session_border", "#2a3a4b"}, {"ui_ok", "#8FBC8F"}}
-
-// Returns the active skin's resume panel colors, the defaults when no skin loads
-func resumePanelColors(c *CLI) [4]string {
-	var out [4]string
-	skin := config.GetActiveSkin(c.ctx)
-	for i, kv := range resumeSkinColors {
-		out[i] = kv[1]
-		if skin != nil {
-			out[i] = skin.GetColor(kv[0], kv[1])
-		}
-	}
-	return out
 }
 
 // Drops the agent so the next turn rebuilds it, releasing the LLM clients of an agent that holds its own first
@@ -277,7 +122,8 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 	modelAtEntry := c.model
 	c.credentialsRateLimited = false
 	c.credentialsTerminal = false
-	runtime, primaryErr := resolveRuntimeProviderFn(c.ctx, home.Dir(c.ctx), c.requestedProvider, c.model, c.explicitBaseURL, c.explicitAPIKey)
+	// The gateway session runs the turn and mints its own short lived OAuth token, this process only routes
+	runtime, primaryErr := resolveRuntimeProviderFn(provider.WithDeferredTokenMint(c.ctx), home.Dir(c.ctx), c.requestedProvider, c.model, c.explicitBaseURL, c.explicitAPIKey)
 	if primaryErr != nil {
 		runtime = nil
 		if fb := c.resolveFallbackRuntime(primaryErr); fb != nil {
@@ -334,7 +180,6 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 	routingChanged := resolvedProvider != c.provider || apiMode != c.apiMode || runtime.Command != c.acpCommand || strings.Join(resolvedArgs, "\x00") != strings.Join(c.acpArgs, "\x00")
 	c.provider, c.apiMode, c.acpCommand, c.acpArgs = resolvedProvider, apiMode, runtime.Command, resolvedArgs
 	c.credentialPool = runtime.CredentialPool
-	c.providerSource = runtime.Source
 	c.apiKey = apiKey
 	c.baseURL = baseURL
 	c.resolvedRuntime = runtime
@@ -362,7 +207,6 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 // Re-resolves the CLI level reasoning config for the current model through the shared chokepoint
 func (c *CLI) resolveCLIReasoning() {
 	c.reasoningConfig = config.ResolveReasoningConfig(c.config, c.model)
-	c.reasoningUserSet = false
 }
 
 // Normalizes provider specific model ids and routing, true when the model or api mode changed
@@ -449,7 +293,7 @@ func (c *CLI) resolveFallbackRuntime(primaryErr error) *provider.Runtime {
 		if fbProvider == "" || fbModel == "" {
 			continue
 		}
-		runtime, err := provider.ResolveRuntimeProvider(c.ctx, home.Dir(c.ctx), fbProvider, fbModel, cliStr(fb["base_url"], ""), provider.AuxFallbackEntryAPIKey(c.ctx, fb))
+		runtime, err := provider.ResolveRuntimeProvider(provider.WithDeferredTokenMint(c.ctx), home.Dir(c.ctx), fbProvider, fbModel, cliStr(fb["base_url"], ""), provider.AuxFallbackEntryAPIKey(c.ctx, fb))
 		if err != nil || runtime == nil {
 			continue
 		}
@@ -591,7 +435,9 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
 		return false
 	}
-	c.installToolCallbacks()
+	if c.env != nil {
+		c.env.Ask = singleQueryAsker{}
+	}
 	if !ensureTurnCredentials(c) {
 		return false
 	}
@@ -611,27 +457,11 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		rt = currentRuntime(c)
 	}
 	effectiveModel := firstNonEmpty(modelOverride, c.model)
-	pendingOneTurn := c.pendingOneTurnModelRestore
-	oneTurn := pendingOneTurn != nil
 	o := gatewayAgentOptions{SessionDB: c.sessionDB, SessionID: c.sessionID, Model: effectiveModel, Provider: rt.Provider, BaseURL: rt.BaseURL,
-		APIMode: rt.APIMode, MaxIterations: c.maxTurns, QuietMode: !c.verbose, ToolProgressMode: c.toolProgressMode,
-		ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier, PushReasoning: c.reasoningUserSet && !oneTurn, OneTurn: oneTurn,
+		APIMode: rt.APIMode, MaxIterations: c.maxTurns, ToolProgressMode: c.toolProgressMode,
+		ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier,
 		ReasoningCallback: c.currentReasoningCallback(), ThinkingCallback: c.onThinking, ToolProgressCallback: c.onToolProgress,
-		NoticeCallback: c.onNotice, NoticeClearCallback: c.onNoticeClear, ToolEnv: c.env,
-		ApprovalCallback: c.approvalCallback, SudoPasswordCallback: c.sudoPasswordCallback}
-	if oneTurn {
-		o.OneTurnReasoning = strOrEmpty(pendingOneTurn["one_turn_reasoning"])
-		o.OneTurnAlias = strOrEmpty(pendingOneTurn["one_turn_alias"])
-	}
-	if c.singleQueryMode {
-		o.ClarifyCallback = singleQueryClarifyCallback
-	} else {
-		o.ClarifyCallback = c.clarifyCallback
-		o.ConnectionCallback = c.connectionCallback
-		o.ConnectionUpdateCallback = c.connectionOnChange
-		o.ModelConfirmCallback = c.confirmOwnerModelSwitch
-		o.ModalWithdrawCallback = c.withdrawGatewayModal
-	}
+		NoticeCallback: c.onNotice, NoticeClearCallback: c.onNoticeClear, ToolEnv: c.env, ClarifyCallback: singleQueryClarifyCallback}
 	if c.inlineDiffsEnabled {
 		o.ToolCompleteCallback = c.onToolComplete
 	}
@@ -642,29 +472,12 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 	a, err := newGatewayAgent(c.ctx, o)
 	if err != nil {
 		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
-		for _, line := range home.PartialUpdateHint(err) {
-			chatConsolePrint(line)
-		}
 		return false
 	}
 	c.setAgent(a)
 	setActiveAgent(a)
 	a.SetPrintFn(c.agentStatusPrint)
-	a.SetFinite(c.singleQueryMode)
-	bindGatewayAgent(a)
 	c.activeAgentRouteSignature = routeSignature(effectiveModel, rt)
-	if a.ReasoningPushed() {
-		c.reasoningUserSet = false
-	}
-	if c.pendingTitle != "" && c.sessionDB != nil {
-		a.ensureDBSession()
-		if _, terr := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, c.pendingTitle); terr != nil {
-			cprint("  " + i18n.T(c.ctx, "cli.resume.title_apply_failed", "", map[string]any{"error": terr}))
-		} else {
-			cprint("  " + i18n.T(c.ctx, "cli.resume.title_applied", "", map[string]any{"title": c.pendingTitle}))
-			c.pendingTitle = ""
-		}
-	}
 	return true
 }
 
@@ -690,41 +503,4 @@ func (c *CLI) resumeHistoryLimitError(tipOnly bool) string {
 		pkgLog().Warn(fmt.Sprintf("Resume safety check failed for %s (proceeding without guard): %v", c.sessionID, err))
 	}
 	return ""
-}
-
-// Drops session_meta rows from a stored conversation
-func withoutSessionMeta(rows []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(rows))
-	for _, m := range rows {
-		if m["role"] != "session_meta" {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-// Renders the dim recap panel of the previous conversation capped at the last resume_exchanges exchanges
-func (c *CLI) displayResumedHistory() {
-	displayHistory := c.resumeDisplayHistory
-	if displayHistory == nil {
-		displayHistory = c.conversationHistory
-	}
-	if len(displayHistory) == 0 || c.resumeDisplay == "minimal" {
-		return
-	}
-	disp := cliMap(c.config, "display")
-	entries, lastAsstIdx, lastAsstFull := collectResumeEntries(c, displayHistory, disp, func(t string) string {
-		return tools.SanitizeDisplayText(stripReasoningTags(t))
-	})
-	if len(entries) == 0 {
-		return
-	}
-	skipped := max(0, len(entries)-intOr(mapValueOr(disp, "resume_exchanges", 10), 10)*2)
-	entries = entries[skipped:]
-	if lastAsstIdx >= 0 && lastAsstFull != "" {
-		if adj := lastAsstIdx - skipped; adj >= 0 && adj < len(entries) {
-			entries[adj] = resumeEntry{"assistant_last", lastAsstFull}
-		}
-	}
-	paintResumeHistoryPanel(c, entries, skipped, resumePanelColors(c))
 }

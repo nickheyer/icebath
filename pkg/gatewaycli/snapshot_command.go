@@ -170,11 +170,6 @@ func (s SnapshotCommand) Prune(parts []string) ([]string, error) {
 	return []string{s.T("snapshot.pruned", map[string]any{"deleted": deleted, "keep": keep})}, nil
 }
 
-// Lines for a subcommand the command does not have
-func (s SnapshotCommand) Unknown(sub string) []string {
-	return []string{s.T("snapshot.unknown_subcommand", map[string]any{"subcommand": sub}), s.T("snapshot.usage", nil)}
-}
-
 // Snapshot id a restore names by id or list number, with lines instead when none is named or the number is off
 func (s SnapshotCommand) RestoreTarget(parts []string) (string, []string, error) {
 	if len(parts) < 3 {

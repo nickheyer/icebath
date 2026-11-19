@@ -34,6 +34,10 @@ func (f *relayTestFence) StreamWriterIsCurrent(token int) bool {
 	return token == f.current
 }
 
+func withStreamCall(ctx context.Context, c *streamCall) context.Context {
+	return context.WithValue(ctx, streamCallKey{}, c)
+}
+
 func relayTestFenceCtx(ctx context.Context, fence any) context.Context {
 	return withStreamCall(ctx, &streamCall{attempt: 1, hooks: streamHooks{fence: fence, identity: streamRelayIdentity{SessionID: "session-1", CallRole: "primary"}}})
 }
