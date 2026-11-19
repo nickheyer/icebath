@@ -186,9 +186,9 @@ func checkReleaseUpdate(ctx context.Context, w io.Writer, branch string, branchE
 	case u.pinned:
 		fmt.Fprintf(w, "→ Selected release available: %s\n  Run `%s` to install it.\n", u.label(), command)
 	case u.plan.Ahead >= 0:
-		fmt.Fprintf(w, "⚕ Update available: %d %s behind %s.\n  Run '%s' to install.\n", u.plan.Ahead, commitsWord(u.plan.Ahead), u.follows, command)
+		fmt.Fprintf(w, "󰆧 Update available: %d %s behind %s.\n  Run '%s' to install.\n", u.plan.Ahead, commitsWord(u.plan.Ahead), u.follows, command)
 	default:
-		fmt.Fprintf(w, "⚕ Update available (behind %s).\n  Run '%s' to install.\n", u.follows, command)
+		fmt.Fprintf(w, "󰆧 Update available (behind %s).\n  Run '%s' to install.\n", u.follows, command)
 	}
 	return nil
 }

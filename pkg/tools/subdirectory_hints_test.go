@@ -559,3 +559,8 @@ func TestSubdirectoryHintTrackerWorkingDirReportsTheRoot(t *testing.T) {
 		t.Fatalf("WorkingDir = %q, want %q", got, tr.workingDir)
 	}
 }
+
+// Tracker anchored at workingDir or the process cwd, its deny list and read timeout from the process home
+func NewSubdirectoryHintTracker(workingDir string, enabled bool) *SubdirectoryHintTracker {
+	return NewSubdirectoryHintTrackerFor(nil, workingDir, enabled)
+}

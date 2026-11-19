@@ -27,10 +27,10 @@ func skinHome(t *testing.T) (context.Context, string) {
 
 func TestSetActiveSkin(t *testing.T) {
 	ctx, _ := skinHome(t)
-	if skin := SetActiveSkin(ctx, "ares"); skin.Name != "ares" {
+	if skin := SetActiveSkin(ctx, "taro"); skin.Name != "taro" {
 		t.Fatal(skin.Name)
 	}
-	if GetActiveSkinName(ctx) != "ares" || GetActiveSkin(ctx).Name != "ares" {
+	if GetActiveSkinName(ctx) != "taro" || GetActiveSkin(ctx).Name != "taro" {
 		t.Fatal(GetActiveSkinName(ctx))
 	}
 }
@@ -42,7 +42,7 @@ func TestLoadUserSkinFromYAML(t *testing.T) {
 	if skin.Name != "custom" || skin.GetColor("banner_title", "") != "#FF0000" || skin.GetBranding("agent_name", "") != "Custom Agent" {
 		t.Fatal(skin)
 	}
-	if skin.ToolPrefix != "▸" || skin.GetColor("banner_border", "") != "#CD7F32" {
+	if skin.ToolPrefix != "▸" || skin.GetColor("banner_border", "") != "#3b5169" {
 		t.Fatal(skin.ToolPrefix, skin.GetColor("banner_border", ""))
 	}
 }
@@ -51,7 +51,7 @@ func TestLoadUserSkinInvalidSectionTypesFallBackToDefaults(t *testing.T) {
 	ctx, dir := skinHome(t)
 	os.WriteFile(filepath.Join(dir, "broken.yaml"), []byte("branding:\n- also\n- invalid\ncolors:\n- not\n- a\n- mapping\nname: broken\nspinner: invalid\ntool_emojis:\n- invalid\ntool_prefix: '!'\n"), 0o644)
 	skin := LoadSkin(ctx, "broken")
-	if skin.Name != "broken" || skin.GetColor("banner_title", "") != "#FFD700" || skin.GetBranding("agent_name", "") != "Icebath Agent" {
+	if skin.Name != "broken" || skin.GetColor("banner_title", "") != "#e3122b" || skin.GetBranding("agent_name", "") != "Icebath Agent" {
 		t.Fatal(skin.Name, skin.GetColor("banner_title", ""), skin.GetBranding("agent_name", ""))
 	}
 	if _, ok := skin.Spinner["waiting_faces"]; ok || len(skin.ToolEmojis) != 0 || skin.ToolPrefix != "!" {
@@ -62,21 +62,21 @@ func TestLoadUserSkinInvalidSectionTypesFallBackToDefaults(t *testing.T) {
 func TestListSkinsIncludesUserSkins(t *testing.T) {
 	ctx, dir := skinHome(t)
 	os.WriteFile(filepath.Join(dir, "pirate.yaml"), []byte("description: Arr matey\nname: pirate\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "shadow.yaml"), []byte("description: shadows ares\nname: ares\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "shadow.yaml"), []byte("description: shadows taro\nname: taro\n"), 0o644)
 	skins := ListSkins(ctx)
-	if skins[0].Name != "default" || skins[0].Source != "builtin" {
+	if skins[0].Name != DefaultSkinName || skins[0].Source != "builtin" {
 		t.Fatal(skins[0])
 	}
-	found, ares := false, 0
+	found, shadowed := false, 0
 	for _, s := range skins {
 		if s.Name == "pirate" {
 			found = s.Source == "user" && s.Description == "Arr matey"
 		}
-		if s.Name == "ares" {
-			ares++
+		if s.Name == "taro" {
+			shadowed++
 		}
 	}
-	if !found || ares != 1 {
+	if !found || shadowed != 1 {
 		t.Fatal(skins)
 	}
 }
@@ -103,29 +103,34 @@ func TestUserSkinCustomCSS(t *testing.T) {
 	if got := write(strings.Repeat("x", 40000)).CustomCSS; len(got) != 32768 {
 		t.Fatal(len(got))
 	}
-	if LoadSkin(ctx, "default").CustomCSS != "" || LoadSkin(ctx, "mono").CustomCSS != "" {
+	if LoadSkin(ctx, "default").CustomCSS != "" || LoadSkin(ctx, "contrast").CustomCSS != "" {
 		t.Fatal("built in skins carry no css")
 	}
 }
 
 func TestUnknownSkinFallsBackToDefault(t *testing.T) {
-	ctx, _ := skinHome(t)
-	if skin := LoadSkin(ctx, "no-such-skin"); skin.Name != "default" {
+	ctx, dir := skinHome(t)
+	if skin := LoadSkin(ctx, "no-such-skin"); skin.Name != DefaultSkinName || skin.Source != "builtin" {
+		t.Fatal(skin.Name, skin.Source)
+	}
+	if skin := LoadSkin(ctx, "default"); skin.Name != DefaultSkinName {
 		t.Fatal(skin.Name)
 	}
-	if wings := LoadSkin(ctx, "ares").GetSpinnerWings(); len(wings) == 0 || wings[0] != [2]string{"⟪⚔", "⚔⟫"} {
-		t.Fatal(wings)
+	os.WriteFile(filepath.Join(dir, "winged.yaml"), []byte("name: winged\nspinner:\n  wings:\n    - [\"⟪\", \"⟫\"]\n    - [\"only one\"]\n"), 0o644)
+	skin := LoadSkin(ctx, "winged")
+	if wings := skin.GetSpinnerWings(); len(wings) != 1 || wings[0] != [2]string{"⟪", "⟫"} || skin.Source != "user" {
+		t.Fatal(wings, skin.Source)
 	}
 }
 
 func TestBrandingHelpersAndConfigInit(t *testing.T) {
 	ctx, _ := skinHome(t)
-	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": "  mono  "}})
-	if GetActiveSkinName(ctx) != "mono" || GetActiveHelpHeader(ctx, "x") != "[?] Available Commands" {
+	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": "  contrast  "}})
+	if GetActiveSkinName(ctx) != "contrast" || GetActiveHelpHeader(ctx, "x") != "❆ Available Commands" {
 		t.Fatal(GetActiveSkinName(ctx), GetActiveHelpHeader(ctx, "x"))
 	}
 	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": 3}})
-	if GetActiveSkinName(ctx) != "default" || GetActiveGoodbye(ctx, "") != "Goodbye! ☤" {
+	if GetActiveSkinName(ctx) != "default" || GetActiveGoodbye(ctx, "") != "Goodbye! 󰆧" {
 		t.Fatal(GetActiveSkinName(ctx), GetActiveGoodbye(ctx, ""))
 	}
 }

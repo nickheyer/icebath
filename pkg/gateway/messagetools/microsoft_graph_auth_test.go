@@ -243,3 +243,9 @@ func TestFormatGraphError(t *testing.T) {
 		}
 	}
 }
+
+// Credentials with the default scope and authority
+func NewGraphCredentials(tenantID, clientID, clientSecret string) GraphCredentials {
+	return GraphCredentials{TenantID: tenantID, ClientID: clientID, ClientSecret: clientSecret,
+		Scope: DefaultGraphScope, AuthorityURL: DefaultGraphAuthorityURL}
+}

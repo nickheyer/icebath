@@ -129,7 +129,7 @@ func petInfoMeta(ctx context.Context, rid any, _ map[string]any, _ string) (map[
 }
 
 // Kitty placement payload of a state for a terminal that speaks it, nil otherwise
-func petKittyCells(p *pet.InstalledPet, petConf map[string]any, state string, scale float64) map[string]any {
+func petKittyCells(p *pet.InstalledPet, petConf map[string]any, state string, scale float64, terminal string) map[string]any {
 	configured := "auto"
 	if raw := petConf["render_mode"]; truthy(raw) {
 		configured = strings.ToLower(pyrepr.Str(raw))
@@ -138,7 +138,7 @@ func petKittyCells(p *pet.InstalledPet, petConf map[string]any, state string, sc
 	}
 	mode := configured
 	if configured == "" || configured == "auto" {
-		mode = pet.DetectTerminalGraphics()
+		mode = terminal
 	}
 	if mode != "kitty" {
 		return nil
@@ -204,7 +204,11 @@ func petCells(ctx context.Context, rid any, params map[string]any, _ string) (ma
 	}
 	base := map[string]any{"enabled": true, "slug": active.Slug, "displayName": active.DisplayName, "state": state}
 	if truthy(params["graphics"]) {
-		if kitty := petKittyCells(active, petConf, state, scale); kitty != nil {
+		terminal := ""
+		if raw := params["terminal"]; truthy(raw) {
+			terminal = pyrepr.Str(raw)
+		}
+		if kitty := petKittyCells(active, petConf, state, scale, terminal); kitty != nil {
 			for key, value := range kitty {
 				base[key] = value
 			}

@@ -74,13 +74,6 @@ func (c *camRig) settled() bool {
 	return true
 }
 
-// Jumps every spring of the camera to its target
-func (c *camRig) snap() {
-	for _, v := range []*anim.Value{&c.tx, &c.ty, &c.tz, &c.yaw, &c.pitch, &c.dist} {
-		v.Snap()
-	}
-}
-
 // Shot the cinematic camera holds, a point of interest and how long it stays on it
 type cinema struct {
 	target vxl.Vec3

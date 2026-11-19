@@ -308,11 +308,6 @@ func HasHook(ctx context.Context, hookName string) bool {
 	return deliveryManager(ctx).HasHook(hookName)
 }
 
-// Callback snapshot of a hook on the active profile's manager without triggering discovery
-func IterHookCallbacks(ctx context.Context, hookName string) []HookFunc {
-	return GetPluginManager(ctx).IterHookCallbacks(hookName)
-}
-
 // Reports whether the active profile holds its reply stream for an output transform, after lazy discovery
 func StreamHeld(ctx context.Context) bool { return deliveryManager(ctx).HoldsStream() }
 

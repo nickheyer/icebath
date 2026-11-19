@@ -26,13 +26,6 @@ var (
 	}
 )
 
-// RegisterLegacyToolAlias accepts an old tool name at every dispatch seam
-func RegisterLegacyToolAlias(alias, canonical string) {
-	legacyAliasMu.Lock()
-	legacyToolAliases[alias] = canonical
-	legacyAliasMu.Unlock()
-}
-
 // CanonicalToolName maps a legacy alias to the advertised name
 func CanonicalToolName(name string) string {
 	legacyAliasMu.RLock()

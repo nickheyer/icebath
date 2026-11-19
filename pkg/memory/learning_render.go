@@ -360,7 +360,7 @@ func runeSlice(rs []rune, i, j int) string {
 	return string(rs[i:j])
 }
 
-// RGB triple of a hex color, three digit shorthand expanded, gold when unparseable
+// RGB triple of a hex color, three digit shorthand expanded, the Blackwall accent when unparseable
 func HexToRGB(s string) [3]int {
 	t := strings.TrimLeft(pyStrip(s), "#")
 	if utf8.RuneCountInString(t) == 3 {
@@ -376,7 +376,7 @@ func HexToRGB(s string) [3]int {
 	for i := 0; i < 3; i++ {
 		v, ok := pyIntBase16(runeSlice(rs, i*2, i*2+2))
 		if !ok {
-			return [3]int{255, 215, 0}
+			return [3]int{227, 18, 43}
 		}
 		out[i] = v
 	}

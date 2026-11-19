@@ -552,29 +552,6 @@ func captureTransitionLocked(ctx context.Context, conn state.SQLiteConn, roomID 
 	return captureErr
 }
 
-// Commits a new evidence revision only when one consistent source view changed
-func CaptureWorkRecord(ctx context.Context, dbPath, roomID, localGatewayID string, throughSeq *int64) (map[string]any, error) {
-	var out map[string]any
-	invalid := false
-	err := hostedTransaction(ctx, dbPath, true, func(conn state.SQLiteConn) error {
-		record, err := CaptureWorkRecordLocked(ctx, conn, roomID, localGatewayID, throughSeq)
-		var stored *InvalidStoredWorkRecord
-		if errors.As(err, &stored) {
-			invalid = true
-			return nil
-		}
-		out = record
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	if invalid {
-		return nil, invalidStoredWorkRecord("stored work evidence is invalid")
-	}
-	return out, nil
-}
-
 // Captures the source evidence of a room inside the caller's transaction
 func CaptureWorkRecordLocked(ctx context.Context, conn state.SQLiteConn, roomID, localGatewayID string, throughSeq *int64) (map[string]any, error) {
 	if err := workStorageInitialize(ctx, conn); err != nil {

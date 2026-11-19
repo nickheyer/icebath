@@ -340,15 +340,6 @@ func capturedProvenance(ctx context.Context, runner AuthorityRunner, event *Mess
 	return captured, nil
 }
 
-// Durable payload of a native event validated and captured on the caller's goroutine
-func snapshotNativeEvent(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*pyjson.Object, error) {
-	provenance, err := capturedProvenance(ctx, runner, event)
-	if err != nil {
-		return nil, err
-	}
-	return snapshotNative(ctx, runner, adapterEvent(event, false), provenance, false, nil, nil)
-}
-
 // Durable payload of a native event, its identity frozen before the first yield and its media captured off the caller
 func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*pyjson.Object, error) {
 	provenance, err := capturedProvenance(ctx, runner, event)

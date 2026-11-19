@@ -101,7 +101,7 @@ const gatewaySectionLabel = "Messaging Platforms (Gateway)"
 
 // Runs the messaging platforms section under its banner, saving the config once it completes
 func runGatewaySection(ctx context.Context, cfg config.Tree) error {
-	provider.PrintSetupBanner("│     ☤ Icebath Setup — " + pystr.Ljust(gatewaySectionLabel, 33) + " │")
+	provider.PrintSetupBanner("│     󰆧 Icebath Setup — " + pystr.Ljust(gatewaySectionLabel, 33) + " │")
 	if err := provider.RunSetupSteps([]provider.SetupStep{{Label: gatewaySectionLabel, Action: func() error { return setupGatewayFn(ctx, cfg) }}}); err != nil {
 		return err
 	}
@@ -171,10 +171,10 @@ func setupBackup(ctx context.Context, h string) (string, error) {
 
 // Prints the title box of a whole setup run
 func printSetupWizardTitle() {
-	provider.PrintSetupBanner("│             ☤ Icebath Agent Setup Wizard               │",
+	provider.PrintSetupBanner("│             󰆧 Icebath Agent Setup Wizard                │",
 		"├─────────────────────────────────────────────────────────┤",
-		"│  Let's configure your Icebath Agent installation.      │",
-		"│  Press Ctrl+C at any time to exit.                     │")
+		"│  Let's configure your Icebath Agent installation.       │",
+		"│  Press Ctrl+C at any time to exit.                      │")
 }
 
 // Quick Setup of an existing install as one step

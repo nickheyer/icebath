@@ -1929,3 +1929,6 @@ func TestRunApprovalGateFailsClosedWithNobodyToAsk(t *testing.T) {
 		t.Fatalf("approvals.mode off bypasses the gate %+v", got)
 	}
 }
+
+// Denied reports a non consent verdict carrying the retry contract rather than a plain block
+func (r GuardResult) Denied() bool { return !r.Approved && r.Outcome != "" }

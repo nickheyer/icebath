@@ -201,9 +201,9 @@ func (c *CLI) handlePersonalityCommand(cmd string) {
 		return
 	}
 	saved := commands.PersistPersonality(c.ctx, resolved)
-	scope, face := c.commandsT("personality.scope_session", nil), "(^_^)"
+	scope, face := c.commandsT("personality.scope_session", nil), "✓"
 	if saved {
-		scope, face = c.commandsT("personality.scope_saved", nil), "(^_^)b"
+		scope = c.commandsT("personality.scope_saved", nil)
 	}
 	if resolved == "" {
 		c.systemPrompt = ""

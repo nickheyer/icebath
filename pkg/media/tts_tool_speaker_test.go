@@ -869,3 +869,7 @@ func TestWriteWaveFileMatchesTheWaveModuleLayout(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func newStreamerPlayback(ctx context.Context, streamer StreamingTTSProvider, stop Event) *streamerPlayback {
+	return newStreamerPlaybackTo(ctx, streamer, stop, localSpeaker())
+}

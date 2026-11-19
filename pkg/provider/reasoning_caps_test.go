@@ -109,3 +109,31 @@ func TestOpenRouterModelReasoningCapabilities(t *testing.T) {
 		t.Fatal("cache only by default never fetches")
 	}
 }
+
+// ParseOpenRouterReasoningCapabilities normalizes one catalog entry, false when supported_parameters is missing or malformed
+func ParseOpenRouterReasoningCapabilities(item any) (ReasoningCapabilities, bool) {
+	m, ok := asMap(item)
+	if !ok {
+		return ReasoningCapabilities{}, false
+	}
+	caps, known := parseReasoningCaps(m)
+	if !known {
+		return ReasoningCapabilities{}, false
+	}
+	return capabilitiesOf(caps), true
+}
+
+// Drops every profile's slots so the next read starts cold
+func (s *capsSource) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.slot = &capsSlots{}
+}
+
+// ResetReasoningCapsCatalogs drops every in process capability catalog and source slot
+func ResetReasoningCapsCatalogs() {
+	openrouterCapsSource.reset()
+	capsCatalogsMu.Lock()
+	defer capsCatalogsMu.Unlock()
+	capsCatalogs = map[string]*capsCatalog{}
+}

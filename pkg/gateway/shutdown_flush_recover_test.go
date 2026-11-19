@@ -161,3 +161,9 @@ func TestDrainTranscriptSpoolSkipsParseableNonDictPayload(t *testing.T) {
 		t.Fatalf("replayed %v", replayed)
 	}
 }
+
+// Replays flush files into state.db and returns how many messages were recovered
+func RecoverPendingToDB(ctx context.Context, sessionDB TranscriptAppender, resolver SpoolSessionResolver) (int, error) {
+	recovered, _, err := RecoverPendingSpool(ctx, sessionDB, resolver)
+	return recovered, err
+}

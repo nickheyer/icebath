@@ -417,7 +417,7 @@ func (wz *cloudWizard) stepAllowlist() error {
 
 // Interactive wizard for the WhatsApp Cloud API adapter, 0 on success and 1 on abort
 func (wz *cloudWizard) runWhatsAppCloudSetup() (int, error) {
-	wz.lines("", "☤ WhatsApp Business Cloud API Setup", strings.Repeat("=", 50), "",
+	wz.lines("", "󰆧 WhatsApp Business Cloud API Setup", strings.Repeat("=", 50), "",
 		"This wizard configures Icebath to talk to WhatsApp via Meta's",
 		"official Cloud API. It's the production-grade path:", "",
 		"  • No QR codes, no Node.js bridge subprocess",

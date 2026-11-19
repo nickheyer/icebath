@@ -632,13 +632,13 @@ gateway:
     not_git_repo: "✗ Pas un dépôt git — impossible de mettre à jour."
     icebath_cmd_not_found: "✗ Impossible de localiser la commande `icebath`. Icebath est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `icebath update` manuellement dans votre terminal."
     start_failed: "✗ Échec du démarrage de la mise à jour : {error}"
-    starting: "☤ Démarrage de la mise à jour Icebath… Je diffuserai la progression ici."
+    starting: "❆ Démarrage de la mise à jour Icebath… Je diffuserai la progression ici."
     reply_failed: "✗ Échec de l'envoi de la réponse au processus de mise à jour : {error}"
     reply_sent: "✓ `{label}` envoyé au processus de mise à jour."
     failed_notice: "❌ La mise à jour d'Icebath a échoué ; la version précédente tourne toujours. Lancez `icebath update` sur l'hôte pour voir l'erreur complète, ou réessayez /update plus tard."
     prompt_default: " (par défaut : {default})"
     prompt: |-
-      ☤ **La mise à jour a besoin de votre réponse :**
+      ❆ **La mise à jour a besoin de votre réponse :**
 
       {prompt}{default_hint}
 
@@ -1757,7 +1757,7 @@ platform:
       resolved_by_user: "{icon} **{label}** par {user}"
     update_prompt:
 
-      title: "☤ La mise à jour attend votre réponse"
+      title: "❆ La mise à jour attend votre réponse"
       default_hint: |2-
 
 
@@ -2311,7 +2311,7 @@ cli:
     duration_dhm: "{days}j {hours}h {minutes}m"
     duration_m_rest: "{minutes}m {rest}"
     duration_hm_rest: "{hours}h {minutes}m {rest}"
-    no_active_agent: "(._.) Aucun agent actif -- envoyez d'abord un message."
+    no_active_agent: "◈ Aucun agent actif -- envoyez d'abord un message."
     n_more: "{count} de plus"
     more_not_shown: "autres non affichés"
     yes_no_default_yes: "O/n"
@@ -2525,7 +2525,7 @@ cli:
     queued: "Titre de session en attente : {title} (sera enregistré au premier message)"
   undo:
 
-    invalid_count: "(._.) Nombre invalide {value} — utilisez /undo ou /undo N."
+    invalid_count: "◈ Nombre invalide {value} — utilisez /undo ou /undo N."
     removes_last_exchange: "Ceci supprime le dernier échange utilisateur/assistant de l'historique."
     removes_last_turns: "Ceci supprime les {count} derniers tours utilisateur de l'historique."
   resume:
@@ -2583,7 +2583,7 @@ cli:
     out_of_credits_title: "⚡ Crédits épuisés"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Nouveau départ ! Écran effacé et conversation réinitialisée."
+    fresh_start: "❆ Nouveau départ ! Écran effacé et conversation réinitialisée."
     model_reset_default: "(modèle réinitialisé par défaut : {model})"
     title_rejected: "Titre rejeté : {error}"
     title_empty_untitled: "Le titre est vide après nettoyage — session démarrée sans titre."
@@ -2605,7 +2605,7 @@ cli:
     label_reasoning: "Raisonnement"
     label_approvals: "Approbations"
     label_context: "Contexte"
-    recent_intro: "(._.) Aucun message dans la conversation actuelle — voici les sessions récentes que vous pouvez reprendre :"
+    recent_intro: "◈ Aucun message dans la conversation actuelle — voici les sessions récentes que vous pouvez reprendre :"
     recent_header: "Sessions récentes :"
     column_title: "Titre"
     column_preview: "Aperçu"
@@ -2613,48 +2613,48 @@ cli:
     column_id: "ID"
     resume_usage: "Utilisez /resume <number>, /resume <session id> ou /resume <session title> pour continuer."
     resume_example: "Exemple : /resume 2"
-    history_empty: "(._.) Aucun historique de conversation pour l'instant."
+    history_empty: "◈ Aucun historique de conversation pour l'instant."
     history_tools_header: "[Outils]"
     history_tools_hidden_one: "({count} message d'outil masqué)"
     history_tools_hidden_other: "({count} messages d'outil masqués)"
-    history_title: "(^_^) Historique de la conversation"
+    history_title: "❆ Historique de la conversation"
     history_you_header: "[Vous #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(aucune réponse textuelle)"
     history_tool_calls_one: "({count} appel d'outil demandé)"
     history_tool_calls_other: "({count} appels d'outil demandés)"
-    new_session_titled: "(^_^)v Nouvelle session démarrée : {title}"
-    new_session: "(^_^)v Nouvelle session démarrée !"
-    save_nothing: "(;_;) Aucune conversation à enregistrer."
-    save_dir_failed: "(x_x) Impossible de créer le répertoire d'enregistrement {path} : {error}"
+    new_session_titled: "✓ Nouvelle session démarrée : {title}"
+    new_session: "✓ Nouvelle session démarrée !"
+    save_nothing: "◈ Aucune conversation à enregistrer."
+    save_dir_failed: "✘ Impossible de créer le répertoire d'enregistrement {path} : {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Conversation enregistrée dans : {path} ({label})"
+    save_ok: "✓ Conversation enregistrée dans : {path} ({label})"
     save_resume_hint: "Reprenez la session en cours avec : icebath --resume {session_id}"
-    save_failed: "(x_x) Échec de l'enregistrement : {error}"
-    retry_no_messages: "(._.) Aucun message à réessayer."
-    retry_no_user_message: "(._.) Aucun message utilisateur à réessayer."
-    retry_unsafe: "(._.) Impossible de réessayer ce message en toute sécurité : {error}"
-    retry_rewind_failed: "(x_x) Échec du retour en arrière pour réessayer ; l'historique n'a pas été modifié : {error}"
-    retrying: "(^_^)b Nouvelle tentative : \"{preview}\""
-    undo_no_messages: "(._.) Aucun message à annuler."
-    undo_no_user_message: "(._.) Aucun message utilisateur à annuler."
-    undo_failed: "(x_x) Échec de l'annulation ; l'historique n'a pas été modifié : {error}"
-    undo_ok_one: "(^_^)b {count} tour annulé ({messages} message(s)). Sauvegardé dans : \"{backup}\""
-    undo_ok_other: "(^_^)b {count} tours annulés ({messages} message(s)). Sauvegardé dans : \"{backup}\""
+    save_failed: "✘ Échec de l'enregistrement : {error}"
+    retry_no_messages: "◈ Aucun message à réessayer."
+    retry_no_user_message: "◈ Aucun message utilisateur à réessayer."
+    retry_unsafe: "◈ Impossible de réessayer ce message en toute sécurité : {error}"
+    retry_rewind_failed: "✘ Échec du retour en arrière pour réessayer ; l'historique n'a pas été modifié : {error}"
+    retrying: "✓ Nouvelle tentative : \"{preview}\""
+    undo_no_messages: "◈ Aucun message à annuler."
+    undo_no_user_message: "◈ Aucun message utilisateur à annuler."
+    undo_failed: "✘ Échec de l'annulation ; l'historique n'a pas été modifié : {error}"
+    undo_ok_one: "✓ {count} tour annulé ({messages} message(s)). Sauvegardé dans : \"{backup}\""
+    undo_ok_other: "✓ {count} tours annulés ({messages} message(s)). Sauvegardé dans : \"{backup}\""
     undo_remaining: "{count} message(s) restant(s) dans l'historique."
     yolo_state_locked_on: "verrouillé ON"
     yolo_locked: "⚡ YOLO est {state} pour ce processus (démarré avec --yolo / ICEBATH_YOLO_MODE). /yolo ne peut pas le désactiver — redémarrez sans le drapeau pour réactiver les approbations."
     yolo_off: "⚠ Mode YOLO {state} — les commandes dangereuses nécessiteront une approbation."
     yolo_on: "⚡ Mode YOLO {state} — toutes les commandes sont auto-approuvées. À utiliser avec prudence."
-    compress_too_short: "(._.) Conversation trop courte pour être compressée (au moins {min} messages requis)."
-    compress_no_agent: "(._.) Aucun agent actif -- envoyez d'abord un message."
+    compress_too_short: "◈ Conversation trop courte pour être compressée (au moins {min} messages requis)."
+    compress_no_agent: "◈ Aucun agent actif -- envoyez d'abord un message."
     compress_busy: "Compression du contexte..."
     compress_summarizing: "🗜️  Résumé jusqu'ici : {count} messages, en conservant les {keep_last} dernier(s) échange(s) tels quels..."
     compress_focus: "🗜️  Compression de {count} messages, focus : \"{focus}\"..."
     compress_plain: "🗜️  Compression de {count} messages..."
     compress_failed: "❌ Échec de la compression : {error}"
     persist_prompt_summary: "{icon} {label} : {detail} → {outcome}"
-    goodbye: "Au revoir ! ☤"
+    goodbye: "Au revoir ! 󰆧"
     exit_resume_hint: "Reprenez cette session avec :"
     exit_label_session: "Session :       {session_id}"
     exit_label_title: "Titre :         {title}"
@@ -2706,7 +2706,7 @@ cli:
       scope_saved: "(enregistré dans la config)"
       scope_save_failed: "(session uniquement ; échec d'enregistrement)"
       scope_session: "(cette session — utilisez --global pour conserver)"
-      unknown_argument: "(._.) Argument inconnu : {arg}"
+      unknown_argument: "◈ Argument inconnu : {arg}"
       usage: "Usage : {usage}"
       needs_active_session: "{command} nécessite une session de chat active."
       unavailable_no_session: "{label} indisponible (aucune session active)."
@@ -2753,17 +2753,17 @@ cli:
 
       usage: "Usage : /indicator [{styles}]"
       status: "Style de l'indicateur d'activité : {style}"
-      unknown_style: "(._.) Style d'indicateur inconnu : {arg}"
+      unknown_style: "◈ Style d'indicateur inconnu : {arg}"
       label: "Style de l'indicateur d'activité"
       note: "La TUI appliquera le nouveau style à son prochain rendu."
     fast:
 
-      not_supported: "(._.) /fast n'est disponible que pour les modèles prenant en charge le mode rapide (OpenAI Priority Processing ou Anthropic Fast Mode)."
+      not_supported: "◈ /fast n'est disponible que pour les modèles prenant en charge le mode rapide (OpenAI Priority Processing ou Anthropic Fast Mode)."
       feature_generic: "Mode rapide"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Ultrafast n'est pas disponible pour {model} sur ce compte ou cette route."
+      ultrafast_not_supported: "◈ Ultrafast n'est pas disponible pour {model} sur ce compte ou cette route."
       usage: "Usage : /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature} : {status}"
       set_to: "✓ {feature} défini sur {value} {scope}"
@@ -2772,24 +2772,24 @@ cli:
       progress_compose: "┊ composition de la spritesheet…"
       progress_save: "┊ enregistrement…"
       progress_drawing: "┊ dessin de {state}…"
-      describe_prompt: "(o_o) Décrivez votre animal : "
-      usage: "(o_o) Usage : /hatch <description>  (ex. /hatch un petit renard cyber)"
+      describe_prompt: "◈ Décrivez votre animal : "
+      usage: "◈ Usage : /hatch <description>  (ex. /hatch un petit renard cyber)"
       default_name: "Animal"
-      designing: "(o_o) Conception de '{concept}'… (une minute d'appels au modèle d'image)"
-      base_failed: "(x_x) Impossible de générer l'apparence de base : {error}"
-      no_base_draft: "(x_x) Aucune ébauche de base n'est revenue — réessayez."
-      failed: "(x_x) Échec de l'éclosion : {error}"
-      hatched: "(^_^)b {name} a éclos et a été adopté — il arrive dans un instant !"
+      designing: "◈ Conception de '{concept}'… (une minute d'appels au modèle d'image)"
+      base_failed: "✘ Impossible de générer l'apparence de base : {error}"
+      no_base_draft: "✘ Aucune ébauche de base n'est revenue — réessayez."
+      failed: "✘ Échec de l'éclosion : {error}"
+      hatched: "✓ {name} a éclos et a été adopté — il arrive dans un instant !"
     pet:
 
-      is_out: "(^_^)b {name} est de sortie — il arrive dans un instant."
-      put_away_named: "(-_-)zzZ {name} est rangé."
-      put_away: "(-_-)zzZ Animal rangé."
-      usage_scale: "(o_o) Usage : /pet scale <facteur>  (ex. /pet scale 0.5)"
-      scale_set: "(^_^) Échelle de l'animal → {scale}."
-      fetching: "(o_o) Récupération de '{name}' depuis le petdex…"
-      adopt_failed: "(x_x) Impossible d'adopter '{name}' : {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} est de sortie — il arrive dans un instant."
+      put_away_named: "○ {name} est rangé."
+      put_away: "○ Animal rangé."
+      usage_scale: "◈ Usage : /pet scale <facteur>  (ex. /pet scale 0.5)"
+      scale_set: "✓ Échelle de l'animal → {scale}."
+      fetching: "◈ Récupération de '{name}' depuis le petdex…"
+      adopt_failed: "✘ Impossible d'adopter '{name}' : {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Non indexé"
@@ -2879,9 +2879,9 @@ cli:
       failed: "Échec de /journey : {error}"
     paste:
 
-      no_image: "(._.) Aucune image trouvée dans le presse-papiers"
+      no_image: "◈ Aucune image trouvée dans le presse-papiers"
       attached: "📎 Image #{index} jointe depuis le presse-papiers"
-      extract_failed: "(>_<) Le presse-papiers contient une image mais l'extraction a échoué"
+      extract_failed: "◬ Le presse-papiers contient une image mais l'extraction a échoué"
     copy:
 
       nothing_yet: "Rien à copier pour le moment."
@@ -2895,13 +2895,13 @@ cli:
     image:
 
       usage: "Usage : /image <chemin>  ex. /image {example}"
-      not_found: "(>_<) Fichier introuvable : {path}"
-      unsupported: "(._.) Fichier image non pris en charge : {name}"
+      not_found: "◬ Fichier introuvable : {path}"
+      unsupported: "◈ Fichier image non pris en charge : {name}"
       attached: "📎 Image jointe : {name}"
       now_type_prompt: "Saisissez maintenant votre prompt (ou utilisez --image en mode requête unique) : {text}"
     tools:
 
-      usage: "(._.) Usage : /tools {subcommand} <nom> [nom ...]"
+      usage: "◈ Usage : /tools {subcommand} <nom> [nom ...]"
       example_toolset: "Jeu d'outils intégré :  /tools {subcommand} web"
       example_mcp: "Outil MCP :             /tools {subcommand} github:create_issue"
       disabling: "Désactivation de {names}..."
@@ -2952,7 +2952,7 @@ cli:
       compressed_redirect: "La session {session_id} a été compressée dans {resolved_id} ; reprise de la session descendante avec votre transcription."
     sessions:
 
-      none_yet: "(._.) Aucune session précédente pour le moment."
+      none_yet: "◈ Aucune session précédente pour le moment."
     branch:
 
       branched_one: "⑂ Session « {title} » dupliquée en branche ({count} message utilisateur)"
@@ -2981,10 +2981,10 @@ cli:
       tools_in_worktree: "Les outils terminal et fichiers opèrent maintenant dans le worktree."
     personality:
 
-      title: "(^o^)/ Personnalités"
+      title: "❆ Personnalités"
       none_option: "(aucune surcouche de personnalité)"
       usage: "Usage : /personality <nom>   (* = active)"
-      unknown: "(._.) Personnalité inconnue : {name}"
+      unknown: "◈ Personnalité inconnue : {name}"
       available: "Disponibles : none, {available}"
       scope_saved: "(enregistré dans la config)"
       scope_session: "(session uniquement)"
@@ -2993,10 +2993,10 @@ cli:
       set_to: "{face} Personnalité définie sur '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat doit être un entier"
-      unknown_command: "(._.) Commande cron inconnue : {subcommand}"
+      repeat_must_be_integer: "◈ --repeat doit être un entier"
+      unknown_command: "◈ Commande cron inconnue : {subcommand}"
       available: "Disponibles : list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Tâches planifiées"
+      overview_title: "❆ Tâches planifiées"
       overview_commands: "Commandes :"
       overview_usage: |-
         /cron list
@@ -3014,7 +3014,7 @@ cli:
       skills_none: "Skills : aucune"
       next_short: "Prochaine"
       no_jobs_hint: "Aucune tâche planifiée. Utilisez '/cron add' pour en créer une."
-      no_jobs: "(._.) Aucune tâche planifiée."
+      no_jobs: "◈ Aucune tâche planifiée."
       list_header: "Tâches planifiées :"
       id: "ID : {job_id}"
       name: "Nom : {name}"
@@ -3027,26 +3027,26 @@ cli:
       status_delivery_failed: "delivery_failed : {error}"
       status_error: "erreur : {error}"
       last_run: "Dernière exécution : {when} ({status})"
-      usage_add: "(._.) Usage : /cron add <planification> <prompt>"
-      need_prompt_or_skill: "(._.) Veuillez fournir un prompt ou au moins une skill"
-      create_failed: "(x_x) Échec de la création de la tâche : {error}"
-      created: "(^_^)b Tâche créée : {job_id}"
-      usage_edit: "(._.) Usage : /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) Tâche introuvable : {job_id}"
-      update_failed: "(x_x) Échec de la mise à jour de la tâche : {error}"
-      updated: "(^_^)b Tâche mise à jour : {job_id}"
-      usage_action: "(._.) Usage : /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) Échec de la mise en pause de la tâche : {error}"
-      resume_failed: "(x_x) Échec de la reprise de la tâche : {error}"
-      run_failed: "(x_x) Échec de l'exécution de la tâche : {error}"
-      remove_failed: "(x_x) Échec de la suppression de la tâche : {error}"
-      removed: "(^_^)b Tâche supprimée : {name} ({job_id})"
+      usage_add: "◈ Usage : /cron add <planification> <prompt>"
+      need_prompt_or_skill: "◈ Veuillez fournir un prompt ou au moins une skill"
+      create_failed: "✘ Échec de la création de la tâche : {error}"
+      created: "✓ Tâche créée : {job_id}"
+      usage_edit: "◈ Usage : /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ Tâche introuvable : {job_id}"
+      update_failed: "✘ Échec de la mise à jour de la tâche : {error}"
+      updated: "✓ Tâche mise à jour : {job_id}"
+      usage_action: "◈ Usage : /cron {subcommand} <job_id>"
+      pause_failed: "✘ Échec de la mise en pause de la tâche : {error}"
+      resume_failed: "✘ Échec de la reprise de la tâche : {error}"
+      run_failed: "✘ Échec de l'exécution de la tâche : {error}"
+      remove_failed: "✘ Échec de la suppression de la tâche : {error}"
+      removed: "✓ Tâche supprimée : {name} ({job_id})"
       did_not_run: |-
-        (x_x) Tâche non exécutée : {name} ({job_id})
+        ✘ Tâche non exécutée : {name} ({job_id})
           {reason}
-      paused: "(^_^)b Tâche mise en pause : {name} ({job_id})"
-      resumed: "(^_^)b Tâche reprise : {name} ({job_id})"
-      triggered: "(^_^)b Tâche déclenchée : {name} ({job_id})"
+      paused: "✓ Tâche mise en pause : {name} ({job_id})"
+      resumed: "✓ Tâche reprise : {name} ({job_id})"
+      triggered: "✓ Tâche déclenchée : {name} ({job_id})"
     suggestions:
 
       failed: "La commande suggestions a échoué : {error}"
@@ -3055,10 +3055,10 @@ cli:
       failed: "La commande cron blueprint a échoué : {error}"
     curator:
 
-      failed: "(._.) curator : {error}"
+      failed: "◈ curator : {error}"
     kanban:
 
-      failed: "(._.) erreur kanban : {error}"
+      failed: "◈ erreur kanban : {error}"
     memory:
 
       unknown_subcommand: "Sous-commande /memory inconnue. Utilisez : pending, approve <id>, reject <id>, approval <on|off>."
@@ -3081,7 +3081,7 @@ cli:
         Exemple : /bg Résume les meilleurs articles HN du jour
         (Pour une question annexe sur cette conversation, utilisez /btw <question>.)
         La tâche s'exécute dans une session séparée et le résultat s'affiche ici une fois terminée.
-      no_credentials: "(>_<) Impossible de lancer la tâche d'arrière-plan : aucun identifiant valide."
+      no_credentials: "◬ Impossible de lancer la tâche d'arrière-plan : aucun identifiant valide."
       started: "🔄 Tâche d'arrière-plan #{number} démarrée : « {preview} »"
       task_id: "ID de tâche : {task_id}"
       keep_chatting: "Vous pouvez continuer à discuter — les résultats apparaîtront une fois terminés."
@@ -3101,7 +3101,7 @@ cli:
         Exemple : /btw dans quel fichier était cette erreur ?
         Répond à une question rapide sur cette conversation sans l'interrompre.
         (Pour une tâche d'arrière-plan indépendante, utilisez /bg <prompt>.)
-      no_credentials: "(>_<) Impossible de répondre à la question annexe : aucun identifiant valide."
+      no_credentials: "◬ Impossible de répondre à la question annexe : aucun identifiant valide."
       header: "💬 /btw : « {preview} »"
       title_suffix: "(btw)"
       no_answer: "(Aucune réponse générée)"
@@ -3222,8 +3222,8 @@ cli:
       editor_header: |-
         #! Rédigez votre prompt ci-dessous. Les lignes commençant par '#!' sont ignorées.
         #! Enregistrez et quittez pour envoyer ; laissez vide pour annuler.
-      editor_failed: "(>_<) Impossible d'ouvrir l'éditeur : {error}"
-      empty: "(._.) Prompt vide — rien n'a été envoyé."
+      editor_failed: "◬ Impossible d'ouvrir l'éditeur : {error}"
+      empty: "◈ Prompt vide — rien n'a été envoyé."
     focus:
 
       usage: "Usage : /focus [on|off|status]"
@@ -3246,10 +3246,10 @@ cli:
       choice_update_desc: "quitter la session actuelle et mettre à jour Icebath Agent"
       choice_cancel: "Annuler"
       choice_cancel_desc: "conserver la session actuelle"
-      title: "☤  Mettre à jour Icebath Agent"
+      title: "󰆧  Mettre à jour Icebath Agent"
       detail: "Cela quittera la session actuelle et exécutera `icebath update`."
       cancelled: "🟡 /update annulé."
-      launching: "☤ Lancement de la mise à jour..."
+      launching: "󰆧 Lancement de la mise à jour..."
     voice:
 
       unknown_subcommand: "Sous-commande voice inconnue : {subcommand}"
@@ -3277,7 +3277,7 @@ cli:
     did_you_mean_many: "Vouliez-vous dire : {candidates} ?"
   config:
 
-    title: "(^_^) Configuration"
+    title: "❆ Configuration"
     loaded: "(chargé)"
     not_found: "(introuvable)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3306,7 +3306,7 @@ cli:
   context:
 
     header: "🧠 Utilisation du contexte — {model}"
-    compute_failed: "(._.) Impossible de calculer la répartition du contexte : {error}"
+    compute_failed: "◈ Impossible de calculer la répartition du contexte : {error}"
   error:
 
     auth: "Votre clé {provider} a été rejetée. Exécutez `icebath model` pour la saisir de nouveau."
@@ -3329,7 +3329,7 @@ cli:
     starting: "Démarrage du Icebath Gateway (plateformes de messagerie)..."
   gateway_status:
 
-    header: "(✿◠‿◠) État du gateway"
+    header: "❆ État du gateway"
     platform_config_header: "Configuration des plateformes de messagerie :"
     enabled: "Activé"
     not_configured: "Non configuré ({env_var})"
@@ -3342,7 +3342,7 @@ cli:
     step_config: "2. Ou configurez les paramètres dans {path}"
   help:
 
-    header: "(^_^)? Commandes disponibles"
+    header: "❆ Commandes disponibles"
     section_session: "Session"
     section_configuration: "Configuration"
     section_tools_skills: "Outils et skills"
@@ -3422,12 +3422,12 @@ cli:
     skill_load_failed: "Échec du chargement de la skill pour {command}"
   tools:
 
-    none_available: "(;_;) Aucun outil disponible"
-    header: "(^_^)/ Outils disponibles"
-    total: "Total : {count} outils  ヽ(^o^)ノ"
+    none_available: "◈ Aucun outil disponible"
+    header: "❆ Outils disponibles"
+    total: "Total : {count} outils"
   toolsets:
 
-    header: "(^_^)b Ensembles d'outils disponibles"
+    header: "✓ Ensembles d'outils disponibles"
     currently_enabled_legend: "(*) = actuellement activé"
     tip_enable_all: "Astuce : utilisez 'all' ou '*' pour activer tous les ensembles d'outils"
     example: "Exemple : icebath chat --toolsets web,terminal"
@@ -3438,7 +3438,7 @@ cli:
     reset_switch_hint: "Changez d'abord avec `/model` ou `icebath auth`."
     checking_reset_credits: "⏳ Vérification des crédits de réinitialisation..."
     codex_timeout: "❌ Délai dépassé en contactant le backend Codex — réessayez dans un instant."
-    no_api_calls: "(._.) Aucun appel API effectué dans cette session pour le moment."
+    no_api_calls: "◈ Aucun appel API effectué dans cette session pour le moment."
     header_session: "📊 Tokens de la session"
     label_model: "Modèle :"
     label_input_tokens: "Tokens d'entrée :"
@@ -3727,7 +3727,7 @@ tips:
   t016: "/model permet de changer de modèle en cours de session — essayez /model sonnet ou /model gpt-5."
   t017: "/model --global change votre modèle par défaut de façon permanente."
   t018: "/personality pirate donne une personnalité amusante — 14 options intégrées, de kawaii à shakespeare."
-  t019: "/skin change le thème de la CLI — essayez ares, mono, slate, poseidon ou charizard."
+  t019: "/skin change le thème de la CLI — essayez taro, light, contrast, cyberpunk ou dracula."
   t020: "/statusbar affiche ou masque une barre persistante indiquant le modèle, les tokens, le % de contexte utilisé, le coût et la durée."
   t021: "/tools disable browser retire temporairement les outils navigateur pour la session en cours."
   t022: "/browser connect rattache les outils navigateur à votre navigateur de la famille Chromium déjà ouvert via CDP."
@@ -4047,7 +4047,7 @@ tips:
   t336: "/toolsets liste tous les toolsets disponibles pour savoir ce qu'accepte -t/--toolsets."
   t337: "/voice tts bascule en mode TTS seul — l'agent répond à voix haute mais vous continuez à taper vos prompts."
   t338: "/reload-skills rescanne ~/.icebath/skills/ pour que les skills déposées apparaissent sans redémarrer la session."
-  t339: "/indicator kaomoji|emoji|unicode|ascii choisit le style de l'indicateur d'activité de la TUI affiché pendant les exécutions de l'agent."
+  t339: "/indicator unicode|emoji|ascii choisit le style de l'indicateur d'activité de la TUI affiché pendant les exécutions de l'agent."
   t340: "/debug téléverse un bundle de support (infos système + journaux) et renvoie des liens partageables — fonctionne aussi dans le chat."
   t341: "icebath -z \"<prompt>\" est le one-shot le plus pur : la réponse finale sur stdout, rien d'autre — idéal pour les pipes dans des scripts."
   t342: "icebath chat --pass-session-id injecte l'ID de session dans le prompt système pour que l'agent puisse y faire référence lui-même."

@@ -319,7 +319,7 @@ func (a *QQAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, def, s
 	a.mu.Lock()
 	replyTo := a.lastMsgID[chatID]
 	a.mu.Unlock()
-	return a.SendWithKeyboard(ctx, chatID, "☤ **Update Needs Your Input**\n\n"+prompt+defaultHint, BuildUpdatePromptKeyboard(), replyTo)
+	return a.SendWithKeyboard(ctx, chatID, "❆ **Update Needs Your Input**\n\n"+prompt+defaultHint, BuildUpdatePromptKeyboard(), replyTo)
 }
 
 // Text message body, markdown when supported and plain content with a message reference otherwise

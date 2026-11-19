@@ -248,16 +248,6 @@ func firecrawlClientFor(env *Env, capability string) (*firecrawlClient, error) {
 	return client, nil
 }
 
-// ResetFirecrawlClients drops cached clients so the next call re resolves credentials
-func ResetFirecrawlClients() {
-	firecrawlClients.Lock()
-	defer firecrawlClients.Unlock()
-	firecrawlClients.byHome = map[string]struct {
-		key    string
-		client *firecrawlClient
-	}{}
-}
-
 func firecrawlErrorEntry(u, errText, title string, raw bool, blocked *WebsiteBlock) *WebPage {
 	p := &WebPage{URL: u, Title: title, Error: errText, HasRaw: raw}
 	if blocked != nil {

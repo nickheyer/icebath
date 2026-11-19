@@ -215,7 +215,7 @@ func TestPrintToolsSummaryListsEveryPlatform(t *testing.T) {
 	}
 	total := len(EffectiveConfigurableToolsets(s.ctx()))
 	cli := Default.PlatformTools(s.ctx(), "", cfg, "cli", PlatformToolsOptions{IncludeDefaultMCPServers: true})
-	want := "☤ Tool Summary\n\n  CLI  (" + strconv.Itoa(len(cli)) + "/" + strconv.Itoa(total) + ")\n"
+	want := "󰆧 Tool Summary\n\n  CLI  (" + strconv.Itoa(len(cli)) + "/" + strconv.Itoa(total) + ")\n"
 	for _, ts := range sortedSet(cli) {
 		want += "    ✓ " + toolsetLabel(s.ctx(), ts) + "\n"
 	}

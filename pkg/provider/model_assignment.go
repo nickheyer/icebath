@@ -362,11 +362,6 @@ func prepareMainAssignment(ctx context.Context, cfg map[string]any, provider, mo
 	return &PreparedMainAssignment{BaseURL: baseURL, Result: result}, nil
 }
 
-// PrepareMainAssignment validates a main slot pick against the loaded config before the config lock is taken
-func PrepareMainAssignment(ctx context.Context, cfg map[string]any, provider, model, baseURL, apiKey string) (*PreparedMainAssignment, error) {
-	return prepareMainAssignment(ctx, cfg, provider, model, baseURL, apiKey)
-}
-
 // Persists a main slot assignment, registers a new custom endpoint and reports stale aux pins
 func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, model, baseURL, apiKey string, prepared *PreparedMainAssignment) (map[string]any, error) {
 	explicit := isExplicitCustomEndpoint(provider, baseURL)

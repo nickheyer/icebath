@@ -51,8 +51,6 @@ type relayOrderedFloats = relayOrdered[float64]
 
 func newRelayOrdered[V any]() *relayOrdered[V] { return &relayOrdered[V]{vals: map[string]V{}} }
 
-func (m *relayOrdered[V]) size() int { return len(m.order) }
-
 func newRelayOrderedInts() *relayOrderedInts { return &relayOrdered[int]{vals: map[string]int{}} }
 
 func newRelayOrderedFloats() *relayOrderedFloats {
@@ -75,13 +73,6 @@ func (m *relayOrdered[V]) set(k string, v V) {
 		m.order = append(m.order, k)
 	}
 	m.vals[k] = v
-}
-
-// Moves an existing key to the end, the OrderedDict move_to_end
-func (m *relayOrdered[V]) moveToEnd(k string) {
-	if i := slices.Index(m.order, k); i >= 0 {
-		m.order = append(append(m.order[:i:i], m.order[i+1:]...), k)
-	}
 }
 
 func (m *relayOrdered[V]) pop(k string) (V, bool) {

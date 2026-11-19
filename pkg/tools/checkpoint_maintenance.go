@@ -37,11 +37,6 @@ type CheckpointPruneOptions struct {
 	OrphanAllowlist map[string]bool
 }
 
-// Keeps a week of history and deletes every orphan
-func DefaultCheckpointPruneOptions() CheckpointPruneOptions {
-	return CheckpointPruneOptions{RetentionDays: 7, DeleteOrphans: true}
-}
-
 // Error that escapes maintenance the way a Python ValueError or TypeError does
 type checkpointValueError struct{ msg string }
 

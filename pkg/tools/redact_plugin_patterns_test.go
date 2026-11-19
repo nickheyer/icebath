@@ -11,3 +11,11 @@ func TestRedactPrefixSearchExportMatchesThePrefixScan(t *testing.T) {
 		}
 	}
 }
+
+// ResetPluginRedactionPatterns drops every plugin registered pattern and restores the builtin matcher
+func ResetPluginRedactionPatterns() {
+	pluginPatternsMu.Lock()
+	defer pluginPatternsMu.Unlock()
+	pluginPrefixPatterns = nil
+	activePrefix.Store(&prefixMatcher{substrings: prefixSubstrings})
+}

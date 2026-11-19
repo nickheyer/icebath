@@ -79,3 +79,13 @@ func TestYieldRequests(t *testing.T) {
 		t.Fatal("clearing the interrupt kept the yield")
 	}
 }
+
+// IsWorkerYieldRequested reports whether a yield is pending for the worker
+func IsWorkerYieldRequested(id WorkerID) bool {
+	if id == 0 {
+		return false
+	}
+	interruptMu.Lock()
+	defer interruptMu.Unlock()
+	return yieldWorkers[id]
+}

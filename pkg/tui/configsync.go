@@ -23,7 +23,7 @@ const (
 
 var (
 	falsyToggle       = regexp.MustCompile(`(?i)^(?:0|false|no|off)$`)
-	defaultIndicator  = "kaomoji"
+	defaultIndicator  = "unicode"
 	defaultBusyMode   = "queue"
 	defaultPasteLines = 5
 	defaultPasteChars = 2000

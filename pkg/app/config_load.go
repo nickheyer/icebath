@@ -43,13 +43,6 @@ func CLIConfig(ctx context.Context) map[string]any {
 	return cliConfigLoaded
 }
 
-// Replaces the process wide CLI config, nil forcing the next CLIConfig call to reload
-func SetCLIConfig(cfg map[string]any) {
-	cliConfigMu.Lock()
-	cliConfigLoaded = cfg
-	cliConfigMu.Unlock()
-}
-
 // Loads prefill messages from a JSON array file, relative paths under baseDir or the home, missing or invalid giving none
 func loadPrefillMessages(ctx context.Context, filePath, baseDir string) []any {
 	if filePath == "" {

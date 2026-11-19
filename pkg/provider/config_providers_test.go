@@ -415,3 +415,21 @@ func TestEntriesForRouteMatchesOnlyTheNormalizedRoute(t *testing.T) {
 		t.Fatalf("blank base url matched %v", got)
 	}
 }
+
+// Clears the once per provider warning memory for tests
+func resetProviderNormalizeWarnings() {
+	providerNormalizeWarnedMu.Lock()
+	defer providerNormalizeWarnedMu.Unlock()
+	providerNormalizeWarned = map[string]bool{}
+}
+
+// Names config declared before any platform manifest or provider profile entry was added
+func staticDeclaredEnvNames() map[string]bool {
+	providerEnvMu.Lock()
+	defer providerEnvMu.Unlock()
+	out := make(map[string]bool, len(providerEnvStatic))
+	for name := range providerEnvStatic {
+		out[name] = true
+	}
+	return out
+}

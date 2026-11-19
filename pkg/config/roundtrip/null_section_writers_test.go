@@ -123,7 +123,7 @@ func TestP6NullSectionSurvivesTheCLIAndTUIWriters(t *testing.T) {
 					}
 				}, []string{"terminal", "timeout"}},
 				{"tui_rpc", func(t *testing.T) {
-					res := tuiserver.Method("config.set")(ctx, 1, map[string]any{"key": "skin", "value": "ares"})
+					res := tuiserver.Method("config.set")(ctx, 1, map[string]any{"key": "skin", "value": "taro"})
 					if _, ok := res["result"]; !ok {
 						t.Fatalf("[%s] tui config.set: %v", ctxName, res)
 					}

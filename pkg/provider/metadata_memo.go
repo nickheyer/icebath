@@ -132,24 +132,6 @@ func rememberMessageTokens(key string, entry messageTokenEntry) {
 	}
 }
 
-// RetainedBytes is the current retained bytes estimate of the message token memo
-func RetainedBytes() int {
-	c := msgTokensCache
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.retained
-}
-
-// Resets the message token memo
-func clearMessageTokenMemo() {
-	c := msgTokensCache
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.order.Init()
-	c.index = map[string]*list.Element{}
-	c.retained = 0
-}
-
 func longStrings(value any, out map[string]bool) {
 	stack := []any{value}
 	for len(stack) > 0 {

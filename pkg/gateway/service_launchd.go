@@ -160,13 +160,6 @@ func launchdDomain(ctx context.Context) (string, error) {
 	return resolvedLaunchdDomain, nil
 }
 
-// Forgets the cached launchd domain so the next lifecycle call probes again
-func ResetLaunchdDomainCache() {
-	launchdDomainMu.Lock()
-	resolvedLaunchdDomain = ""
-	launchdDomainMu.Unlock()
-}
-
 // True when launchctl failed because the job is not loaded in the domain
 func launchdErrorIndicatesUnloaded(e *CalledProcessError) bool {
 	return e.ReturnCode == 3 || e.ReturnCode == 113 || e.ReturnCode == 125

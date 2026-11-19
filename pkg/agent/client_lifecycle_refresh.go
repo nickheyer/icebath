@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"strings"
@@ -30,29 +29,6 @@ func pyStrValue(v any) string {
 		return s
 	}
 	return pyrepr.Str(v)
-}
-
-// Numeric JWT claim the way isinstance int or float accepts it, booleans included
-func jwtNumber(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	case bool:
-		if n {
-			return 1, true
-		}
-		return 0, true
-	}
-	return 0, false
 }
 
 // Adopts only env edits since the last look, never drift from pool rotation or a configured base url

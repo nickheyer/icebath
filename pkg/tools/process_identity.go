@@ -104,12 +104,6 @@ func InstallID(projectRoot string) string {
 // ProcessBirth is the epoch birth of a managed worker, the same in every process
 func ProcessBirth(pid int) (float64, error) { return identityProber.Birth(pid) }
 
-// WorkerBirth is the birth the identity fences compare, boot ticks on Linux and ProcessBirth elsewhere
-func WorkerBirth(pid int) (float64, error) { return identityProber.WorkerBirth(pid) }
-
-// BootStart is the seconds from boot to the start of pid on Linux, false elsewhere
-func BootStart(pid int) (float64, bool) { return identityProber.BootStart(pid) }
-
 // ProcessBirth of pid or of this process when pid is zero, nil when unreadable
 func processCreateTime(pid int) *float64 {
 	if pid <= 0 {
@@ -188,11 +182,6 @@ func BuildSpawnTag(purpose, projectRoot string) string {
 		createPart = strconv.FormatFloat(*create, 'f', 3, 64)
 	}
 	return strings.Join([]string{spawnTagVersion, InstallID(projectRoot), purpose, strconv.Itoa(currentPid()), createPart}, ":")
-}
-
-// SpawnEnv is the env fragment a spawner merges into a child's environment
-func SpawnEnv(purpose, projectRoot string) map[string]string {
-	return map[string]string{SpawnEnvVar: BuildSpawnTag(purpose, projectRoot)}
 }
 
 // ParseSpawnTag parses a spawn env value, nil for anything malformed
@@ -364,20 +353,7 @@ func readLedger(path string) ([]*pyjson.Object, bool) {
 }
 
 // Moves the home of a row an older icebath wrote to the current key in place, so the next write carries it
-func renameRetiredHomeKey(row *pyjson.Object) {
-	retired := home.RetiredRecordKey(home.RecordKey)
-	if _, has := row.Get(home.RecordKey); has {
-		return
-	}
-	for i, k := range row.Keys {
-		if k == retired {
-			row.Keys[i] = home.RecordKey
-			row.Vals[home.RecordKey] = row.Vals[retired]
-			delete(row.Vals, retired)
-			return
-		}
-	}
-}
+func renameRetiredHomeKey(row *pyjson.Object) { home.AdoptRecordKey(row.Keys, row.Vals) }
 
 // Ledger entries, false after parking a corrupt file, caller holds the ledger lock
 func readLedgerOrQuarantine(path string) ([]*pyjson.Object, bool) {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -191,35 +190,6 @@ func validateMimeAndKind(data []byte, kind, mime string) error {
 	}
 	return nil
 }
-
-// Strictly decoded bounded RPC upload body, data URLs refused
-func DecodeContentBase64(value any) ([]byte, error) {
-	text, ok := value.(string)
-	if !ok || text == "" {
-		return nil, attachmentErr("content_base64 is required")
-	}
-	if strings.HasPrefix(pystr.Lower(pystr.Lstrip(text)), "data:") {
-		return nil, attachmentErr("data URLs are not accepted")
-	}
-	maximumEncoded := ((maxAttachmentBytes + 2) / 3) * 4
-	if utf8.RuneCountInString(text) > maximumEncoded+4 {
-		return nil, attachmentErr("attachment exceeds the per-file size limit")
-	}
-	data, err := base64.StdEncoding.Strict().DecodeString(text)
-	if err != nil {
-		return nil, attachmentErr("content_base64 is not valid base64")
-	}
-	if len(data) == 0 {
-		return nil, attachmentErr("attachment must not be empty")
-	}
-	if len(data) > maxAttachmentBytes {
-		return nil, attachmentErr("attachment exceeds the per-file size limit")
-	}
-	return data, nil
-}
-
-// Base64 of verified bytes for the bounded read RPC
-func EncodeContentBase64(data []byte) string { return base64.StdEncoding.EncodeToString(data) }
 
 // Case and accent folded text of a catalog name
 func FoldCatalogText(value string) string {
@@ -725,12 +695,6 @@ type AttachmentCommit struct {
 	HoldUntilEvent     bool
 }
 
-// Commits a manifest, the normalized entries only
-func (s *HostedRoomAttachmentStore) CommitMessage(c AttachmentCommit) ([]map[string]any, error) {
-	normalized, _, err := s.CommitMessageWithReceipt(c)
-	return normalized, err
-}
-
 // Commits a manifest and reports only the rows this call transitioned
 func (s *HostedRoomAttachmentStore) CommitMessageWithReceipt(c AttachmentCommit) ([]map[string]any, []string, error) {
 	roomID, err := attachmentIdentifier(c.RoomID, "room_id")
@@ -925,39 +889,6 @@ func publishedAttachmentIDs(payloadJSON string) (map[string]bool, error) {
 	return out, nil
 }
 
-// Retains committed blobs once their immutable room event is durable
-func (s *HostedRoomAttachmentStore) RetainEvent(roomIDValue, eventIDValue any) (int64, error) {
-	roomID, err := attachmentIdentifier(roomIDValue, "room_id")
-	if err != nil {
-		return 0, err
-	}
-	eventID, err := attachmentIdentifier(eventIDValue, "event_id")
-	if err != nil {
-		return 0, err
-	}
-	now := s.now()
-	var changed int64
-	err = s.transaction(true, func(conn state.SQLiteConn) error {
-		event, err := state.QueryRowObject(s.ctx, conn, `SELECT 1 AS one FROM hosted_room_events
-                    WHERE room_id=? AND event_id=? LIMIT 1`, roomID, eventID)
-		if err != nil {
-			return err
-		}
-		if event == nil {
-			return attachmentConflict("attachment owner event is not durable in the room log")
-		}
-		result, err := conn.ExecContext(s.ctx, `UPDATE hosted_room_attachments
-                      SET expires_at=NULL, updated_at=?
-                    WHERE room_id=? AND event_id=? AND state='committed'`, now, roomID, eventID)
-		if err != nil {
-			return err
-		}
-		changed, err = result.RowsAffected()
-		return err
-	})
-	return changed, err
-}
-
 // Selection of one committed row a recipient or viewer reads
 type attachmentSelection struct {
 	roomID, attachmentID, recipientMemberID string
@@ -1124,27 +1055,6 @@ func (s *HostedRoomAttachmentStore) ReconcileRoomEvents() (int64, error) {
 	return changed, err
 }
 
-// Marks every live attachment of the room disbanded with the grace expiry
-func (s *HostedRoomAttachmentStore) MarkRoomDisbanded(roomIDValue any) (int64, error) {
-	roomID, err := attachmentIdentifier(roomIDValue, "room_id")
-	if err != nil {
-		return 0, err
-	}
-	now := s.now()
-	var changed int64
-	err = s.transaction(true, func(conn state.SQLiteConn) error {
-		result, err := conn.ExecContext(s.ctx, `UPDATE hosted_room_attachments
-                      SET state='disbanded', updated_at=?, expires_at=?
-                    WHERE room_id=? AND state!='disbanded'`, now, now+DisbandedGraceSeconds, roomID)
-		if err != nil {
-			return err
-		}
-		changed, err = result.RowsAffected()
-		return err
-	})
-	return changed, err
-}
-
 // Removes expired attachments and unreferenced blobs, the count of removed rows
 func (s *HostedRoomAttachmentStore) Prune(now *float64) (int, error) {
 	at := s.now()
@@ -1275,28 +1185,6 @@ func (s *HostedRoomAttachmentStore) sweepOrphans() error {
 		}
 	}
 	return err
-}
-
-// Attachment and blob counts and byte totals, scoped to one room when given
-func (s *HostedRoomAttachmentStore) Stats(roomID *string) (map[string]int64, error) {
-	var out map[string]int64
-	err := s.transaction(false, func(conn state.SQLiteConn) error {
-		query, args := "SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM hosted_room_attachments", []any{}
-		if roomID != nil {
-			query, args = query+" WHERE room_id=?", []any{*roomID}
-		}
-		row, err := state.QueryRowObject(s.ctx, conn, query, args...)
-		if err != nil {
-			return err
-		}
-		blob, err := state.QueryRowObject(s.ctx, conn, "SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM hosted_room_attachment_blobs")
-		if err != nil {
-			return err
-		}
-		out = map[string]int64{"attachments": hrInt(row, "count"), "logical_bytes": hrInt(row, "bytes"), "blobs": hrInt(blob, "count"), "physical_bytes": hrInt(blob, "bytes")}
-		return nil
-	})
-	return out, err
 }
 
 // Viewer read of a live hosted room, its authority fenced before and after the byte read

@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-const facadeConfig = "# hand-tuned\nmodel:\n  default: my-org/custom-model\ndisplay:\n  skin: mono\nterminal:\n  backend: docker\n"
+const facadeConfig = "# hand-tuned\nmodel:\n  default: my-org/custom-model\ndisplay:\n  skin: contrast\nterminal:\n  backend: docker\n"
 
 // Fresh home with cold facade caches, the moa hooks registered and parse warnings silenced
 func facadeHome(t *testing.T, text string) (string, string) {
@@ -88,13 +88,13 @@ func TestMissingConfigFieldsIgnoreUserNamedPresetsButCheckSchemaOptions(t *testi
 }
 
 func TestUserConfigOverridesDefaultAndEnvRefsExpand(t *testing.T) {
-	h, _ := facadeHome(t, "display:\n  skin: ares\nmodel:\n  default: ${FACADE_MODEL}\n")
+	h, _ := facadeHome(t, "display:\n  skin: taro\nmodel:\n  default: ${FACADE_MODEL}\n")
 	t.Setenv("FACADE_MODEL", "org/expanded")
 	cfg, err := Load(h, facadeLookup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.String("display.skin", "") != "ares" || cfg.String("model.default", "") != "org/expanded" {
+	if cfg.String("display.skin", "") != "taro" || cfg.String("model.default", "") != "org/expanded" {
 		t.Fatalf("got skin %q model %q", cfg.String("display.skin", ""), cfg.String("model.default", ""))
 	}
 	t.Setenv("FACADE_MODEL", "org/rotated")
@@ -145,7 +145,7 @@ func TestTransientReadErrorIsNotRecordedAsACorruptConfig(t *testing.T) {
 	}
 	os.Chmod(path, 0o600)
 	cfg, err = Load(h, facadeLookup)
-	if err != nil || cfg.String("display.skin", "") != "mono" || FailedReadError(cfg) != nil {
+	if err != nil || cfg.String("display.skin", "") != "contrast" || FailedReadError(cfg) != nil {
 		t.Fatalf("readable again: %v %v", cfg.String("display.skin", ""), err)
 	}
 	if _, active := ActiveConfigParseFailure(h); active {
@@ -169,7 +169,7 @@ func TestUnreadableConfigServesOneCachedFallbackUntilItReads(t *testing.T) {
 	denyConfigReads(t, path)
 	for range 5 {
 		cfg, err := Load(h, facadeLookup)
-		if err != nil || FailedReadError(cfg) == nil || cfg.String("display.skin", "") != "mono" {
+		if err != nil || FailedReadError(cfg) == nil || cfg.String("display.skin", "") != "contrast" {
 			t.Fatalf("fallback %v %v", cfg.String("display.skin", ""), err)
 		}
 	}
@@ -200,7 +200,7 @@ func TestSaveRefusalForBadYAMLAsksForAnEditNotARetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Map("display")["skin"] = "ares"
+	cfg.Map("display")["skin"] = "taro"
 	err = SaveConfig(context.Background(), h, cfg, SaveOptions{})
 	if err == nil || !strings.Contains(err.Error(), "has a formatting error") || !strings.Contains(err.Error(), "icebath config edit") || strings.Contains(err.Error(), "Try again") {
 		t.Fatalf("refusal %v", err)
@@ -217,7 +217,7 @@ func TestAuthoredNullsSurviveConfigWrites(t *testing.T) {
 			h, path := facadeHome(t, seed)
 			ctx := context.Background()
 			if op == "partial_save" {
-				if err := SaveConfig(ctx, h, map[string]any{"display": map[string]any{"skin": "mono"}}, SaveOptions{MergeExisting: true}); err != nil {
+				if err := SaveConfig(ctx, h, map[string]any{"display": map[string]any{"skin": "contrast"}}, SaveOptions{MergeExisting: true}); err != nil {
 					t.Fatal(err)
 				}
 			} else {
@@ -225,7 +225,7 @@ func TestAuthoredNullsSurviveConfigWrites(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				cfg.Map("display")["skin"] = "mono"
+				cfg.Map("display")["skin"] = "contrast"
 				if err := SaveConfig(ctx, h, cfg, SaveOptions{}); err != nil {
 					t.Fatal(err)
 				}
@@ -251,7 +251,7 @@ func TestAuthoredNullsSurviveConfigWrites(t *testing.T) {
 			if _, has := raw["agent"]; has {
 				t.Fatalf("an agent section the user never wrote: %s", data)
 			}
-			if rt.String("display.skin", "") != "mono" {
+			if rt.String("display.skin", "") != "contrast" {
 				t.Fatalf("skin not saved: %s", data)
 			}
 		})
@@ -286,7 +286,7 @@ func TestSaveConfigStripsManagedKeysAndPreservesEnvTemplates(t *testing.T) {
 	if err != nil || cfg.String("auxiliary.vision.api_key", "") != "sk-secret" {
 		t.Fatalf("expansion %v", err)
 	}
-	cfg.Map("display")["skin"] = "ares"
+	cfg.Map("display")["skin"] = "taro"
 	if err := SaveConfig(context.Background(), h, cfg, SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}

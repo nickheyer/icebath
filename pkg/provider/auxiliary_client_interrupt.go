@@ -269,11 +269,6 @@ func auxAnthropicAuxStreamEventHook(ctx context.Context) func(event any) error {
 // AuxStreamDeadlineFunc reads the waiting host's absolute deadline live, false when none applies
 type AuxStreamDeadlineFunc func() (time.Time, bool)
 
-// AuxStreamDeadlineAt is a fixed host deadline
-func AuxStreamDeadlineAt(deadline time.Time) AuxStreamDeadlineFunc {
-	return func() (time.Time, bool) { return deadline, true }
-}
-
 type auxStreamDeadlineKey struct{}
 
 // AuxStreamDeadline publishes the host deadline to stream consumers under the context, nil keeping the previous one

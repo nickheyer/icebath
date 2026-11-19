@@ -176,9 +176,6 @@ func resolveHomeDotenv(h string) map[string]string {
 	return out
 }
 
-// Exported form of the read only home dotenv resolution
-func ResolveHomeDotenv(h string) map[string]string { return resolveHomeDotenv(h) }
-
 func nextDotenvPassLocked() int {
 	p := dotenvPasses
 	dotenvPasses++

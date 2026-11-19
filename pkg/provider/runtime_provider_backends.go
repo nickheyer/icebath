@@ -377,15 +377,3 @@ func (r *resolver) resolveExternalProcessRuntime(provider, requestedProvider str
 	rt.RequestedProvider = requestedProvider
 	return rt, nil
 }
-
-// Token minted by the forwarded source for the Azure Foundry explicit path
-func materializeToken(ctx context.Context, src func(context.Context) (string, error)) string {
-	if src == nil {
-		return ""
-	}
-	token, err := src(ctx)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(token)
-}

@@ -12,9 +12,9 @@ func truecolorConsole(width int) (*Console, *bytes.Buffer) {
 
 func TestPanelHorizontalsBoxStylePaddingAndWidthMatchRich(t *testing.T) {
 	c, buf := truecolorConsole(40)
-	c.PrintPanel(Panel{Content: &Text{Plain: "Hello world, this is the answer text that wraps."}, Title: "[#CD7F32 bold]☤ Icebath[/]", TitleAlign: "left",
+	c.PrintPanel(Panel{Content: &Text{Plain: "Hello world, this is the answer text that wraps."}, Title: "[#CD7F32 bold]󰆧 Icebath[/]", TitleAlign: "left",
 		BorderStyle: "#CD7F32", Style: "#FFF8DC", Box: "horizontals", Padding: &[2]int{1, 0}, Width: 36})
-	want := "\x1b[38;2;205;127;50m ─\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[1;38;2;205;127;50m☤ Icebath\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;205;127;50m─────────────────────\x1b[0m\x1b[38;2;205;127;50m─ \x1b[0m\n" +
+	want := "\x1b[38;2;205;127;50m ─\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[1;38;2;205;127;50m󰆧 Icebath\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;205;127;50m─────────────────────\x1b[0m\x1b[38;2;205;127;50m─ \x1b[0m\n" +
 		"\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;255;248;220m                                  \x1b[0m\x1b[38;2;205;127;50m \x1b[0m\n" +
 		"\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;255;248;220mHello world, this is the answer \x1b[0m\x1b[38;2;255;248;220m  \x1b[0m\x1b[38;2;205;127;50m \x1b[0m\n" +
 		"\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;255;248;220mtext that wraps.\x1b[0m\x1b[38;2;255;248;220m                  \x1b[0m\x1b[38;2;205;127;50m \x1b[0m\n" +
@@ -27,9 +27,9 @@ func TestPanelHorizontalsBoxStylePaddingAndWidthMatchRich(t *testing.T) {
 
 func TestPanelStyleLiesUnderMarkdownContent(t *testing.T) {
 	c, buf := truecolorConsole(40)
-	c.PrintPanel(Panel{Content: &Markdown{Source: "Some **bold** text\n\n- item one\n- item two"}, Title: "[#CD7F32 bold]☤ Icebath[/]", TitleAlign: "left",
+	c.PrintPanel(Panel{Content: &Markdown{Source: "Some **bold** text\n\n- item one\n- item two"}, Title: "[#CD7F32 bold]󰆧 Icebath[/]", TitleAlign: "left",
 		BorderStyle: "#CD7F32", Style: "#FFF8DC", Box: "horizontals", Padding: &[2]int{1, 0}, Width: 40})
-	want := "\x1b[38;2;205;127;50m ─\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[1;38;2;205;127;50m☤ Icebath\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;205;127;50m─────────────────────────\x1b[0m\x1b[38;2;205;127;50m─ \x1b[0m\n" +
+	want := "\x1b[38;2;205;127;50m ─\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[1;38;2;205;127;50m󰆧 Icebath\x1b[0m\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;205;127;50m─────────────────────────\x1b[0m\x1b[38;2;205;127;50m─ \x1b[0m\n" +
 		"\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;255;248;220m                                      \x1b[0m\x1b[38;2;205;127;50m \x1b[0m\n" +
 		"\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;255;248;220mSome \x1b[0m\x1b[1;38;2;255;248;220mbold\x1b[0m\x1b[38;2;255;248;220m text                        \x1b[0m\x1b[38;2;205;127;50m \x1b[0m\n" +
 		"\x1b[38;2;205;127;50m \x1b[0m\x1b[38;2;255;248;220m                                      \x1b[0m\x1b[38;2;205;127;50m \x1b[0m\n" +

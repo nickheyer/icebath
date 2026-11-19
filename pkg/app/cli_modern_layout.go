@@ -24,9 +24,9 @@ const (
 	modernRed                   = "\x1b[38;2;239;83;80m"
 	modernSeparatorWidth        = 40
 	modernReasoningPreviewLines = 10
-	modernDefaultAccent         = "#FFBF00"
-	modernDefaultResponseLabel  = " ☤ Icebath "
-	modernDefaultBrandGlyph     = "☤"
+	modernDefaultAccent         = "#9cc7e8"
+	modernDefaultResponseLabel  = " 󰆧 Icebath "
+	modernDefaultBrandGlyph     = "󰆧"
 	modernDefaultBrandName      = "Icebath"
 )
 
@@ -81,7 +81,7 @@ func modernFg(hexColor string, bold bool) string {
 	return "\x1b[" + prefix + "38;2;" + rgb[0] + ";" + rgb[1] + ";" + rgb[2] + "m"
 }
 
-// Glyph and name from the skin response label, the caduceus and brand name when the label has one word
+// Glyph and name from the skin response label, the cube mark and brand name when the label has one word
 func brandGlyph() (string, string) {
 	label := modernDefaultResponseLabel
 	if skin := config.GetActiveSkin(context.Background()); skin != nil {

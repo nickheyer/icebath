@@ -818,12 +818,6 @@ var Distributions = map[string]Distribution{
 	"mixed_tasks":    dist("Mixed distribution with high browser, terminal, and file availability for complex tasks", "browser", 92, "terminal", 92, "file", 92, "web", 35, "vision", 15, "image_gen", 15),
 }
 
-// GetDistribution returns the named distribution
-func GetDistribution(name string) (Distribution, bool) {
-	d, ok := Distributions[name]
-	return d, ok
-}
-
 // ListDistributions returns a copy of every distribution keyed by name
 func ListDistributions() map[string]Distribution {
 	out := make(map[string]Distribution, len(Distributions))
@@ -1433,12 +1427,6 @@ func mergeMCPServers(cfg config.Tree, names []string, passthrough map[string]boo
 		}
 	}
 	return result
-}
-
-// PlatformToolsExplicitlySaved reports whether platform_toolsets holds a saved list for the platform
-func PlatformToolsExplicitlySaved(cfg config.Tree, platform string) bool {
-	_, isList := coercePlatformToolsetsValue(cfg.Sub("platform_toolsets")[platform], platform)
-	return isList
 }
 
 // PlatformTools resolves the enabled toolset names for one platform from config

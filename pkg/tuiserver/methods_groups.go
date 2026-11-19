@@ -2,8 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -282,15 +280,6 @@ func groupsCapabilities(ctx context.Context, rid any, params map[string]any) map
 		"features": []any{"authority_epoch", "coordinator_fencing", "room_identity", "monotonic_log", "idempotent_send",
 			"replayable_disband", "typed_events", "actor_identity", "log_replication", "authority_takeover"},
 		"methods": methods, "max_log_limit": gateway.MaxRoomLogLimit})
-}
-
-// Random hex of n bytes, os.urandom(n).hex()
-func randomHexID(n int) string {
-	raw := make([]byte, n)
-	if _, err := rand.Read(raw); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(raw)
 }
 
 // Python int() of a param, zero for a falsy one

@@ -120,8 +120,3 @@ func maybeMarkXAIStorageNoticeSeen(env *tools.Env, sectionName string) string {
 	os.WriteFile(marker, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
 	return notice
 }
-
-// Headers for xAI JSON requests
-func xaiJSONHeaders(apiKey string) map[string]string {
-	return map[string]string{"Authorization": "Bearer " + apiKey, "Content-Type": "application/json", "User-Agent": UserAgent}
-}

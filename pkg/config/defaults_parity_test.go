@@ -965,8 +965,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 66 || Version != 66 {
-		t.Errorf("schema version %v, want 66", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 67 || Version != 67 {
+		t.Errorf("schema version %v, want 67", Defaults()["_config_version"])
 	}
 }
 

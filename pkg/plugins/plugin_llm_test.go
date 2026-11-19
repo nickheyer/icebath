@@ -450,3 +450,8 @@ func TestPluginFacadeConstructionAndHelpers(t *testing.T) {
 }
 
 func resolveStreamNameProbe(context.Context, map[string]any) (any, error) { return nil, nil }
+
+// Facade with an injected policy and caller, no config and no provider
+func makePluginLlmForTest(pluginID string, policy trustPolicy, sync, async pluginLlmCaller) *PluginLlm {
+	return newPluginLlm(pluginID, func(context.Context, string) trustPolicy { return policy }, sync, async)
+}

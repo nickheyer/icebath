@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Ní stór git é seo — ní féidir nuashonrú."
     icebath_cmd_not_found: "✗ Níorbh fhéidir an t-ordú `icebath` a aimsiú. Tá Icebath ag rith, ach níorbh fhéidir leis an ordú nuashonraithe an inrite a aimsiú ar PATH ná tríd an léirmhínitheoir Python reatha. Bain triail as `icebath update` a rith de láimh i do theirminéal."
     start_failed: "✗ Theip ar nuashonrú a thosú: {error}"
-    starting: "☤ Ag tosú nuashonrú Icebath… Cuirfidh mé an dul chun cinn ar shruth anseo."
+    starting: "❆ Ag tosú nuashonrú Icebath… Cuirfidh mé an dul chun cinn ar shruth anseo."
     reply_failed: "✗ Theip ar fhreagra a sheoladh chuig an bpróiseas nuashonraithe: {error}"
     reply_sent: "✓ Seoladh `{label}` chuig an bpróiseas nuashonraithe."
     failed_notice: "❌ Theip ar nuashonrú Icebath; tá an leagan roimhe seo fós ag rith. Rith `icebath update` ar an óstach chun an earráid iomlán a fheiceáil, nó bain triail as /update arís níos déanaí."
     prompt_default: " (réamhshocrú: {default})"
-    prompt: "☤ **Teastaíonn d'ionchur ón nuashonrú:**\n\n{prompt}{default_hint}\n\nFreagair `{prefix}approve` (tá) nó `{prefix}deny` (níl), nó clóscríobh do fhreagra go díreach."
+    prompt: "❆ **Teastaíonn d'ionchur ón nuashonrú:**\n\n{prompt}{default_hint}\n\nFreagair `{prefix}approve` (tá) nó `{prefix}deny` (níl), nó clóscríobh do fhreagra go díreach."
     finished: "✅ Nuashonrú Icebath críochnaithe."
     timed_out: "❌ Chuaigh nuashonrú Icebath thar am tar éis 30 nóiméad."
     finished_success: "✅ Críochnaíodh nuashonrú Icebath go rathúil."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** ag {user}"
     update_prompt:
 
-      title: "☤ Tá d'Ionchur de Dhíth ar an Nuashonrú"
+      title: "❆ Tá d'Ionchur de Dhíth ar an Nuashonrú"
       default_hint: "\n\nRéamhshocrú: `{default}`"
       answer_yes: "✓ Tá"
       answer_no: "✗ Níl"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}l {hours}u {minutes}n"
     duration_m_rest: "{minutes}n {rest}"
     duration_hm_rest: "{hours}u {minutes}n {rest}"
-    no_active_agent: "(._.) Níl aon ghníomhaire gníomhach -- seol teachtaireacht ar dtús."
+    no_active_agent: "◈ Níl aon ghníomhaire gníomhach -- seol teachtaireacht ar dtús."
     n_more: "{count} eile"
     more_not_shown: "tuilleadh gan taispeáint"
     yes_no_default_yes: "T/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "Teideal seisiúin i scuaine: {title} (sábhálfar é leis an gcéad teachtaireacht)"
   undo:
 
-    invalid_count: "(._.) Líon neamhbhailí {value} — úsáid /undo nó /undo N."
+    invalid_count: "◈ Líon neamhbhailí {value} — úsáid /undo nó /undo N."
     removes_last_exchange: "Baineann sé seo an malartú úsáideora/cúntóra is déanaí ón stair."
     removes_last_turns: "Baineann sé seo na {count} seal úsáideora is déanaí ón stair."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ Creidmheasanna ídithe"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Tús úr! Scáileán glanta agus comhrá athshocraithe."
+    fresh_start: "❆ Tús úr! Scáileán glanta agus comhrá athshocraithe."
     model_reset_default: "(samhail athshocraithe go réamhshocrú na cumraíochta: {model})"
     title_rejected: "Teideal diúltaithe: {error}"
     title_empty_untitled: "Tá an teideal folamh tar éis glanta — seisiún tosaithe gan teideal."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "Réasúnaíocht"
     label_approvals: "Ceadanna"
     label_context: "Comhthéacs"
-    recent_intro: "(._.) Níl aon teachtaireacht sa chomhrá reatha fós — seo seisiúin le déanaí ar féidir leat iad a atosú:"
+    recent_intro: "◈ Níl aon teachtaireacht sa chomhrá reatha fós — seo seisiúin le déanaí ar féidir leat iad a atosú:"
     recent_header: "Seisiúin le déanaí:"
     column_title: "Teideal"
     column_preview: "Réamhamharc"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "Úsáid /resume <uimhir>, /resume <id seisiúin>, nó /resume <teideal seisiúin> le leanúint ar aghaidh."
     resume_example: "Sampla: /resume 2"
-    history_empty: "(._.) Níl aon stair chomhrá ann fós."
+    history_empty: "◈ Níl aon stair chomhrá ann fós."
     history_tools_header: "[Uirlisí]"
     history_tools_hidden_one: "({count} teachtaireacht uirlise folaithe)"
     history_tools_hidden_other: "({count} teachtaireacht uirlise folaithe)"
-    history_title: "(^_^) Stair an Chomhrá"
+    history_title: "❆ Stair an Chomhrá"
     history_you_header: "[Tusa #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(gan freagra téacs)"
     history_tool_calls_one: "(iarradh {count} ghlao uirlise)"
     history_tool_calls_other: "(iarradh {count} glao uirlise)"
-    new_session_titled: "(^_^)v Seisiún nua tosaithe: {title}"
-    new_session: "(^_^)v Seisiún nua tosaithe!"
-    save_nothing: "(;_;) Níl aon chomhrá le sábháil."
-    save_dir_failed: "(x_x) Theip ar an eolaire sábhála {path} a chruthú: {error}"
+    new_session_titled: "✓ Seisiún nua tosaithe: {title}"
+    new_session: "✓ Seisiún nua tosaithe!"
+    save_nothing: "◈ Níl aon chomhrá le sábháil."
+    save_dir_failed: "✘ Theip ar an eolaire sábhála {path} a chruthú: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Comhrá sábháilte in: {path} ({label})"
+    save_ok: "✓ Comhrá sábháilte in: {path} ({label})"
     save_resume_hint: "Atosaigh an seisiún beo le: icebath --resume {session_id}"
-    save_failed: "(x_x) Theip ar shábháil: {error}"
-    retry_no_messages: "(._.) Níl aon teachtaireacht le hathiarraidh."
-    retry_no_user_message: "(._.) Níor aimsíodh aon teachtaireacht úsáideora le hathiarraidh."
-    retry_unsafe: "(._.) Ní féidir an teachtaireacht sin a athiarraidh go sábháilte: {error}"
-    retry_rewind_failed: "(x_x) Theip ar athchasadh na hathiarrata; níor athraíodh an stair: {error}"
-    retrying: "(^_^)b Ag athiarraidh: \"{preview}\""
-    undo_no_messages: "(._.) Níl aon teachtaireacht le cealú."
-    undo_no_user_message: "(._.) Níor aimsíodh aon teachtaireacht úsáideora le cealú."
-    undo_failed: "(x_x) Theip ar an gcealú; níor athraíodh an stair: {error}"
-    undo_ok_one: "(^_^)b Cealaíodh {count} seal ({messages} teachtaireacht). Cúltacaithe chuig: \"{backup}\""
-    undo_ok_other: "(^_^)b Cealaíodh {count} seal ({messages} teachtaireacht). Cúltacaithe chuig: \"{backup}\""
+    save_failed: "✘ Theip ar shábháil: {error}"
+    retry_no_messages: "◈ Níl aon teachtaireacht le hathiarraidh."
+    retry_no_user_message: "◈ Níor aimsíodh aon teachtaireacht úsáideora le hathiarraidh."
+    retry_unsafe: "◈ Ní féidir an teachtaireacht sin a athiarraidh go sábháilte: {error}"
+    retry_rewind_failed: "✘ Theip ar athchasadh na hathiarrata; níor athraíodh an stair: {error}"
+    retrying: "✓ Ag athiarraidh: \"{preview}\""
+    undo_no_messages: "◈ Níl aon teachtaireacht le cealú."
+    undo_no_user_message: "◈ Níor aimsíodh aon teachtaireacht úsáideora le cealú."
+    undo_failed: "✘ Theip ar an gcealú; níor athraíodh an stair: {error}"
+    undo_ok_one: "✓ Cealaíodh {count} seal ({messages} teachtaireacht). Cúltacaithe chuig: \"{backup}\""
+    undo_ok_other: "✓ Cealaíodh {count} seal ({messages} teachtaireacht). Cúltacaithe chuig: \"{backup}\""
     undo_remaining: "{count} teachtaireacht fágtha sa stair."
     yolo_state_locked_on: "glasáilte AR"
     yolo_locked: "⚡ Tá YOLO {state} don phróiseas seo (tosaithe le --yolo / ICEBATH_YOLO_MODE). Ní féidir le /yolo é a dhíchumasú — atosaigh gan an bhratach chun ceadanna a athchumasú."
     yolo_off: "⚠ Mód YOLO {state} — beidh cead de dhíth d'orduithe contúirteacha."
     yolo_on: "⚡ Mód YOLO {state} — gach ordú ceadaithe go huathoibríoch. Úsáid go cúramach."
-    compress_too_short: "(._.) Níl go leor comhrá le dlúthú (teastaíonn {min} theachtaireacht ar a laghad)."
-    compress_no_agent: "(._.) Níl aon ghníomhaire gníomhach -- seol teachtaireacht ar dtús."
+    compress_too_short: "◈ Níl go leor comhrá le dlúthú (teastaíonn {min} theachtaireacht ar a laghad)."
+    compress_no_agent: "◈ Níl aon ghníomhaire gníomhach -- seol teachtaireacht ar dtús."
     compress_busy: "Ag dlúthú an chomhthéacs..."
     compress_summarizing: "🗜️  Ag déanamh achoimre go dtí seo: {count} teachtaireacht, ag coinneáil na {keep_last} malartú is déanaí focal ar fhocal..."
     compress_focus: "🗜️  Ag dlúthú {count} teachtaireacht, fócas: \"{focus}\"..."
     compress_plain: "🗜️  Ag dlúthú {count} teachtaireacht..."
     compress_failed: "❌ Theip ar dhlúthú: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "Slán! ☤"
+    goodbye: "Slán! 󰆧"
     exit_resume_hint: "Atosaigh an seisiún seo le:"
     exit_label_session: "Seisiún:        {session_id}"
     exit_label_title: "Teideal:        {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(sábháilte sa chumraíocht)"
       scope_save_failed: "(seisiún amháin; theip ar shábháil na cumraíochta)"
       scope_session: "(an seisiún seo — úsáid --global chun é a choinneáil)"
-      unknown_argument: "(._.) Argóint anaithnid: {arg}"
+      unknown_argument: "◈ Argóint anaithnid: {arg}"
       usage: "Úsáid: {usage}"
       needs_active_session: "Teastaíonn seisiún comhrá gníomhach ó {command} le rith."
       unavailable_no_session: "Níl {label} ar fáil (gan seisiún gníomhach)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "Úsáid: /indicator [{styles}]"
       status: "Stíl an táscaire gnóthach: {style}"
-      unknown_style: "(._.) Stíl táscaire anaithnid: {arg}"
+      unknown_style: "◈ Stíl táscaire anaithnid: {arg}"
       label: "Stíl an táscaire gnóthach"
       note: "Glacfaidh an TUI leis an stíl nua ar an chéad rindreáil eile."
     fast:
 
-      not_supported: "(._.) Níl /fast ar fáil ach do shamhlacha a thacaíonn le mód tapa (OpenAI Priority Processing nó Anthropic Fast Mode)."
+      not_supported: "◈ Níl /fast ar fáil ach do shamhlacha a thacaíonn le mód tapa (OpenAI Priority Processing nó Anthropic Fast Mode)."
       feature_generic: "Mód tapa"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Níl Ultrafast ar fáil do {model} ar an gcuntas nó ar an mbealach seo."
+      ultrafast_not_supported: "◈ Níl Ultrafast ar fáil do {model} ar an gcuntas nó ar an mbealach seo."
       usage: "Úsáid: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature} socraithe go {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ ag cur an spritesheet le chéile…"
       progress_save: "┊ ag sábháil…"
       progress_drawing: "┊ ag tarraingt {state}…"
-      describe_prompt: "(o_o) Déan cur síos ar do pheata: "
-      usage: "(o_o) Úsáid: /hatch <description>  (m.sh. /hatch sionnach cibear bídeach)"
+      describe_prompt: "◈ Déan cur síos ar do pheata: "
+      usage: "◈ Úsáid: /hatch <description>  (m.sh. /hatch sionnach cibear bídeach)"
       default_name: "Peata"
-      designing: "(o_o) Ag dearadh '{concept}'… (nóiméad de ghlaonna ar an tsamhail íomhá)"
-      base_failed: "(x_x) Níorbh fhéidir buncuma a ghiniúint: {error}"
-      no_base_draft: "(x_x) Níor tháinig aon bhundréacht ar ais — bain triail eile as."
-      failed: "(x_x) Theip ar /hatch: {error}"
-      hatched: "(^_^)b Tá {name} gortha agus uchtaithe — léimfidh sé isteach ar ball beag!"
+      designing: "◈ Ag dearadh '{concept}'… (nóiméad de ghlaonna ar an tsamhail íomhá)"
+      base_failed: "✘ Níorbh fhéidir buncuma a ghiniúint: {error}"
+      no_base_draft: "✘ Níor tháinig aon bhundréacht ar ais — bain triail eile as."
+      failed: "✘ Theip ar /hatch: {error}"
+      hatched: "✓ Tá {name} gortha agus uchtaithe — léimfidh sé isteach ar ball beag!"
     pet:
 
-      is_out: "(^_^)b Tá {name} amuigh — léimfidh sé isteach ar ball beag."
-      put_away_named: "(-_-)zzZ {name} curtha i leataobh."
-      put_away: "(-_-)zzZ Peata curtha i leataobh."
-      usage_scale: "(o_o) Úsáid: /pet scale <factor>  (m.sh. /pet scale 0.5)"
-      scale_set: "(^_^) Scála an pheata → {scale}."
-      fetching: "(o_o) Ag fáil '{name}' ón petdex…"
-      adopt_failed: "(x_x) Níorbh fhéidir '{name}' a uchtú: {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ Tá {name} amuigh — léimfidh sé isteach ar ball beag."
+      put_away_named: "○ {name} curtha i leataobh."
+      put_away: "○ Peata curtha i leataobh."
+      usage_scale: "◈ Úsáid: /pet scale <factor>  (m.sh. /pet scale 0.5)"
+      scale_set: "✓ Scála an pheata → {scale}."
+      fetching: "◈ Ag fáil '{name}' ón petdex…"
+      adopt_failed: "✘ Níorbh fhéidir '{name}' a uchtú: {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Gan stáitsiú"
@@ -2616,9 +2616,9 @@ cli:
       failed: "Theip ar /journey: {error}"
     paste:
 
-      no_image: "(._.) Níor aimsíodh aon íomhá sa ghearrthaisce"
+      no_image: "◈ Níor aimsíodh aon íomhá sa ghearrthaisce"
       attached: "📎 Íomhá #{index} ceangailte ón ghearrthaisce"
-      extract_failed: "(>_<) Tá íomhá sa ghearrthaisce ach theip ar í a asbhaint"
+      extract_failed: "◬ Tá íomhá sa ghearrthaisce ach theip ar í a asbhaint"
     copy:
 
       nothing_yet: "Níl aon rud le cóipeáil fós."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "Úsáid: /image <path>  m.sh. /image {example}"
-      not_found: "(>_<) Comhad gan a aimsiú: {path}"
-      unsupported: "(._.) Ní comhad íomhá a dtacaítear leis é: {name}"
+      not_found: "◬ Comhad gan a aimsiú: {path}"
+      unsupported: "◈ Ní comhad íomhá a dtacaítear leis é: {name}"
       attached: "📎 Íomhá ceangailte: {name}"
       now_type_prompt: "Clóscríobh do leid anois (nó úsáid --image sa mhód aoncheiste): {text}"
     tools:
 
-      usage: "(._.) Úsáid: /tools {subcommand} <name> [name ...]"
+      usage: "◈ Úsáid: /tools {subcommand} <name> [name ...]"
       example_toolset: "Tacar uirlisí ionsuite:  /tools {subcommand} web"
       example_mcp: "Uirlis MCP:              /tools {subcommand} github:create_issue"
       disabling: "Ag díchumasú {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "Dlúthaíodh seisiún {session_id} isteach i {resolved_id}; ag atosú an tsliochtaigh le do thraschríbhinn."
     sessions:
 
-      none_yet: "(._.) Níl aon seisiún roimhe seo ann fós."
+      none_yet: "◈ Níl aon seisiún roimhe seo ann fós."
     branch:
 
       branched_one: "⑂ Brainseáladh seisiún \"{title}\" ({count} teachtaireacht úsáideora)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "Oibríonn uirlisí teirminéil agus comhad sa worktree anois."
     personality:
 
-      title: "(^o^)/ Pearsantachtaí"
+      title: "❆ Pearsantachtaí"
       none_option: "(gan forleagan pearsantachta)"
       usage: "Úsáid: /personality <name>   (* = gníomhach)"
-      unknown: "(._.) Pearsantacht anaithnid: {name}"
+      unknown: "◈ Pearsantacht anaithnid: {name}"
       available: "Ar fáil: none, {available}"
       scope_saved: "(sábháilte sa chumraíocht)"
       scope_session: "(seisiún amháin)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} Pearsantacht socraithe go '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) caithfidh --repeat a bheith ina shlánuimhir"
-      unknown_command: "(._.) Ordú cron anaithnid: {subcommand}"
+      repeat_must_be_integer: "◈ caithfidh --repeat a bheith ina shlánuimhir"
+      unknown_command: "◈ Ordú cron anaithnid: {subcommand}"
       available: "Ar fáil: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Tascanna Sceidealta"
+      overview_title: "❆ Tascanna Sceidealta"
       overview_commands: "Orduithe:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Seiceáil stádas an fhreastalaí\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Tasc nua\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Tascanna Reatha:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "Scileanna: gan aon cheann"
       next_short: "Ar aghaidh"
       no_jobs_hint: "Níl aon tasc sceidealta. Úsáid '/cron add' chun ceann a chruthú."
-      no_jobs: "(._.) Níl aon tasc sceidealta."
+      no_jobs: "◈ Níl aon tasc sceidealta."
       list_header: "Tascanna Sceidealta:"
       id: "ID: {job_id}"
       name: "Ainm: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "earráid: {error}"
       last_run: "Rith deireanach: {when} ({status})"
-      usage_add: "(._.) Úsáid: /cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) Tabhair leid nó scil amháin ar a laghad, le do thoil"
-      create_failed: "(x_x) Theip ar an tasc a chruthú: {error}"
-      created: "(^_^)b Tasc cruthaithe: {job_id}"
-      usage_edit: "(._.) Úsáid: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) Tasc gan a aimsiú: {job_id}"
-      update_failed: "(x_x) Theip ar an tasc a nuashonrú: {error}"
-      updated: "(^_^)b Tasc nuashonraithe: {job_id}"
-      usage_action: "(._.) Úsáid: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) Theip ar an tasc a chur ar sos: {error}"
-      resume_failed: "(x_x) Theip ar an tasc a atosú: {error}"
-      run_failed: "(x_x) Theip ar an tasc a rith: {error}"
-      remove_failed: "(x_x) Theip ar an tasc a bhaint: {error}"
-      removed: "(^_^)b Tasc bainte: {name} ({job_id})"
-      did_not_run: "(x_x) Níor ritheadh an tasc: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b Tasc curtha ar sos: {name} ({job_id})"
-      resumed: "(^_^)b Tasc atosaithe: {name} ({job_id})"
-      triggered: "(^_^)b Tasc spreagtha: {name} ({job_id})"
+      usage_add: "◈ Úsáid: /cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ Tabhair leid nó scil amháin ar a laghad, le do thoil"
+      create_failed: "✘ Theip ar an tasc a chruthú: {error}"
+      created: "✓ Tasc cruthaithe: {job_id}"
+      usage_edit: "◈ Úsáid: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ Tasc gan a aimsiú: {job_id}"
+      update_failed: "✘ Theip ar an tasc a nuashonrú: {error}"
+      updated: "✓ Tasc nuashonraithe: {job_id}"
+      usage_action: "◈ Úsáid: /cron {subcommand} <job_id>"
+      pause_failed: "✘ Theip ar an tasc a chur ar sos: {error}"
+      resume_failed: "✘ Theip ar an tasc a atosú: {error}"
+      run_failed: "✘ Theip ar an tasc a rith: {error}"
+      remove_failed: "✘ Theip ar an tasc a bhaint: {error}"
+      removed: "✓ Tasc bainte: {name} ({job_id})"
+      did_not_run: "✘ Níor ritheadh an tasc: {name} ({job_id})\n  {reason}"
+      paused: "✓ Tasc curtha ar sos: {name} ({job_id})"
+      resumed: "✓ Tasc atosaithe: {name} ({job_id})"
+      triggered: "✓ Tasc spreagtha: {name} ({job_id})"
     suggestions:
 
       failed: "Theip ar an ordú moltaí: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "Theip ar an ordú gormchló cron: {error}"
     curator:
 
-      failed: "(._.) coimeádaí: {error}"
+      failed: "◈ coimeádaí: {error}"
     kanban:
 
-      failed: "(._.) earráid kanban: {error}"
+      failed: "◈ earráid kanban: {error}"
     memory:
 
       unknown_subcommand: "Fo-ordú /memory anaithnid. Úsáid: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "Úsáid: /bg <prompt>\nSampla: /bg Déan achoimre ar phríomhscéalta HN inniu\n(Le haghaidh ceist thaobhach faoin gcomhrá seo, úsáid /btw <question>.)\nRitheann an tasc i seisiún ar leith agus taispeántar na torthaí anseo nuair a bheidh sé críochnaithe."
-      no_credentials: "(>_<) Ní féidir tasc cúlra a thosú: níl dintiúir bhailí ann."
+      no_credentials: "◬ Ní féidir tasc cúlra a thosú: níl dintiúir bhailí ann."
       started: "🔄 Tasc cúlra #{number} tosaithe: \"{preview}\""
       task_id: "ID an taisc: {task_id}"
       keep_chatting: "Is féidir leat leanúint leis an gcomhrá — taispeánfar na torthaí nuair a bheidh sé críochnaithe."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "Úsáid: /btw <question>\nSampla: /btw cén comhad ina raibh an earráid sin?\nFreagraíonn sé ceist ghasta faoin gcomhrá seo gan cur isteach air.\n(Le haghaidh tasc cúlra neamhspleách, úsáid /bg <prompt>.)"
-      no_credentials: "(>_<) Ní féidir an cheist thaobhach a fhreagairt: níl dintiúir bhailí ann."
+      no_credentials: "◬ Ní féidir an cheist thaobhach a fhreagairt: níl dintiúir bhailí ann."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(Níor gineadh aon fhreagra)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! Cum do leid thíos. Déantar neamhaird de línte a thosaíonn le '#!'.\n#! Sábháil agus scoir le seoladh; fág folamh le cealú."
-      editor_failed: "(>_<) Níorbh fhéidir an t-eagarthóir a oscailt: {error}"
-      empty: "(._.) Leid fholamh — níor seoladh aon rud."
+      editor_failed: "◬ Níorbh fhéidir an t-eagarthóir a oscailt: {error}"
+      empty: "◈ Leid fholamh — níor seoladh aon rud."
     focus:
 
       usage: "Úsáid: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "scoir den seisiún reatha agus nuashonraigh Icebath Agent"
       choice_cancel: "Cealaigh"
       choice_cancel_desc: "coinnigh an seisiún reatha"
-      title: "☤  Nuashonraigh Icebath Agent"
+      title: "󰆧  Nuashonraigh Icebath Agent"
       detail: "Scoirfidh sé seo den seisiún reatha agus rithfidh sé `icebath update`."
       cancelled: "🟡 /update cealaithe."
-      launching: "☤ Ag lainseáil an nuashonraithe..."
+      launching: "󰆧 Ag lainseáil an nuashonraithe..."
     voice:
 
       unknown_subcommand: "Fo-ordú gutha anaithnid: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "An é seo a bhí i gceist agat: {candidates}?"
   config:
 
-    title: "(^_^) Cumraíocht"
+    title: "❆ Cumraíocht"
     loaded: "(lódáilte)"
     not_found: "(gan aimsiú)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 Úsáid Comhthéacs — {model}"
-    compute_failed: "(._.) Níorbh fhéidir miondealú an chomhthéacs a ríomh: {error}"
+    compute_failed: "◈ Níorbh fhéidir miondealú an chomhthéacs a ríomh: {error}"
   error:
 
     auth: "Diúltaíodh d'eochair {provider}. Rith `icebath model` chun í a iontráil arís."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Ag tosú Icebath Gateway (ardáin teachtaireachtaí)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Stádas Gateway"
+    header: "❆ Stádas Gateway"
     platform_config_header: "Cumraíocht Ardán Teachtaireachtaí:"
     enabled: "Cumasaithe"
     not_configured: "Gan cumrú ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. Nó cumraigh na socruithe in {path}"
   help:
 
-    header: "(^_^)? Orduithe ar Fáil"
+    header: "❆ Orduithe ar Fáil"
     section_session: "Seisiún"
     section_configuration: "Cumraíocht"
     section_tools_skills: "Uirlisí & Scileanna"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "Theip ar an scil a lódáil do {command}"
   tools:
 
-    none_available: "(;_;) Níl aon uirlis ar fáil"
-    header: "(^_^)/ Uirlisí ar Fáil"
-    total: "Iomlán: {count} uirlis  ヽ(^o^)ノ"
+    none_available: "◈ Níl aon uirlis ar fáil"
+    header: "❆ Uirlisí ar Fáil"
+    total: "Iomlán: {count} uirlis"
   toolsets:
 
-    header: "(^_^)b Tacair Uirlisí ar Fáil"
+    header: "✓ Tacair Uirlisí ar Fáil"
     currently_enabled_legend: "(*) = cumasaithe faoi láthair"
     tip_enable_all: "Leid: Úsáid 'all' nó '*' chun gach tacar uirlisí a chumasú"
     example: "Sampla: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "Athraigh le `/model` nó `icebath auth` ar dtús."
     checking_reset_credits: "⏳ Ag seiceáil creidmheasanna athshocraithe bainc..."
     codex_timeout: "❌ Chuaigh an chumarsáid le hinneall Codex thar am — bain triail eile as ar ball."
-    no_api_calls: "(._.) Níor rinneadh aon ghlao API sa seisiún seo fós."
+    no_api_calls: "◈ Níor rinneadh aon ghlao API sa seisiún seo fós."
     header_session: "📊 Úsáid Comharthaí Seisiúin"
     label_model: "Samhail:"
     label_input_tokens: "Comharthaí ionchuir:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "Ligeann /model duit samhlacha a athrú i lár seisiúin — bain triail as /model sonnet nó /model gpt-5."
   t017: "Athraíonn /model --global do shamhail réamhshocraithe go buan."
   t018: "Socraíonn /personality pirate pearsantacht spraíúil — 14 rogha ionsuite ó kawaii go shakespeare."
-  t019: "Athraíonn /skin téama an CLI — bain triail as ares, mono, slate, poseidon, nó charizard."
+  t019: "Athraíonn /skin téama an CLI — bain triail as taro, light, contrast, cyberpunk, nó dracula."
   t020: "Scoránaíonn /statusbar barra buan a thaispeánann an tsamhail, comharthaí, % líonta an chomhthéacs, costas, agus fad."
   t021: "Baineann /tools disable browser uirlisí brabhsálaí go sealadach don seisiún reatha."
   t022: "Ceanglaíonn /browser connect uirlisí brabhsálaí le do bhrabhsálaí de chlann Chromium atá ag rith, trí CDP."
@@ -3748,7 +3748,7 @@ tips:
   t336: "Liostaíonn /toolsets gach tacar uirlisí atá ar fáil ionas go mbeidh a fhios agat cad a ghlacann -t/--toolsets leis."
   t337: "Scoránaíonn /voice tts mód TTS amháin — freagraíonn an gníomhaire os ard ach clóscríobhann tú do leideanna fós."
   t338: "Athscanann /reload-skills ~/.icebath/skills/ ionas go dtagann scileanna drop-in chun cinn gan an seisiún a atosú."
-  t339: "Roghnaíonn /indicator kaomoji|emoji|unicode|ascii stíl an táscaire gnóthach TUI a thaispeántar le linn rití gníomhaire."
+  t339: "Roghnaíonn /indicator unicode|emoji|ascii stíl an táscaire gnóthach TUI a thaispeántar le linn rití gníomhaire."
   t340: "Uaslódálann /debug cuach tacaíochta (eolas córais + logaí) agus filleann naisc inroinnte — oibríonn sé sa chomhrá freisin."
   t341: "Is é icebath -z \"<prompt>\" an aon-uaire is glaine: an freagra deiridh ar stdout, gan aon rud eile — foirfe le haghaidh píopála i scripteanna."
   t342: "Instealann icebath chat --pass-session-id ID an tseisiúin i leid an chórais ionas gur féidir leis an ngníomhaire tagairt dó féin."

@@ -87,11 +87,6 @@ func flowMenuAnswer(title string, labels, answers []string, def int) (answer str
 	return answers[idx], true, false
 }
 
-// SetupMenuAnswer is the arrow key list standing in for a typed setup prompt, ran false off a terminal
-func SetupMenuAnswer(title string, labels, answers []string, def int) (answer string, ran, cancelled bool) {
-	return flowMenuAnswer(title, labels, answers, def)
-}
-
 // Resolves an existing wizard credential and its source without changing its storage
 func existingAPIKeyForModelFlow(env PoolEnv, providerID string, pconfig Profile) (string, string) {
 	key, source, _ := authResolver(env).apiKeyProviderSecret(providerID, pconfig)

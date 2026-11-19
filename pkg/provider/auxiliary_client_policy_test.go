@@ -478,3 +478,10 @@ func TestAuxModelForProviderReadsTheFastTierOnlyWhenPreferred(t *testing.T) {
 		t.Fatalf("plain got %q", got)
 	}
 }
+
+// Forgets every remembered temperature rejection as a fresh process starts
+func auxResetTemperatureRejections() {
+	auxTemperatureRejectedMu.Lock()
+	auxTemperatureRejectedRoutes = map[auxTemperatureRoute]bool{}
+	auxTemperatureRejectedMu.Unlock()
+}

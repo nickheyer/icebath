@@ -234,40 +234,6 @@ func tallySilence(spoke, held bool, where string) (bool, int) {
 	return false, count
 }
 
-// StartRecording begins a push to talk capture from the default input device
-func StartRecording(ctx context.Context) error {
-	pttRecorderMu.Lock()
-	defer pttRecorderMu.Unlock()
-	if pttRecorder != nil && pttRecorder.IsRecording() {
-		return nil
-	}
-	rec := CreateAudioRecorder()
-	if err := rec.Start(ctx, nil); err != nil {
-		return err
-	}
-	pttRecorder = rec
-	return nil
-}
-
-// StopAndTranscribe stops the push to talk capture and returns its transcript, empty when none
-func StopAndTranscribe(ctx context.Context) (string, error) {
-	pttRecorderMu.Lock()
-	rec := pttRecorder
-	pttRecorder = nil
-	pttRecorderMu.Unlock()
-	if rec == nil {
-		return "", nil
-	}
-	wavPath, err := rec.Stop()
-	if err != nil {
-		return "", err
-	}
-	if wavPath == "" {
-		return "", nil
-	}
-	return transcribeWav(ctx, wavPath, "voice transcription failed: %s", ""), nil
-}
-
 // StartContinuous starts the VAD driven loop, false while a stop is still transcribing
 func StartContinuous(ctx context.Context, o ContinuousOptions) (bool, error) {
 	continuousMu.Lock()

@@ -774,11 +774,6 @@ type codexWatchdogs struct {
 	progress             float64
 }
 
-// Base non stream stale timeout and whether it is the implicit default
-func (c *codexResponsesClient) staleTimeoutBase(req *Request, settings wireSettings) (float64, bool) {
-	return nonStreamStaleTimeoutBase(settings, c.cc.provider, req.Model)
-}
-
 // Effective stale timeout scaled by context, floored for high effort, and capped by the context deadline
 func (c *codexResponsesClient) computeStaleTimeout(ctx context.Context, req *Request, settings wireSettings, estTokens int, kwargs map[string]any) float64 {
 	return computeNonStreamStaleTimeout(ctx, settings, c.cc.provider, req, c.cc.local, true, estTokens, kwargs)

@@ -151,12 +151,6 @@ func isNumber(v any) bool {
 	return false
 }
 
-// Reports whether a value is a Python int, bool included, integral float64 counted for ints a Go decoder widened
-func isPyInt(v any) bool {
-	_, ok := pyIntValue(v)
-	return ok
-}
-
 // Python int value of an int shaped value, integral float64 narrowed back to int64
 func pyIntValue(v any) (any, bool) {
 	switch t := v.(type) {

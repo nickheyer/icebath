@@ -376,8 +376,6 @@ func pickerScopedEnv(ctx context.Context) func(string) (string, error) {
 	return func(name string) (string, error) { return scopedKeyEnv(ctx, name) }
 }
 
-func rawEnv(name string) (string, error) { return os.Getenv(name), nil }
-
 // Any key lowercased is already emitted or excluded
 func pickerSkip(seen, excluded map[string]bool, keys ...string) bool {
 	for _, k := range keys {

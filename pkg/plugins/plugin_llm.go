@@ -607,11 +607,6 @@ func newPluginLlm(pluginID string, policyLoader func(ctx context.Context, plugin
 	return &PluginLlm{pluginID: pluginID, policyLoader: policyLoader, syncCaller: sync, asyncCaller: async}
 }
 
-// Facade with an injected policy and caller, no config and no provider
-func makePluginLlmForTest(pluginID string, policy trustPolicy, sync, async pluginLlmCaller) *PluginLlm {
-	return newPluginLlm(pluginID, func(context.Context, string) trustPolicy { return policy }, sync, async)
-}
-
 // Host chat completion against the active model, overrides gated per plugin
 func (l *PluginLlm) Complete(ctx context.Context, messages []any, o PluginLlmOptions) (*PluginLlmCompleteResult, error) {
 	agent, kw, err := l.gate(ctx, o, messages, nil)

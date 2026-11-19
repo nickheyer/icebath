@@ -69,12 +69,6 @@ func (c *streamingCall) currentStaleTimeout() float64 {
 	return c.staleTimeout
 }
 
-func (c *streamingCall) currentAttempt() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.current
-}
-
 func (c *streamingCall) callIsDone() bool {
 	select {
 	case <-c.callDone:

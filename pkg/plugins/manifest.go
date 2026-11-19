@@ -218,24 +218,6 @@ func asMap(v any) map[string]any {
 	return nil
 }
 
-// Integer of a YAML scalar
-func asInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		if n == float64(int(n)) {
-			return int(n), true
-		}
-	case string:
-		i, err := strconv.Atoi(strings.TrimSpace(n))
-		return i, err == nil
-	}
-	return 0, false
-}
-
 // Parsed requires_env entries, nameless entries dropped
 func parseEnvSpecs(v any) []EnvSpec {
 	var out []EnvSpec

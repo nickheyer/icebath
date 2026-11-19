@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"errors"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -30,18 +29,4 @@ func ValidateWithinDir(path, root string) string {
 		return "Path escapes allowed directory: '" + resolved + "' is not in the subpath of '" + rootResolved + "'"
 	}
 	return ""
-}
-
-// Resolves a model supplied path against the session base directory after rejecting unsafe characters
-func ResolveSafePath(env *Env, path string) (string, error) {
-	if strings.TrimSpace(path) == "" {
-		return "", errors.New("path must not be empty")
-	}
-	if hasUnsafePathChars(path) {
-		return "", errors.New("path contains control characters or line separators; use a plain filesystem path")
-	}
-	if msg := ntNamespaceError(path, "Access"); msg != "" {
-		return "", errors.New(msg)
-	}
-	return resolvePathForTask(env, path)
 }

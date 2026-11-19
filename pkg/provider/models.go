@@ -1201,9 +1201,6 @@ var (
 	swrRefreshWait     sync.WaitGroup
 )
 
-// WaitProviderModelsRefreshes blocks until every background catalog refresh has finished
-func WaitProviderModelsRefreshes() { swrRefreshWait.Wait() }
-
 // One provider row of the disk cache
 func cacheEntry(fp string, models []string, at time.Time) map[string]any {
 	return map[string]any{"fp": fp, "at": float64(at.UnixNano()) / 1e9, "models": cloneStrings(models)}
@@ -2009,14 +2006,4 @@ func CachedFetchAPIModels(ctx context.Context, opts CachedFetchOptions) (Catalog
 		return CatalogRows{}, false
 	}
 	return chatCatalogRows(rows), true
-}
-
-// ResetProviderModelsCaches clears the process resident probe and refresh state of this slice
-func ResetProviderModelsCaches() {
-	probeNegMu.Lock()
-	probeNegCache = map[string]time.Time{}
-	probeNegMu.Unlock()
-	swrRefreshMu.Lock()
-	swrRefreshInflight = map[swrKey]bool{}
-	swrRefreshMu.Unlock()
 }

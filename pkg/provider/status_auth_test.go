@@ -2,7 +2,6 @@ package provider
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -56,16 +55,6 @@ func (s *statusTestSink) FirstEnvValue(names ...string) string {
 }
 
 func (s *statusTestSink) EffectiveProviderLabel() string { return s.provider }
-
-func renderStatusAuthProviders(t *testing.T, ctx context.Context) string {
-	t.Helper()
-	sink := &statusTestSink{}
-	c := &StatusContext{Ctx: ctx, Out: sink, Config: map[string]any{}}
-	if err := StatusRenderAuthProviders(c); err != nil {
-		t.Fatal(err)
-	}
-	return sink.buf.String()
-}
 
 func TestStatusAuthFormattersAndOAuthBlockGates(t *testing.T) {
 	if statusFormatISOTimestamp(nil) != "(unknown)" || statusFormatISOTimestamp("  ") != "(unknown)" || statusFormatISOTimestamp(" not a date") != " not a date" {

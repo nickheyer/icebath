@@ -289,3 +289,11 @@ func TestAuxCallKwargsCarriesTheRuntimeMainSessionHeader(t *testing.T) {
 		t.Fatalf("extra_headers %v", kwargs["extra_headers"])
 	}
 }
+
+// Drops every cached semaphore
+func auxResetAuxSemaphores() {
+	auxSemMu.Lock()
+	defer auxSemMu.Unlock()
+	clear(auxSyncSemaphores)
+	clear(auxAsyncSemaphores)
+}

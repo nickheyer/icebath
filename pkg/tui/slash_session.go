@@ -10,7 +10,7 @@ import (
 )
 
 // Busy indicator styles in the order the command offers them
-var indicatorNames = []string{"kaomoji", "emoji", "unicode", "ascii"}
+var indicatorNames = []string{"unicode", "emoji", "ascii"}
 
 // Word of a fast mode value
 func fastModeWord(word string) string {

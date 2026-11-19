@@ -510,8 +510,8 @@ func TestDisplaySkinTouch(t *testing.T) {
 	})
 	t.Run("test_builtin_or_missing_skin_file_is_fine", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.mustSet("display.skin", "mono", false)
-		if !strings.Contains(c.readConfig(), "skin: mono") {
+		c.mustSet("display.skin", "contrast", false)
+		if !strings.Contains(c.readConfig(), "skin: contrast") {
 			t.Fatalf("config %q", c.readConfig())
 		}
 	})

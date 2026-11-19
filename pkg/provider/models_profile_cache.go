@@ -37,24 +37,3 @@ func (s *profileSlot[T]) set(ctx context.Context, value T) {
 	}
 	s.byHome[home.Key(home.Dir(ctx))] = value
 }
-
-// Clears the active profile's value so the next read starts cold
-func (s *profileSlot[T]) clear(ctx context.Context) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if home.Override(ctx) == "" {
-		var zero T
-		s.module, s.moduleSet = zero, false
-		return
-	}
-	delete(s.byHome, home.Key(home.Dir(ctx)))
-}
-
-// Drops every profile's value
-func (s *profileSlot[T]) reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var zero T
-	s.module, s.moduleSet = zero, false
-	s.byHome = map[string]T{}
-}

@@ -304,14 +304,14 @@ func rtP3Ops(t *testing.T) map[string]rtOp {
 	ctx := context.Background()
 	return map[string]rtOp{
 		"cli_set": {func(h string) error {
-			return SetConfigValue(ctx, h, "display.skin", "ares", false, testCommandSources())
+			return SetConfigValue(ctx, h, "display.skin", "taro", false, testCommandSources())
 		}, [][]string{rtP3Target}},
 		"save_config": {func(h string) error {
 			cfg, err := Load(h, facadeLookup)
 			if err != nil {
 				return err
 			}
-			roundtrip.Set(map[string]any(cfg), rtP3Target, "ares")
+			roundtrip.Set(map[string]any(cfg), rtP3Target, "taro")
 			return SaveConfig(ctx, h, cfg, SaveOptions{})
 		}, [][]string{rtP3Target}},
 		"migrate": {func(h string) error {
@@ -324,7 +324,7 @@ func rtP3Ops(t *testing.T) map[string]rtOp {
 func rtP3Case(t *testing.T, seed int64) *roundtrip.Case {
 	t.Helper()
 	c := rtGen(t, seed, roundtrip.GenOptions{NoNullLeaves: true, ExcludeTop: []string{"display", "delegation", "agent"}})
-	text, err := roundtrip.BeforeVersion(c.Text, "display:\n  skin: mono\n  compact: true\ndelegation:\n  max_iterations: 50\n"+
+	text, err := roundtrip.BeforeVersion(c.Text, "display:\n  skin: contrast\n  compact: true\ndelegation:\n  max_iterations: 50\n"+
 		"agent:\n  verify_on_stop: false\n")
 	if err != nil {
 		t.Fatal(err)

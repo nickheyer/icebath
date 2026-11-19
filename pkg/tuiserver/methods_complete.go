@@ -554,14 +554,6 @@ func modelOptions(ctx context.Context, rid any, params map[string]any) (map[stri
 	return ok(rid, payload), nil
 }
 
-// Pool environment of the scoped profile home with its live secret scope
-func scopedPoolEnv(ctx context.Context) provider.PoolEnv {
-	h := home.Dir(ctx)
-	env := provider.HomePoolEnv(h)
-	env.Scope, env.Ctx = provider.SecretScopeFrom(ctx), ctx
-	return env
-}
-
 // Saves an API key for the provider and answers its refreshed picker row marked authenticated
 func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	if skew := modelSkewErr(ctx, rid); skew != nil {

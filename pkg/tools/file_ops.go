@@ -157,15 +157,6 @@ func (s *shellFileOps) head(path string, nbytes int) *ExecuteResult {
 	return s.exec("head -c "+strconv.Itoa(nbytes)+" "+s.escapeShellArg(path, true)+" 2>/dev/null", "", 0)
 }
 
-// Snippet through the backend python3, retried with python when only that name exists
-func (s *shellFileOps) runPythonSnippet(snippet string) *ExecuteResult {
-	result := s.exec("python3 -c "+s.escapeShellArg(snippet, true), "", 0)
-	if result.ExitCode != 0 && strings.Contains(result.Stdout, "python3") {
-		result = s.exec("python -c "+s.escapeShellArg(snippet, true), "", 0)
-	}
-	return result
-}
-
 // Sentinel delimited segments of body and each extra command, body exit status, and the reply
 func (s *shellFileOps) fencedRead(body string, more ...string) (segments []string, rc int, rcOK bool, reply *ExecuteResult, fenced bool) {
 	sentinel := newFileOpsSentinel(bytesSentinelPrefix)

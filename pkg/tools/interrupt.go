@@ -106,16 +106,6 @@ func RequestYield(id WorkerID) {
 	interruptMu.Unlock()
 }
 
-// IsWorkerYieldRequested reports whether a yield is pending for the worker
-func IsWorkerYieldRequested(id WorkerID) bool {
-	if id == 0 {
-		return false
-	}
-	interruptMu.Lock()
-	defer interruptMu.Unlock()
-	return yieldWorkers[id]
-}
-
 // ConsumeYield atomically takes the pending yield for the worker
 func ConsumeYield(id WorkerID) bool {
 	if id == 0 {

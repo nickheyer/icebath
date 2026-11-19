@@ -309,3 +309,12 @@ func TestEffortFieldsOfAResolvedRoute(t *testing.T) {
 		t.Fatalf("high effort %v", high)
 	}
 }
+
+// Reserves an API source for a session from the authenticated API edge, driving its binding inline
+func bindAPISession(ctx context.Context, a *SessionAuthority, sessionID string, opts apiBindOptions) (SessionRef, error) {
+	result, err := runSteps(ctx, bindAPISteps(ctx, a, sessionID, opts))
+	if err != nil {
+		return SessionRef{}, err
+	}
+	return result.(SessionRef), nil
+}

@@ -60,14 +60,6 @@ func filter(names []string, pat string, want bool) []string {
 	return out
 }
 
-// Bytes form of fnmatch where every byte is the ISO-8859-1 character of its value
-func FnmatchBytes(name, pat []byte) bool {
-	if runtime.GOOS == "windows" {
-		return FnmatchCase(normcase(string(name)), normcase(string(pat)))
-	}
-	return FnmatchCaseBytes(name, pat)
-}
-
 // Bytes form of fnmatchcase where every byte is the ISO-8859-1 character of its value
 func FnmatchCaseBytes(name, pat []byte) bool {
 	return Compile(latin1(pat)).MatchString(latin1(name))

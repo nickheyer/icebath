@@ -56,7 +56,7 @@ func TestGlyphLayoutScrollbackIsWidthIndependent(t *testing.T) {
 		if start < 1 || rows[start-1] != bar || rows[start+1] != "I will read calc.py first." || rows[start+2] != thought[0] {
 			t.Fatalf("reasoning rows %q", rows)
 		}
-		brand := slices.IndexFunc(rows, func(r string) bool { return strings.HasPrefix(r, "☤ Icebath") })
+		brand := slices.IndexFunc(rows, func(r string) bool { return strings.HasPrefix(r, "󰆧 Icebath") })
 		if brand < 1 || rows[brand-1] != bar {
 			t.Fatalf("answer rows %q", rows)
 		}

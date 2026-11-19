@@ -621,7 +621,7 @@ func AutoPruneOfferInteractive(ctx context.Context, stdout io.Writer, cprint fun
 	}
 	lines := AutoPruneAdviceLines(*advice, "/")
 	cprint("")
-	cprint("☤ " + lines[0])
+	cprint("󰆧 " + lines[0])
 	for _, line := range lines[1 : len(lines)-1] {
 		cprint("  " + line)
 	}

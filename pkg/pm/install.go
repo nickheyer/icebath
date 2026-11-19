@@ -309,27 +309,6 @@ func LazyInstallsAllowedFor(ctx context.Context) bool {
 	return isBool && allowed
 }
 
-// Venv extras recorded in the installed state
-func EnabledExtras(ctx context.Context) ([]string, error) {
-	runtimeFacts, err := NewFacts(RuntimeFactsPath(ctx), false)
-	if err != nil {
-		return nil, err
-	}
-	fact, _ := runtimeFacts.Get("venv")
-	if len(fact) == 0 {
-		facts, err := storeFacts(ctx)
-		if err != nil {
-			return nil, err
-		}
-		fact, _ = facts.Get("venv")
-	}
-	value, present := fact["extras"]
-	if !present {
-		return []string{}, nil
-	}
-	return pyIterStrings(value)
-}
-
 // Reports whether the current pin of a package is installed
 func IsInstalled(ctx context.Context, name string) (bool, error) {
 	p, err := GetPackage(name)
@@ -354,11 +333,6 @@ var sealedLayout = func(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return isRegularFile(filepath.Join(filepath.Dir(root), "manifest.json")), nil
-}
-
-// Records the refusal of an on demand install in the process receipt scope and returns it
-func RefuseLazy(name, what string) *InstallError {
-	return RefuseLazyFor(context.Background(), name, what)
 }
 
 // Records the refusal of an on demand install in a context's receipt scope and returns it

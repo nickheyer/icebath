@@ -72,11 +72,6 @@ func PrepareWindowsEnvironment(source, state string, env map[string]string) (map
 	return prepared, nil
 }
 
-// Environment a dependency build of a source tree needs on this host, nil when the ambient one suffices
-func SourceBuildEnvironment(source string) (map[string]string, error) {
-	return sourceBuildEnvironment(context.Background(), source)
-}
-
 // Environment a dependency build needs, reusing the store parent as the provider's state root
 func sourceBuildEnvironment(ctx context.Context, source string) (map[string]string, error) {
 	target, err := CurrentTarget()

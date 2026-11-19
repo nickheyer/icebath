@@ -847,15 +847,6 @@ var (
 	registerUserPath = registerWindowsUserPath
 )
 
-// InlineStringLiteral keeps inline Python source intact through Windows PowerShell's native argv quoting, repr elsewhere
-func InlineStringLiteral(value string) string {
-	if !isWindows() {
-		return pyrepr.StrRepr(value)
-	}
-	escaped := pycodecs.UnicodeEscape(value)
-	return "'" + strings.NewReplacer("'", `\x27`, `"`, `\x22`).Replace(escaped) + "'"
-}
-
 // ExeIsVenvBound reports a launcher exe embedding the venv interpreter of the pre pm installer, which must be replaced
 func ExeIsVenvBound(exe, venvDir string) bool {
 	if venvDir == "" {

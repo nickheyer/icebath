@@ -24,9 +24,6 @@ func catalogGroup(group string) []string {
 	return out
 }
 
-// Kaomoji spinner frames in catalog order
-func faces() []string { return catalogGroup("content.faces") }
-
 // Thinking verbs the spinner cycles through
 var spinnerVerbs = []string{"pondering", "contemplating", "musing", "cogitating", "ruminating", "deliberating", "mulling", "reflecting", "processing", "reasoning", "analyzing", "computing", "synthesizing", "formulating", "brainstorming"}
 

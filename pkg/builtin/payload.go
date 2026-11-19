@@ -197,14 +197,6 @@ func treeFiles(t *Tree) (map[string]treeFile, error) {
 	return files, nil
 }
 
-// Copies every payload file under a prefix into the tree at a destination directory
-func copyPayloadTree(files map[string]treeFile, prefix, dest string) {
-	for _, rel := range payloadUnder(prefix) {
-		src := files["payload/"+rel]
-		files[path.Join(dest, strings.TrimPrefix(rel, prefix+"/"))] = src
-	}
-}
-
 func isFile(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.Mode().IsRegular()

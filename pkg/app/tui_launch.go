@@ -357,7 +357,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		return tuiLaunchExitCode(callErr, deps.stderr)
 	}
 	if code == 42 {
-		fmt.Fprint(deps.stdout, "\n☤ Launching update...\n\n")
+		fmt.Fprint(deps.stdout, "\n󰆧 Launching update...\n\n")
 		deps.relaunch([]string{"update"}, false)
 	}
 	return code

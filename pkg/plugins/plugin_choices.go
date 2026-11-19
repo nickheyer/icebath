@@ -118,8 +118,3 @@ func askChoice(ctx context.Context, question any, choices []any) (string, bool, 
 	}
 	return "", false, nil
 }
-
-// Public entry of plugin_choices ask_choice for surfaces and tests outside a plugin context
-func AskChoice(ctx context.Context, question any, choices []any) (string, bool, error) {
-	return askChoice(ctx, question, choices)
-}

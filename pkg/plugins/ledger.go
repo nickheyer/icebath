@@ -146,15 +146,6 @@ func restoreMapping[V comparable](mapping map[string]V, key string, current, pre
 	return true
 }
 
-// Restores a manager value only while current is still the active one
-func restoreValue[V comparable](field *V, current, previous V) bool {
-	if *field != current {
-		return false
-	}
-	*field = previous
-	return true
-}
-
 // Drops a name from a manager name set once no active ledger entry of that kind owns it
 func (m *Manager) removeNameIfUnowned(kind string, names map[string]bool, name string) {
 	m.mu.Lock()
@@ -234,11 +225,6 @@ func (m *Manager) dropFallbackHooks(src *hookSource) {
 	for _, h := range handles {
 		_ = h.Dispose()
 	}
-}
-
-// Registers a memory loader hook unless general discovery already loaded the same source
-func (m *Manager) registerFallbackHook(c *Context, src *hookSource, hookName string, fn HookFunc, holdStream bool) *Registration {
-	return m.registerFallbackHookWith(c, src, hookName, func() *Registration { return c.RegisterHook(hookName, fn, holdStream) })
 }
 
 // Fallback hook registration through register, a no op handle when general discovery owns the source

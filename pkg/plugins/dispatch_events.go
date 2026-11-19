@@ -221,31 +221,6 @@ func (m *Manager) deliverEvent(item *queuedPluginEvent) bool {
 	return false
 }
 
-// Waits until the current event generation is idle, false on timeout
-func (m *Manager) waitForEventDispatch(timeout time.Duration) bool {
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
-	m.eventMu.Lock()
-	generation := m.eventGeneration
-	for {
-		if m.eventPending[generation] == 0 {
-			m.eventMu.Unlock()
-			return true
-		}
-		idle := m.eventIdle
-		m.eventMu.Unlock()
-		select {
-		case <-idle:
-		case <-deadline.C:
-			m.eventMu.Lock()
-			ok := m.eventPending[generation] == 0
-			m.eventMu.Unlock()
-			return ok
-		}
-		m.eventMu.Lock()
-	}
-}
-
 // Queues an event without blocking and returns the subscriber count scheduled
 func (m *Manager) dispatchEvent(ctx context.Context, event string, payload map[string]any) int {
 	depth := emitDepth(ctx)

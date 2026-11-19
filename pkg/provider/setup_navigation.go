@@ -219,12 +219,6 @@ func (e setupGoBack) Error() string   { return strconv.Itoa(e.promptIndex) }
 func (setupGoBack) SetupGoBack()      {}
 func (setupGoBack) setupControlFlow() {}
 
-// Reports whether a recovered panic value is setup navigation that must keep unwinding
-func isSetupControlFlow(r any) bool {
-	_, ok := r.(setupControlFlow)
-	return ok
-}
-
 // Translates the shared prompt events into setup control flow, replaying an answer only to the prompt that gave it
 func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*cliui.MenuNavigationStart, error) {
 	state := currentSetupNavigation()
@@ -271,9 +265,6 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 	}
 	return nil, nil
 }
-
-// Installs the setup navigation state and menu handler around fn and restores both after
-func setupNavigationScope(fn func()) { guardedNavigationScope(false, fn) }
 
 // Navigation scope whose prompts ask for a second Escape before cancelling when guard is set
 func guardedNavigationScope(guard bool, fn func()) {

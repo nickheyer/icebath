@@ -154,7 +154,7 @@ func TestCloudAgentFirstRemoteReadCompletesCold(t *testing.T) {
 				os.MkdirAll(dir, 0o755)
 				os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte("name: probe\nkind: model-provider\nversion: 0.0.1\n"), 0o644)
 			}
-			p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
+			p.Upper = map[string]any{"display": map[string]any{"skin": "taro"}}
 			var skin any
 			var err error
 			withinBound(t, 60*time.Second, func() {
@@ -162,7 +162,7 @@ func TestCloudAgentFirstRemoteReadCompletesCold(t *testing.T) {
 				tree, err = config.LoadContext(context.Background(), p.Home, os.LookupEnv)
 				skin = tree.Get("display.skin")
 			})
-			if err != nil || skin != "ares" {
+			if err != nil || skin != "taro" {
 				t.Fatalf("load %v skin %v", err, skin)
 			}
 			gets := p.Gets()

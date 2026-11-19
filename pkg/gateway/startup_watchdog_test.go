@@ -660,3 +660,24 @@ func TestDumpPathDumpWriteFailureIsSwallowed(t *testing.T) {
 	t.Cleanup(func() { startupWatchdogDumpPathFn = saved })
 	writeStartupWatchdogDumpRecord(pyjson.ObjectOf("tag", "x"))
 }
+
+func (h *StartupWatchdogHandle) Disarmed() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.state == startupWatchdogDisarmed
+}
+
+// Waits for the watchdog goroutine to finish, at most timeout when it is positive
+func (h *StartupWatchdogHandle) Join(timeout time.Duration) {
+	if !h.started {
+		return
+	}
+	if timeout <= 0 {
+		<-h.done
+		return
+	}
+	select {
+	case <-h.done:
+	case <-time.After(timeout):
+	}
+}

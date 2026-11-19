@@ -26,7 +26,7 @@ func (s *ToolsSetup) ToolsCommand(ns map[string]any, firstInstall bool, cfg conf
 	if pyTruthy(ns["summary"]) {
 		return s.printToolsSummary(cfg, enabledPlatforms)
 	}
-	s.printColor("☤ Icebath Tool Configuration", cliui.Cyan, cliui.Bold)
+	s.printColor("󰆧 Icebath Tool Configuration", cliui.Cyan, cliui.Bold)
 	s.printColor("  Enable or disable tools per platform.", cliui.Dim)
 	s.printColor("  Tools that need API keys will be configured when enabled.", cliui.Dim)
 	s.printColor("  Guide: icebath tools --help", cliui.Dim)

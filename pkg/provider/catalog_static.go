@@ -482,22 +482,6 @@ func pluginProviderEntersPicker(name string) bool {
 	return !canonicalSlugs[name]
 }
 
-// PluginProviderEntersPicker reports whether a profile slug still lacks a row in the canonical table
-func PluginProviderEntersPicker(name string) bool {
-	catalogOnce.Do(buildCatalogTables)
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	return pluginProviderEntersPicker(name)
-}
-
-// SyncPluginProviderCatalog admits every registered profile without a built in row and returns how many were added
-func SyncPluginProviderCatalog() int {
-	catalogOnce.Do(buildCatalogTables)
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	return syncPluginProviderCatalogLocked()
-}
-
 // Admits pending plugin rows with picker_after chains resolved in declared order
 func syncPluginProviderCatalogLocked() int {
 	var pending []Profile
@@ -590,14 +574,6 @@ func CanonicalProviders() []CanonicalProviderEntry {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
 	return append([]CanonicalProviderEntry(nil), canonicalProviders...)
-}
-
-// IsCanonicalProvider reports whether the slug has a row in the canonical table
-func IsCanonicalProvider(slug string) bool {
-	catalogOnce.Do(buildCatalogTables)
-	catalogMu.Lock()
-	defer catalogMu.Unlock()
-	return canonicalSlugs[slug]
 }
 
 // Hidden profiles the user has not opted into by adding a credential pool row for them

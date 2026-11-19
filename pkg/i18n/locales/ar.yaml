@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ ليس مستودع git — لا يمكن التحديث."
     icebath_cmd_not_found: "✗ تعذّر تحديد موقع أمر `icebath`. Icebath يعمل، لكن أمر التحديث لم يجد الملف التنفيذي على PATH أو عبر مُفسّر Python الحالي. جرّب تشغيل `icebath update` يدويًا في طرفيتك."
     start_failed: "✗ فشل بدء التحديث: {error}"
-    starting: "☤ جارٍ بدء تحديث Icebath… سأبثّ التقدّم هنا."
+    starting: "❆ جارٍ بدء تحديث Icebath… سأبثّ التقدّم هنا."
     reply_failed: "✗ فشل إرسال الردّ إلى عملية التحديث: {error}"
     reply_sent: "✓ أُرسل `{label}` إلى عملية التحديث."
     failed_notice: "❌ فشل تحديث Icebath؛ الإصدار السابق لا يزال يعمل. شغّل `icebath update` على المضيف لرؤية الخطأ كاملًا، أو جرّب /update لاحقًا."
     prompt_default: " (الافتراضي: {default})"
-    prompt: "☤ **التحديث يحتاج إلى ردّك:**\n\n{prompt}{default_hint}\n\nأرسل `{prefix}approve` (نعم) أو `{prefix}deny` (لا)، أو اكتب إجابتك مباشرة."
+    prompt: "❆ **التحديث يحتاج إلى ردّك:**\n\n{prompt}{default_hint}\n\nأرسل `{prefix}approve` (نعم) أو `{prefix}deny` (لا)، أو اكتب إجابتك مباشرة."
     finished: "✅ انتهى تحديث Icebath."
     timed_out: "❌ انتهت مهلة تحديث Icebath بعد 30 دقيقة."
     finished_success: "✅ انتهى تحديث Icebath بنجاح."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** بواسطة {user}"
     update_prompt:
 
-      title: "☤ التحديث يحتاج إلى ردّك"
+      title: "❆ التحديث يحتاج إلى ردّك"
       default_hint: "\n\nالافتراضي: `{default}`"
       answer_yes: "✓ نعم"
       answer_no: "✗ لا"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}ي {hours}س {minutes}د"
     duration_m_rest: "{minutes}د {rest}"
     duration_hm_rest: "{hours}س {minutes}د {rest}"
-    no_active_agent: "(._.) لا يوجد وكيل نشط -- أرسل رسالة أولًا."
+    no_active_agent: "◈ لا يوجد وكيل نشط -- أرسل رسالة أولًا."
     n_more: "{count} أخرى"
     more_not_shown: "أخرى غير معروضة"
     yes_no_default_yes: "Y/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "عنوان الجلسة في قائمة الانتظار: {title} (سيُحفظ مع أول رسالة)"
   undo:
 
-    invalid_count: "(._.) عدد غير صالح {value} — استخدم /undo أو /undo N."
+    invalid_count: "◈ عدد غير صالح {value} — استخدم /undo أو /undo N."
     removes_last_exchange: "سيزيل هذا آخر تبادل بين المستخدم والمساعد من السجل."
     removes_last_turns: "سيزيل هذا آخر {count} أدوار للمستخدم من السجل."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ نفد الرصيد"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ بداية جديدة! مُسحت الشاشة وأُعيد ضبط المحادثة."
+    fresh_start: "❆ بداية جديدة! مُسحت الشاشة وأُعيد ضبط المحادثة."
     model_reset_default: "(أُعيد ضبط النموذج إلى الافتراضي في الإعدادات: {model})"
     title_rejected: "رُفض العنوان: {error}"
     title_empty_untitled: "العنوان فارغ بعد التنظيف — بدأت الجلسة بلا عنوان."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "الاستدلال"
     label_approvals: "الموافقات"
     label_context: "السياق"
-    recent_intro: "(._.) لا توجد رسائل في الدردشة الحالية بعد — إليك الجلسات الأخيرة التي يمكنك استئنافها:"
+    recent_intro: "◈ لا توجد رسائل في الدردشة الحالية بعد — إليك الجلسات الأخيرة التي يمكنك استئنافها:"
     recent_header: "الجلسات الأخيرة:"
     column_title: "العنوان"
     column_preview: "المعاينة"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "المعرّف"
     resume_usage: "استخدم /resume <number> أو /resume <session id> أو /resume <session title> للمتابعة."
     resume_example: "مثال: /resume 2"
-    history_empty: "(._.) لا يوجد سجل محادثة بعد."
+    history_empty: "◈ لا يوجد سجل محادثة بعد."
     history_tools_header: "[الأدوات]"
     history_tools_hidden_one: "({count} رسالة أداة مخفية)"
     history_tools_hidden_other: "({count} رسائل أدوات مخفية)"
-    history_title: "(^_^) سجل المحادثة"
+    history_title: "❆ سجل المحادثة"
     history_you_header: "[أنت #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(لا توجد استجابة نصية)"
     history_tool_calls_one: "(طلب {count} استدعاء أداة)"
     history_tool_calls_other: "(طلب {count} استدعاءات أدوات)"
-    new_session_titled: "(^_^)v بدأت جلسة جديدة: {title}"
-    new_session: "(^_^)v بدأت جلسة جديدة!"
-    save_nothing: "(;_;) لا توجد محادثة لحفظها."
-    save_dir_failed: "(x_x) فشل إنشاء مجلد الحفظ {path}: {error}"
+    new_session_titled: "✓ بدأت جلسة جديدة: {title}"
+    new_session: "✓ بدأت جلسة جديدة!"
+    save_nothing: "◈ لا توجد محادثة لحفظها."
+    save_dir_failed: "✘ فشل إنشاء مجلد الحفظ {path}: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v حُفظت المحادثة في: {path} ({label})"
+    save_ok: "✓ حُفظت المحادثة في: {path} ({label})"
     save_resume_hint: "استأنف الجلسة الحية عبر: icebath --resume {session_id}"
-    save_failed: "(x_x) فشل الحفظ: {error}"
-    retry_no_messages: "(._.) لا توجد رسائل لإعادة المحاولة."
-    retry_no_user_message: "(._.) لم يُعثر على رسالة مستخدم لإعادة المحاولة."
-    retry_unsafe: "(._.) تعذّر إعادة محاولة تلك الرسالة بأمان: {error}"
-    retry_rewind_failed: "(x_x) فشل الرجوع لإعادة المحاولة؛ لم يتغيّر السجل: {error}"
-    retrying: "(^_^)b جارٍ إعادة المحاولة: \"{preview}\""
-    undo_no_messages: "(._.) لا توجد رسائل للتراجع عنها."
-    undo_no_user_message: "(._.) لم يُعثر على رسالة مستخدم للتراجع عنها."
-    undo_failed: "(x_x) فشل التراجع؛ لم يتغيّر السجل: {error}"
-    undo_ok_one: "(^_^)b تم التراجع عن {count} دور ({messages} رسالة). نُسخ احتياطيًا إلى: \"{backup}\""
-    undo_ok_other: "(^_^)b تم التراجع عن {count} أدوار ({messages} رسالة). نُسخ احتياطيًا إلى: \"{backup}\""
+    save_failed: "✘ فشل الحفظ: {error}"
+    retry_no_messages: "◈ لا توجد رسائل لإعادة المحاولة."
+    retry_no_user_message: "◈ لم يُعثر على رسالة مستخدم لإعادة المحاولة."
+    retry_unsafe: "◈ تعذّر إعادة محاولة تلك الرسالة بأمان: {error}"
+    retry_rewind_failed: "✘ فشل الرجوع لإعادة المحاولة؛ لم يتغيّر السجل: {error}"
+    retrying: "✓ جارٍ إعادة المحاولة: \"{preview}\""
+    undo_no_messages: "◈ لا توجد رسائل للتراجع عنها."
+    undo_no_user_message: "◈ لم يُعثر على رسالة مستخدم للتراجع عنها."
+    undo_failed: "✘ فشل التراجع؛ لم يتغيّر السجل: {error}"
+    undo_ok_one: "✓ تم التراجع عن {count} دور ({messages} رسالة). نُسخ احتياطيًا إلى: \"{backup}\""
+    undo_ok_other: "✓ تم التراجع عن {count} أدوار ({messages} رسالة). نُسخ احتياطيًا إلى: \"{backup}\""
     undo_remaining: "{count} رسالة متبقية في السجل."
     yolo_state_locked_on: "مقفل على التفعيل"
     yolo_locked: "⚡ وضع YOLO {state} لهذه العملية (بدأت مع --yolo / ICEBATH_YOLO_MODE). لا يمكن لـ /yolo تعطيله — أعد التشغيل دون العلم لإعادة تفعيل الموافقات."
     yolo_off: "⚠ وضع YOLO {state} — ستتطلب الأوامر الخطيرة موافقة."
     yolo_on: "⚡ وضع YOLO {state} — تتم الموافقة على جميع الأوامر تلقائيًا. استخدمه بحذر."
-    compress_too_short: "(._.) المحادثة أقصر من أن تُضغط (تحتاج {min} رسائل على الأقل)."
-    compress_no_agent: "(._.) لا يوجد وكيل نشط -- أرسل رسالة أولًا."
+    compress_too_short: "◈ المحادثة أقصر من أن تُضغط (تحتاج {min} رسائل على الأقل)."
+    compress_no_agent: "◈ لا يوجد وكيل نشط -- أرسل رسالة أولًا."
     compress_busy: "جارٍ ضغط السياق..."
     compress_summarizing: "🗜️  جارٍ التلخيص حتى هنا: {count} رسالة، مع الإبقاء على آخر {keep_last} تبادل حرفيًا..."
     compress_focus: "🗜️  جارٍ ضغط {count} رسالة، التركيز: \"{focus}\"..."
     compress_plain: "🗜️  جارٍ ضغط {count} رسالة..."
     compress_failed: "❌ فشل الضغط: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "إلى اللقاء! ☤"
+    goodbye: "إلى اللقاء! 󰆧"
     exit_resume_hint: "استأنف هذه الجلسة عبر:"
     exit_label_session: "الجلسة:        {session_id}"
     exit_label_title: "العنوان:          {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(حُفظ في الإعدادات)"
       scope_save_failed: "(لهذه الجلسة فقط؛ فشل حفظ الإعدادات)"
       scope_session: "(هذه الجلسة — استخدم --global للحفظ الدائم)"
-      unknown_argument: "(._.) وسيطة غير معروفة: {arg}"
+      unknown_argument: "◈ وسيطة غير معروفة: {arg}"
       usage: "الاستخدام: {usage}"
       needs_active_session: "يحتاج {command} إلى جلسة محادثة نشطة ليعمل."
       unavailable_no_session: "{label} غير متاح (لا توجد جلسة نشطة)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "الاستخدام: /indicator [{styles}]"
       status: "نمط مؤشر الانشغال: {style}"
-      unknown_style: "(._.) نمط مؤشر غير معروف: {arg}"
+      unknown_style: "◈ نمط مؤشر غير معروف: {arg}"
       label: "نمط مؤشر الانشغال"
       note: "تعتمد TUI النمط الجديد عند العرض التالي."
     fast:
 
-      not_supported: "(._.) الأمر /fast متاح فقط للنماذج التي تدعم الوضع السريع (OpenAI Priority Processing أو Anthropic Fast Mode)."
+      not_supported: "◈ الأمر /fast متاح فقط للنماذج التي تدعم الوضع السريع (OpenAI Priority Processing أو Anthropic Fast Mode)."
       feature_generic: "الوضع السريع"
       feature_anthropic: "الوضع السريع من Anthropic"
       feature_openai: "المعالجة ذات الأولوية"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) ‏Ultrafast غير متاح لـ {model} على هذا الحساب أو المسار."
+      ultrafast_not_supported: "◈ ‏Ultrafast غير متاح لـ {model} على هذا الحساب أو المسار."
       usage: "الاستخدام: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ تم ضبط {feature} على {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ جارٍ تركيب ورقة الرسوم…"
       progress_save: "┊ جارٍ الحفظ…"
       progress_drawing: "┊ جارٍ رسم {state}…"
-      describe_prompt: "(o_o) صِف حيوانك الأليف: "
-      usage: "(o_o) الاستخدام: /hatch <description>  (مثال: /hatch a tiny cyber fox)"
+      describe_prompt: "◈ صِف حيوانك الأليف: "
+      usage: "◈ الاستخدام: /hatch <description>  (مثال: /hatch a tiny cyber fox)"
       default_name: "الحيوان الأليف"
-      designing: "(o_o) جارٍ تصميم '{concept}'… (دقيقة من استدعاءات نموذج الصور)"
-      base_failed: "(x_x) تعذّر إنشاء المظهر الأساسي: {error}"
-      no_base_draft: "(x_x) لم تُرجَع أي مسودة أساسية — حاول مجددًا."
-      failed: "(x_x) فشل الفتح: {error}"
-      hatched: "(^_^)b فُتح {name} واعتُمد — سيظهر بعد قليل!"
+      designing: "◈ جارٍ تصميم '{concept}'… (دقيقة من استدعاءات نموذج الصور)"
+      base_failed: "✘ تعذّر إنشاء المظهر الأساسي: {error}"
+      no_base_draft: "✘ لم تُرجَع أي مسودة أساسية — حاول مجددًا."
+      failed: "✘ فشل الفتح: {error}"
+      hatched: "✓ فُتح {name} واعتُمد — سيظهر بعد قليل!"
     pet:
 
-      is_out: "(^_^)b {name} خرج — سيظهر بعد قليل."
-      put_away_named: "(-_-)zzZ تم إبعاد {name}."
-      put_away: "(-_-)zzZ تم إبعاد الحيوان الأليف."
-      usage_scale: "(o_o) الاستخدام: /pet scale <factor>  (مثال: /pet scale 0.5)"
-      scale_set: "(^_^) مقياس الحيوان الأليف ← {scale}."
-      fetching: "(o_o) جارٍ جلب '{name}' من petdex…"
-      adopt_failed: "(x_x) تعذّر اعتماد '{name}': {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} خرج — سيظهر بعد قليل."
+      put_away_named: "○ تم إبعاد {name}."
+      put_away: "○ تم إبعاد الحيوان الأليف."
+      usage_scale: "◈ الاستخدام: /pet scale <factor>  (مثال: /pet scale 0.5)"
+      scale_set: "✓ مقياس الحيوان الأليف ← {scale}."
+      fetching: "◈ جارٍ جلب '{name}' من petdex…"
+      adopt_failed: "✘ تعذّر اعتماد '{name}': {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "غير مُدرَج"
@@ -2616,9 +2616,9 @@ cli:
       failed: "فشل /journey: {error}"
     paste:
 
-      no_image: "(._.) لم يُعثر على صورة في الحافظة"
+      no_image: "◈ لم يُعثر على صورة في الحافظة"
       attached: "📎 تم إرفاق الصورة #{index} من الحافظة"
-      extract_failed: "(>_<) تحتوي الحافظة على صورة لكن فشل استخراجها"
+      extract_failed: "◬ تحتوي الحافظة على صورة لكن فشل استخراجها"
     copy:
 
       nothing_yet: "لا شيء للنسخ بعد."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "الاستخدام: /image <path>  مثال: /image {example}"
-      not_found: "(>_<) الملف غير موجود: {path}"
-      unsupported: "(._.) ملف صورة غير مدعوم: {name}"
+      not_found: "◬ الملف غير موجود: {path}"
+      unsupported: "◈ ملف صورة غير مدعوم: {name}"
       attached: "📎 تم إرفاق الصورة: {name}"
       now_type_prompt: "اكتب الآن مطالبتك (أو استخدم --image في وضع الاستعلام الواحد): {text}"
     tools:
 
-      usage: "(._.) الاستخدام: /tools {subcommand} <name> [name ...]"
+      usage: "◈ الاستخدام: /tools {subcommand} <name> [name ...]"
       example_toolset: "مجموعة أدوات مضمّنة:  /tools {subcommand} web"
       example_mcp: "أداة MCP:          /tools {subcommand} github:create_issue"
       disabling: "جارٍ تعطيل {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "ضُغطت الجلسة {session_id} في {resolved_id}؛ جارٍ استئناف الجلسة المتفرّعة مع نصّك."
     sessions:
 
-      none_yet: "(._.) لا توجد جلسات سابقة بعد."
+      none_yet: "◈ لا توجد جلسات سابقة بعد."
     branch:
 
       branched_one: "⑂ تم تفريع الجلسة \"{title}\" ({count} رسالة مستخدم)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "تعمل أدوات الطرفية والملفات الآن داخل الـ worktree."
     personality:
 
-      title: "(^o^)/ الشخصيات"
+      title: "❆ الشخصيات"
       none_option: "(بدون طبقة شخصية)"
       usage: "الاستخدام: /personality <name>   (* = النشطة)"
-      unknown: "(._.) شخصية غير معروفة: {name}"
+      unknown: "◈ شخصية غير معروفة: {name}"
       available: "المتاح: none, {available}"
       scope_saved: "(حُفظ في الإعدادات)"
       scope_session: "(لهذه الجلسة فقط)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} تم ضبط الشخصية على '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) يجب أن يكون --repeat عددًا صحيحًا"
-      unknown_command: "(._.) أمر cron غير معروف: {subcommand}"
+      repeat_must_be_integer: "◈ يجب أن يكون --repeat عددًا صحيحًا"
+      unknown_command: "◈ أمر cron غير معروف: {subcommand}"
       available: "المتاح: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) المهام المجدولة"
+      overview_title: "❆ المهام المجدولة"
       overview_commands: "الأوامر:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"تحقّق من حالة الخادم\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"مهمة جديدة\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "المهام الحالية:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "المهارات: لا شيء"
       next_short: "التالي"
       no_jobs_hint: "لا توجد مهام مجدولة. استخدم '/cron add' لإنشاء واحدة."
-      no_jobs: "(._.) لا توجد مهام مجدولة."
+      no_jobs: "◈ لا توجد مهام مجدولة."
       list_header: "المهام المجدولة:"
       id: "المعرّف: {job_id}"
       name: "الاسم: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "خطأ: {error}"
       last_run: "آخر تشغيل: {when} ({status})"
-      usage_add: "(._.) الاستخدام: /cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) يرجى تقديم مطالبة أو مهارة واحدة على الأقل"
-      create_failed: "(x_x) فشل إنشاء المهمة: {error}"
-      created: "(^_^)b تم إنشاء المهمة: {job_id}"
-      usage_edit: "(._.) الاستخدام: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) المهمة غير موجودة: {job_id}"
-      update_failed: "(x_x) فشل تحديث المهمة: {error}"
-      updated: "(^_^)b تم تحديث المهمة: {job_id}"
-      usage_action: "(._.) الاستخدام: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) فشل إيقاف المهمة مؤقتًا: {error}"
-      resume_failed: "(x_x) فشل استئناف المهمة: {error}"
-      run_failed: "(x_x) فشل تشغيل المهمة: {error}"
-      remove_failed: "(x_x) فشل حذف المهمة: {error}"
-      removed: "(^_^)b تم حذف المهمة: {name} ({job_id})"
-      did_not_run: "(x_x) لم تُشغَّل المهمة: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b تم إيقاف المهمة مؤقتًا: {name} ({job_id})"
-      resumed: "(^_^)b تم استئناف المهمة: {name} ({job_id})"
-      triggered: "(^_^)b تم تشغيل المهمة: {name} ({job_id})"
+      usage_add: "◈ الاستخدام: /cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ يرجى تقديم مطالبة أو مهارة واحدة على الأقل"
+      create_failed: "✘ فشل إنشاء المهمة: {error}"
+      created: "✓ تم إنشاء المهمة: {job_id}"
+      usage_edit: "◈ الاستخدام: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ المهمة غير موجودة: {job_id}"
+      update_failed: "✘ فشل تحديث المهمة: {error}"
+      updated: "✓ تم تحديث المهمة: {job_id}"
+      usage_action: "◈ الاستخدام: /cron {subcommand} <job_id>"
+      pause_failed: "✘ فشل إيقاف المهمة مؤقتًا: {error}"
+      resume_failed: "✘ فشل استئناف المهمة: {error}"
+      run_failed: "✘ فشل تشغيل المهمة: {error}"
+      remove_failed: "✘ فشل حذف المهمة: {error}"
+      removed: "✓ تم حذف المهمة: {name} ({job_id})"
+      did_not_run: "✘ لم تُشغَّل المهمة: {name} ({job_id})\n  {reason}"
+      paused: "✓ تم إيقاف المهمة مؤقتًا: {name} ({job_id})"
+      resumed: "✓ تم استئناف المهمة: {name} ({job_id})"
+      triggered: "✓ تم تشغيل المهمة: {name} ({job_id})"
     suggestions:
 
       failed: "فشل أمر الاقتراحات: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "فشل أمر مخطط cron: {error}"
     curator:
 
-      failed: "(._.) المنسّق: {error}"
+      failed: "◈ المنسّق: {error}"
     kanban:
 
-      failed: "(._.) خطأ في كانبان: {error}"
+      failed: "◈ خطأ في كانبان: {error}"
     memory:
 
       unknown_subcommand: "أمر /memory الفرعي غير معروف. استخدم: pending أو approve <id> أو reject <id> أو approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "الاستخدام: /bg <prompt>\nمثال: /bg لخّص أهم قصص HN اليوم\n(لسؤال جانبي عن هذه المحادثة، استخدم /btw <question>.)\nتعمل المهمة في جلسة منفصلة وتُعرض النتائج هنا عند الانتهاء."
-      no_credentials: "(>_<) لا يمكن بدء مهمة في الخلفية: لا توجد بيانات اعتماد صالحة."
+      no_credentials: "◬ لا يمكن بدء مهمة في الخلفية: لا توجد بيانات اعتماد صالحة."
       started: "🔄 بدأت مهمة الخلفية #{number}: \"{preview}\""
       task_id: "معرّف المهمة: {task_id}"
       keep_chatting: "يمكنك متابعة المحادثة — ستظهر النتائج عند الانتهاء."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "الاستخدام: /btw <question>\nمثال: /btw في أي ملف كان ذلك الخطأ؟\nيجيب عن سؤال سريع حول هذه المحادثة دون مقاطعتها.\n(لمهمة مستقلة في الخلفية، استخدم /bg <prompt>.)"
-      no_credentials: "(>_<) لا يمكن الإجابة عن السؤال الجانبي: لا توجد بيانات اعتماد صالحة."
+      no_credentials: "◬ لا يمكن الإجابة عن السؤال الجانبي: لا توجد بيانات اعتماد صالحة."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(لم يتم إنشاء أي إجابة)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! اكتب مطالبتك أدناه. الأسطر التي تبدأ بـ '#!' تُتجاهل.\n#! احفظ واخرج للإرسال؛ اتركه فارغًا للإلغاء."
-      editor_failed: "(>_<) تعذّر فتح المحرر: {error}"
-      empty: "(._.) مطالبة فارغة — لم يُرسل شيء."
+      editor_failed: "◬ تعذّر فتح المحرر: {error}"
+      empty: "◈ مطالبة فارغة — لم يُرسل شيء."
     focus:
 
       usage: "الاستخدام: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "الخروج من الجلسة الحالية وتحديث Icebath Agent"
       choice_cancel: "إلغاء"
       choice_cancel_desc: "الإبقاء على الجلسة الحالية"
-      title: "☤  تحديث Icebath Agent"
+      title: "󰆧  تحديث Icebath Agent"
       detail: "سيؤدي هذا إلى الخروج من الجلسة الحالية وتشغيل `icebath update`."
       cancelled: "🟡 أُلغي /update."
-      launching: "☤ جارٍ بدء التحديث..."
+      launching: "󰆧 جارٍ بدء التحديث..."
     voice:
 
       unknown_subcommand: "أمر فرعي غير معروف لـ voice: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "هل تقصد: {candidates}؟"
   config:
 
-    title: "(^_^) الإعدادات"
+    title: "❆ الإعدادات"
     loaded: "(محمّل)"
     not_found: "(غير موجود)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 استخدام السياق — {model}"
-    compute_failed: "(._.) تعذّر حساب تفصيل السياق: {error}"
+    compute_failed: "◈ تعذّر حساب تفصيل السياق: {error}"
   error:
 
     auth: "رُفض مفتاح {provider} الخاص بك. شغّل `icebath model` لإدخاله من جديد."
@@ -3042,7 +3042,7 @@ cli:
     starting: "جارٍ تشغيل بوّابة Icebath (منصات المراسلة)..."
   gateway_status:
 
-    header: "(✿◠‿◠) حالة البوّابة"
+    header: "❆ حالة البوّابة"
     platform_config_header: "إعدادات منصات المراسلة:"
     enabled: "مفعّل"
     not_configured: "غير مهيّأ ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. أو اضبط الإعدادات في {path}"
   help:
 
-    header: "(^_^)? الأوامر المتاحة"
+    header: "❆ الأوامر المتاحة"
     section_session: "الجلسة"
     section_configuration: "الإعدادات"
     section_tools_skills: "الأدوات والمهارات"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "فشل تحميل المهارة لـ {command}"
   tools:
 
-    none_available: "(;_;) لا توجد أدوات متاحة"
-    header: "(^_^)/ الأدوات المتاحة"
-    total: "الإجمالي: {count} أداة  ヽ(^o^)ノ"
+    none_available: "◈ لا توجد أدوات متاحة"
+    header: "❆ الأدوات المتاحة"
+    total: "الإجمالي: {count} أداة"
   toolsets:
 
-    header: "(^_^)b مجموعات الأدوات المتاحة"
+    header: "✓ مجموعات الأدوات المتاحة"
     currently_enabled_legend: "(*) = مفعّلة حاليًا"
     tip_enable_all: "نصيحة: استخدم 'all' أو '*' لتفعيل كل مجموعات الأدوات"
     example: "مثال: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "بدّل أولًا عبر `/model` أو `icebath auth`."
     checking_reset_credits: "⏳ جارٍ التحقق من رصيد إعادة التعيين المُدَّخر..."
     codex_timeout: "❌ انتهت مهلة الاتصال بخادم Codex — أعد المحاولة بعد قليل."
-    no_api_calls: "(._.) لم تُجرَ أي استدعاءات API في هذه الجلسة بعد."
+    no_api_calls: "◈ لم تُجرَ أي استدعاءات API في هذه الجلسة بعد."
     header_session: "📊 استخدام الرموز في الجلسة"
     label_model: "النموذج:"
     label_input_tokens: "رموز الإدخال:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model يتيح لك تبديل النماذج أثناء الجلسة — جرّب /model sonnet أو /model gpt-5."
   t017: "/model --global يغيّر نموذجك الافتراضي بشكل دائم."
   t018: "/personality pirate يضبط شخصية مرحة — 14 خيارًا مضمّنًا من kawaii إلى shakespeare."
-  t019: "/skin يغيّر سمة واجهة سطر الأوامر — جرّب ares أو mono أو slate أو poseidon أو charizard."
+  t019: "/skin يغيّر سمة واجهة سطر الأوامر — جرّب taro أو light أو contrast أو cyberpunk أو dracula."
   t020: "/statusbar يبدّل شريطًا دائمًا يعرض النموذج والرموز ونسبة امتلاء السياق والتكلفة والمدة."
   t021: "/tools disable browser يزيل أدوات المتصفح مؤقتًا من الجلسة الحالية."
   t022: "/browser connect يربط أدوات المتصفح بمتصفح Chromium العامل لديك عبر CDP."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets يسرد كل مجموعات الأدوات المتاحة لتعرف ما يقبله -t/--toolsets."
   t337: "/voice tts يبدّل وضع TTS فقط — يرد الوكيل بصوت مسموع بينما تظل تكتب مطالباتك."
   t338: "/reload-skills يُعيد فحص ~/.icebath/skills/ لتظهر المهارات المضافة دون إعادة تشغيل الجلسة."
-  t339: "/indicator kaomoji|emoji|unicode|ascii يختار نمط مؤشر الانشغال في TUI الذي يظهر أثناء عمل الوكيل."
+  t339: "/indicator unicode|emoji|ascii يختار نمط مؤشر الانشغال في TUI الذي يظهر أثناء عمل الوكيل."
   t340: "/debug يرفع حزمة دعم (معلومات النظام + السجلات) ويعيد روابط قابلة للمشاركة — يعمل في المحادثة أيضًا."
   t341: "icebath -z \"<prompt>\" هو أنقى تشغيل لمرة واحدة: الإجابة النهائية على stdout ولا شيء غيرها — مثالي للتمرير في السكربتات."
   t342: "icebath chat --pass-session-id يحقن معرّف الجلسة في موجّه النظام ليتمكن الوكيل من الإشارة إليه."

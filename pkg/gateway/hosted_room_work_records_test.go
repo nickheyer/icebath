@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -262,4 +263,27 @@ func TestBrokenPassiveEvidenceDoesNotAuthorizeOrBlockStop(t *testing.T) {
 	if hrStr(row, "disposition") != "invalid" || hrStr(row, "record_json") != "broken" {
 		t.Fatalf("row %v", row)
 	}
+}
+
+// Commits a new evidence revision only when one consistent source view changed
+func CaptureWorkRecord(ctx context.Context, dbPath, roomID, localGatewayID string, throughSeq *int64) (map[string]any, error) {
+	var out map[string]any
+	invalid := false
+	err := hostedTransaction(ctx, dbPath, true, func(conn state.SQLiteConn) error {
+		record, err := CaptureWorkRecordLocked(ctx, conn, roomID, localGatewayID, throughSeq)
+		var stored *InvalidStoredWorkRecord
+		if errors.As(err, &stored) {
+			invalid = true
+			return nil
+		}
+		out = record
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if invalid {
+		return nil, invalidStoredWorkRecord("stored work evidence is invalid")
+	}
+	return out, nil
 }

@@ -514,20 +514,6 @@ func specialFileKind(path string) string {
 // Empty ordered result object
 func newDict() *pyjson.Object { return &pyjson.Object{Vals: map[string]any{}} }
 
-// Removes a key from an ordered result object
-func dictDel(o *pyjson.Object, key string) {
-	if _, ok := o.Vals[key]; !ok {
-		return
-	}
-	delete(o.Vals, key)
-	for i, k := range o.Keys {
-		if k == key {
-			o.Keys = append(o.Keys[:i], o.Keys[i+1:]...)
-			break
-		}
-	}
-}
-
 // Sets a key only when absent, the dict setdefault form
 func dictSetDefault(o *pyjson.Object, key string, v any) {
 	if _, ok := o.Vals[key]; !ok {

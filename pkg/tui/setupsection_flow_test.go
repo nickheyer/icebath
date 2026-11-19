@@ -58,7 +58,7 @@ func pressOverlay(t *testing.T, a *app, key string) {
 func TestSetupFlowRendersEachQuestionAndSendsTheAnswers(t *testing.T) {
 	a := testApp(t)
 	g := &flowGateway{steps: []map[string]any{
-		flowStep([]any{"☤ Icebath Tool Configuration"}, map[string]any{"id": 1, "kind": "choose", "question": "Select an option:", "default": 0,
+		flowStep([]any{"󰆧 Icebath Tool Configuration"}, map[string]any{"id": 1, "kind": "choose", "question": "Select an option:", "default": 0,
 			"options": []any{map[string]any{"title": "Configure CLI", "detail": "19/30"}, map[string]any{"title": "Done", "detail": ""}}}),
 		flowStep([]any{}, map[string]any{"id": 2, "kind": "check", "question": "Tools for CLI", "selected": []any{0},
 			"items":  []any{map[string]any{"title": "Web", "detail": "search", "tools": []any{"web_search"}}, map[string]any{"title": "Vision", "detail": "", "tools": []any{"vision"}}},

@@ -635,15 +635,3 @@ func DeepinfraBaseURL(ctx context.Context, section map[string]any) string {
 	}
 	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
-
-// ResetModelsFetchCaches clears every process resident picker cache of this slice
-func ResetModelsFetchCaches() {
-	openrouterCatalogSlot.reset()
-	aiGatewayCatalogMu.Lock()
-	aiGatewayCatalogCache = nil
-	aiGatewayCatalogMu.Unlock()
-	deepinfraCatalogMu.Lock()
-	deepinfraCatalogCache = map[string][]map[string]any{}
-	deepinfraCatalogNegCache = map[string]time.Time{}
-	deepinfraCatalogMu.Unlock()
-}

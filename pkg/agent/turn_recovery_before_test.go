@@ -111,13 +111,13 @@ func TestSurrogateVsAsciiSanitization(t *testing.T) {
 		}
 	})
 	t.Run("test_ascii_codec_strips_all_non_ascii", func(t *testing.T) {
-		messages := []any{map[string]any{"role": "user", "content": "test ☤🤖你好 end"}}
+		messages := []any{map[string]any{"role": "user", "content": "test ❆🤖你好 end"}}
 		if !state.SanitizeMessagesNonASCII(messages) || messages[0].(map[string]any)["content"] != "test  end" {
 			t.Fatalf("messages %v", messages)
 		}
 	})
 	t.Run("test_no_surrogates_returns_false", func(t *testing.T) {
-		if state.SanitizeMessagesSurrogates([]any{map[string]any{"role": "user", "content": "hello ☤ world"}}) {
+		if state.SanitizeMessagesSurrogates([]any{map[string]any{"role": "user", "content": "hello ❆ world"}}) {
 			t.Fatal("non surrogate text reported")
 		}
 	})

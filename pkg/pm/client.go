@@ -607,19 +607,6 @@ func EnsureToolsForSync(ctx context.Context) error {
 	return nil
 }
 
-// Stages a cross target pin through the worker boundary and returns its entry
-func StageOnly(ctx context.Context, name, target string, opts StageOnlyOptions) (string, error) {
-	var entry string
-	observed := &observedHooks{}
-	err := observed.result(clientWorkerCall(ctx, "stage_only", policyArgs{Name: name}, func(workerCtx context.Context) error {
-		var err error
-		entry, err = stageOnly(workerCtx, name, target, StageOnlyOptions{Progress: observed.progress(opts.Progress),
-			PauseEvent: opts.PauseEvent, DownloadProgress: observed.download(opts.DownloadProgress)})
-		return err
-	}))
-	return entry, err
-}
-
 // Runs a path returning Python environment operation through the worker boundary
 func pathCall(ctx context.Context, operation string, args policyArgs, run func(context.Context) (string, error)) (string, error) {
 	var path string
@@ -702,18 +689,6 @@ func ExportRequirements(ctx context.Context, opts ExportRequirementsOptions) err
 func BuildRequirementsEnvironment(ctx context.Context, opts BuildRequirementsEnvironmentOptions) (string, error) {
 	return pathCall(ctx, "build_requirements_environment", policyArgs{Explicit: opts.Explicit},
 		func(c context.Context) (string, error) { return buildRequirementsEnvironment(c, opts) })
-}
-
-// Realizes build tools without selecting application or profile state
-func PrepareTools(ctx context.Context, opts PrepareToolsOptions) (string, error) {
-	return pathCall(ctx, "prepare_tools", policyArgs{},
-		func(c context.Context) (string, error) { return prepareTools(c, opts) })
-}
-
-// Copies verified pins independently, never bootstrapping
-func StageTools(ctx context.Context, opts StageToolsOptions) (string, error) {
-	return pathCall(ctx, "stage_tools", policyArgs{},
-		func(c context.Context) (string, error) { return stageTools(c, opts) })
 }
 
 // Prunes a uv cache to what the lock needs

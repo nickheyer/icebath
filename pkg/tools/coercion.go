@@ -376,11 +376,6 @@ func coerceSchemaAcceptsKind(schema any, kind string, rootSchema any, seen map[u
 	return false
 }
 
-// Recursively parses JSON encoded strings where the schema expects a container
-func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, bool) {
-	return coerceNormalizeJSONStringsWith(wtf8CoerceDecoder, value, schema, rootSchema)
-}
-
 // JSON string normalization reading nested strings with the given JSON reader
 func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any, rootSchema any) (any, bool) {
 	m, ok := pyjson.Dict(schema)
@@ -480,11 +475,6 @@ func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any,
 	return value, changed
 }
 
-// Coerces a string to the expected type or type union and reports whether it changed
-func coerceValue(value string, expectedType any, schema map[string]any) (any, bool) {
-	return coerceValueWith(wtf8CoerceDecoder, value, expectedType, schema)
-}
-
 // String coercion parsing JSON containers with the given JSON reader
 func coerceValueWith(decode coerceDecoder, value string, expectedType any, schema map[string]any) (any, bool) {
 	if coerceSchemaAllowsNull(schema) && strings.ToLower(strings.TrimSpace(value)) == "null" {
@@ -551,11 +541,6 @@ func coerceSchemaAllowsNull(schema map[string]any) bool {
 		}
 	}
 	return false
-}
-
-// Parses the string as JSON when the parsed kind matches the expected container
-func coerceJSON(value string, expected string) (any, bool) {
-	return coerceJSONWith(wtf8CoerceDecoder, value, expected)
 }
 
 // Container parse of a string through the given JSON reader

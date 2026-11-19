@@ -19,7 +19,7 @@ func TestMigration54DropsTheRetiredInterfaceSections(t *testing.T) {
 		"dashboard":       map[string]any{"theme": "midnight"},
 		"webapp":          map[string]any{"enabled": true},
 		"desktop":         map[string]any{"font_family": "Mono"},
-		"display":         map[string]any{"skin": "slate"},
+		"display":         map[string]any{"skin": "dracula"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestMigration54DropsTheRetiredInterfaceSections(t *testing.T) {
 			t.Fatalf("%s survived the migration: %v", section, doc)
 		}
 	}
-	if display, _ := doc["display"].(map[string]any); display["skin"] != "slate" {
+	if display, _ := doc["display"].(map[string]any); display["skin"] != "dracula" {
 		t.Fatalf("display touched: %v", doc["display"])
 	}
 	found := false
@@ -149,9 +149,9 @@ func TestMigration54WithoutDashboardSessionKeysOnlyDropsSections(t *testing.T) {
 	persisted, res, out := m54Run(t, map[string]any{
 		"dashboard": map[string]any{"theme": "midnight", "ws_ping_interval": 20.0},
 		"desktop":   map[string]any{"font_family": "Mono"},
-		"display":   map[string]any{"skin": "slate"},
+		"display":   map[string]any{"skin": "dracula"},
 	})
-	if !reflect.DeepEqual(persisted, map[string]any{"display": map[string]any{"skin": "slate"}}) {
+	if !reflect.DeepEqual(persisted, map[string]any{"display": map[string]any{"skin": "dracula"}}) {
 		t.Fatalf("persisted %v", persisted)
 	}
 	if !reflect.DeepEqual(res.ConfigAdded, []string{"removed dashboard, desktop"}) {
@@ -160,7 +160,7 @@ func TestMigration54WithoutDashboardSessionKeysOnlyDropsSections(t *testing.T) {
 	if out != "  ✓ Removed dashboard, desktop — the terminal UI is the one interface.\n" {
 		t.Fatalf("out %q", out)
 	}
-	if persisted, res, out := m54Run(t, map[string]any{"display": map[string]any{"skin": "slate"}}); persisted != nil || len(res.ConfigAdded) != 0 || out != "" {
+	if persisted, res, out := m54Run(t, map[string]any{"display": map[string]any{"skin": "dracula"}}); persisted != nil || len(res.ConfigAdded) != 0 || out != "" {
 		t.Fatalf("untouched config persisted %v added %v out %q", persisted, res.ConfigAdded, out)
 	}
 }

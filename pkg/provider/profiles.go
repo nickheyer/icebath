@@ -2,12 +2,13 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
@@ -308,15 +309,6 @@ func normalizeProviderCtx(ctx context.Context, name string) string {
 	return key
 }
 
-// IsLocalAlias reports whether the name is one of the local server aliases routed through custom
-func IsLocalAlias(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "ollama", "local", "vllm", "llamacpp", "llama.cpp", "llama-cpp", "lmstudio", "lm-studio", "lm_studio":
-		return true
-	}
-	return false
-}
-
 // IsLlamaCppAlias reports whether the name addresses the managed llama.cpp runtime
 func IsLlamaCppAlias(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
@@ -470,47 +462,6 @@ func HostMandatedMode(baseURL string) APIMode {
 		return ModeCodexResponses
 	case strings.HasPrefix(host, "bedrock-runtime.") && HostMatches(baseURL, "amazonaws.com"):
 		return modeBedrockConverse
-	}
-	return ""
-}
-
-// DetectModeForURL infers the wire protocol from the endpoint shape or returns empty
-func DetectModeForURL(baseURL string) APIMode {
-	host := Hostname(baseURL)
-	switch host {
-	case "api.x.ai", "api.meta.ai", "api.router.com":
-		return ModeCodexResponses
-	case "api.actual.inc":
-		return ModeChatCompletions
-	case "api.anthropic.com":
-		return ModeAnthropicMessages
-	}
-	if IsOfficialOpenAIHost(baseURL) {
-		return ModeCodexResponses
-	}
-	normalized := strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
-	path := URLPath(normalized)
-	if strings.HasSuffix(path, "/anthropic") || strings.HasSuffix(path, "/anthropic/v1") || (host == "api.kimi.com" && strings.Contains(normalized, "/coding")) {
-		return ModeAnthropicMessages
-	}
-	return ""
-}
-
-// ParseMode canonicalizes legacy api_mode spellings and rejects unknown ones
-func ParseMode(raw string) APIMode {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "chat_completions", "chat-completions", "chat", "openai", "openai_chat", "openai-chat", "completions":
-		return ModeChatCompletions
-	case "codex_responses", "codex-responses", "responses", "openai_responses", "openai-responses", "codex":
-		return ModeCodexResponses
-	case "anthropic_messages", "anthropic-messages", "anthropic", "messages", "claude":
-		return ModeAnthropicMessages
-	case "gemini_native", "gemini-native", "gemini", "google":
-		return ModeGeminiNative
-	case "bedrock_converse", "bedrock-converse", "bedrock", "converse":
-		return modeBedrockConverse
-	case "codex_app_server", "codex-app-server", "app_server":
-		return modeCodexAppServer
 	}
 	return ""
 }

@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Git deposu değil — güncellenemiyor."
     icebath_cmd_not_found: "✗ `icebath` komutu bulunamadı. Icebath çalışıyor, ancak güncelleme komutu yürütülebilir dosyayı PATH'te veya mevcut Python yorumlayıcısı aracılığıyla bulamadı. Terminalde `icebath update` komutunu manuel olarak çalıştırmayı deneyin."
     start_failed: "✗ Güncelleme başlatılamadı: {error}"
-    starting: "☤ Icebath güncellemesi başlatılıyor… İlerlemeyi buraya akıtacağım."
+    starting: "❆ Icebath güncellemesi başlatılıyor… İlerlemeyi buraya akıtacağım."
     reply_failed: "✗ Yanıt güncelleme sürecine gönderilemedi: {error}"
     reply_sent: "✓ `{label}` güncelleme sürecine gönderildi."
     failed_notice: "❌ Icebath güncellemesi başarısız oldu; önceki sürüm hâlâ çalışıyor. Hatanın tamamını görmek için ana makinede `icebath update` çalıştırın veya daha sonra /update komutunu yeniden deneyin."
     prompt_default: " (varsayılan: {default})"
-    prompt: "☤ **Güncelleme girdinizi bekliyor:**\n\n{prompt}{default_hint}\n\n`{prefix}approve` (evet) veya `{prefix}deny` (hayır) yazın ya da yanıtınızı doğrudan yazın."
+    prompt: "❆ **Güncelleme girdinizi bekliyor:**\n\n{prompt}{default_hint}\n\n`{prefix}approve` (evet) veya `{prefix}deny` (hayır) yazın ya da yanıtınızı doğrudan yazın."
     finished: "✅ Icebath güncellemesi tamamlandı."
     timed_out: "❌ Icebath güncellemesi 30 dakika sonra zaman aşımına uğradı."
     finished_success: "✅ Icebath güncellemesi başarıyla tamamlandı."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** — {user}"
     update_prompt:
 
-      title: "☤ Güncelleme Girdinizi Bekliyor"
+      title: "❆ Güncelleme Girdinizi Bekliyor"
       default_hint: "\n\nVarsayılan: `{default}`"
       answer_yes: "✓ Evet"
       answer_no: "✗ Hayır"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}g {hours}sa {minutes}dk"
     duration_m_rest: "{minutes}dk {rest}"
     duration_hm_rest: "{hours}sa {minutes}dk {rest}"
-    no_active_agent: "(._.) Aktif ajan yok -- önce bir mesaj gönderin."
+    no_active_agent: "◈ Aktif ajan yok -- önce bir mesaj gönderin."
     n_more: "{count} tane daha"
     more_not_shown: "tane daha gösterilmiyor"
     yes_no_default_yes: "E/h"
@@ -2269,7 +2269,7 @@ cli:
     queued: "Oturum başlığı sıraya alındı: {title} (ilk mesajda kaydedilecek)"
   undo:
 
-    invalid_count: "(._.) Geçersiz sayı {value} — /undo veya /undo N kullanın."
+    invalid_count: "◈ Geçersiz sayı {value} — /undo veya /undo N kullanın."
     removes_last_exchange: "Bu işlem son kullanıcı/asistan alışverişini geçmişten kaldırır."
     removes_last_turns: "Bu işlem son {count} kullanıcı turunu geçmişten kaldırır."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ Kredi bitti"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Yeni bir başlangıç! Ekran temizlendi ve konuşma sıfırlandı."
+    fresh_start: "❆ Yeni bir başlangıç! Ekran temizlendi ve konuşma sıfırlandı."
     model_reset_default: "(model yapılandırma varsayılanına sıfırlandı: {model})"
     title_rejected: "Başlık reddedildi: {error}"
     title_empty_untitled: "Temizleme sonrasında başlık boş kaldı — oturum başlıksız başlatıldı."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "Akıl yürütme"
     label_approvals: "Onaylar"
     label_context: "Bağlam"
-    recent_intro: "(._.) Geçerli sohbette henüz mesaj yok — sürdürebileceğiniz son oturumlar:"
+    recent_intro: "◈ Geçerli sohbette henüz mesaj yok — sürdürebileceğiniz son oturumlar:"
     recent_header: "Son oturumlar:"
     column_title: "Başlık"
     column_preview: "Önizleme"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "Kimlik"
     resume_usage: "Devam etmek için /resume <numara>, /resume <oturum kimliği> veya /resume <oturum başlığı> kullanın."
     resume_example: "Örnek: /resume 2"
-    history_empty: "(._.) Henüz konuşma geçmişi yok."
+    history_empty: "◈ Henüz konuşma geçmişi yok."
     history_tools_header: "[Araçlar]"
     history_tools_hidden_one: "({count} araç mesajı gizli)"
     history_tools_hidden_other: "({count} araç mesajı gizli)"
-    history_title: "(^_^) Konuşma Geçmişi"
+    history_title: "❆ Konuşma Geçmişi"
     history_you_header: "[Siz #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(metin yanıtı yok)"
     history_tool_calls_one: "({count} araç çağrısı istendi)"
     history_tool_calls_other: "({count} araç çağrısı istendi)"
-    new_session_titled: "(^_^)v Yeni oturum başlatıldı: {title}"
-    new_session: "(^_^)v Yeni oturum başlatıldı!"
-    save_nothing: "(;_;) Kaydedilecek konuşma yok."
-    save_dir_failed: "(x_x) Kayıt dizini {path} oluşturulamadı: {error}"
+    new_session_titled: "✓ Yeni oturum başlatıldı: {title}"
+    new_session: "✓ Yeni oturum başlatıldı!"
+    save_nothing: "◈ Kaydedilecek konuşma yok."
+    save_dir_failed: "✘ Kayıt dizini {path} oluşturulamadı: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Konuşma şuraya kaydedildi: {path} ({label})"
+    save_ok: "✓ Konuşma şuraya kaydedildi: {path} ({label})"
     save_resume_hint: "Canlı oturumu sürdürmek için: icebath --resume {session_id}"
-    save_failed: "(x_x) Kaydedilemedi: {error}"
-    retry_no_messages: "(._.) Yeniden denenecek mesaj yok."
-    retry_no_user_message: "(._.) Yeniden denenecek kullanıcı mesajı bulunamadı."
-    retry_unsafe: "(._.) Bu mesaj güvenli şekilde yeniden denenemiyor: {error}"
-    retry_rewind_failed: "(x_x) Yeniden deneme için geri sarma başarısız oldu; geçmiş değişmedi: {error}"
-    retrying: "(^_^)b Yeniden deneniyor: \"{preview}\""
-    undo_no_messages: "(._.) Geri alınacak mesaj yok."
-    undo_no_user_message: "(._.) Geri alınacak kullanıcı mesajı bulunamadı."
-    undo_failed: "(x_x) Geri alma başarısız oldu; geçmiş değişmedi: {error}"
-    undo_ok_one: "(^_^)b {count} tur geri alındı ({messages} mesaj). Yedeklendi: \"{backup}\""
-    undo_ok_other: "(^_^)b {count} tur geri alındı ({messages} mesaj). Yedeklendi: \"{backup}\""
+    save_failed: "✘ Kaydedilemedi: {error}"
+    retry_no_messages: "◈ Yeniden denenecek mesaj yok."
+    retry_no_user_message: "◈ Yeniden denenecek kullanıcı mesajı bulunamadı."
+    retry_unsafe: "◈ Bu mesaj güvenli şekilde yeniden denenemiyor: {error}"
+    retry_rewind_failed: "✘ Yeniden deneme için geri sarma başarısız oldu; geçmiş değişmedi: {error}"
+    retrying: "✓ Yeniden deneniyor: \"{preview}\""
+    undo_no_messages: "◈ Geri alınacak mesaj yok."
+    undo_no_user_message: "◈ Geri alınacak kullanıcı mesajı bulunamadı."
+    undo_failed: "✘ Geri alma başarısız oldu; geçmiş değişmedi: {error}"
+    undo_ok_one: "✓ {count} tur geri alındı ({messages} mesaj). Yedeklendi: \"{backup}\""
+    undo_ok_other: "✓ {count} tur geri alındı ({messages} mesaj). Yedeklendi: \"{backup}\""
     undo_remaining: "Geçmişte {count} mesaj kaldı."
     yolo_state_locked_on: "AÇIK olarak kilitli"
     yolo_locked: "⚡ YOLO bu süreç için {state} (--yolo / ICEBATH_YOLO_MODE ile başlatıldı). /yolo bunu kapatamaz — onayları geri getirmek için bayrak olmadan yeniden başlatın."
     yolo_off: "⚠ YOLO modu {state} — tehlikeli komutlar onay gerektirecek."
     yolo_on: "⚡ YOLO modu {state} — tüm komutlar otomatik onaylanıyor. Dikkatli kullanın."
-    compress_too_short: "(._.) Sıkıştırmak için yeterli konuşma yok (en az {min} mesaj gerekli)."
-    compress_no_agent: "(._.) Etkin ajan yok -- önce bir mesaj gönderin."
+    compress_too_short: "◈ Sıkıştırmak için yeterli konuşma yok (en az {min} mesaj gerekli)."
+    compress_no_agent: "◈ Etkin ajan yok -- önce bir mesaj gönderin."
     compress_busy: "Bağlam sıkıştırılıyor..."
     compress_summarizing: "🗜️  Buraya kadar özetleniyor: {count} mesaj, son {keep_last} alışveriş olduğu gibi korunuyor..."
     compress_focus: "🗜️  {count} mesaj sıkıştırılıyor, odak: \"{focus}\"..."
     compress_plain: "🗜️  {count} mesaj sıkıştırılıyor..."
     compress_failed: "❌ Sıkıştırma başarısız oldu: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "Hoşça kalın! ☤"
+    goodbye: "Hoşça kalın! 󰆧"
     exit_resume_hint: "Bu oturumu sürdürmek için:"
     exit_label_session: "Oturum:         {session_id}"
     exit_label_title: "Başlık:         {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(yapılandırmaya kaydedildi)"
       scope_save_failed: "(yalnızca bu oturum; yapılandırma kaydedilemedi)"
       scope_session: "(bu oturum — kalıcı yapmak için --global kullanın)"
-      unknown_argument: "(._.) Bilinmeyen argüman: {arg}"
+      unknown_argument: "◈ Bilinmeyen argüman: {arg}"
       usage: "Kullanım: {usage}"
       needs_active_session: "{command} komutunun çalışması için etkin bir sohbet oturumu gerekir."
       unavailable_no_session: "{label} kullanılamıyor (etkin oturum yok)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "Kullanım: /indicator [{styles}]"
       status: "Meşgul göstergesi stili: {style}"
-      unknown_style: "(._.) Bilinmeyen gösterge stili: {arg}"
+      unknown_style: "◈ Bilinmeyen gösterge stili: {arg}"
       label: "Meşgul göstergesi stili"
       note: "TUI yeni stili bir sonraki çiziminde kullanır."
     fast:
 
-      not_supported: "(._.) /fast yalnızca hızlı modu destekleyen modellerde kullanılabilir (OpenAI Priority Processing veya Anthropic Fast Mode)."
+      not_supported: "◈ /fast yalnızca hızlı modu destekleyen modellerde kullanılabilir (OpenAI Priority Processing veya Anthropic Fast Mode)."
       feature_generic: "Hızlı mod"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Ultrafast bu hesapta veya rotada {model} için kullanılamıyor."
+      ultrafast_not_supported: "◈ Ultrafast bu hesapta veya rotada {model} için kullanılamıyor."
       usage: "Kullanım: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature} {value} olarak ayarlandı {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ sprite sayfası oluşturuluyor…"
       progress_save: "┊ kaydediliyor…"
       progress_drawing: "┊ {state} çiziliyor…"
-      describe_prompt: "(o_o) Evcil hayvanınızı tanımlayın: "
-      usage: "(o_o) Kullanım: /hatch <açıklama>  (örn. /hatch minik bir siber tilki)"
+      describe_prompt: "◈ Evcil hayvanınızı tanımlayın: "
+      usage: "◈ Kullanım: /hatch <açıklama>  (örn. /hatch minik bir siber tilki)"
       default_name: "Evcil hayvan"
-      designing: "(o_o) '{concept}' tasarlanıyor… (bir dakikalık görüntü modeli çağrıları)"
-      base_failed: "(x_x) Temel görünüm oluşturulamadı: {error}"
-      no_base_draft: "(x_x) Temel taslak gelmedi — yeniden deneyin."
-      failed: "(x_x) Yumurtadan çıkarma başarısız oldu: {error}"
-      hatched: "(^_^)b {name} yumurtadan çıktı ve sahiplenildi — kısa süre içinde belirecek!"
+      designing: "◈ '{concept}' tasarlanıyor… (bir dakikalık görüntü modeli çağrıları)"
+      base_failed: "✘ Temel görünüm oluşturulamadı: {error}"
+      no_base_draft: "✘ Temel taslak gelmedi — yeniden deneyin."
+      failed: "✘ Yumurtadan çıkarma başarısız oldu: {error}"
+      hatched: "✓ {name} yumurtadan çıktı ve sahiplenildi — kısa süre içinde belirecek!"
     pet:
 
-      is_out: "(^_^)b {name} dışarıda — kısa süre içinde belirecek."
-      put_away_named: "(-_-)zzZ {name} kaldırıldı."
-      put_away: "(-_-)zzZ Evcil hayvan kaldırıldı."
-      usage_scale: "(o_o) Kullanım: /pet scale <çarpan>  (örn. /pet scale 0.5)"
-      scale_set: "(^_^) Evcil hayvan ölçeği → {scale}."
-      fetching: "(o_o) '{name}' petdex'ten getiriliyor…"
-      adopt_failed: "(x_x) '{name}' sahiplenilemedi: {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} dışarıda — kısa süre içinde belirecek."
+      put_away_named: "○ {name} kaldırıldı."
+      put_away: "○ Evcil hayvan kaldırıldı."
+      usage_scale: "◈ Kullanım: /pet scale <çarpan>  (örn. /pet scale 0.5)"
+      scale_set: "✓ Evcil hayvan ölçeği → {scale}."
+      fetching: "◈ '{name}' petdex'ten getiriliyor…"
+      adopt_failed: "✘ '{name}' sahiplenilemedi: {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Hazırlanmamış"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey başarısız oldu: {error}"
     paste:
 
-      no_image: "(._.) Panoda görüntü bulunamadı"
+      no_image: "◈ Panoda görüntü bulunamadı"
       attached: "📎 Görüntü #{index} panodan eklendi"
-      extract_failed: "(>_<) Panoda bir görüntü var ancak çıkarma başarısız oldu"
+      extract_failed: "◬ Panoda bir görüntü var ancak çıkarma başarısız oldu"
     copy:
 
       nothing_yet: "Henüz kopyalanacak bir şey yok."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "Kullanım: /image <yol>  örn. /image {example}"
-      not_found: "(>_<) Dosya bulunamadı: {path}"
-      unsupported: "(._.) Desteklenen bir görüntü dosyası değil: {name}"
+      not_found: "◬ Dosya bulunamadı: {path}"
+      unsupported: "◈ Desteklenen bir görüntü dosyası değil: {name}"
       attached: "📎 Görüntü eklendi: {name}"
       now_type_prompt: "Şimdi isteminizi yazın (veya tek sorgu modunda --image kullanın): {text}"
     tools:
 
-      usage: "(._.) Kullanım: /tools {subcommand} <ad> [ad ...]"
+      usage: "◈ Kullanım: /tools {subcommand} <ad> [ad ...]"
       example_toolset: "Yerleşik araç seti:  /tools {subcommand} web"
       example_mcp: "MCP aracı:           /tools {subcommand} github:create_issue"
       disabling: "{names} devre dışı bırakılıyor..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "{session_id} oturumu {resolved_id} içine sıkıştırıldı; transkriptinizle birlikte türev oturum sürdürülüyor."
     sessions:
 
-      none_yet: "(._.) Henüz önceki oturum yok."
+      none_yet: "◈ Henüz önceki oturum yok."
     branch:
 
       branched_one: "⑂ \"{title}\" oturumu dallandırıldı ({count} kullanıcı mesajı)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "Terminal ve dosya araçları artık worktree içinde çalışıyor."
     personality:
 
-      title: "(^o^)/ Kişilikler"
+      title: "❆ Kişilikler"
       none_option: "(kişilik katmanı yok)"
       usage: "Kullanım: /personality <ad>   (* = etkin)"
-      unknown: "(._.) Bilinmeyen kişilik: {name}"
+      unknown: "◈ Bilinmeyen kişilik: {name}"
       available: "Kullanılabilir: none, {available}"
       scope_saved: "(yapılandırmaya kaydedildi)"
       scope_session: "(yalnızca bu oturum)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} Kişilik '{name}' olarak ayarlandı {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat bir tam sayı olmalıdır"
-      unknown_command: "(._.) Bilinmeyen cron komutu: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat bir tam sayı olmalıdır"
+      unknown_command: "◈ Bilinmeyen cron komutu: {subcommand}"
       available: "Kullanılabilir: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Zamanlanmış Görevler"
+      overview_title: "❆ Zamanlanmış Görevler"
       overview_commands: "Komutlar:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Sunucu durumunu kontrol et\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Yeni görev\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Mevcut İşler:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "Skill'ler: yok"
       next_short: "Sonraki"
       no_jobs_hint: "Zamanlanmış iş yok. Oluşturmak için '/cron add' kullanın."
-      no_jobs: "(._.) Zamanlanmış iş yok."
+      no_jobs: "◈ Zamanlanmış iş yok."
       list_header: "Zamanlanmış İşler:"
       id: "Kimlik: {job_id}"
       name: "Ad: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "hata: {error}"
       last_run: "Son çalıştırma: {when} ({status})"
-      usage_add: "(._.) Kullanım: /cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) Lütfen bir istem veya en az bir skill belirtin"
-      create_failed: "(x_x) İş oluşturulamadı: {error}"
-      created: "(^_^)b İş oluşturuldu: {job_id}"
-      usage_edit: "(._.) Kullanım: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) İş bulunamadı: {job_id}"
-      update_failed: "(x_x) İş güncellenemedi: {error}"
-      updated: "(^_^)b İş güncellendi: {job_id}"
-      usage_action: "(._.) Kullanım: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) İş duraklatılamadı: {error}"
-      resume_failed: "(x_x) İş sürdürülemedi: {error}"
-      run_failed: "(x_x) İş çalıştırılamadı: {error}"
-      remove_failed: "(x_x) İş kaldırılamadı: {error}"
-      removed: "(^_^)b İş kaldırıldı: {name} ({job_id})"
-      did_not_run: "(x_x) İş çalıştırılmadı: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b İş duraklatıldı: {name} ({job_id})"
-      resumed: "(^_^)b İş sürdürüldü: {name} ({job_id})"
-      triggered: "(^_^)b İş tetiklendi: {name} ({job_id})"
+      usage_add: "◈ Kullanım: /cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ Lütfen bir istem veya en az bir skill belirtin"
+      create_failed: "✘ İş oluşturulamadı: {error}"
+      created: "✓ İş oluşturuldu: {job_id}"
+      usage_edit: "◈ Kullanım: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ İş bulunamadı: {job_id}"
+      update_failed: "✘ İş güncellenemedi: {error}"
+      updated: "✓ İş güncellendi: {job_id}"
+      usage_action: "◈ Kullanım: /cron {subcommand} <job_id>"
+      pause_failed: "✘ İş duraklatılamadı: {error}"
+      resume_failed: "✘ İş sürdürülemedi: {error}"
+      run_failed: "✘ İş çalıştırılamadı: {error}"
+      remove_failed: "✘ İş kaldırılamadı: {error}"
+      removed: "✓ İş kaldırıldı: {name} ({job_id})"
+      did_not_run: "✘ İş çalıştırılmadı: {name} ({job_id})\n  {reason}"
+      paused: "✓ İş duraklatıldı: {name} ({job_id})"
+      resumed: "✓ İş sürdürüldü: {name} ({job_id})"
+      triggered: "✓ İş tetiklendi: {name} ({job_id})"
     suggestions:
 
       failed: "Öneriler komutu başarısız oldu: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "Cron blueprint komutu başarısız oldu: {error}"
     curator:
 
-      failed: "(._.) curator: {error}"
+      failed: "◈ curator: {error}"
     kanban:
 
-      failed: "(._.) kanban hatası: {error}"
+      failed: "◈ kanban hatası: {error}"
     memory:
 
       unknown_subcommand: "Bilinmeyen /memory alt komutu. Kullanım: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "Kullanım: /bg <prompt>\nÖrnek: /bg Bugünün öne çıkan HN haberlerini özetle\n(Bu konuşma hakkında bir yan soru için /btw <soru> kullanın.)\nGörev ayrı bir oturumda çalışır ve sonuçlar tamamlandığında burada görüntülenir."
-      no_credentials: "(>_<) Arka plan görevi başlatılamıyor: geçerli kimlik bilgisi yok."
+      no_credentials: "◬ Arka plan görevi başlatılamıyor: geçerli kimlik bilgisi yok."
       started: "🔄 #{number} numaralı arka plan görevi başlatıldı: \"{preview}\""
       task_id: "Görev kimliği: {task_id}"
       keep_chatting: "Sohbete devam edebilirsiniz — sonuçlar tamamlandığında görünecek."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "Kullanım: /btw <soru>\nÖrnek: /btw o hata hangi dosyadaydı?\nBu konuşma hakkındaki hızlı bir soruyu, konuşmayı kesmeden yanıtlar.\n(Bağımsız bir arka plan görevi için /bg <prompt> kullanın.)"
-      no_credentials: "(>_<) Yan soru yanıtlanamıyor: geçerli kimlik bilgisi yok."
+      no_credentials: "◬ Yan soru yanıtlanamıyor: geçerli kimlik bilgisi yok."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(Yanıt üretilmedi)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! İsteminizi aşağıya yazın. '#!' ile başlayan satırlar yok sayılır.\n#! Göndermek için kaydedip çıkın; iptal etmek için boş bırakın."
-      editor_failed: "(>_<) Düzenleyici açılamadı: {error}"
-      empty: "(._.) Boş istem — hiçbir şey gönderilmedi."
+      editor_failed: "◬ Düzenleyici açılamadı: {error}"
+      empty: "◈ Boş istem — hiçbir şey gönderilmedi."
     focus:
 
       usage: "Kullanım: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "geçerli oturumdan çıkıp Icebath Agent'ı güncelle"
       choice_cancel: "İptal"
       choice_cancel_desc: "geçerli oturumu koru"
-      title: "☤  Icebath Agent'ı Güncelle"
+      title: "󰆧  Icebath Agent'ı Güncelle"
       detail: "Bu işlem geçerli oturumdan çıkar ve `icebath update` komutunu çalıştırır."
       cancelled: "🟡 /update iptal edildi."
-      launching: "☤ Güncelleme başlatılıyor..."
+      launching: "󰆧 Güncelleme başlatılıyor..."
     voice:
 
       unknown_subcommand: "Bilinmeyen voice alt komutu: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "Şunlardan birini mi demek istediniz: {candidates}?"
   config:
 
-    title: "(^_^) Yapılandırma"
+    title: "❆ Yapılandırma"
     loaded: "(yüklendi)"
     not_found: "(bulunamadı)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 Bağlam Kullanımı — {model}"
-    compute_failed: "(._.) Bağlam dökümü hesaplanamadı: {error}"
+    compute_failed: "◈ Bağlam dökümü hesaplanamadı: {error}"
   error:
 
     auth: "{provider} anahtarınız reddedildi. Yeniden girmek için `icebath model` çalıştırın."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Icebath Gateway başlatılıyor (mesajlaşma platformları)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Gateway Durumu"
+    header: "❆ Gateway Durumu"
     platform_config_header: "Mesajlaşma Platformu Yapılandırması:"
     enabled: "Etkin"
     not_configured: "Yapılandırılmamış ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. Veya ayarları {path} içinde yapılandırın"
   help:
 
-    header: "(^_^)? Kullanılabilir Komutlar"
+    header: "❆ Kullanılabilir Komutlar"
     section_session: "Oturum"
     section_configuration: "Yapılandırma"
     section_tools_skills: "Araçlar ve Skill'ler"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "{command} için skill yüklenemedi"
   tools:
 
-    none_available: "(;_;) Kullanılabilir araç yok"
-    header: "(^_^)/ Kullanılabilir Araçlar"
-    total: "Toplam: {count} araç  ヽ(^o^)ノ"
+    none_available: "◈ Kullanılabilir araç yok"
+    header: "❆ Kullanılabilir Araçlar"
+    total: "Toplam: {count} araç"
   toolsets:
 
-    header: "(^_^)b Kullanılabilir Araç Setleri"
+    header: "✓ Kullanılabilir Araç Setleri"
     currently_enabled_legend: "(*) = şu anda etkin"
     tip_enable_all: "İpucu: Tüm araç setlerini etkinleştirmek için 'all' veya '*' kullanın"
     example: "Örnek: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "Önce `/model` veya `icebath auth` ile geçiş yapın."
     checking_reset_credits: "⏳ Birikmiş sıfırlama kredileri kontrol ediliyor..."
     codex_timeout: "❌ Codex arka ucuyla iletişim zaman aşımına uğradı — kısa süre sonra yeniden deneyin."
-    no_api_calls: "(._.) Bu oturumda henüz API çağrısı yapılmadı."
+    no_api_calls: "◈ Bu oturumda henüz API çağrısı yapılmadı."
     header_session: "📊 Oturum Token Kullanımı"
     label_model: "Model:"
     label_input_tokens: "Giriş tokenları:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model oturum ortasında model değiştirmenizi sağlar — /model sonnet veya /model gpt-5 deneyin."
   t017: "/model --global varsayılan modelinizi kalıcı olarak değiştirir."
   t018: "/personality pirate eğlenceli bir kişilik ayarlar — kawaii'den shakespeare'e 14 yerleşik seçenek."
-  t019: "/skin CLI temasını değiştirir — ares, mono, slate, poseidon veya charizard deneyin."
+  t019: "/skin CLI temasını değiştirir — taro, light, contrast, cyberpunk veya dracula deneyin."
   t020: "/statusbar model, token, bağlam doluluk yüzdesi, maliyet ve süreyi gösteren kalıcı bir çubuğu açar/kapatır."
   t021: "/tools disable browser tarayıcı araçlarını mevcut oturum için geçici olarak kaldırır."
   t022: "/browser connect tarayıcı araçlarını CDP üzerinden çalışan Chromium tabanlı tarayıcınıza bağlar."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets, -t/--toolsets seçeneğinin neleri kabul ettiğini bilmeniz için mevcut tüm araç setlerini listeler."
   t337: "/voice tts, yalnızca TTS modunu açıp kapatır — ajan yanıtlarını sesli okur ama istemlerinizi yine siz yazarsınız."
   t338: "/reload-skills, ~/.icebath/skills/ dizinini yeniden tarar; böylece eklenen skill'ler oturumu yeniden başlatmadan görünür."
-  t339: "/indicator kaomoji|emoji|unicode|ascii, ajan çalışırken TUI'de gösterilen meşgul göstergesi stilini seçer."
+  t339: "/indicator unicode|emoji|ascii, ajan çalışırken TUI'de gösterilen meşgul göstergesi stilini seçer."
   t340: "/debug, bir destek paketi (sistem bilgisi + günlükler) yükler ve paylaşılabilir bağlantılar döndürür — sohbette de çalışır."
   t341: "icebath -z \"<prompt>\" en saf tek seferlik kullanımdır: stdout'a yalnızca nihai yanıt, başka hiçbir şey yok — betiklerde borulamak için idealdir."
   t342: "icebath chat --pass-session-id, oturum kimliğini sistem istemine ekler; böylece ajan kendi oturumuna atıfta bulunabilir."

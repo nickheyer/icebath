@@ -211,12 +211,24 @@ func (p *petView) refresh() tea.Cmd {
 			p.enabled = true
 			return tea.Batch(cmd, p.startTicking(), p.probe(), p.pullSheet())
 		}
-		cells := tuigateway.PetCellsParams{Graphics: p.graphics, State: state}
+		cells := tuigateway.PetCellsParams{Graphics: p.graphics, State: state, Terminal: petTerminalGraphics(getenv)}
 		return tea.Batch(cmd, quietPet(p, tuigateway.PetCells, cells, func(res *tuigateway.PetCellsResult) tea.Cmd {
 			p.syncing = false
 			return p.applyCells(state, meta, res)
 		}))
 	})
+}
+
+// Image form this terminal paints for the pet, kitty placeholders or half blocks, read from the environment alone.
+// It travels with pet.cells because one gateway serves many clients, so the gateway's environment names no client's terminal
+func petTerminalGraphics(env func(string) string) string {
+	if env("TMUX") != "" || env("STY") != "" {
+		return "unicode"
+	}
+	if pet.SupportsKittyPlaceholders() {
+		return "kitty"
+	}
+	return "unicode"
 }
 
 // Releases the terminal side kitty image of the selection
@@ -627,7 +639,7 @@ func (p *petView) place(w, h, top int) petPlacement {
 	sprite, cols, high := p.spriteRows()
 	var petBox []string
 	if sprite != nil {
-		petBox = framedBox(t, " "+p.name+" ", sprite, cols+4)
+		petBox = framedBox(t, p.a.uiTheme().Border, " "+p.name+" ", sprite, cols+4)
 	}
 	for _, withPet := range []bool{true, false} {
 		stack := hatch

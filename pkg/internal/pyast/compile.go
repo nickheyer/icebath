@@ -3,18 +3,10 @@ package pyast
 import (
 	"bytes"
 	"fmt"
-	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // compileFoldShift is how much deeper compile() enters the preprocess pass than ast.parse does
 const compileFoldShift = 32
-
-// CompileStage runs the stages of compile() that follow the parser over a parsed module and returns the first error raised
-func CompileStage(tree *Node, filename string) error {
-	return compileStages(tree, filename, nil)
-}
 
 // Compile compiles source bytes like compile(source, filename, "exec") and returns the error it raises
 func Compile(source []byte, filename string) error {
@@ -28,17 +20,6 @@ func Compile(source []byte, filename string) error {
 	}
 	o.encoding = declaredEncoding(source)
 	return compileBuffer(text, o)
-}
-
-// CompileString compiles source text like compile(source, filename, "exec") and returns the error it raises
-func CompileString(source, filename string) error {
-	if err := pystr.StrictUTF8EncodeError(source); err != nil {
-		return err
-	}
-	if strings.IndexByte(source, 0) >= 0 {
-		return nullBytesError()
-	}
-	return compileBuffer(translateLines([]byte(source), true), Options{Filename: filename, encoding: "utf-8"})
 }
 
 func compileBuffer(buf []byte, o Options) error {

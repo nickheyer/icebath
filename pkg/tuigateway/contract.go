@@ -151,15 +151,6 @@ func (q Request[P, R]) Params(raw any) (P, error) {
 	return p, Loose(paramsOrEmpty(raw), &p)
 }
 
-// Answer the gateway reads, refused with the field named when it does not fit
-func (q Request[P, R]) Answer(raw any) (R, error) {
-	var r R
-	if err := Strict(raw, &r); err != nil {
-		return r, &ParamsRefusal{Method: q.entry.Name, Fit: err}
-	}
-	return r, nil
-}
-
 // Notification whose payload is T
 type Event[T any] struct{ entry *Entry }
 

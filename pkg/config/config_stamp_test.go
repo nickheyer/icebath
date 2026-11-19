@@ -178,7 +178,7 @@ func TestTransientReadErrorIsNotACorruptConfig(t *testing.T) {
 	var out strings.Builder
 	ParseFailureOut = &out
 	h := t.TempDir()
-	path := writeConfig(t, h, "display:\n  skin: mono\n")
+	path := writeConfig(t, h, "display:\n  skin: contrast\n")
 	readErr := &os.PathError{Op: "open", Path: path, Err: syscall.EMFILE}
 	saved := readFailureBytes
 	readFailureBytes = func(string) ([]byte, error) { return nil, readErr }

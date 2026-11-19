@@ -458,3 +458,6 @@ func TestSeedCatalogCacheFromCheckout(t *testing.T) {
 		t.Fatal("seed not on disk")
 	}
 }
+
+// WaitCatalogRefreshes blocks until every background manifest refresh has landed
+func WaitCatalogRefreshes() { catalogSWRWait.Wait() }

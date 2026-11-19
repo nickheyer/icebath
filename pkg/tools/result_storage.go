@@ -217,13 +217,6 @@ func pruneSpilloverOnce(env *Env) {
 	}
 }
 
-// ResetSpilloverPruneState forgets which homes were swept so tests can observe the first spill sweep
-func ResetSpilloverPruneState() {
-	spilloverPruneMu.Lock()
-	spilloverPrunedHomes = map[string]bool{}
-	spilloverPruneMu.Unlock()
-}
-
 // True when this process writes the spill file directly because the sandbox files are the host's
 func isHostSideEnvironment(sandbox Environment) bool {
 	return sandbox == nil || sandbox.UsesHostFilesystem()

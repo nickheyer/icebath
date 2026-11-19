@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -110,13 +111,6 @@ func (w *RuntimeStatusWriter) Flush(timeout time.Duration) bool {
 	return ok
 }
 
-// True once generation persisted, false once it no longer can, unsettled while work remains
-func (w *RuntimeStatusWriter) Settled(generation int) (state bool, settled bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.settledLocked(generation)
-}
-
 func (w *RuntimeStatusWriter) settledLocked(generation int) (bool, bool) {
 	if w.successfulGen >= generation {
 		return true, true
@@ -189,6 +183,7 @@ func mergeOverOnDisk(path string, payload *pyjson.Object) *pyjson.Object {
 	if existing == nil {
 		return payload
 	}
+	home.AdoptRecordKey(existing.Keys, existing.Vals)
 	merged := pyjson.NewObject()
 	for _, k := range existing.Keys {
 		merged.Set(k, recGet(existing, k))
@@ -422,6 +417,7 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 		if loaded == nil || loaded.Len() == 0 {
 			loaded = buildRuntimeStatusRecord()
 		}
+		home.AdoptRecordKey(loaded.Keys, loaded.Vals)
 		runtimeStatusState = loaded
 	}
 	previous := runtimeStatusState

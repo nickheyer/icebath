@@ -374,11 +374,6 @@ func APIExecution(ctx context.Context) *pyjson.Object {
 	return prepared
 }
 
-// Context carrying prepared as the executing API admission, for the runner and its cases
-func BindAPIExecution(ctx context.Context, prepared *pyjson.Object) context.Context {
-	return bindAPIExecution(ctx, prepared)
-}
-
 // One request owned API sink, args positional and kwargs by name as the Python callback receives them
 type APIObserverCallback func(args []any, kwargs map[string]any) error
 

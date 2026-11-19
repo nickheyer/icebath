@@ -76,11 +76,6 @@ func scopeTerminalCwd(env *Env) (string, error) {
 // Scope aware TERMINAL_CWD value for plugin sessions, read through the per turn terminal scope
 func ScopeTerminalCwd(env *Env) (string, error) { return scopeTerminalCwd(env) }
 
-func existingDir(env *Env, raw, label string) string {
-	p, _ := existingDirErr(env, raw, label)
-	return p
-}
-
 // Normalized path of a configured directory with its user home expanded, empty with a warning when it is no directory
 func existingDirErr(env *Env, raw, label string) (string, error) {
 	p, err := pypath.PathExpanduser(raw)

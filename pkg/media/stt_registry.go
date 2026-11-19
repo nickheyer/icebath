@@ -59,9 +59,6 @@ func (e *sttNotImplementedError) Error() string { return e.msg }
 // Embeddable stream session default with no partial transcript
 type TranscriptionStreamSessionDefaults struct{}
 
-// No live caption text unless the session provides one
-func (TranscriptionStreamSessionDefaults) PartialTranscript() (string, error) { return "", nil }
-
 var transcriptionRegistryBuiltinNames = sttSet("local", "local_command", "groq", "openai", "mistral", "xai", "elevenlabs", "deepinfra")
 
 // Warns that a plugin tried to take a built in STT name and was ignored

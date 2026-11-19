@@ -102,16 +102,16 @@ func loadWithManaged(t *testing.T, userYAML, managedYAML string) map[string]any 
 }
 
 func TestCliConfigHonorsManagedSkin(t *testing.T) {
-	cfg := loadWithManaged(t, "display:\n  skin: user_skin\n", "display:\n  skin: charizard\n")
-	if sectionOf(cfg, "display")["skin"] != "charizard" {
+	cfg := loadWithManaged(t, "display:\n  skin: user_skin\n", "display:\n  skin: cyberpunk\n")
+	if sectionOf(cfg, "display")["skin"] != "cyberpunk" {
 		t.Fatalf("display %v", cfg["display"])
 	}
 }
 
 func TestCliConfigManagedLeafPreservesUserSiblings(t *testing.T) {
-	cfg := loadWithManaged(t, "display:\n  skin: user_skin\n  show_reasoning: true\n", "display:\n  skin: charizard\n")
+	cfg := loadWithManaged(t, "display:\n  skin: user_skin\n  show_reasoning: true\n", "display:\n  skin: cyberpunk\n")
 	display := sectionOf(cfg, "display")
-	if display["skin"] != "charizard" || display["show_reasoning"] != true {
+	if display["skin"] != "cyberpunk" || display["show_reasoning"] != true {
 		t.Fatalf("display %v", display)
 	}
 }
@@ -302,4 +302,11 @@ func TestRootLevelProviderOverrideTerminalVercelRuntimeBridgedToEnv(t *testing.T
 	if sectionOf(cfg, "terminal")["vercel_runtime"] != "python3.13" || os.Getenv("TERMINAL_VERCEL_RUNTIME") != "python3.13" {
 		t.Fatalf("terminal %v env %q", cfg["terminal"], os.Getenv("TERMINAL_VERCEL_RUNTIME"))
 	}
+}
+
+// Replaces the process wide CLI config, nil forcing the next CLIConfig call to reload
+func SetCLIConfig(cfg map[string]any) {
+	cliConfigMu.Lock()
+	cliConfigLoaded = cfg
+	cliConfigMu.Unlock()
 }

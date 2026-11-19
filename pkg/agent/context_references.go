@@ -173,13 +173,6 @@ func GetContextReferenceProviders() map[string]ContextReferenceProvider {
 	return out
 }
 
-// ClearContextReferenceProvidersForTests empties the plugin provider registry
-func ClearContextReferenceProvidersForTests() {
-	contextReferenceProvidersMu.Lock()
-	defer contextReferenceProvidersMu.Unlock()
-	contextReferenceProviders = map[string]ContextReferenceProvider{}
-}
-
 const quotedReferenceValue = "(?:`[^`\\n]+`|\"[^\"\\n]+\"|'[^'\\n]+')"
 
 // ReferencePattern matches the built in @ references, the quoted or bare value with an optional line range

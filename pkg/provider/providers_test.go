@@ -249,3 +249,13 @@ func TestDetermineModeCtxMatchesTheContextFreeResolution(t *testing.T) {
 		t.Fatal("anthropic transport")
 	}
 }
+
+// IsAggregator reports whether the provider is a multi model aggregator or a named custom endpoint
+func IsAggregator(providerName string) bool {
+	return isAggregatorCtx(context.Background(), providerName)
+}
+
+// DetermineMode picks the wire from the host mandate, then the provider transport
+func DetermineMode(providerName, baseURL, model string) APIMode {
+	return determineModeCtx(context.Background(), providerName, baseURL, model)
+}

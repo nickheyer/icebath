@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Не git-репозиторій — оновлення неможливе."
     icebath_cmd_not_found: "✗ Не вдалося знайти команду `icebath`. Icebath запущено, але команда оновлення не знайшла виконуваний файл у PATH або через поточний інтерпретатор Python. Спробуйте виконати `icebath update` вручну у вашому терміналі."
     start_failed: "✗ Не вдалося запустити оновлення: {error}"
-    starting: "☤ Запуск оновлення Icebath… Я транслюватиму прогрес сюди."
+    starting: "❆ Запуск оновлення Icebath… Я транслюватиму прогрес сюди."
     reply_failed: "✗ Не вдалося надіслати відповідь процесу оновлення: {error}"
     reply_sent: "✓ Надіслано `{label}` процесу оновлення."
     failed_notice: "❌ Оновлення Icebath не вдалося; попередня версія працює далі. Виконайте `icebath update` на хості, щоб побачити повну помилку, або спробуйте /update пізніше."
     prompt_default: " (за замовчуванням: {default})"
-    prompt: "☤ **Оновлення потребує вашої відповіді:**\n\n{prompt}{default_hint}\n\nВідповідайте `{prefix}approve` (так) або `{prefix}deny` (ні), або введіть відповідь напряму."
+    prompt: "❆ **Оновлення потребує вашої відповіді:**\n\n{prompt}{default_hint}\n\nВідповідайте `{prefix}approve` (так) або `{prefix}deny` (ні), або введіть відповідь напряму."
     finished: "✅ Оновлення Icebath завершено."
     timed_out: "❌ Час оновлення Icebath вичерпано через 30 хвилин."
     finished_success: "✅ Оновлення Icebath успішно завершено."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** — {user}"
     update_prompt:
 
-      title: "☤ Оновлення потребує вашої відповіді"
+      title: "❆ Оновлення потребує вашої відповіді"
       default_hint: "\n\nЗа замовчуванням: `{default}`"
       answer_yes: "✓ Так"
       answer_no: "✗ Ні"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}д {hours}год {minutes}хв"
     duration_m_rest: "{minutes}хв {rest}"
     duration_hm_rest: "{hours}год {minutes}хв {rest}"
-    no_active_agent: "(._.) Немає активного агента -- спочатку надішліть повідомлення."
+    no_active_agent: "◈ Немає активного агента -- спочатку надішліть повідомлення."
     n_more: "ще {count}"
     more_not_shown: "решту не показано"
     yes_no_default_yes: "Y/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "Назву сеансу поставлено в чергу: {title} (буде збережено з першим повідомленням)"
   undo:
 
-    invalid_count: "(._.) Недійсне число {value} — використовуйте /undo або /undo N."
+    invalid_count: "◈ Недійсне число {value} — використовуйте /undo або /undo N."
     removes_last_exchange: "Це видаляє з історії останній обмін репліками (ваше повідомлення та відповідь асистента)."
     removes_last_turns: "Це видаляє з історії останні {count} ходів користувача."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ Кредити вичерпано"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Новий початок! Екран очищено, розмову скинуто."
+    fresh_start: "❆ Новий початок! Екран очищено, розмову скинуто."
     model_reset_default: "(модель скинуто до типової з конфігурації: {model})"
     title_rejected: "Назву відхилено: {error}"
     title_empty_untitled: "Після очищення назва порожня — сеанс запущено без назви."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "Міркування"
     label_approvals: "Схвалення"
     label_context: "Контекст"
-    recent_intro: "(._.) У поточному чаті ще немає повідомлень — ось недавні сеанси, які можна відновити:"
+    recent_intro: "◈ У поточному чаті ще немає повідомлень — ось недавні сеанси, які можна відновити:"
     recent_header: "Недавні сеанси:"
     column_title: "Назва"
     column_preview: "Уривок"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "Щоб продовжити, використайте /resume <номер>, /resume <id сеансу> або /resume <назва сеансу>."
     resume_example: "Приклад: /resume 2"
-    history_empty: "(._.) Історії розмови ще немає."
+    history_empty: "◈ Історії розмови ще немає."
     history_tools_header: "[Інструменти]"
     history_tools_hidden_one: "(приховано {count} повідомлення інструмента)"
     history_tools_hidden_other: "(приховано {count} повідомлень інструментів)"
-    history_title: "(^_^) Історія розмови"
+    history_title: "❆ Історія розмови"
     history_you_header: "[Ви №{index}]"
     history_assistant_header: "[{agent_name} №{index}]"
     history_no_text: "(без текстової відповіді)"
     history_tool_calls_one: "(запитано {count} виклик інструмента)"
     history_tool_calls_other: "(запитано {count} викликів інструментів)"
-    new_session_titled: "(^_^)v Новий сеанс запущено: {title}"
-    new_session: "(^_^)v Новий сеанс запущено!"
-    save_nothing: "(;_;) Немає розмови для збереження."
-    save_dir_failed: "(x_x) Не вдалося створити каталог для збереження {path}: {error}"
+    new_session_titled: "✓ Новий сеанс запущено: {title}"
+    new_session: "✓ Новий сеанс запущено!"
+    save_nothing: "◈ Немає розмови для збереження."
+    save_dir_failed: "✘ Не вдалося створити каталог для збереження {path}: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Розмову збережено в: {path} ({label})"
+    save_ok: "✓ Розмову збережено в: {path} ({label})"
     save_resume_hint: "Відновити активний сеанс: icebath --resume {session_id}"
-    save_failed: "(x_x) Не вдалося зберегти: {error}"
-    retry_no_messages: "(._.) Немає повідомлень для повторення."
-    retry_no_user_message: "(._.) Не знайдено повідомлення користувача для повторення."
-    retry_unsafe: "(._.) Неможливо безпечно повторити це повідомлення: {error}"
-    retry_rewind_failed: "(x_x) Не вдалося відкотити для повторення; історію не змінено: {error}"
-    retrying: "(^_^)b Повторюю: \"{preview}\""
-    undo_no_messages: "(._.) Немає повідомлень для скасування."
-    undo_no_user_message: "(._.) Не знайдено повідомлення користувача для скасування."
-    undo_failed: "(x_x) Не вдалося скасувати; історію не змінено: {error}"
-    undo_ok_one: "(^_^)b Скасовано {count} хід (повідомлень: {messages}). Резервна копія: \"{backup}\""
-    undo_ok_other: "(^_^)b Скасовано {count} ходів (повідомлень: {messages}). Резервна копія: \"{backup}\""
+    save_failed: "✘ Не вдалося зберегти: {error}"
+    retry_no_messages: "◈ Немає повідомлень для повторення."
+    retry_no_user_message: "◈ Не знайдено повідомлення користувача для повторення."
+    retry_unsafe: "◈ Неможливо безпечно повторити це повідомлення: {error}"
+    retry_rewind_failed: "✘ Не вдалося відкотити для повторення; історію не змінено: {error}"
+    retrying: "✓ Повторюю: \"{preview}\""
+    undo_no_messages: "◈ Немає повідомлень для скасування."
+    undo_no_user_message: "◈ Не знайдено повідомлення користувача для скасування."
+    undo_failed: "✘ Не вдалося скасувати; історію не змінено: {error}"
+    undo_ok_one: "✓ Скасовано {count} хід (повідомлень: {messages}). Резервна копія: \"{backup}\""
+    undo_ok_other: "✓ Скасовано {count} ходів (повідомлень: {messages}). Резервна копія: \"{backup}\""
     undo_remaining: "В історії залишилося повідомлень: {count}."
     yolo_state_locked_on: "заблоковано УВІМК"
     yolo_locked: "⚡ YOLO {state} для цього процесу (запущено з --yolo / ICEBATH_YOLO_MODE). /yolo не може його вимкнути — перезапустіть без прапорця, щоб знову ввімкнути схвалення."
     yolo_off: "⚠ Режим YOLO {state} — небезпечні команди потребуватимуть схвалення."
     yolo_on: "⚡ Режим YOLO {state} — усі команди схвалюються автоматично. Використовуйте з обережністю."
-    compress_too_short: "(._.) Недостатньо розмови для стиснення (потрібно щонайменше {min} повідомлень)."
-    compress_no_agent: "(._.) Немає активного агента — спочатку надішліть повідомлення."
+    compress_too_short: "◈ Недостатньо розмови для стиснення (потрібно щонайменше {min} повідомлень)."
+    compress_no_agent: "◈ Немає активного агента — спочатку надішліть повідомлення."
     compress_busy: "Стиснення контексту..."
     compress_summarizing: "🗜️  Підсумовую до цього місця: {count} повідомлень, останні {keep_last} обмін(ів) зберігаю дослівно..."
     compress_focus: "🗜️  Стискаю {count} повідомлень, фокус: \"{focus}\"..."
     compress_plain: "🗜️  Стискаю {count} повідомлень..."
     compress_failed: "❌ Стиснення не вдалося: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "До побачення! ☤"
+    goodbye: "До побачення! 󰆧"
     exit_resume_hint: "Відновити цей сеанс:"
     exit_label_session: "Сеанс:          {session_id}"
     exit_label_title: "Назва:          {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(збережено в конфігурації)"
       scope_save_failed: "(лише для цього сеансу; не вдалося зберегти конфігурацію)"
       scope_session: "(лише цей сеанс — додайте --global, щоб зберегти)"
-      unknown_argument: "(._.) Невідомий аргумент: {arg}"
+      unknown_argument: "◈ Невідомий аргумент: {arg}"
       usage: "Використання: {usage}"
       needs_active_session: "Для {command} потрібен активний сеанс чату."
       unavailable_no_session: "{label} недоступно (немає активного сеансу)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "Використання: /indicator [{styles}]"
       status: "Стиль індикатора зайнятості: {style}"
-      unknown_style: "(._.) Невідомий стиль індикатора: {arg}"
+      unknown_style: "◈ Невідомий стиль індикатора: {arg}"
       label: "Стиль індикатора зайнятості"
       note: "TUI застосує новий стиль під час наступного перемалювання."
     fast:
 
-      not_supported: "(._.) /fast доступний лише для моделей, що підтримують швидкий режим (OpenAI Priority Processing або Anthropic Fast Mode)."
+      not_supported: "◈ /fast доступний лише для моделей, що підтримують швидкий режим (OpenAI Priority Processing або Anthropic Fast Mode)."
       feature_generic: "Швидкий режим"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Ultrafast недоступний для {model} у цьому обліковому записі або маршруті."
+      ultrafast_not_supported: "◈ Ultrafast недоступний для {model} у цьому обліковому записі або маршруті."
       usage: "Використання: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature}: встановлено {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ збираємо спрайтшит…"
       progress_save: "┊ зберігаємо…"
       progress_drawing: "┊ малюємо {state}…"
-      describe_prompt: "(o_o) Опишіть свого улюбленця: "
-      usage: "(o_o) Використання: /hatch <description>  (напр. /hatch крихітна кіберлисиця)"
+      describe_prompt: "◈ Опишіть свого улюбленця: "
+      usage: "◈ Використання: /hatch <description>  (напр. /hatch крихітна кіберлисиця)"
       default_name: "Улюбленець"
-      designing: "(o_o) Створюємо дизайн '{concept}'… (близько хвилини викликів моделі зображень)"
-      base_failed: "(x_x) Не вдалося згенерувати базовий вигляд: {error}"
-      no_base_draft: "(x_x) Базовий ескіз не повернувся — спробуйте ще раз."
-      failed: "(x_x) Вилуплення не вдалося: {error}"
-      hatched: "(^_^)b {name}: вилуплено й прийнято — незабаром з'явиться!"
+      designing: "◈ Створюємо дизайн '{concept}'… (близько хвилини викликів моделі зображень)"
+      base_failed: "✘ Не вдалося згенерувати базовий вигляд: {error}"
+      no_base_draft: "✘ Базовий ескіз не повернувся — спробуйте ще раз."
+      failed: "✘ Вилуплення не вдалося: {error}"
+      hatched: "✓ {name}: вилуплено й прийнято — незабаром з'явиться!"
     pet:
 
-      is_out: "(^_^)b {name} виходить — незабаром з'явиться."
-      put_away_named: "(-_-)zzZ {name} сховано."
-      put_away: "(-_-)zzZ Улюбленця сховано."
-      usage_scale: "(o_o) Використання: /pet scale <factor>  (напр. /pet scale 0.5)"
-      scale_set: "(^_^) Масштаб улюбленця → {scale}."
-      fetching: "(o_o) Отримуємо '{name}' з petdex…"
-      adopt_failed: "(x_x) Не вдалося прийняти '{name}': {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} виходить — незабаром з'явиться."
+      put_away_named: "○ {name} сховано."
+      put_away: "○ Улюбленця сховано."
+      usage_scale: "◈ Використання: /pet scale <factor>  (напр. /pet scale 0.5)"
+      scale_set: "✓ Масштаб улюбленця → {scale}."
+      fetching: "◈ Отримуємо '{name}' з petdex…"
+      adopt_failed: "✘ Не вдалося прийняти '{name}': {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Неіндексовані"
@@ -2616,9 +2616,9 @@ cli:
       failed: "Помилка /journey: {error}"
     paste:
 
-      no_image: "(._.) У буфері обміну немає зображення"
+      no_image: "◈ У буфері обміну немає зображення"
       attached: "📎 Зображення №{index} додано з буфера обміну"
-      extract_failed: "(>_<) У буфері обміну є зображення, але не вдалося його витягти"
+      extract_failed: "◬ У буфері обміну є зображення, але не вдалося його витягти"
     copy:
 
       nothing_yet: "Поки що нічого копіювати."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "Використання: /image <path>  напр. /image {example}"
-      not_found: "(>_<) Файл не знайдено: {path}"
-      unsupported: "(._.) Непідтримуваний файл зображення: {name}"
+      not_found: "◬ Файл не знайдено: {path}"
+      unsupported: "◈ Непідтримуваний файл зображення: {name}"
       attached: "📎 Додано зображення: {name}"
       now_type_prompt: "Тепер введіть запит (або використайте --image у режимі одиночного запиту): {text}"
     tools:
 
-      usage: "(._.) Використання: /tools {subcommand} <name> [name ...]"
+      usage: "◈ Використання: /tools {subcommand} <name> [name ...]"
       example_toolset: "Вбудований набір:  /tools {subcommand} web"
       example_mcp: "Інструмент MCP:    /tools {subcommand} github:create_issue"
       disabling: "Вимкнення {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "Сеанс {session_id} було стиснуто в {resolved_id}; відновлюємо сеанс-нащадок із вашою стенограмою."
     sessions:
 
-      none_yet: "(._.) Попередніх сеансів ще немає."
+      none_yet: "◈ Попередніх сеансів ще немає."
     branch:
 
       branched_one: "⑂ Створено гілку сеансу \"{title}\" ({count} повідомлення користувача)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "Термінал і файлові інструменти тепер працюють у робочому дереві."
     personality:
 
-      title: "(^o^)/ Особистості"
+      title: "❆ Особистості"
       none_option: "(без накладання особистості)"
       usage: "Використання: /personality <name>   (* = активна)"
-      unknown: "(._.) Невідома особистість: {name}"
+      unknown: "◈ Невідома особистість: {name}"
       available: "Доступні: none, {available}"
       scope_saved: "(збережено в конфігурації)"
       scope_session: "(лише для цього сеансу)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} Особистість встановлено на '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat має бути цілим числом"
-      unknown_command: "(._.) Невідома команда cron: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat має бути цілим числом"
+      unknown_command: "◈ Невідома команда cron: {subcommand}"
       available: "Доступні: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Заплановані завдання"
+      overview_title: "❆ Заплановані завдання"
       overview_commands: "Команди:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Перевірити стан сервера\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Нове завдання\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Поточні завдання:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "Навички: немає"
       next_short: "Наступний"
       no_jobs_hint: "Немає запланованих завдань. Використайте '/cron add', щоб створити нове."
-      no_jobs: "(._.) Немає запланованих завдань."
+      no_jobs: "◈ Немає запланованих завдань."
       list_header: "Заплановані завдання:"
       id: "ID: {job_id}"
       name: "Назва: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "не доставлено: {error}"
       status_error: "помилка: {error}"
       last_run: "Останній запуск: {when} ({status})"
-      usage_add: "(._.) Використання: /cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) Вкажіть запит або хоча б одну навичку"
-      create_failed: "(x_x) Не вдалося створити завдання: {error}"
-      created: "(^_^)b Завдання створено: {job_id}"
-      usage_edit: "(._.) Використання: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) Завдання не знайдено: {job_id}"
-      update_failed: "(x_x) Не вдалося оновити завдання: {error}"
-      updated: "(^_^)b Завдання оновлено: {job_id}"
-      usage_action: "(._.) Використання: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) Не вдалося призупинити завдання: {error}"
-      resume_failed: "(x_x) Не вдалося відновити завдання: {error}"
-      run_failed: "(x_x) Не вдалося запустити завдання: {error}"
-      remove_failed: "(x_x) Не вдалося видалити завдання: {error}"
-      removed: "(^_^)b Завдання видалено: {name} ({job_id})"
-      did_not_run: "(x_x) Завдання не запущено: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b Завдання призупинено: {name} ({job_id})"
-      resumed: "(^_^)b Завдання відновлено: {name} ({job_id})"
-      triggered: "(^_^)b Завдання запущено: {name} ({job_id})"
+      usage_add: "◈ Використання: /cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ Вкажіть запит або хоча б одну навичку"
+      create_failed: "✘ Не вдалося створити завдання: {error}"
+      created: "✓ Завдання створено: {job_id}"
+      usage_edit: "◈ Використання: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ Завдання не знайдено: {job_id}"
+      update_failed: "✘ Не вдалося оновити завдання: {error}"
+      updated: "✓ Завдання оновлено: {job_id}"
+      usage_action: "◈ Використання: /cron {subcommand} <job_id>"
+      pause_failed: "✘ Не вдалося призупинити завдання: {error}"
+      resume_failed: "✘ Не вдалося відновити завдання: {error}"
+      run_failed: "✘ Не вдалося запустити завдання: {error}"
+      remove_failed: "✘ Не вдалося видалити завдання: {error}"
+      removed: "✓ Завдання видалено: {name} ({job_id})"
+      did_not_run: "✘ Завдання не запущено: {name} ({job_id})\n  {reason}"
+      paused: "✓ Завдання призупинено: {name} ({job_id})"
+      resumed: "✓ Завдання відновлено: {name} ({job_id})"
+      triggered: "✓ Завдання запущено: {name} ({job_id})"
     suggestions:
 
       failed: "Не вдалося виконати команду пропозицій: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "Не вдалося виконати команду cron blueprint: {error}"
     curator:
 
-      failed: "(._.) куратор: {error}"
+      failed: "◈ куратор: {error}"
     kanban:
 
-      failed: "(._.) помилка kanban: {error}"
+      failed: "◈ помилка kanban: {error}"
     memory:
 
       unknown_subcommand: "Невідома підкоманда /memory. Доступні: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "Використання: /bg <prompt>\nПриклад: /bg Підсумуй найкращі історії з HN сьогодні\n(Для побіжного питання про цю розмову використовуйте /btw <question>.)\nЗавдання виконується в окремому сеансі, а результати з'являться тут після завершення."
-      no_credentials: "(>_<) Не вдалося запустити фонове завдання: немає дійсних облікових даних."
+      no_credentials: "◬ Не вдалося запустити фонове завдання: немає дійсних облікових даних."
       started: "🔄 Фонове завдання #{number} запущено: «{preview}»"
       task_id: "ID завдання: {task_id}"
       keep_chatting: "Можна продовжити спілкування — результати з'являться після завершення."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "Використання: /btw <question>\nПриклад: /btw у якому файлі була та помилка?\nВідповідає на швидке питання про цю розмову, не перериваючи її.\n(Для незалежного фонового завдання використовуйте /bg <prompt>.)"
-      no_credentials: "(>_<) Не вдалося відповісти на побіжне питання: немає дійсних облікових даних."
+      no_credentials: "◬ Не вдалося відповісти на побіжне питання: немає дійсних облікових даних."
       header: "💬 /btw: «{preview}»"
       title_suffix: "(btw)"
       no_answer: "(Відповідь не згенеровано)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! Складіть свій запит нижче. Рядки, що починаються з '#!', ігноруються.\n#! Збережіть і вийдіть, щоб надіслати; залиште порожнім, щоб скасувати."
-      editor_failed: "(>_<) Не вдалося відкрити редактор: {error}"
-      empty: "(._.) Порожній запит — нічого не надіслано."
+      editor_failed: "◬ Не вдалося відкрити редактор: {error}"
+      empty: "◈ Порожній запит — нічого не надіслано."
     focus:
 
       usage: "Використання: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "вийти з поточного сеансу та оновити Icebath Agent"
       choice_cancel: "Скасувати"
       choice_cancel_desc: "залишити поточний сеанс"
-      title: "☤  Оновлення Icebath Agent"
+      title: "󰆧  Оновлення Icebath Agent"
       detail: "Це завершить поточний сеанс і виконає `icebath update`."
       cancelled: "🟡 /update скасовано."
-      launching: "☤ Запуск оновлення..."
+      launching: "󰆧 Запуск оновлення..."
     voice:
 
       unknown_subcommand: "Невідома підкоманда voice: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "Ви мали на увазі: {candidates}?"
   config:
 
-    title: "(^_^) Конфігурація"
+    title: "❆ Конфігурація"
     loaded: "(завантажено)"
     not_found: "(не знайдено)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 Використання контексту — {model}"
-    compute_failed: "(._.) Не вдалося обчислити розбивку контексту: {error}"
+    compute_failed: "◈ Не вдалося обчислити розбивку контексту: {error}"
   error:
 
     auth: "Ваш ключ {provider} відхилено. Виконайте `icebath model`, щоб ввести його знову."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Запуск Icebath Gateway (платформи обміну повідомленнями)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Стан шлюзу"
+    header: "❆ Стан шлюзу"
     platform_config_header: "Конфігурація платформ обміну повідомленнями:"
     enabled: "Увімкнено"
     not_configured: "Не налаштовано ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. Або налаштуйте параметри в {path}"
   help:
 
-    header: "(^_^)? Доступні команди"
+    header: "❆ Доступні команди"
     section_session: "Сеанс"
     section_configuration: "Конфігурація"
     section_tools_skills: "Інструменти й навички"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "Не вдалося завантажити навичку для {command}"
   tools:
 
-    none_available: "(;_;) Немає доступних інструментів"
-    header: "(^_^)/ Доступні інструменти"
-    total: "Усього: {count} інструментів  ヽ(^o^)ノ"
+    none_available: "◈ Немає доступних інструментів"
+    header: "❆ Доступні інструменти"
+    total: "Усього: {count} інструментів"
   toolsets:
 
-    header: "(^_^)b Доступні набори інструментів"
+    header: "✓ Доступні набори інструментів"
     currently_enabled_legend: "(*) = зараз увімкнено"
     tip_enable_all: "Порада: використовуйте 'all' або '*', щоб увімкнути всі набори інструментів"
     example: "Приклад: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "Спочатку перемкніться через `/model` або `icebath auth`."
     checking_reset_credits: "⏳ Перевірка накопичених кредитів скидання..."
     codex_timeout: "❌ Час очікування відповіді від бекенда Codex минув — спробуйте трохи пізніше."
-    no_api_calls: "(._.) У цьому сеансі ще не було викликів API."
+    no_api_calls: "◈ У цьому сеансі ще не було викликів API."
     header_session: "📊 Використання токенів сеансу"
     label_model: "Модель:"
     label_input_tokens: "Вхідні токени:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model дозволяє змінити модель посеред сеансу — спробуйте /model sonnet або /model gpt-5."
   t017: "/model --global назавжди змінює вашу модель за замовчуванням."
   t018: "/personality pirate вмикає веселу особистість — 14 вбудованих варіантів від kawaii до shakespeare."
-  t019: "/skin змінює тему CLI — спробуйте ares, mono, slate, poseidon або charizard."
+  t019: "/skin змінює тему CLI — спробуйте taro, light, contrast, cyberpunk або dracula."
   t020: "/statusbar перемикає постійний рядок стану з моделлю, токенами, % заповнення контексту, вартістю та тривалістю."
   t021: "/tools disable browser тимчасово вилучає інструменти браузера з поточного сеансу."
   t022: "/browser connect під'єднує інструменти браузера до вашого запущеного браузера на основі Chromium через CDP."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets перелічує всі доступні набори інструментів, щоб ви знали, що приймає -t/--toolsets."
   t337: "/voice tts вмикає режим лише TTS — агент відповідає вголос, а ви й далі вводите запити з клавіатури."
   t338: "/reload-skills повторно сканує ~/.icebath/skills/, тож скопійовані туди навички з'являються без перезапуску сеансу."
-  t339: "/indicator kaomoji|emoji|unicode|ascii обирає стиль індикатора зайнятості TUI, який показується під час роботи агента."
+  t339: "/indicator unicode|emoji|ascii обирає стиль індикатора зайнятості TUI, який показується під час роботи агента."
   t340: "/debug завантажує пакет для підтримки (інформація про систему + журнали) і повертає посилання для поширення — працює і в чаті."
   t341: "icebath -z \"<prompt>\" — найчистіший одноразовий запуск: лише фінальна відповідь у stdout і нічого більше — ідеально для конвеєрів у скриптах."
   t342: "icebath chat --pass-session-id вставляє ID сеансу в системний промпт, щоб агент міг на нього посилатися."

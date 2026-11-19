@@ -443,3 +443,10 @@ func TestSpillSafety(t *testing.T) {
 		t.Fatal("overwrote a directory")
 	}
 }
+
+// ResetSpilloverPruneState forgets which homes were swept so tests can observe the first spill sweep
+func ResetSpilloverPruneState() {
+	spilloverPruneMu.Lock()
+	spilloverPrunedHomes = map[string]bool{}
+	spilloverPruneMu.Unlock()
+}

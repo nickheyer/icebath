@@ -42,7 +42,7 @@ func SkinPayload(ctx context.Context, cfg map[string]any) (payload map[string]an
 		helpHeader = value
 	}
 	return map[string]any{
-		"name": skin.Name, "colors": skin.Colors,
+		"name": skin.Name, "source": skin.Source, "colors": skin.Colors,
 		"light_colors": skin.LightColors, "dark_colors": skin.DarkColors,
 		"branding": skin.Branding, "banner_logo": skin.BannerLogo,
 		"banner_hero": skin.BannerHero, "tool_prefix": skin.ToolPrefix,

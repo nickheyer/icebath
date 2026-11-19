@@ -11,14 +11,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -39,20 +35,6 @@ const UserAgent = "Icebath-Agent/1.0"
 
 var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 var falsyStrings = map[string]bool{"0": true, "false": true, "no": true, "off": true, "disabled": true}
-
-// Coerces bool like values using the shared truthy string set, nil yields the default
-func truthy(v any, def bool) bool {
-	if v == nil {
-		return def
-	}
-	if s, ok := v.(string); ok {
-		return truthyStrings[strings.ToLower(strings.TrimSpace(s))]
-	}
-	if b, ok := config.AsBool(v); ok {
-		return b
-	}
-	return config.Truthy(v)
-}
 
 // Coerces common YAML and env bool spellings without treating random strings as true
 func configBool(v any, def bool) bool {
@@ -101,58 +83,6 @@ func cfgString(t config.Tree, key string) string {
 		return strings.TrimSpace(s)
 	}
 	return ""
-}
-
-// Float value of a config key with a fallback on bad values
-func cfgFloat(t config.Tree, key string, def float64) float64 {
-	if t == nil {
-		return def
-	}
-	v, ok := t[key]
-	if !ok || v == nil {
-		return def
-	}
-	if _, isBool := v.(bool); isBool {
-		return def
-	}
-	if s, ok := v.(string); ok {
-		f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-		if err != nil {
-			return def
-		}
-		return f
-	}
-	f, ok := config.AsFloat(v)
-	if !ok {
-		return def
-	}
-	return f
-}
-
-// Int value of a config key with a fallback on bad values
-func cfgInt(t config.Tree, key string, def int) int {
-	if t == nil {
-		return def
-	}
-	v, ok := t[key]
-	if !ok || v == nil {
-		return def
-	}
-	if _, isBool := v.(bool); isBool {
-		return def
-	}
-	if s, ok := v.(string); ok {
-		f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-		if err != nil {
-			return def
-		}
-		return int(f)
-	}
-	i, ok := config.AsInt(v)
-	if !ok {
-		return def
-	}
-	return i
 }
 
 // Positive int value of a config key or zero
@@ -214,16 +144,6 @@ func secret(env *tools.Env, name string) string {
 		return strings.TrimSpace(env.Secrets.String(name))
 	}
 	return strings.TrimSpace(os.Getenv(name))
-}
-
-// First non empty secret among several names
-func firstSecret(env *tools.Env, names ...string) string {
-	for _, n := range names {
-		if v := secret(env, n); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // Random lowercase hex of n bytes
@@ -500,118 +420,9 @@ func stringList(v any) []string {
 	return out
 }
 
-// Path of a binary on PATH or in the common Homebrew and local prefixes
-func findBinary(name string) string {
-	for _, dir := range []string{"/opt/homebrew/bin", "/usr/local/bin"} {
-		candidate := filepath.Join(dir, name)
-		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
-			return candidate
-		}
-	}
-	p, err := exec.LookPath(name)
-	if err != nil {
-		return ""
-	}
-	return p
-}
-
 // Removes a file ignoring missing or locked entries
 func removeQuietly(path string) {
 	if path != "" {
 		os.Remove(path)
 	}
-}
-
-// Deletes files in a directory matching a glob older than the age, returning the count
-func unlinkFilesOlderThan(dir, pattern string, maxAge time.Duration) int {
-	matches, err := filepath.Glob(filepath.Join(dir, pattern))
-	if err != nil {
-		return 0
-	}
-	cutoff := time.Now().Add(-maxAge)
-	removed := 0
-	for _, p := range matches {
-		st, err := os.Stat(p)
-		if err != nil || !st.Mode().IsRegular() || !st.ModTime().Before(cutoff) {
-			continue
-		}
-		if os.Remove(p) == nil {
-			removed++
-		}
-	}
-	return removed
-}
-
-// Reports whether this process runs inside WSL
-func isWSL() bool {
-	if runtime.GOOS != "linux" {
-		return false
-	}
-	raw, err := os.ReadFile("/proc/version")
-	if err != nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(string(raw)), "microsoft")
-}
-
-// Reports whether this process runs inside Termux on Android
-func isTermux() bool {
-	if os.Getenv("TERMUX_VERSION") != "" {
-		return true
-	}
-	prefix := os.Getenv("PREFIX")
-	return strings.Contains(prefix, "com.termux")
-}
-
-// Reports whether this process runs inside a Docker, Podman, or LXC container
-func isContainer() bool {
-	if runtime.GOOS != "linux" {
-		return false
-	}
-	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := os.Stat(marker); err == nil {
-			return true
-		}
-	}
-	raw, err := os.ReadFile("/proc/1/cgroup")
-	if err == nil {
-		text := strings.ToLower(string(raw))
-		for _, needle := range []string{"docker", "lxc", "containerd", "podman", "kubepods"} {
-			if strings.Contains(text, needle) {
-				return true
-			}
-		}
-	}
-	return os.Getenv("container") != ""
-}
-
-// Clamps a float into a closed range
-func clampFloat(v, lo, hi float64) float64 {
-	if math.IsNaN(v) {
-		return lo
-	}
-	return math.Max(lo, math.Min(hi, v))
-}
-
-// Clamps an int into a closed range
-func clampInt(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
-}
-
-// Working directory for scratch files under the system temp dir
-func tempDir(sub string) string {
-	dir := filepath.Join(os.TempDir(), sub)
-	os.MkdirAll(dir, 0o755)
-	return dir
-}
-
-// Creates a private scratch directory with a prefix
-func makeTempDir(prefix string) (string, error) {
-	return os.MkdirTemp("", prefix)
 }

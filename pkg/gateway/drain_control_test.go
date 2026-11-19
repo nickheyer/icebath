@@ -200,3 +200,10 @@ func TestRestartWaitGatesVerbs(t *testing.T) {
 		t.Fatal("stopping runner still in restart wait")
 	}
 }
+
+// Drops the cached instantiation epoch
+func instantiationEpochCacheClear() {
+	epochMu.Lock()
+	epochCached = nil
+	epochMu.Unlock()
+}

@@ -111,11 +111,6 @@ func (r *URLLibRequest) Redirected() *URLLibRequest {
 	return out
 }
 
-// Copy whose dicts edit apart from these
-func (r *URLLibRequest) Clone() *URLLibRequest {
-	return &URLLibRequest{headers: append([]HeaderLine(nil), r.headers...), unredirected: append([]HeaderLine(nil), r.unredirected...)}
-}
-
 // Fills the unredirected body headers, Host and opener addheaders the way AbstractHTTPHandler.do_request_ does
 func (r *URLLibRequest) DoRequest(host string, data []byte, hasData bool, addheaders []HeaderLine) {
 	if hasData {

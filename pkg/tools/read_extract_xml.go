@@ -168,18 +168,3 @@ func (n *etNode) get(attr, fallback string) string {
 	}
 	return fallback
 }
-
-// Concatenated text of the node and every descendant in document order
-func (n *etNode) itertext() string {
-	var b strings.Builder
-	var walk func(x *etNode)
-	walk = func(x *etNode) {
-		b.WriteString(x.text)
-		for _, c := range x.children {
-			walk(c)
-			b.WriteString(c.tail)
-		}
-	}
-	walk(n)
-	return b.String()
-}

@@ -238,8 +238,6 @@ func injectSteerAfterNewestToolResult(a *AIAgent, messages *[]*state.Message, st
 	requeuePendingSteer(a, steerText)
 }
 
-var thinkingSpinnerTypes = []string{"brain", "sparkle", "pulse", "moon", "star"}
-
 // Prints the verbose request summary or starts the quiet mode thinking indicator
 func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 	s.ThinkingSpinner = nil
@@ -254,17 +252,15 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 		if err != nil {
 			return err
 		}
-		face := faces[rand.IntN(len(faces))]
 		verbs, err := thinkingVerbs(ctx)
 		if err != nil {
 			return err
 		}
-		verb := verbs[rand.IntN(len(verbs))]
+		status := faced(faces, verbs[rand.IntN(len(verbs))]+"...")
 		if a.thinkingCallback != nil {
-			a.callThinking(face + " " + verb + "...")
+			a.callThinking(status)
 		} else if !a.hasStreamConsumers() && a.shouldStartQuietSpinner() {
-			kind := thinkingSpinnerTypes[rand.IntN(len(thinkingSpinnerTypes))]
-			s.ThinkingSpinner = startKawaiiSpinner(ctx, face+" "+verb+"...", kind, a.printFn)
+			s.ThinkingSpinner = startStatusSpinner(ctx, status, a.printFn)
 		}
 	}
 	if a.verboseLogging {

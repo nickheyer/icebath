@@ -65,13 +65,6 @@ func (e *vError) absolutePath() []any {
 	return append(append([]any(nil), e.parent.absolutePath()...), e.path...)
 }
 
-func (e *vError) absoluteSchemaPath() []any {
-	if e.parent == nil {
-		return e.schemaPath
-	}
-	return append(append([]any(nil), e.parent.absoluteSchemaPath()...), e.schemaPath...)
-}
-
 // Python text of the error, verbose once validator, value, instance and schema are all set
 func (e *vError) str(schemaWord, instanceWord string) string {
 	return e.strAt(nil, schemaWord, instanceWord)

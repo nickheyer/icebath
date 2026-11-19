@@ -846,31 +846,6 @@ func isolationMode(cfg map[string]any) string {
 	return mode
 }
 
-// Reason an in process import of third party code must not happen, empty when allowed
-func inProcessImportRefusal(cfg map[string]any, what string) string {
-	if isolationMode(cfg) != pluginIsolationHost {
-		return ""
-	}
-	return what + " runs only in-process, and plugins.isolation is 'host' (third-party plugin code " +
-		"never runs inside the icebath process); set plugins.isolation: in_process to load it"
-}
-
-// Names of a plugins config list as a set, nil when the key is not a list
-func pluginsConfigSet(cfg map[string]any, key string) map[string]bool {
-	plugins, _ := cfg["plugins"].(map[string]any)
-	list, ok := plugins[key].([]any)
-	if !ok {
-		return nil
-	}
-	out := map[string]bool{}
-	for _, v := range list {
-		if s, ok := v.(string); ok {
-			out[s] = true
-		}
-	}
-	return out
-}
-
 // Every bundled plugin profile in discovery order, the source both discovery and the catalog read
 func bundledSource() []Profile {
 	var out []Profile

@@ -631,11 +631,6 @@ func schemaSanitizeMap(node *pyjson.Object, path string) *pyjson.Object {
 	return out
 }
 
-func isMap(v any) bool {
-	_, ok := pyjson.Dict(v)
-	return ok
-}
-
 func isAnyList(v any) bool {
 	switch v.(type) {
 	case []any, []string:

@@ -32,8 +32,8 @@ func TestScenarioConfigGetSetUnsetMigrate(t *testing.T) {
 	if r := s.Run("config", "get", "agent.max_turns").Exit(0); r.Stdout != "42\n" {
 		s.Failf("config get agent.max_turns printed %q", r.Stdout)
 	}
-	s.Run("config", "set", "display.skin", "mono").Exit(0)
-	s.HasJSON(s.YAML("config.yaml"), `{"display": {"skin": "mono"}}`)
+	s.Run("config", "set", "display.skin", "contrast").Exit(0)
+	s.HasJSON(s.YAML("config.yaml"), `{"display": {"skin": "contrast"}}`)
 
 	s.Run("config", "set", "OPENAI_API_KEY", "sk-scenario-secret-0123456789").Exit(0).Has("✓ Set OPENAI_API_KEY in " + s.Home + "/.env")
 	if env := s.Read(".env"); !strings.Contains(env, "OPENAI_API_KEY=sk-scenario-secret-0123456789") {

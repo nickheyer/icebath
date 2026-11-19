@@ -91,13 +91,6 @@ func redactedResult(value any) any {
 	return value
 }
 
-// Settles a claim completed with its redacted result
-func retainResult(ctx context.Context, db *state.SessionDB, epoch int64, row, result *pyjson.Object) (*pyjson.Object, error) {
-	stored, _ := redactedResult(result).(*pyjson.Object)
-	return db.SettleSessionInput(ctx, state.SettleInput{Epoch: epoch, AdmissionID: rowString(row, "admission_id"),
-		Generation: rowGeneration(row), Outcome: "completed", Result: stored})
-}
-
 // Generation an admission row was claimed under, zero for a row never claimed
 func rowGeneration(row *pyjson.Object) int64 {
 	if stamped := rowInt(row, "generation"); stamped != nil {

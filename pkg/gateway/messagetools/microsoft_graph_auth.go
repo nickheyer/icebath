@@ -106,12 +106,6 @@ type GraphCredentials struct {
 	AuthorityURL string
 }
 
-// Credentials with the default scope and authority
-func NewGraphCredentials(tenantID, clientID, clientSecret string) GraphCredentials {
-	return GraphCredentials{TenantID: tenantID, ClientID: clientID, ClientSecret: clientSecret,
-		Scope: DefaultGraphScope, AuthorityURL: DefaultGraphAuthorityURL}
-}
-
 // OAuth v2 token endpoint of the tenant under the authority
 func (c GraphCredentials) TokenURL() string {
 	return strings.TrimRight(c.AuthorityURL, "/") + "/" + strings.Trim(pystr.Strip(c.TenantID), "/") + "/oauth2/v2.0/token"

@@ -336,5 +336,5 @@ func (p *petView) hatchBox(t theme) []string {
 	width = min(width, hatchBoxCols)
 	inner := append(append([]string{}, job.preview...), toneStyle(t.Color.Text).Render(truncateEnd(status, width)),
 		toneStyle(t.Color.Muted).Render(truncateEnd(hint, width)))
-	return framedBox(t, " /hatch · "+job.name+" ", inner, width+4)
+	return framedBox(t, p.a.uiTheme().Border, " /hatch · "+job.name+" ", inner, width+4)
 }

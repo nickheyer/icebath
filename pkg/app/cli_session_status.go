@@ -36,9 +36,9 @@ func (c *CLI) showStatus() {
 	if c.apiKey != "" {
 		apiIndicator = "[green bold]●[/]"
 	}
-	separatorColor, accentColor, labelColor := "#B8860B", "#FFBF00", "cyan"
+	separatorColor, accentColor, labelColor := "#6c7f92", "#9cc7e8", "cyan"
 	if skin := config.GetActiveSkin(c.ctx); skin != nil {
-		separatorColor, accentColor, labelColor = skin.GetColor("banner_dim", "#B8860B"), skin.GetColor("ui_accent", "#FFBF00"), skin.GetColor("ui_label", "#DAA520")
+		separatorColor, accentColor, labelColor = skin.GetColor("banner_dim", "#6c7f92"), skin.GetColor("ui_accent", "#9cc7e8"), skin.GetColor("ui_label", "#6c7f92")
 	}
 	sep := " [dim " + separatorColor + "]·[/] "
 	toolsetsInfo := ""

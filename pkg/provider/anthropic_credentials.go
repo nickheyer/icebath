@@ -260,14 +260,6 @@ func IsRotationConsumedUncommitted(secret, sourcePath string) bool {
 	return readSpentRotationSidecar(sourcePath)[fp]
 }
 
-// ResetSpentRotationsForTests clears the process local spent rotation registry
-func ResetSpentRotationsForTests() {
-	spentRotationMu.Lock()
-	defer spentRotationMu.Unlock()
-	spentRotationFingerprints = nil
-	deadRefreshTokenPrints = map[string]bool{}
-}
-
 // Normalizes a claudeAiOauth payload into the credential record shape
 func claudeOAuthRecord(data map[string]any, source string) map[string]any {
 	oauth, _ := data["claudeAiOauth"].(map[string]any)

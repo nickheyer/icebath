@@ -954,3 +954,19 @@ func TestModelsDevFetchHonorsTheEnvironmentProxies(t *testing.T) {
 		t.Fatal("the models.dev fetch must go through HTTPS_PROXY and HTTP_PROXY like the reference requests.get")
 	}
 }
+
+// WaitModelsDevRefresh blocks until any background registry refresh has finished
+func WaitModelsDevRefresh() { modelsDevRefreshWait.Wait() }
+
+// ResetModelsDevCache drops the in memory registry, the backoff and the once per process warnings
+func ResetModelsDevCache() {
+	modelsDevStateMu.Lock()
+	modelsDevCache = nil
+	modelsDevCacheTime = time.Time{}
+	modelsDevRetryAfter = time.Time{}
+	modelsDevStateMu.Unlock()
+	modelsDevWarnMu.Lock()
+	modelsDevOverrideWarned = map[string]bool{}
+	modelsDevUnknownWarned = map[string]bool{}
+	modelsDevWarnMu.Unlock()
+}

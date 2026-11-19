@@ -105,17 +105,6 @@ func AuthorityAtSequence(history []AuthoritySpan, seq int64) (AuthoritySpan, err
 	return AuthoritySpan{}, authorityHistoryError("event precedes the known authority history")
 }
 
-// Original coordinator of a room, stable across authority changes
-func OriginGatewayID(room map[string]any) (string, error) {
-	epoch, _ := hostedStrictInt(room["authority_epoch"])
-	gatewayID, _ := room["authority_gateway_id"].(string)
-	history, err := ValidateAuthorityHistory(room["authority_history"], gatewayID, epoch)
-	if err != nil {
-		return "", err
-	}
-	return history[0].GatewayID, nil
-}
-
 // Committed authority transfers read inside the caller's room state transaction, nil for none to certify
 func ReadAuthorityHistoryLocked(ctx context.Context, conn state.SQLiteConn, roomID, gatewayID string, epoch int64) ([]any, error) {
 	rows, err := state.QueryObjects(ctx, conn, `SELECT seq,authority_epoch,actor_json,payload_json FROM hosted_room_events
@@ -291,20 +280,6 @@ func workValidateProvenance(record map[string]any, spans []AuthoritySpan) error 
 		}
 	}
 	return nil
-}
-
-// Origin authority of each recorded task by its source event
-func WorkTaskOrigins(record map[string]any, spans []AuthoritySpan) (map[string]any, error) {
-	out := map[string]any{}
-	for _, task := range workList(record["tasks"]) {
-		seq, _ := hostedStrictInt(task["source_event_seq"])
-		origin, err := AuthorityAtSequence(spans, seq)
-		if err != nil {
-			return nil, err
-		}
-		out[task["task_id"].(string)] = map[string]any{"gateway_id": origin.GatewayID, "epoch": origin.Epoch}
-	}
-	return out, nil
 }
 
 // Object items of a record list

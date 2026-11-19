@@ -2,12 +2,13 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,12 +19,6 @@ var (
 	multiplexActive bool
 	autoPinnedHome  string
 )
-
-// PinProcessHome fixes the launch home routed profile decisions compare against, empty releases it
-func PinProcessHome(path string) { home.PinProcess(path, path == "") }
-
-// ProcessHomePinned reports whether a host pinned the launch home
-func ProcessHomePinned() bool { return home.ProcessPinned() }
 
 // RoutingProcessHome is the pinned launch home, else the process home
 func RoutingProcessHome() string { return home.RoutingProcess() }

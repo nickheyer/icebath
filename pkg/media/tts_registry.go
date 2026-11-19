@@ -33,11 +33,6 @@ var ttsRegistry = provider.NewProviderRegistry[TTSProvider](provider.ProviderReg
 	BuiltinNames: ttsRegistryBuiltinNames, OnBuiltinCollision: warnTTSBuiltinCollision,
 })
 
-// Registers a plugin TTS provider, a built in name ignored with a warning
-func RegisterTTSProvider(p TTSProvider, scope string) error {
-	return ttsRegistry.Register(p, scope)
-}
-
 // Registered TTS providers sorted by name
 func ListTTSProviders(ctx context.Context, scope string) []TTSProvider {
 	return ttsRegistry.ListProviders(ctx, scope)

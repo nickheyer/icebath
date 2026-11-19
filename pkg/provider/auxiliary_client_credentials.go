@@ -15,22 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Value of an optional pool attribute, nil when the row leaves it empty
-func auxEntryAttr(v string) any {
-	if v == "" {
-		return nil
-	}
-	return v
-}
-
-// Extra attribute of a pool row with a default when absent
-func auxEntryExtra(entry *PooledCredential, key string, def any) any {
-	if v, ok := entry.Extra[key]; ok {
-		return v
-	}
-	return def
-}
-
 // Pool entry selector seam the tests swap for a present but exhausted pool
 var auxSelectPoolEntryFn = auxSelectPoolEntry
 

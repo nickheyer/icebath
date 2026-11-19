@@ -40,11 +40,6 @@ type StreamingTTSHandle struct {
 	Aborted     bool
 }
 
-// Handle for the chat with the default audio format, the dataclass defaults
-func NewStreamingTTSHandle(chatID string) *StreamingTTSHandle {
-	return &StreamingTTSHandle{ChatID: chatID, AudioFormat: DefaultAudioFormat()}
-}
-
 // Turn scoped suppression key from the run generation or else the event message or update id
 func StreamingTTSTurnKey(sessionKey string, turnMarker any, event *MessageEvent) (string, bool) {
 	if sessionKey == "" {

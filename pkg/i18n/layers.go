@@ -308,11 +308,6 @@ func packSurfaces() map[langSurface]bool {
 	return out
 }
 
-// PackSurfaces lists every language and surface pair a pack supplies
-func PackSurfaces() [][2]string {
-	return sortedPairs(packSurfaces())
-}
-
 // PackLanguages lists the languages some pack supplies, sorted
 func PackLanguages() []string {
 	return langsOf(packSurfaces())
@@ -394,9 +389,6 @@ func overlaySurfaces(h string) map[langSurface]bool {
 	return found
 }
 
-// OverlaySurfaces lists every language and surface pair with an overlay file under the home
-func OverlaySurfaces(h string) [][2]string { return sortedPairs(overlaySurfaces(h)) }
-
 // OverlayLanguages lists languages with at least one overlay file under the home
 func OverlayLanguages(h string) []string { return langsOf(overlaySurfaces(h)) }
 
@@ -439,27 +431,6 @@ func ResetRegistryForTests() {
 	packs = nil
 	layerMu.Unlock()
 	ClearLayerCache()
-}
-
-// RegisteredPacks returns the registrations in order
-func RegisteredPacks() []*PackEntry {
-	layerMu.Lock()
-	defer layerMu.Unlock()
-	return append([]*PackEntry{}, packs...)
-}
-
-func sortedPairs(set map[langSurface]bool) [][2]string {
-	out := make([][2]string, 0, len(set))
-	for k := range set {
-		out = append(out, [2]string{k.lang, k.surface})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i][0] != out[j][0] {
-			return out[i][0] < out[j][0]
-		}
-		return out[i][1] < out[j][1]
-	})
-	return out
 }
 
 func langsOf(set map[langSurface]bool) []string {

@@ -164,3 +164,13 @@ func TestWsTransportPreservesCrossBatchOrder(t *testing.T) {
 		t.Fatalf("entered = %v", entered)
 	}
 }
+
+// Blocks until the caller owns the lock
+func (l *fifoLock) lock() { <-l.reserve() }
+
+// Number of places queued behind the current owner
+func (l *fifoLock) waiting() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.waiters)
+}

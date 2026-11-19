@@ -186,3 +186,6 @@ func TestAnthropicPromptCachePolicyWrapsUnexported(t *testing.T) {
 		t.Fatalf("got (%v, %v) want (%v, %v)", gotCache, gotNative, wantCache, wantNative)
 	}
 }
+
+// ConfiguredCacheTTL returns the configured 5m or 1h cache tier, empty when none applies
+func ConfiguredCacheTTL(ctx context.Context) string { return configuredCacheTTL(ctx) }

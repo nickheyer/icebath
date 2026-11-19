@@ -1,13 +1,21 @@
-package app
+package theme
 
-const icebathAgentLogo = "[#e6f5fb]▄▖                             [/][#f50325]█   [/][#e6f5fb]▄                         ▄       ▄       [/]\n" +
+// Inks the art is authored in, a surface repaints them with the text and accent tones of its theme
+const (
+	LogoInk = "#e6f5fb"
+	LogoBar = "#f50325"
+)
+
+// Logo is the ICE | BATH wordmark, 77 cells by 6 rows, the letters in LogoInk and the bar in LogoBar
+const Logo = "[#e6f5fb]▄▖                             [/][#f50325]█   [/][#e6f5fb]▄                         ▄       ▄       [/]\n" +
 	"[#e6f5fb]▀▘                             [/][#f50325]█   [/][#e6f5fb]█▌                        █▌      █▌      [/]\n" +
 	"[#e6f5fb]█▌     ▟▛▀▀▀▀▀▀    ▗█▀▀▀▀▀▀▙   [/][#f50325]█   [/][#e6f5fb]█▛▀▀▀▀▀▜▖    ▝▀▀▀▀▀▀▙    ▀█▛▀▀    █▛▀▀▀▀▜▄[/]\n" +
 	"[#e6f5fb]█▌     █           ▐█▄▄▄▄▄▄█   [/][#f50325]▐   [/][#e6f5fb]█▌     ▐█    ▄▄▄▄▄▄▄█▌    █▌      █▌    ▐█[/]\n" +
 	"[#e6f5fb]█▌     █▄          ▐▙▖         [/][#f50325]▐   [/][#e6f5fb]█▌     ▟▛   ▐▙      █▌    ▜▙      █▌    ▐█[/]\n" +
 	"[#e6f5fb]▀▘      ▀▀▀▀▀▀▀     ▝▀▀▀▀▀▀▘   [/][#f50325]▐   [/][#e6f5fb]▀▀▀▀▀▀▀▘     ▀▀▀▀▀▀▀▀      ▀▀▀    ▀▘    ▝▀[/]"
 
-const icebathHero = "[#e6f5fb]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
+// Hero is the stacked ICE over BATH mark in braille, 30 cells by 15 rows, in the same two inks
+const Hero = "[#e6f5fb]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
 	"[#e6f5fb]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
 	"[#f50325]⣤⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
 	"[#f50325]⠿⠿⠀⠀⠀[/][#e6f5fb]⣀⡀⠀⣀⡀⠀⠀⠀⠀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +

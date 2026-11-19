@@ -423,3 +423,8 @@ func TestPKCEConfigValidationAndTokenFields(t *testing.T) {
 		t.Fatal("usable")
 	}
 }
+
+// PKCEProviderProfileHooks are the auth handler and refresh hooks a plugin registers for its provider
+func PKCEProviderProfileHooks(cfg OAuthPKCEConfig) ProviderProfileHooks {
+	return ProviderProfileHooks{AuthHandler: PKCEAuthHandler(cfg), RefreshCredential: PKCERefreshCredential(cfg)}
+}

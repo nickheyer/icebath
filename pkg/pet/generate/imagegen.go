@@ -99,27 +99,6 @@ func ResolveProvider(ctx context.Context, env *tools.Env, requireReferences bool
 		"OpenRouter or OpenAI (gpt-image-2) with an API key."}
 }
 
-// Configured reference capable providers with their label and default flag, in preference order
-func ListSpriteProviders(ctx context.Context, env *tools.Env) []map[string]any {
-	discoverImagePlugins(ctx)
-	defaultName := ""
-	if sp, err := ResolveProvider(ctx, env, true, ""); err == nil {
-		defaultName = sp.Name
-	}
-	out := []map[string]any{}
-	for _, name := range refCapable {
-		if availableProvider(ctx, name) == nil {
-			continue
-		}
-		label, ok := providerLabels[name]
-		if !ok {
-			label = name
-		}
-		out = append(out, map[string]any{"name": name, "label": label, "default": name == defaultName})
-	}
-	return out
-}
-
 // Local path of an image reference, downloading a URL first
 func saveLocal(ctx context.Context, env *tools.Env, ref, prefix string) (string, error) {
 	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {

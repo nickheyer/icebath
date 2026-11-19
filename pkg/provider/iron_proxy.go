@@ -546,8 +546,6 @@ func (p IronProxy) detectDockerBridgeIP() string {
 	return addr.String()
 }
 
-func isReservedV4(addr netip.Addr) bool { return pyipaddress.IsReserved(addr) }
-
 // IronProxyConfigOptions parameterize the generated proxy.yaml
 type IronProxyConfigOptions struct {
 	Mappings          []TokenMapping
@@ -1358,16 +1356,6 @@ func tailLog(path string, lines int) string {
 		all = all[len(all)-lines:]
 	}
 	return strings.Join(all, "\n")
-}
-
-// ResetIronProxyForTests clears the version cache and the start nonce
-func ResetIronProxyForTests() {
-	ironVersionMu.Lock()
-	ironVersionCache = map[string]string{}
-	ironVersionMu.Unlock()
-	ironNonceMu.Lock()
-	ironProxyNonce = ""
-	ironNonceMu.Unlock()
 }
 
 func ironErrText(res ironRunResult) string {

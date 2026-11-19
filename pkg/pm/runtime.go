@@ -317,15 +317,6 @@ func touchFile(path string) error {
 	return os.Chtimes(path, now, now)
 }
 
-// Pins the runtime generation an interpreter prefix belongs to so the collector leaves it alone
-func LeaseCurrentRuntime(prefix string) error {
-	if !IsRuntimePrefix(prefix) {
-		return nil
-	}
-	_, err := LeaseDirectory(prefix)
-	return err
-}
-
 // Removes runtime generations nothing can run from, skipping while a stage holds the prepare lock
 func managedCollectRuntimeGenerations(root string) ([]string, error) {
 	generations := filepath.Join(root, "generations")
@@ -436,17 +427,4 @@ func RuntimeCommand(ctx context.Context, script string, args []string, opts Runt
 	launcher := "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); " +
 		"script=sys.argv.pop(1); sys.argv[0]=script; runpy.run_path(script,run_name='__main__')"
 	return append([]string{resident.Python, "-I", "-S", "-B", "-c", launcher, resident.SitePackages, script}, args...), nil
-}
-
-// Runs a script in the isolated runtime with inherited stdio and returns its exit code
-func RunRuntimeScript(ctx context.Context, script string, argv []string, opts RuntimeOptions) (int, error) {
-	command, err := RuntimeCommand(ctx, script, argv, opts)
-	if err != nil {
-		return 0, err
-	}
-	env, err := RuntimeEnvironment(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return (&Runner{Name: "pm-runtime", Env: env}).Run(ctx, command[0], command[1:]...)
 }

@@ -133,13 +133,6 @@ func warnOncePerProvider(providerKey, signature, msg string, args ...any) {
 	pkgLog().Warn(fmt.Sprintf(msg, args...))
 }
 
-// Clears the once per provider warning memory for tests
-func resetProviderNormalizeWarnings() {
-	providerNormalizeWarnedMu.Lock()
-	defer providerNormalizeWarnedMu.Unlock()
-	providerNormalizeWarned = map[string]bool{}
-}
-
 var placeholderTokenRe = regexp.MustCompile(`\{[^}]+\}`)
 
 // First usable URL among base_url, url, and api, with unresolved placeholders accepted unvalidated
@@ -798,17 +791,6 @@ func publishProviderEnvNames(entries []config.NamedEnvVar) {
 	for _, e := range entries {
 		providerEnvNames[e.Name] = true
 	}
-}
-
-// Names config declared before any platform manifest or provider profile entry was added
-func staticDeclaredEnvNames() map[string]bool {
-	providerEnvMu.Lock()
-	defer providerEnvMu.Unlock()
-	out := make(map[string]bool, len(providerEnvStatic))
-	for name := range providerEnvStatic {
-		out[name] = true
-	}
-	return out
 }
 
 // Key env names then the base URL env name, the order the env_vars tuple of the profile lists them

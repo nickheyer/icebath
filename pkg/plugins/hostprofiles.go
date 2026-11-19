@@ -2,12 +2,10 @@ package plugins
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -34,10 +32,6 @@ type HostedProfileCall struct {
 	Field bool
 }
 
-func (p *HostedProfile) String() string {
-	return fmt.Sprintf("<plugin-host profile %s>", errchain.Show(p.Name))
-}
-
 // Runs one overridden method or callable field in the plugin host of the active profile
 func (p *HostedProfile) Call(ctx context.Context, attr string, args []any, kwargs map[string]any) (any, error) {
 	m := GetPluginManager(ctx)
@@ -53,27 +47,6 @@ func (p *HostedProfile) Call(ctx context.Context, attr string, args []any, kwarg
 
 var hostedProfilesMu sync.Mutex
 var hostedProfiles = map[string][]*HostedProfile{}
-
-// Hosted profile proxies of a model provider plugin plus the reason each profile that must load in process cannot be hosted
-func LoadHostedProfiles(ctx context.Context, pluginDir, moduleName string) ([]*HostedProfile, map[string]string, error) {
-	all, err := loadProviderProfiles(ctx, pluginDir, moduleName)
-	if err != nil {
-		return nil, nil, err
-	}
-	inProcess := map[string]string{}
-	hosted := []*HostedProfile{}
-	for _, profile := range all {
-		if profile.InProcess != "" {
-			inProcess[profile.Name] = profile.InProcess
-			continue
-		}
-		hosted = append(hosted, profile)
-	}
-	hostedProfilesMu.Lock()
-	hostedProfiles[pluginDir] = hosted
-	hostedProfilesMu.Unlock()
-	return hosted, inProcess, nil
-}
 
 // Every profile a model provider plugin registers in extraction order, in process ones carrying their reason
 func loadProviderProfiles(ctx context.Context, pluginDir, moduleName string) ([]*HostedProfile, error) {
@@ -122,12 +95,6 @@ func hostedProfileFrom(pluginDir, moduleName string, entry map[string]any) (*Hos
 		p.Calls[attr] = HostedProfileCall{Async: config.PyTruthy(meta["async"]), Sig: signatureFrom(meta["sig"]), Field: config.PyTruthy(meta["field"])}
 	}
 	return p, nil
-}
-
-// Reports whether a profile value is a hosted proxy whose code runs in the plugin host
-func IsHostedProfile(profile any) bool {
-	_, ok := profile.(*HostedProfile)
-	return ok
 }
 
 // Env var names of every hosted profile that reads ambient credentials

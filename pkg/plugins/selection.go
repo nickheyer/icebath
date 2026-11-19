@@ -111,9 +111,6 @@ func UnknownPluginMessage(name string, downloadedOnly bool) string {
 	return unknownPluginMessage(name, downloadedOnly)
 }
 
-// Frozen old updater entry that stops for relaunch instead of writing a raw plugin selection
-func saveEnabledSet(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
 // Removes a key and its bare leaf from a name set
 func discardKeyAndLeaf(names map[string]bool, key string) {
 	delete(names, key)

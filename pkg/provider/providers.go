@@ -393,11 +393,6 @@ func GetProviderLabel(ctx context.Context, providerID string) string {
 	return canonical
 }
 
-// IsAggregator reports whether the provider is a multi model aggregator or a named custom endpoint
-func IsAggregator(providerName string) bool {
-	return isAggregatorCtx(context.Background(), providerName)
-}
-
 func isAggregatorCtx(ctx context.Context, providerName string) bool {
 	norm := NormalizeProviderDef(ctx, providerName)
 	if strings.HasPrefix(norm, "custom:") {
@@ -418,11 +413,6 @@ func isRoutingAggregatorCtx(ctx context.Context, providerName string) bool {
 		return false
 	}
 	return isAggregatorCtx(ctx, norm)
-}
-
-// DetermineMode picks the wire from the host mandate, then the provider transport
-func DetermineMode(providerName, baseURL, model string) APIMode {
-	return determineModeCtx(context.Background(), providerName, baseURL, model)
 }
 
 func determineModeCtx(ctx context.Context, providerName, baseURL, model string) APIMode {

@@ -111,13 +111,6 @@ func (r *homeScopedRegistry) rawGet(key string) *Profile {
 	return r.rows[key]
 }
 
-func (r *homeScopedRegistry) rawContains(key string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	_, ok := r.rows[key]
-	return ok
-}
-
 // Stores a row under key, a new key appended and an existing one keeping its place
 func (r *homeScopedRegistry) set(key string, row *Profile) {
 	r.mu.Lock()

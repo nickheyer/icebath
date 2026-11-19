@@ -191,3 +191,10 @@ func TestTransportAndAuxiliaryShareOneRejectionMemo(t *testing.T) {
 		t.Fatalf("an unparseable base URL raises as urlparse does, got %v", err)
 	}
 }
+
+// Drops every remembered response format rejection as a fresh process starts
+func auxResetStructuredOutputRejections() {
+	auxRejectedRoutesMu.Lock()
+	auxRejectedRoutes = map[auxRejectedRoute]bool{}
+	auxRejectedRoutesMu.Unlock()
+}

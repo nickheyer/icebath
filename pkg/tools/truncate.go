@@ -88,13 +88,6 @@ func ToolOutputLimits(env *Env) OutputLimits {
 	return limits
 }
 
-// Drops the cached limits for tests or after a config hot reload
-func ResetToolOutputLimitsCache() {
-	outputLimitsMu.Lock()
-	defer outputLimitsMu.Unlock()
-	outputLimitsCache = map[string]OutputLimits{}
-}
-
 // Formats an integer with thousands separators the way Python {n:,} does
 func commaInt(n int) string {
 	s := strconv.Itoa(n)

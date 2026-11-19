@@ -128,7 +128,7 @@ func (a *TelegramAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, 
 		if def != "" {
 			hint = tr(ctx, "platform.telegram.prompt.default_hint", "default", def)
 		}
-		text := a.FormatMessage(fmt.Sprintf("☤ *%s*\n\n%s%s", tr(ctx, "platform.telegram.prompt.update_header"), prompt, hint))
+		text := a.FormatMessage(fmt.Sprintf("❆ *%s*\n\n%s%s", tr(ctx, "platform.telegram.prompt.update_header"), prompt, hint))
 		keyboard := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
 			button(tr(ctx, "platform.telegram.prompt.affirm"), "update_prompt:y"), button(tr(ctx, "platform.telegram.prompt.negate"), "update_prompt:n")}}}
 		return builtPrompt{text: text, keyboard: keyboard}, nil
@@ -1108,7 +1108,7 @@ func (a *TelegramAdapter) handleUpdatePromptCallback(ctx context.Context, q call
 	if answer == "y" {
 		wordKey = "platform.telegram.prompt.affirm_word"
 	}
-	a.editMDQuiet(ctx, q, "☤ "+tr(ctx, "platform.telegram.prompt.update_answered", "answer", "*"+tr(ctx, wordKey)+"*"))
+	a.editMDQuiet(ctx, q, "❆ "+tr(ctx, "platform.telegram.prompt.update_answered", "answer", "*"+tr(ctx, wordKey)+"*"))
 	responsePath := filepath.Join(home.Dir(ctx), ".update_response")
 	tmp := strings.TrimSuffix(responsePath, filepath.Ext(responsePath)) + ".tmp"
 	writeErr := os.WriteFile(tmp, []byte(answer), 0o644)

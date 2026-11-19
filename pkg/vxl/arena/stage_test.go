@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/vxl"
 )
@@ -340,5 +341,12 @@ func TestStageCalmsOnlyWhenStill(t *testing.T) {
 	st.render(now.Add(99 * time.Millisecond))
 	if st.out.Moved() == 0 || st.rate() != 30 {
 		t.Fatalf("rate %v once the floor moved again by %d pixels", st.rate(), st.out.Moved())
+	}
+}
+
+// Jumps every spring of the camera to its target
+func (c *camRig) snap() {
+	for _, v := range []*anim.Value{&c.tx, &c.ty, &c.tz, &c.yaw, &c.pitch, &c.dist} {
+		v.Snap()
 	}
 }

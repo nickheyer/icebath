@@ -140,11 +140,6 @@ func RecordRestartInterruptedBoot(ctx context.Context, windowSeconds int, now *f
 	return boots, nil
 }
 
-// Removes the persisted boot log
-func ClearRestartLoopGuard(ctx context.Context) {
-	_ = os.Remove(restartLoopStatePath(ctx))
-}
-
 // Records this boot and reports whether the chain reached the restart limit so auto resume is skipped
 func RestartLoopCheckAndRecord(ctx context.Context, maxRestarts, windowSeconds int, now *float64, maxGapSeconds int) (bool, error) {
 	boots, err := RecordRestartInterruptedBoot(ctx, windowSeconds, now, maxGapSeconds)

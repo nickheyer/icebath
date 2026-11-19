@@ -763,12 +763,6 @@ func NormalizeUsage(responseUsage any, provider, apiMode string) CanonicalUsage 
 		ReasoningTokens: reasoning, RequestCount: 1, RawUsage: raw}
 }
 
-// CanonicalUsageFromUsage converts the wire Usage struct into the billing buckets
-func CanonicalUsageFromUsage(u Usage) CanonicalUsage {
-	return CanonicalUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CacheReadTokens: u.CacheReadTokens,
-		CacheWriteTokens: u.CacheWriteTokens, ReasoningTokens: u.ReasoningTokens, RequestCount: 1}
-}
-
 func unknownCost(source string, notes ...string) CostResult {
 	return CostResult{Status: "unknown", Source: source, Label: "n/a", Notes: notes}
 }
@@ -1605,16 +1599,6 @@ func fetchDeepinfraPricing(timeout time.Duration, forceRefresh bool) PricingTabl
 		}
 	}
 	return result
-}
-
-// ResetPricingCache drops every cached catalog, deadline and provider key
-func ResetPricingCache() {
-	pricingCacheMu.Lock()
-	defer pricingCacheMu.Unlock()
-	pricingCache = map[string]PricingTable{}
-	pricingCacheOrder = nil
-	pricingCacheRetryAfter = map[string]time.Time{}
-	pricingProviderCacheKey = map[[2]string]string{}
 }
 
 // ---- plan limits and credits tracker reads ----

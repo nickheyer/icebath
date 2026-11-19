@@ -188,3 +188,8 @@ func TestGatewayGitProbeIsSafe(t *testing.T) {
 		t.Fatalf("fired %v", fired)
 	}
 }
+
+// GitProbeRunGit runs one bounded git probe in cwd for the TUI gateway
+func GitProbeRunGit(cwd string, args ...string) string {
+	return tuiRunGit(cwd, args...)
+}

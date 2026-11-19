@@ -39,21 +39,6 @@ type ValidationReport struct {
 	Isolation *IsolationReport
 }
 
-// Detail of every failed check, its name when the detail is empty
-func (r *ValidationReport) Failures() []string {
-	out := []string{}
-	for _, c := range r.Checks {
-		if !c.OK {
-			if c.Detail != "" {
-				out = append(out, c.Detail)
-			} else {
-				out = append(out, c.Name)
-			}
-		}
-	}
-	return out
-}
-
 // Reports whether every check passed
 func (r *ValidationReport) OK() bool {
 	for _, c := range r.Checks {
@@ -439,10 +424,6 @@ func declaredList(manifest map[string]any, key string) []string {
 		}
 	}
 	return out
-}
-
-func checkBuiltinCollisions(report *ValidationReport, manifest map[string]any) {
-	checkBuiltinCollisionsWith(report, manifest, nil)
 }
 
 // Sorted candidate tool names that a built in tool already holds

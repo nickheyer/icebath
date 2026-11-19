@@ -534,3 +534,28 @@ func TestPluginsShowNotFoundExits(t *testing.T) {
 		t.Fatalf("show of an unknown plugin returned %v", err)
 	}
 }
+
+// Waits until the current event generation is idle, false on timeout
+func (m *Manager) waitForEventDispatch(timeout time.Duration) bool {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	m.eventMu.Lock()
+	generation := m.eventGeneration
+	for {
+		if m.eventPending[generation] == 0 {
+			m.eventMu.Unlock()
+			return true
+		}
+		idle := m.eventIdle
+		m.eventMu.Unlock()
+		select {
+		case <-idle:
+		case <-deadline.C:
+			m.eventMu.Lock()
+			ok := m.eventPending[generation] == 0
+			m.eventMu.Unlock()
+			return ok
+		}
+		m.eventMu.Lock()
+	}
+}

@@ -409,17 +409,3 @@ func extractHTTPStatus(err error) (int, bool) {
 	}
 	return 0, false
 }
-
-// Response body JSON of an error carrying an HTTP response
-func errorResponseJSON(err error) (map[string]any, bool) {
-	var fe *falClientHTTPError
-	if !errors.As(err, &fe) || fe.Response == nil {
-		return nil, false
-	}
-	v, jerr := fe.Response.JSON()
-	if jerr != nil {
-		return nil, false
-	}
-	m, ok := v.(map[string]any)
-	return m, ok
-}

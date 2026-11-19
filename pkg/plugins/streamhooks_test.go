@@ -170,3 +170,17 @@ func TestInterimAndLifecycleHooksQueuedAndConsumerCount(t *testing.T) {
 		t.Fatal("queued with no consumer")
 	}
 }
+
+// Stops every stream hook dispatcher, waiting up to the timeout for each
+func ShutdownPluginStreamHookDispatcher(timeout time.Duration) {
+	streamDispatcherMu.Lock()
+	dispatchers := make([]*consumerDispatcher, 0, len(streamDispatchers))
+	for _, d := range streamDispatchers {
+		dispatchers = append(dispatchers, d)
+	}
+	streamDispatchers = map[streamDispatcherKey]*consumerDispatcher{}
+	streamDispatcherMu.Unlock()
+	for _, d := range dispatchers {
+		stopStreamDispatcher(d, timeout)
+	}
+}

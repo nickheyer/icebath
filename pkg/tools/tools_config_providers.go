@@ -72,16 +72,6 @@ func catalogCategory(tsKey string) *pyjson.Object {
 	return cat
 }
 
-// List membership by equality the way provider in cat["providers"] compares dicts
-func providerIn(provider *pyjson.Object, rows []*pyjson.Object) bool {
-	for _, r := range rows {
-		if pyjson.Equal(provider, r) {
-			return true
-		}
-	}
-	return false
-}
-
 // Membership of a value among members, an error for a list or mapping value
 func pySetContains(v any, members ...any) (bool, error) {
 	switch v.(type) {

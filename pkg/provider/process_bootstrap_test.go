@@ -652,3 +652,18 @@ func TestInstallSafeStdioIgnoresBrokenPipeSignals(t *testing.T) {
 		t.Fatal("SIGPIPE is still delivered after InstallSafeStdio")
 	}
 }
+
+// Really closes every process shared transport and reports how many there were
+func closeSharedTransports() int {
+	sharedTransportsMu.Lock()
+	transports := make([]*keepaliveTransport, 0, len(sharedTransports))
+	for _, t := range sharedTransports {
+		transports = append(transports, t)
+	}
+	sharedTransports = map[sharedTransportKey]*keepaliveTransport{}
+	sharedTransportsMu.Unlock()
+	for _, t := range transports {
+		t.transport.CloseIdleConnections()
+	}
+	return len(transports)
+}

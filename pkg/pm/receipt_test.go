@@ -542,3 +542,11 @@ func TestReceiptWorkerReceiptIsAttributedOnlyToItsInvokingUpdate(t *testing.T) {
 		t.Fatalf("mismatched correlation accepted with %v", err)
 	}
 }
+
+// Deep copy of the in flight receipt, nil when nothing was begun
+func ReceiptSnapshot(ctx context.Context) map[string]any {
+	s := scopeOf(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return receiptPlain(s.current)
+}

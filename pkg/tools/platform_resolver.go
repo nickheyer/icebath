@@ -54,19 +54,6 @@ type resolverProbe struct {
 	Endpoint  observation[string]
 }
 
-type platformResolver interface {
-	Name() string
-	Locate(ctx *commandLookupContext) commandResolution
-	Inspect(res commandResolution, ctx *commandLookupContext) resolverInspection
-}
-
-type platformProbeable interface {
-	platformResolver
-	Probe(res commandResolution, effort ResolverEffort, deadline float64) (resolverProbe, error)
-}
-
-var _ platformProbeable = PlatformAppResolver{}
-
 var platformLoopbackHosts = []string{"127.0.0.1", "localhost", "::1", "[::1]"}
 
 // PlatformAppLocation is one place to look, a path or a location kind value with an install relative file
@@ -92,13 +79,6 @@ type PlatformAppDef struct {
 	EndpointPath     string
 }
 
-// Definition with the dataclass defaults for every optional field
-func NewPlatformAppDef(appID, osFamily, presence string, locations ...PlatformAppLocation) PlatformAppDef {
-	return PlatformAppDef{AppID: appID, OSFamily: osFamily, Presence: presence, Locations: locations,
-		VersionKind: "none", LivenessKind: "none", LivenessPIDKey: "pid", LivenessURLKey: "http",
-		LivenessTokenKey: "token", EndpointPath: "/mcp"}
-}
-
 func platformExpand(path string) string { return osPathExpandVars(osPathExpandUser(path)) }
 
 // PlatformEndpoint is a validated runtime endpoint whose token never prints
@@ -115,8 +95,6 @@ func (e PlatformEndpoint) GoString() string { return e.String() }
 
 // PlatformAppResolver resolves a desktop application declared by a PlatformAppDef
 type PlatformAppResolver struct{ Definition PlatformAppDef }
-
-func (r PlatformAppResolver) Name() string { return r.Definition.AppID }
 
 // Stats every declared location in order, the first present hit setting the resolution kind
 func (r PlatformAppResolver) Locate(ctx *commandLookupContext) commandResolution {

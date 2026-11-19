@@ -209,21 +209,6 @@ type PluginSystemExit struct{ CodeRepr string }
 
 func (e *PluginSystemExit) Error() string { return "SystemExit(" + e.CodeRepr + ")" }
 
-// Hosted import failure as an in-process load raises it, SystemExit caught by code and KeyboardInterrupt propagating
-func inProcessLoadFailure(ctx context.Context, err error) error {
-	var remote *PluginHostError
-	if !errors.As(err, &remote) || IsolationMode(ctx, nil) == IsolationHost {
-		return err
-	}
-	switch remote.TypeName {
-	case "SystemExit":
-		return &PluginSystemExit{CodeRepr: remote.ExitCode}
-	case "KeyboardInterrupt":
-		return &UserInterrupt{Err: err}
-	}
-	return err
-}
-
 // Why this icebath is not one the plugin accepts, empty when it fits
 func icebathFitError(mf *Manifest) string {
 	if reason := RequiresVersionError(mf.RequiresIcebath); reason != "" {

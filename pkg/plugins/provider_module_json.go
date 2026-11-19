@@ -178,12 +178,3 @@ func (h *PluginHost) ProviderModuleJSONCall(ctx context.Context, pluginDir, modu
 	}
 	return out, true, nil
 }
-
-// Calls a provider module function with JSON text arguments in the plugin host of the context home
-func ProviderModuleJSONCall(ctx context.Context, pluginDir, moduleName, submodule, function, argsJSON string, pathArgs []int, require []string, track [][]any) (*ProviderModuleJSONResult, bool, error) {
-	host, err := GetPluginManager(ctx).pluginHost()
-	if err != nil {
-		return nil, false, err
-	}
-	return host.ProviderModuleJSONCall(ctx, pluginDir, moduleName, submodule, function, argsJSON, pathArgs, require, track)
-}

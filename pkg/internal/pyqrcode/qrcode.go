@@ -875,9 +875,6 @@ func (c *Code) mapData(data []int, mask int) {
 	}
 }
 
-// Fitted symbol version
-func (c *Code) Version() int { return c.version }
-
 // Half block art of the symbol with its border, the output of print_ascii without a tty
 func (c *Code) PrintASCII(invert bool) string {
 	codes := []string{" ", "▀", "▄", "█"}

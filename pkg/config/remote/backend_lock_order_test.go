@@ -83,9 +83,9 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 		return original(ctx, method, profile, etag, body, token)
 	}
 	t.Cleanup(func() { request = original })
-	p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
+	p.Upper = map[string]any{"display": map[string]any{"skin": "taro"}}
 	doc, err := b.ReadUserDoc(context.Background(), h)
-	if err != nil || doc.(map[string]any)["display"].(map[string]any)["skin"] != "ares" {
+	if err != nil || doc.(map[string]any)["display"].(map[string]any)["skin"] != "taro" {
 		t.Fatalf("read %v %v", doc, err)
 	}
 	if len(reentries) != 2 {
@@ -190,17 +190,17 @@ func TestNothingIsLoggedUnderABackendLock(t *testing.T) {
 // A set equal to the inherited value is stored at the profile level and outlives an upper change
 func TestSetEqualToInheritedValueIsStoredAndSurvivesAnUpperChange(t *testing.T) {
 	p := setupPlane(t)
-	p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
-	if err := setValue(p, "display.skin", "ares"); err != nil {
+	p.Upper = map[string]any{"display": map[string]any{"skin": "taro"}}
+	if err := setValue(p, "display.skin", "taro"); err != nil {
 		t.Fatal(err)
 	}
-	mustEqualJSON(t, "values", profileValues(p, "default"), map[string]any{"display": map[string]any{"skin": "ares"}})
+	mustEqualJSON(t, "values", profileValues(p, "default"), map[string]any{"display": map[string]any{"skin": "taro"}})
 	p.Mu.Lock()
-	p.Upper = map[string]any{"display": map[string]any{"skin": "slate"}}
+	p.Upper = map[string]any{"display": map[string]any{"skin": "dracula"}}
 	p.Mu.Unlock()
 	ResetForTests()
 	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.Home, "config.yaml"))
-	if err != nil || doc.(map[string]any)["display"].(map[string]any)["skin"] != "ares" {
+	if err != nil || doc.(map[string]any)["display"].(map[string]any)["skin"] != "taro" {
 		t.Fatalf("read %v %v", doc, err)
 	}
 }

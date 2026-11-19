@@ -291,7 +291,7 @@ func ShowConfig(out io.Writer, src ShowSources) error {
 	cfg := src.Config
 	p.line("")
 	p.line("%s", colorize("┌─────────────────────────────────────────────────────────┐", ColorCyan))
-	p.line("%s", colorize("│              ☤ Icebath Configuration                   │", ColorCyan))
+	p.line("%s", colorize("│              󰆧 Icebath Configuration                    │", ColorCyan))
 	p.line("%s", colorize("└─────────────────────────────────────────────────────────┘", ColorCyan))
 	p.managedBanner()
 	p.section("Paths")

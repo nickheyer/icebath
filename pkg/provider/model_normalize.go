@@ -40,17 +40,6 @@ var (
 	modelIDNormalizers   = map[string]ModelIDNormalizer{}
 )
 
-// RegisterModelIDNormalizer installs a profile owned id repair for one canonical provider
-func RegisterModelIDNormalizer(provider string, fn ModelIDNormalizer) {
-	modelIDNormalizersMu.Lock()
-	defer modelIDNormalizersMu.Unlock()
-	if fn == nil {
-		delete(modelIDNormalizers, provider)
-		return
-	}
-	modelIDNormalizers[provider] = fn
-}
-
 // Native id from the provider profile hook, empty when no hook exists or it declines
 func profileNormalizeModelID(ctx context.Context, provider, model string) (out string) {
 	modelIDNormalizersMu.RLock()

@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 // Palette of the TUI, every slot a hex, rgb or ansi256 tone
@@ -109,7 +111,6 @@ func (c *themeColors) slot(key string) *string {
 // Agent identity the TUI shows
 type themeBrand struct {
 	Name       string `json:"name"`
-	Icon       string `json:"icon"`
 	Prompt     string `json:"prompt"`
 	Welcome    string `json:"welcome"`
 	Goodbye    string `json:"goodbye"`
@@ -117,8 +118,11 @@ type themeBrand struct {
 	HelpHeader string `json:"helpHeader"`
 }
 
-// Palette, brand and banner art of the TUI
+// Palette, brand and banner art of the TUI, with the skin they came from
 type theme struct {
+	// Name of the skin and whether icebath ships it unmodified, a built in one painting with its own toolkit theme
+	Skin       string      `json:"skin"`
+	Builtin    bool        `json:"builtin"`
 	Color      themeColors `json:"color"`
 	Brand      themeBrand  `json:"brand"`
 	BannerLogo string      `json:"bannerLogo"`
@@ -394,7 +398,7 @@ func themeToneHex(tone string) string {
 	return ""
 }
 
-var defaultBrand = themeBrand{Name: "Icebath Agent", Icon: "☤", Prompt: "❯", Welcome: "Type your message or /help for commands.", Goodbye: "Goodbye! ☤", Tool: "┊", HelpHeader: "(^_^)? Commands"}
+var defaultBrand = themeBrand{Name: "Icebath Agent", Prompt: "$", Welcome: "Type your message or /help for commands.", Goodbye: "Goodbye! 󰆧", Tool: "┊", HelpHeader: "❆ Commands"}
 
 var jsWhitespaceRun = regexp.MustCompile(`[` + jsWS + `]+`)
 
@@ -480,10 +484,10 @@ func buildPalette(s themeSeeds, isLight bool) themeColors {
 }
 
 var (
-	darkSeeds  = themeSeeds{Accent: "#FFBF00", ActiveRow: "#333355", Bg: "#101014", Border: "#CD7F32", Error: "#ef5350", Ok: "#4caf50", Primary: "#FFD700", Prompt: "#FFF8DC", Selection: "#3a3a55", ShellDollar: "#4dabf7", StatusBad: "#FF8C00", StatusCritical: "#FF6B6B", StatusGood: "#8FBC8F", StatusWarn: "#FFD700", Surface: "#1a1a2e", Text: "#FFF8DC", Warn: "#ffa726"}
-	lightSeeds = themeSeeds{Accent: "#956E00", Bg: "#ffffff", Border: "#A56628", Error: "#C14240", Ok: "#367E39", Primary: "#867000", Prompt: "#2B2014", ShellDollar: "#377BB3", StatusBad: "#A65A00", StatusCritical: "#B94D4D", StatusGood: "#5C7A5C", StatusWarn: "#867000", Text: "#3D2F13", Warn: "#956115"}
-	darkTheme  = theme{Color: buildPalette(darkSeeds, false), Brand: defaultBrand}
-	lightTheme = theme{Color: buildPalette(lightSeeds, true), Brand: defaultBrand}
+	darkSeeds  = themeSeeds{Accent: "#9cc7e8", ActiveRow: "#2a3a4b", Bg: "#05070a", Border: "#3b5169", Error: "#ff4757", Muted: "#6c7f92", Ok: "#7fc7a5", Primary: "#e3122b", Prompt: "#dfe9f2", Selection: "#2a3a4b", ShellDollar: "#9cc7e8", StatusBad: "#e3122b", StatusCritical: "#ff4757", StatusGood: "#7fc7a5", StatusWarn: "#e0b35a", Surface: "#0a0e13", Text: "#dfe9f2", Warn: "#e0b35a"}
+	lightSeeds = themeSeeds{Accent: "#2f6f9f", ActiveRow: "#b3bfcc", Bg: "#eef1f5", Border: "#7d93a9", Error: "#d12f3f", Muted: "#647081", Ok: "#2e8b63", Primary: "#c8102e", Prompt: "#141c26", Selection: "#b3bfcc", ShellDollar: "#2f6f9f", StatusBad: "#c8102e", StatusCritical: "#d12f3f", StatusGood: "#2e8b63", StatusWarn: "#9a6b00", Surface: "#fafbfd", Text: "#141c26", Warn: "#9a6b00"}
+	darkTheme  = theme{Skin: uitheme.DefaultName, Builtin: true, Color: buildPalette(darkSeeds, false), Brand: defaultBrand}
+	lightTheme = theme{Skin: uitheme.DefaultName, Builtin: true, Color: buildPalette(lightSeeds, true), Brand: defaultBrand}
 )
 
 const (
@@ -559,9 +563,9 @@ func referenceBackground(isLight bool, env func(string) string) string {
 		return "#" + cached
 	}
 	if isLight {
-		return "#ffffff"
+		return lightSeeds.Bg
 	}
-	return "#101014"
+	return darkSeeds.Bg
 }
 
 var lightDefaultTermPrograms = map[string]bool{"Apple_Terminal": true}

@@ -408,3 +408,8 @@ func TestAuxInterruptProtectionNestedProtectionPreservesExplicitCancelCheck(t *t
 		t.Fatal("outside every scope no cancel is requested")
 	}
 }
+
+// AuxStreamDeadlineAt is a fixed host deadline
+func AuxStreamDeadlineAt(deadline time.Time) AuxStreamDeadlineFunc {
+	return func() (time.Time, bool) { return deadline, true }
+}

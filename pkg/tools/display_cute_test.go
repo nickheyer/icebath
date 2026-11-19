@@ -449,8 +449,15 @@ func TestARealToolErrorIsStillAFailure(t *testing.T) {
 
 func TestDisplayIntegrationToolMessageUsesSkinPrefix(t *testing.T) {
 	ctx := cuteTestHome(t)
+	skins := filepath.Join(os.Getenv("ICEBATH_HOME"), "skins")
+	if err := os.MkdirAll(skins, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skins, "dashed.yaml"), []byte("name: dashed\ntool_prefix: \"\u254e\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	prev := config.GetActiveSkinName(ctx)
-	config.SetActiveSkin(ctx, "ares")
+	config.SetActiveSkin(ctx, "dashed")
 	t.Cleanup(func() { config.SetActiveSkin(ctx, prev) })
 	msg := cuteLine(ctx, "terminal", map[string]any{"command": "ls"}, 0.5, nil)
 	if !strings.HasPrefix(msg, "╎") || strings.Contains(msg, "┊") {

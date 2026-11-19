@@ -46,7 +46,7 @@ func describeReply(t *testing.T, ctx context.Context, a *SessionAuthority) map[s
 
 func TestRuntimeDescribeCarriesTheProfilesResolvedSkin(t *testing.T) {
 	ctx, a := newDescribeAuthority(t)
-	if err := os.WriteFile(filepath.Join(a.ProfileID, "config.yaml"), []byte("display:\n  skin: ares\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(a.ProfileID, "config.yaml"), []byte("display:\n  skin: taro\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	described := describeReply(t, ctx, a)
@@ -55,7 +55,7 @@ func TestRuntimeDescribeCarriesTheProfilesResolvedSkin(t *testing.T) {
 		t.Fatalf("no result in %v", described)
 	}
 	skin, _ := result["skin"].(map[string]any)
-	if skin["name"] != "ares" {
+	if skin["name"] != "taro" {
 		t.Fatalf("skin %v", skin["name"])
 	}
 	if colors, _ := skin["colors"].(map[string]any); len(colors) == 0 {

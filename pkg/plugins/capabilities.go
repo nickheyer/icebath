@@ -266,12 +266,3 @@ func truthy(v any) bool {
 	}
 	return false
 }
-
-// Human readable capability line for a consent screen
-func capabilityLine(id string) string {
-	spec, ok := CapabilityRegistry[id]
-	if !ok {
-		return id
-	}
-	return fmt.Sprintf("%s — %s", id, spec.Description)
-}

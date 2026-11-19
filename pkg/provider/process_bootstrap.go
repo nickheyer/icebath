@@ -375,21 +375,6 @@ func getSharedTransport(key sharedTransportKey, build func() *keepaliveTransport
 	return t
 }
 
-// Really closes every process shared transport and reports how many there were
-func closeSharedTransports() int {
-	sharedTransportsMu.Lock()
-	transports := make([]*keepaliveTransport, 0, len(sharedTransports))
-	for _, t := range sharedTransports {
-		transports = append(transports, t)
-	}
-	sharedTransports = map[sharedTransportKey]*keepaliveTransport{}
-	sharedTransportsMu.Unlock()
-	for _, t := range transports {
-		t.transport.CloseIdleConnections()
-	}
-	return len(transports)
-}
-
 // Per client view of a shared transport that absorbs close and tracks its own in flight connections
 type sharedTransportView struct {
 	inner    *keepaliveTransport

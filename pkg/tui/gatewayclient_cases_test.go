@@ -86,10 +86,10 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 	})
 	t.Run("boots the owner's profile skin: runtime.describe.skin rides the client-local ready (row 3)", func(t *testing.T) {
 		_, _, _, rec, s := startLocal(t, nil)
-		describe(t, s, `{"session_create":{"sources":["tui"],"parameters":["source","request_id"]},"skin":{"name":"ares","colors":{"banner_title":"#C7A96B"},"branding":{"prompt_symbol":"⚔"}}}`)
+		describe(t, s, `{"session_create":{"sources":["tui"],"parameters":["source","request_id"]},"skin":{"name":"taro","colors":{"banner_title":"#C7A96B"},"branding":{"prompt_symbol":"⚔"}}}`)
 		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
 		skin := rec.events("gateway.ready")[0].Payload["skin"]
-		want := map[string]any{"name": "ares", "colors": map[string]any{"banner_title": "#C7A96B"}, "branding": map[string]any{"prompt_symbol": "⚔"}}
+		want := map[string]any{"name": "taro", "colors": map[string]any{"banner_title": "#C7A96B"}, "branding": map[string]any{"prompt_symbol": "⚔"}}
 		if !reflect.DeepEqual(skin, want) {
 			t.Fatalf("skin %#v", skin)
 		}
@@ -252,14 +252,14 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		c, _, _, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
 		rec := &recorder{}
 		c.attach(rec.send)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"skin":{"name":"mono"},"session_authority":true}}}`)
+		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"skin":{"name":"contrast"},"session_authority":true}}}`)
 		eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
 		if len(rec.events("gateway.ready")) != 0 {
 			t.Fatal("ready before discovery")
 		}
 		describe(t, s, `{"session_create":{"sources":["tui"],"parameters":["source","request_id","model"]}}`)
 		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
-		if skin := rec.events("gateway.ready")[0].Payload["skin"]; !reflect.DeepEqual(skin, map[string]any{"name": "mono"}) {
+		if skin := rec.events("gateway.ready")[0].Payload["skin"]; !reflect.DeepEqual(skin, map[string]any{"name": "contrast"}) {
 			t.Fatalf("skin %v", skin)
 		}
 		c.mu.Lock()

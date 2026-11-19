@@ -116,12 +116,6 @@ type HardwareBudget struct {
 	CommitRoomBytes   *int64
 }
 
-// Budget with lazy reads on and every optional field at its default
-func NewHardwareBudget(usableVRAM, totalDevice, ramAvailable int64) HardwareBudget {
-	return HardwareBudget{UsableVRAMBytes: usableVRAM, TotalDeviceBytes: totalDevice,
-		RAMAvailableBytes: ramAvailable, LazyReads: true}
-}
-
 // Profile as this machine loads it, on demand tensors counted as weights where read up front
 func AsLoaded(profile ModelProfile, budget HardwareBudget) ModelProfile {
 	if profile.LazyBytes != 0 && !budget.LazyReads {

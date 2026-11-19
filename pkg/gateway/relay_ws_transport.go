@@ -709,14 +709,6 @@ func (t *WebSocketRelayTransport) DescriptorForPlatform(platform string) any {
 	return nil
 }
 
-// Negotiated descriptor of one fronted platform
-func (t *WebSocketRelayTransport) descriptorFor(platform string) (CapabilityDescriptor, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	d, ok := t.byPlatform[platform]
-	return d, ok
-}
-
 // True once the connector closed 4401 against a fresh token after a successful handshake
 func (t *WebSocketRelayTransport) AuthRevoked() bool {
 	t.mu.Lock()

@@ -69,11 +69,6 @@ func ScopedRuntimeMain(ctx context.Context, mainRuntime map[string]any) (context
 	return context.WithValue(ctx, auxRuntimeMainKey{}, runtime), runtime
 }
 
-// Drops the runtime binding under the returned context
-func ClearRuntimeMain(ctx context.Context) context.Context {
-	return context.WithValue(ctx, auxRuntimeMainKey{}, map[string]any(nil))
-}
-
 // Main runtime fields and the context only fields a binding carries
 var (
 	auxMainRuntimeFields        = []string{"provider", "model", "base_url", "api_key", "api_mode", "auth_mode"}

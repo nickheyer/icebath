@@ -212,13 +212,6 @@ func RememberTemperatureRejection(provider, baseURL string, rejectedKwargs map[s
 	return nil
 }
 
-// Forgets every remembered temperature rejection as a fresh process starts
-func auxResetTemperatureRejections() {
-	auxTemperatureRejectedMu.Lock()
-	auxTemperatureRejectedRoutes = map[auxTemperatureRoute]bool{}
-	auxTemperatureRejectedMu.Unlock()
-}
-
 // Temperature policy as omit, a fixed value, or neither when the caller's value stands
 func auxFixedTemperatureForModel(model, baseURL, provider string) (omit bool, fixed *float64, err error) {
 	if isKimiModel(model) {

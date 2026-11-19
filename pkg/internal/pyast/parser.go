@@ -256,18 +256,6 @@ func (p *parser) lineText(lineno int) string {
 	return string(p.lx.src[s:e])
 }
 
-// Character offset of a one based byte column as _PyPegen_byte_offset_to_character_offset
-func byteToChar(line string, col int) int {
-	b := []byte(line + "\n")
-	if col > len(b)+1 {
-		col = len(b) + 1
-	}
-	if col > len(b) {
-		return charCount(b) + 1
-	}
-	return charCount(b[:max(col, 0)])
-}
-
 const currentPos = -5
 
 // Raises a SyntaxError at zero based byte columns like RAISE_ERROR_KNOWN_LOCATION

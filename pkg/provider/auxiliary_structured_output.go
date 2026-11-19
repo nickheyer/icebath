@@ -115,13 +115,6 @@ func RememberStructuredOutputRejection(provider, baseURL string, rejectedKwargs 
 	return nil
 }
 
-// Drops every remembered response format rejection as a fresh process starts
-func auxResetStructuredOutputRejections() {
-	auxRejectedRoutesMu.Lock()
-	auxRejectedRoutes = map[auxRejectedRoute]bool{}
-	auxRejectedRoutesMu.Unlock()
-}
-
 // Profile or memo verdict on the response format type with the route key the memo uses
 func auxResponseFormatKnownUnsupported(ctx context.Context, provider, baseURL, model string, formatType any) (bool, string, error) {
 	if !pyrepr.Truthy(formatType) {

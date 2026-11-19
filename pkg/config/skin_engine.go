@@ -18,9 +18,14 @@ import (
 //go:embed builtin_skins.json
 var builtinSkinsJSON string
 
+// DefaultSkinName is the built in skin a config without display.skin gets, also reachable as "default"
+const DefaultSkinName = "blackwall"
+
 // Complete skin configuration, every mapping keeping its file or definition key order
 type SkinConfig struct {
-	Name        string
+	Name string
+	// Where the definition came from, builtin or user
+	Source      string
 	Description any
 	Colors      map[string]any
 	LightColors map[string]any
@@ -133,6 +138,9 @@ func BuiltinSkinNames() []string {
 }
 
 func builtinSkin(name string) (map[string]any, bool) {
+	if name == "default" {
+		name = DefaultSkinName
+	}
 	table, _ := builtinSkinTable()
 	skin, ok := table[name].(map[string]any)
 	return skin, ok
@@ -188,8 +196,8 @@ func mergeOrdered(a, b map[string]any) map[string]any {
 }
 
 // Skin config from a built in or user mapping, the default skin filling missing colors, spinner and branding
-func buildSkinConfig(data map[string]any) *SkinConfig {
-	def, _ := builtinSkin("default")
+func buildSkinConfig(data map[string]any, source string) *SkinConfig {
+	def, _ := builtinSkin(DefaultSkinName)
 	name := PyStr(getOr(data, "name", "unknown"))
 	section := func(key string) map[string]any {
 		value, present := data[key]
@@ -210,7 +218,7 @@ func buildSkinConfig(data map[string]any) *SkinConfig {
 		css = css[:32768]
 	}
 	return &SkinConfig{
-		Name: name, Description: getOr(data, "description", ""), Colors: merged("colors"),
+		Name: name, Source: source, Description: getOr(data, "description", ""), Colors: merged("colors"),
 		LightColors: section("light_colors"), DarkColors: section("dark_colors"),
 		Spinner: merged("spinner"), Branding: merged("branding"),
 		ToolPrefix: getOr(data, "tool_prefix", getOr(def, "tool_prefix", "┊")),
@@ -272,12 +280,12 @@ func LoadSkin(ctx context.Context, name string) *SkinConfig {
 	}
 	switch {
 	case len(data) > 0:
-		return buildSkinConfig(data)
+		return buildSkinConfig(data, "user")
 	case isBuiltin:
-		return buildSkinConfig(builtin)
+		return buildSkinConfig(builtin, "builtin")
 	}
-	def, _ := builtinSkin("default")
-	return buildSkinConfig(def)
+	def, _ := builtinSkin(DefaultSkinName)
+	return buildSkinConfig(def, "builtin")
 }
 
 // Active skin of the routed home or the process, initialized from the profile config on first use

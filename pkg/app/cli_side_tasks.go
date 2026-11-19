@@ -54,11 +54,11 @@ func (c *CLI) printSideResultPanel(headerLines []string, body, titleSuffix, empt
 		}
 		return
 	}
-	label, respColor, respText := "☤ Icebath", "#CD7F32", "#FFF8DC"
+	label, respColor, respText := "󰆧 Icebath", "#9cc7e8", "#dfe9f2"
 	if skin := config.GetActiveSkin(c.ctx); skin != nil {
-		label = skin.GetBranding("response_label", "☤ Icebath")
-		respColor = maybeRemapForLightMode(skin.GetColor("response_border", "#CD7F32"))
-		respText = maybeRemapForLightMode(skin.GetColor("banner_text", "#FFF8DC"))
+		label = skin.GetBranding("response_label", "󰆧 Icebath")
+		respColor = maybeRemapForLightMode(skin.GetColor("response_border", "#9cc7e8"))
+		respText = maybeRemapForLightMode(skin.GetColor("banner_text", "#dfe9f2"))
 	}
 	richConsole.PrintPanel(pyrich.Panel{
 		Content: renderFinalAssistantContent(body, c.finalResponseMarkdown), Title: "[" + respColor + " bold]" + label + " " + titleSuffix + "[/]",

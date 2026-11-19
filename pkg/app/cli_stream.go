@@ -562,10 +562,10 @@ func (c *CLI) renderStreamText(text string) {
 		}
 		c.streamBoxOpened = true
 		c.streamBoxLive = true
-		label, textHex := "☤ Icebath", "#FFF8DC"
+		label, textHex := "󰆧 Icebath", "#dfe9f2"
 		if skin := config.GetActiveSkin(c.ctx); skin != nil {
-			label = skin.GetBranding("response_label", "☤ Icebath")
-			textHex = skin.GetColor("banner_text", "#FFF8DC")
+			label = skin.GetBranding("response_label", "󰆧 Icebath")
+			textHex = skin.GetColor("banner_text", "#dfe9f2")
 		}
 		c.streamTextANSI = ""
 		var rgb [3]string

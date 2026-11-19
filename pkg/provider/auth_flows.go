@@ -16,35 +16,6 @@ import (
 
 // ---- status helpers ----
 
-// Symlink resolved absolute form of a store path
-func authStoreKey(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	}
-	if abs, err := filepath.Abs(path); err == nil {
-		return abs
-	}
-	return path
-}
-
-// Active store identity and file version, the version absent for a missing file
-func authFileCacheKey(env PoolEnv) (string, string, bool) {
-	authFile := env.Store.Path()
-	version, err := fileCacheVersion(authFile)
-	if err != nil {
-		return authStoreKey(authFile), "", false
-	}
-	return authStoreKey(authFile), version, true
-}
-
-func copyStatus(status map[string]any) map[string]any {
-	out := make(map[string]any, len(status))
-	for k, v := range status {
-		out[k] = v
-	}
-	return out
-}
-
 // OAuthResolveOptions are the per call knobs an OAuth runtime credential resolver accepts
 type OAuthResolveOptions struct {
 	ForceRefresh        bool

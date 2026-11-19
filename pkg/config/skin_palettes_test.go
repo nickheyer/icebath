@@ -26,21 +26,29 @@ var paletteStrongFG = []string{
 }
 
 var paletteSoftFG = []string{
-	"banner_dim", "banner_border", "ui_warn", "input_rule", "response_border",
-	"status_bar_dim", "status_bar_warn", "session_label", "session_border",
+	"banner_dim", "ui_warn", "response_border", "status_bar_dim", "status_bar_warn", "session_label",
 }
+
+// Frame and rule tones, drawn as lines and never read as text
+var paletteLines = []string{"banner_border", "input_rule", "session_border"}
+
+// Keys a palette may carry beyond the required ones
+var paletteOptionalKeys = []string{"background", "syntax_keyword", "syntax_string", "syntax_number", "syntax_comment"}
 
 var (
 	paletteOnStatusBar = []string{"status_bar_text", "status_bar_strong", "status_bar_dim"}
 	paletteFills       = []string{"status_bar_bg", "completion_menu_bg", "completion_menu_current_bg", "selection_bg", "voice_status_bg"}
-	paletteLightSkins  = []string{"daylight", "warm-lightmode"}
+	paletteLightSkins  = []string{"light"}
+	// Skins whose tones are the terminal's own sixteen colors, which have no fixed luminance to measure
+	paletteTerminalSkins = []string{"plain"}
 )
 
 const (
 	paletteStrongMin = 3.9
 	paletteSoftMin   = 2.8
-	paletteDarkPole  = "#101014"
-	paletteLightPole = "#ffffff"
+	paletteLineMin   = 1.6
+	paletteDarkPole  = "#05070a"
+	paletteLightPole = "#eef1f5"
 )
 
 // WCAG relative luminance of a six digit hex color
@@ -120,16 +128,22 @@ func TestBuiltinBasePalettes(t *testing.T) {
 			}
 		})
 		t.Run(name+":colors/contrast", func(t *testing.T) {
+			if slices.Contains(paletteTerminalSkins, name) {
+				t.Skip("tones are terminal color names")
+			}
 			pole := paletteDarkPole
 			if isLight {
 				pole = paletteLightPole
+			}
+			if authored, ok := palette["background"].(string); ok {
+				pole = authored
 			}
 			var problems []string
 			if !isLight {
 				for _, group := range []struct {
 					keys  []string
 					floor float64
-				}{{paletteStrongFG, paletteStrongMin}, {paletteSoftFG, paletteSoftMin}} {
+				}{{paletteStrongFG, paletteStrongMin}, {paletteSoftFG, paletteSoftMin}, {paletteLines, paletteLineMin}} {
 					for _, key := range group.keys {
 						c := paletteColor(t, palette, key)
 						if ratio := paletteContrast(t, c, pole); ratio < group.floor {
@@ -174,7 +188,7 @@ func TestBuiltinOverlayKeysAndFillPolarity(t *testing.T) {
 			t.Run(name+":"+block.key, func(t *testing.T) {
 				var unknown []string
 				for key := range palette {
-					if !slices.Contains(paletteRequiredKeys, key) {
+					if !slices.Contains(paletteRequiredKeys, key) && !slices.Contains(paletteOptionalKeys, key) {
 						unknown = append(unknown, key)
 					}
 				}

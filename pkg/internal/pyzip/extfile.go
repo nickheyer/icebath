@@ -188,54 +188,6 @@ func copyFileObj(read func(int) ([]byte, error), w io.Writer) (int64, error) {
 	}
 }
 
-// zipfile.ZipFile.read, the whole member read through ZipExtFile.read
-func (r *ZipReader) Read(name string) ([]byte, error) {
-	x, err := r.GetInfo(name)
-	if err != nil {
-		return nil, err
-	}
-	f, err := r.openInfo(x, pyrepr.StrRepr(name))
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return f.read(-1)
-}
-
-// zipfile.ZipFile.testzip, the first member whose read raises BadZipFile with true, other errors returned
-func (r *ZipReader) TestZip() (string, bool, error) {
-	for _, x := range r.Filelist {
-		err := r.testMember(x.Filename)
-		var bad *BadZipFile
-		if errors.As(err, &bad) {
-			return x.Filename, true, nil
-		}
-		if err != nil {
-			return "", false, err
-		}
-	}
-	return "", false, nil
-}
-
-// Opens a member by name and reads it in 1 MiB chunks to its CRC check
-func (r *ZipReader) testMember(name string) error {
-	x, err := r.GetInfo(name)
-	if err != nil {
-		return err
-	}
-	f, err := r.openInfo(x, pyrepr.StrRepr(name))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	for {
-		data, err := f.read(1 << 20)
-		if err != nil || len(data) == 0 {
-			return err
-		}
-	}
-}
-
 // zipfile.ZipFile.extractall into path, the working directory when nil, members nil meaning every name
 func (r *ZipReader) ExtractAll(path *string, members []string) error {
 	if members == nil {

@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -148,57 +147,6 @@ func (f *FailoverHostedRoomPeerClient) Prepare(ctx context.Context, req PeerPrep
 
 func (f *FailoverHostedRoomPeerClient) Dispatch(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
 	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) { return c.Dispatch(ctx, dispatch, grant) })
-}
-
-func (f *FailoverHostedRoomPeerClient) History(ctx context.Context, roomID, profile, sessionID, grant string) ([]map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) ([]map[string]any, error) {
-		return c.History(ctx, roomID, profile, sessionID, grant)
-	})
-}
-
-func (f *FailoverHostedRoomPeerClient) Status(ctx context.Context, roomID, profile, sessionID, grant string) (map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) {
-		return c.Status(ctx, roomID, profile, sessionID, grant)
-	})
-}
-
-func (f *FailoverHostedRoomPeerClient) Stop(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) { return c.Stop(ctx, dispatch, grant) })
-}
-
-// Reads the live catalog over the active link of the same target
-func (f *FailoverHostedRoomPeerClient) Probe(grant string) (map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) {
-		prober, ok := peerHook[peerProber](c)
-		if !ok {
-			return nil, errors.New("this RoomLink cannot read the peer's catalog")
-		}
-		return prober.Probe(grant)
-	})
-}
-
-// Sends the file over the active link of the same target, refused when a candidate cannot carry files
-func (f *FailoverHostedRoomPeerClient) SendFile(ctx context.Context, grant string, file map[string]any, data []byte) (map[string]any, error) {
-	return failoverCall(f, func(c HostedRoomPeerClient) (map[string]any, error) {
-		sender, ok := peerHook[peerFileSender](c)
-		if !ok {
-			size, _ := hostedStrictInt(file["size"])
-			return nil, &PeerFileRefusedError{Name: pyrepr.Str(file["name"]), Size: size, Detail: "this RoomLink cannot carry files"}
-		}
-		return sender.SendFile(ctx, grant, file, data)
-	})
-}
-
-// Binds the room scope into every candidate that takes one
-func (f *FailoverHostedRoomPeerClient) BindRoomScope(scope PeerRoomScope) error {
-	for _, c := range f.Candidates {
-		if binder, ok := peerHook[peerRoomScopeBinder](c.Client); ok {
-			if err := binder.BindRoomScope(scope); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // Secret free target coordinates plus a separately stored room grant

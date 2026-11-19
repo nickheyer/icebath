@@ -33,13 +33,13 @@ func VisionImageNotes(ctx context.Context, env *tools.Env, userText string, imag
 		}
 		if pyrepr.Truthy(result["success"]) {
 			analysis, _ := result["analysis"].(string)
-			parts = append(parts, "[The user sent an image~ Here's what I can see:\n"+memory.SanitizeContext(analysis)+"]\n"+
+			parts = append(parts, "[The user sent an image. Here's what I can see:\n"+memory.SanitizeContext(analysis)+"]\n"+
 				"[If you need a closer look, use vision_analyze with "+
-				"image_url: "+path+" ~]")
+				"image_url: "+path+"]")
 			continue
 		}
 		parts = append(parts, "[The user sent an image but I couldn't quite see it "+
-			"this time (>_<) You can try looking at it yourself "+
+			"this time. You can try looking at it yourself "+
 			"with vision_analyze using image_url: "+path+"]")
 	}
 	if len(parts) == 0 {

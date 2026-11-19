@@ -582,13 +582,6 @@ func (c *boundedOutputCollector) closeSpill() string {
 	return c.spillPath
 }
 
-// Characters currently retained in the window
-func (c *boundedOutputCollector) bufferedChars() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.headChars + c.tailChars
-}
-
 // Characters appended over the collector lifetime
 func (c *boundedOutputCollector) total() int {
 	c.mu.Lock()
@@ -1333,11 +1326,6 @@ func (b *baseEnv) MarkRecreated() {
 	b.mu.Lock()
 	b.recreatedNoticePending = true
 	b.mu.Unlock()
-}
-
-// Default run hook that every backend must override
-func (b *baseEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdinData *string) (ProcessHandle, error) {
-	return nil, fmt.Errorf("%s must implement runBash", b.self.EnvType())
 }
 
 // Default hook before each command, remote backends trigger their file sync here
@@ -2223,12 +2211,6 @@ func streamExitedNonzero(p *StreamProcess) bool {
 		return false
 	}
 	return code != 0
-}
-
-// Close stops the listener
-func (f *PortForward) Close() {
-	f.closed.Store(true)
-	f.listener.Close()
 }
 
 // ForwardFailures counts connections through the forward of a port that never reached the target

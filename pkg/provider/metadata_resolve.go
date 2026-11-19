@@ -24,28 +24,6 @@ var (
 	profileLiveContextHooks   = map[string]ProfileLiveContextLengthHook{}
 )
 
-// RegisterProfileContextLength installs a profile owned static context bound for one canonical provider
-func RegisterProfileContextLength(providerName string, fn ProfileContextLengthHook) {
-	profileContextHooksMu.Lock()
-	defer profileContextHooksMu.Unlock()
-	if fn == nil {
-		delete(profileContextLengthHooks, NormalizeProvider(providerName))
-		return
-	}
-	profileContextLengthHooks[NormalizeProvider(providerName)] = fn
-}
-
-// RegisterProfileLiveContextLength installs a profile owned live catalog lookup for one canonical provider
-func RegisterProfileLiveContextLength(providerName string, fn ProfileLiveContextLengthHook) {
-	profileContextHooksMu.Lock()
-	defer profileContextHooksMu.Unlock()
-	if fn == nil {
-		delete(profileLiveContextHooks, NormalizeProvider(providerName))
-		return
-	}
-	profileLiveContextHooks[NormalizeProvider(providerName)] = fn
-}
-
 func profileContextLength(providerName, model string) int {
 	if _, ok := ProfileFor(providerName); !ok {
 		return 0

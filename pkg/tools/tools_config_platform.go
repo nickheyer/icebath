@@ -42,13 +42,6 @@ func platformToolsetsWarned(platform string) bool {
 	return warnedInvalidPlatformToolsets.seen[platform]
 }
 
-// Clears the once per process warning guard of one platform
-func discardPlatformToolsetsWarning(platform string) {
-	warnedInvalidPlatformToolsets.Lock()
-	delete(warnedInvalidPlatformToolsets.seen, platform)
-	warnedInvalidPlatformToolsets.Unlock()
-}
-
 var platformEnableEnvVars = [][2]string{
 	{"telegram", "TELEGRAM_BOT_TOKEN"}, {"discord", "DISCORD_BOT_TOKEN"}, {"slack", "SLACK_BOT_TOKEN"},
 	{"whatsapp", "WHATSAPP_ENABLED"}, {"qqbot", "QQ_APP_ID"},

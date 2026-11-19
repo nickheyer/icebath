@@ -211,3 +211,10 @@ func TestAReplyThatDiffersFromTheLastMessageIsKeptVerbatim(t *testing.T) {
 		t.Fatalf("stored %v %v, expected %v", stored, err, expected)
 	}
 }
+
+// Settles a claim completed with its redacted result
+func retainResult(ctx context.Context, db *state.SessionDB, epoch int64, row, result *pyjson.Object) (*pyjson.Object, error) {
+	stored, _ := redactedResult(result).(*pyjson.Object)
+	return db.SettleSessionInput(ctx, state.SettleInput{Epoch: epoch, AdmissionID: rowString(row, "admission_id"),
+		Generation: rowGeneration(row), Outcome: "completed", Result: stored})
+}

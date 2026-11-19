@@ -221,13 +221,6 @@ func (l *relayLazy[T]) get(ctx context.Context) T {
 	return l.value
 }
 
-func (l *relayLazy[T]) reset() {
-	l.mu.Lock()
-	var zero T
-	l.value, l.set = zero, false
-	l.mu.Unlock()
-}
-
 type relayFuture interface {
 	Done() <-chan struct{}
 	Result(timeout time.Duration) (any, error)
@@ -568,9 +561,6 @@ func relayLoadSegmentsConfig(ctx context.Context) relaySegmentsConfig {
 }
 
 var relaySegmentsConfigLazy = &relayLazy[relaySegmentsConfig]{factory: relayLoadSegmentsConfig}
-
-// Clears the cached segments configuration so the next read reloads it
-func ResetRelaySegmentsConfigForTests() { relaySegmentsConfigLazy.reset() }
 
 // Keeps process wide Relay plugins alive across a deferred operation
 type RelayOperationLease struct {

@@ -171,3 +171,10 @@ func TestPlatformStoreBundleSurvivesAnUnwritableHome(t *testing.T) {
 		t.Fatal("the platform context carries the roots")
 	}
 }
+
+// ResetTrustStoreForTests forgets the installed store and every cached context
+func ResetTrustStoreForTests() {
+	trustMu.Lock()
+	defer trustMu.Unlock()
+	trustInstalled, platformRoots, caConfigs, platformBundle = nil, nil, map[string]*tls.Config{}, ""
+}

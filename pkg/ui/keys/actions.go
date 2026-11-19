@@ -92,7 +92,7 @@ func overlay(a Action) Action { a.Overlay = true; return a }
 // registry lists the available actions in display order.
 var registry = func() []Action {
 	out := []Action{
-		overlay(act("palette", Global, "commands", "open the command palette and close any overlay", "alt+space")),
+		overlay(act("palette", Global, "palette", "open the command palette and close any overlay", "alt+space")),
 		act("open", Global, "open panel", "choose a panel to open in this workspace", "alt+a"),
 		act("keys.edit", Global, "keybinds", "open the keybind editor"),
 		overlay(act("quit", Global, "quit", "quit icebath", "ctrl+q")),

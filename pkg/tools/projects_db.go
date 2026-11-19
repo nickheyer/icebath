@@ -778,11 +778,6 @@ func (p *ProjectsDB) ReconcileDiscoveredReposPolicy(policyKey string, preserveUn
 	return cleared, err
 }
 
-// ClearDiscoveredRepos wipes the scan cache and records the policy key when given
-func (p *ProjectsDB) ClearDiscoveredRepos(policyKey *string) error {
-	return p.writeTxn(func(x sqlExecutor) error { return projectClearReposLocked(x, true, policyKey) })
-}
-
 // DiscoveredRepo is one cached repo root with its label
 type DiscoveredRepo struct {
 	Root     string

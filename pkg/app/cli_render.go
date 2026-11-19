@@ -100,7 +100,7 @@ func assistantCopyText(content any) string {
 	return stripReasoningTags(assistantContentAsText(content))
 }
 
-const accentANSIDefault = "\033[1;38;2;255;215;0m"
+const accentANSIDefault = "\033[1;38;2;156;199;232m"
 
 const boldANSI = "\033[1m"
 
@@ -123,7 +123,7 @@ func hexToANSI(hexColor string, bold bool) string {
 			if bold {
 				return accentANSIDefault
 			}
-			return "\033[38;2;184;134;11m"
+			return "\033[38;2;108;127;146m"
 		}
 		rgb[i] = n
 	}
@@ -232,11 +232,15 @@ func detectLightMode() bool {
 	return result
 }
 
-// Light mode equivalents of skin colors unreadable on cream backgrounds, standalone foregrounds only
+// Light mode equivalents of the dark skins' colors unreadable on paper backgrounds, standalone foregrounds only
 var lightModeRemap = map[string]string{
-	"#FFF8DC": "#1A1A1A", "#FFD700": "#9A6B00", "#FFBF00": "#8A5A00", "#B8860B": "#5C4500",
-	"#DAA520": "#6B4F00", "#F1E6CF": "#1A1A1A", "#c9d1d9": "#24292F", "#EAF7FF": "#0F1B26",
-	"#F5F5F5": "#1A1A1A", "#FFF0D4": "#1A1A1A", "#CD7F32": "#8A4F1A", "#FFEFB5": "#3A2A00",
+	"#dfe9f2": "#141c26", "#6c7f92": "#647081", "#9cc7e8": "#2f6f9f", "#e3122b": "#c8102e",
+	"#7fc7a5": "#2e8b63", "#ff4757": "#d12f3f", "#e0b35a": "#9a6b00", "#3b5169": "#7d93a9",
+	"#d6def7": "#141c26", "#ffc857": "#9a6b00", "#ffd98a": "#9a6b00", "#5ff1ff": "#1d7f8f", "#7cff9e": "#2e8b63",
+	"#ffffff": "#000000", "#bfbfbf": "#404040", "#ffff00": "#7a6a00", "#00ffff": "#006b6b", "#00ff00": "#006b00",
+	"#00e038": "#006b1b", "#00ff41": "#006b1b", "#00cc34": "#006b1b", "#ffb000": "#8a5a00",
+	"#f8f8f2": "#282a36", "#6272a4": "#6c664b", "#8be9fd": "#036a96", "#bd93f9": "#644ac9",
+	"#50fa7b": "#14710a", "#ffb86c": "#a34d14", "#ff79c6": "#a3144d", "#ff5555": "#cb3a2a",
 }
 
 var lightModeRemapUpper = func() map[string]string {
@@ -292,28 +296,14 @@ func (s *skinAwareANSI) Reset() {
 	s.mu.Unlock()
 }
 
-var accentANSI = &skinAwareANSI{skinKey: "response_border", fallbackHex: "#FFD700", bold: true}
-
-// Wraps the text in an SGR attribute when stdout is a real tty, plain otherwise
-func ttyWrap(s, sgr string) string {
-	if console().StdoutIsTTY() {
-		return sgr + s + "\x1b[0m"
-	}
-	return s
-}
-
-// Bold when stdout is a real tty
-func boldTTY(s string) string { return ttyWrap(s, "\x1b[1m") }
-
-// Dim italic when stdout is a real tty
-func dimTTY(s string) string { return ttyWrap(s, "\x1b[2;3m") }
+var accentANSI = &skinAwareANSI{skinKey: "response_border", fallbackHex: "#9cc7e8", bold: true}
 
 // The active skin accent color for legacy CLI output lines
 func accentHex() string {
 	if skin := config.GetActiveSkin(context.Background()); skin != nil {
-		return skin.GetColor("ui_accent", "#FFBF00")
+		return skin.GetColor("ui_accent", "#9cc7e8")
 	}
-	return "#FFBF00"
+	return "#9cc7e8"
 }
 
 var richANSITokenRe = regexp.MustCompile(`(?:\x1b\](.*?)\x1b\\)|(?:\x1b([(@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))`)
@@ -533,11 +523,11 @@ func buildCompactBanner() string {
 		}
 		return def
 	}
-	borderColor := color("banner_border", "#FFD700")
-	titleColor := color("banner_title", "#FFBF00")
-	dimColor := color("banner_dim", "#B8860B")
-	tinyLine := "☤ ICEBATH"
-	if skin != nil && skin.Name != "default" {
+	borderColor := color("banner_border", "#3b5169")
+	titleColor := color("banner_title", "#e3122b")
+	dimColor := color("banner_dim", "#6c7f92")
+	tinyLine := "󰆧 ICEBATH"
+	if skin != nil && skin.Name != config.DefaultSkinName {
 		tinyLine = skin.GetBranding("agent_name", "Icebath Agent")
 	}
 	line1 := i18n.T(ctx, "cli.render.banner_tagline", "", map[string]any{"name": tinyLine})

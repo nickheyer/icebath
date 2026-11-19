@@ -264,7 +264,7 @@ func (s *statusRun) banner(lines []string, styles ...string) {
 
 func (s *statusRun) renderHeader() error {
 	s.banner([]string{"┌─────────────────────────────────────────────────────────┐",
-		"│                 ☤ Icebath Agent Status                  │",
+		"│                 󰆧 Icebath Agent Status                  │",
 		"└─────────────────────────────────────────────────────────┘"}, cliui.Cyan)
 	if paused := statusEstopLine(s.ctx); paused != "" {
 		s.banner([]string{paused}, cliui.Yellow, cliui.Bold)

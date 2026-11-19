@@ -376,8 +376,6 @@ func anthBetaHeader(betas []string) map[string]string {
 	return map[string]string{"anthropic-beta": strings.Join(betas, ",")}
 }
 
-func anthAttributionHeaders() map[string]string { return attributionHeaders("IcebathAgent") }
-
 // Order sensitive endpoint and key classification into kimi, bearer, api_key or oauth
 func anthAuthStyle(apiKey, baseURL, normalizedBaseURL string) string {
 	if isKimiCodingEndpoint(baseURL) {

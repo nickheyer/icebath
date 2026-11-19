@@ -335,14 +335,6 @@ func (q *composerQueue) cancelServerRow(row *pendingRow, then func(err error) te
 	return call(q.gw, tuigateway.CanonicalPromptResolveUnknown, tuigateway.PromptResolveUnknownParams{SessionID: sid, AdmissionID: row.AdmissionID, ExecutionGeneration: *row.ExecutionGeneration}, settled)
 }
 
-// Session id as JavaScript holds it, null when empty
-func nilIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 // Sets the entry being edited
 func (q *composerQueue) setQueueEdit(idx *int) error {
 	queue, err := q.getQueue(nil)

@@ -49,22 +49,6 @@ func ParseWith(source string, opts Options) (*Node, []Warning, error) {
 	return parseOpts(translateLines([]byte(source), execMode(opts.Mode)), opts)
 }
 
-// ParseBytesWith parses encoded source like ast.parse(bytes) with options, honouring a BOM and a coding declaration
-func ParseBytesWith(source []byte, opts Options) (*Node, []Warning, error) {
-	if err := checkCompileArgs(opts); err != nil {
-		return nil, nil, err
-	}
-	if bytes.IndexByte(source, 0) >= 0 {
-		return nil, nil, nullBytesError()
-	}
-	text, err := decodeSource(translateLines(source, execMode(opts.Mode)))
-	if err != nil {
-		return nil, nil, withFilename(err, opts)
-	}
-	opts.encoding = declaredEncoding(source)
-	return parseOpts(text, opts)
-}
-
 // ParseNode compiles an AST object like ast.parse(tree), returning a converted, validated and preprocessed copy
 func ParseNode(n *Node, opts Options) (*Node, error) {
 	if err := checkCompileArgs(opts); err != nil {

@@ -179,6 +179,7 @@ func newApp(ctx context.Context, host Host) *app {
 	store := newTUIStore()
 	turn := newTurnController(store)
 	gw := newGatewayClient(host.Attach)
+	setRPCErrorLogSink(gw.recordLog)
 	a := &app{ctx: ctx, host: host, keys: tuiKeymap(), gw: gw, store: store, turn: turn, git: newGitBranchTracker(), battery: &batteryPoller{},
 		resize: newResizeCoalescer(32 * time.Millisecond), inputs: newComposerHistory(newInputHistory(ctx))}
 	a.events, a.boot = newEventHandler(store, turn, gw, a)
@@ -203,7 +204,7 @@ func newApp(ctx context.Context, host Host) *app {
 	a.localCommands = slices.DeleteFunc(a.localCommands, func(c slashCommand) bool { return !localCommandLinked(c.name) })
 	a.pet = petCardFor(a)
 	a.card = newSessionCard(a)
-	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(bootMotion()))
+	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(a.motion()))
 	_, open := a.wm.AddWorkspace("session", a.card)
 	a.boot = tea.Batch(a.boot, open)
 	a.wm.SetBar(a.barStatus)
@@ -218,6 +219,14 @@ func bootMotion() float64 {
 		return 0
 	}
 	return 1
+}
+
+// Motion scale of the window manager, none under the plain theme
+func (a *app) motion() float64 {
+	if a.toolkit.Plain {
+		return 0
+	}
+	return bootMotion()
 }
 
 // Runs the terminal UI, prints the session summary when it ends and returns the exit status
@@ -416,6 +425,7 @@ func (a *app) afterUpdate() tea.Cmd {
 	if !themesEqual(ui.Theme, a.seenTheme) {
 		a.syncTheme()
 		a.wm.SetTheme(a.toolkit)
+		a.wm.SetMotion(a.motion())
 		a.card.composer.SetTheme(a.toolkit)
 		a.arena.retheme(a.toolkit)
 		a.card.view.invalidate()

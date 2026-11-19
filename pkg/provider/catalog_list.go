@@ -371,9 +371,6 @@ func spawnCatalogSWRRefresh(ctx context.Context, url string) {
 	}()
 }
 
-// WaitCatalogRefreshes blocks until every background manifest refresh has landed
-func WaitCatalogRefreshes() { catalogSWRWait.Wait() }
-
 func rememberCatalog(ctx context.Context, data map[string]any, mtime time.Time) map[string]any {
 	catalogCacheMu.Lock()
 	defer catalogCacheMu.Unlock()

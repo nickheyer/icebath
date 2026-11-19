@@ -149,9 +149,6 @@ func SortKeys(on bool) Option { return func(o *options) { o.sortKeys = on } }
 // skipkeys, dropping entries whose key is not str int float bool or None
 func SkipKeys(on bool) Option { return func(o *options) { o.skipKeys = on } }
 
-// check_circular, true by default
-func CheckCircular(on bool) Option { return func(o *options) { o.checkCircular = on } }
-
 // default, called for values json cannot encode and its result encoded in their place
 func Default(fn func(any) (any, error)) Option { return func(o *options) { o.def = fn } }
 

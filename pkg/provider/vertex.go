@@ -120,13 +120,6 @@ var (
 	vertexCredsCache = map[vertexCacheKey]*vertexCacheEntry{}
 )
 
-// Clears the per content credential cache
-func resetVertexCredentialCache() {
-	vertexCredsMu.Lock()
-	vertexCredsCache = map[vertexCacheKey]*vertexCacheEntry{}
-	vertexCredsMu.Unlock()
-}
-
 // File bytes and the content keyed cache entry for one credential attempt
 func vertexSASnapshot(path string) ([]byte, vertexCacheKey) {
 	if path == "" {

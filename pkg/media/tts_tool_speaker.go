@@ -438,10 +438,6 @@ type streamerPlayback struct {
 	currentRate     int
 }
 
-func newStreamerPlayback(ctx context.Context, streamer StreamingTTSProvider, stop Event) *streamerPlayback {
-	return newStreamerPlaybackTo(ctx, streamer, stop, localSpeaker())
-}
-
 // Streamer playback into an output, PCM written to PortAudio only when the output allows the device
 func newStreamerPlaybackTo(ctx context.Context, streamer StreamingTTSProvider, stop Event, out speechOutput) *streamerPlayback {
 	p := &streamerPlayback{ctx: ctx, play: out.play, streamer: streamer, stop: stop, useDevice: out.device(),

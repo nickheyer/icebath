@@ -140,14 +140,6 @@ func typeCommentStart(src []byte, i, end int) (int, bool) {
 	return i, true
 }
 
-// Splits decoded UTF-8 source into tokens, stopping at the first tokenizer error
-func tokenize(src []byte) *lexer { return tokenizeWith(src, false, false) }
-
-// Tokenizes with TYPE_COMMENT tokens and type ignores when asked, and tokenizer warnings raised as errors when asked
-func tokenizeWith(src []byte, typeComments, warnErrors bool) *lexer {
-	return tokenizeBarry(src, typeComments, warnErrors, -1)
-}
-
 // Tokenizes with <> enabled from token index at, after the first barry_as_FLUFL future import for -1, never for -2
 func tokenizeBarry(src []byte, typeComments, warnErrors bool, at int) *lexer {
 	lx := &lexer{src: src, atbol: true, indstack: []int{0}, altindstack: []int{0}, modes: []tokMode{{kind: modeRegular}}, typeComments: typeComments, warnErrors: warnErrors, barryAt: at, barryTok: -1}

@@ -404,3 +404,13 @@ func TestUncreatableStateDirFailsEveryWriterAndStop(t *testing.T) {
 		t.Fatal("the blocking file is left alone")
 	}
 }
+
+// ResetIronProxyForTests clears the version cache and the start nonce
+func ResetIronProxyForTests() {
+	ironVersionMu.Lock()
+	ironVersionCache = map[string]string{}
+	ironVersionMu.Unlock()
+	ironNonceMu.Lock()
+	ironProxyNonce = ""
+	ironNonceMu.Unlock()
+}

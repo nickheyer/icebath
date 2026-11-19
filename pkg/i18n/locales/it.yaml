@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Non è un repository git — impossibile aggiornare."
     icebath_cmd_not_found: "✗ Impossibile localizzare il comando `icebath`. Icebath è in esecuzione, ma il comando di aggiornamento non ha trovato l'eseguibile nel PATH o tramite l'interprete Python attuale. Prova a eseguire `icebath update` manualmente nel terminale."
     start_failed: "✗ Avvio dell'aggiornamento non riuscito: {error}"
-    starting: "☤ Avvio dell'aggiornamento di Icebath… mostrerò qui i progressi in streaming."
+    starting: "❆ Avvio dell'aggiornamento di Icebath… mostrerò qui i progressi in streaming."
     reply_failed: "✗ Impossibile inviare la risposta al processo di aggiornamento: {error}"
     reply_sent: "✓ Inviato `{label}` al processo di aggiornamento."
     failed_notice: "❌ Aggiornamento di Icebath non riuscito; la versione precedente è ancora in esecuzione. Esegui `icebath update` sull'host per vedere l'errore completo, oppure riprova /update più tardi."
     prompt_default: " (predefinito: {default})"
-    prompt: "☤ **L'aggiornamento richiede il tuo input:**\n\n{prompt}{default_hint}\n\nRispondi `{prefix}approve` (sì) o `{prefix}deny` (no), oppure digita direttamente la tua risposta."
+    prompt: "❆ **L'aggiornamento richiede il tuo input:**\n\n{prompt}{default_hint}\n\nRispondi `{prefix}approve` (sì) o `{prefix}deny` (no), oppure digita direttamente la tua risposta."
     finished: "✅ Aggiornamento di Icebath completato."
     timed_out: "❌ Aggiornamento di Icebath scaduto dopo 30 minuti."
     finished_success: "✅ Aggiornamento di Icebath completato con successo."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** da {user}"
     update_prompt:
 
-      title: "☤ L'aggiornamento richiede il tuo input"
+      title: "❆ L'aggiornamento richiede il tuo input"
       default_hint: "\n\nPredefinito: `{default}`"
       answer_yes: "✓ Sì"
       answer_no: "✗ No"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}d {hours}h {minutes}m"
     duration_m_rest: "{minutes}m {rest}"
     duration_hm_rest: "{hours}h {minutes}m {rest}"
-    no_active_agent: "(._.) Nessun agente attivo -- invia prima un messaggio."
+    no_active_agent: "◈ Nessun agente attivo -- invia prima un messaggio."
     n_more: "altri {count}"
     more_not_shown: "altri non mostrati"
     yes_no_default_yes: "S/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "Titolo della sessione in coda: {title} (verrà salvato al primo messaggio)"
   undo:
 
-    invalid_count: "(._.) Numero {value} non valido — usa /undo o /undo N."
+    invalid_count: "◈ Numero {value} non valido — usa /undo o /undo N."
     removes_last_exchange: "Questa operazione rimuove dalla cronologia l'ultimo scambio utente/assistente."
     removes_last_turns: "Questa operazione rimuove dalla cronologia gli ultimi {count} turni dell'utente."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ Crediti esauriti"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Si ricomincia! Schermo pulito e conversazione azzerata."
+    fresh_start: "❆ Si ricomincia! Schermo pulito e conversazione azzerata."
     model_reset_default: "(modello ripristinato al valore predefinito della configurazione: {model})"
     title_rejected: "Titolo rifiutato: {error}"
     title_empty_untitled: "Il titolo è vuoto dopo la pulizia — sessione avviata senza titolo."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "Ragionamento"
     label_approvals: "Approvazioni"
     label_context: "Contesto"
-    recent_intro: "(._.) Nessun messaggio nella chat corrente — ecco le sessioni recenti che puoi riprendere:"
+    recent_intro: "◈ Nessun messaggio nella chat corrente — ecco le sessioni recenti che puoi riprendere:"
     recent_header: "Sessioni recenti:"
     column_title: "Titolo"
     column_preview: "Anteprima"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "Usa /resume <number>, /resume <session id> o /resume <session title> per continuare."
     resume_example: "Esempio: /resume 2"
-    history_empty: "(._.) Nessuna cronologia della conversazione."
+    history_empty: "◈ Nessuna cronologia della conversazione."
     history_tools_header: "[Strumenti]"
     history_tools_hidden_one: "({count} messaggio di strumento nascosto)"
     history_tools_hidden_other: "({count} messaggi di strumenti nascosti)"
-    history_title: "(^_^) Cronologia della conversazione"
+    history_title: "❆ Cronologia della conversazione"
     history_you_header: "[Tu #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(nessuna risposta testuale)"
     history_tool_calls_one: "(richiesta {count} chiamata a strumento)"
     history_tool_calls_other: "(richieste {count} chiamate a strumenti)"
-    new_session_titled: "(^_^)v Nuova sessione avviata: {title}"
-    new_session: "(^_^)v Nuova sessione avviata!"
-    save_nothing: "(;_;) Nessuna conversazione da salvare."
-    save_dir_failed: "(x_x) Impossibile creare la directory di salvataggio {path}: {error}"
+    new_session_titled: "✓ Nuova sessione avviata: {title}"
+    new_session: "✓ Nuova sessione avviata!"
+    save_nothing: "◈ Nessuna conversazione da salvare."
+    save_dir_failed: "✘ Impossibile creare la directory di salvataggio {path}: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Conversazione salvata in: {path} ({label})"
+    save_ok: "✓ Conversazione salvata in: {path} ({label})"
     save_resume_hint: "Riprendi la sessione attiva con: icebath --resume {session_id}"
-    save_failed: "(x_x) Impossibile salvare: {error}"
-    retry_no_messages: "(._.) Nessun messaggio da riprovare."
-    retry_no_user_message: "(._.) Nessun messaggio utente da riprovare."
-    retry_unsafe: "(._.) Impossibile riprovare quel messaggio in sicurezza: {error}"
-    retry_rewind_failed: "(x_x) Riavvolgimento per il nuovo tentativo non riuscito; la cronologia non è stata modificata: {error}"
-    retrying: "(^_^)b Riprovo: \"{preview}\""
-    undo_no_messages: "(._.) Nessun messaggio da annullare."
-    undo_no_user_message: "(._.) Nessun messaggio utente da annullare."
-    undo_failed: "(x_x) Annullamento non riuscito; la cronologia non è stata modificata: {error}"
-    undo_ok_one: "(^_^)b Annullato {count} turno ({messages} messaggio/i). Backup salvato in: \"{backup}\""
-    undo_ok_other: "(^_^)b Annullati {count} turni ({messages} messaggio/i). Backup salvato in: \"{backup}\""
+    save_failed: "✘ Impossibile salvare: {error}"
+    retry_no_messages: "◈ Nessun messaggio da riprovare."
+    retry_no_user_message: "◈ Nessun messaggio utente da riprovare."
+    retry_unsafe: "◈ Impossibile riprovare quel messaggio in sicurezza: {error}"
+    retry_rewind_failed: "✘ Riavvolgimento per il nuovo tentativo non riuscito; la cronologia non è stata modificata: {error}"
+    retrying: "✓ Riprovo: \"{preview}\""
+    undo_no_messages: "◈ Nessun messaggio da annullare."
+    undo_no_user_message: "◈ Nessun messaggio utente da annullare."
+    undo_failed: "✘ Annullamento non riuscito; la cronologia non è stata modificata: {error}"
+    undo_ok_one: "✓ Annullato {count} turno ({messages} messaggio/i). Backup salvato in: \"{backup}\""
+    undo_ok_other: "✓ Annullati {count} turni ({messages} messaggio/i). Backup salvato in: \"{backup}\""
     undo_remaining: "Messaggi rimasti nella cronologia: {count}."
     yolo_state_locked_on: "bloccato su ON"
     yolo_locked: "⚡ YOLO è {state} per questo processo (avviato con --yolo / ICEBATH_YOLO_MODE). /yolo non può disattivarlo — riavvia senza il flag per riattivare le approvazioni."
     yolo_off: "⚠ Modalità YOLO {state} — i comandi pericolosi richiederanno approvazione."
     yolo_on: "⚡ Modalità YOLO {state} — tutti i comandi auto-approvati. Usa con cautela."
-    compress_too_short: "(._.) Conversazione troppo breve per la compressione (servono almeno {min} messaggi)."
-    compress_no_agent: "(._.) Nessun agente attivo -- invia prima un messaggio."
+    compress_too_short: "◈ Conversazione troppo breve per la compressione (servono almeno {min} messaggi)."
+    compress_no_agent: "◈ Nessun agente attivo -- invia prima un messaggio."
     compress_busy: "Compressione del contesto..."
     compress_summarizing: "🗜️  Riepilogo fino a qui: {count} messaggi, mantenendo gli ultimi {keep_last} scambi alla lettera..."
     compress_focus: "🗜️  Comprimo {count} messaggi, focus: \"{focus}\"..."
     compress_plain: "🗜️  Comprimo {count} messaggi..."
     compress_failed: "❌ Compressione non riuscita: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "Arrivederci! ☤"
+    goodbye: "Arrivederci! 󰆧"
     exit_resume_hint: "Riprendi questa sessione con:"
     exit_label_session: "Sessione:       {session_id}"
     exit_label_title: "Titolo:         {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(salvato nella configurazione)"
       scope_save_failed: "(solo sessione; salvataggio della configurazione non riuscito)"
       scope_session: "(questa sessione — usa --global per renderlo permanente)"
-      unknown_argument: "(._.) Argomento sconosciuto: {arg}"
+      unknown_argument: "◈ Argomento sconosciuto: {arg}"
       usage: "Uso: {usage}"
       needs_active_session: "{command} richiede una sessione di chat attiva per funzionare."
       unavailable_no_session: "{label} non disponibile (nessuna sessione attiva)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "Uso: /indicator [{styles}]"
       status: "Stile dell'indicatore di attività: {style}"
-      unknown_style: "(._.) Stile indicatore sconosciuto: {arg}"
+      unknown_style: "◈ Stile indicatore sconosciuto: {arg}"
       label: "Stile dell'indicatore di attività"
       note: "La TUI applicherà il nuovo stile al prossimo aggiornamento dello schermo."
     fast:
 
-      not_supported: "(._.) /fast è disponibile solo per i modelli che supportano la modalità veloce (OpenAI Priority Processing o Anthropic Fast Mode)."
+      not_supported: "◈ /fast è disponibile solo per i modelli che supportano la modalità veloce (OpenAI Priority Processing o Anthropic Fast Mode)."
       feature_generic: "Modalità veloce"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Ultrafast non è disponibile per {model} su questo account o percorso."
+      ultrafast_not_supported: "◈ Ultrafast non è disponibile per {model} su questo account o percorso."
       usage: "Uso: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature} impostato su {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ composizione dello spritesheet…"
       progress_save: "┊ salvataggio…"
       progress_drawing: "┊ disegno {state}…"
-      describe_prompt: "(o_o) Descrivi il tuo pet: "
-      usage: "(o_o) Uso: /hatch <description>  (es. /hatch a tiny cyber fox)"
+      describe_prompt: "◈ Descrivi il tuo pet: "
+      usage: "◈ Uso: /hatch <description>  (es. /hatch a tiny cyber fox)"
       default_name: "Pet"
-      designing: "(o_o) Progettazione di '{concept}'… (circa un minuto di chiamate al modello immagini)"
-      base_failed: "(x_x) Impossibile generare l'aspetto di base: {error}"
-      no_base_draft: "(x_x) Nessuna bozza di base ricevuta — riprova."
-      failed: "(x_x) Schiusa non riuscita: {error}"
-      hatched: "(^_^)b {name} è nato ed è stato adottato — comparirà tra poco!"
+      designing: "◈ Progettazione di '{concept}'… (circa un minuto di chiamate al modello immagini)"
+      base_failed: "✘ Impossibile generare l'aspetto di base: {error}"
+      no_base_draft: "✘ Nessuna bozza di base ricevuta — riprova."
+      failed: "✘ Schiusa non riuscita: {error}"
+      hatched: "✓ {name} è nato ed è stato adottato — comparirà tra poco!"
     pet:
 
-      is_out: "(^_^)b {name} è fuori — comparirà tra poco."
-      put_away_named: "(-_-)zzZ {name} messo a riposo."
-      put_away: "(-_-)zzZ Pet messo a riposo."
-      usage_scale: "(o_o) Uso: /pet scale <factor>  (es. /pet scale 0.5)"
-      scale_set: "(^_^) Scala del pet → {scale}."
-      fetching: "(o_o) Recupero di '{name}' dal petdex…"
-      adopt_failed: "(x_x) Impossibile adottare '{name}': {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} è fuori — comparirà tra poco."
+      put_away_named: "○ {name} messo a riposo."
+      put_away: "○ Pet messo a riposo."
+      usage_scale: "◈ Uso: /pet scale <factor>  (es. /pet scale 0.5)"
+      scale_set: "✓ Scala del pet → {scale}."
+      fetching: "◈ Recupero di '{name}' dal petdex…"
+      adopt_failed: "✘ Impossibile adottare '{name}': {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Non in stage"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey non riuscito: {error}"
     paste:
 
-      no_image: "(._.) Nessuna immagine trovata negli appunti"
+      no_image: "◈ Nessuna immagine trovata negli appunti"
       attached: "📎 Immagine #{index} allegata dagli appunti"
-      extract_failed: "(>_<) Gli appunti contengono un'immagine ma l'estrazione non è riuscita"
+      extract_failed: "◬ Gli appunti contengono un'immagine ma l'estrazione non è riuscita"
     copy:
 
       nothing_yet: "Niente da copiare per ora."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "Uso: /image <path>  es. /image {example}"
-      not_found: "(>_<) File non trovato: {path}"
-      unsupported: "(._.) Non è un file immagine supportato: {name}"
+      not_found: "◬ File non trovato: {path}"
+      unsupported: "◈ Non è un file immagine supportato: {name}"
       attached: "📎 Immagine allegata: {name}"
       now_type_prompt: "Ora digita il tuo prompt (o usa --image in modalità query singola): {text}"
     tools:
 
-      usage: "(._.) Uso: /tools {subcommand} <name> [name ...]"
+      usage: "◈ Uso: /tools {subcommand} <name> [name ...]"
       example_toolset: "Toolset integrato:  /tools {subcommand} web"
       example_mcp: "Strumento MCP:      /tools {subcommand} github:create_issue"
       disabling: "Disattivazione di {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "La sessione {session_id} è stata compressa in {resolved_id}; riprendo la sessione discendente con la tua trascrizione."
     sessions:
 
-      none_yet: "(._.) Nessuna sessione precedente."
+      none_yet: "◈ Nessuna sessione precedente."
     branch:
 
       branched_one: "⑂ Sessione ramificata \"{title}\" ({count} messaggio utente)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "Gli strumenti terminale e file ora operano nel worktree."
     personality:
 
-      title: "(^o^)/ Personalità"
+      title: "❆ Personalità"
       none_option: "(nessun overlay di personalità)"
       usage: "Uso: /personality <name>   (* = attiva)"
-      unknown: "(._.) Personalità sconosciuta: {name}"
+      unknown: "◈ Personalità sconosciuta: {name}"
       available: "Disponibili: none, {available}"
       scope_saved: "(salvato nella configurazione)"
       scope_session: "(solo sessione)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} Personalità impostata su '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat deve essere un numero intero"
-      unknown_command: "(._.) Comando cron sconosciuto: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat deve essere un numero intero"
+      unknown_command: "◈ Comando cron sconosciuto: {subcommand}"
       available: "Disponibili: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Attività pianificate"
+      overview_title: "❆ Attività pianificate"
       overview_commands: "Comandi:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Controlla lo stato del server\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Nuova attività\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Job attuali:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "Skill: nessuna"
       next_short: "Prossima"
       no_jobs_hint: "Nessun job pianificato. Usa '/cron add' per crearne uno."
-      no_jobs: "(._.) Nessun job pianificato."
+      no_jobs: "◈ Nessun job pianificato."
       list_header: "Job pianificati:"
       id: "ID: {job_id}"
       name: "Nome: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "errore: {error}"
       last_run: "Ultima esecuzione: {when} ({status})"
-      usage_add: "(._.) Uso: /cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) Indica un prompt o almeno una skill"
-      create_failed: "(x_x) Impossibile creare il job: {error}"
-      created: "(^_^)b Job creato: {job_id}"
-      usage_edit: "(._.) Uso: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) Job non trovato: {job_id}"
-      update_failed: "(x_x) Impossibile aggiornare il job: {error}"
-      updated: "(^_^)b Job aggiornato: {job_id}"
-      usage_action: "(._.) Uso: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) Impossibile mettere in pausa il job: {error}"
-      resume_failed: "(x_x) Impossibile riprendere il job: {error}"
-      run_failed: "(x_x) Impossibile eseguire il job: {error}"
-      remove_failed: "(x_x) Impossibile rimuovere il job: {error}"
-      removed: "(^_^)b Job rimosso: {name} ({job_id})"
-      did_not_run: "(x_x) Job non eseguito: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b Job in pausa: {name} ({job_id})"
-      resumed: "(^_^)b Job ripreso: {name} ({job_id})"
-      triggered: "(^_^)b Job avviato: {name} ({job_id})"
+      usage_add: "◈ Uso: /cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ Indica un prompt o almeno una skill"
+      create_failed: "✘ Impossibile creare il job: {error}"
+      created: "✓ Job creato: {job_id}"
+      usage_edit: "◈ Uso: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ Job non trovato: {job_id}"
+      update_failed: "✘ Impossibile aggiornare il job: {error}"
+      updated: "✓ Job aggiornato: {job_id}"
+      usage_action: "◈ Uso: /cron {subcommand} <job_id>"
+      pause_failed: "✘ Impossibile mettere in pausa il job: {error}"
+      resume_failed: "✘ Impossibile riprendere il job: {error}"
+      run_failed: "✘ Impossibile eseguire il job: {error}"
+      remove_failed: "✘ Impossibile rimuovere il job: {error}"
+      removed: "✓ Job rimosso: {name} ({job_id})"
+      did_not_run: "✘ Job non eseguito: {name} ({job_id})\n  {reason}"
+      paused: "✓ Job in pausa: {name} ({job_id})"
+      resumed: "✓ Job ripreso: {name} ({job_id})"
+      triggered: "✓ Job avviato: {name} ({job_id})"
     suggestions:
 
       failed: "Comando suggestions non riuscito: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "Comando cron blueprint non riuscito: {error}"
     curator:
 
-      failed: "(._.) curator: {error}"
+      failed: "◈ curator: {error}"
     kanban:
 
-      failed: "(._.) errore kanban: {error}"
+      failed: "◈ errore kanban: {error}"
     memory:
 
       unknown_subcommand: "Sottocomando /memory sconosciuto. Usa: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "Uso: /bg <prompt>\nEsempio: /bg Riassumi le principali notizie di HN di oggi\n(Per una domanda a margine su questa conversazione, usa /btw <question>.)\nL'attività viene eseguita in una sessione separata e i risultati compaiono qui al termine."
-      no_credentials: "(>_<) Impossibile avviare l'attività in background: nessuna credenziale valida."
+      no_credentials: "◬ Impossibile avviare l'attività in background: nessuna credenziale valida."
       started: "🔄 Attività in background #{number} avviata: \"{preview}\""
       task_id: "ID attività: {task_id}"
       keep_chatting: "Puoi continuare a chattare — i risultati compariranno al termine."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "Uso: /btw <question>\nEsempio: /btw in quale file era quell'errore?\nRisponde a una rapida domanda su questa conversazione senza interromperla.\n(Per un'attività in background indipendente, usa /bg <prompt>.)"
-      no_credentials: "(>_<) Impossibile rispondere alla domanda a margine: nessuna credenziale valida."
+      no_credentials: "◬ Impossibile rispondere alla domanda a margine: nessuna credenziale valida."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(Nessuna risposta generata)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! Scrivi il tuo prompt qui sotto. Le righe che iniziano con '#!' vengono ignorate.\n#! Salva ed esci per inviare; lascia vuoto per annullare."
-      editor_failed: "(>_<) Impossibile aprire l'editor: {error}"
-      empty: "(._.) Prompt vuoto — niente inviato."
+      editor_failed: "◬ Impossibile aprire l'editor: {error}"
+      empty: "◈ Prompt vuoto — niente inviato."
     focus:
 
       usage: "Uso: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "esci dalla sessione attuale e aggiorna Icebath Agent"
       choice_cancel: "Annulla"
       choice_cancel_desc: "mantieni la sessione attuale"
-      title: "☤  Aggiorna Icebath Agent"
+      title: "󰆧  Aggiorna Icebath Agent"
       detail: "Verrà chiusa la sessione attuale ed eseguito `icebath update`."
       cancelled: "🟡 /update annullato."
-      launching: "☤ Avvio dell'aggiornamento..."
+      launching: "󰆧 Avvio dell'aggiornamento..."
     voice:
 
       unknown_subcommand: "Sottocomando voice sconosciuto: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "Intendevi: {candidates}?"
   config:
 
-    title: "(^_^) Configurazione"
+    title: "❆ Configurazione"
     loaded: "(caricato)"
     not_found: "(non trovato)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 Utilizzo del contesto — {model}"
-    compute_failed: "(._.) Impossibile calcolare la ripartizione del contesto: {error}"
+    compute_failed: "◈ Impossibile calcolare la ripartizione del contesto: {error}"
   error:
 
     auth: "La tua chiave {provider} è stata rifiutata. Esegui `icebath model` per reinserirla."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Avvio di Icebath Gateway (piattaforme di messaggistica)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Stato del gateway"
+    header: "❆ Stato del gateway"
     platform_config_header: "Configurazione piattaforme di messaggistica:"
     enabled: "Attivo"
     not_configured: "Non configurato ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. Oppure configura le impostazioni in {path}"
   help:
 
-    header: "(^_^)? Comandi disponibili"
+    header: "❆ Comandi disponibili"
     section_session: "Sessione"
     section_configuration: "Configurazione"
     section_tools_skills: "Strumenti e skill"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "Impossibile caricare la skill per {command}"
   tools:
 
-    none_available: "(;_;) Nessuno strumento disponibile"
-    header: "(^_^)/ Strumenti disponibili"
-    total: "Totale: {count} strumenti  ヽ(^o^)ノ"
+    none_available: "◈ Nessuno strumento disponibile"
+    header: "❆ Strumenti disponibili"
+    total: "Totale: {count} strumenti"
   toolsets:
 
-    header: "(^_^)b Toolset disponibili"
+    header: "✓ Toolset disponibili"
     currently_enabled_legend: "(*) = attualmente attivo"
     tip_enable_all: "Suggerimento: usa 'all' o '*' per attivare tutti i toolset"
     example: "Esempio: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "Prima cambia con `/model` o `icebath auth`."
     checking_reset_credits: "⏳ Verifica dei crediti di reset accumulati..."
     codex_timeout: "❌ Timeout nella comunicazione con il backend Codex — riprova tra poco."
-    no_api_calls: "(._.) Nessuna chiamata API effettuata finora in questa sessione."
+    no_api_calls: "◈ Nessuna chiamata API effettuata finora in questa sessione."
     header_session: "📊 Utilizzo token della sessione"
     label_model: "Modello:"
     label_input_tokens: "Token di input:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model ti permette di cambiare modello a metà sessione: prova /model sonnet o /model gpt-5."
   t017: "/model --global cambia in modo permanente il tuo modello predefinito."
   t018: "/personality pirate imposta una personalità divertente: 14 opzioni integrate, da kawaii a shakespeare."
-  t019: "/skin cambia il tema della CLI: prova ares, mono, slate, poseidon o charizard."
+  t019: "/skin cambia il tema della CLI: prova taro, light, contrast, cyberpunk o dracula."
   t020: "/statusbar attiva o disattiva una barra persistente che mostra modello, token, % di riempimento del contesto, costo e durata."
   t021: "/tools disable browser rimuove temporaneamente gli strumenti browser per la sessione corrente."
   t022: "/browser connect collega gli strumenti browser al tuo browser della famiglia Chromium già in esecuzione tramite CDP."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets elenca tutti i toolset disponibili, così sai cosa accetta -t/--toolsets."
   t337: "/voice tts attiva o disattiva la modalità solo TTS — l'agente risponde a voce ma tu continui a digitare i prompt."
   t338: "/reload-skills riesamina ~/.icebath/skills/ così le skill aggiunte a mano compaiono senza riavviare la sessione."
-  t339: "/indicator kaomoji|emoji|unicode|ascii sceglie lo stile dell'indicatore di attività della TUI mostrato durante le esecuzioni dell'agente."
+  t339: "/indicator unicode|emoji|ascii sceglie lo stile dell'indicatore di attività della TUI mostrato durante le esecuzioni dell'agente."
   t340: "/debug carica un bundle di supporto (info di sistema + log) e restituisce link condivisibili — funziona anche in chat."
   t341: "icebath -z \"<prompt>\" è il one-shot più puro: risposta finale su stdout e nient'altro — ideale per le pipe negli script."
   t342: "icebath chat --pass-session-id inietta l'ID di sessione nel prompt di sistema così l'agente può farvi riferimento."

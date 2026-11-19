@@ -67,9 +67,6 @@ func (l *fifoLock) reserve() chan struct{} {
 	return turn
 }
 
-// Blocks until the caller owns the lock
-func (l *fifoLock) lock() { <-l.reserve() }
-
 // Hands the lock to the longest waiting place, freeing it when nobody waits
 func (l *fifoLock) unlock() {
 	l.mu.Lock()
@@ -81,13 +78,6 @@ func (l *fifoLock) unlock() {
 	turn := l.waiters[0]
 	l.waiters = l.waiters[1:]
 	close(turn)
-}
-
-// Number of places queued behind the current owner
-func (l *fifoLock) waiting() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.waiters)
 }
 
 // Per connection WebSocket transport, safe to write from any goroutine with batches kept in wire order

@@ -7,9 +7,9 @@ import (
 )
 
 // Busy indicator styles the TUI accepts and the one it starts with
-var IndicatorStyles = []string{"ascii", "emoji", "kaomoji", "unicode"}
+var IndicatorStyles = []string{"ascii", "emoji", "unicode"}
 
-const DefaultIndicatorStyle = "kaomoji"
+const DefaultIndicatorStyle = "unicode"
 
 // Size ceiling for an attachment staged on the host before the base64 read back
 const AttachmentMaxBytes = 16 * 1024 * 1024

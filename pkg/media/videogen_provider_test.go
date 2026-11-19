@@ -287,3 +287,8 @@ func TestCredentialsFollowTheProfileSecretScope(t *testing.T) {
 		t.Fatal(*o.APIKey, *o.BaseURL)
 	}
 }
+
+// Registers a video generation provider, a same name registration replacing the earlier one
+func RegisterVideoGenProvider(p VideoGenProvider, scope string) error {
+	return videoGenRegistry.Register(p, scope)
+}

@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 66
+const Version = 67
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -499,7 +499,7 @@ func defaultsLiteral() Tree {
 			"focus_saved_tool_progress":        "all",
 			"skin":                             "default",
 			"language":                         "en",
-			"tui_status_indicator":             "kaomoji",
+			"tui_status_indicator":             "unicode",
 			"user_message_preview": map[string]any{
 				"first_lines": 2,
 				"last_lines":  2,

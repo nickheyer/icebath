@@ -147,15 +147,6 @@ func (c *codexResponsesClient) requestOverrides(req *Request) map[string]any {
 	return overrides
 }
 
-// Truthy request metadata flag, the strings 1, true, yes and on
-func metadataTruthy(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
-}
-
 // Responses text.format object from a chat completions response_format
 func codexTextFormat(rf map[string]any) map[string]any {
 	format := map[string]any{}

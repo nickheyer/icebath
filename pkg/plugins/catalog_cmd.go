@@ -128,13 +128,6 @@ func writeCatalogSidecarRecord(target string, catalog map[string]any, sha string
 	}
 }
 
-func writeCatalogSidecar(target string, entry *PluginCatalogEntry, sha string) {
-	if sha == "" {
-		sha = entry.Sha
-	}
-	writeCatalogSidecarRecord(target, map[string]any{"name": entry.Name, "repo": entry.Repo, "tier": entry.Tier}, sha)
-}
-
 // Moves one trusted installer record onto the nested catalog block contract
 func writeCatalogBlock(ctx context.Context, h, pluginDir string, block map[string]any) (map[string]any, error) {
 	err := updateInstallRecord(ctx, h, filepath.Base(pluginDir), func(current map[string]any) map[string]any {
@@ -1322,18 +1315,6 @@ func CatalogRowFields(h, dir string, pins, versions map[string]string) (map[stri
 func CatalogPins(ctx context.Context) map[string]string {
 	pins, _, _ := CatalogRowsMaps(ctx)
 	return pins
-}
-
-// Catalog name to display title for entries carrying one
-func CatalogTitles(ctx context.Context) map[string]string {
-	_, _, titles := CatalogRowsMaps(ctx)
-	return titles
-}
-
-// Catalog name to version label for entries carrying one
-func CatalogVersions(ctx context.Context) map[string]string {
-	_, versions, _ := CatalogRowsMaps(ctx)
-	return versions
 }
 
 // Pins, versions and titles maps from one live catalog resolution, all empty when it fails

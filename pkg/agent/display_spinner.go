@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -19,24 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-var kawaiiSpinnerFrames = map[string][]string{
-	"dots": strings.Split("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", ""), "bounce": strings.Split("⠁⠂⠄⡀⢀⠠⠐⠈", ""),
-	"grow": strings.Split("▁▂▃▄▅▆▇█▇▆▅▄▃▂", ""), "arrows": strings.Split("←↖↑↗→↘↓↙", ""),
-	"star": strings.Split("✶✷✸✹✺✹✸✷", ""), "moon": strings.Split("🌑🌒🌓🌔🌕🌖🌗🌘", ""),
-	"pulse": strings.Split("◜◠◝◞◡◟", ""), "brain": strings.Split("🧠💭💡✨💫🌟💡💭", ""),
-	"sparkle": strings.Split("⁺˚*✧✦✧*˚", ""),
-}
+// Frames of the status spinner, the icebath braille wheel
+var spinnerFrames = strings.Split("⣾⣽⣻⢿⡿⣟⣯⣷", "")
 
-var kawaiiWaiting = []string{
-	"(｡◕‿◕｡)", "(◕‿◕✿)", "٩(◕‿◕｡)۶", "(✿◠‿◠)", "( ˘▽˘)っ", "♪(´ε` )", "(◕ᴗ◕✿)", "ヾ(＾∇＾)", "(≧◡≦)", "(★ω★)",
-}
-
-var kawaiiThinking = []string{
-	"(｡•́︿•̀｡)", "(◔_◔)", "(¬‿¬)", "( •_•)>⌐■-■", "(⌐■_■)", "(´･_･`)", "◉_◉", "(°ロ°)", "( ˘⌣˘)♡", "ヽ(>∀<☆)☆",
-	"٩(๑❛ᴗ❛๑)۶", "(⊙_⊙)", "(¬_¬)", "( ͡° ͜ʖ ͡°)", "ಠ_ಠ",
-}
-
-var kawaiiThinkingVerbs = []string{
+var defaultThinkingVerbs = []string{
 	"pondering", "contemplating", "musing", "cogitating", "ruminating", "deliberating", "mulling",
 	"reflecting", "processing", "reasoning", "analyzing", "computing", "synthesizing", "formulating",
 	"brainstorming",
@@ -72,14 +59,22 @@ func skinSpinnerList(ctx context.Context, key string, fallback []string) ([]stri
 	return nil, fmt.Errorf("skin spinner %s is %s, expected a list", key, errchain.Kind(value))
 }
 
-// Skin waiting faces or the kawaii waiting defaults
+// Faces a skin puts ahead of a waiting label, none unless the skin authors them
 func waitingFaces(ctx context.Context) ([]string, error) {
-	return skinSpinnerList(ctx, "waiting_faces", kawaiiWaiting)
+	return skinSpinnerList(ctx, "waiting_faces", nil)
 }
 
-// Skin thinking faces or the kawaii thinking defaults
+// Faces a skin puts ahead of a thinking verb, none unless the skin authors them
 func thinkingFaces(ctx context.Context) ([]string, error) {
-	return skinSpinnerList(ctx, "thinking_faces", kawaiiThinking)
+	return skinSpinnerList(ctx, "thinking_faces", nil)
+}
+
+// Text behind a random face of the list, the bare text when the list is empty
+func faced(faces []string, text string) string {
+	if len(faces) == 0 {
+		return text
+	}
+	return faces[rand.IntN(len(faces))] + " " + text
 }
 
 // Comma separated catalog verbs for the active language, English defaults when the catalog lacks them
@@ -91,7 +86,7 @@ func catalogThinkingVerbs(ctx context.Context) []string {
 		}
 	}
 	if len(verbs) == 0 || (len(verbs) == 1 && verbs[0] == "display.thinking_verbs") {
-		return kawaiiThinkingVerbs
+		return defaultThinkingVerbs
 	}
 	return verbs
 }
@@ -101,7 +96,7 @@ func thinkingVerbs(ctx context.Context) ([]string, error) {
 	return skinSpinnerList(ctx, "thinking_verbs", catalogThinkingVerbs(ctx))
 }
 
-type kawaiiSpinner struct {
+type statusSpinner struct {
 	ctx         context.Context
 	mu          sync.Mutex
 	message     string
@@ -116,24 +111,20 @@ type kawaiiSpinner struct {
 	out         io.Writer
 }
 
-// Unstarted spinner of the named frame set that writes to print fn or the stdout captured now
-func newKawaiiSpinner(ctx context.Context, message, spinnerType string, printFn func(string)) *kawaiiSpinner {
-	frames, ok := kawaiiSpinnerFrames[spinnerType]
-	if !ok {
-		frames = kawaiiSpinnerFrames["dots"]
-	}
-	return &kawaiiSpinner{ctx: ctx, message: message, frames: frames, printFn: printFn, out: statusStdout}
+// Unstarted spinner that writes to print fn or the stdout captured now
+func newStatusSpinner(ctx context.Context, message string, printFn func(string)) *statusSpinner {
+	return &statusSpinner{ctx: ctx, message: message, frames: spinnerFrames, printFn: printFn, out: statusStdout}
 }
 
 // Started spinner for the call sites that show one while a request or tool runs
-func startKawaiiSpinner(ctx context.Context, message, spinnerType string, printFn func(string)) tools.Spinner {
-	s := newKawaiiSpinner(ctx, message, spinnerType, printFn)
+func startStatusSpinner(ctx context.Context, message string, printFn func(string)) tools.Spinner {
+	s := newStatusSpinner(ctx, message, printFn)
 	s.Start()
 	return s
 }
 
 // Sends text through print fn swallowing its panics, else writes text and end to the captured stdout
-func (s *kawaiiSpinner) write(text, end string, flush bool) {
+func (s *statusSpinner) write(text, end string, flush bool) {
 	if s.printFn != nil {
 		func() {
 			defer func() { _ = recover() }()
@@ -151,24 +142,24 @@ func (s *kawaiiSpinner) write(text, end string, flush bool) {
 	}
 }
 
-func (s *kawaiiSpinner) isTTY() bool {
+func (s *statusSpinner) isTTY() bool {
 	f, ok := s.out.(interface{ Fd() uintptr })
 	return ok && isatty.IsTerminal(f.Fd())
 }
 
-func (s *kawaiiSpinner) isPatchStdoutProxy() bool {
+func (s *statusSpinner) isPatchStdoutProxy() bool {
 	_, ok := s.out.(StdoutProxy)
 	return ok
 }
 
-func (s *kawaiiSpinner) isRunning() bool {
+func (s *statusSpinner) isRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.running
 }
 
 // Sleeps for d or until stop closes
-func (s *kawaiiSpinner) pause(stop chan struct{}, d time.Duration) {
+func (s *statusSpinner) pause(stop chan struct{}, d time.Duration) {
 	select {
 	case <-stop:
 	case <-time.After(d):
@@ -176,7 +167,7 @@ func (s *kawaiiSpinner) pause(stop chan struct{}, d time.Duration) {
 }
 
 // Draws frames with elapsed time on a terminal, logs one line otherwise, until stopped
-func (s *kawaiiSpinner) animate(stop, done chan struct{}) {
+func (s *statusSpinner) animate(stop, done chan struct{}) {
 	defer close(done)
 	tty := s.isTTY()
 	if !tty {
@@ -225,7 +216,7 @@ func (s *kawaiiSpinner) animate(stop, done chan struct{}) {
 }
 
 // Starts the animation goroutine unless one already runs
-func (s *kawaiiSpinner) Start() {
+func (s *statusSpinner) Start() {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -239,21 +230,21 @@ func (s *kawaiiSpinner) Start() {
 }
 
 // Replaces the message the next frame draws
-func (s *kawaiiSpinner) UpdateText(message string) {
+func (s *statusSpinner) UpdateText(message string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.message = message
 }
 
 // Spaces wide enough to blank the last frame, never the erase escape that garbles under patch stdout
-func (s *kawaiiSpinner) clearLineBlanks() string {
+func (s *statusSpinner) clearLineBlanks() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return strings.Repeat(" ", max(s.lastLineLen+5, 40))
 }
 
 // Prints a line above the spinner, clearing the current frame first while it runs
-func (s *kawaiiSpinner) PrintAbove(text string) {
+func (s *statusSpinner) PrintAbove(text string) {
 	if s.isRunning() {
 		s.write("\r"+s.clearLineBlanks()+"\r  "+text, "\n", true)
 		return
@@ -262,7 +253,7 @@ func (s *kawaiiSpinner) PrintAbove(text string) {
 }
 
 // Stops the animation, clears its line on a terminal and prints the final message with elapsed time
-func (s *kawaiiSpinner) Stop(finalMessage string) {
+func (s *statusSpinner) Stop(finalMessage string) {
 	s.mu.Lock()
 	s.running = false
 	stop, done, started := s.stopCh, s.done, s.startTime

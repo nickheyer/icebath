@@ -365,3 +365,14 @@ func TestIsTruthyValueAcceptsTheFlagSpellings(t *testing.T) {
 		}
 	}
 }
+
+// MigrateLeftCoreHome installs every left core plugin the home uses and lacks, returning the installed names
+func MigrateLeftCoreHome(ctx context.Context, h string, install func(string) (map[string]any, error), say func(string), processEnv bool) []string {
+	var installed []string
+	for _, f := range leftCorePending(ctx, h, say, processEnv, false) {
+		if leftCoreInstallOne(ctx, h, f, install, say, processEnv) {
+			installed = append(installed, f.Plugin)
+		}
+	}
+	return installed
+}

@@ -191,11 +191,11 @@ func TestOverlayNoopWithoutScope(t *testing.T) {
 }
 
 func TestOverlayPreservesUserSiblings(t *testing.T) {
-	cfg := "display:\n  skin: charizard\n"
+	cfg := "display:\n  skin: cyberpunk\n"
 	writeManagedScope(t, &cfg, nil)
 	out := ApplyManagedOverlay(map[string]any{"display": map[string]any{"skin": "user", "show_reasoning": true}})
 	display := out["display"].(map[string]any)
-	if display["skin"] != "charizard" || display["show_reasoning"] != true {
+	if display["skin"] != "cyberpunk" || display["show_reasoning"] != true {
 		t.Fatal(out)
 	}
 }

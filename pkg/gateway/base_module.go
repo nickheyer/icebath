@@ -259,13 +259,6 @@ func parseScutilProxy(out string) string {
 	return ""
 }
 
-// Drops the memoised scutil answer so the next lookup reads it again
-func ResetMacOSProxyCache() {
-	macOSProxyCache.Lock()
-	macOSProxyCache.set = false
-	macOSProxyCache.Unlock()
-}
-
 // Reports whether NO_PROXY matches at least one of the target hosts
 func ShouldBypassProxy(targetHosts []string) bool {
 	return provider.ShouldBypassProxy(targetHosts, nil)

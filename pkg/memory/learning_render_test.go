@@ -364,9 +364,20 @@ func TestRenderFramesMatchesPythonGolden(t *testing.T) {
 
 func TestPaletteAndDatesMatchPythonGolden(t *testing.T) {
 	golden := loadRenderGolden(t)
+	unparseable := map[string]bool{"0x1234": true, "f_f_f_": true, "zz": true}
 	for color, raw := range golden["_palette"].(map[string]any) {
-		want := raw.(map[string]any)
+		var want any = raw.(map[string]any)
 		got := map[string]any{"dark": DerivePalette(color, true), "light": DerivePalette(color, false), "rgb": HexToRGB(color)}
+		if unparseable[strings.TrimSpace(color)] {
+			// A color that does not parse falls back to the Blackwall accent, where the reference falls back to its own primary
+			const fallback = "#e3122b"
+			if HexToRGB(color) != [3]int{227, 18, 43} {
+				t.Errorf("%q falls back to %v", color, HexToRGB(color))
+			}
+			dark, light := DerivePalette(fallback, true), DerivePalette(fallback, false)
+			dark["primary"], light["primary"] = color, color
+			want = normalizeJSON(t, map[string]any{"dark": dark, "light": light, "rgb": HexToRGB(fallback)})
+		}
 		if d := jsonDiff(color, normalizeJSON(t, got), want); d != "" {
 			t.Errorf("palette mismatch %s", d)
 		}

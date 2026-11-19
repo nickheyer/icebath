@@ -117,33 +117,6 @@ func isOrphan(state, dataRoot string, retention float64, retain bool) (bool, err
 	return float64(time.Now().UnixNano())/1e9-used > retention, nil
 }
 
-// Sorted state dirs under installs whose checkout is gone or missing and unused past retention
-func OrphanInstallStates(installs string) ([]string, error) {
-	if st, err := os.Stat(installs); err != nil || !st.IsDir() {
-		return nil, nil
-	}
-	dataRoot := filepath.Dir(resolvePath(installs))
-	retention, retain, err := retentionSeconds(filepath.Dir(installs))
-	if err != nil {
-		return nil, err
-	}
-	states, err := sortedChildren(installs)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, state := range states {
-		orphan, err := isOrphan(state, dataRoot, retention, retain)
-		if err != nil {
-			return nil, err
-		}
-		if orphan {
-			out = append(out, state)
-		}
-	}
-	return out, nil
-}
-
 // Child paths of a directory sorted by name
 func sortedChildren(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)

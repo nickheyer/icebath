@@ -19,7 +19,7 @@ func TestStatErrorAfterACachedAbsentConfigIsAFailedRead(t *testing.T) {
 	if err != nil || len(cfg) != 0 {
 		t.Fatalf("absent config read %v, %v", cfg, err)
 	}
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("display:\n  skin: mono\nmodel:\n  default: keep-me\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("display:\n  skin: contrast\nmodel:\n  default: keep-me\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(config.SwapConfigVersion(func(_ context.Context, configPath string) ([]any, error) {

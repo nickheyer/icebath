@@ -274,8 +274,8 @@ func (a *DiscordAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, d
 		if err != nil {
 			return promptMessage{}, err
 		}
-		return promptMessage{content: selfContainedPromptContent(ctx, "☤ **"+updateTitle+"**", prompt+defaultHint, false, ""), view: &view.icebathView,
-			embed: newEmbed(truncateDiscordComponentText("☤ "+updateTitle, discordEmbedTitleLimit), prompt+defaultHint, colorGold)}, nil
+		return promptMessage{content: selfContainedPromptContent(ctx, "❆ **"+updateTitle+"**", prompt+defaultHint, false, ""), view: &view.icebathView,
+			embed: newEmbed(truncateDiscordComponentText("❆ "+updateTitle, discordEmbedTitleLimit), prompt+defaultHint, colorGold)}, nil
 	}, "")
 	if result.Success && metadataMarksNonconversational(metadata) {
 		a.nonconversationalMessages.markMany(ctx, []string{fmt.Sprint(result.MessageID)})

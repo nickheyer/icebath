@@ -313,9 +313,6 @@ type RuntimeMode struct {
 	Instructions string
 }
 
-// Kind names the posture profile
-func (m RuntimeMode) Kind() string { return m.Profile.Name }
-
 // IsCoding reports whether the coding posture is active
 func (m RuntimeMode) IsCoding() bool { return m.Profile.Name == CodingProfile.Name }
 
@@ -358,14 +355,6 @@ func (m RuntimeMode) SystemPromptParts(validToolNames map[string]bool, workspace
 		trailing = []string{"Operator instructions (from config):\n" + m.Instructions}
 	}
 	return prefix, workspaceParts, trailing
-}
-
-// SystemBlocks returns the posture blocks as one flat list
-func (m RuntimeMode) SystemBlocks() []string {
-	prefix, workspace, trailing := m.SystemPromptParts(nil, nil)
-	out := append([]string{}, prefix...)
-	out = append(out, workspace...)
-	return append(out, trailing...)
 }
 
 // CompactSkillCategories lists skill categories demoted to names only under focus

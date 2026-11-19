@@ -193,7 +193,7 @@ func TestSkinUseAndList(t *testing.T) {
 	if len(lines) != len(BuiltinSkinNames())+1 {
 		t.Fatalf("listed %q", out.String())
 	}
-	if lines[0] != "  default          builtin  "+PyStr(getOr(mustBuiltin(t, "default"), "description", "")) {
+	if lines[0] != "  blackwall        builtin  "+PyStr(getOr(mustBuiltin(t, DefaultSkinName), "description", "")) {
 		t.Fatalf("builtin row %q", lines[0])
 	}
 	if last := lines[len(lines)-1]; last != "* oasis            user     Sea green" {

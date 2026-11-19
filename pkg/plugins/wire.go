@@ -497,22 +497,8 @@ type Channel struct {
 	notifyCancel     bool
 }
 
-// Channel over the streams serving peer requests with handler, the plugin host child end of the wire
-func NewChannel(reader io.ReadCloser, writer io.WriteCloser, handler func(ctx context.Context, method string, params map[string]any, origin any) (any, error),
-	name string, onClose func(string), contextForOrigin func(any) context.Context) *Channel {
-	return newChannel(reader, writer, handler, name, onClose, contextForOrigin)
-}
-
 // Caller context recorded for a pending request id this side sent, nil when none is pending
 func (c *Channel) ContextOf(id any) context.Context { return c.contextOf(id) }
-
-// Context marking the peer request its holder serves, the origin of every request sent under it
-func WithServingRequest(ctx context.Context, id any) context.Context {
-	return withServingRequest(ctx, id)
-}
-
-// Peer request the context serves, nil outside a request
-func ServingRequest(ctx context.Context) any { return servingRequest(ctx) }
 
 func newChannel(reader io.ReadCloser, writer io.WriteCloser, handler wireHandler, name string,
 	onClose func(string), contextForOrigin func(any) context.Context) *Channel {

@@ -158,3 +158,10 @@ func TestColdCatalogIsWarmedSoTheNextProcessStartsAtTheFloor(t *testing.T) {
 		t.Fatalf("next process starts at the floor, got %v, %v", got, err)
 	}
 }
+
+// Drops every remembered floored route as a fresh process starts
+func auxResetReasoningFloors() {
+	auxFlooredRoutesMu.Lock()
+	auxFlooredRoutes = map[auxFlooredRoute]bool{}
+	auxFlooredRoutesMu.Unlock()
+}

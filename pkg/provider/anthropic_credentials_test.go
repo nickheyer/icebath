@@ -127,3 +127,11 @@ func TestOpenBrowserURLReportsThatNoRegistryBrowserTookTheURL(t *testing.T) {
 		t.Fatalf("open with no browser on the PATH = %v", err)
 	}
 }
+
+// ResetSpentRotationsForTests clears the process local spent rotation registry
+func ResetSpentRotationsForTests() {
+	spentRotationMu.Lock()
+	defer spentRotationMu.Unlock()
+	spentRotationFingerprints = nil
+	deadRefreshTokenPrints = map[string]bool{}
+}

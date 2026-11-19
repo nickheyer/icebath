@@ -237,9 +237,6 @@ func (c *rawConfig) parse(path, text string) error {
 	return nil
 }
 
-// Reports a Windows path separator
-func isNTSep(c byte) bool { return c == '\\' || c == '/' }
-
 // Uv index and transport settings the ambient environment asks for, pip knobs translated
 func BridgedIndexSettings(ambient map[string]string, sitePrefix string) (map[string]string, error) {
 	settings := map[string]string{}

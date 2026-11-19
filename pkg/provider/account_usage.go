@@ -258,27 +258,6 @@ func renderUsageWindowLines(snapshot *AccountUsageSnapshot) []string {
 	return lines
 }
 
-// Dollars with thousands separators and two decimals, sign after the dollar like Python formatting
-func fmtUsageUSD(d float64) string {
-	sign := ""
-	if d < 0 || (d == 0 && math.Signbit(d)) {
-		sign = "-"
-		d = -d
-	}
-	text := strconv.FormatFloat(d, 'f', 2, 64)
-	whole, cents, _ := strings.Cut(text, ".")
-	var b strings.Builder
-	for i, r := range whole {
-		if i > 0 && (len(whole)-i)%3 == 0 {
-			b.WriteByte(',')
-		}
-		b.WriteRune(r)
-	}
-	return "$" + sign + b.String() + "." + cents
-}
-
-func finiteRef(v *float64) bool { return v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) }
-
 // Codex usage, reset credit list and consume endpoints by the Codex CLI path style split
 func codexBackendURLs(baseURL string) (string, string, string) {
 	normalized := strings.TrimRight(strings.TrimSpace(baseURL), "/")

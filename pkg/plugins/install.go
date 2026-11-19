@@ -893,12 +893,6 @@ func resolveSource(ctx context.Context, identifier, catalogName, ref string) (*P
 	return entry, identifier, warnings, nil
 }
 
-// Tree to enable, reusing a refused catalog install on disk, else the error result of a fresh install
-func placeTree(ctx context.Context, h string, entry *PluginCatalogEntry, identifier string, force bool, ref string,
-	step func(InstallPhase), inspectedSha string) (string, map[string]any, string, map[string]any, error) {
-	return placeTreeConsented(ctx, h, entry, identifier, force, ref, step, inspectedSha, false)
-}
-
 // Tree placement carrying the dependency consent the caller already holds into publication
 func placeTreeConsented(ctx context.Context, h string, entry *PluginCatalogEntry, identifier string, force bool, ref string,
 	step func(InstallPhase), inspectedSha string, assumeDepsConsent bool) (string, map[string]any, string, map[string]any, error) {

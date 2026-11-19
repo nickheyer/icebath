@@ -36,9 +36,6 @@ var foregroundMaxTimeout = sync.OnceValue(func() int {
 	return v
 })
 
-// ForegroundMaxTimeout is the cap on a foreground terminal timeout in seconds
-func ForegroundMaxTimeout() int { return foregroundMaxTimeout() }
-
 // Tool description shown to the model
 const terminalToolDescription = `Run shell commands on the OS/shell/backend named in your environment section. The working directory, files and exported variables persist between calls: activate a virtualenv or export once, not before every command.
 

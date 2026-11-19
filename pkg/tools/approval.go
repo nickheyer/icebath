@@ -58,9 +58,6 @@ type GuardResult struct {
 	DenyReason      string
 }
 
-// Denied reports a non consent verdict carrying the retry contract rather than a plain block
-func (r GuardResult) Denied() bool { return !r.Approved && r.Outcome != "" }
-
 // PendingApproval is one approval parked for later review through approve or deny commands
 type PendingApproval struct {
 	Command        string
@@ -352,17 +349,6 @@ func HasBlockingApproval(sessionKey string) bool {
 	return len(approvalState.gatewayQueues[sessionKey]) > 0
 }
 
-// PendingGatewayApprovalCount counts unresolved gateway approvals across every session
-func PendingGatewayApprovalCount() int {
-	approvalState.Lock()
-	defer approvalState.Unlock()
-	n := 0
-	for _, q := range approvalState.gatewayQueues {
-		n += len(q)
-	}
-	return n
-}
-
 // GetPendingGatewayApproval copies the oldest unresolved approval for reconnecting clients
 func GetPendingGatewayApproval(sessionKey string) map[string]any {
 	if sessionKey == "" {
@@ -399,13 +385,6 @@ func PendingApprovalFor(sessionKey string) (PendingApproval, bool) {
 	defer approvalState.Unlock()
 	p, ok := approvalState.pending[sessionKey]
 	return p, ok
-}
-
-// ClearPendingApproval drops the stored pending approval of a session
-func ClearPendingApproval(sessionKey string) {
-	approvalState.Lock()
-	defer approvalState.Unlock()
-	delete(approvalState.pending, sessionKey)
 }
 
 // ApproveSession approves a pattern for this session only

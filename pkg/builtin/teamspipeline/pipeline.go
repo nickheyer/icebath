@@ -228,11 +228,6 @@ type TeamsPipelineConfig struct {
 	TeamsDelivery         any
 }
 
-// Settings with the dataclass defaults
-func NewTeamsPipelineConfig() *TeamsPipelineConfig {
-	return &TeamsPipelineConfig{TranscriptPreferred: true, TranscriptionFallback: true, FFmpegExtractAudio: true, TranscriptMinChars: 80}
-}
-
 // Settings from a snake or camel case dict, missing flags keeping their defaults
 func TeamsPipelineConfigFromDict(payload any) (*TeamsPipelineConfig, error) {
 	data, err := configDict(payload)

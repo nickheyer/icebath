@@ -35,10 +35,6 @@ var (
 	auxUnavailableClock = time.Now
 )
 
-func auxSentence(text string) string {
-	return strings.TrimRight(pystr.Strip(text), ".") + "."
-}
-
 // Persisted pool rows of a provider, empty when the store cannot be read
 func auxPersistedPoolEntries(env PoolEnv, providerID string) []PooledCredential {
 	rows, err := env.Store.ReadCredentialPool(providerID)

@@ -2,12 +2,9 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // StatusSink is the icebath status printing surface the credential sections render through
@@ -28,15 +25,6 @@ type StatusContext struct {
 	Deep   bool
 	Config map[string]any
 }
-
-func (c *StatusContext) ctx() context.Context {
-	if c.Ctx == nil {
-		return context.Background()
-	}
-	return c.Ctx
-}
-
-func (c *StatusContext) env() PoolEnv { return modelsPoolEnv(c.ctx()) }
 
 // ISO timestamp in the local zone as date, time and zone name, the raw value when it does not parse
 func statusFormatISOTimestamp(value any) any {
@@ -151,89 +139,5 @@ func statusOAuthBlockRender(out StatusSink, block statusOAuthBlock, status map[s
 		}
 		out.Detail(row.label, value)
 	}
-	return nil
-}
-
-// First usable Anthropic credential over the registry key env vars, the profile .env winning over the shell
-func getAnthropicKey(env PoolEnv) string {
-	profile, ok := registryProfileCtx(env.ctx(), "anthropic")
-	if !ok {
-		return ""
-	}
-	for _, name := range profile.KeyEnv {
-		if v := GetEnvPreferDotenv(env, name); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// Prints the API Keys section with every known key redacted and Anthropic through its dedicated lookup
-func StatusRenderAPIKeys(c *StatusContext) error {
-	c.Out.Section("API Keys")
-	for _, row := range statusAPIKeys {
-		value := c.Out.FirstEnvValue(row.envs...)
-		c.Out.Row(row.name, value != "", config.RedactKey(value), 12, "  ")
-	}
-	value := getAnthropicKey(c.env())
-	c.Out.Row("Anthropic", value != "", config.RedactKey(value), 12, "  ")
-	return nil
-}
-
-// Prints the Auth Providers section from refresh free snapshots
-func StatusRenderAuthProviders(c *StatusContext) error {
-	c.Out.Section("Auth Providers")
-	env := c.env()
-	for _, block := range statusOAuthBlocks {
-		status := block.status(env)
-		if status == nil {
-			status = map[string]any{}
-		}
-		if err := statusOAuthBlockRender(c.Out, block, status); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Prints the API-Key Providers section and probes LM Studio only when it is the effective provider
-func StatusRenderAPIKeyProviders(c *StatusContext) error {
-	c.Out.Section("API-Key Providers")
-	for _, row := range statusAPIKeyProviders {
-		configured := c.Out.FirstEnvValue(row.envs...) != ""
-		text := "not configured (run: icebath model)"
-		if configured {
-			text = "configured"
-		}
-		c.Out.Row(row.name, configured, text, 16, " ")
-	}
-	if c.Out.EffectiveProviderLabel() != "LM Studio" {
-		return nil
-	}
-	var base any
-	if modelCfg, ok := c.Config["model"].(map[string]any); ok {
-		base = modelCfg["base_url"]
-	}
-	if !pyTruthy(base) {
-		base = c.Out.EnvValue("LM_BASE_URL")
-	}
-	if !pyTruthy(base) {
-		base = "http://127.0.0.1:1234/v1"
-	}
-	baseText := pyStr(base)
-	ok, msg := false, ""
-	models, found, err := ProbeLMStudioModels(c.ctx(), c.Out.EnvValue("LM_API_KEY"), baseText, 1500*time.Millisecond)
-	var authErr *AuthError
-	switch {
-	case errors.As(err, &authErr):
-		ok, msg = false, "auth rejected — set LM_API_KEY"
-	case err != nil:
-		return err
-	case found:
-		ok, msg = true, fmt.Sprintf("reachable (%d model(s)) at %s", len(models), baseText)
-	default:
-		msg = "unreachable at " + baseText
-	}
-	c.Out.Row("LM Studio", ok, msg, 16, " ")
 	return nil
 }

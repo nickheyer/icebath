@@ -57,11 +57,6 @@ func signalOf(state *os.ProcessState) int {
 	return 0
 }
 
-// Reports a write to a pipe whose reader is gone
-func isBrokenPipe(err error) bool {
-	return errors.Is(err, syscall.EPIPE)
-}
-
 // Reads one chunk within the timeout, ready false on an idle pipe, error on EOF or a closed file
 func readChunkTimeout(f *os.File, buf []byte, timeout time.Duration) (int, bool, error) {
 	if err := f.SetReadDeadline(time.Now().Add(timeout)); err != nil {

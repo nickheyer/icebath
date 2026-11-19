@@ -119,3 +119,8 @@ func TestRestartLoopGuardDisabledBreakerNeverTrips(t *testing.T) {
 		}
 	}
 }
+
+// Removes the persisted boot log
+func ClearRestartLoopGuard(ctx context.Context) {
+	_ = os.Remove(restartLoopStatePath(ctx))
+}

@@ -429,12 +429,6 @@ func (s *CommandTokenSource) servedChildEnv(ctx context.Context) ([]string, erro
 	return out, nil
 }
 
-// Child environment of the served profile, empty when the profile scope refuses the spawn
-func (s *CommandTokenSource) childEnv() []string {
-	env, _ := s.servedChildEnv(context.Background())
-	return env
-}
-
 // Runs a shell command and returns its stdout and exit code
 func runShellCommand(ctx context.Context, command string, env []string) ([]byte, int, error) {
 	cmd, err := pyShellCommand(ctx, command)

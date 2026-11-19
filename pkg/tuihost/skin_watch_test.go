@@ -61,7 +61,7 @@ func skinHomes(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	writeSkin(t, def, "default")
-	writeSkin(t, work, "ares")
+	writeSkin(t, work, "taro")
 	t.Setenv("ICEBATH_HOME", def)
 	skinBaselines.Lock()
 	skinBaselines.last, skinBaselines.byHome = nil, map[string]SkinSignature{}
@@ -95,21 +95,21 @@ func TestProfileSkinSwitchRepaintsOnlyThatProfilesTui(t *testing.T) {
 	NoteSkinBroadcast(context.Background())
 	BroadcastSkinIfChanged(context.Background())
 
-	writeSkin(t, work, "mono")
+	writeSkin(t, work, "contrast")
 	BroadcastSkinIfChanged(context.Background())
-	if got := peerSkins(workPeer); len(got) != 1 || got[0] != "mono" {
+	if got := peerSkins(workPeer); len(got) != 1 || got[0] != "contrast" {
 		t.Fatalf("work peer skins = %v", got)
 	}
 	if got := peerSkins(defaultPeer); len(got) != 0 {
 		t.Fatalf("default peer skins = %v", got)
 	}
 
-	writeSkin(t, def, "slate")
+	writeSkin(t, def, "dracula")
 	BroadcastSkinIfChanged(context.Background())
-	if got := peerSkins(defaultPeer); len(got) != 1 || got[0] != "slate" {
+	if got := peerSkins(defaultPeer); len(got) != 1 || got[0] != "dracula" {
 		t.Fatalf("default peer skins = %v", got)
 	}
-	if got := peerSkins(workPeer); len(got) != 1 || got[0] != "mono" {
+	if got := peerSkins(workPeer); len(got) != 1 || got[0] != "contrast" {
 		t.Fatalf("work peer skins = %v", got)
 	}
 }
@@ -121,7 +121,7 @@ func TestOwnerSkinRpcBaselineIsPerProfile(t *testing.T) {
 	workCtx := home.WithOverride(context.Background(), work)
 	NoteSkinBroadcast(context.Background())
 	NoteSkinBroadcast(workCtx)
-	writeSkin(t, work, "mono")
+	writeSkin(t, work, "contrast")
 	NoteSkinBroadcast(workCtx)
 
 	BroadcastSkinIfChanged(context.Background())

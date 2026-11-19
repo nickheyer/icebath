@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Git リポジトリではありません — 更新できません。"
     icebath_cmd_not_found: "✗ `icebath` コマンドが見つかりません。Icebath は実行中ですが、更新コマンドは PATH 上にも現在の Python インタープリタ経由でも実行可能ファイルを見つけられませんでした。ターミナルで `icebath update` を手動で実行してみてください。"
     start_failed: "✗ 更新の開始に失敗しました: {error}"
-    starting: "☤ Icebath の更新を開始しています… 進捗をここにストリーミングします。"
+    starting: "❆ Icebath の更新を開始しています… 進捗をここにストリーミングします。"
     reply_failed: "✗ 更新プロセスへの応答送信に失敗しました: {error}"
     reply_sent: "✓ 更新プロセスに `{label}` を送信しました。"
     failed_notice: "❌ Icebath の更新に失敗しました。以前のバージョンが引き続き動作しています。完全なエラーを見るにはホストで `icebath update` を実行するか、後で /update を再試行してください。"
     prompt_default: " (デフォルト: {default})"
-    prompt: "☤ **更新に入力が必要です:**\n\n{prompt}{default_hint}\n\n`{prefix}approve` (はい) または `{prefix}deny` (いいえ) と返信するか、回答を直接入力してください。"
+    prompt: "❆ **更新に入力が必要です:**\n\n{prompt}{default_hint}\n\n`{prefix}approve` (はい) または `{prefix}deny` (いいえ) と返信するか、回答を直接入力してください。"
     finished: "✅ Icebath の更新が終了しました。"
     timed_out: "❌ Icebath の更新は 30 分でタイムアウトしました。"
     finished_success: "✅ Icebath の更新が正常に完了しました。"
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} {user} が **{label}**"
     update_prompt:
 
-      title: "☤ アップデートに入力が必要です"
+      title: "❆ アップデートに入力が必要です"
       default_hint: "\n\nデフォルト: `{default}`"
       answer_yes: "✓ はい"
       answer_no: "✗ いいえ"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}日 {hours}時間 {minutes}分"
     duration_m_rest: "{minutes}分 {rest}"
     duration_hm_rest: "{hours}時間 {minutes}分 {rest}"
-    no_active_agent: "(._.) アクティブなエージェントがありません -- まずメッセージを送信してください。"
+    no_active_agent: "◈ アクティブなエージェントがありません -- まずメッセージを送信してください。"
     n_more: "他 {count} 件"
     more_not_shown: "件は非表示"
     yes_no_default_yes: "Y/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "セッションのタイトルを予約しました: {title}（最初のメッセージ送信時に保存されます）"
   undo:
 
-    invalid_count: "(._.) 無効な件数 {value} — /undo または /undo N を使用してください。"
+    invalid_count: "◈ 無効な件数 {value} — /undo または /undo N を使用してください。"
     removes_last_exchange: "履歴から直前のユーザー/アシスタントのやり取りを削除します。"
     removes_last_turns: "履歴から直前の {count} ユーザーターンを削除します。"
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ クレジット残高がありません"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ 新たなスタート！画面をクリアし、会話をリセットしました。"
+    fresh_start: "❆ 新たなスタート！画面をクリアし、会話をリセットしました。"
     model_reset_default: "(モデルを設定のデフォルトにリセットしました: {model})"
     title_rejected: "タイトルが拒否されました: {error}"
     title_empty_untitled: "整形後のタイトルが空です — セッションはタイトルなしで開始しました。"
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "推論"
     label_approvals: "承認"
     label_context: "コンテキスト"
-    recent_intro: "(._.) 現在のチャットにはまだメッセージがありません — 再開できる最近のセッションはこちらです:"
+    recent_intro: "◈ 現在のチャットにはまだメッセージがありません — 再開できる最近のセッションはこちらです:"
     recent_header: "最近のセッション:"
     column_title: "タイトル"
     column_preview: "プレビュー"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "続行するには /resume <number>、/resume <session id>、または /resume <session title> を使用してください。"
     resume_example: "例: /resume 2"
-    history_empty: "(._.) まだ会話履歴がありません。"
+    history_empty: "◈ まだ会話履歴がありません。"
     history_tools_header: "[ツール]"
     history_tools_hidden_one: "({count} 件のツールメッセージを非表示)"
     history_tools_hidden_other: "({count} 件のツールメッセージを非表示)"
-    history_title: "(^_^) 会話履歴"
+    history_title: "❆ 会話履歴"
     history_you_header: "[あなた #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(テキスト応答なし)"
     history_tool_calls_one: "({count} 件のツール呼び出しを要求)"
     history_tool_calls_other: "({count} 件のツール呼び出しを要求)"
-    new_session_titled: "(^_^)v 新しいセッションを開始しました: {title}"
-    new_session: "(^_^)v 新しいセッションを開始しました！"
-    save_nothing: "(;_;) 保存する会話がありません。"
-    save_dir_failed: "(x_x) 保存ディレクトリ {path} の作成に失敗しました: {error}"
+    new_session_titled: "✓ 新しいセッションを開始しました: {title}"
+    new_session: "✓ 新しいセッションを開始しました！"
+    save_nothing: "◈ 保存する会話がありません。"
+    save_dir_failed: "✘ 保存ディレクトリ {path} の作成に失敗しました: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v 会話を保存しました: {path} ({label})"
+    save_ok: "✓ 会話を保存しました: {path} ({label})"
     save_resume_hint: "ライブセッションを再開するには: icebath --resume {session_id}"
-    save_failed: "(x_x) 保存に失敗しました: {error}"
-    retry_no_messages: "(._.) 再試行するメッセージがありません。"
-    retry_no_user_message: "(._.) 再試行するユーザーメッセージが見つかりません。"
-    retry_unsafe: "(._.) そのメッセージを安全に再試行できません: {error}"
-    retry_rewind_failed: "(x_x) 再試行の巻き戻しに失敗しました。履歴は変更されていません: {error}"
-    retrying: "(^_^)b 再試行中: \"{preview}\""
-    undo_no_messages: "(._.) 取り消すメッセージがありません。"
-    undo_no_user_message: "(._.) 取り消すユーザーメッセージが見つかりません。"
-    undo_failed: "(x_x) 取り消しに失敗しました。履歴は変更されていません: {error}"
-    undo_ok_one: "(^_^)b {count} ターンを取り消しました ({messages} 件のメッセージ)。バックアップ先: \"{backup}\""
-    undo_ok_other: "(^_^)b {count} ターンを取り消しました ({messages} 件のメッセージ)。バックアップ先: \"{backup}\""
+    save_failed: "✘ 保存に失敗しました: {error}"
+    retry_no_messages: "◈ 再試行するメッセージがありません。"
+    retry_no_user_message: "◈ 再試行するユーザーメッセージが見つかりません。"
+    retry_unsafe: "◈ そのメッセージを安全に再試行できません: {error}"
+    retry_rewind_failed: "✘ 再試行の巻き戻しに失敗しました。履歴は変更されていません: {error}"
+    retrying: "✓ 再試行中: \"{preview}\""
+    undo_no_messages: "◈ 取り消すメッセージがありません。"
+    undo_no_user_message: "◈ 取り消すユーザーメッセージが見つかりません。"
+    undo_failed: "✘ 取り消しに失敗しました。履歴は変更されていません: {error}"
+    undo_ok_one: "✓ {count} ターンを取り消しました ({messages} 件のメッセージ)。バックアップ先: \"{backup}\""
+    undo_ok_other: "✓ {count} ターンを取り消しました ({messages} 件のメッセージ)。バックアップ先: \"{backup}\""
     undo_remaining: "履歴に {count} 件のメッセージが残っています。"
     yolo_state_locked_on: "オンに固定"
     yolo_locked: "⚡ このプロセスでは YOLO は{state}です (--yolo / ICEBATH_YOLO_MODE で起動)。/yolo では無効化できません — 承認を再度有効にするには、フラグなしで再起動してください。"
     yolo_off: "⚠ YOLO モードは{state}です — 危険なコマンドには承認が必要です。"
     yolo_on: "⚡ YOLO モードは{state}です — すべてのコマンドが自動承認されます。注意して使用してください。"
-    compress_too_short: "(._.) 圧縮するには会話が足りません (最低 {min} 件のメッセージが必要です)。"
-    compress_no_agent: "(._.) アクティブなエージェントがありません -- まずメッセージを送信してください。"
+    compress_too_short: "◈ 圧縮するには会話が足りません (最低 {min} 件のメッセージが必要です)。"
+    compress_no_agent: "◈ アクティブなエージェントがありません -- まずメッセージを送信してください。"
     compress_busy: "コンテキストを圧縮中..."
     compress_summarizing: "🗜️  ここまでを要約しています: {count} 件のメッセージ、直近 {keep_last} 往復はそのまま保持..."
     compress_focus: "🗜️  {count} 件のメッセージを圧縮しています、焦点: \"{focus}\"..."
     compress_plain: "🗜️  {count} 件のメッセージを圧縮しています..."
     compress_failed: "❌ 圧縮に失敗しました: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "さようなら！ ☤"
+    goodbye: "さようなら！ 󰆧"
     exit_resume_hint: "このセッションを再開するには:"
     exit_label_session: "セッション:        {session_id}"
     exit_label_title: "タイトル:          {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "（設定に保存済み）"
       scope_save_failed: "（このセッションのみ。設定の保存に失敗しました）"
       scope_session: "（このセッションのみ — 永続化するには --global を使用してください）"
-      unknown_argument: "(._.) 不明な引数: {arg}"
+      unknown_argument: "◈ 不明な引数: {arg}"
       usage: "使い方: {usage}"
       needs_active_session: "{command} を実行するにはアクティブなチャットセッションが必要です。"
       unavailable_no_session: "{label} は利用できません（アクティブなセッションがありません）。"
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "使い方: /indicator [{styles}]"
       status: "処理中インジケーターのスタイル: {style}"
-      unknown_style: "(._.) 不明なインジケータースタイル: {arg}"
+      unknown_style: "◈ 不明なインジケータースタイル: {arg}"
       label: "処理中インジケーターのスタイル"
       note: "TUI は次の描画時に新しいスタイルを反映します。"
     fast:
 
-      not_supported: "(._.) /fast は高速モードに対応したモデル（OpenAI Priority Processing または Anthropic Fast Mode）でのみ利用できます。"
+      not_supported: "◈ /fast は高速モードに対応したモデル（OpenAI Priority Processing または Anthropic Fast Mode）でのみ利用できます。"
       feature_generic: "高速モード"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) このアカウントまたはルートでは {model} の Ultrafast は利用できません。"
+      ultrafast_not_supported: "◈ このアカウントまたはルートでは {model} の Ultrafast は利用できません。"
       usage: "使い方: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature} を {value} に設定しました {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ スプライトシートを合成中…"
       progress_save: "┊ 保存中…"
       progress_drawing: "┊ {state} を描画中…"
-      describe_prompt: "(o_o) ペットの説明を入力してください: "
-      usage: "(o_o) 使い方: /hatch <説明>  (例: /hatch a tiny cyber fox)"
+      describe_prompt: "◈ ペットの説明を入力してください: "
+      usage: "◈ 使い方: /hatch <説明>  (例: /hatch a tiny cyber fox)"
       default_name: "ペット"
-      designing: "(o_o) '{concept}' をデザイン中…（画像モデルの呼び出しに 1 分ほどかかります）"
-      base_failed: "(x_x) ベースの外見を生成できませんでした: {error}"
-      no_base_draft: "(x_x) ベースの下書きが返ってきませんでした — もう一度お試しください。"
-      failed: "(x_x) 孵化に失敗しました: {error}"
-      hatched: "(^_^)b {name} が孵化して仲間になりました — まもなく登場します！"
+      designing: "◈ '{concept}' をデザイン中…（画像モデルの呼び出しに 1 分ほどかかります）"
+      base_failed: "✘ ベースの外見を生成できませんでした: {error}"
+      no_base_draft: "✘ ベースの下書きが返ってきませんでした — もう一度お試しください。"
+      failed: "✘ 孵化に失敗しました: {error}"
+      hatched: "✓ {name} が孵化して仲間になりました — まもなく登場します！"
     pet:
 
-      is_out: "(^_^)b {name} が出てきました — まもなく登場します。"
-      put_away_named: "(-_-)zzZ {name} をしまいました。"
-      put_away: "(-_-)zzZ ペットをしまいました。"
-      usage_scale: "(o_o) 使い方: /pet scale <倍率>  (例: /pet scale 0.5)"
-      scale_set: "(^_^) ペットの倍率 → {scale}。"
-      fetching: "(o_o) petdex から '{name}' を取得中…"
-      adopt_failed: "(x_x) '{name}' を引き取れませんでした: {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} が出てきました — まもなく登場します。"
+      put_away_named: "○ {name} をしまいました。"
+      put_away: "○ ペットをしまいました。"
+      usage_scale: "◈ 使い方: /pet scale <倍率>  (例: /pet scale 0.5)"
+      scale_set: "✓ ペットの倍率 → {scale}。"
+      fetching: "◈ petdex から '{name}' を取得中…"
+      adopt_failed: "✘ '{name}' を引き取れませんでした: {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "未ステージ"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey に失敗しました: {error}"
     paste:
 
-      no_image: "(._.) クリップボードに画像が見つかりません"
+      no_image: "◈ クリップボードに画像が見つかりません"
       attached: "📎 クリップボードから画像 #{index} を添付しました"
-      extract_failed: "(>_<) クリップボードに画像はありますが、取り出しに失敗しました"
+      extract_failed: "◬ クリップボードに画像はありますが、取り出しに失敗しました"
     copy:
 
       nothing_yet: "コピーするものがまだありません。"
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "使い方: /image <path>  例: /image {example}"
-      not_found: "(>_<) ファイルが見つかりません: {path}"
-      unsupported: "(._.) 対応していない画像ファイルです: {name}"
+      not_found: "◬ ファイルが見つかりません: {path}"
+      unsupported: "◈ 対応していない画像ファイルです: {name}"
       attached: "📎 画像を添付しました: {name}"
       now_type_prompt: "続けてプロンプトを入力してください（単発クエリモードでは --image を使用）: {text}"
     tools:
 
-      usage: "(._.) 使い方: /tools {subcommand} <name> [name ...]"
+      usage: "◈ 使い方: /tools {subcommand} <name> [name ...]"
       example_toolset: "組み込みツールセット:  /tools {subcommand} web"
       example_mcp: "MCP ツール:            /tools {subcommand} github:create_issue"
       disabling: "{names} を無効化しています..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "セッション {session_id} は {resolved_id} に圧縮されています。トランスクリプトを引き継いで後続セッションを再開します。"
     sessions:
 
-      none_yet: "(._.) 過去のセッションはまだありません。"
+      none_yet: "◈ 過去のセッションはまだありません。"
     branch:
 
       branched_one: "⑂ セッション \"{title}\" を分岐しました（ユーザーメッセージ {count} 件）"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "ターミナルとファイルのツールは、以降ワークツリー内で動作します。"
     personality:
 
-      title: "(^o^)/ パーソナリティ"
+      title: "❆ パーソナリティ"
       none_option: "(パーソナリティのオーバーレイなし)"
       usage: "使い方: /personality <name>   (* = 有効)"
-      unknown: "(._.) 不明なパーソナリティ: {name}"
+      unknown: "◈ 不明なパーソナリティ: {name}"
       available: "利用可能: none, {available}"
       scope_saved: "(設定に保存済み)"
       scope_session: "(このセッションのみ)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} パーソナリティを '{name}' に設定しました {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat には整数を指定してください"
-      unknown_command: "(._.) 不明な cron コマンド: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat には整数を指定してください"
+      unknown_command: "◈ 不明な cron コマンド: {subcommand}"
       available: "利用可能: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) スケジュール済みタスク"
+      overview_title: "❆ スケジュール済みタスク"
       overview_commands: "コマンド:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Check server status\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"New task\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "現在のジョブ:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "スキル: なし"
       next_short: "次回"
       no_jobs_hint: "スケジュール済みのジョブはありません。'/cron add' で作成できます。"
-      no_jobs: "(._.) スケジュール済みのジョブはありません。"
+      no_jobs: "◈ スケジュール済みのジョブはありません。"
       list_header: "スケジュール済みジョブ:"
       id: "ID: {job_id}"
       name: "名前: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "error: {error}"
       last_run: "前回実行: {when} ({status})"
-      usage_add: "(._.) 使い方: /cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) プロンプトか、少なくとも 1 つのスキルを指定してください"
-      create_failed: "(x_x) ジョブの作成に失敗しました: {error}"
-      created: "(^_^)b ジョブを作成しました: {job_id}"
-      usage_edit: "(._.) 使い方: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) ジョブが見つかりません: {job_id}"
-      update_failed: "(x_x) ジョブの更新に失敗しました: {error}"
-      updated: "(^_^)b ジョブを更新しました: {job_id}"
-      usage_action: "(._.) 使い方: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) ジョブの一時停止に失敗しました: {error}"
-      resume_failed: "(x_x) ジョブの再開に失敗しました: {error}"
-      run_failed: "(x_x) ジョブの実行に失敗しました: {error}"
-      remove_failed: "(x_x) ジョブの削除に失敗しました: {error}"
-      removed: "(^_^)b ジョブを削除しました: {name} ({job_id})"
-      did_not_run: "(x_x) ジョブを実行しませんでした: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b ジョブを一時停止しました: {name} ({job_id})"
-      resumed: "(^_^)b ジョブを再開しました: {name} ({job_id})"
-      triggered: "(^_^)b ジョブを起動しました: {name} ({job_id})"
+      usage_add: "◈ 使い方: /cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ プロンプトか、少なくとも 1 つのスキルを指定してください"
+      create_failed: "✘ ジョブの作成に失敗しました: {error}"
+      created: "✓ ジョブを作成しました: {job_id}"
+      usage_edit: "◈ 使い方: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ ジョブが見つかりません: {job_id}"
+      update_failed: "✘ ジョブの更新に失敗しました: {error}"
+      updated: "✓ ジョブを更新しました: {job_id}"
+      usage_action: "◈ 使い方: /cron {subcommand} <job_id>"
+      pause_failed: "✘ ジョブの一時停止に失敗しました: {error}"
+      resume_failed: "✘ ジョブの再開に失敗しました: {error}"
+      run_failed: "✘ ジョブの実行に失敗しました: {error}"
+      remove_failed: "✘ ジョブの削除に失敗しました: {error}"
+      removed: "✓ ジョブを削除しました: {name} ({job_id})"
+      did_not_run: "✘ ジョブを実行しませんでした: {name} ({job_id})\n  {reason}"
+      paused: "✓ ジョブを一時停止しました: {name} ({job_id})"
+      resumed: "✓ ジョブを再開しました: {name} ({job_id})"
+      triggered: "✓ ジョブを起動しました: {name} ({job_id})"
     suggestions:
 
       failed: "suggestions コマンドが失敗しました: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "cron blueprint コマンドが失敗しました: {error}"
     curator:
 
-      failed: "(._.) curator: {error}"
+      failed: "◈ curator: {error}"
     kanban:
 
-      failed: "(._.) kanban エラー: {error}"
+      failed: "◈ kanban エラー: {error}"
     memory:
 
       unknown_subcommand: "不明な /memory サブコマンドです。次のいずれかを使ってください: pending, approve <id>, reject <id>, approval <on|off>。"
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "使い方: /bg <prompt>\n例: /bg 今日の HN 上位記事を要約して\n(この会話についてのちょっとした質問には /btw <question> を使ってください。)\nタスクは別のセッションで実行され、完了したら結果がここに表示されます。"
-      no_credentials: "(>_<) バックグラウンドタスクを開始できません: 有効な認証情報がありません。"
+      no_credentials: "◬ バックグラウンドタスクを開始できません: 有効な認証情報がありません。"
       started: "🔄 バックグラウンドタスク #{number} を開始しました: \"{preview}\""
       task_id: "タスク ID: {task_id}"
       keep_chatting: "チャットを続けられます — 完了したら結果が表示されます。"
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "使い方: /btw <question>\n例: /btw あのエラーはどのファイルにあった？\nこの会話を中断せずに、会話についてのちょっとした質問に答えます。\n(独立したバックグラウンドタスクには /bg <prompt> を使ってください。)"
-      no_credentials: "(>_<) サイド質問に回答できません: 有効な認証情報がありません。"
+      no_credentials: "◬ サイド質問に回答できません: 有効な認証情報がありません。"
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(回答は生成されませんでした)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! 以下にプロンプトを入力してください。'#!' で始まる行は無視されます。\n#! 保存して終了すると送信されます。空のままにするとキャンセルされます。"
-      editor_failed: "(>_<) エディターを開けませんでした: {error}"
-      empty: "(._.) プロンプトが空です — 何も送信していません。"
+      editor_failed: "◬ エディターを開けませんでした: {error}"
+      empty: "◈ プロンプトが空です — 何も送信していません。"
     focus:
 
       usage: "使い方: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "現在のセッションを終了して Icebath Agent を更新します"
       choice_cancel: "キャンセル"
       choice_cancel_desc: "現在のセッションを維持します"
-      title: "☤  Icebath Agent を更新"
+      title: "󰆧  Icebath Agent を更新"
       detail: "現在のセッションを終了し、`icebath update` を実行します。"
       cancelled: "🟡 /update をキャンセルしました。"
-      launching: "☤ 更新を開始しています..."
+      launching: "󰆧 更新を開始しています..."
     voice:
 
       unknown_subcommand: "不明な voice サブコマンド: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "次のいずれかですか: {candidates}？"
   config:
 
-    title: "(^_^) 設定"
+    title: "❆ 設定"
     loaded: "（読み込み済み）"
     not_found: "（見つかりません）"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 コンテキスト使用量 — {model}"
-    compute_failed: "(._.) コンテキストの内訳を計算できませんでした: {error}"
+    compute_failed: "◈ コンテキストの内訳を計算できませんでした: {error}"
   error:
 
     auth: "{provider} のキーが拒否されました。`icebath model` を実行して再入力してください。"
@@ -3042,7 +3042,7 @@ cli:
     starting: "Icebath ゲートウェイ（メッセージングプラットフォーム）を起動しています..."
   gateway_status:
 
-    header: "(✿◠‿◠) ゲートウェイの状態"
+    header: "❆ ゲートウェイの状態"
     platform_config_header: "メッセージングプラットフォームの設定:"
     enabled: "有効"
     not_configured: "未設定（{env_var}）"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. または {path} で設定を行う"
   help:
 
-    header: "(^_^)? 利用可能なコマンド"
+    header: "❆ 利用可能なコマンド"
     section_session: "セッション"
     section_configuration: "設定"
     section_tools_skills: "ツールとスキル"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "{command} のスキルの読み込みに失敗しました"
   tools:
 
-    none_available: "(;_;) 利用可能なツールがありません"
-    header: "(^_^)/ 利用可能なツール"
-    total: "合計: {count} 個のツール  ヽ(^o^)ノ"
+    none_available: "◈ 利用可能なツールがありません"
+    header: "❆ 利用可能なツール"
+    total: "合計: {count} 個のツール"
   toolsets:
 
-    header: "(^_^)b 利用可能なツールセット"
+    header: "✓ 利用可能なツールセット"
     currently_enabled_legend: "(*) = 現在有効"
     tip_enable_all: "ヒント: 'all' または '*' で全ツールセットを有効化できます"
     example: "例: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "先に `/model` または `icebath auth` で切り替えてください。"
     checking_reset_credits: "⏳ 蓄積されたリセットクレジットを確認中..."
     codex_timeout: "❌ Codex バックエンドとの通信がタイムアウトしました — しばらくしてから再試行してください。"
-    no_api_calls: "(._.) このセッションではまだ API 呼び出しがありません。"
+    no_api_calls: "◈ このセッションではまだ API 呼び出しがありません。"
     header_session: "📊 セッションのトークン使用量"
     label_model: "モデル:"
     label_input_tokens: "入力トークン:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model でセッション中にモデルを切り替えられます。/model sonnet や /model gpt-5 を試してみてください。"
   t017: "/model --global はデフォルトのモデルを恒久的に変更します。"
   t018: "/personality pirate で楽しいパーソナリティを設定できます。kawaii から shakespeare まで 14 種類の組み込みオプションがあります。"
-  t019: "/skin は CLI のテーマを変更します。ares、mono、slate、poseidon、charizard を試してみてください。"
+  t019: "/skin は CLI のテーマを変更します。taro、light、contrast、cyberpunk、dracula を試してみてください。"
   t020: "/statusbar はモデル、トークン、コンテキスト使用率 %、コスト、経過時間を表示する常設バーのオン/オフを切り替えます。"
   t021: "/tools disable browser は現在のセッションの間だけ、ブラウザツールを一時的に外します。"
   t022: "/browser connect は CDP 経由で、起動中の Chromium 系ブラウザにブラウザツールを接続します。"
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets は利用可能なすべてのツールセットを一覧表示し、-t/--toolsets に何を渡せるかがわかります。"
   t337: "/voice tts は TTS のみのモードを切り替えます。エージェントの応答は音声で読み上げられ、プロンプトはこれまで通りタイプします。"
   t338: "/reload-skills は ~/.icebath/skills/ を再スキャンするため、セッションを再起動せずに追加したスキルが現れます。"
-  t339: "/indicator kaomoji|emoji|unicode|ascii で、エージェント実行中に表示される TUI のビジーインジケーターのスタイルを選べます。"
+  t339: "/indicator unicode|emoji|ascii で、エージェント実行中に表示される TUI のビジーインジケーターのスタイルを選べます。"
   t340: "/debug はサポートバンドル（システム情報とログ）をアップロードして共有用リンクを返します。チャットでも使えます。"
   t341: "icebath -z \"<prompt>\" は最も純粋なワンショット実行です。最終回答だけを stdout に出力するため、スクリプトでのパイプ処理に理想的です。"
   t342: "icebath chat --pass-session-id はセッション ID をシステムプロンプトに注入し、エージェントが自身のセッションを参照できるようにします。"

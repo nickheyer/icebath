@@ -1,101 +1,10 @@
 package media
 
 import (
-	"context"
-	"fmt"
-	"slices"
 	"sync"
-	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
 	sttLeaseMu sync.Mutex
 	sttLeases  = map[string]bool{}
 )
-
-// Preloads the configured local STT model so the next transcription starts hot, the result naming what happened
-func WarmSTTProvider(ctx context.Context, sttConfig map[string]any, provider string) (*pyjson.Object, error) {
-	if sttConfig == nil {
-		sttConfig = loadSTTConfig(ctx)
-	}
-	name := provider
-	if name == "" {
-		resolved, err := getProvider(ctx, sttConfig)
-		if err != nil {
-			return nil, err
-		}
-		name = resolved
-	}
-	name = pystr.Strip(pystr.Lower(name))
-	result := pyjson.ObjectOf("provider", name, "warmed", false, "action", "noop")
-	if name != "local" && name != "local_command" {
-		return result, nil
-	}
-	if name == "local_command" {
-		result.Set("warmed", true)
-		return result, nil
-	}
-	if !hasFasterWhisper() && !whisperProvisioned() {
-		result.Set("action", "error")
-		result.Set("error", whisperMissingText)
-		return result, nil
-	}
-	localCfg, _ := sttConfig["local"].(map[string]any)
-	if localCfg == nil {
-		localCfg = map[string]any{}
-	}
-	modelName := normalizeLocalModel(sttStrOrEmpty(localCfg["model"]))
-	localModelMu.Lock()
-	hotBefore := localModel != nil && localModelName == modelName
-	localModelMu.Unlock()
-	started := time.Now()
-	model, err := getOrLoadLocalModel(ctx, modelName, localCfg)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[STT] warm-up for local model '%s' failed: %v", modelName, err))
-		result.Set("action", "error")
-		result.Set("error", err.Error())
-		return result, nil
-	}
-	if model == nil {
-		result.Set("action", "error")
-		result.Set("error", "Local whisper model failed to load")
-		return result, nil
-	}
-	model.release()
-	touchTranscriptionTime()
-	if idle := getIdleUnloadSeconds(localCfg); idle > 0 {
-		startIdleUnloadWatcher(ctx, idle)
-	}
-	elapsedMS := time.Since(started).Milliseconds()
-	action := "loaded"
-	if hotBefore {
-		action = "cached"
-	}
-	result.Set("warmed", true)
-	result.Set("action", action)
-	result.Set("elapsed_ms", elapsedMS)
-	pkgLog().Info(fmt.Sprintf("[STT] warm-up local model '%s': %s in %dms", modelName, action, elapsedMS))
-	return result, nil
-}
-
-// Sorted names of the live STT leases
-func STTLeaseHolders() []string {
-	sttLeaseMu.Lock()
-	defer sttLeaseMu.Unlock()
-	out := make([]string, 0, len(sttLeases))
-	for k := range sttLeases {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
-}
-
-// Drops every STT lease, the reset the lease cases run between them
-func ResetSTTLeases() {
-	sttLeaseMu.Lock()
-	clear(sttLeases)
-	sttLeaseMu.Unlock()
-}

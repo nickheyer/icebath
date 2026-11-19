@@ -170,7 +170,7 @@ func (r *Run) PrintGallery(limit int) error {
 	if err != nil {
 		var me *ManifestError
 		if errors.As(err, &me) {
-			r.printf("(._.) Couldn't reach the petdex gallery: %s", me.Msg)
+			r.printf("◈ Couldn't reach the petdex gallery: %s", me.Msg)
 			return nil
 		}
 		return err
@@ -187,7 +187,7 @@ func (r *Run) PrintGallery(limit int) error {
 	if limit > 0 && len(entries) > limit {
 		shown = entries[:limit]
 	}
-	r.printf("(^o^)/ petdex gallery — first %d of %d:", len(shown), len(entries))
+	r.printf("❆ petdex gallery — first %d of %d:", len(shown), len(entries))
 	for _, e := range shown {
 		mark := "○"
 		if installed[e.Slug] {

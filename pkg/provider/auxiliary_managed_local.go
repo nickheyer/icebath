@@ -97,10 +97,3 @@ func auxIsManagedLocalEndpoint(baseURL string) bool {
 
 // IsManagedLocalEndpoint reports whether a base URL targets the llama-server this install manages
 func IsManagedLocalEndpoint(baseURL string) bool { return auxIsManagedLocalEndpoint(baseURL) }
-
-// Drops the cached managed endpoint so the next read consults the state file
-func auxResetManagedLocalCache() {
-	auxManagedLocalMu.Lock()
-	auxManagedLocalCacheAt, auxManagedLocalCached = time.Time{}, ""
-	auxManagedLocalMu.Unlock()
-}

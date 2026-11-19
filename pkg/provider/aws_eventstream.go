@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -255,68 +254,6 @@ func awsDecodeEventStreamHeaders(data []byte) ([]awsEventStreamHeader, error) {
 	return out, nil
 }
 
-// Wire bytes of one frame with both checksums, the encoder fakes and tests replay through
-func awsEncodeEventStreamMessage(headers []awsEventStreamHeader, payload []byte) ([]byte, error) {
-	var hb bytes.Buffer
-	for _, h := range headers {
-		if len(h.Name) > 255 {
-			return nil, fmt.Errorf("aws event stream header name %q exceeds 255 bytes", h.Name)
-		}
-		hb.WriteByte(byte(len(h.Name)))
-		hb.WriteString(h.Name)
-		hb.WriteByte(h.Type)
-		var raw []byte
-		switch h.Type {
-		case awsHeaderTrue, awsHeaderFalse:
-		case awsHeaderByte:
-			raw = []byte{byte(h.Value.(int8))}
-		case awsHeaderShort:
-			raw = binary.BigEndian.AppendUint16(nil, uint16(h.Value.(int16)))
-		case awsHeaderInteger:
-			raw = binary.BigEndian.AppendUint32(nil, uint32(h.Value.(int32)))
-		case awsHeaderLong:
-			raw = binary.BigEndian.AppendUint64(nil, uint64(h.Value.(int64)))
-		case awsHeaderTimestamp:
-			raw = binary.BigEndian.AppendUint64(nil, uint64(h.Value.(time.Time).UnixMilli()))
-		case awsHeaderUUID:
-			raw = h.Value.([]byte)
-			if len(raw) != 16 {
-				return nil, fmt.Errorf("aws event stream uuid header %q must be 16 bytes", h.Name)
-			}
-		case awsHeaderBytes, awsHeaderString:
-			if s, ok := h.Value.(string); ok {
-				raw = []byte(s)
-			} else {
-				raw = h.Value.([]byte)
-			}
-			if len(raw) > 0xffff {
-				return nil, fmt.Errorf("aws event stream header %q value exceeds 65535 bytes", h.Name)
-			}
-			hb.Write(binary.BigEndian.AppendUint16(nil, uint16(len(raw))))
-		default:
-			return nil, fmt.Errorf("aws event stream header %q has unknown value type %d", h.Name, h.Type)
-		}
-		hb.Write(raw)
-	}
-	total := awsEventStreamMinFrameLen + hb.Len() + len(payload)
-	out := make([]byte, 0, total)
-	out = binary.BigEndian.AppendUint32(out, uint32(total))
-	out = binary.BigEndian.AppendUint32(out, uint32(hb.Len()))
-	out = binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(out[:8]))
-	out = append(out, hb.Bytes()...)
-	out = append(out, payload...)
-	return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(out)), nil
-}
-
-// String header triple of an event frame with the given event type
-func awsEventHeaders(eventType, contentType string) []awsEventStreamHeader {
-	return []awsEventStreamHeader{
-		{Name: ":event-type", Type: awsHeaderString, Value: eventType},
-		{Name: ":content-type", Type: awsHeaderString, Value: contentType},
-		{Name: ":message-type", Type: awsHeaderString, Value: "event"},
-	}
-}
-
 // Anthropic events decoded from the chunk frames of InvokeModelWithResponseStream
 type bedrockInvokeEvents struct {
 	r       *awsEventStreamReader
@@ -360,30 +297,4 @@ func (s *bedrockInvokeEvents) Next() (*anthEvent, error) {
 		}
 		return &anthEvent{Type: typ, Payload: payload, Raw: string(data)}, nil
 	}
-}
-
-// Chunk frame wrapping one anthropic event the way InvokeModelWithResponseStream sends it
-func bedrockInvokeChunkFrame(event map[string]any) ([]byte, error) {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := json.Marshal(map[string]string{"bytes": base64.StdEncoding.EncodeToString(data)})
-	if err != nil {
-		return nil, err
-	}
-	return awsEncodeEventStreamMessage(awsEventHeaders("chunk", "application/json"), payload)
-}
-
-// Exception frame of the given exception type and message
-func awsEventStreamExceptionFrame(exceptionType, message string) ([]byte, error) {
-	payload, err := json.Marshal(map[string]string{"message": message})
-	if err != nil {
-		return nil, err
-	}
-	return awsEncodeEventStreamMessage([]awsEventStreamHeader{
-		{Name: ":exception-type", Type: awsHeaderString, Value: exceptionType},
-		{Name: ":content-type", Type: awsHeaderString, Value: "application/json"},
-		{Name: ":message-type", Type: awsHeaderString, Value: "exception"},
-	}, payload)
 }

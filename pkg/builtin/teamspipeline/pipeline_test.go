@@ -369,3 +369,8 @@ func TestCreateJobFromUsersResourcePathWithoutOdataID(t *testing.T) {
 		t.Fatalf("transcript id %v", got)
 	}
 }
+
+// Settings with the dataclass defaults
+func NewTeamsPipelineConfig() *TeamsPipelineConfig {
+	return &TeamsPipelineConfig{TranscriptPreferred: true, TranscriptionFallback: true, FFmpegExtractAudio: true, TranscriptMinChars: 80}
+}

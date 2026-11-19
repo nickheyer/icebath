@@ -334,7 +334,7 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 			}
 			if !turn.boxOpened {
 				turn.boxOpened = true
-				label := " ☤ Icebath "
+				label := " 󰆧 Icebath "
 				if c.showTimestamps {
 					label = label + c.timestampNow() + " "
 				}
@@ -907,11 +907,11 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	if response == "" || cliTruthy(result["response_previewed"]) {
 		return
 	}
-	label, respColor, respText := "☤ Icebath", "#CD7F32", "#FFF8DC"
+	label, respColor, respText := "󰆧 Icebath", "#9cc7e8", "#dfe9f2"
 	if skin := config.GetActiveSkin(c.ctx); skin != nil {
-		label = skin.GetBranding("response_label", "☤ Icebath")
-		respColor = skin.GetColor("response_border", "#CD7F32")
-		respText = skin.GetColor("banner_text", "#FFF8DC")
+		label = skin.GetBranding("response_label", "󰆧 Icebath")
+		respColor = skin.GetColor("response_border", "#9cc7e8")
+		respText = skin.GetColor("banner_text", "#dfe9f2")
 	}
 	respColor, respText = maybeRemapForLightMode(respColor), maybeRemapForLightMode(respText)
 	isErrorResponse := cliTruthy(result["failed"]) || cliTruthy(result["partial"])
@@ -967,7 +967,7 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	func() {
 		defer func() { _ = recover() }()
 		defaultChatConsole.PrintPanel(pyrich.Panel{
-			Body: strings.Join(ctaLines, "\n"), Title: "[#CD7F32 bold]" + c.t("cli.chat.out_of_credits_title", nil) + "[/]",
-			TitleAlign: "left", BorderStyle: "#CD7F32", Box: "horizontals", Padding: &[2]int{1, 4}, Width: scrollbackBoxWidth()})
+			Body: strings.Join(ctaLines, "\n"), Title: "[#9cc7e8 bold]" + c.t("cli.chat.out_of_credits_title", nil) + "[/]",
+			TitleAlign: "left", BorderStyle: "#9cc7e8", Box: "horizontals", Padding: &[2]int{1, 4}, Width: scrollbackBoxWidth()})
 	}()
 }

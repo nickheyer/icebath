@@ -379,14 +379,6 @@ func auxLoopClosed(other any) bool {
 	return ok && b.IsClosed()
 }
 
-// Drops every cached semaphore
-func auxResetAuxSemaphores() {
-	auxSemMu.Lock()
-	defer auxSemMu.Unlock()
-	clear(auxSyncSemaphores)
-	clear(auxAsyncSemaphores)
-}
-
 // True when a profile payload carries a reasoning wire control at any depth
 func auxContainsProfileReasoningFields(value any) bool {
 	m, ok := pyjson.Dict(value)

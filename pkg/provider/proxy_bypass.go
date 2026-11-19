@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"net"
 	"net/netip"
 	"net/url"
 	"os"
@@ -229,15 +228,4 @@ func ShouldBypassProxy(targets []string, noProxyValue *string) bool {
 		}
 	}
 	return false
-}
-
-// HostOf is the lowercased host of a URL or host port string
-func HostOf(value string) string {
-	host, _, _ := SplitHostPort(value)
-	if host == "" {
-		if h, _, err := net.SplitHostPort(value); err == nil {
-			return strings.ToLower(h)
-		}
-	}
-	return host
 }

@@ -21,18 +21,6 @@ const (
 	KindSkill
 )
 
-func (k Kind) String() string {
-	switch k {
-	case KindSlash:
-		return "slash"
-	case KindBang:
-		return "bang"
-	case KindSkill:
-		return "skill"
-	}
-	return "prompt"
-}
-
 // LooksLikeSlashCommand reports whether text starts a slash command rather than an absolute path
 func LooksLikeSlashCommand(text string) bool {
 	if text == "" || !strings.HasPrefix(text, "/") {

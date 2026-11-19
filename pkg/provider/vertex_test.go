@@ -624,3 +624,10 @@ func TestVertexGetConfigExportedResolvesProfileHome(t *testing.T) {
 		t.Fatalf("token %q base %q", token, base)
 	}
 }
+
+// Clears the per content credential cache
+func resetVertexCredentialCache() {
+	vertexCredsMu.Lock()
+	vertexCredsCache = map[vertexCacheKey]*vertexCacheEntry{}
+	vertexCredsMu.Unlock()
+}

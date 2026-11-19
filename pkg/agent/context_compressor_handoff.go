@@ -159,16 +159,6 @@ func findContextSummaries(messages []map[string]any, start, end int) []contextSu
 	return out
 }
 
-// Newest handoff summary inside a compression window, index minus one when none
-func findLatestContextSummary(messages []map[string]any, start, end int) (int, string) {
-	found := findContextSummaries(messages, start, end)
-	if len(found) == 0 {
-		return -1, ""
-	}
-	last := found[len(found)-1]
-	return last.idx, last.body
-}
-
 // Canonical call id for logging, matching uses the id variants
 func getToolCallID(tc any) string {
 	v := tcGet(tc, "call_id", nil)

@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Не git-репозиторий — обновление невозможно."
     icebath_cmd_not_found: "✗ Не удалось найти команду `icebath`. Icebath запущен, но команда обновления не нашла исполняемый файл в PATH или через текущий интерпретатор Python. Попробуйте выполнить `icebath update` вручную в терминале."
     start_failed: "✗ Не удалось запустить обновление: {error}"
-    starting: "☤ Запуск обновления Icebath… Я буду транслировать прогресс сюда."
+    starting: "❆ Запуск обновления Icebath… Я буду транслировать прогресс сюда."
     reply_failed: "✗ Не удалось отправить ответ процессу обновления: {error}"
     reply_sent: "✓ Отправлено `{label}` процессу обновления."
     failed_notice: "❌ Обновление Icebath не удалось; предыдущая версия продолжает работать. Выполните `icebath update` на хосте, чтобы увидеть полную ошибку, или попробуйте /update позже."
     prompt_default: " (по умолчанию: {default})"
-    prompt: "☤ **Обновлению нужен ваш ответ:**\n\n{prompt}{default_hint}\n\nОтветьте `{prefix}approve` (да) или `{prefix}deny` (нет), либо введите ответ напрямую."
+    prompt: "❆ **Обновлению нужен ваш ответ:**\n\n{prompt}{default_hint}\n\nОтветьте `{prefix}approve` (да) или `{prefix}deny` (нет), либо введите ответ напрямую."
     finished: "✅ Обновление Icebath завершено."
     timed_out: "❌ Обновление Icebath прервано по тайм-ауту через 30 минут."
     finished_success: "✅ Обновление Icebath успешно завершено."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}**: {user}"
     update_prompt:
 
-      title: "☤ Обновлению нужен ваш ответ"
+      title: "❆ Обновлению нужен ваш ответ"
       default_hint: "\n\nПо умолчанию: `{default}`"
       answer_yes: "✓ Да"
       answer_no: "✗ Нет"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days} д {hours} ч {minutes} мин"
     duration_m_rest: "{minutes} мин {rest}"
     duration_hm_rest: "{hours} ч {minutes} мин {rest}"
-    no_active_agent: "(._.) Нет активного агента — сначала отправьте сообщение."
+    no_active_agent: "◈ Нет активного агента — сначала отправьте сообщение."
     n_more: "ещё {count}"
     more_not_shown: "остальные не показаны"
     yes_no_default_yes: "Y/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "Заголовок сеанса поставлен в очередь: {title} (будет сохранён при первом сообщении)"
   undo:
 
-    invalid_count: "(._.) Недопустимое число {value} — используйте /undo или /undo N."
+    invalid_count: "◈ Недопустимое число {value} — используйте /undo или /undo N."
     removes_last_exchange: "Это удалит из истории последний обмен «пользователь/ассистент»."
     removes_last_turns: "Это удалит из истории последние ходы пользователя: {count}."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ Кредиты закончились"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Начинаем заново! Экран очищен, разговор сброшен."
+    fresh_start: "❆ Начинаем заново! Экран очищен, разговор сброшен."
     model_reset_default: "(модель сброшена на значение по умолчанию из конфигурации: {model})"
     title_rejected: "Заголовок отклонён: {error}"
     title_empty_untitled: "После очистки заголовок пуст — сеанс начат без заголовка."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "Рассуждения"
     label_approvals: "Одобрения"
     label_context: "Контекст"
-    recent_intro: "(._.) В текущем чате пока нет сообщений — вот недавние сеансы, которые можно возобновить:"
+    recent_intro: "◈ В текущем чате пока нет сообщений — вот недавние сеансы, которые можно возобновить:"
     recent_header: "Недавние сеансы:"
     column_title: "Заголовок"
     column_preview: "Превью"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "Используйте /resume <номер>, /resume <id сеанса> или /resume <заголовок сеанса>, чтобы продолжить."
     resume_example: "Пример: /resume 2"
-    history_empty: "(._.) История разговора пока пуста."
+    history_empty: "◈ История разговора пока пуста."
     history_tools_header: "[Инструменты]"
     history_tools_hidden_one: "(скрыто {count} сообщение инструмента)"
     history_tools_hidden_other: "(скрыто сообщений инструментов: {count})"
-    history_title: "(^_^) История разговора"
+    history_title: "❆ История разговора"
     history_you_header: "[Вы #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(нет текстового ответа)"
     history_tool_calls_one: "(запрошен {count} вызов инструмента)"
     history_tool_calls_other: "(запрошено вызовов инструментов: {count})"
-    new_session_titled: "(^_^)v Новый сеанс начат: {title}"
-    new_session: "(^_^)v Новый сеанс начат!"
-    save_nothing: "(;_;) Нет разговора для сохранения."
-    save_dir_failed: "(x_x) Не удалось создать каталог для сохранения {path}: {error}"
+    new_session_titled: "✓ Новый сеанс начат: {title}"
+    new_session: "✓ Новый сеанс начат!"
+    save_nothing: "◈ Нет разговора для сохранения."
+    save_dir_failed: "✘ Не удалось создать каталог для сохранения {path}: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Разговор сохранён в: {path} ({label})"
+    save_ok: "✓ Разговор сохранён в: {path} ({label})"
     save_resume_hint: "Возобновить текущий сеанс: icebath --resume {session_id}"
-    save_failed: "(x_x) Не удалось сохранить: {error}"
-    retry_no_messages: "(._.) Нет сообщений для повтора."
-    retry_no_user_message: "(._.) Не найдено сообщение пользователя для повтора."
-    retry_unsafe: "(._.) Невозможно безопасно повторить это сообщение: {error}"
-    retry_rewind_failed: "(x_x) Откат для повтора не удался; история не изменена: {error}"
-    retrying: "(^_^)b Повторяем: \"{preview}\""
-    undo_no_messages: "(._.) Нет сообщений для отмены."
-    undo_no_user_message: "(._.) Не найдено сообщение пользователя для отмены."
-    undo_failed: "(x_x) Отмена не удалась; история не изменена: {error}"
-    undo_ok_one: "(^_^)b Отменён {count} ход (сообщений: {messages}). Резервная копия: \"{backup}\""
-    undo_ok_other: "(^_^)b Отменено ходов: {count} (сообщений: {messages}). Резервная копия: \"{backup}\""
+    save_failed: "✘ Не удалось сохранить: {error}"
+    retry_no_messages: "◈ Нет сообщений для повтора."
+    retry_no_user_message: "◈ Не найдено сообщение пользователя для повтора."
+    retry_unsafe: "◈ Невозможно безопасно повторить это сообщение: {error}"
+    retry_rewind_failed: "✘ Откат для повтора не удался; история не изменена: {error}"
+    retrying: "✓ Повторяем: \"{preview}\""
+    undo_no_messages: "◈ Нет сообщений для отмены."
+    undo_no_user_message: "◈ Не найдено сообщение пользователя для отмены."
+    undo_failed: "✘ Отмена не удалась; история не изменена: {error}"
+    undo_ok_one: "✓ Отменён {count} ход (сообщений: {messages}). Резервная копия: \"{backup}\""
+    undo_ok_other: "✓ Отменено ходов: {count} (сообщений: {messages}). Резервная копия: \"{backup}\""
     undo_remaining: "Сообщений осталось в истории: {count}."
     yolo_state_locked_on: "жёстко ВКЛЮЧЁН"
     yolo_locked: "⚡ Режим YOLO {state} для этого процесса (запущен с --yolo / ICEBATH_YOLO_MODE). /yolo не может его выключить — перезапустите без флага, чтобы снова включить одобрения."
     yolo_off: "⚠ Режим YOLO {state} — опасные команды будут требовать одобрения."
     yolo_on: "⚡ Режим YOLO {state} — все команды одобряются автоматически. Будьте осторожны."
-    compress_too_short: "(._.) Разговор слишком короткий для сжатия (нужно не менее {min} сообщений)."
-    compress_no_agent: "(._.) Нет активного агента — сначала отправьте сообщение."
+    compress_too_short: "◈ Разговор слишком короткий для сжатия (нужно не менее {min} сообщений)."
+    compress_no_agent: "◈ Нет активного агента — сначала отправьте сообщение."
     compress_busy: "Сжатие контекста..."
     compress_summarizing: "🗜️  Сводка до этого места: сообщений: {count}, последние обмены ({keep_last}) сохраняются дословно..."
     compress_focus: "🗜️  Сжимаем сообщения ({count}), фокус: \"{focus}\"..."
     compress_plain: "🗜️  Сжимаем сообщения ({count})..."
     compress_failed: "❌ Сжатие не удалось: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "До свидания! ☤"
+    goodbye: "До свидания! 󰆧"
     exit_resume_hint: "Возобновить этот сеанс:"
     exit_label_session: "Сеанс:          {session_id}"
     exit_label_title: "Заголовок:      {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(сохранено в конфигурации)"
       scope_save_failed: "(только для сеанса; не удалось сохранить конфигурацию)"
       scope_session: "(этот сеанс — используйте --global, чтобы сохранить)"
-      unknown_argument: "(._.) Неизвестный аргумент: {arg}"
+      unknown_argument: "◈ Неизвестный аргумент: {arg}"
       usage: "Использование: {usage}"
       needs_active_session: "Для {command} нужен активный сеанс чата."
       unavailable_no_session: "{label} недоступно (нет активного сеанса)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "Использование: /indicator [{styles}]"
       status: "Стиль индикатора занятости: {style}"
-      unknown_style: "(._.) Неизвестный стиль индикатора: {arg}"
+      unknown_style: "◈ Неизвестный стиль индикатора: {arg}"
       label: "Стиль индикатора занятости"
       note: "TUI применит новый стиль при следующей отрисовке."
     fast:
 
-      not_supported: "(._.) /fast доступен только для моделей с поддержкой быстрого режима (OpenAI Priority Processing или Anthropic Fast Mode)."
+      not_supported: "◈ /fast доступен только для моделей с поддержкой быстрого режима (OpenAI Priority Processing или Anthropic Fast Mode)."
       feature_generic: "Быстрый режим"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Ultrafast недоступен для {model} в этом аккаунте или маршруте."
+      ultrafast_not_supported: "◈ Ultrafast недоступен для {model} в этом аккаунте или маршруте."
       usage: "Использование: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature}: установлено {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ сборка спрайтшита…"
       progress_save: "┊ сохранение…"
       progress_drawing: "┊ рисуем {state}…"
-      describe_prompt: "(o_o) Опишите своего питомца: "
-      usage: "(o_o) Использование: /hatch <описание>  (например, /hatch крошечная кибер-лиса)"
+      describe_prompt: "◈ Опишите своего питомца: "
+      usage: "◈ Использование: /hatch <описание>  (например, /hatch крошечная кибер-лиса)"
       default_name: "Питомец"
-      designing: "(o_o) Создаём «{concept}»… (около минуты вызовов модели изображений)"
-      base_failed: "(x_x) Не удалось сгенерировать базовый облик: {error}"
-      no_base_draft: "(x_x) Базовый набросок не получен — попробуйте ещё раз."
-      failed: "(x_x) Hatch не удался: {error}"
-      hatched: "(^_^)b {name} вылупился и принят — скоро появится!"
+      designing: "◈ Создаём «{concept}»… (около минуты вызовов модели изображений)"
+      base_failed: "✘ Не удалось сгенерировать базовый облик: {error}"
+      no_base_draft: "✘ Базовый набросок не получен — попробуйте ещё раз."
+      failed: "✘ Hatch не удался: {error}"
+      hatched: "✓ {name} вылупился и принят — скоро появится!"
     pet:
 
-      is_out: "(^_^)b {name} выпущен — скоро появится."
-      put_away_named: "(-_-)zzZ {name} убран."
-      put_away: "(-_-)zzZ Питомец убран."
-      usage_scale: "(o_o) Использование: /pet scale <множитель>  (например, /pet scale 0.5)"
-      scale_set: "(^_^) Масштаб питомца → {scale}."
-      fetching: "(o_o) Загружаем «{name}» из petdex…"
-      adopt_failed: "(x_x) Не удалось принять «{name}»: {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} выпущен — скоро появится."
+      put_away_named: "○ {name} убран."
+      put_away: "○ Питомец убран."
+      usage_scale: "◈ Использование: /pet scale <множитель>  (например, /pet scale 0.5)"
+      scale_set: "✓ Масштаб питомца → {scale}."
+      fetching: "◈ Загружаем «{name}» из petdex…"
+      adopt_failed: "✘ Не удалось принять «{name}»: {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Не в индексе"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey не удался: {error}"
     paste:
 
-      no_image: "(._.) В буфере обмена нет изображения"
+      no_image: "◈ В буфере обмена нет изображения"
       attached: "📎 Изображение №{index} прикреплено из буфера обмена"
-      extract_failed: "(>_<) В буфере обмена есть изображение, но извлечь его не удалось"
+      extract_failed: "◬ В буфере обмена есть изображение, но извлечь его не удалось"
     copy:
 
       nothing_yet: "Пока нечего копировать."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "Использование: /image <путь>  например, /image {example}"
-      not_found: "(>_<) Файл не найден: {path}"
-      unsupported: "(._.) Неподдерживаемый файл изображения: {name}"
+      not_found: "◬ Файл не найден: {path}"
+      unsupported: "◈ Неподдерживаемый файл изображения: {name}"
       attached: "📎 Прикреплено изображение: {name}"
       now_type_prompt: "Теперь введите промпт (или используйте --image в режиме одиночного запроса): {text}"
     tools:
 
-      usage: "(._.) Использование: /tools {subcommand} <имя> [имя ...]"
+      usage: "◈ Использование: /tools {subcommand} <имя> [имя ...]"
       example_toolset: "Встроенный набор:  /tools {subcommand} web"
       example_mcp: "Инструмент MCP:    /tools {subcommand} github:create_issue"
       disabling: "Выключаем {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "Сеанс {session_id} был сжат в {resolved_id}; возобновляем сеанс-потомок с вашей стенограммой."
     sessions:
 
-      none_yet: "(._.) Предыдущих сеансов пока нет."
+      none_yet: "◈ Предыдущих сеансов пока нет."
     branch:
 
       branched_one: "⑂ Создана ветка сеанса \"{title}\" ({count} сообщение пользователя)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "Терминал и файловые инструменты теперь работают в worktree."
     personality:
 
-      title: "(^o^)/ Личности"
+      title: "❆ Личности"
       none_option: "(без наложения личности)"
       usage: "Использование: /personality <имя>   (* = активная)"
-      unknown: "(._.) Неизвестная личность: {name}"
+      unknown: "◈ Неизвестная личность: {name}"
       available: "Доступно: none, {available}"
       scope_saved: "(сохранено в конфигурации)"
       scope_session: "(только для сеанса)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} Личность установлена: '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat должен быть целым числом"
-      unknown_command: "(._.) Неизвестная команда cron: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat должен быть целым числом"
+      unknown_command: "◈ Неизвестная команда cron: {subcommand}"
       available: "Доступно: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Запланированные задачи"
+      overview_title: "❆ Запланированные задачи"
       overview_commands: "Команды:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Проверить состояние сервера\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Новая задача\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Текущие задачи:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "Навыки: нет"
       next_short: "Далее"
       no_jobs_hint: "Запланированных задач нет. Создайте через '/cron add'."
-      no_jobs: "(._.) Запланированных задач нет."
+      no_jobs: "◈ Запланированных задач нет."
       list_header: "Запланированные задачи:"
       id: "ID: {job_id}"
       name: "Имя: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "ошибка: {error}"
       last_run: "Последний запуск: {when} ({status})"
-      usage_add: "(._.) Использование: /cron add <расписание> <промпт>"
-      need_prompt_or_skill: "(._.) Укажите промпт или хотя бы один навык"
-      create_failed: "(x_x) Не удалось создать задачу: {error}"
-      created: "(^_^)b Задача создана: {job_id}"
-      usage_edit: "(._.) Использование: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) Задача не найдена: {job_id}"
-      update_failed: "(x_x) Не удалось обновить задачу: {error}"
-      updated: "(^_^)b Задача обновлена: {job_id}"
-      usage_action: "(._.) Использование: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) Не удалось приостановить задачу: {error}"
-      resume_failed: "(x_x) Не удалось возобновить задачу: {error}"
-      run_failed: "(x_x) Не удалось запустить задачу: {error}"
-      remove_failed: "(x_x) Не удалось удалить задачу: {error}"
-      removed: "(^_^)b Задача удалена: {name} ({job_id})"
-      did_not_run: "(x_x) Задача не запущена: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b Задача приостановлена: {name} ({job_id})"
-      resumed: "(^_^)b Задача возобновлена: {name} ({job_id})"
-      triggered: "(^_^)b Задача запущена: {name} ({job_id})"
+      usage_add: "◈ Использование: /cron add <расписание> <промпт>"
+      need_prompt_or_skill: "◈ Укажите промпт или хотя бы один навык"
+      create_failed: "✘ Не удалось создать задачу: {error}"
+      created: "✓ Задача создана: {job_id}"
+      usage_edit: "◈ Использование: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ Задача не найдена: {job_id}"
+      update_failed: "✘ Не удалось обновить задачу: {error}"
+      updated: "✓ Задача обновлена: {job_id}"
+      usage_action: "◈ Использование: /cron {subcommand} <job_id>"
+      pause_failed: "✘ Не удалось приостановить задачу: {error}"
+      resume_failed: "✘ Не удалось возобновить задачу: {error}"
+      run_failed: "✘ Не удалось запустить задачу: {error}"
+      remove_failed: "✘ Не удалось удалить задачу: {error}"
+      removed: "✓ Задача удалена: {name} ({job_id})"
+      did_not_run: "✘ Задача не запущена: {name} ({job_id})\n  {reason}"
+      paused: "✓ Задача приостановлена: {name} ({job_id})"
+      resumed: "✓ Задача возобновлена: {name} ({job_id})"
+      triggered: "✓ Задача запущена: {name} ({job_id})"
     suggestions:
 
       failed: "Ошибка команды suggestions: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "Ошибка команды cron blueprint: {error}"
     curator:
 
-      failed: "(._.) curator: {error}"
+      failed: "◈ curator: {error}"
     kanban:
 
-      failed: "(._.) ошибка kanban: {error}"
+      failed: "◈ ошибка kanban: {error}"
     memory:
 
       unknown_subcommand: "Неизвестная подкоманда /memory. Доступны: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "Использование: /bg <промпт>\nПример: /bg Кратко перескажи главные новости HN за сегодня\n(Для побочного вопроса об этом разговоре используйте /btw <вопрос>.)\nЗадача выполняется в отдельном сеансе, результат появится здесь по завершении."
-      no_credentials: "(>_<) Не удалось запустить фоновую задачу: нет действительных учётных данных."
+      no_credentials: "◬ Не удалось запустить фоновую задачу: нет действительных учётных данных."
       started: "🔄 Фоновая задача #{number} запущена: \"{preview}\""
       task_id: "ID задачи: {task_id}"
       keep_chatting: "Можете продолжать общение — результат появится по завершении."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "Использование: /btw <вопрос>\nПример: /btw в каком файле была та ошибка?\nОтвечает на короткий вопрос об этом разговоре, не прерывая его.\n(Для независимой фоновой задачи используйте /bg <промпт>.)"
-      no_credentials: "(>_<) Не удалось ответить на побочный вопрос: нет действительных учётных данных."
+      no_credentials: "◬ Не удалось ответить на побочный вопрос: нет действительных учётных данных."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(Ответ не сгенерирован)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! Составьте промпт ниже. Строки, начинающиеся с '#!', игнорируются.\n#! Сохраните и выйдите, чтобы отправить; оставьте пустым для отмены."
-      editor_failed: "(>_<) Не удалось открыть редактор: {error}"
-      empty: "(._.) Пустой промпт — ничего не отправлено."
+      editor_failed: "◬ Не удалось открыть редактор: {error}"
+      empty: "◈ Пустой промпт — ничего не отправлено."
     focus:
 
       usage: "Использование: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "выйти из текущего сеанса и обновить Icebath Agent"
       choice_cancel: "Отмена"
       choice_cancel_desc: "оставить текущий сеанс"
-      title: "☤  Обновить Icebath Agent"
+      title: "󰆧  Обновить Icebath Agent"
       detail: "Текущий сеанс будет завершён, затем запустится `icebath update`."
       cancelled: "🟡 /update отменено."
-      launching: "☤ Запускаю обновление..."
+      launching: "󰆧 Запускаю обновление..."
     voice:
 
       unknown_subcommand: "Неизвестная подкоманда voice: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "Вы имели в виду: {candidates}?"
   config:
 
-    title: "(^_^) Конфигурация"
+    title: "❆ Конфигурация"
     loaded: "(загружено)"
     not_found: "(не найдено)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 Использование контекста — {model}"
-    compute_failed: "(._.) Не удалось рассчитать разбивку контекста: {error}"
+    compute_failed: "◈ Не удалось рассчитать разбивку контекста: {error}"
   error:
 
     auth: "Ваш ключ {provider} отклонён. Выполните `icebath model`, чтобы ввести его заново."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Запуск шлюза Icebath (платформы обмена сообщениями)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Состояние шлюза"
+    header: "❆ Состояние шлюза"
     platform_config_header: "Конфигурация платформ обмена сообщениями:"
     enabled: "Включено"
     not_configured: "Не настроено ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. Или настройте параметры в {path}"
   help:
 
-    header: "(^_^)? Доступные команды"
+    header: "❆ Доступные команды"
     section_session: "Сеанс"
     section_configuration: "Конфигурация"
     section_tools_skills: "Инструменты и навыки"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "Не удалось загрузить навык для {command}"
   tools:
 
-    none_available: "(;_;) Нет доступных инструментов"
-    header: "(^_^)/ Доступные инструменты"
-    total: "Всего инструментов: {count}  ヽ(^o^)ノ"
+    none_available: "◈ Нет доступных инструментов"
+    header: "❆ Доступные инструменты"
+    total: "Всего инструментов: {count}"
   toolsets:
 
-    header: "(^_^)b Доступные наборы инструментов"
+    header: "✓ Доступные наборы инструментов"
     currently_enabled_legend: "(*) = сейчас включён"
     tip_enable_all: "Совет: используйте 'all' или '*', чтобы включить все наборы инструментов"
     example: "Пример: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "Сначала переключитесь через `/model` или `icebath auth`."
     checking_reset_credits: "⏳ Проверяю накопленные кредиты на сброс..."
     codex_timeout: "❌ Тайм-аут при обращении к бэкенду Codex — попробуйте ещё раз чуть позже."
-    no_api_calls: "(._.) В этом сеансе ещё не было вызовов API."
+    no_api_calls: "◈ В этом сеансе ещё не было вызовов API."
     header_session: "📊 Расход токенов за сеанс"
     label_model: "Модель:"
     label_input_tokens: "Входные токены:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model позволяет сменить модель прямо в сеансе — попробуйте /model sonnet или /model gpt-5."
   t017: "/model --global навсегда меняет вашу модель по умолчанию."
   t018: "/personality pirate задаёт забавную личность — 14 встроенных вариантов, от kawaii до shakespeare."
-  t019: "/skin меняет тему CLI — попробуйте ares, mono, slate, poseidon или charizard."
+  t019: "/skin меняет тему CLI — попробуйте taro, light, contrast, cyberpunk или dracula."
   t020: "/statusbar включает постоянную строку с моделью, токенами, заполненностью контекста в %, стоимостью и длительностью."
   t021: "/tools disable browser временно убирает инструменты браузера на текущий сеанс."
   t022: "/browser connect подключает инструменты браузера к вашему запущенному браузеру семейства Chromium через CDP."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets перечисляет все доступные наборы инструментов, чтобы вы знали, что принимает -t/--toolsets."
   t337: "/voice tts включает режим «только TTS» — агент отвечает голосом, а вы по-прежнему печатаете промпты."
   t338: "/reload-skills заново сканирует ~/.icebath/skills/, чтобы добавленные навыки появились без перезапуска сеанса."
-  t339: "/indicator kaomoji|emoji|unicode|ascii выбирает стиль индикатора занятости TUI, который показывается во время работы агента."
+  t339: "/indicator unicode|emoji|ascii выбирает стиль индикатора занятости TUI, который показывается во время работы агента."
   t340: "/debug загружает бандл поддержки (сведения о системе + логи) и возвращает ссылки, которыми можно поделиться — работает и в чате."
   t341: "icebath -z \"<промпт>\" — самый чистый одноразовый запуск: в stdout только итоговый ответ и ничего больше — идеально для конвейеров в скриптах."
   t342: "icebath chat --pass-session-id добавляет ID сеанса в системный промпт, чтобы агент мог ссылаться на него."

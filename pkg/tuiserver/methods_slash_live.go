@@ -24,7 +24,7 @@ var computeContextDetails = agent.ComputeContextDetails
 // Commands a local session answers in process instead of through the slash worker
 var contextLocalInProcess = map[string]bool{"context": true}
 
-const noAgentUsage = "(._.) No active agent -- send a message first."
+const noAgentUsage = "◈ No active agent -- send a message first."
 
 // HelpCategory is one help category of the command registry with its command and description rows
 type HelpCategory struct {

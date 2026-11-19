@@ -17,10 +17,10 @@ import (
 
 var wizardBanner = []string{
 	"┌─────────────────────────────────────────────────────────┐",
-	"│             ☤ Gateway Setup                            │",
+	"│             󰆧 Gateway Setup                             │",
 	"├─────────────────────────────────────────────────────────┤",
 	"│  Configure messaging platforms and the gateway service. │",
-	"│  Press Ctrl+C at any time to exit.                     │",
+	"│  Press Ctrl+C at any time to exit.                      │",
 	"└─────────────────────────────────────────────────────────┘",
 }
 

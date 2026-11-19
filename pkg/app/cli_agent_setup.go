@@ -249,7 +249,7 @@ func collectResumeEntries(c *CLI, displayHistory []map[string]any, disp map[stri
 	return entries, lastAsstIdx, lastAsstFull
 }
 
-var resumeSkinColors = [][2]string{{"banner_text", "#FFF8DC"}, {"session_label", "#DAA520"}, {"session_border", "#8B8682"}, {"ui_ok", "#8FBC8F"}}
+var resumeSkinColors = [][2]string{{"banner_text", "#dfe9f2"}, {"session_label", "#6c7f92"}, {"session_border", "#2a3a4b"}, {"ui_ok", "#8FBC8F"}}
 
 // Returns the active skin's resume panel colors, the defaults when no skin loads
 func resumePanelColors(c *CLI) [4]string {

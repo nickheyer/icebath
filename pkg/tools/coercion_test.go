@@ -207,3 +207,13 @@ func TestCoerceToolArgsNested(t *testing.T) {
 		t.Fatalf("bare string not wrapped: %v", result)
 	}
 }
+
+// Recursively parses JSON encoded strings where the schema expects a container
+func coerceNormalizeJSONStrings(value any, schema any, rootSchema any) (any, bool) {
+	return coerceNormalizeJSONStringsWith(wtf8CoerceDecoder, value, schema, rootSchema)
+}
+
+// Coerces a string to the expected type or type union and reports whether it changed
+func coerceValue(value string, expectedType any, schema map[string]any) (any, bool) {
+	return coerceValueWith(wtf8CoerceDecoder, value, expectedType, schema)
+}

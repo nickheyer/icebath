@@ -277,12 +277,6 @@ func orderFlushFiles(paths []string) []string {
 	return ordered
 }
 
-// Replays flush files into state.db and returns how many messages were recovered
-func RecoverPendingToDB(ctx context.Context, sessionDB TranscriptAppender, resolver SpoolSessionResolver) (int, error) {
-	recovered, _, err := RecoverPendingSpool(ctx, sessionDB, resolver)
-	return recovered, err
-}
-
 // Replays flush files deleting each on success, returning the count and the sessions held back
 func RecoverPendingSpool(ctx context.Context, sessionDB TranscriptAppender, resolver SpoolSessionResolver) (int, map[string]bool, error) {
 	flushDir, err := shutdownFlushDir(ctx)

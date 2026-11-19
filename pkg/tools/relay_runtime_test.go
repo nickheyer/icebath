@@ -800,3 +800,13 @@ func TestLoadNemoRelayReadsTheRegisteredBinding(t *testing.T) {
 		t.Fatalf("failing binding %v", err)
 	}
 }
+
+func (l *relayLazy[T]) reset() {
+	l.mu.Lock()
+	var zero T
+	l.value, l.set = zero, false
+	l.mu.Unlock()
+}
+
+// Clears the cached segments configuration so the next read reloads it
+func ResetRelaySegmentsConfigForTests() { relaySegmentsConfigLazy.reset() }

@@ -266,9 +266,9 @@ func reportShallowVerdict(ctx context.Context, w io.Writer, gitCmd []string, roo
 		return nil
 	}
 	if counted > 0 {
-		fmt.Fprintf(w, "⚕ Update available: %d %s behind %s.\n", counted, commitsWord(counted), compareBranch)
+		fmt.Fprintf(w, "󰆧 Update available: %d %s behind %s.\n", counted, commitsWord(counted), compareBranch)
 	} else {
-		fmt.Fprintf(w, "⚕ Update available (behind %s).\n", compareBranch)
+		fmt.Fprintf(w, "󰆧 Update available (behind %s).\n", compareBranch)
 	}
 	command, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
 	if err != nil {
@@ -292,7 +292,7 @@ func reportRevListVerdict(ctx context.Context, w io.Writer, gitCmd []string, roo
 		fmt.Fprintln(w, "✓ Already up to date.")
 		return nil
 	}
-	fmt.Fprintf(w, "⚕ Update available: %d %s behind %s.\n", behind, commitsWord(behind), compareBranch)
+	fmt.Fprintf(w, "󰆧 Update available: %d %s behind %s.\n", behind, commitsWord(behind), compareBranch)
 	command, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
 	if err != nil {
 		return err

@@ -755,7 +755,7 @@ func RunUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 		return 0, nil
 	}
 	fmt.Fprintln(w)
-	uninstallBox(w, "│            ☤ Icebath Agent Uninstaller                 │", cliui.Magenta)
+	uninstallBox(w, "│            󰆧 Icebath Agent Uninstaller                  │", cliui.Magenta)
 	fmt.Fprintln(w)
 	managed := install.InstallerCreated(projectRoot)
 	fmt.Fprintln(w, cliui.Color("Current Installation:", cliui.Cyan, cliui.Bold))
@@ -1032,7 +1032,7 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 		}
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Thank you for using Icebath Agent! ☤")
+	fmt.Fprintln(w, "Thank you for using Icebath Agent! 󰆧")
 	fmt.Fprintln(w)
 }
 

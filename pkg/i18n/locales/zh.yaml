@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ 不是 git 仓库 — 无法更新。"
     icebath_cmd_not_found: "✗ 无法找到 `icebath` 命令。Icebath 正在运行，但更新命令无法在 PATH 上或通过当前 Python 解释器找到可执行文件。请尝试在终端中手动运行 `icebath update`。"
     start_failed: "✗ 启动更新失败：{error}"
-    starting: "☤ 正在启动 Icebath 更新…… 进度将在此处显示。"
+    starting: "❆ 正在启动 Icebath 更新…… 进度将在此处显示。"
     reply_failed: "✗ 向更新进程发送响应失败：{error}"
     reply_sent: "✓ 已向更新进程发送 `{label}`。"
     failed_notice: "❌ Icebath 更新失败；之前的版本仍在运行。在主机上运行 `icebath update` 查看完整错误，或稍后再试 /update。"
     prompt_default: " （默认：{default}）"
-    prompt: "☤ **更新需要你的输入：**\n\n{prompt}{default_hint}\n\n回复 `{prefix}approve`（是）或 `{prefix}deny`（否），或直接输入你的答案。"
+    prompt: "❆ **更新需要你的输入：**\n\n{prompt}{default_hint}\n\n回复 `{prefix}approve`（是）或 `{prefix}deny`（否），或直接输入你的答案。"
     finished: "✅ Icebath 更新已完成。"
     timed_out: "❌ Icebath 更新已超时（30 分钟）。"
     finished_success: "✅ Icebath 更新成功完成。"
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}**（由 {user}）"
     update_prompt:
 
-      title: "☤ 更新需要你的输入"
+      title: "❆ 更新需要你的输入"
       default_hint: "\n\n默认值：`{default}`"
       answer_yes: "✓ 是"
       answer_no: "✗ 否"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}天 {hours}小时 {minutes}分"
     duration_m_rest: "{minutes}分 {rest}"
     duration_hm_rest: "{hours}小时 {minutes}分 {rest}"
-    no_active_agent: "(._.) 没有活动的代理——请先发送一条消息。"
+    no_active_agent: "◈ 没有活动的代理——请先发送一条消息。"
     n_more: "还有 {count} 项"
     more_not_shown: "更多未显示"
     yes_no_default_yes: "Y/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "会话标题已排队：{title}（将在首条消息时保存）"
   undo:
 
-    invalid_count: "(._.) 无效的数量 {value}——请使用 /undo 或 /undo N。"
+    invalid_count: "◈ 无效的数量 {value}——请使用 /undo 或 /undo N。"
     removes_last_exchange: "这将从历史中删除最近一轮用户/助手对话。"
     removes_last_turns: "这将从历史中删除最近 {count} 个用户回合。"
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ 额度已用完"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ 全新开始！屏幕已清空，对话已重置。"
+    fresh_start: "❆ 全新开始！屏幕已清空，对话已重置。"
     model_reset_default: "（模型已重置为配置默认值：{model}）"
     title_rejected: "标题被拒绝：{error}"
     title_empty_untitled: "清理后标题为空 — 会话以无标题开始。"
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "推理"
     label_approvals: "审批"
     label_context: "上下文"
-    recent_intro: "(._.) 当前聊天还没有消息 — 以下是可以恢复的最近会话："
+    recent_intro: "◈ 当前聊天还没有消息 — 以下是可以恢复的最近会话："
     recent_header: "最近的会话："
     column_title: "标题"
     column_preview: "预览"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "使用 /resume <编号>、/resume <会话 ID> 或 /resume <会话标题> 继续。"
     resume_example: "示例：/resume 2"
-    history_empty: "(._.) 还没有对话历史。"
+    history_empty: "◈ 还没有对话历史。"
     history_tools_header: "[工具]"
     history_tools_hidden_one: "（已隐藏 {count} 条工具消息）"
     history_tools_hidden_other: "（已隐藏 {count} 条工具消息）"
-    history_title: "(^_^) 对话历史"
+    history_title: "❆ 对话历史"
     history_you_header: "[你 #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "（无文本回复）"
     history_tool_calls_one: "（请求了 {count} 次工具调用）"
     history_tool_calls_other: "（请求了 {count} 次工具调用）"
-    new_session_titled: "(^_^)v 新会话已开始：{title}"
-    new_session: "(^_^)v 新会话已开始！"
-    save_nothing: "(;_;) 没有可保存的对话。"
-    save_dir_failed: "(x_x) 无法创建保存目录 {path}：{error}"
+    new_session_titled: "✓ 新会话已开始：{title}"
+    new_session: "✓ 新会话已开始！"
+    save_nothing: "◈ 没有可保存的对话。"
+    save_dir_failed: "✘ 无法创建保存目录 {path}：{error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v 对话已保存到：{path}（{label}）"
+    save_ok: "✓ 对话已保存到：{path}（{label}）"
     save_resume_hint: "恢复当前会话：icebath --resume {session_id}"
-    save_failed: "(x_x) 保存失败：{error}"
-    retry_no_messages: "(._.) 没有可重试的消息。"
-    retry_no_user_message: "(._.) 未找到可重试的用户消息。"
-    retry_unsafe: "(._.) 无法安全地重试该消息：{error}"
-    retry_rewind_failed: "(x_x) 重试回退失败；历史未被更改：{error}"
-    retrying: "(^_^)b 正在重试：\"{preview}\""
-    undo_no_messages: "(._.) 没有可撤销的消息。"
-    undo_no_user_message: "(._.) 未找到可撤销的用户消息。"
-    undo_failed: "(x_x) 撤销失败；历史未被更改：{error}"
-    undo_ok_one: "(^_^)b 已撤销 {count} 个回合（{messages} 条消息）。已备份到：\"{backup}\""
-    undo_ok_other: "(^_^)b 已撤销 {count} 个回合（{messages} 条消息）。已备份到：\"{backup}\""
+    save_failed: "✘ 保存失败：{error}"
+    retry_no_messages: "◈ 没有可重试的消息。"
+    retry_no_user_message: "◈ 未找到可重试的用户消息。"
+    retry_unsafe: "◈ 无法安全地重试该消息：{error}"
+    retry_rewind_failed: "✘ 重试回退失败；历史未被更改：{error}"
+    retrying: "✓ 正在重试：\"{preview}\""
+    undo_no_messages: "◈ 没有可撤销的消息。"
+    undo_no_user_message: "◈ 未找到可撤销的用户消息。"
+    undo_failed: "✘ 撤销失败；历史未被更改：{error}"
+    undo_ok_one: "✓ 已撤销 {count} 个回合（{messages} 条消息）。已备份到：\"{backup}\""
+    undo_ok_other: "✓ 已撤销 {count} 个回合（{messages} 条消息）。已备份到：\"{backup}\""
     undo_remaining: "历史中还剩 {count} 条消息。"
     yolo_state_locked_on: "锁定为开启"
     yolo_locked: "⚡ 本进程的 YOLO 已{state}（以 --yolo / ICEBATH_YOLO_MODE 启动）。/yolo 无法将其关闭 — 请去掉该标志重启以重新启用审批。"
     yolo_off: "⚠ YOLO 模式{state} — 危险命令将需要审批。"
     yolo_on: "⚡ YOLO 模式{state} — 所有命令自动批准。请谨慎使用。"
-    compress_too_short: "(._.) 对话太短，无法压缩（至少需要 {min} 条消息）。"
-    compress_no_agent: "(._.) 没有活动的代理 -- 请先发送一条消息。"
+    compress_too_short: "◈ 对话太短，无法压缩（至少需要 {min} 条消息）。"
+    compress_no_agent: "◈ 没有活动的代理 -- 请先发送一条消息。"
     compress_busy: "正在压缩上下文..."
     compress_summarizing: "🗜️  正在总结到此处为止的 {count} 条消息，原样保留最近 {keep_last} 轮交流..."
     compress_focus: "🗜️  正在压缩 {count} 条消息，重点：\"{focus}\"..."
     compress_plain: "🗜️  正在压缩 {count} 条消息..."
     compress_failed: "❌ 压缩失败：{error}"
     persist_prompt_summary: "{icon} {label}：{detail} → {outcome}"
-    goodbye: "再见！☤"
+    goodbye: "再见！󰆧"
     exit_resume_hint: "恢复此会话："
     exit_label_session: "会话：          {session_id}"
     exit_label_title: "标题：          {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "（已保存到配置）"
       scope_save_failed: "（仅本会话；配置保存失败）"
       scope_session: "（仅本会话 — 加 --global 可持久保存）"
-      unknown_argument: "(._.) 未知参数：{arg}"
+      unknown_argument: "◈ 未知参数：{arg}"
       usage: "用法：{usage}"
       needs_active_session: "{command} 需要在活动的聊天会话中运行。"
       unavailable_no_session: "{label} 不可用（没有活动会话）。"
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "用法：/indicator [{styles}]"
       status: "忙碌指示器样式：{style}"
-      unknown_style: "(._.) 未知的指示器样式：{arg}"
+      unknown_style: "◈ 未知的指示器样式：{arg}"
       label: "忙碌指示器样式"
       note: "TUI 将在下次渲染时应用新样式。"
     fast:
 
-      not_supported: "(._.) /fast 仅适用于支持快速模式的模型（OpenAI Priority Processing 或 Anthropic Fast Mode）。"
+      not_supported: "◈ /fast 仅适用于支持快速模式的模型（OpenAI Priority Processing 或 Anthropic Fast Mode）。"
       feature_generic: "快速模式"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) 此账户或路由无法为 {model} 使用 Ultrafast。"
+      ultrafast_not_supported: "◈ 此账户或路由无法为 {model} 使用 Ultrafast。"
       usage: "用法：/fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}：{status}"
       set_to: "✓ {feature} 已设为 {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ 正在合成精灵图…"
       progress_save: "┊ 正在保存…"
       progress_drawing: "┊ 正在绘制 {state}…"
-      describe_prompt: "(o_o) 描述你的宠物： "
-      usage: "(o_o) 用法：/hatch <描述>  （例如 /hatch a tiny cyber fox）"
+      describe_prompt: "◈ 描述你的宠物： "
+      usage: "◈ 用法：/hatch <描述>  （例如 /hatch a tiny cyber fox）"
       default_name: "宠物"
-      designing: "(o_o) 正在设计 '{concept}'…（需要约一分钟的图像模型调用）"
-      base_failed: "(x_x) 无法生成基础形象：{error}"
-      no_base_draft: "(x_x) 没有返回基础草稿 — 请重试。"
-      failed: "(x_x) 孵化失败：{error}"
-      hatched: "(^_^)b {name} 已孵化并领养 — 马上就会出现！"
+      designing: "◈ 正在设计 '{concept}'…（需要约一分钟的图像模型调用）"
+      base_failed: "✘ 无法生成基础形象：{error}"
+      no_base_draft: "✘ 没有返回基础草稿 — 请重试。"
+      failed: "✘ 孵化失败：{error}"
+      hatched: "✓ {name} 已孵化并领养 — 马上就会出现！"
     pet:
 
-      is_out: "(^_^)b {name} 已放出 — 马上就会出现。"
-      put_away_named: "(-_-)zzZ {name} 已收起。"
-      put_away: "(-_-)zzZ 宠物已收起。"
-      usage_scale: "(o_o) 用法：/pet scale <倍数>  （例如 /pet scale 0.5）"
-      scale_set: "(^_^) 宠物缩放 → {scale}。"
-      fetching: "(o_o) 正在从 petdex 获取 '{name}'…"
-      adopt_failed: "(x_x) 无法领养 '{name}'：{error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} 已放出 — 马上就会出现。"
+      put_away_named: "○ {name} 已收起。"
+      put_away: "○ 宠物已收起。"
+      usage_scale: "◈ 用法：/pet scale <倍数>  （例如 /pet scale 0.5）"
+      scale_set: "✓ 宠物缩放 → {scale}。"
+      fetching: "◈ 正在从 petdex 获取 '{name}'…"
+      adopt_failed: "✘ 无法领养 '{name}'：{error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "未暂存"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey 失败：{error}"
     paste:
 
-      no_image: "(._.) 剪贴板中没有图片"
+      no_image: "◈ 剪贴板中没有图片"
       attached: "📎 已从剪贴板附加图片 #{index}"
-      extract_failed: "(>_<) 剪贴板中有图片，但提取失败"
+      extract_failed: "◬ 剪贴板中有图片，但提取失败"
     copy:
 
       nothing_yet: "还没有可复制的内容。"
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "用法：/image <路径>  例如 /image {example}"
-      not_found: "(>_<) 文件不存在：{path}"
-      unsupported: "(._.) 不支持的图片文件：{name}"
+      not_found: "◬ 文件不存在：{path}"
+      unsupported: "◈ 不支持的图片文件：{name}"
       attached: "📎 已附加图片：{name}"
       now_type_prompt: "现在输入你的提示词（或在单次查询模式下使用 --image）：{text}"
     tools:
 
-      usage: "(._.) 用法：/tools {subcommand} <名称> [名称 ...]"
+      usage: "◈ 用法：/tools {subcommand} <名称> [名称 ...]"
       example_toolset: "内置工具集：  /tools {subcommand} web"
       example_mcp: "MCP 工具：     /tools {subcommand} github:create_issue"
       disabling: "正在禁用 {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "会话 {session_id} 已被压缩为 {resolved_id}；正在带着你的转录恢复其后继会话。"
     sessions:
 
-      none_yet: "(._.) 还没有历史会话。"
+      none_yet: "◈ 还没有历史会话。"
     branch:
 
       branched_one: "⑂ 已分支会话 \"{title}\"（{count} 条用户消息）"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "终端和文件工具现在将在该工作树中运行。"
     personality:
 
-      title: "(^o^)/ 人格"
+      title: "❆ 人格"
       none_option: "(无人格覆盖)"
       usage: "用法：/personality <name>   (* = 当前启用)"
-      unknown: "(._.) 未知人格：{name}"
+      unknown: "◈ 未知人格：{name}"
       available: "可用：none、{available}"
       scope_saved: "(已保存到配置)"
       scope_session: "(仅本会话)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} 人格已设为 '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat 必须是整数"
-      unknown_command: "(._.) 未知的 cron 命令：{subcommand}"
+      repeat_must_be_integer: "◈ --repeat 必须是整数"
+      unknown_command: "◈ 未知的 cron 命令：{subcommand}"
       available: "可用：list、add、edit、pause、resume、run、remove"
-      overview_title: "(^_^) 定时任务"
+      overview_title: "❆ 定时任务"
       overview_commands: "命令："
       overview_usage: "/cron list\n/cron add \"every 2h\" \"检查服务器状态\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"新任务\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "当前任务："
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "技能：无"
       next_short: "下次"
       no_jobs_hint: "暂无定时任务。使用 '/cron add' 创建一个。"
-      no_jobs: "(._.) 暂无定时任务。"
+      no_jobs: "◈ 暂无定时任务。"
       list_header: "定时任务："
       id: "ID：{job_id}"
       name: "名称：{name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed：{error}"
       status_error: "error：{error}"
       last_run: "上次运行：{when}（{status}）"
-      usage_add: "(._.) 用法：/cron add <schedule> <prompt>"
-      need_prompt_or_skill: "(._.) 请提供提示词或至少一个技能"
-      create_failed: "(x_x) 创建任务失败：{error}"
-      created: "(^_^)b 已创建任务：{job_id}"
-      usage_edit: "(._.) 用法：/cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) 找不到任务：{job_id}"
-      update_failed: "(x_x) 更新任务失败：{error}"
-      updated: "(^_^)b 已更新任务：{job_id}"
-      usage_action: "(._.) 用法：/cron {subcommand} <job_id>"
-      pause_failed: "(x_x) 暂停任务失败：{error}"
-      resume_failed: "(x_x) 恢复任务失败：{error}"
-      run_failed: "(x_x) 运行任务失败：{error}"
-      remove_failed: "(x_x) 删除任务失败：{error}"
-      removed: "(^_^)b 已删除任务：{name}（{job_id}）"
-      did_not_run: "(x_x) 任务未运行：{name}（{job_id}）\n  {reason}"
-      paused: "(^_^)b 已暂停任务：{name}（{job_id}）"
-      resumed: "(^_^)b 已恢复任务：{name}（{job_id}）"
-      triggered: "(^_^)b 已触发任务：{name}（{job_id}）"
+      usage_add: "◈ 用法：/cron add <schedule> <prompt>"
+      need_prompt_or_skill: "◈ 请提供提示词或至少一个技能"
+      create_failed: "✘ 创建任务失败：{error}"
+      created: "✓ 已创建任务：{job_id}"
+      usage_edit: "◈ 用法：/cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ 找不到任务：{job_id}"
+      update_failed: "✘ 更新任务失败：{error}"
+      updated: "✓ 已更新任务：{job_id}"
+      usage_action: "◈ 用法：/cron {subcommand} <job_id>"
+      pause_failed: "✘ 暂停任务失败：{error}"
+      resume_failed: "✘ 恢复任务失败：{error}"
+      run_failed: "✘ 运行任务失败：{error}"
+      remove_failed: "✘ 删除任务失败：{error}"
+      removed: "✓ 已删除任务：{name}（{job_id}）"
+      did_not_run: "✘ 任务未运行：{name}（{job_id}）\n  {reason}"
+      paused: "✓ 已暂停任务：{name}（{job_id}）"
+      resumed: "✓ 已恢复任务：{name}（{job_id}）"
+      triggered: "✓ 已触发任务：{name}（{job_id}）"
     suggestions:
 
       failed: "suggestions 命令失败：{error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "cron blueprint 命令失败：{error}"
     curator:
 
-      failed: "(._.) curator：{error}"
+      failed: "◈ curator：{error}"
     kanban:
 
-      failed: "(._.) 看板错误：{error}"
+      failed: "◈ 看板错误：{error}"
     memory:
 
       unknown_subcommand: "未知的 /memory 子命令。可用：pending、approve <id>、reject <id>、approval <on|off>。"
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "用法：/bg <prompt>\n示例：/bg 总结今天 HN 的热门文章\n（如需就本次对话提一个附带问题，请使用 /btw <question>。）\n任务会在独立会话中运行，完成后结果显示在这里。"
-      no_credentials: "(>_<) 无法启动后台任务：没有有效的凭据。"
+      no_credentials: "◬ 无法启动后台任务：没有有效的凭据。"
       started: "🔄 后台任务 #{number} 已启动：\"{preview}\""
       task_id: "任务 ID：{task_id}"
       keep_chatting: "你可以继续聊天——完成后结果会显示在这里。"
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "用法：/btw <question>\n示例：/btw 刚才那个错误在哪个文件里？\n在不打断当前对话的情况下，快速回答一个关于本次对话的问题。\n（如需运行独立的后台任务，请使用 /bg <prompt>。）"
-      no_credentials: "(>_<) 无法回答附带问题：没有有效的凭据。"
+      no_credentials: "◬ 无法回答附带问题：没有有效的凭据。"
       header: "💬 /btw：\"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(未生成回答)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! 请在下方撰写你的提示词。以 '#!' 开头的行会被忽略。\n#! 保存并退出即发送；留空则取消。"
-      editor_failed: "(>_<) 无法打开编辑器：{error}"
-      empty: "(._.) 提示词为空——未发送。"
+      editor_failed: "◬ 无法打开编辑器：{error}"
+      empty: "◈ 提示词为空——未发送。"
     focus:
 
       usage: "用法：/focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "退出当前会话并更新 Icebath Agent"
       choice_cancel: "取消"
       choice_cancel_desc: "保留当前会话"
-      title: "☤  更新 Icebath Agent"
+      title: "󰆧  更新 Icebath Agent"
       detail: "这将退出当前会话并运行 `icebath update`。"
       cancelled: "🟡 /update 已取消。"
-      launching: "☤ 正在启动更新..."
+      launching: "󰆧 正在启动更新..."
     voice:
 
       unknown_subcommand: "未知的 voice 子命令：{subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "你是想输入：{candidates}？"
   config:
 
-    title: "(^_^) 配置"
+    title: "❆ 配置"
     loaded: "（已加载）"
     not_found: "（未找到）"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 上下文用量 — {model}"
-    compute_failed: "(._.) 无法计算上下文明细：{error}"
+    compute_failed: "◈ 无法计算上下文明细：{error}"
   error:
 
     auth: "你的 {provider} 密钥被拒绝。运行 `icebath model` 重新输入。"
@@ -3042,7 +3042,7 @@ cli:
     starting: "正在启动 Icebath 网关（消息平台）..."
   gateway_status:
 
-    header: "(✿◠‿◠) 网关状态"
+    header: "❆ 网关状态"
     platform_config_header: "消息平台配置："
     enabled: "已启用"
     not_configured: "未配置（{env_var}）"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. 或在 {path} 中配置"
   help:
 
-    header: "(^_^)? 可用命令"
+    header: "❆ 可用命令"
     section_session: "会话"
     section_configuration: "配置"
     section_tools_skills: "工具与技能"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "加载 {command} 的技能失败"
   tools:
 
-    none_available: "(;_;) 没有可用工具"
-    header: "(^_^)/ 可用工具"
-    total: "共 {count} 个工具  ヽ(^o^)ノ"
+    none_available: "◈ 没有可用工具"
+    header: "❆ 可用工具"
+    total: "共 {count} 个工具"
   toolsets:
 
-    header: "(^_^)b 可用工具集"
+    header: "✓ 可用工具集"
     currently_enabled_legend: "(*) = 当前已启用"
     tip_enable_all: "提示：使用 'all' 或 '*' 可启用所有工具集"
     example: "示例：icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "请先用 `/model` 或 `icebath auth` 切换。"
     checking_reset_credits: "⏳ 正在检查累积的重置额度..."
     codex_timeout: "❌ 与 Codex 后端通信超时 — 请稍后重试。"
-    no_api_calls: "(._.) 本会话尚未发起任何 API 调用。"
+    no_api_calls: "◈ 本会话尚未发起任何 API 调用。"
     header_session: "📊 会话 Token 用量"
     label_model: "模型："
     label_input_tokens: "输入 tokens："
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model 可在会话中途切换模型——试试 /model sonnet 或 /model gpt-5。"
   t017: "/model --global 会永久更改你的默认模型。"
   t018: "/personality pirate 可设置一个有趣的人格——从 kawaii 到 shakespeare 共有 14 种内置选项。"
-  t019: "/skin 可更换 CLI 主题——试试 ares、mono、slate、poseidon 或 charizard。"
+  t019: "/skin 可更换 CLI 主题——试试 taro、light、contrast、cyberpunk 或 dracula。"
   t020: "/statusbar 切换常驻状态栏，显示模型、tokens、上下文占用百分比、费用和耗时。"
   t021: "/tools disable browser 会在当前会话中临时移除浏览器工具。"
   t022: "/browser connect 通过 CDP 把浏览器工具连接到你正在运行的 Chromium 系浏览器。"
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets 列出所有可用工具集，让你知道 -t/--toolsets 接受哪些值。"
   t337: "/voice tts 切换仅 TTS 模式——代理的回复会朗读出来，但你仍然用打字输入提示词。"
   t338: "/reload-skills 重新扫描 ~/.icebath/skills/，让直接放入的技能无需重启会话即可出现。"
-  t339: "/indicator kaomoji|emoji|unicode|ascii 选择代理运行期间 TUI 忙碌指示器的样式。"
+  t339: "/indicator unicode|emoji|ascii 选择代理运行期间 TUI 忙碌指示器的样式。"
   t340: "/debug 上传支持包（系统信息 + 日志）并返回可分享的链接——在聊天中也能用。"
   t341: "icebath -z \"<prompt>\" 是最纯粹的一次性调用：只在 stdout 输出最终答案，别无其他——非常适合在脚本中做管道处理。"
   t342: "icebath chat --pass-session-id 把会话 ID 注入系统提示词，让代理可以引用自己的会话。"

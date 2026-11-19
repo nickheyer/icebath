@@ -1,11 +1,7 @@
 package pet
 
 import (
-	"bytes"
 	"context"
-	"image"
-	"image/png"
-	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,7 +12,6 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -195,69 +190,6 @@ func ExportPet(h, slug string) (string, []byte, error) {
 		return "", nil, err
 	}
 	return name + ".zip", data, nil
-}
-
-// Nearest neighbour resize sampling each destination pixel centre the way Pillow NEAREST does
-func resizeNearest(src *image.NRGBA, w, h int) *image.NRGBA {
-	b := src.Bounds()
-	out := image.NewNRGBA(image.Rect(0, 0, w, h))
-	xScale, yScale := float64(b.Dx())/float64(w), float64(b.Dy())/float64(h)
-	for y := range h {
-		sy := min(b.Dy()-1, int(math.Floor((float64(y)+0.5)*yScale)))
-		for x := range w {
-			sx := min(b.Dx()-1, int(math.Floor((float64(x)+0.5)*xScale)))
-			out.SetNRGBA(x, y, src.NRGBAAt(b.Min.X+sx, b.Min.Y+sy))
-		}
-	}
-	return out
-}
-
-// Small idle frame PNG of a slug cached on disk, nil on any failure, a petdex source URL only fetched when not installed
-func ThumbnailPNG(ctx context.Context, env *tools.Env, h, slug, sourceURL string) []byte {
-	if slug = pystr.Strip(slug); slug == "" {
-		return nil
-	}
-	cache, err := thumbPath(h, slug)
-	if err != nil {
-		return nil
-	}
-	if info, statErr := os.Stat(cache); statErr == nil && info.Mode().IsRegular() {
-		if data, readErr := os.ReadFile(cache); readErr == nil {
-			return data
-		}
-	}
-	var sheet []byte
-	if p, _ := usablePet(h, slug, ""); p != nil {
-		if data, readErr := os.ReadFile(p.Spritesheet); readErr == nil {
-			sheet = data
-		}
-	}
-	if sheet == nil && sourceURL != "" && isPetdexHost(sourceURL) {
-		if resp, fetchErr := httpGet(ctx, env, sourceURL, 30*time.Second); fetchErr != nil {
-			pkgLog().Debug("thumb fetch failed for " + slug + ": " + fetchErrText(fetchErr))
-		} else {
-			sheet = resp.Content
-		}
-	}
-	if len(sheet) == 0 {
-		return nil
-	}
-	decoded, _, err := image.Decode(bytes.NewReader(sheet))
-	if err != nil {
-		pkgLog().Debug("thumb crop failed for " + slug + ": " + err.Error())
-		return nil
-	}
-	rgba := pypil.ToNRGBA(decoded)
-	b := rgba.Bounds()
-	frame := rgba.SubImage(image.Rect(b.Min.X, b.Min.Y, b.Min.X+min(thumbFrameW, b.Dx()), b.Min.Y+min(thumbFrameH, b.Dy()))).(*image.NRGBA)
-	scaled := resizeNearest(frame, thumbW, int(math.RoundToEven(float64(thumbW)*thumbFrameH/thumbFrameW)))
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, scaled); err != nil {
-		pkgLog().Debug("thumb crop failed for " + slug + ": " + err.Error())
-		return nil
-	}
-	_ = os.WriteFile(cache, buf.Bytes(), 0o666)
-	return buf.Bytes()
 }
 
 // Deletes an installed pet and its cached thumbnail, true when the directory is gone

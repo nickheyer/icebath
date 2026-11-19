@@ -387,11 +387,6 @@ func auxTryPaymentFallback(ctx context.Context, failedProvider, task, reason, fa
 	return nil, "", "", nil
 }
 
-// Candidate skip predicate for a failed route, model scoped with a failed model and credential wide without
-func auxFailedBackendSkip(failedProvider, failedModel, failedBaseURL string, scope FailureScope) func(provider, model, baseURL string) bool {
-	return auxFailedBackendSkipIn(context.Background(), failedProvider, failedModel, failedBaseURL, scope)
-}
-
 // Candidate skip predicate for a failed route with first class providers read from the context home
 func auxFailedBackendSkipIn(ctx context.Context, failedProvider, failedModel, failedBaseURL string, scope FailureScope) func(provider, model, baseURL string) bool {
 	skipModel := strings.ToLower(strings.TrimSpace(failedModel))

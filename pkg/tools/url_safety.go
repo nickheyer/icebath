@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -97,42 +96,6 @@ func netlocHost(netloc string) string {
 	return strings.ToLower(host)
 }
 
-// Port text of an authority, empty when absent, false when not a valid port number
-func netlocPort(netloc string) (string, bool) {
-	host := netloc
-	if i := strings.LastIndex(host, "@"); i >= 0 {
-		host = host[i+1:]
-	}
-	if strings.HasPrefix(host, "[") {
-		j := strings.Index(host, "]")
-		if j < 0 {
-			return "", true
-		}
-		host = host[j+1:]
-		if host == "" {
-			return "", true
-		}
-		if !strings.HasPrefix(host, ":") {
-			return "", false
-		}
-		host = host[1:]
-	} else {
-		i := strings.LastIndex(host, ":")
-		if i < 0 {
-			return "", true
-		}
-		host = host[i+1:]
-	}
-	if host == "" {
-		return "", true
-	}
-	n, err := strconv.Atoi(host)
-	if err != nil || n < 0 || n > 65535 {
-		return host, false
-	}
-	return host, true
-}
-
 // Percent encodes every byte outside the unreserved set and the caller's safe set
 func quoteURLPart(s, safe string) string {
 	var b strings.Builder
@@ -193,31 +156,6 @@ var sensitiveQueryParamNames = map[string]bool{
 	"client_secret": true, "credential": true, "credentials": true, "jwt": true, "password": true, "passwd": true, "secret": true,
 	"session_id": true, "signature": true, "token": true, "x_amz_security_token": true, "x_amz_signature": true,
 	"x-amz-security-token": true, "x-amz-signature": true,
-}
-
-// First credential named query parameter with a value, empty when none
-func sensitiveQueryParamName(raw string) string {
-	if !strings.Contains(raw, "?") {
-		return ""
-	}
-	parts := splitURL(strings.TrimSpace(raw))
-	if !isHTTPScheme(parts.scheme) || parts.query == "" {
-		return ""
-	}
-	for _, pair := range strings.FieldsFunc(parts.query, func(r rune) bool { return r == '&' || r == ';' }) {
-		key, value, _ := strings.Cut(pair, "=")
-		if value == "" {
-			continue
-		}
-		decoded, err := url.QueryUnescape(key)
-		if err != nil {
-			decoded = key
-		}
-		if sensitiveQueryParamNames[strings.ToLower(decoded)] {
-			return key
-		}
-	}
-	return ""
 }
 
 // Cloud metadata hostnames always blocked regardless of DNS or config toggle

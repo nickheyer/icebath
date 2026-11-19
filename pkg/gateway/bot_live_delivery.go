@@ -528,9 +528,6 @@ func deliveryTruthy(v any) bool {
 	return true
 }
 
-// Retired UI poller claim, only the session bot may migrate and admit queued records
-func ClaimPendingDelivery(profileHome string, owner map[string]any) map[string]any { return nil }
-
 // Persists an immutable terminal receipt where an identical duplicate completion is safe
 func CompleteDelivery(ctx context.Context, profileHome, deliveryID, status, reply, errText, reason string) (map[string]any, error) {
 	key, err := checkDeliveryID(deliveryID)

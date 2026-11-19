@@ -558,20 +558,3 @@ func parseMarker(text string) (markerList, error) {
 	}
 	return normalizeExtras(markers).(markerList), nil
 }
-
-// EvaluateMarker evaluates a PEP 508 marker string in process, the environment over defaults like Marker.evaluate
-func EvaluateMarker(marker string, defaults, environment map[string]string) (bool, error) {
-	markers, err := parseMarker(marker)
-	if err != nil {
-		return false, err
-	}
-	return evaluateMarker(markers, defaults, environment)
-}
-
-// MarkerHolds evaluates the requirement's marker over the environment laid on the defaults, true when it carries none
-func (r *pyRequirement) MarkerHolds(defaults, environment map[string]string) (bool, error) {
-	if len(r.Marker) == 0 {
-		return true, nil
-	}
-	return evaluateMarker(r.Marker, defaults, environment)
-}

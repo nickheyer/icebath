@@ -178,13 +178,6 @@ func InTreeCatalogTime() *float64 {
 	return resolved
 }
 
-// Forgets the resolved in-tree catalog time so the next call resolves it again
-func resetInTreeCatalogTime() {
-	inTreeCatalogTimeMu.Lock()
-	inTreeCatalogTimeResolved, inTreeCatalogTimeValue = false, nil
-	inTreeCatalogTimeMu.Unlock()
-}
-
 // In-tree catalog time the live merge consults, swapped by tests
 var inTreeCatalogTime = InTreeCatalogTime
 

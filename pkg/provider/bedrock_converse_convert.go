@@ -109,13 +109,6 @@ func bedrockCachePointAllowed(model, placement string) bool {
 	return !bedrockCachePointRejections[strings.ToLower(model)][placement]
 }
 
-// ResetBedrockCachePointRejections forgets every recorded cachePoint verdict
-func ResetBedrockCachePointRejections() {
-	bedrockCachePointMu.Lock()
-	defer bedrockCachePointMu.Unlock()
-	bedrockCachePointRejections = map[string]map[string]bool{}
-}
-
 // Blocks minus bare cachePoint entries, false when not a list or nothing was removed
 func bedrockWithoutCachePoints(blocks any) ([]any, bool) {
 	list, ok := asList(blocks)
@@ -978,10 +971,4 @@ func buildBedrockConverseKwargs(in bedrockConverseInput) map[string]any {
 		delete(kwargs, "inferenceConfig")
 	}
 	return kwargs
-}
-
-// Converse inputs with the default 4096 token output limit
-func newBedrockConverseInput(model string, messages []map[string]any) bedrockConverseInput {
-	maxTokens := bedrockDefaultMaxTokens
-	return bedrockConverseInput{Model: model, Messages: messages, MaxTokens: &maxTokens}
 }

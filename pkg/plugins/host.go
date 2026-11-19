@@ -671,21 +671,6 @@ func (h *PluginHost) unload(key string) error {
 	return nil
 }
 
-// Drops a module and its submodules from a running child, failing when it does not answer in time
-func (h *PluginHost) evictModules(moduleName string) error {
-	h.mu.Lock()
-	ch := h.channel
-	h.mu.Unlock()
-	if ch == nil {
-		return nil
-	}
-	if _, closed := ch.ClosedReason(); closed {
-		return nil
-	}
-	_, err := ch.Call(h.baseCtx, "evict_modules", map[string]any{"module_name": moduleName}, hostShutdownGrace)
-	return err
-}
-
 func (h *PluginHost) unavailableAsExit(err error) error {
 	var un *PluginHostUnavailable
 	if errors.As(err, &un) {
@@ -1094,11 +1079,6 @@ func (h *PluginHost) callableProxy(ref map[string]any) *HostedCallable {
 // Calls the plugin callable in the child
 func (f *HostedCallable) Call(ctx context.Context, args []any, kwargs map[string]any) (any, error) {
 	return f.host.invoke(ctx, f.ref, args, kwargs, f.generation)
-}
-
-// Python identity used by hook attribution and failure reports
-func (f *HostedCallable) callbackIdentity() (string, string) {
-	return f.Module + "." + f.QualName, f.Name
 }
 
 // Plugin provider object living in the child, an instance of its provider base on the parent side

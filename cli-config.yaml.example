@@ -7,7 +7,7 @@
 # Schema version of this file. The installers copy it to seed config.yaml, and
 # `icebath update` uses it to know which one-time migrations the file already
 # has. icebath manages it: do not copy it into another config.
-_config_version: 66
+_config_version: 67
 
 # =============================================================================
 # Database Configuration
@@ -2125,22 +2125,21 @@ display:
   # ───────────────────────────────────────────────────────────────────────────
   # Skin / Theme
   # ───────────────────────────────────────────────────────────────────────────
-  # Customize CLI visual appearance — banner colors, spinner faces, tool prefix,
-  # response box label, and branding text. Change at runtime with /skin <name>.
+  # Customize the visual appearance — palette, banner art, spinner text, tool
+  # prefix, response label, and branding text. Change at runtime with /skin <name>.
   #
   # Built-in skins:
-  #   default        — Classic icebath gold/kawaii
-  #   ares           — Crimson/bronze war-god theme with spinner wings
-  #   mono           — Clean grayscale monochrome
-  #   slate          — Cool blue developer-focused
-  #   daylight       — Bright light-mode theme
-  #   warm-lightmode — Warm paper-tone light-mode theme
-  #   poseidon       — Sea-green/teal Olympian theme
-  #   sisyphus       — Earthy stone-and-moss theme
-  #   charizard      — Fiery orange dragon theme
+  #   blackwall — Near black with a red accent and ice blue (the default; also
+  #               spelled "default"). On a light terminal it paints as "light".
+  #   taro      — Deep indigo with amber, cyan and magenta
+  #   light     — Paper palette for bright rooms
+  #   contrast  — Black and white with saturated signal colors, thick borders
+  #   plain     — The terminal's own sixteen colors with ASCII borders
+  #   cyberpunk — Neon green on black
+  #   dracula   — The Dracula palette
   #
   # Custom skins: drop a YAML file in ~/.icebath/skins/<name>.yaml
-  # Schema (all fields optional, missing values inherit from default):
+  # Schema (all fields optional, missing values inherit from blackwall):
   #
   #   name: my-theme
   #   description: Short description
@@ -2152,18 +2151,21 @@ display:
   #     banner_text: "#HEX"      # Body text (tool names, skill names)
   #     ui_accent: "#HEX"        # UI accent color
   #     response_border: "#HEX"  # Response box border color
+  #     background: "#HEX"       # Terminal background the skin is authored for
   #   spinner:
-  #     waiting_faces: ["(⚔)", "(⛨)"]       # Faces shown while waiting
-  #     thinking_faces: ["(⚔)", "(⌁)"]      # Faces shown while thinking
-  #     thinking_verbs: ["forging", "plotting"]  # Verbs for spinner messages
+  #     waiting_faces: ["◇", "◆"]            # Marks shown ahead of a waiting label (none by default)
+  #     thinking_faces: ["◈", "⟁"]           # Marks shown ahead of a thinking verb (none by default)
+  #     thinking_verbs: ["chilling", "plotting"]  # Verbs for spinner messages
   #     wings:                                # Optional left/right spinner decorations
-  #       - ["⟪⚔", "⚔⟫"]
-  #       - ["⟪▲", "▲⟫"]
+  #       - ["⟪", "⟫"]
+  #       - ["❮", "❯"]
   #   branding:
   #     agent_name: "My Agent"               # Banner title and branding
-  #     welcome: "Welcome message"           # Shown at CLI startup
-  #     response_label: " ⚔ Agent "         # Response box header label
-  #     prompt_symbol: "⚔"                  # Prompt symbol (bare token; renderers add trailing space)
+  #     welcome: "Welcome message"           # Shown at session start
+  #     response_label: " ❆ Agent "         # Response box header label
+  #     prompt_symbol: "❯"                  # Prompt symbol (bare token; renderers add trailing space)
+  #   banner_logo: "[#HEX]art[/]"            # Wide art over the session banner, rich markup
+  #   banner_hero: "[#HEX]art[/]"            # Narrow art used when the logo does not fit
   #   tool_prefix: "╎"                       # Tool output line prefix (default: ┊)
   #
   skin: default

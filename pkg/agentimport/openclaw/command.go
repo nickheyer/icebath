@@ -70,7 +70,7 @@ func outln(c *cliui.Console, text string) { fmt.Fprintln(c.Out, text) }
 func printBanner(c *cliui.Console, title string) {
 	outln(c, "")
 	rule := strings.Repeat("─", 57)
-	for _, line := range []string{"┌" + rule + "┐", "│          ☤ Icebath — " + pystr.Ljust(title, 34) + "│", "└" + rule + "┘"} {
+	for _, line := range []string{"┌" + rule + "┐", "│          󰆧 Icebath — " + pystr.Ljust(title, 35) + "│", "└" + rule + "┘"} {
 		outln(c, c.Color(line, cliui.Magenta))
 	}
 }

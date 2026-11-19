@@ -220,3 +220,6 @@ func TestTerminalEnvRegistry(t *testing.T) {
 		}
 	})
 }
+
+// Clears every plugin terminal backend registration, for tests only
+func ResetTerminalEnvRegistryForTests() { terminalEnvRegistry.ResetForTests() }

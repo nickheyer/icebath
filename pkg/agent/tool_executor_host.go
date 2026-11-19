@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -171,14 +170,14 @@ func (a *AIAgent) ShouldEmitQuietToolMessages() bool { return a.shouldEmitQuietT
 
 func (a *AIAgent) ShouldStartQuietSpinner() bool { return a.shouldStartQuietSpinner() }
 
-// Started dots spinner on the agent printer behind a random waiting face
+// Started spinner on the agent printer, the label behind a waiting face when the skin authors any
 func (a *AIAgent) StartSpinner(label string) tools.Spinner {
 	ctx := a.homeContext()
 	faces, err := waitingFaces(ctx)
 	if err != nil {
 		panic(err)
 	}
-	return startKawaiiSpinner(ctx, faces[rand.IntN(len(faces))]+" "+label, "dots", a.printFn)
+	return startStatusSpinner(ctx, faced(faces, label), a.printFn)
 }
 
 func (a *AIAgent) CuteToolMessage(name string, args map[string]any, duration float64, result any) string {

@@ -147,17 +147,6 @@ func envEnabled(name string) bool {
 	return truthy(os.Getenv(name))
 }
 
-// Secrets file lookup of a home
-func secretLookup(h string) func(string) (string, bool) {
-	s := config.NewSecrets(h)
-	return func(name string) (string, bool) {
-		if v, ok := s.Get(name); ok && v != "" {
-			return v, true
-		}
-		return "", false
-	}
-}
-
 // Writes bytes atomically through a temporary sibling file
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

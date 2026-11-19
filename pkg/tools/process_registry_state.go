@@ -1019,31 +1019,6 @@ func (b ProcessNotificationBatch) DisplayText(r *ProcessRegistry) string {
 	return ProcessCompletionDisplayText(events)
 }
 
-// GroupProcessNotifications groups consecutive completions, watches and delegations are barriers
-func GroupProcessNotifications(notifications []DrainedNotification) []ProcessNotificationBatch {
-	out := []ProcessNotificationBatch{}
-	batch := []DrainedNotification{}
-	for _, n := range notifications {
-		evtType := "completion"
-		if t := asStr(n.Event["type"]); t != "" {
-			evtType = t
-		}
-		if evtType == "completion" {
-			batch = append(batch, n)
-			continue
-		}
-		if len(batch) > 0 {
-			out = append(out, ProcessNotificationBatch{Notifications: batch})
-			batch = []DrainedNotification{}
-		}
-		out = append(out, ProcessNotificationBatch{Notifications: []DrainedNotification{n}})
-	}
-	if len(batch) > 0 {
-		out = append(out, ProcessNotificationBatch{Notifications: batch})
-	}
-	return out
-}
-
 // Raw child process noise rather than a delegation or work closeout deliverable
 func isChildProcessNotification(evt map[string]any) bool {
 	if t := asStr(evt["type"]); t == "async_delegation" || t == "async_delegation_work_closeout" {
@@ -1681,26 +1656,6 @@ type TimelineNotification struct {
 	DisplayText          string
 	DisplayKind          string
 	NotificationCategory string
-}
-
-// NewTimelineNotification builds a notification with the result category by default
-func NewTimelineNotification(text, displayText, displayKind, category string) TimelineNotification {
-	if category == "" {
-		category = "result"
-	}
-	return TimelineNotification{Text: text, DisplayText: displayText, DisplayKind: displayKind, NotificationCategory: category}
-}
-
-// TimelineNotificationForDelegation renders a delegation event as a timeline notification
-func TimelineNotificationForDelegation(text string, event map[string]any) TimelineNotification {
-	if DiagnosticProcessEvent == nil {
-		panic("tools: DiagnosticProcessEvent must be installed by the agent notification presentation")
-	}
-	category := "result"
-	if DiagnosticProcessEvent(event) {
-		category = "diagnostic"
-	}
-	return NewTimelineNotification(text, AsyncDelegationDisplayText(event), "async_delegation_complete", category)
 }
 
 // One line provenance for a subagent owned process event, empty otherwise

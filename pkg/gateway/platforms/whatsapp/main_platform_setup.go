@@ -187,7 +187,7 @@ func CmdWhatsApp(ctx context.Context, h string, ns map[string]any, w io.Writer, 
 
 // The wizard steps in order, enabling WhatsApp only once pairing succeeded
 func (wz *whatsAppWizard) setup() error {
-	wz.say("", "☤ WhatsApp Setup", strings.Repeat("=", 50))
+	wz.say("", "󰆧 WhatsApp Setup", strings.Repeat("=", 50))
 	mode, err := wz.whatsappChooseMode()
 	if err != nil || mode == "" {
 		return err
@@ -254,12 +254,12 @@ func (wz *whatsAppWizard) setup() error {
 		wz.say("  Next steps:", "    1. Start the gateway:  icebath gateway",
 			"    2. Send a message to the bot's WhatsApp number",
 			"    3. The agent will reply automatically", "",
-			"  Tip: Agent responses are prefixed with '☤ Icebath Agent'")
+			"  Tip: Agent responses are prefixed with '❆ Icebath Agent'")
 	} else {
 		wz.say("  Next steps:", "    1. Start the gateway:  icebath gateway",
 			"    2. Open WhatsApp → Message Yourself",
 			"    3. Type a message — the agent will reply", "",
-			"  Tip: Agent responses are prefixed with '☤ Icebath Agent'",
+			"  Tip: Agent responses are prefixed with '❆ Icebath Agent'",
 			"  so you can tell them apart from your own messages.")
 	}
 	wz.say("", "  Or install as a service: icebath gateway install")

@@ -38,27 +38,6 @@ type promptSink interface {
 	misfit(name string, err error)
 }
 
-// Text value of a param, empty for anything else
-func paramStr(v any) string {
-	s, _ := v.(string)
-	return s
-}
-
-// Strings of a non empty list, nil for anything else
-func paramStrList(v any) []string {
-	list, isList := v.([]any)
-	if !isList || len(list) == 0 {
-		return nil
-	}
-	out := []string{}
-	for _, item := range list {
-		if s, isStr := item.(string); isStr {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // Clarify questions with a question text, trimmed
 func clarifyQuestionsOf(questions []tuigateway.ClarifyQuestion) []clarifyQuestion {
 	out := []clarifyQuestion{}

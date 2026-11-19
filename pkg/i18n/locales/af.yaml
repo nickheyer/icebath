@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ Nie 'n git-bewaarplek nie — kan nie opdateer nie."
     icebath_cmd_not_found: "✗ Kon nie die `icebath`-opdrag vind nie. Icebath loop, maar die opdateeropdrag kon nie die uitvoerbare lêer op PATH of via die huidige Python-vertolker vind nie. Probeer `icebath update` met die hand in jou terminale uitvoer."
     start_failed: "✗ Kon nie opdatering begin nie: {error}"
-    starting: "☤ Begin Icebath-opdatering… Ek sal vordering hier stroom."
+    starting: "❆ Begin Icebath-opdatering… Ek sal vordering hier stroom."
     reply_failed: "✗ Kon nie antwoord na die opdateerproses stuur nie: {error}"
     reply_sent: "✓ `{label}` na die opdateerproses gestuur."
     failed_notice: "❌ Icebath-opdatering het misluk; die vorige weergawe loop steeds. Voer `icebath update` op die gasheer uit om die volledige fout te sien, of probeer /update later weer."
     prompt_default: " (verstek: {default})"
-    prompt: "☤ **Opdatering benodig jou insette:**\n\n{prompt}{default_hint}\n\nAntwoord `{prefix}approve` (ja) of `{prefix}deny` (nee), of tik jou antwoord direk in."
+    prompt: "❆ **Opdatering benodig jou insette:**\n\n{prompt}{default_hint}\n\nAntwoord `{prefix}approve` (ja) of `{prefix}deny` (nee), of tik jou antwoord direk in."
     finished: "✅ Icebath-opdatering voltooi."
     timed_out: "❌ Icebath-opdatering het na 30 minute uitgetel."
     finished_success: "✅ Icebath-opdatering suksesvol voltooi."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** deur {user}"
     update_prompt:
 
-      title: "☤ Opdatering het jou insette nodig"
+      title: "❆ Opdatering het jou insette nodig"
       default_hint: "\n\nVerstek: `{default}`"
       answer_yes: "✓ Ja"
       answer_no: "✗ Nee"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}d {hours}u {minutes}m"
     duration_m_rest: "{minutes}m {rest}"
     duration_hm_rest: "{hours}u {minutes}m {rest}"
-    no_active_agent: "(._.) Geen aktiewe agent nie -- stuur eers 'n boodskap."
+    no_active_agent: "◈ Geen aktiewe agent nie -- stuur eers 'n boodskap."
     n_more: "nog {count}"
     more_not_shown: "meer nie gewys nie"
     yes_no_default_yes: "J/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "Sessie-titel in tou geplaas: {title} (word by die eerste boodskap gestoor)"
   undo:
 
-    invalid_count: "(._.) Ongeldige getal {value} — gebruik /undo of /undo N."
+    invalid_count: "◈ Ongeldige getal {value} — gebruik /undo of /undo N."
     removes_last_exchange: "Dit verwyder die laaste gebruiker/assistent-uitruiling uit die geskiedenis."
     removes_last_turns: "Dit verwyder die laaste {count} gebruikersbeurte uit die geskiedenis."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ Krediete op"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Vars begin! Skerm skoongemaak en gesprek herstel."
+    fresh_start: "❆ Vars begin! Skerm skoongemaak en gesprek herstel."
     model_reset_default: "(model teruggestel na konfigurasie-verstek: {model})"
     title_rejected: "Titel verwerp: {error}"
     title_empty_untitled: "Titel is leeg na opruiming — sessie sonder titel begin."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "Redenering"
     label_approvals: "Goedkeurings"
     label_context: "Konteks"
-    recent_intro: "(._.) Nog geen boodskappe in die huidige geselsie nie — hier is onlangse sessies wat jy kan hervat:"
+    recent_intro: "◈ Nog geen boodskappe in die huidige geselsie nie — hier is onlangse sessies wat jy kan hervat:"
     recent_header: "Onlangse sessies:"
     column_title: "Titel"
     column_preview: "Voorskou"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "Gebruik /resume <nommer>, /resume <sessie-id> of /resume <sessietitel> om voort te gaan."
     resume_example: "Voorbeeld: /resume 2"
-    history_empty: "(._.) Nog geen gesprekgeskiedenis nie."
+    history_empty: "◈ Nog geen gesprekgeskiedenis nie."
     history_tools_header: "[Gereedskap]"
     history_tools_hidden_one: "({count} gereedskapboodskap versteek)"
     history_tools_hidden_other: "({count} gereedskapboodskappe versteek)"
-    history_title: "(^_^) Gesprekgeskiedenis"
+    history_title: "❆ Gesprekgeskiedenis"
     history_you_header: "[Jy #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(geen teksantwoord)"
     history_tool_calls_one: "({count} gereedskapsoproep versoek)"
     history_tool_calls_other: "({count} gereedskapsoproepe versoek)"
-    new_session_titled: "(^_^)v Nuwe sessie begin: {title}"
-    new_session: "(^_^)v Nuwe sessie begin!"
-    save_nothing: "(;_;) Geen gesprek om te stoor nie."
-    save_dir_failed: "(x_x) Kon nie stoorgids {path} skep nie: {error}"
+    new_session_titled: "✓ Nuwe sessie begin: {title}"
+    new_session: "✓ Nuwe sessie begin!"
+    save_nothing: "◈ Geen gesprek om te stoor nie."
+    save_dir_failed: "✘ Kon nie stoorgids {path} skep nie: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Gesprek gestoor na: {path} ({label})"
+    save_ok: "✓ Gesprek gestoor na: {path} ({label})"
     save_resume_hint: "Hervat die lewendige sessie met: icebath --resume {session_id}"
-    save_failed: "(x_x) Kon nie stoor nie: {error}"
-    retry_no_messages: "(._.) Geen boodskappe om te herprobeer nie."
-    retry_no_user_message: "(._.) Geen gebruikersboodskap gevind om te herprobeer nie."
-    retry_unsafe: "(._.) Kan nie daardie boodskap veilig herprobeer nie: {error}"
-    retry_rewind_failed: "(x_x) Terugdraai vir herprobeer het misluk; geskiedenis is nie verander nie: {error}"
-    retrying: "(^_^)b Probeer weer: \"{preview}\""
-    undo_no_messages: "(._.) Geen boodskappe om ongedaan te maak nie."
-    undo_no_user_message: "(._.) Geen gebruikersboodskap gevind om ongedaan te maak nie."
-    undo_failed: "(x_x) Ongedaan maak het misluk; geskiedenis is nie verander nie: {error}"
-    undo_ok_one: "(^_^)b {count} beurt ongedaan gemaak ({messages} boodskap(pe)). Gerugsteun na: \"{backup}\""
-    undo_ok_other: "(^_^)b {count} beurte ongedaan gemaak ({messages} boodskap(pe)). Gerugsteun na: \"{backup}\""
+    save_failed: "✘ Kon nie stoor nie: {error}"
+    retry_no_messages: "◈ Geen boodskappe om te herprobeer nie."
+    retry_no_user_message: "◈ Geen gebruikersboodskap gevind om te herprobeer nie."
+    retry_unsafe: "◈ Kan nie daardie boodskap veilig herprobeer nie: {error}"
+    retry_rewind_failed: "✘ Terugdraai vir herprobeer het misluk; geskiedenis is nie verander nie: {error}"
+    retrying: "✓ Probeer weer: \"{preview}\""
+    undo_no_messages: "◈ Geen boodskappe om ongedaan te maak nie."
+    undo_no_user_message: "◈ Geen gebruikersboodskap gevind om ongedaan te maak nie."
+    undo_failed: "✘ Ongedaan maak het misluk; geskiedenis is nie verander nie: {error}"
+    undo_ok_one: "✓ {count} beurt ongedaan gemaak ({messages} boodskap(pe)). Gerugsteun na: \"{backup}\""
+    undo_ok_other: "✓ {count} beurte ongedaan gemaak ({messages} boodskap(pe)). Gerugsteun na: \"{backup}\""
     undo_remaining: "{count} boodskap(pe) oor in geskiedenis."
     yolo_state_locked_on: "vasgestel op AAN"
     yolo_locked: "⚡ YOLO is {state} vir hierdie proses (begin met --yolo / ICEBATH_YOLO_MODE). /yolo kan dit nie deaktiveer nie — herbegin sonder die vlag om goedkeurings te heraktiveer."
     yolo_off: "⚠ YOLO-modus {state} — gevaarlike opdragte sal goedkeuring vereis."
     yolo_on: "⚡ YOLO-modus {state} — alle opdragte word outomaties goedgekeur. Gebruik versigtig."
-    compress_too_short: "(._.) Nie genoeg gesprek om saam te pers nie (ten minste {min} boodskappe nodig)."
-    compress_no_agent: "(._.) Geen aktiewe agent nie -- stuur eers 'n boodskap."
+    compress_too_short: "◈ Nie genoeg gesprek om saam te pers nie (ten minste {min} boodskappe nodig)."
+    compress_no_agent: "◈ Geen aktiewe agent nie -- stuur eers 'n boodskap."
     compress_busy: "Pers konteks saam..."
     compress_summarizing: "🗜️  Som tot hier op: {count} boodskappe, behou laaste {keep_last} uitruiling(s) woordeliks..."
     compress_focus: "🗜️  Pers {count} boodskappe saam, fokus: \"{focus}\"..."
     compress_plain: "🗜️  Pers {count} boodskappe saam..."
     compress_failed: "❌ Saampersing het misluk: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "Totsiens! ☤"
+    goodbye: "Totsiens! 󰆧"
     exit_resume_hint: "Hervat hierdie sessie met:"
     exit_label_session: "Sessie:         {session_id}"
     exit_label_title: "Titel:          {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(gestoor in konfigurasie)"
       scope_save_failed: "(slegs sessie; konfigurasie-stoor het misluk)"
       scope_session: "(hierdie sessie — gebruik --global om permanent te stoor)"
-      unknown_argument: "(._.) Onbekende argument: {arg}"
+      unknown_argument: "◈ Onbekende argument: {arg}"
       usage: "Gebruik: {usage}"
       needs_active_session: "{command} benodig 'n aktiewe geselsessie om te loop."
       unavailable_no_session: "{label} nie beskikbaar nie (geen aktiewe sessie)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "Gebruik: /indicator [{styles}]"
       status: "Besig-aanwyserstyl: {style}"
-      unknown_style: "(._.) Onbekende aanwyserstyl: {arg}"
+      unknown_style: "◈ Onbekende aanwyserstyl: {arg}"
       label: "Besig-aanwyserstyl"
       note: "Die TUI neem die nuwe styl by sy volgende vertoning oor."
     fast:
 
-      not_supported: "(._.) /fast is slegs beskikbaar vir modelle wat vinnige modus ondersteun (OpenAI Priority Processing of Anthropic Fast Mode)."
+      not_supported: "◈ /fast is slegs beskikbaar vir modelle wat vinnige modus ondersteun (OpenAI Priority Processing of Anthropic Fast Mode)."
       feature_generic: "Vinnige modus"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Ultrafast is nie beskikbaar vir {model} op hierdie rekening of roete nie."
+      ultrafast_not_supported: "◈ Ultrafast is nie beskikbaar vir {model} op hierdie rekening of roete nie."
       usage: "Gebruik: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature} gestel op {value} {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ stel spritesheet saam…"
       progress_save: "┊ stoor…"
       progress_drawing: "┊ teken {state}…"
-      describe_prompt: "(o_o) Beskryf jou troeteldier: "
-      usage: "(o_o) Gebruik: /hatch <beskrywing>  (bv. /hatch 'n klein kuberjakkals)"
+      describe_prompt: "◈ Beskryf jou troeteldier: "
+      usage: "◈ Gebruik: /hatch <beskrywing>  (bv. /hatch 'n klein kuberjakkals)"
       default_name: "Troeteldier"
-      designing: "(o_o) Ontwerp '{concept}'… ('n minuut se beeldmodel-oproepe)"
-      base_failed: "(x_x) Kon nie 'n basisvoorkoms genereer nie: {error}"
-      no_base_draft: "(x_x) Geen basiskonsep het teruggekom nie — probeer weer."
-      failed: "(x_x) Uitbroei het misluk: {error}"
-      hatched: "(^_^)b {name} het uitgebroei en is aangeneem — dit verskyn binnekort!"
+      designing: "◈ Ontwerp '{concept}'… ('n minuut se beeldmodel-oproepe)"
+      base_failed: "✘ Kon nie 'n basisvoorkoms genereer nie: {error}"
+      no_base_draft: "✘ Geen basiskonsep het teruggekom nie — probeer weer."
+      failed: "✘ Uitbroei het misluk: {error}"
+      hatched: "✓ {name} het uitgebroei en is aangeneem — dit verskyn binnekort!"
     pet:
 
-      is_out: "(^_^)b {name} is uit — dit verskyn binnekort."
-      put_away_named: "(-_-)zzZ {name} is weggesit."
-      put_away: "(-_-)zzZ Troeteldier weggesit."
-      usage_scale: "(o_o) Gebruik: /pet scale <faktor>  (bv. /pet scale 0.5)"
-      scale_set: "(^_^) Troeteldierskaal → {scale}."
-      fetching: "(o_o) Haal '{name}' uit die petdex…"
-      adopt_failed: "(x_x) Kon nie '{name}' aanneem nie: {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} is uit — dit verskyn binnekort."
+      put_away_named: "○ {name} is weggesit."
+      put_away: "○ Troeteldier weggesit."
+      usage_scale: "◈ Gebruik: /pet scale <faktor>  (bv. /pet scale 0.5)"
+      scale_set: "✓ Troeteldierskaal → {scale}."
+      fetching: "◈ Haal '{name}' uit die petdex…"
+      adopt_failed: "✘ Kon nie '{name}' aanneem nie: {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Ongestadieer"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey het misluk: {error}"
     paste:
 
-      no_image: "(._.) Geen beeld in knipbord gevind nie"
+      no_image: "◈ Geen beeld in knipbord gevind nie"
       attached: "📎 Beeld #{index} vanaf knipbord aangeheg"
-      extract_failed: "(>_<) Knipbord het 'n beeld, maar onttrekking het misluk"
+      extract_failed: "◬ Knipbord het 'n beeld, maar onttrekking het misluk"
     copy:
 
       nothing_yet: "Nog niks om te kopieer nie."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "Gebruik: /image <pad>  bv. /image {example}"
-      not_found: "(>_<) Lêer nie gevind nie: {path}"
-      unsupported: "(._.) Nie 'n ondersteunde beeldlêer nie: {name}"
+      not_found: "◬ Lêer nie gevind nie: {path}"
+      unsupported: "◈ Nie 'n ondersteunde beeldlêer nie: {name}"
       attached: "📎 Beeld aangeheg: {name}"
       now_type_prompt: "Tik nou jou prompt (of gebruik --image in enkelnavraagmodus): {text}"
     tools:
 
-      usage: "(._.) Gebruik: /tools {subcommand} <naam> [naam ...]"
+      usage: "◈ Gebruik: /tools {subcommand} <naam> [naam ...]"
       example_toolset: "Ingeboude gereedskapstel:  /tools {subcommand} web"
       example_mcp: "MCP-gereedskap:            /tools {subcommand} github:create_issue"
       disabling: "Deaktiveer {names}..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "Sessie {session_id} is in {resolved_id} saamgepers; die afstammeling word met jou transkripsie hervat."
     sessions:
 
-      none_yet: "(._.) Nog geen vorige sessies nie."
+      none_yet: "◈ Nog geen vorige sessies nie."
     branch:
 
       branched_one: "⑂ Sessie \"{title}\" vertak ({count} gebruikersboodskap)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "Terminaal- en lêergereedskap werk nou in die werkboom."
     personality:
 
-      title: "(^o^)/ Persoonlikhede"
+      title: "❆ Persoonlikhede"
       none_option: "(geen persoonlikheidslaag)"
       usage: "Gebruik: /personality <naam>   (* = aktief)"
-      unknown: "(._.) Onbekende persoonlikheid: {name}"
+      unknown: "◈ Onbekende persoonlikheid: {name}"
       available: "Beskikbaar: none, {available}"
       scope_saved: "(gestoor in konfigurasie)"
       scope_session: "(slegs sessie)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} Persoonlikheid gestel op '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat moet 'n heelgetal wees"
-      unknown_command: "(._.) Onbekende cron-opdrag: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat moet 'n heelgetal wees"
+      unknown_command: "◈ Onbekende cron-opdrag: {subcommand}"
       available: "Beskikbaar: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Geskeduleerde Take"
+      overview_title: "❆ Geskeduleerde Take"
       overview_commands: "Opdragte:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Kontroleer bedienerstatus\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Nuwe taak\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Huidige Take:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "Vaardighede: geen"
       next_short: "Volgende"
       no_jobs_hint: "Geen geskeduleerde take nie. Gebruik '/cron add' om een te skep."
-      no_jobs: "(._.) Geen geskeduleerde take nie."
+      no_jobs: "◈ Geen geskeduleerde take nie."
       list_header: "Geskeduleerde Take:"
       id: "ID: {job_id}"
       name: "Naam: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "fout: {error}"
       last_run: "Laaste lopie: {when} ({status})"
-      usage_add: "(._.) Gebruik: /cron add <skedule> <prompt>"
-      need_prompt_or_skill: "(._.) Verskaf asseblief 'n prompt of ten minste een vaardigheid"
-      create_failed: "(x_x) Kon nie taak skep nie: {error}"
-      created: "(^_^)b Taak geskep: {job_id}"
-      usage_edit: "(._.) Gebruik: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) Taak nie gevind nie: {job_id}"
-      update_failed: "(x_x) Kon nie taak opdateer nie: {error}"
-      updated: "(^_^)b Taak opgedateer: {job_id}"
-      usage_action: "(._.) Gebruik: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) Kon nie taak pouseer nie: {error}"
-      resume_failed: "(x_x) Kon nie taak hervat nie: {error}"
-      run_failed: "(x_x) Kon nie taak uitvoer nie: {error}"
-      remove_failed: "(x_x) Kon nie taak verwyder nie: {error}"
-      removed: "(^_^)b Taak verwyder: {name} ({job_id})"
-      did_not_run: "(x_x) Taak nie uitgevoer nie: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b Taak gepouseer: {name} ({job_id})"
-      resumed: "(^_^)b Taak hervat: {name} ({job_id})"
-      triggered: "(^_^)b Taak geaktiveer: {name} ({job_id})"
+      usage_add: "◈ Gebruik: /cron add <skedule> <prompt>"
+      need_prompt_or_skill: "◈ Verskaf asseblief 'n prompt of ten minste een vaardigheid"
+      create_failed: "✘ Kon nie taak skep nie: {error}"
+      created: "✓ Taak geskep: {job_id}"
+      usage_edit: "◈ Gebruik: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ Taak nie gevind nie: {job_id}"
+      update_failed: "✘ Kon nie taak opdateer nie: {error}"
+      updated: "✓ Taak opgedateer: {job_id}"
+      usage_action: "◈ Gebruik: /cron {subcommand} <job_id>"
+      pause_failed: "✘ Kon nie taak pouseer nie: {error}"
+      resume_failed: "✘ Kon nie taak hervat nie: {error}"
+      run_failed: "✘ Kon nie taak uitvoer nie: {error}"
+      remove_failed: "✘ Kon nie taak verwyder nie: {error}"
+      removed: "✓ Taak verwyder: {name} ({job_id})"
+      did_not_run: "✘ Taak nie uitgevoer nie: {name} ({job_id})\n  {reason}"
+      paused: "✓ Taak gepouseer: {name} ({job_id})"
+      resumed: "✓ Taak hervat: {name} ({job_id})"
+      triggered: "✓ Taak geaktiveer: {name} ({job_id})"
     suggestions:
 
       failed: "Voorstelle-opdrag het misluk: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "Cron-bloudruk-opdrag het misluk: {error}"
     curator:
 
-      failed: "(._.) kurator: {error}"
+      failed: "◈ kurator: {error}"
     kanban:
 
-      failed: "(._.) kanban-fout: {error}"
+      failed: "◈ kanban-fout: {error}"
     memory:
 
       unknown_subcommand: "Onbekende /memory-subopdrag. Gebruik: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "Gebruik: /bg <prompt>\nVoorbeeld: /bg Som vandag se top HN-stories op\n(Vir 'n newevraag oor hierdie gesprek, gebruik /btw <vraag>.)\nDie taak loop in 'n aparte sessie en die resultate verskyn hier wanneer dit klaar is."
-      no_credentials: "(>_<) Kan nie agtergrondtaak begin nie: geen geldige geloofsbriewe nie."
+      no_credentials: "◬ Kan nie agtergrondtaak begin nie: geen geldige geloofsbriewe nie."
       started: "🔄 Agtergrondtaak #{number} begin: \"{preview}\""
       task_id: "Taak-ID: {task_id}"
       keep_chatting: "Jy kan aanhou gesels — resultate verskyn wanneer dit klaar is."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "Gebruik: /btw <vraag>\nVoorbeeld: /btw in watter lêer was daardie fout?\nBeantwoord 'n vinnige vraag oor hierdie gesprek sonder om dit te onderbreek.\n(Vir 'n onafhanklike agtergrondtaak, gebruik /bg <prompt>.)"
-      no_credentials: "(>_<) Kan nie newevraag beantwoord nie: geen geldige geloofsbriewe nie."
+      no_credentials: "◬ Kan nie newevraag beantwoord nie: geen geldige geloofsbriewe nie."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(Geen antwoord gegenereer nie)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! Stel jou prompt hieronder saam. Reëls wat met '#!' begin, word geïgnoreer.\n#! Stoor en sluit af om te stuur; laat leeg om te kanselleer."
-      editor_failed: "(>_<) Kon nie redigeerder oopmaak nie: {error}"
-      empty: "(._.) Leë prompt — niks gestuur nie."
+      editor_failed: "◬ Kon nie redigeerder oopmaak nie: {error}"
+      empty: "◈ Leë prompt — niks gestuur nie."
     focus:
 
       usage: "Gebruik: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "verlaat die huidige sessie en dateer Icebath Agent op"
       choice_cancel: "Kanselleer"
       choice_cancel_desc: "behou die huidige sessie"
-      title: "☤  Dateer Icebath Agent Op"
+      title: "󰆧  Dateer Icebath Agent Op"
       detail: "Dit sal die huidige sessie verlaat en `icebath update` uitvoer."
       cancelled: "🟡 /update gekanselleer."
-      launching: "☤ Begin opdatering..."
+      launching: "󰆧 Begin opdatering..."
     voice:
 
       unknown_subcommand: "Onbekende voice-subopdrag: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "Het jy een hiervan bedoel: {candidates}?"
   config:
 
-    title: "(^_^) Konfigurasie"
+    title: "❆ Konfigurasie"
     loaded: "(gelaai)"
     not_found: "(nie gevind nie)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 Konteksgebruik — {model}"
-    compute_failed: "(._.) Kon nie konteksverdeling bereken nie: {error}"
+    compute_failed: "◈ Kon nie konteksverdeling bereken nie: {error}"
   error:
 
     auth: "Jou {provider}-sleutel is verwerp. Voer `icebath model` uit om dit weer in te voer."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Begin Icebath Gateway (boodskapplatforms)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Gateway-status"
+    header: "❆ Gateway-status"
     platform_config_header: "Boodskapplatform-konfigurasie:"
     enabled: "Geaktiveer"
     not_configured: "Nie opgestel nie ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. Of stel instellings op in {path}"
   help:
 
-    header: "(^_^)? Beskikbare Opdragte"
+    header: "❆ Beskikbare Opdragte"
     section_session: "Sessie"
     section_configuration: "Konfigurasie"
     section_tools_skills: "Gereedskap & Vaardighede"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "Kon nie vaardigheid vir {command} laai nie"
   tools:
 
-    none_available: "(;_;) Geen gereedskap beskikbaar nie"
-    header: "(^_^)/ Beskikbare Gereedskap"
-    total: "Totaal: {count} gereedskap  ヽ(^o^)ノ"
+    none_available: "◈ Geen gereedskap beskikbaar nie"
+    header: "❆ Beskikbare Gereedskap"
+    total: "Totaal: {count} gereedskap"
   toolsets:
 
-    header: "(^_^)b Beskikbare Gereedskapstelle"
+    header: "✓ Beskikbare Gereedskapstelle"
     currently_enabled_legend: "(*) = tans geaktiveer"
     tip_enable_all: "Wenk: Gebruik 'all' of '*' om alle gereedskapstelle te aktiveer"
     example: "Voorbeeld: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "Skakel eers oor met `/model` of `icebath auth`."
     checking_reset_credits: "⏳ Gaan gebankte terugstelkrediete na..."
     codex_timeout: "❌ Tyd verstryk tydens kommunikasie met die Codex-agterkant — probeer netnou weer."
-    no_api_calls: "(._.) Nog geen API-oproepe in hierdie sessie gemaak nie."
+    no_api_calls: "◈ Nog geen API-oproepe in hierdie sessie gemaak nie."
     header_session: "📊 Sessie-tokengebruik"
     label_model: "Model:"
     label_input_tokens: "Invoertokens:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model laat jou modelle middel in 'n sessie verander — probeer /model sonnet of /model gpt-5."
   t017: "/model --global verander jou verstekmodel permanent."
   t018: "/personality pirate stel 'n prettige persoonlikheid in — 14 ingeboude opsies van kawaii tot shakespeare."
-  t019: "/skin verander die CLI-tema — probeer ares, mono, slate, poseidon of charizard."
+  t019: "/skin verander die CLI-tema — probeer taro, light, contrast, cyberpunk of dracula."
   t020: "/statusbar skakel 'n permanente balk aan of af wat model, tokens, konteksvulling %, koste en duur wys."
   t021: "/tools disable browser verwyder blaaiergereedskap tydelik vir die huidige sessie."
   t022: "/browser connect koppel blaaiergereedskap via CDP aan jou lopende Chromium-familie-blaaier."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets lys elke beskikbare gereedskapstel sodat jy weet wat -t/--toolsets aanvaar."
   t337: "/voice tts skakel slegs-TTS-modus aan of af — die agent antwoord hardop, maar jy tik steeds jou prompte."
   t338: "/reload-skills skandeer ~/.icebath/skills/ weer sodat inprop-vaardighede verskyn sonder om die sessie te herbegin."
-  t339: "/indicator kaomoji|emoji|unicode|ascii kies die styl van die TUI-besig-aanwyser wat tydens agent-lopies gewys word."
+  t339: "/indicator unicode|emoji|ascii kies die styl van die TUI-besig-aanwyser wat tydens agent-lopies gewys word."
   t340: "/debug laai 'n ondersteuningsbundel (stelselinligting + logs) op en gee deelbare skakels terug — werk ook in die klets."
   t341: "icebath -z \"<prompt>\" is die suiwerste eenmalige lopie: finale antwoord op stdout, niks anders nie — ideaal om in skripte te pyp."
   t342: "icebath chat --pass-session-id spuit die sessie-ID in die stelselprompt in sodat die agent daarna kan verwys."

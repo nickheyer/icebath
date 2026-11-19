@@ -188,17 +188,3 @@ func StreamReasoningDeltasEnabled(ctx context.Context) bool {
 	section, _ := cfg["plugins"].(map[string]any)
 	return config.PyTruthy(section["stream_reasoning_deltas"])
 }
-
-// Stops every stream hook dispatcher, waiting up to the timeout for each
-func ShutdownPluginStreamHookDispatcher(timeout time.Duration) {
-	streamDispatcherMu.Lock()
-	dispatchers := make([]*consumerDispatcher, 0, len(streamDispatchers))
-	for _, d := range streamDispatchers {
-		dispatchers = append(dispatchers, d)
-	}
-	streamDispatchers = map[streamDispatcherKey]*consumerDispatcher{}
-	streamDispatcherMu.Unlock()
-	for _, d := range dispatchers {
-		stopStreamDispatcher(d, timeout)
-	}
-}

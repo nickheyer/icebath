@@ -170,7 +170,7 @@ func TestGatewaySetupWithNoPlatformProgressSkipsTheServiceOffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	order := []string{"☤ Gateway Setup", "Gateway service is not installed yet.",
+	order := []string{"󰆧 Gateway Setup", "Gateway service is not installed yet.",
 		"You'll be offered to install it after configuring platforms.", "Messaging Platforms",
 		"No platforms configured. Run 'icebath gateway setup' when ready."}
 	at := 0

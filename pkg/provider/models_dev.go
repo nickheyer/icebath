@@ -684,9 +684,6 @@ func startBackgroundModelsDevRefresh(h string) {
 	go backgroundModelsDevRefresh(h)
 }
 
-// WaitModelsDevRefresh blocks until any background registry refresh has finished
-func WaitModelsDevRefresh() { modelsDevRefreshWait.Wait() }
-
 // Registry served from memory, then disk of any age, then one singleflight network fetch
 func fetchModelsDevIn(h string, allowNetwork bool) map[string]any {
 	return fetchModelsDevWith(h, false, allowNetwork)
@@ -774,19 +771,6 @@ func FetchModelsDev(ctx context.Context, forceRefresh bool) map[string]any {
 // ModelsDevOffline returns any memory or disk copy of the registry without a request
 func ModelsDevOffline(ctx context.Context) map[string]any {
 	return fetchModelsDevIn(home.Dir(ctx), false)
-}
-
-// ResetModelsDevCache drops the in memory registry, the backoff and the once per process warnings
-func ResetModelsDevCache() {
-	modelsDevStateMu.Lock()
-	modelsDevCache = nil
-	modelsDevCacheTime = time.Time{}
-	modelsDevRetryAfter = time.Time{}
-	modelsDevStateMu.Unlock()
-	modelsDevWarnMu.Lock()
-	modelsDevOverrideWarned = map[string]bool{}
-	modelsDevUnknownWarned = map[string]bool{}
-	modelsDevWarnMu.Unlock()
 }
 
 // Raw models.dev provider entry or nil
@@ -1225,11 +1209,6 @@ func RegisterModelCapabilities(provider string, caps map[string]map[string]any) 
 		copied[model] = entry
 	}
 	registeredModelCaps[key] = copied
-}
-
-// Exact model declaration from the registered profile capabilities, the one plugin seam
-func providerModelCapabilities(provider, model string) map[string]any {
-	return providerModelCapabilitiesIn("", provider, model)
 }
 
 // Exact model declaration of the provider profile registered for a home, then of a direct registration

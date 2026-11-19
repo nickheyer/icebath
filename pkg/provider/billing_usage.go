@@ -58,27 +58,6 @@ func BillingOrEntitlementMessage(capability, provider, baseURL, model string, un
 	return strings.Join(lines, "\n")
 }
 
-// BillingBlockDict is the structured billing descriptor, flagged unverified when the cause may be a filter
-func BillingBlockDict(provider, baseURL, model, message string, unverified bool) map[string]any {
-	built, err := BuildBillingBlockErr(provider, baseURL, model, message)
-	if err != nil {
-		return nil
-	}
-	block := built.ToDict()
-	if unverified {
-		block["unverified"] = true
-	}
-	return block
-}
-
-// BillingTerminalLabel prefixes a billing failure summary without asserting an unverified exhaustion
-func BillingTerminalLabel(summary string, unverified bool) string {
-	if unverified {
-		return "Provider reported usage/credit exhaustion (unverified — the same error can be a content-filter rejection, not billing): " + summary
-	}
-	return "Billing or credits exhausted: " + summary
-}
-
 // PrintBillingOrEntitlementGuidance emits the billing or entitlement next steps, false when there are none
 func PrintBillingOrEntitlementGuidance(emit func(...string), capability, provider, baseURL, model string, unverified bool) bool {
 	return printGuidance(emit, BillingOrEntitlementMessage(capability, provider, baseURL, model, unverified))

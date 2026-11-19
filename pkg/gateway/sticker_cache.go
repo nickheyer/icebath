@@ -78,13 +78,13 @@ func BuildStickerInjection(description, emoji, setName string) string {
 	if setName != "" && emoji != "" {
 		context += fmt.Sprintf(" from \"%s\"", setName)
 	}
-	return fmt.Sprintf("[The user sent a sticker%s~ It shows: \"%s\" (=^.w.^=)]", context, description)
+	return fmt.Sprintf("[The user sent a sticker%s. It shows: \"%s\"]", context, description)
 }
 
 // Injection text for an animated or video sticker vision cannot read
 func BuildAnimatedStickerInjection(emoji string) string {
 	if emoji != "" {
-		return fmt.Sprintf("[The user sent an animated sticker %s~ I can't see animated ones yet, but the emoji suggests: %s]", emoji, emoji)
+		return fmt.Sprintf("[The user sent an animated sticker %s. I can't see animated ones yet, but the emoji suggests: %s]", emoji, emoji)
 	}
-	return "[The user sent an animated sticker~ I can't see animated ones yet]"
+	return "[The user sent an animated sticker. I can't see animated ones yet]"
 }

@@ -466,11 +466,6 @@ func NewSecretDiskCache(basename string) *SecretDiskCache {
 	return &SecretDiskCache{basename: basename}
 }
 
-// Path is the cache file for a home
-func (c *SecretDiskCache) Path(homePath string) string {
-	return filepath.Join(ResolveCacheHome(homePath), c.basename)
-}
-
 func (c *SecretDiskCache) currentPath(homePath string) string {
 	return CurrentCachePath(ResolveCacheHome(homePath), c.basename)
 }
@@ -825,21 +820,6 @@ func EnsureBuiltinSecretSources() {
 			pkgLog().Warn(fmt.Sprintf("Failed to register bundled %s secret source", s.Spec().Label))
 		}
 	}
-}
-
-// BuiltinSecretSourcesLoaded reports whether the bundled sources were registered in this process
-func BuiltinSecretSourcesLoaded() bool {
-	secretRegistryMu.Lock()
-	defer secretRegistryMu.Unlock()
-	return builtinSourcesReady
-}
-
-// ResetSecretRegistryForTests empties the registry
-func ResetSecretRegistryForTests() {
-	secretRegistryMu.Lock()
-	defer secretRegistryMu.Unlock()
-	secretSources, secretSourceOrder, secretSourceOrigins = map[string]SecretSource{}, nil, map[string]string{}
-	scopedSecretSources, scopedSecretOrder, builtinSourcesReady = map[string]map[string]SecretSource{}, map[string][]string{}, false
 }
 
 // ---- orchestrated apply ----

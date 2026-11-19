@@ -9,7 +9,6 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -204,11 +203,6 @@ func (r *resolver) fileEnv() map[string]string {
 		return map[string]string{}
 	}
 	return r.secrets.File()
-}
-
-// Trimmed env URL with the trailing slash dropped, empty when unset
-func optionalBaseURLValue(value string) string {
-	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 // ---- model config ----
@@ -503,17 +497,6 @@ var (
 	perModelHooksMu sync.RWMutex
 	perModelHooks   = map[string]PerModelAPIModeHook{}
 )
-
-// RegisterPerModelAPIMode installs a profile owned per model wire hook for one canonical provider
-func RegisterPerModelAPIMode(provider string, fn PerModelAPIModeHook) {
-	perModelHooksMu.Lock()
-	defer perModelHooksMu.Unlock()
-	if fn == nil {
-		delete(perModelHooks, provider)
-		return
-	}
-	perModelHooks[provider] = fn
-}
 
 // perModelHookProfile is a provider whose profile routes api mode per model through its hook
 type perModelHookProfile struct {
@@ -1037,28 +1020,6 @@ var (
 	apiKeySecretSeams   = map[string]APIKeySecretResolver{}
 	runtimeBaseURLSeams = map[string]RuntimeBaseURLResolver{}
 )
-
-// RegisterAPIKeySecretResolver installs a profile owned api key resolution that is final when it answers
-func RegisterAPIKeySecretResolver(provider string, fn APIKeySecretResolver) {
-	credentialSeamsMu.Lock()
-	defer credentialSeamsMu.Unlock()
-	if fn == nil {
-		delete(apiKeySecretSeams, provider)
-		return
-	}
-	apiKeySecretSeams[provider] = fn
-}
-
-// RegisterRuntimeBaseURLResolver installs a profile owned runtime base URL derived from the credential
-func RegisterRuntimeBaseURLResolver(provider string, fn RuntimeBaseURLResolver) {
-	credentialSeamsMu.Lock()
-	defer credentialSeamsMu.Unlock()
-	if fn == nil {
-		delete(runtimeBaseURLSeams, provider)
-		return
-	}
-	runtimeBaseURLSeams[provider] = fn
-}
 
 // Api key provider secret and its source, the profile seam, model.key_env, registry env vars, then the login store
 func (r *resolver) apiKeyProviderSecret(providerID string, pconfig Profile) (string, string, func(context.Context) (string, error)) {
@@ -2422,14 +2383,4 @@ func resolveFallbackChain(ctx context.Context, cfg config.Tree, secrets *config.
 		return nil, fmt.Errorf("provider: no fallback entry resolved: %s", strings.Join(errs, "; "))
 	}
 	return routes, nil
-}
-
-// Integer env value with a default when unset or malformed
-func (r *resolver) envInt(name string, def int) int {
-	if v := strings.TrimSpace(r.secret(name)); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
-		}
-	}
-	return def
 }

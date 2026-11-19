@@ -355,9 +355,9 @@ func runGateway(ctx context.Context, w io.Writer, verbose int, quiet, replace, f
 		return err
 	}
 	printLines(w, "┌─────────────────────────────────────────────────────────┐",
-		"│           ☤ Icebath Gateway Starting...                 │",
+		"│           󰆧 Icebath Gateway Starting...                 │",
 		"├─────────────────────────────────────────────────────────┤",
-		"│  Messaging platforms + cron scheduler                    │",
+		"│  Messaging platforms + cron scheduler                   │",
 		"│  Press Ctrl+C to stop                                   │",
 		"└─────────────────────────────────────────────────────────┘", "")
 	var verbosity *int

@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -394,11 +393,6 @@ func FilterEntries(entries []*PluginCatalogEntry, query string) []*PluginCatalog
 	return out
 }
 
-// In-tree catalog entries matching a query
-func SearchCatalog(query string) []*PluginCatalogEntry {
-	return FilterEntries(LoadCatalog(""), query)
-}
-
 // Kill list entry matching a catalog name or repo, the in-tree list united with the live one when dir is empty
 func FindRemoved(ctx context.Context, nameOrRepo, dir string) *RemovedEntry {
 	if nameOrRepo == "" {
@@ -414,11 +408,6 @@ func FindRemoved(ctx context.Context, nameOrRepo, dir string) *RemovedEntry {
 // Full kill list in one resolution, the in-tree list united with the live one
 func ResolvedRemovedEntries(ctx context.Context) []RemovedEntry {
 	return append(loadRemovedList(""), LiveRemovedList(ctx)...)
-}
-
-// In-tree kill list united with the last fetched live copy of the current home, without any network round trip
-func CachedRemovedEntries(ctx context.Context) []RemovedEntry {
-	return cachedRemovedEntries(home.Dir(ctx))
 }
 
 // One candidate against a resolved kill list by exact name or normalized repo

@@ -15,10 +15,13 @@ import (
 
 const bootWriteDelay = 400 * time.Millisecond
 
+// Version of the boot theme file this build reads and writes, an older file dropped for the default theme
+const bootThemeVersion = 2
+
 // File of the last session's resolved theme that paints the first frame
 func bootFilePath() string { return filepath.Join(home.Process(), "tui-theme-boot.json") }
 
-// On disk boot theme, version 1
+// On disk boot theme, version 2 since a theme names its skin
 type bootThemeFile struct {
 	Background string `json:"background,omitempty"`
 	Mode       string `json:"mode,omitempty"`
@@ -70,14 +73,14 @@ func readBootTheme() (bootThemeFile, bool) {
 		Theme      json.RawMessage `json:"theme"`
 		Version    any             `json:"version"`
 	}
-	if json.Unmarshal(data, &raw) != nil || raw.Version != float64(1) || !looksLikeTheme(raw.Theme) {
+	if json.Unmarshal(data, &raw) != nil || raw.Version != float64(bootThemeVersion) || !looksLikeTheme(raw.Theme) {
 		return bootThemeFile{}, false
 	}
 	var t theme
 	if json.Unmarshal(raw.Theme, &t) != nil {
 		return bootThemeFile{}, false
 	}
-	out := bootThemeFile{Theme: &t, Version: 1}
+	out := bootThemeFile{Theme: &t, Version: bootThemeVersion}
 	out.Background, _ = raw.Background.(string)
 	if mode, _ := raw.Mode.(string); mode == "light" || mode == "dark" {
 		out.Mode = mode
@@ -136,7 +139,7 @@ func writeBootTheme(t theme, background, mode string) {
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
 		enc.SetEscapeHTML(false)
-		if enc.Encode(bootThemeFile{Background: background, Mode: mode, Theme: &t, Version: 1}) != nil {
+		if enc.Encode(bootThemeFile{Background: background, Mode: mode, Theme: &t, Version: bootThemeVersion}) != nil {
 			return
 		}
 		path := bootFilePath()

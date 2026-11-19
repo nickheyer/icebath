@@ -59,13 +59,6 @@ var manifestCache struct {
 	prefetching bool
 }
 
-// Drops the cached manifest so the next fetch hits the network
-func ClearManifestCache() {
-	manifestCache.Lock()
-	defer manifestCache.Unlock()
-	manifestCache.warm, manifestCache.entries = false, nil
-}
-
 // Whether the cache holds a manifest younger than the TTL, the caller holding the lock
 func cacheIsWarmLocked() bool {
 	return manifestCache.warm && time.Since(manifestCache.at) < manifestTTL

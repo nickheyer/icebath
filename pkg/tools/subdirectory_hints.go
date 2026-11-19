@@ -136,11 +136,6 @@ type SubdirectoryHintTracker struct {
 	loadedDigests    map[string]bool
 }
 
-// Tracker anchored at workingDir or the process cwd, its deny list and read timeout from the process home
-func NewSubdirectoryHintTracker(workingDir string, enabled bool) *SubdirectoryHintTracker {
-	return NewSubdirectoryHintTrackerFor(nil, workingDir, enabled)
-}
-
 // Tracker anchored at workingDir or the process cwd, its deny list and read timeout from the home of env
 func NewSubdirectoryHintTrackerFor(env *Env, workingDir string, enabled bool) *SubdirectoryHintTracker {
 	if workingDir == "" {

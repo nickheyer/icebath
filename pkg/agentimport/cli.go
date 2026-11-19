@@ -459,7 +459,7 @@ func ensureConfigFile(icebathHome string) error {
 func printBanner(c *cliui.Console) {
 	fmt.Fprintln(c.Out)
 	fmt.Fprintln(c.Out, color(c, "┌─────────────────────────────────────────────────────────┐", ansiMagenta))
-	fmt.Fprintln(c.Out, color(c, "│          ☤ Icebath — Import From Another Agent         │", ansiMagenta))
+	fmt.Fprintln(c.Out, color(c, "│          󰆧 Icebath — Import From Another Agent          │", ansiMagenta))
 	fmt.Fprintln(c.Out, color(c, "└─────────────────────────────────────────────────────────┘", ansiMagenta))
 }
 

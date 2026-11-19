@@ -218,7 +218,7 @@ func (r *Runner) printBanner() {
 	}
 	fmt.Fprintf(r.stdout, "\n%s%s\n%s\n%s\n%s\n%s\n%s\n", open,
 		"┌─────────────────────────────────────────────────────────┐",
-		"│             ☤ Icebath Agent Installer                   │",
+		"│             󰆧 Icebath Agent Installer                   │",
 		"├─────────────────────────────────────────────────────────┤",
 		"│  An open source AI agent by Nicholas W. Heyer.          │",
 		"└─────────────────────────────────────────────────────────┘",

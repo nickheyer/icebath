@@ -236,17 +236,6 @@ func SwapAnchorImportable(fn func(ctx context.Context, anchor string) bool) func
 // Client sync a configured feature install goes through
 var clientSyncVenv = SyncVenv
 
-// Anchors of an extra the selected environment cannot import
-func Missing(ctx context.Context, extra string) []string {
-	var out []string
-	for _, anchor := range anchors(extra) {
-		if !anchorImportable(ctx, anchor) {
-			out = append(out, anchor)
-		}
-	}
-	return out
-}
-
 // Reports an anchor installed as a package dir, module file or compiled extension under a site packages tree
 func installedIn(sitePackages, anchor string) bool {
 	parts := strings.Split(anchor, ".")

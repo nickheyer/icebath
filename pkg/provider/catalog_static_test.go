@@ -292,3 +292,27 @@ func TestCatalogProviderAliasesAndFlags(t *testing.T) {
 		t.Fatal("picker policy sets wrong")
 	}
 }
+
+// PluginProviderEntersPicker reports whether a profile slug still lacks a row in the canonical table
+func PluginProviderEntersPicker(name string) bool {
+	catalogOnce.Do(buildCatalogTables)
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	return pluginProviderEntersPicker(name)
+}
+
+// SyncPluginProviderCatalog admits every registered profile without a built in row and returns how many were added
+func SyncPluginProviderCatalog() int {
+	catalogOnce.Do(buildCatalogTables)
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	return syncPluginProviderCatalogLocked()
+}
+
+// IsCanonicalProvider reports whether the slug has a row in the canonical table
+func IsCanonicalProvider(slug string) bool {
+	catalogOnce.Do(buildCatalogTables)
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	return canonicalSlugs[slug]
+}

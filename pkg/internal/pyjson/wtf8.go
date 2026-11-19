@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"math"
 	"math/bits"
 	"reflect"
@@ -17,38 +16,12 @@ import (
 	"strings"
 	"sync"
 	"unicode"
-	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// Text a Go JSON server decodes from Python ensure_ascii JSON of s, a high low surrogate pair joined and others U+FFFD
-func ASCIIWireText(s string) string {
-	if utf8.ValidString(s) {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); {
-		r, size := pystr.DecodeRune(s[i:])
-		if !pystr.IsSurrogate(r) {
-			b.WriteString(s[i : i+size])
-			i += size
-			continue
-		}
-		i += size
-		if r <= pystr.SurrogateHighMax && i < len(s) {
-			if r2, n := pystr.DecodeRune(s[i:]); r2 >= pystr.SurrogateLowMin && r2 <= pystr.SurrogateMax {
-				b.WriteRune(utf16.DecodeRune(r, r2))
-				i += n
-				continue
-			}
-		}
-		b.WriteRune(utf8.RuneError)
-	}
-	return b.String()
-}
 
 // Decodes JSON into the encoding/json any shapes with lone surrogate escapes kept as WTF-8 code points
 func DecodeWTF8(data []byte) (any, error) { return decodeWTF8JSON(data, false, false) }

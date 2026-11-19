@@ -28,20 +28,6 @@ func (s *auxOnceSet) add(key string) bool {
 	return true
 }
 
-// Reports whether the key was already logged
-func (s *auxOnceSet) has(key string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.seen[key]
-}
-
-// Forgets every logged key as a test reset does
-func (s *auxOnceSet) clear() {
-	s.mu.Lock()
-	s.seen = map[string]bool{}
-	s.mu.Unlock()
-}
-
 // Per branch dedup of resolve_provider_client fall through warnings
 var (
 	auxLoggedUnknownProviderKeys    = newAuxOnceSet()

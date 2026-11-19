@@ -125,22 +125,6 @@ func bedrockControlClient(ctx context.Context, region string) (*awsServiceClient
 	return bedrockCachedClient(ctx, "bedrock", region, 0)
 }
 
-// ResetBedrockClientCache drops every cached client, profile resolution and fallback warning
-func ResetBedrockClientCache() {
-	bedrockClientsMu.Lock()
-	for k, c := range bedrockClients {
-		c.closeIdle()
-		delete(bedrockClients, k)
-	}
-	bedrockClientsMu.Unlock()
-	bedrockProfileMu.Lock()
-	bedrockProfileCache = map[string]string{}
-	bedrockProfileMu.Unlock()
-	bedrockWarnedMu.Lock()
-	bedrockWarnedDefault = map[string]bool{}
-	bedrockWarnedMu.Unlock()
-}
-
 // InvalidateBedrockRuntimeClient evicts every read timeout slot of one region's runtime clients
 func InvalidateBedrockRuntimeClient(ctx context.Context, region string) bool {
 	homeKey := ""
@@ -280,11 +264,6 @@ func resolveBedrockBearerTokenCtx(ctx context.Context) string {
 		return strings.TrimSpace(GetSecretStr(ctx, "AWS_BEARER_TOKEN_BEDROCK", ""))
 	}
 	return resolveBedrockBearerToken()
-}
-
-// Bedrock API key from an explicit environment mapping
-func resolveBedrockBearerTokenFrom(env map[string]string) string {
-	return strings.TrimSpace(env["AWS_BEARER_TOKEN_BEDROCK"])
 }
 
 // BedrockOpenAINoCredentialsError is a Mantle call with neither a key nor resolvable AWS credentials
@@ -686,9 +665,6 @@ func isAnthropicBedrockModel(model string) bool {
 	return bedrockAnthropicModelRe.MatchString(model)
 }
 
-// IsAnthropicBedrockModel reports Claude on Bedrock, the Messages wire path
-func IsAnthropicBedrockModel(model string) bool { return isAnthropicBedrockModel(model) }
-
 // Live discovered model ids of the runtime region merged with the Mantle ids, false on failure or empty
 func bedrockModelIDsOrNone(ctx context.Context) ([]string, bool) {
 	discovered := discoverBedrockModelsFn(ctx, resolveBedrockRuntimeRegionCtx(ctx), nil)
@@ -812,13 +788,6 @@ var (
 
 // Discovery entry point, replaced by tests
 var discoverBedrockModelsFn = DiscoverBedrockModels
-
-// ResetBedrockDiscoveryCache clears the model discovery cache
-func ResetBedrockDiscoveryCache() {
-	bedrockDiscoveryMu.Lock()
-	bedrockDiscoveryCache = map[string]bedrockDiscoveryEntry{}
-	bedrockDiscoveryMu.Unlock()
-}
 
 func bedrockModelEntry(id, name, provider string, input, output []string) BedrockModel {
 	n := strings.TrimSpace(name)
@@ -1127,11 +1096,6 @@ func bedrockContextLength(ctx context.Context, model, region string, probe bool)
 // Static table window of a model with no probe, the metadata fallback
 func bedrockStaticContextLength(model string) int {
 	return bedrockContextLength(context.Background(), model, "", false)
-}
-
-// BedrockContextLength is the window of a model, probing the region first when probe is set
-func BedrockContextLength(ctx context.Context, model, region string, probe bool) int {
-	return bedrockContextLength(ctx, model, region, probe)
 }
 
 // ---- application inference profiles ----

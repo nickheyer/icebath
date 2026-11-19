@@ -42,14 +42,14 @@ func (r *progressRecorder) last() progressCall {
 }
 
 // Spinner writing to buf that reports running without an animation goroutine
-func bufferedRunningSpinner(message string, buf *bytes.Buffer) *kawaiiSpinner {
-	s := newKawaiiSpinner(context.Background(), message, "dots", nil)
+func bufferedRunningSpinner(message string, buf *bytes.Buffer) *statusSpinner {
+	s := newStatusSpinner(context.Background(), message, nil)
 	s.out = buf
 	s.running = true
 	return s
 }
 
-func recordingParent(spinner *kawaiiSpinner) (*AIAgent, *progressRecorder) {
+func recordingParent(spinner *statusSpinner) (*AIAgent, *progressRecorder) {
 	parent, rec := &AIAgent{}, &progressRecorder{}
 	if spinner != nil {
 		parent.delegateSpinner = spinner
@@ -82,7 +82,7 @@ func TestPrintAboveWithSpinnerRunning(t *testing.T) {
 
 func TestPrintAboveUsesCapturedStdout(t *testing.T) {
 	var buf, redirected bytes.Buffer
-	spinner := newKawaiiSpinner(context.Background(), "test", "dots", nil)
+	spinner := newStatusSpinner(context.Background(), "test", nil)
 	spinner.out = &buf
 	prev := statusStdout
 	statusStdout = &redirected

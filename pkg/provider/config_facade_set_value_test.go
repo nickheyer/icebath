@@ -315,8 +315,8 @@ func TestSetValueDisplaySkinTouch(t *testing.T) {
 		}
 	}
 	s = newSetValueHome(t, "")
-	s.mustSet("display.skin", "mono")
-	if !strings.Contains(s.text(), "skin: mono") {
+	s.mustSet("display.skin", "contrast")
+	if !strings.Contains(s.text(), "skin: contrast") {
 		t.Fatalf("builtin skin %q", s.text())
 	}
 	body := "name: neon\ncolors:\n  ui_accent: '#ff33aa'\n"

@@ -263,7 +263,7 @@ func TestReleaseUpdateMovesOnlyToANewerBuild(t *testing.T) {
 	}{
 		{"older", "v1.0.0", "✓ Already up to date.\n", "✓ Already up to date.\n", "v1.1.0", c2},
 		{"equal", "v1.1.0", "✓ Already up to date.\n", "✓ Already up to date.\n", "v1.1.0", c2},
-		{"newer", "v1.2.0", "⚕ Update available: 1 commit behind main.\n  Run 'icebath update' to install.\n", "→ Release: main v1.2.0 (333333333333)\n", "v1.2.0", c3},
+		{"newer", "v1.2.0", "󰆧 Update available: 1 commit behind main.\n  Run 'icebath update' to install.\n", "→ Release: main v1.2.0 (333333333333)\n", "v1.2.0", c3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inst := newRPInstall(t, "v1.1.0", c2)

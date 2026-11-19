@@ -30,11 +30,6 @@ func azureEntraCredentialsIn(ctx context.Context, cfgEntra map[string]any) (func
 	return entraTokenProviderIn(ctx, scope)
 }
 
-// Callable api key minting a fresh Entra JWT per request for the process profile
-func azureEntraCredentials(cfgEntra map[string]any) (func(context.Context) (string, error), error) {
-	return azureEntraCredentialsIn(context.Background(), cfgEntra)
-}
-
 // Azure Foundry API key from the explicit arg, the credential pool, the .env file, then the environment
 func (r *resolver) azureFoundryAPIKey(explicitAPIKey string) (string, error) {
 	if explicitAPIKey != "" {

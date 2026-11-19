@@ -233,6 +233,8 @@ type PetCellsParams struct {
 	State    string  `json:"state,omitzero"`
 	Cols     int64   `json:"cols,omitzero"`
 	Graphics bool    `json:"graphics,omitzero"`
+	// Image form the client's own terminal paints, kitty or unicode, since the gateway's environment names no client's terminal
+	Terminal string `json:"terminal,omitzero"`
 }
 
 // Frames of one pet state, half-block cells of eight colour channels or the kitty transmit escapes

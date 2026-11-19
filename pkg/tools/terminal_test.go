@@ -853,3 +853,6 @@ func TestPreExecGuardMinTimeoutSExportMatchesTheGuardFloor(t *testing.T) {
 		t.Fatalf("guard floor %d %v", PreExecGuardMinTimeoutS, preExecGuardMinTimeout)
 	}
 }
+
+// ForegroundMaxTimeout is the cap on a foreground terminal timeout in seconds
+func ForegroundMaxTimeout() int { return foregroundMaxTimeout() }

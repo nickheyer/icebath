@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"fmt"
 	"maps"
 	"strconv"
@@ -9,15 +8,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/setupflow"
 )
-
-// Shim that hands an old updater's install call to the takeover child instead of installing
-func pipInstall(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
-// Shim that stops an old updater reaching the vendor cua-driver installer through this module
-func installCuaDriver(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
 
 // Whether platform_toolsets holds an explicitly saved list for the platform, a list literal string counting
 func PlatformToolsetsExplicitlySaved(cfg config.Tree, platform string) bool {
@@ -333,7 +325,7 @@ func (s *ToolsSetup) platformMenuLabel(cfg config.Tree, pkey string) (string, er
 func (s *ToolsSetup) printToolsSummary(cfg config.Tree, enabledPlatforms []string) error {
 	ctx := s.ctx()
 	total := len(EffectiveConfigurableToolsets(ctx))
-	s.printColor("☤ Tool Summary", cliui.Cyan, cliui.Bold)
+	s.printColor("󰆧 Tool Summary", cliui.Cyan, cliui.Bold)
 	s.println("")
 	summary, err := Default.PlatformToolsetSummary(ctx, "", s.home(), cfg, append([]string{}, enabledPlatforms...))
 	if err != nil {

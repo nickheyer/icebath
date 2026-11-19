@@ -2,12 +2,13 @@ package tui
 
 import (
 	"errors"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -69,14 +70,6 @@ func toolLabelsOf(labels []tuigateway.ToolLabel) []toolLabel {
 		out = append(out, toolLabel{Emoji: l.Emoji, Text: l.Text, Preview: l.Preview})
 	}
 	return out
-}
-
-// Number of a payload field, nil when it is no number
-func optionalNumber(p map[string]any, k string) *float64 {
-	if n, isNum := p[k].(float64); isNum {
-		return &n
-	}
-	return nil
 }
 
 // Text of an optional payload field with ANSI escapes removed, empty when absent

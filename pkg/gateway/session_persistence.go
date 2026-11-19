@@ -367,13 +367,6 @@ func (s *SessionStore) CloseAllDBHandles() {
 	})
 }
 
-// Loads the index from disk once
-func (s *SessionStore) ensureLoaded(ctx context.Context) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ensureLoadedLocked(ctx)
-}
-
 // Loads the index and returns the key's entry, lock held
 func (s *SessionStore) entryLocked(ctx context.Context, sessionKey string) *SessionEntry {
 	s.ensureLoadedLocked(ctx)

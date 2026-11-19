@@ -55,14 +55,6 @@ func BusyInputHintGateway(mode string) string {
 	return busyInputHintGatewayDefault
 }
 
-// Plain text CLI version of the busy input hint
-func BusyInputHintCLI(mode string) string {
-	if hint, ok := busyInputHintsCLI[mode]; ok {
-		return hint
-	}
-	return busyInputHintCLIDefault
-}
-
 // Markdown hint shown once after a long running tool streamed every step
 func ToolProgressHintGateway() string {
 	return "\U0001F4A1 First-time tip — that tool took a while and I'm streaming every step. If the progress messages " +
@@ -73,15 +65,6 @@ func ToolProgressHintGateway() string {
 func ToolProgressHintCLI() string {
 	return "(tip) That tool ran for a while. Use /verbose to cycle tool-progress " +
 		"display modes (all -> new -> off -> verbose). This tip only shows once."
-}
-
-// Banner shown the first time a legacy OpenClaw directory is found, migrate first and clean up after
-func OpenclawResidueHintCLI() string {
-	return "A legacy OpenClaw directory was detected at ~/.openclaw/.\n" +
-		"To port your config, memory, and skills over to Icebath, run `icebath import-agent openclaw`.\n" +
-		"If you've already migrated and want to archive the old directory, run `icebath claw cleanup` " +
-		"(renames it to ~/.openclaw.pre-migration — OpenClaw will stop working after this).\n" +
-		"This tip only shows once."
 }
 
 // True when the home, the user's by default, holds an .openclaw directory

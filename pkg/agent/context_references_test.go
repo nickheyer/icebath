@@ -777,3 +777,10 @@ func TestHostedContextObjectNameReadsEnginesAndReferenceProviders(t *testing.T) 
 		t.Fatal("a foreign value is no engine")
 	}
 }
+
+// ClearContextReferenceProvidersForTests empties the plugin provider registry
+func ClearContextReferenceProvidersForTests() {
+	contextReferenceProvidersMu.Lock()
+	defer contextReferenceProvidersMu.Unlock()
+	contextReferenceProviders = map[string]ContextReferenceProvider{}
+}

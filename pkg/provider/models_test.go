@@ -1188,3 +1188,16 @@ func TestCuratedModelsForProvider(t *testing.T) {
 		t.Fatalf("live rows: %v", rows)
 	}
 }
+
+// WaitProviderModelsRefreshes blocks until every background catalog refresh has finished
+func WaitProviderModelsRefreshes() { swrRefreshWait.Wait() }
+
+// ResetProviderModelsCaches clears the process resident probe and refresh state of this slice
+func ResetProviderModelsCaches() {
+	probeNegMu.Lock()
+	probeNegCache = map[string]time.Time{}
+	probeNegMu.Unlock()
+	swrRefreshMu.Lock()
+	swrRefreshInflight = map[swrKey]bool{}
+	swrRefreshMu.Unlock()
+}

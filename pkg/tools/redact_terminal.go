@@ -285,11 +285,6 @@ func RedactTerminalCommandOutput(env *Env, output, command string, force bool) s
 	return redacted
 }
 
-// RedactTerminalOutput redacts terminal output when the command that produced it is unknown
-func RedactTerminalOutput(env *Env, s string) string {
-	return RedactTerminalCommandOutput(env, s, "", false)
-}
-
 // CommandApprovalIdentity is everything the approval path keys a decision on for the call's command
 func CommandApprovalIdentity(env *Env, call *Call) string {
 	command := ""

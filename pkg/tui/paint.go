@@ -18,6 +18,8 @@ var ansiToneNames = map[string]int{
 	"black": 0, "red": 1, "green": 2, "yellow": 3, "blue": 4, "magenta": 5, "cyan": 6, "white": 7,
 	"gray": 8, "grey": 8, "blackBright": 8, "redBright": 9, "greenBright": 10, "yellowBright": 11,
 	"blueBright": 12, "magentaBright": 13, "cyanBright": 14, "whiteBright": 15,
+	"bright_black": 8, "bright_red": 9, "bright_green": 10, "bright_yellow": 11,
+	"bright_blue": 12, "bright_magenta": 13, "bright_cyan": 14, "bright_white": 15,
 }
 
 // Text with surrounding whitespace removed
@@ -65,11 +67,32 @@ func clockText(epochSeconds float64) string {
 	return time.Unix(int64(epochSeconds), 0).In(clockLocation()).Format("15:04")
 }
 
-// Toolkit palette carrying the tones of a skin, so cards, bar and dialogs follow the session theme
+// Whether the terminal can only show the plain theme, one without true color or box drawing, or one asked to drop color
+func plainTerminal(env func(string) string) bool {
+	term := strings.ToLower(env("TERM"))
+	return term == "dumb" || term == "linux" || env("NO_COLOR") != ""
+}
+
+// Toolkit palette of the session theme. A skin icebath ships paints with the toolkit theme of its name, the default
+// one with the plain theme on a terminal that can show no other and the paper theme on a light terminal. Any other
+// skin lays its tones over the theme it names or the theme of its polarity, so cards, bar and dialogs follow it
 func toolkitTheme(t theme, light bool) uitheme.Theme {
-	base := uitheme.Blackwall()
-	if light {
-		base = uitheme.Light()
+	base, named := uitheme.Named(t.Skin)
+	switch {
+	case t.Skin == uitheme.DefaultName && t.Builtin && plainTerminal(getenv):
+		base = uitheme.Plain()
+	case !named || (t.Skin == uitheme.DefaultName && light):
+		base = uitheme.Blackwall()
+		if light {
+			base = uitheme.Light()
+		}
+	}
+	if prompt := trimJS(t.Brand.Prompt); prompt != "" && !base.Plain {
+		base.Glyphs.Prompt = prompt
+	}
+	base.Name = "session"
+	if named && t.Builtin {
+		return base
 	}
 	set := func(dst *color.Color, tone string) {
 		if c := toneColor(tone); c != nil {
@@ -86,10 +109,6 @@ func toolkitTheme(t theme, light bool) uitheme.Theme {
 	set(&base.Alive, t.Color.Ok)
 	set(&base.Alarm, t.Color.Error)
 	set(&base.SteelBright, t.Color.Border)
-	if prompt := trimJS(t.Brand.Prompt); prompt != "" {
-		base.Glyphs.Prompt = prompt
-	}
-	base.Name = "session"
 	return base
 }
 

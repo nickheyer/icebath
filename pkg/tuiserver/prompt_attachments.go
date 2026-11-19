@@ -221,6 +221,3 @@ func queueAttachedImage(ctx context.Context, session *tuihost.Session, imgBytes 
 
 // ValueError of an attachment staging step
 type attachmentError struct{ msg string }
-
-func (e *attachmentError) Error() string      { return e.msg }
-func (e *attachmentError) PyTypeName() string { return "ValueError" }

@@ -106,12 +106,3 @@ func auxLogSkipUnhealthy(ctx context.Context, label, task, baseURL string) {
 	}
 	pkgLog().Info(fmt.Sprintf("Auxiliary %s: skipping %s (%s, retry in %ds)", task, label, reason, max(0, int(expiresAt-now))))
 }
-
-// Clears every hidden provider endpoint
-func auxResetAuxUnhealthyCache() {
-	auxUnhealthyMu.Lock()
-	defer auxUnhealthyMu.Unlock()
-	clear(auxUnhealthyUntil)
-	clear(auxUnhealthyLoggedAt)
-	clear(auxUnhealthyReason)
-}

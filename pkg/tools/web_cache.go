@@ -177,14 +177,6 @@ func (m *SearchMemo) FlightLock(provider, query string, limit int) *sync.Mutex {
 	return lock
 }
 
-// Clear drops every cached entry
-func (m *SearchMemo) Clear() {
-	m.mu.Lock()
-	m.store = map[memoKey]memoEntry{}
-	m.locks = map[memoKey]*sync.Mutex{}
-	m.mu.Unlock()
-}
-
 // SliceSearchResponse trims a bucketed response's result list down to the caller's limit
 func SliceSearchResponse(response *WebSearchResponse, limit int) *WebSearchResponse {
 	if response == nil || response.Data == nil || len(response.Data.Web) <= limit {

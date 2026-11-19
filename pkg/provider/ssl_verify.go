@@ -86,13 +86,6 @@ func InstallTrustStore() bool {
 	return loaded
 }
 
-// ResetTrustStoreForTests forgets the installed store and every cached context
-func ResetTrustStoreForTests() {
-	trustMu.Lock()
-	defer trustMu.Unlock()
-	trustInstalled, platformRoots, caConfigs, platformBundle = nil, nil, map[string]*tls.Config{}, ""
-}
-
 // CoerceInsecure reads an ssl_verify setting as a request to disable verification
 func CoerceInsecure(sslVerify any) bool {
 	switch v := sslVerify.(type) {

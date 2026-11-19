@@ -71,7 +71,7 @@ func TestNoSingleTransientReadErrorReachesTheFile(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			cfg.Map("display")["skin"] = "ares"
+			cfg.Map("display")["skin"] = "taro"
 			return SaveConfig(ctx, h, cfg, SaveOptions{})
 		},
 		"read_raw_config": func(h string) error {
@@ -79,7 +79,7 @@ func TestNoSingleTransientReadErrorReachesTheFile(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			ensureDict(raw, "display")["skin"] = "ares"
+			ensureDict(raw, "display")["skin"] = "taro"
 			return SaveConfig(ctx, h, raw, SaveOptions{})
 		},
 	}
@@ -106,7 +106,7 @@ func TestNoSingleTransientReadErrorReachesTheFile(t *testing.T) {
 				}
 				goodAfter, _ := os.ReadFile(path)
 				reads := faults.count
-				if !bytes.Contains(goodAfter, []byte("skin: ares")) || reads < 1 {
+				if !bytes.Contains(goodAfter, []byte("skin: taro")) || reads < 1 {
 					t.Fatalf("reads %d saved %s", reads, goodAfter)
 				}
 				for k := 1; k <= reads; k++ {

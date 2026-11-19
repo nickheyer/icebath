@@ -123,7 +123,7 @@ func (BusyInputMode) Values() []string { return []string{"queue", "steer", "inte
 
 type IndicatorStyle string
 
-func (IndicatorStyle) Values() []string { return []string{"kaomoji", "emoji", "unicode", "ascii"} }
+func (IndicatorStyle) Values() []string { return []string{"unicode", "emoji", "ascii"} }
 
 type DetailsMode string
 
@@ -377,7 +377,7 @@ func ClientConfigOf(cfg map[string]any) ClientConfig {
 			DetailsMode:      detailsModeOf(display),
 			Sections:         sectionsOf(display["sections"]),
 			FocusView:        flagOf(display["focus_view"], false),
-			Indicator:        choiceOf(display["tui_status_indicator"], IndicatorStyle("kaomoji")),
+			Indicator:        choiceOf(display["tui_status_indicator"], IndicatorStyle("unicode")),
 			InlineDiffs:      flagOf(display["inline_diffs"], true),
 			MouseTracking:    MouseTrackingOf(display),
 			ShowReasoning:    flagOf(display["show_reasoning"], true),

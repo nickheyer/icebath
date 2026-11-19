@@ -111,13 +111,6 @@ func RememberReasoningFloor(provider, baseURL string, rejectedKwargs map[string]
 	return nil
 }
 
-// Drops every remembered floored route as a fresh process starts
-func auxResetReasoningFloors() {
-	auxFlooredRoutesMu.Lock()
-	auxFlooredRoutes = map[auxFlooredRoute]bool{}
-	auxFlooredRoutesMu.Unlock()
-}
-
 func auxReasoningFloored(route, model string) bool {
 	auxFlooredRoutesMu.Lock()
 	defer auxFlooredRoutesMu.Unlock()

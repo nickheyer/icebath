@@ -39,19 +39,6 @@ type upstreamAuthHinter interface {
 	AuthHint() string
 }
 
-// One line status summary of an adapter for proxy status
-func describeAdapter(a UpstreamAdapter) string {
-	cred, err := a.GetCredential()
-	if err != nil {
-		return fmt.Sprintf("%s: not ready (%s)", a.DisplayName(), pyrepr.ExceptionMessage(err))
-	}
-	ttl := ""
-	if cred.ExpiresAt != "" {
-		ttl = fmt.Sprintf(" (expires %s)", cred.ExpiresAt)
-	}
-	return fmt.Sprintf("%s: %s%s", a.DisplayName(), cred.BaseURL, ttl)
-}
-
 // Adapter constructors keyed by the icebath proxy start --provider value
 var proxyAdapters = map[string]func(env PoolEnv) UpstreamAdapter{
 	"xai": func(env PoolEnv) UpstreamAdapter { return newXAIGrokAdapter(env) },

@@ -307,11 +307,6 @@ var terminalEnvRegistry = providerregistry.New[BackendProvider](providerregistry
 // RegisterTerminalBackend adds a plugin backend to the global layer, refusing names reserved by the built in environments
 func RegisterTerminalBackend(p BackendProvider) error { return terminalEnvRegistry.Register(p, "") }
 
-// RegisterTerminalBackendScoped adds a plugin backend to one profile scope, empty for the global layer
-func RegisterTerminalBackendScoped(p BackendProvider, scope string) error {
-	return terminalEnvRegistry.Register(p, scope)
-}
-
 // Registers a backend shipped in this package under its reserved name
 func registerBuiltinBackend(p BackendProvider) {
 	builtinBackendProviders.Lock()

@@ -192,32 +192,6 @@ func foreignOrigin(c foreignCandidate, parsed foreignParsed) *pyjson.Object {
 	return pyjson.ObjectOf("tool", foreignSourceDBNames[c.source], "path", c.path, "foreign_session_id", optionalText(parsed.sessionID))
 }
 
-// Last forty turns of a foreign session cut for the renderer, with whether it was imported already
-func PreviewForeignSession(ctx context.Context, handle any, db *state.DB) (map[string]any, error) {
-	c, parsed, err := resolveForeignSession(handle)
-	if err != nil {
-		return nil, err
-	}
-	existing, err := db.FindForeignImport(ctx, foreignOrigin(c, parsed))
-	if err != nil {
-		return nil, err
-	}
-	tail := parsed.turns[max(0, len(parsed.turns)-40):]
-	messages, cut := make([]any, 0, len(tail)), false
-	for _, turn := range tail {
-		if len([]rune(turn.content)) > 8000 {
-			cut = true
-		}
-		messages = append(messages, map[string]any{"role": turn.role, "content": runePrefix(turn.content, 8000)})
-	}
-	var already any
-	if existing != "" {
-		already = existing
-	}
-	return map[string]any{"messages": messages, "total": len(parsed.turns), "truncated": len(parsed.turns) > 40 || cut,
-		"already_imported": already, "cwd": optionalText(parsed.cwd)}, nil
-}
-
 // Imports a browsed foreign session into the store under its display title and existing working directory
 func ImportBrowserSession(ctx context.Context, handle any, db *state.DB, profile string) (*pyjson.Object, error) {
 	c, parsed, err := resolveForeignSession(handle)

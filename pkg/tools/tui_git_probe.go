@@ -53,11 +53,6 @@ func runTUIGit(cwd string, args ...string) string {
 	return boundedGitProbe(append([]string{"git", "-C", cwd}, args...), tuiGitTimeout, nil)
 }
 
-// GitProbeRunGit runs one bounded git probe in cwd for the TUI gateway
-func GitProbeRunGit(cwd string, args ...string) string {
-	return tuiRunGit(cwd, args...)
-}
-
 // GitProbeBranch is the current branch name, else the short HEAD hash
 func GitProbeBranch(cwd string) string {
 	if b := tuiRunGit(cwd, "branch", "--show-current"); b != "" {

@@ -74,15 +74,6 @@ func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
 	return label, "", nil
 }
 
-// Label and billing page of a provider, a readable label without a url when the base url is malformed
-func resolveProviderLink(slug, baseURL string) (string, string) {
-	label, url, err := resolveProviderLinkErr(slug, baseURL)
-	if err != nil {
-		return "", ""
-	}
-	return label, url
-}
-
 // BuildBillingBlockErr describes a billing classified failure, the urlparse ValueError of a malformed base url returned
 func BuildBillingBlockErr(provider, baseURL, model, message string) (BillingBlock, error) {
 	slug := pystr.Lower(pystr.Strip(provider))

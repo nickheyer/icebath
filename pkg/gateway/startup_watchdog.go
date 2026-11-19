@@ -220,12 +220,6 @@ func (h *StartupWatchdogHandle) Lease(expectedS any, phase string) {
 	h.leaseCount++
 }
 
-func (h *StartupWatchdogHandle) Disarmed() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.state == startupWatchdogDisarmed
-}
-
 // True while the watchdog goroutine is still running
 func (h *StartupWatchdogHandle) IsAlive() bool {
 	if !h.started {
@@ -236,21 +230,6 @@ func (h *StartupWatchdogHandle) IsAlive() bool {
 		return false
 	default:
 		return true
-	}
-}
-
-// Waits for the watchdog goroutine to finish, at most timeout when it is positive
-func (h *StartupWatchdogHandle) Join(timeout time.Duration) {
-	if !h.started {
-		return
-	}
-	if timeout <= 0 {
-		<-h.done
-		return
-	}
-	select {
-	case <-h.done:
-	case <-time.After(timeout):
 	}
 }
 

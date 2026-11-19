@@ -3,7 +3,6 @@ package tools
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -700,9 +699,4 @@ func shortTaskID(id string) string {
 		return id[:8]
 	}
 	return id
-}
-
-// Formats a task id with its backend for log lines
-func taskLabel(envType, taskID string) string {
-	return fmt.Sprintf("%s/%s", envType, shortTaskID(taskID))
 }

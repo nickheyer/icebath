@@ -24,8 +24,10 @@ var paintableHexRe = regexp.MustCompile(`(?i)^#[0-9a-f]{6}$`)
 // Whether a terminal default color can be painted with this hex
 func isPaintableHex(hex string) bool { return paintableHexRe.MatchString(hex) }
 
-// Skin the gateway announced, its colors split by polarity, branding and banner art
+// Skin the gateway announced, its name and source, colors split by polarity, branding and banner art
 type gatewaySkin struct {
+	Name        string
+	Source      string
 	Colors      map[string]string
 	LightColors map[string]string
 	DarkColors  map[string]string
@@ -42,7 +44,7 @@ func gatewaySkinOf(p *tuigateway.SkinPayloadModel) *gatewaySkin {
 		return nil
 	}
 	return &gatewaySkin{
-		Colors: p.Colors, LightColors: p.LightColors, DarkColors: p.DarkColors, Branding: p.Branding,
+		Name: p.Name, Source: p.Source, Colors: p.Colors, LightColors: p.LightColors, DarkColors: p.DarkColors, Branding: p.Branding,
 		BannerLogo: p.BannerLogo, BannerHero: p.BannerHero, ToolPrefix: p.ToolPrefix, HelpHeader: p.HelpHeader,
 	}
 }
@@ -76,12 +78,14 @@ func themeForSkin(s *gatewaySkin) theme {
 			colors[k] = v
 		}
 	}
-	return fromSkin(colors, s.Branding, s.BannerLogo, s.BannerHero, s.ToolPrefix, s.HelpHeader, os.Getenv)
+	t := fromSkin(colors, s.Branding, s.BannerLogo, s.BannerHero, s.ToolPrefix, s.HelpHeader, os.Getenv)
+	t.Skin, t.Builtin = s.Name, s.Source == "builtin"
+	return t
 }
 
-// Whether two themes paint the same, every color and the brand name, prompt and banners
+// Whether two themes paint the same, the skin they come from, every color and the brand name, prompt and banners
 func themesEqual(a, b theme) bool {
-	return a.Color == b.Color && a.Brand.Name == b.Brand.Name && a.Brand.Prompt == b.Brand.Prompt && a.BannerLogo == b.BannerLogo && a.BannerHero == b.BannerHero
+	return a.Skin == b.Skin && a.Builtin == b.Builtin && a.Color == b.Color && a.Brand.Name == b.Brand.Name && a.Brand.Prompt == b.Brand.Prompt && a.BannerLogo == b.BannerLogo && a.BannerHero == b.BannerHero
 }
 
 // Makes a theme current and saves it for the next boot, a full repaint shortly after when it changed

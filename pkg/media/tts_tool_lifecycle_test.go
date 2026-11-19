@@ -603,3 +603,23 @@ func TestZeroKeepWarmUnloadsInline(t *testing.T) {
 		t.Fatal("inline unload left state")
 	}
 }
+
+// Sorted names of the live leases
+func TTSLeaseHolders() []string {
+	ttsLeaseMu.Lock()
+	defer ttsLeaseMu.Unlock()
+	out := make([]string, 0, len(ttsLeases))
+	for k := range ttsLeases {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Cancels the pending unload and drops every lease
+func ResetTTSLeasesForTests() {
+	ttsLeaseMu.Lock()
+	defer ttsLeaseMu.Unlock()
+	cancelKeepWarmLocked()
+	clear(ttsLeases)
+}

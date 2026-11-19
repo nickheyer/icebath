@@ -42,7 +42,7 @@ func spinnerOverStdout(t *testing.T, stdout, reader *os.File) (bool, string) {
 	prev := os.Stdout
 	os.Stdout = stdout
 	t.Cleanup(func() { os.Stdout = prev })
-	s := newKawaiiSpinner(context.Background(), "thinking", "dots", nil)
+	s := newStatusSpinner(context.Background(), "thinking", nil)
 	tty := s.isTTY()
 	s.Start()
 	time.Sleep(350 * time.Millisecond)

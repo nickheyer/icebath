@@ -323,6 +323,3 @@ var removalRegistry = []RemovalStep{
 			"Note: The underlying value in config.yaml is unchanged.  Edit it directly if you want to remove the credential from disk."),
 		Description: "Custom provider config.yaml api_key field"},
 }
-
-// RemovalSteps lists the registered removal steps in match order
-func RemovalSteps() []RemovalStep { return append([]RemovalStep(nil), removalRegistry...) }

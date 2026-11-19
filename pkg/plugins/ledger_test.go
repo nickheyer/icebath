@@ -166,3 +166,8 @@ func TestExportedLedgerViews(t *testing.T) {
 		t.Fatalf("unload released %d", released)
 	}
 }
+
+// Registers a memory loader hook unless general discovery already loaded the same source
+func (m *Manager) registerFallbackHook(c *Context, src *hookSource, hookName string, fn HookFunc, holdStream bool) *Registration {
+	return m.registerFallbackHookWith(c, src, hookName, func() *Registration { return c.RegisterHook(hookName, fn, holdStream) })
+}

@@ -434,3 +434,10 @@ func TestThreadMetadataAndReplyAnchor(t *testing.T) {
 		t.Fatal("the override wins")
 	}
 }
+
+// Drops the memoised scutil answer so the next lookup reads it again
+func ResetMacOSProxyCache() {
+	macOSProxyCache.Lock()
+	macOSProxyCache.set = false
+	macOSProxyCache.Unlock()
+}

@@ -3,7 +3,6 @@ package msalruntime
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -828,11 +827,4 @@ func (r *Runtime) DiscoverAccounts(ctx context.Context, clientID, correlationID 
 		return nil, err
 	}
 	return &DiscoverAccountsResult{r: r, h: h}, nil
-}
-
-// Whether err is the broker runtime failing to load or start, the conditions msal answers by leaving the broker off
-func IsUnavailable(err error) bool {
-	var le *LoadError
-	var se *StartupError
-	return errors.As(err, &le) || errors.As(err, &se)
 }

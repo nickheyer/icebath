@@ -725,3 +725,13 @@ func TestFormatPricePerMtok(t *testing.T) {
 		}
 	}
 }
+
+// ResetPricingCache drops every cached catalog, deadline and provider key
+func ResetPricingCache() {
+	pricingCacheMu.Lock()
+	defer pricingCacheMu.Unlock()
+	pricingCache = map[string]PricingTable{}
+	pricingCacheOrder = nil
+	pricingCacheRetryAfter = map[string]time.Time{}
+	pricingProviderCacheKey = map[[2]string]string{}
+}

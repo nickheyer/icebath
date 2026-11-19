@@ -468,3 +468,10 @@ func TestEnabledPluginToolsetsExportedMatchesTheResolver(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// Clears the once per process warning guard of one platform
+func discardPlatformToolsetsWarning(platform string) {
+	warnedInvalidPlatformToolsets.Lock()
+	delete(warnedInvalidPlatformToolsets.seen, platform)
+	warnedInvalidPlatformToolsets.Unlock()
+}

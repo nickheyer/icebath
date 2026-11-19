@@ -244,19 +244,6 @@ func (p *parser) starNamedExpression() *Node {
 	return p.namedExpression()
 }
 
-// Comma separated star_named_expressions closed by the given bracket, with the comma diagnostic
-func (p *parser) starNamedExpressions(close string) []*Node {
-	var elts []*Node
-	for !p.isOp(close) {
-		elts = append(elts, p.starNamedExpression())
-		if !p.isOp(",") {
-			break
-		}
-		p.next()
-	}
-	return elts
-}
-
 func (p *parser) disjunction() *Node {
 	t := p.cur()
 	a := p.conjunction()

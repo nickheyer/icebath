@@ -35,6 +35,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 const releaseURLBase = "https://github.com/nickheyer/icebath/releases/tag"
@@ -929,7 +930,7 @@ func bannerLeftLines(ctx context.Context, model, cwd, sessionID string, contextL
 	}
 	lines = append(lines, fmt.Sprintf("[dim %s]%s[/]", dim, cwd))
 	if sessionID != "" {
-		lines = append(lines, fmt.Sprintf("[dim %s]Session: %s[/]", skinColor(ctx, "session_border", "#8B8682"), sessionID))
+		lines = append(lines, fmt.Sprintf("[dim %s]Session: %s[/]", skinColor(ctx, "session_border", "#2a3a4b"), sessionID))
 	}
 	return lines
 }
@@ -1102,11 +1103,11 @@ func buildWelcomeBanner(ctx context.Context, console *pyrich.Console, o welcomeB
 	for _, name := range o.EnabledToolsets {
 		enabled[name] = true
 	}
-	accent := skinColor(ctx, "banner_accent", "#FFBF00")
-	dim := skinColor(ctx, "banner_dim", "#B8860B")
-	text := skinColor(ctx, "banner_text", "#FFF8DC")
+	accent := skinColor(ctx, "banner_accent", "#9cc7e8")
+	dim := skinColor(ctx, "banner_dim", "#6c7f92")
+	text := skinColor(ctx, "banner_text", "#dfe9f2")
 	skin := quiet(func() (*config.SkinConfig, error) { return bannerActiveSkin(ctx), nil }, nil)
-	hero, logo := icebathHero, icebathAgentLogo
+	hero, logo := uitheme.Hero, uitheme.Logo
 	if skin != nil {
 		if pyrepr.Truthy(skin.BannerHero) {
 			custom, isStr := skin.BannerHero.(string)
@@ -1207,7 +1208,7 @@ func buildWelcomeBanner(ctx context.Context, console *pyrich.Console, o welcomeB
 		console.Print(logo)
 		console.Print()
 	}
-	console.PrintPanel(pyrich.Panel{Content: grid, Title: fmt.Sprintf("[bold %s]%s[/]", skinColor(ctx, "banner_title", "#FFD700"), versionLabel),
-		BorderStyle: skinColor(ctx, "banner_border", "#CD7F32"), PadX: 2})
+	console.PrintPanel(pyrich.Panel{Content: grid, Title: fmt.Sprintf("[bold %s]%s[/]", skinColor(ctx, "banner_title", "#e3122b"), versionLabel),
+		BorderStyle: skinColor(ctx, "banner_border", "#3b5169"), PadX: 2})
 	return nil
 }

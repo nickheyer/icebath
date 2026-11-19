@@ -630,13 +630,6 @@ var (
 	classifierHooks   []ClassifierHook
 )
 
-// RegisterClassifierHook adds a plugin classification hook consulted first in registration order
-func RegisterClassifierHook(h ClassifierHook) {
-	classifierHooksMu.Lock()
-	defer classifierHooksMu.Unlock()
-	classifierHooks = append(classifierHooks, h)
-}
-
 func pluginVerdict(c *classifyCtx) *Verdict {
 	classifierHooksMu.RLock()
 	hooks := append([]ClassifierHook{}, classifierHooks...)
@@ -1344,12 +1337,6 @@ func hostOfBaseURL(baseURL string) string {
 		return ""
 	}
 	return strings.ToLower(u.Hostname())
-}
-
-func baseURLUnderDomain(baseURL, domain string) bool {
-	host := hostOfBaseURL(baseURL)
-	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
-	return host != "" && domain != "" && (host == domain || strings.HasSuffix(host, "."+domain))
 }
 
 func offRouteHost(c *classifyCtx) string {

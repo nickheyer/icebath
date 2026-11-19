@@ -12,8 +12,8 @@ func strPtr(s string) *string { return &s }
 func boolPtr(b bool) *bool { return &b }
 
 func TestToolCallSignatureHashesCanonicalArgs(t *testing.T) {
-	argsA := map[string]any{"z": []any{map[string]any{"β": "☤", "a": 1.0}}, "a": map[string]any{"y": 2.0, "x": "secret-token-value"}}
-	argsB := map[string]any{"a": map[string]any{"x": "secret-token-value", "y": 2.0}, "z": []any{map[string]any{"a": 1.0, "β": "☤"}}}
+	argsA := map[string]any{"z": []any{map[string]any{"β": "❆", "a": 1.0}}, "a": map[string]any{"y": 2.0, "x": "secret-token-value"}}
+	argsB := map[string]any{"a": map[string]any{"x": "secret-token-value", "y": 2.0}, "z": []any{map[string]any{"a": 1.0, "β": "❆"}}}
 	if CanonicalToolArgs(argsA) != CanonicalToolArgs(argsB) {
 		t.Fatal("canonical args differ")
 	}
@@ -25,7 +25,7 @@ func TestToolCallSignatureHashesCanonicalArgs(t *testing.T) {
 	if meta["tool_name"] != "web_search" || meta["args_hash"] != sigA.ArgsHash {
 		t.Fatalf("metadata %v", meta)
 	}
-	if encoded := jsonCompact(meta); strings.Contains(encoded, "secret-token-value") || strings.Contains(encoded, "☤") {
+	if encoded := jsonCompact(meta); strings.Contains(encoded, "secret-token-value") || strings.Contains(encoded, "❆") {
 		t.Fatal("metadata exposes raw args")
 	}
 }

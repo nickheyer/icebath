@@ -113,11 +113,6 @@ func (r *BotDeliverResult) UnmarshalJSON(data []byte) error {
 
 type ConnectorErrorReason string
 
-func (ConnectorErrorReason) Values() []string {
-	return []string{"invalid_params", "not_owner", "connector_request_failed", "unknown_target", "link_still_valid", "reissue_refused",
-		"unknown_operation", "invalid_answer", "connectors_unavailable"}
-}
-
 // Registers a compute worker execution on an idle session
 var WorkerRegister = NewCanonicalMethod[WorkerRegisterParams, WorkerExecution]("worker.register")
 

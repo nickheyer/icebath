@@ -450,8 +450,8 @@ func protocolViolationStreak(ctx context.Context, conn state.SQLiteConn, taskID 
 	return streak, nil
 }
 
-// Box drawing and the caduceus response label a worker log wraps its replies in
-var logChromeRE = regexp2.MustCompile(`[─━═╭╮╰╯│┃┌┐└┘]+|☤\s*(?i:icebath)`, regexp2.None)
+// Box drawing and the cube marked response label a worker log wraps its replies in
+var logChromeRE = regexp2.MustCompile(`[─━═╭╮╰╯│┃┌┐└┘]+|󰆧\s*(?i:icebath)`, regexp2.None)
 
 // The CLI exit summary header in the active language
 func exitSummaryMarker(ctx context.Context) string {

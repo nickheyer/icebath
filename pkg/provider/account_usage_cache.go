@@ -233,11 +233,6 @@ func hasAccountUsage(ctx context.Context, provider string) bool {
 	return HasAccountUsage(ctx, provider)
 }
 
-// Remembered slot of the process home for inventory readers without a request context
-func cachedAccountUsage(provider, identityID, baseURL string) *AccountUsageSnapshot {
-	return CachedAccountUsage(context.Background(), provider, identityID, baseURL)
-}
-
 func snapshotIsStale(snapshot *AccountUsageSnapshot) bool {
 	return AccountUsageSnapshotIsStale(snapshot)
 }

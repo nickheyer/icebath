@@ -466,3 +466,23 @@ func TestBuiltinSecretSourcesLoadedFollowsTheRegistry(t *testing.T) {
 		t.Fatal("an apply pass did not load the bundled sources")
 	}
 }
+
+// Path is the cache file for a home
+func (c *SecretDiskCache) Path(homePath string) string {
+	return filepath.Join(ResolveCacheHome(homePath), c.basename)
+}
+
+// BuiltinSecretSourcesLoaded reports whether the bundled sources were registered in this process
+func BuiltinSecretSourcesLoaded() bool {
+	secretRegistryMu.Lock()
+	defer secretRegistryMu.Unlock()
+	return builtinSourcesReady
+}
+
+// ResetSecretRegistryForTests empties the registry
+func ResetSecretRegistryForTests() {
+	secretRegistryMu.Lock()
+	defer secretRegistryMu.Unlock()
+	secretSources, secretSourceOrder, secretSourceOrigins = map[string]SecretSource{}, nil, map[string]string{}
+	scopedSecretSources, scopedSecretOrder, builtinSourcesReady = map[string]map[string]SecretSource{}, map[string][]string{}, false
+}

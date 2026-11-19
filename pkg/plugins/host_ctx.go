@@ -28,14 +28,6 @@ func opt(name string, def any) pyParam { return pyParam{name: name, def: def} }
 func kwo(name string, def any) pyParam { return pyParam{name: name, kwOnly: true, def: def} }
 func kwReq(name string) pyParam        { return pyParam{name: name, kwOnly: true, required: true} }
 func varKwargs() pyParam               { return pyParam{name: "kwargs", varKw: true} }
-func pyNames(names []string) string    { return strings.Join(names, ", ") }
-func pyQuoted(names []string) []string {
-	out := make([]string, len(names))
-	for i, n := range names {
-		out[i] = "'" + n + "'"
-	}
-	return out
-}
 
 // Binds a call the way Python binds arguments to a PluginContext method, raising its TypeError wording
 func bindPy(method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {

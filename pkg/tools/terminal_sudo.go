@@ -65,13 +65,6 @@ func setCachedSudoPassword(scope, password string) {
 	sudoPasswordCache.byScope[scope] = password
 }
 
-// ResetCachedSudoPasswords clears every cached sudo password
-func ResetCachedSudoPasswords() {
-	sudoPasswordCache.Lock()
-	defer sudoPasswordCache.Unlock()
-	sudoPasswordCache.byScope = map[string]string{}
-}
-
 // Messages sudo prints when it needs a password it cannot ask for
 var sudoHeadlessFailures = []string{"sudo: a password is required", "sudo: no tty present", "sudo: a terminal is required"}
 

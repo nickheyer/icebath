@@ -414,14 +414,6 @@ func processCwd(env *Env) (string, error) {
 	return os.Getwd()
 }
 
-// Expands tilde and, on host backends, translates Git Bash drive paths
-func hostText(env *Env, text string, containerPaths bool) string {
-	if !containerPaths {
-		text = msysToWindowsPath(text)
-	}
-	return expandTildeFor(env, text)
-}
-
 // Host text with the tilde account lookup encode error raised the way Python raises it
 func hostTextErr(env *Env, text string, containerPaths bool) (string, error) {
 	if !containerPaths {
@@ -645,9 +637,6 @@ func resolveBaseDirFor(env *Env, taskID string, containerPaths *bool) (string, e
 	return anchorPath(text, func() (string, error) { return processCwd(env) }, cp)
 }
 
-// Base directory of the default task
-func resolveBaseDir(env *Env) (string, error) { return resolveBaseDirFor(env, "default", nil) }
-
 // Resolves a model supplied path against the task base directory
 func resolvePathForTaskID(env *Env, taskID, filePath string) (string, error) {
 	if terminalEnvTypeForTask(env, taskID) == "ssh" {
@@ -704,11 +693,6 @@ func resolveEntryForTaskID(env *Env, taskID, filePath string) (string, error) {
 	return filepath.Join(base, name), nil
 }
 
-// Entry resolution for the default task
-func resolveEntryForTask(env *Env, filePath string) (string, error) {
-	return resolveEntryForTaskID(env, "default", filePath)
-}
-
 // Reports whether a resolved path equals or sits below a resolved root
 func isUnder(p, root string) bool {
 	if p == root {
@@ -761,11 +745,6 @@ func pathResolutionWarningFor(env *Env, taskID, filePath, resolved string) strin
 		"a different directory than the terminal's cwd. If this is not " +
 		"intended (e.g. a git-worktree session writing into the main " +
 		"checkout), pass an absolute path under the workspace instead."
-}
-
-// Workspace divergence warning for the default task
-func pathResolutionWarning(env *Env, filePath, resolved string) string {
-	return pathResolutionWarningFor(env, "default", filePath, resolved)
 }
 
 // Reports whether a path contains a literal parent directory component

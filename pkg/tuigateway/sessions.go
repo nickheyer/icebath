@@ -608,7 +608,9 @@ type GatewayReadyPayload struct {
 }
 
 type SkinPayloadModel struct {
-	Name        string            `json:"name,omitzero"`
+	Name string `json:"name,omitzero"`
+	// builtin for a skin icebath ships unmodified, user for one read from the home skins folder
+	Source      string            `json:"source,omitzero"`
 	Description string            `json:"description,omitzero"`
 	Colors      map[string]string `json:"colors,omitzero"`
 	LightColors map[string]string `json:"light_colors,omitzero"`

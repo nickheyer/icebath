@@ -60,8 +60,6 @@ func (o *ordered[K, V]) set(k K, v V) {
 
 func (o *ordered[K, V]) del(k K) { delete(o.m, k) }
 
-func (o *ordered[K, V]) size() int { return len(o.m) }
-
 func (o *ordered[K, V]) clear() { o.m = map[K]*orderedEntry[V]{} }
 
 // Evicts the oldest entries until the map is within the cap

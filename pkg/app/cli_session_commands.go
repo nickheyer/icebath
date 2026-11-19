@@ -387,7 +387,7 @@ func (c *CLI) saveConversation(cmd string) {
 	}
 	format, err := state.NormalizeSaveFormat(parts[0])
 	if err != nil {
-		printLines("(._.) "+err.Error(), state.SaveUsage)
+		printLines("◈ "+err.Error(), state.SaveUsage)
 		return
 	}
 	filename := ""
@@ -462,7 +462,7 @@ func (c *CLI) exportOnGateway(connection *gatewaycli.GatewayConnection, format, 
 // Plain json save on an owner without session.export, written on the gateway host
 func (c *CLI) saveOnOlderGateway(connection *gatewaycli.GatewayConnection, format, filename string, redact bool) {
 	if redact || format != "json" || filename != "" {
-		printLines("(._.) This gateway predates this CLI: only a plain /save json works until it restarts " +
+		printLines("◈ This gateway predates this CLI: only a plain /save json works until it restarts " +
 			"(it saves on the gateway host).")
 		return
 	}
@@ -476,7 +476,7 @@ func (c *CLI) saveOnOlderGateway(connection *gatewaycli.GatewayConnection, forma
 	}
 	reply, _ := pyjson.Plain(raw).(map[string]any)
 	if saved := strOrEmpty(reply["file"]); saved != "" {
-		printLines("(^_^)v Conversation saved on the gateway host: " + saved)
+		printLines("✓ Conversation saved on the gateway host: " + saved)
 		return
 	}
 	printLines(c.t("cli.session.save_failed", map[string]any{"error": "the gateway returned no file"}))

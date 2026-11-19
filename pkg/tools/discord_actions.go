@@ -190,14 +190,6 @@ func discordDetectCapabilities(env *Env, token string, force bool) *pyjson.Objec
 	return caps
 }
 
-// Clears the detection cache and the record of started background detections
-func discordResetCapabilityCache() {
-	discordCapsMu.Lock()
-	defer discordCapsMu.Unlock()
-	discordCapsCache = map[string]*pyjson.Object{}
-	discordCapsBgStarted = map[string]bool{}
-}
-
 // Python int() of a decoded value with a falsy value counting as the fallback
 func discordInt(v any, fallback int64) (int64, error) {
 	switch t := v.(type) {

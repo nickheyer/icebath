@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -264,6 +265,20 @@ func TestWriteRuntimeStatusOverwritesStalePidOnRestart(t *testing.T) {
 	payload := ReadRuntimeStatus("")
 	if !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || pyEq(recGet(payload, "start_time"), 1000.0) {
 		t.Fatalf("pid %v start %v", recGet(payload, "pid"), recGet(payload, "start_time"))
+	}
+}
+
+func TestWriteRuntimeStatusAdoptsTheHomeKeyOfAnOlderRecord(t *testing.T) {
+	dir := statusHome(t)
+	retired := home.RetiredRecordKey(home.RecordKey)
+	os.WriteFile(filepath.Join(dir, "gateway_state.json"), []byte(`{"pid": 99999, "kind": "icebath-gateway", "`+retired+`": "/old/home", "platforms": {}}`), 0o644)
+	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running"}})
+	payload := ReadRuntimeStatus("")
+	if _, stale := payload.Get(retired); stale {
+		t.Fatalf("the rewritten record still carries %s: %v", retired, payload.Keys)
+	}
+	if v, ok := payload.Get(home.RecordKey); !ok || v != "/old/home" || payload.Keys[2] != home.RecordKey {
+		t.Fatalf("home key %v %v in %v", v, ok, payload.Keys)
 	}
 }
 

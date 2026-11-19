@@ -71,7 +71,7 @@ func TestSyncFailureRealRunToSpinnerThreeModes(t *testing.T) {
 		var buffer bytes.Buffer
 		prevStdout := statusStdout
 		statusStdout = &buffer
-		spinner := newKawaiiSpinner(context.Background(), "delegating", "dots", nil)
+		spinner := newStatusSpinner(context.Background(), "delegating", nil)
 		statusStdout = prevStdout
 		parent, rec := &AIAgent{sessionID: "parent", env: env}, &progressRecorder{}
 		parent.delegateSpinner = spinner

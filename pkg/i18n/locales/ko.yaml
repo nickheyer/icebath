@@ -558,12 +558,12 @@ gateway:
     not_git_repo: "✗ git 저장소가 아닙니다 — 업데이트할 수 없습니다."
     icebath_cmd_not_found: "✗ `icebath` 명령을 찾을 수 없습니다. Icebath는 실행 중이지만 PATH나 현재 Python 인터프리터를 통해 실행 파일을 찾을 수 없습니다. 터미널에서 `icebath update`를 직접 실행해 보세요."
     start_failed: "✗ 업데이트 시작 실패: {error}"
-    starting: "☤ Icebath 업데이트를 시작합니다… 진행 상황을 여기에 스트리밍하겠습니다."
+    starting: "❆ Icebath 업데이트를 시작합니다… 진행 상황을 여기에 스트리밍하겠습니다."
     reply_failed: "✗ 업데이트 프로세스에 응답을 보내지 못했어요: {error}"
     reply_sent: "✓ 업데이트 프로세스에 `{label}`을(를) 보냈어요."
     failed_notice: "❌ Icebath 업데이트에 실패했어요. 이전 버전이 계속 실행 중이에요. 전체 오류를 보려면 호스트에서 `icebath update`를 실행하거나, 나중에 /update를 다시 시도하세요."
     prompt_default: " (기본값: {default})"
-    prompt: "☤ **업데이트에 입력이 필요해요:**\n\n{prompt}{default_hint}\n\n`{prefix}approve`(예) 또는 `{prefix}deny`(아니요)로 답하거나, 답을 직접 입력하세요."
+    prompt: "❆ **업데이트에 입력이 필요해요:**\n\n{prompt}{default_hint}\n\n`{prefix}approve`(예) 또는 `{prefix}deny`(아니요)로 답하거나, 답을 직접 입력하세요."
     finished: "✅ Icebath 업데이트가 끝났어요."
     timed_out: "❌ Icebath 업데이트가 30분이 지나 시간 초과됐어요."
     finished_success: "✅ Icebath 업데이트가 성공적으로 끝났어요."
@@ -1538,7 +1538,7 @@ platform:
       resolved_by_user: "{icon} **{label}** — {user}"
     update_prompt:
 
-      title: "☤ 업데이트에 입력이 필요해요"
+      title: "❆ 업데이트에 입력이 필요해요"
       default_hint: "\n\n기본값: `{default}`"
       answer_yes: "✓ 예"
       answer_no: "✗ 아니요"
@@ -2061,7 +2061,7 @@ cli:
     duration_dhm: "{days}일 {hours}시간 {minutes}분"
     duration_m_rest: "{minutes}분 {rest}"
     duration_hm_rest: "{hours}시간 {minutes}분 {rest}"
-    no_active_agent: "(._.) 활성 에이전트가 없어요 -- 먼저 메시지를 보내 주세요."
+    no_active_agent: "◈ 활성 에이전트가 없어요 -- 먼저 메시지를 보내 주세요."
     n_more: "외 {count}개"
     more_not_shown: "더 있음 (표시 안 됨)"
     yes_no_default_yes: "Y/n"
@@ -2269,7 +2269,7 @@ cli:
     queued: "세션 제목이 대기 중이에요: {title} (첫 메시지에 저장돼요)"
   undo:
 
-    invalid_count: "(._.) {value}은(는) 잘못된 개수예요 — /undo 또는 /undo N을 사용해 주세요."
+    invalid_count: "◈ {value}은(는) 잘못된 개수예요 — /undo 또는 /undo N을 사용해 주세요."
     removes_last_exchange: "기록에서 마지막 사용자/어시스턴트 교환을 제거해요."
     removes_last_turns: "기록에서 마지막 사용자 턴 {count}개를 제거해요."
   resume:
@@ -2327,7 +2327,7 @@ cli:
     out_of_credits_title: "⚡ 크레딧 소진"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ 새로 시작해요! 화면을 지우고 대화를 초기화했어요."
+    fresh_start: "❆ 새로 시작해요! 화면을 지우고 대화를 초기화했어요."
     model_reset_default: "(모델을 설정 기본값으로 초기화했어요: {model})"
     title_rejected: "제목이 거부되었어요: {error}"
     title_empty_untitled: "정리 후 제목이 비어 있어요 — 세션을 제목 없이 시작했어요."
@@ -2349,7 +2349,7 @@ cli:
     label_reasoning: "추론"
     label_approvals: "승인"
     label_context: "컨텍스트"
-    recent_intro: "(._.) 현재 채팅에 아직 메시지가 없어요 — 재개할 수 있는 최근 세션이에요:"
+    recent_intro: "◈ 현재 채팅에 아직 메시지가 없어요 — 재개할 수 있는 최근 세션이에요:"
     recent_header: "최근 세션:"
     column_title: "제목"
     column_preview: "미리보기"
@@ -2357,48 +2357,48 @@ cli:
     column_id: "ID"
     resume_usage: "계속하려면 /resume <number>, /resume <session id> 또는 /resume <session title>을 사용하세요."
     resume_example: "예시: /resume 2"
-    history_empty: "(._.) 아직 대화 기록이 없어요."
+    history_empty: "◈ 아직 대화 기록이 없어요."
     history_tools_header: "[도구]"
     history_tools_hidden_one: "(도구 메시지 {count}개 숨김)"
     history_tools_hidden_other: "(도구 메시지 {count}개 숨김)"
-    history_title: "(^_^) 대화 기록"
+    history_title: "❆ 대화 기록"
     history_you_header: "[사용자 #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(텍스트 응답 없음)"
     history_tool_calls_one: "(도구 호출 {count}건 요청)"
     history_tool_calls_other: "(도구 호출 {count}건 요청)"
-    new_session_titled: "(^_^)v 새 세션을 시작했어요: {title}"
-    new_session: "(^_^)v 새 세션을 시작했어요!"
-    save_nothing: "(;_;) 저장할 대화가 없어요."
-    save_dir_failed: "(x_x) 저장 디렉터리 {path}을(를) 만들지 못했어요: {error}"
+    new_session_titled: "✓ 새 세션을 시작했어요: {title}"
+    new_session: "✓ 새 세션을 시작했어요!"
+    save_nothing: "◈ 저장할 대화가 없어요."
+    save_dir_failed: "✘ 저장 디렉터리 {path}을(를) 만들지 못했어요: {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v 대화를 저장했어요: {path} ({label})"
+    save_ok: "✓ 대화를 저장했어요: {path} ({label})"
     save_resume_hint: "라이브 세션 재개: icebath --resume {session_id}"
-    save_failed: "(x_x) 저장에 실패했어요: {error}"
-    retry_no_messages: "(._.) 다시 시도할 메시지가 없어요."
-    retry_no_user_message: "(._.) 다시 시도할 사용자 메시지를 찾을 수 없어요."
-    retry_unsafe: "(._.) 그 메시지는 안전하게 다시 시도할 수 없어요: {error}"
-    retry_rewind_failed: "(x_x) 다시 시도를 위한 되감기에 실패했어요. 기록은 변경되지 않았어요: {error}"
-    retrying: "(^_^)b 다시 시도해요: \"{preview}\""
-    undo_no_messages: "(._.) 되돌릴 메시지가 없어요."
-    undo_no_user_message: "(._.) 되돌릴 사용자 메시지를 찾을 수 없어요."
-    undo_failed: "(x_x) 되돌리기에 실패했어요. 기록은 변경되지 않았어요: {error}"
-    undo_ok_one: "(^_^)b {count}턴을 되돌렸어요 (메시지 {messages}개). 백업 위치: \"{backup}\""
-    undo_ok_other: "(^_^)b {count}턴을 되돌렸어요 (메시지 {messages}개). 백업 위치: \"{backup}\""
+    save_failed: "✘ 저장에 실패했어요: {error}"
+    retry_no_messages: "◈ 다시 시도할 메시지가 없어요."
+    retry_no_user_message: "◈ 다시 시도할 사용자 메시지를 찾을 수 없어요."
+    retry_unsafe: "◈ 그 메시지는 안전하게 다시 시도할 수 없어요: {error}"
+    retry_rewind_failed: "✘ 다시 시도를 위한 되감기에 실패했어요. 기록은 변경되지 않았어요: {error}"
+    retrying: "✓ 다시 시도해요: \"{preview}\""
+    undo_no_messages: "◈ 되돌릴 메시지가 없어요."
+    undo_no_user_message: "◈ 되돌릴 사용자 메시지를 찾을 수 없어요."
+    undo_failed: "✘ 되돌리기에 실패했어요. 기록은 변경되지 않았어요: {error}"
+    undo_ok_one: "✓ {count}턴을 되돌렸어요 (메시지 {messages}개). 백업 위치: \"{backup}\""
+    undo_ok_other: "✓ {count}턴을 되돌렸어요 (메시지 {messages}개). 백업 위치: \"{backup}\""
     undo_remaining: "기록에 메시지 {count}개가 남아 있어요."
     yolo_state_locked_on: "ON으로 잠김"
     yolo_locked: "⚡ 이 프로세스에서 YOLO가 {state} 상태예요 (--yolo / ICEBATH_YOLO_MODE로 시작됨). /yolo로는 끌 수 없어요 — 승인을 다시 활성화하려면 플래그 없이 재시작하세요."
     yolo_off: "⚠ YOLO 모드 {state} — 위험한 명령은 승인이 필요해요."
     yolo_on: "⚡ YOLO 모드 {state} — 모든 명령이 자동 승인돼요. 주의해서 사용하세요."
-    compress_too_short: "(._.) 압축할 만큼 대화가 충분하지 않아요 (메시지가 최소 {min}개 필요해요)."
-    compress_no_agent: "(._.) 활성 에이전트가 없어요 -- 먼저 메시지를 보내세요."
+    compress_too_short: "◈ 압축할 만큼 대화가 충분하지 않아요 (메시지가 최소 {min}개 필요해요)."
+    compress_no_agent: "◈ 활성 에이전트가 없어요 -- 먼저 메시지를 보내세요."
     compress_busy: "컨텍스트를 압축하는 중..."
     compress_summarizing: "🗜️  여기까지 요약해요: 메시지 {count}개, 마지막 {keep_last}개 교환은 그대로 유지..."
     compress_focus: "🗜️  메시지 {count}개를 압축해요, 초점: \"{focus}\"..."
     compress_plain: "🗜️  메시지 {count}개를 압축하는 중..."
     compress_failed: "❌ 압축에 실패했어요: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "안녕히 가세요! ☤"
+    goodbye: "안녕히 가세요! 󰆧"
     exit_resume_hint: "이 세션을 재개하려면:"
     exit_label_session: "세션:           {session_id}"
     exit_label_title: "제목:           {title}"
@@ -2450,7 +2450,7 @@ cli:
       scope_saved: "(설정에 저장됨)"
       scope_save_failed: "(이 세션만; 설정 저장 실패)"
       scope_session: "(이 세션만 — 계속 유지하려면 --global 사용)"
-      unknown_argument: "(._.) 알 수 없는 인수: {arg}"
+      unknown_argument: "◈ 알 수 없는 인수: {arg}"
       usage: "사용법: {usage}"
       needs_active_session: "{command}을(를) 실행하려면 활성 채팅 세션이 필요해요."
       unavailable_no_session: "{label}을(를) 사용할 수 없어요 (활성 세션 없음)."
@@ -2497,17 +2497,17 @@ cli:
 
       usage: "사용법: /indicator [{styles}]"
       status: "작업 중 표시기 스타일: {style}"
-      unknown_style: "(._.) 알 수 없는 표시기 스타일: {arg}"
+      unknown_style: "◈ 알 수 없는 표시기 스타일: {arg}"
       label: "작업 중 표시기 스타일"
       note: "TUI는 다음 렌더링부터 새 스타일을 적용해요."
     fast:
 
-      not_supported: "(._.) /fast는 빠른 모드를 지원하는 모델에서만 사용할 수 있어요 (OpenAI Priority Processing 또는 Anthropic Fast Mode)."
+      not_supported: "◈ /fast는 빠른 모드를 지원하는 모델에서만 사용할 수 있어요 (OpenAI Priority Processing 또는 Anthropic Fast Mode)."
       feature_generic: "빠른 모드"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) 이 계정 또는 경로에서는 {model}에 Ultrafast를 사용할 수 없습니다."
+      ultrafast_not_supported: "◈ 이 계정 또는 경로에서는 {model}에 Ultrafast를 사용할 수 없습니다."
       usage: "사용법: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature}을(를) {value}(으)로 설정했어요 {scope}"
@@ -2516,24 +2516,24 @@ cli:
       progress_compose: "┊ 스프라이트시트 구성 중…"
       progress_save: "┊ 저장 중…"
       progress_drawing: "┊ {state} 그리는 중…"
-      describe_prompt: "(o_o) 펫을 설명해 주세요: "
-      usage: "(o_o) 사용법: /hatch <설명>  (예: /hatch a tiny cyber fox)"
+      describe_prompt: "◈ 펫을 설명해 주세요: "
+      usage: "◈ 사용법: /hatch <설명>  (예: /hatch a tiny cyber fox)"
       default_name: "펫"
-      designing: "(o_o) '{concept}' 디자인 중… (이미지 모델 호출에 1분 정도 걸려요)"
-      base_failed: "(x_x) 기본 모습을 생성하지 못했어요: {error}"
-      no_base_draft: "(x_x) 기본 초안이 돌아오지 않았어요 — 다시 시도해 주세요."
-      failed: "(x_x) 부화 실패: {error}"
-      hatched: "(^_^)b {name}이(가) 부화해서 입양됐어요 — 곧 나타날 거예요!"
+      designing: "◈ '{concept}' 디자인 중… (이미지 모델 호출에 1분 정도 걸려요)"
+      base_failed: "✘ 기본 모습을 생성하지 못했어요: {error}"
+      no_base_draft: "✘ 기본 초안이 돌아오지 않았어요 — 다시 시도해 주세요."
+      failed: "✘ 부화 실패: {error}"
+      hatched: "✓ {name}이(가) 부화해서 입양됐어요 — 곧 나타날 거예요!"
     pet:
 
-      is_out: "(^_^)b {name}이(가) 나왔어요 — 곧 나타날 거예요."
-      put_away_named: "(-_-)zzZ {name}을(를) 재웠어요."
-      put_away: "(-_-)zzZ 펫을 재웠어요."
-      usage_scale: "(o_o) 사용법: /pet scale <배율>  (예: /pet scale 0.5)"
-      scale_set: "(^_^) 펫 크기 → {scale}."
-      fetching: "(o_o) petdex에서 '{name}' 가져오는 중…"
-      adopt_failed: "(x_x) '{name}'을(를) 입양하지 못했어요: {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name}이(가) 나왔어요 — 곧 나타날 거예요."
+      put_away_named: "○ {name}을(를) 재웠어요."
+      put_away: "○ 펫을 재웠어요."
+      usage_scale: "◈ 사용법: /pet scale <배율>  (예: /pet scale 0.5)"
+      scale_set: "✓ 펫 크기 → {scale}."
+      fetching: "◈ petdex에서 '{name}' 가져오는 중…"
+      adopt_failed: "✘ '{name}'을(를) 입양하지 못했어요: {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "스테이징 안 됨"
@@ -2616,9 +2616,9 @@ cli:
       failed: "/journey 실패: {error}"
     paste:
 
-      no_image: "(._.) 클립보드에 이미지가 없어요"
+      no_image: "◈ 클립보드에 이미지가 없어요"
       attached: "📎 클립보드에서 이미지 #{index}을(를) 첨부했어요"
-      extract_failed: "(>_<) 클립보드에 이미지가 있지만 추출에 실패했어요"
+      extract_failed: "◬ 클립보드에 이미지가 있지만 추출에 실패했어요"
     copy:
 
       nothing_yet: "아직 복사할 내용이 없어요."
@@ -2632,13 +2632,13 @@ cli:
     image:
 
       usage: "사용법: /image <경로>  예: /image {example}"
-      not_found: "(>_<) 파일을 찾을 수 없어요: {path}"
-      unsupported: "(._.) 지원하지 않는 이미지 파일이에요: {name}"
+      not_found: "◬ 파일을 찾을 수 없어요: {path}"
+      unsupported: "◈ 지원하지 않는 이미지 파일이에요: {name}"
       attached: "📎 이미지 첨부됨: {name}"
       now_type_prompt: "이제 프롬프트를 입력하세요 (단일 질의 모드에서는 --image 사용): {text}"
     tools:
 
-      usage: "(._.) 사용법: /tools {subcommand} <이름> [이름 ...]"
+      usage: "◈ 사용법: /tools {subcommand} <이름> [이름 ...]"
       example_toolset: "내장 도구 세트:  /tools {subcommand} web"
       example_mcp: "MCP 도구:        /tools {subcommand} github:create_issue"
       disabling: "{names} 비활성화 중..."
@@ -2689,7 +2689,7 @@ cli:
       compressed_redirect: "세션 {session_id}은(는) {resolved_id}(으)로 압축됐어요; 대화 기록과 함께 후속 세션을 재개해요."
     sessions:
 
-      none_yet: "(._.) 아직 이전 세션이 없어요."
+      none_yet: "◈ 아직 이전 세션이 없어요."
     branch:
 
       branched_one: "⑂ 세션 \"{title}\"을(를) 분기했어요 (사용자 메시지 {count}개)"
@@ -2718,10 +2718,10 @@ cli:
       tools_in_worktree: "이제 터미널과 파일 도구가 워크트리 안에서 동작해요."
     personality:
 
-      title: "(^o^)/ 성격"
+      title: "❆ 성격"
       none_option: "(성격 오버레이 없음)"
       usage: "사용법: /personality <이름>   (* = 활성)"
-      unknown: "(._.) 알 수 없는 성격: {name}"
+      unknown: "◈ 알 수 없는 성격: {name}"
       available: "사용 가능: none, {available}"
       scope_saved: "(설정에 저장됨)"
       scope_session: "(이 세션만)"
@@ -2730,10 +2730,10 @@ cli:
       set_to: "{face} 성격을 '{name}'(으)로 설정했어요 {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) --repeat는 정수여야 해요"
-      unknown_command: "(._.) 알 수 없는 cron 명령: {subcommand}"
+      repeat_must_be_integer: "◈ --repeat는 정수여야 해요"
+      unknown_command: "◈ 알 수 없는 cron 명령: {subcommand}"
       available: "사용 가능: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) 예약된 작업"
+      overview_title: "❆ 예약된 작업"
       overview_commands: "명령:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"서버 상태 확인\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"새 작업\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "현재 작업:"
@@ -2741,7 +2741,7 @@ cli:
       skills_none: "스킬: 없음"
       next_short: "다음"
       no_jobs_hint: "예약된 작업이 없어요. '/cron add'로 만들 수 있어요."
-      no_jobs: "(._.) 예약된 작업이 없어요."
+      no_jobs: "◈ 예약된 작업이 없어요."
       list_header: "예약된 작업:"
       id: "ID: {job_id}"
       name: "이름: {name}"
@@ -2754,24 +2754,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "오류: {error}"
       last_run: "마지막 실행: {when} ({status})"
-      usage_add: "(._.) 사용법: /cron add <일정> <프롬프트>"
-      need_prompt_or_skill: "(._.) 프롬프트 또는 스킬을 하나 이상 지정해 주세요"
-      create_failed: "(x_x) 작업 생성 실패: {error}"
-      created: "(^_^)b 작업을 만들었어요: {job_id}"
-      usage_edit: "(._.) 사용법: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) 작업을 찾을 수 없어요: {job_id}"
-      update_failed: "(x_x) 작업 업데이트 실패: {error}"
-      updated: "(^_^)b 작업을 업데이트했어요: {job_id}"
-      usage_action: "(._.) 사용법: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) 작업 일시 중지 실패: {error}"
-      resume_failed: "(x_x) 작업 재개 실패: {error}"
-      run_failed: "(x_x) 작업 실행 실패: {error}"
-      remove_failed: "(x_x) 작업 제거 실패: {error}"
-      removed: "(^_^)b 작업을 제거했어요: {name} ({job_id})"
-      did_not_run: "(x_x) 작업을 실행하지 않았어요: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b 작업을 일시 중지했어요: {name} ({job_id})"
-      resumed: "(^_^)b 작업을 재개했어요: {name} ({job_id})"
-      triggered: "(^_^)b 작업을 실행시켰어요: {name} ({job_id})"
+      usage_add: "◈ 사용법: /cron add <일정> <프롬프트>"
+      need_prompt_or_skill: "◈ 프롬프트 또는 스킬을 하나 이상 지정해 주세요"
+      create_failed: "✘ 작업 생성 실패: {error}"
+      created: "✓ 작업을 만들었어요: {job_id}"
+      usage_edit: "◈ 사용법: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ 작업을 찾을 수 없어요: {job_id}"
+      update_failed: "✘ 작업 업데이트 실패: {error}"
+      updated: "✓ 작업을 업데이트했어요: {job_id}"
+      usage_action: "◈ 사용법: /cron {subcommand} <job_id>"
+      pause_failed: "✘ 작업 일시 중지 실패: {error}"
+      resume_failed: "✘ 작업 재개 실패: {error}"
+      run_failed: "✘ 작업 실행 실패: {error}"
+      remove_failed: "✘ 작업 제거 실패: {error}"
+      removed: "✓ 작업을 제거했어요: {name} ({job_id})"
+      did_not_run: "✘ 작업을 실행하지 않았어요: {name} ({job_id})\n  {reason}"
+      paused: "✓ 작업을 일시 중지했어요: {name} ({job_id})"
+      resumed: "✓ 작업을 재개했어요: {name} ({job_id})"
+      triggered: "✓ 작업을 실행시켰어요: {name} ({job_id})"
     suggestions:
 
       failed: "제안 명령 실패: {error}"
@@ -2780,10 +2780,10 @@ cli:
       failed: "크론 블루프린트 명령 실패: {error}"
     curator:
 
-      failed: "(._.) curator: {error}"
+      failed: "◈ curator: {error}"
     kanban:
 
-      failed: "(._.) 칸반 오류: {error}"
+      failed: "◈ 칸반 오류: {error}"
     memory:
 
       unknown_subcommand: "알 수 없는 /memory 하위 명령이에요. 사용 가능: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2802,7 +2802,7 @@ cli:
     background:
 
       usage: "사용법: /bg <프롬프트>\n예시: /bg 오늘 HN 인기 글 요약해 줘\n(이 대화에 관한 곁가지 질문은 /btw <질문>을 사용하세요.)\n작업은 별도 세션에서 실행되고, 끝나면 결과가 여기에 표시돼요."
-      no_credentials: "(>_<) 백그라운드 작업을 시작할 수 없어요: 유효한 자격 증명이 없어요."
+      no_credentials: "◬ 백그라운드 작업을 시작할 수 없어요: 유효한 자격 증명이 없어요."
       started: "🔄 백그라운드 작업 #{number} 시작됨: \"{preview}\""
       task_id: "작업 ID: {task_id}"
       keep_chatting: "계속 채팅해도 돼요 — 끝나면 결과가 표시돼요."
@@ -2818,7 +2818,7 @@ cli:
     btw:
 
       usage: "사용법: /btw <question>\n예시: /btw 그 오류가 어느 파일에 있었어?\n대화를 중단하지 않고 이 대화에 관한 간단한 질문에 답해요.\n(독립적인 백그라운드 작업은 /bg <prompt>을 사용하세요.)"
-      no_credentials: "(>_<) 사이드 질문에 답할 수 없어요: 유효한 자격 증명이 없어요."
+      no_credentials: "◬ 사이드 질문에 답할 수 없어요: 유효한 자격 증명이 없어요."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(생성된 답변 없음)"
@@ -2937,8 +2937,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! 아래에 프롬프트를 작성하세요. '#!'로 시작하는 줄은 무시돼요.\n#! 저장하고 종료하면 전송돼요. 비워 두면 취소돼요."
-      editor_failed: "(>_<) 편집기를 열 수 없었어요: {error}"
-      empty: "(._.) 프롬프트가 비어 있어요 — 아무것도 보내지 않았어요."
+      editor_failed: "◬ 편집기를 열 수 없었어요: {error}"
+      empty: "◈ 프롬프트가 비어 있어요 — 아무것도 보내지 않았어요."
     focus:
 
       usage: "사용법: /focus [on|off|status]"
@@ -2961,10 +2961,10 @@ cli:
       choice_update_desc: "현재 세션을 종료하고 Icebath Agent를 업데이트해요"
       choice_cancel: "취소"
       choice_cancel_desc: "현재 세션을 유지해요"
-      title: "☤  Icebath Agent 업데이트"
+      title: "󰆧  Icebath Agent 업데이트"
       detail: "현재 세션을 종료하고 `icebath update`를 실행해요."
       cancelled: "🟡 /update가 취소됐어요."
-      launching: "☤ 업데이트를 시작해요..."
+      launching: "󰆧 업데이트를 시작해요..."
     voice:
 
       unknown_subcommand: "알 수 없는 voice 하위 명령이에요: {subcommand}"
@@ -2992,7 +2992,7 @@ cli:
     did_you_mean_many: "이 중 하나를 입력하려던 건가요: {candidates}?"
   config:
 
-    title: "(^_^) 설정"
+    title: "❆ 설정"
     loaded: "(불러옴)"
     not_found: "(찾을 수 없음)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3021,7 +3021,7 @@ cli:
   context:
 
     header: "🧠 컨텍스트 사용량 — {model}"
-    compute_failed: "(._.) 컨텍스트 내역을 계산할 수 없어요: {error}"
+    compute_failed: "◈ 컨텍스트 내역을 계산할 수 없어요: {error}"
   error:
 
     auth: "{provider} 키가 거부되었어요. `icebath model`을 실행해 다시 입력하세요."
@@ -3042,7 +3042,7 @@ cli:
     starting: "Icebath 게이트웨이(메시징 플랫폼)를 시작하는 중..."
   gateway_status:
 
-    header: "(✿◠‿◠) 게이트웨이 상태"
+    header: "❆ 게이트웨이 상태"
     platform_config_header: "메시징 플랫폼 설정:"
     enabled: "활성화됨"
     not_configured: "설정되지 않음 ({env_var})"
@@ -3055,7 +3055,7 @@ cli:
     step_config: "2. {path}에서 설정을 구성하세요"
   help:
 
-    header: "(^_^)? 사용 가능한 명령"
+    header: "❆ 사용 가능한 명령"
     section_session: "세션"
     section_configuration: "설정"
     section_tools_skills: "도구 및 스킬"
@@ -3131,12 +3131,12 @@ cli:
     skill_load_failed: "{command}의 스킬을 불러오지 못했어요"
   tools:
 
-    none_available: "(;_;) 사용 가능한 도구가 없어요"
-    header: "(^_^)/ 사용 가능한 도구"
-    total: "합계: 도구 {count}개  ヽ(^o^)ノ"
+    none_available: "◈ 사용 가능한 도구가 없어요"
+    header: "❆ 사용 가능한 도구"
+    total: "합계: 도구 {count}개"
   toolsets:
 
-    header: "(^_^)b 사용 가능한 도구 세트"
+    header: "✓ 사용 가능한 도구 세트"
     currently_enabled_legend: "(*) = 현재 활성화됨"
     tip_enable_all: "팁: 모든 도구 세트를 활성화하려면 'all' 또는 '*'를 사용하세요"
     example: "예시: icebath chat --toolsets web,terminal"
@@ -3147,7 +3147,7 @@ cli:
     reset_switch_hint: "먼저 `/model` 또는 `icebath auth`로 전환하세요."
     checking_reset_credits: "⏳ 적립된 초기화 크레딧 확인 중..."
     codex_timeout: "❌ Codex 백엔드와 통신 중 시간이 초과되었어요 — 잠시 후 다시 시도하세요."
-    no_api_calls: "(._.) 이 세션에서 아직 API 호출이 없어요."
+    no_api_calls: "◈ 이 세션에서 아직 API 호출이 없어요."
     header_session: "📊 세션 토큰 사용량"
     label_model: "모델:"
     label_input_tokens: "입력 토큰:"
@@ -3428,7 +3428,7 @@ tips:
   t016: "/model로 세션 중에 모델을 바꿀 수 있어요 — /model sonnet이나 /model gpt-5를 시도해 보세요."
   t017: "/model --global은 기본 모델을 영구적으로 변경해요."
   t018: "/personality pirate는 재미있는 성격을 설정해요 — kawaii부터 shakespeare까지 14가지 내장 옵션이 있어요."
-  t019: "/skin은 CLI 테마를 바꿔요 — ares, mono, slate, poseidon, charizard를 시도해 보세요."
+  t019: "/skin은 CLI 테마를 바꿔요 — taro, light, contrast, cyberpunk, dracula를 시도해 보세요."
   t020: "/statusbar는 모델, 토큰, 컨텍스트 사용률 %, 비용, 경과 시간을 보여주는 고정 표시줄을 전환해요."
   t021: "/tools disable browser는 현재 세션에서 브라우저 도구를 일시적으로 제거해요."
   t022: "/browser connect는 CDP를 통해 실행 중인 Chromium 계열 브라우저에 브라우저 도구를 연결해요."
@@ -3748,7 +3748,7 @@ tips:
   t336: "/toolsets는 사용 가능한 모든 도구 세트를 나열해서 -t/--toolsets에 무엇을 넘길 수 있는지 알려줘요."
   t337: "/voice tts는 음성 합성 전용 모드를 전환해요 — 에이전트는 소리로 답하지만 프롬프트는 계속 타이핑해요."
   t338: "/reload-skills는 ~/.icebath/skills/를 다시 스캔해서 세션을 재시작하지 않고도 드롭인 스킬이 나타나게 해요."
-  t339: "/indicator kaomoji|emoji|unicode|ascii는 에이전트가 실행 중일 때 표시되는 TUI 작업 표시기 스타일을 골라요."
+  t339: "/indicator unicode|emoji|ascii는 에이전트가 실행 중일 때 표시되는 TUI 작업 표시기 스타일을 골라요."
   t340: "/debug는 지원 번들(시스템 정보 + 로그)을 업로드하고 공유 가능한 링크를 돌려줘요 — 채팅에서도 동작해요."
   t341: "icebath -z \"<prompt>\"는 가장 순수한 일회성 실행이에요: stdout에 최종 답변만 출력하고 다른 건 없어요 — 스크립트 파이프에 이상적이에요."
   t342: "icebath chat --pass-session-id는 세션 ID를 시스템 프롬프트에 주입해서 에이전트가 자기 세션을 참조할 수 있게 해요."

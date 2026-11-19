@@ -362,9 +362,6 @@ func configuredCacheTTL(ctx context.Context) string {
 	return ""
 }
 
-// ConfiguredCacheTTL returns the configured 5m or 1h cache tier, empty when none applies
-func ConfiguredCacheTTL(ctx context.Context) string { return configuredCacheTTL(ctx) }
-
 // CachePolicyAgent is the agent state the cache policy falls back to, nil CustomProviders means none attached yet
 type CachePolicyAgent struct {
 	Provider        string

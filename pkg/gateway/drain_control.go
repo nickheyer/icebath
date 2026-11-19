@@ -105,13 +105,6 @@ var CurrentInstantiationEpoch = func() string {
 	return epoch
 }
 
-// Drops the cached instantiation epoch
-func instantiationEpochCacheClear() {
-	epochMu.Lock()
-	epochCached = nil
-	epochMu.Unlock()
-}
-
 // Drain request marker inside the home, the active profile home when empty
 func DrainRequestPath(ctx context.Context, h string) string {
 	if h == "" {

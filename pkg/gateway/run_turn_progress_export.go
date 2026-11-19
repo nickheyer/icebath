@@ -16,11 +16,6 @@ func ToolCompletePayload(ctx context.Context, callID, toolName, args, result any
 	return toolCompletePayload(ctx, callID, toolName, args, result, isError, verbose)
 }
 
-// Current physical session of a conversation, the local receipt entry for a local session
-func PhysicalTarget(ctx context.Context, a *SessionAuthority, ref SessionRef) (string, error) {
-	return physicalTarget(ctx, a, ref)
-}
-
 // Seeds the agent compression counter from the count the live session carried
 func SeedCompressionCount(live *LiveSession, agent any) { seedCompressionCount(live, agent) }
 

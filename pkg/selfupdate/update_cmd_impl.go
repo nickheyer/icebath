@@ -318,7 +318,7 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(w, "☤ Updating Icebath Agent...")
+	fmt.Fprintln(w, "󰆧 Updating Icebath Agent...")
 	fmt.Fprintln(w)
 	preUpdatePlan, err := beginUpdateReceiptAndPlan(ctx, w, args)
 	if err != nil {

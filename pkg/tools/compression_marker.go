@@ -43,11 +43,6 @@ func pyCommaInt(n int) string {
 	return b.String()
 }
 
-// Full compression marker with the disclaimer sentence
-func compressionMarker(omitted, total int) string {
-	return CompressionMarkerPrefix + " " + pyCommaInt(omitted) + " of " + pyCommaInt(total) + " chars omitted here by icebath's context compressor." + compressionMarkerDisclaimer
-}
-
 // Elision marker, the first sentence of the compression marker with per instance counts
 func elisionMarker(omitted, total int) string {
 	return CompressionMarkerPrefix + " " + pyCommaInt(omitted) + " of " + pyCommaInt(total) + " chars omitted here by icebath's context compressor.⟫"

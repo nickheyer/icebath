@@ -27,9 +27,6 @@ func WaitForLaunchdServicePID(ctx context.Context, label string, oldPid int, hav
 // Seconds a restart may drain in flight turns, from the environment override else the agent config
 func GetRestartDrainTimeout(ctx context.Context) (float64, error) { return getRestartDrainTimeout(ctx) }
 
-// Whether pid is still the icebath process born at the expected start time
-func PidIsIcebath(pid int, expectedStartTime any) bool { return pidIsIcebath(pid, expectedStartTime) }
-
 // Records the gateway pids a start vouched for so a later death is reported
 func WriteStartAttestation(ctx context.Context, pids []int, via string) {
 	writeStartAttestation(ctx, pids, via)

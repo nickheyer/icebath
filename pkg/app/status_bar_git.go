@@ -22,13 +22,6 @@ var (
 	gitBranchCache   = map[string]gitBranchHit{}
 )
 
-// Empties the per directory branch cache so the next read walks the tree again
-func resetGitBranchCache() {
-	gitBranchCacheMu.Lock()
-	gitBranchCache = map[string]gitBranchHit{}
-	gitBranchCacheMu.Unlock()
-}
-
 // Nearest enclosing git dir for start, following worktree pointer files to their private git dir
 func resolveGitDir(start string) (string, bool) {
 	for _, parent := range append([]string{start}, pypath.PathParents(start)...) {

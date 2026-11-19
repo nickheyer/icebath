@@ -289,3 +289,18 @@ func vtWrite(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+// Detail of every failed check, its name when the detail is empty
+func (r *ValidationReport) Failures() []string {
+	out := []string{}
+	for _, c := range r.Checks {
+		if !c.OK {
+			if c.Detail != "" {
+				out = append(out, c.Detail)
+			} else {
+				out = append(out, c.Name)
+			}
+		}
+	}
+	return out
+}

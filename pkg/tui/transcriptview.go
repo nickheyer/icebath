@@ -295,7 +295,7 @@ func (v *transcriptView) streamLines(text string, c renderCtx) []string {
 	return append(lines, v.markdownLines(text[cut:], c)...)
 }
 
-// Session banner of a fresh or resumed session, the brand, model, folder and what the agent has loaded
+// Session banner of a fresh or resumed session, the art, the brand, model, folder and what the agent has loaded
 func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 	info := infoOf(raw)
 	pad := strings.Repeat(" ", transcriptIndent)
@@ -303,11 +303,15 @@ func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 	if name == "" {
 		name = "icebath"
 	}
-	head := toneStyle(c.t.Color.Primary).Bold(true).Render(strings.TrimSpace(c.t.Brand.Icon + " " + name))
+	head := toneStyle(c.t.Color.Primary).Bold(true).Render(strings.TrimSpace(c.ut.Glyphs.Brand + " " + name))
 	if version := infoText(info.Version); version != "" && version != "unknown" {
 		head += toneStyle(c.t.Color.Muted).Render("  " + version)
 	}
-	lines := []string{pad + head}
+	lines := bannerArt(c)
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, pad+head)
 	if welcome := trimJS(c.t.Brand.Welcome); welcome != "" {
 		lines = append(lines, wrapUnder(welcome, c.width, "", toneStyle(c.t.Color.Muted))...)
 	}
@@ -330,7 +334,11 @@ func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 		}
 	}
 	row("loaded", strings.Join(counts, " · "))
-	return append(lines, pad+toneStyle(c.t.Color.Border).Render(strings.Repeat("─", max(min(c.width-transcriptIndent*2, 60), 4))))
+	span := 0
+	for _, line := range lines {
+		span = max(span, ansi.StringWidth(line)-transcriptIndent)
+	}
+	return append(lines, pad+toneStyle(c.t.Color.Border).Render(strings.Repeat("─", max(min(span, c.width-transcriptIndent*2), 4))))
 }
 
 // Entries of every group of a grouped listing

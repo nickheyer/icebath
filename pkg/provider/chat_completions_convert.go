@@ -211,9 +211,6 @@ func (c *ccRoute) isOpenRouter() bool   { return c.provider == "openrouter" || c
 func (c *ccRoute) isQwenPortal() bool   { return c.hostIs("portal.qwen.ai") }
 func (c *ccRoute) isDirectOpenAI() bool { return c.host == "api.openai.com" }
 func (c *ccRoute) isAzureOpenAI() bool  { return c.hostIs("openai.azure.com") }
-func (c *ccRoute) isAzureHost() bool {
-	return c.isAzureOpenAI() || c.hostIs("services.ai.azure.com") || c.hostIs("cognitiveservices.azure.com")
-}
 func (c *ccRoute) isKimiHost() bool {
 	return c.hostIs("api.kimi.com") || c.hostIs("moonshot.ai") || c.hostIs("moonshot.cn")
 }
@@ -688,33 +685,6 @@ var rejectedReasoningRoutes = map[string]map[string]bool{}
 
 func reasoningRouteKey(provider, baseURL, model string) string {
 	return strings.ToLower(strings.TrimSpace(provider)) + "|" + ccHostname(baseURL) + "|" + strings.TrimSpace(model)
-}
-
-// RecordReasoningFieldRejection remembers the reasoning keys a route rejected and returns the new ones
-func RecordReasoningFieldRejection(route Route, errBody string, sentMessages []*omap) map[string]bool {
-	fields := RejectedReasoningFields(errBody, sentMessages)
-	if NeedsReasoningEcho(route.Provider, route.Model, route.BaseURL) {
-		delete(fields, carrierRC)
-	}
-	if len(fields) == 0 {
-		return fields
-	}
-	key := reasoningRouteKey(route.Provider, route.BaseURL, route.Model)
-	rejectedReasoningMu.Lock()
-	defer rejectedReasoningMu.Unlock()
-	known := rejectedReasoningRoutes[key]
-	if known == nil {
-		known = map[string]bool{}
-		rejectedReasoningRoutes[key] = known
-	}
-	fresh := map[string]bool{}
-	for k := range fields {
-		if !known[k] {
-			known[k] = true
-			fresh[k] = true
-		}
-	}
-	return fresh
 }
 
 func rejectedReasoningCarriers(route Route) map[string]bool {

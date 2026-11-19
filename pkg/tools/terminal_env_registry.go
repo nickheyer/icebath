@@ -101,6 +101,3 @@ func safeStripEnvKeys(p BackendProvider) (keys []string) {
 func TerminalEnvRegistryGeneration(ctx context.Context, scope string) providerregistry.Generation {
 	return terminalEnvRegistry.RegistryGeneration(ctx, scope)
 }
-
-// Clears every plugin terminal backend registration, for tests only
-func ResetTerminalEnvRegistryForTests() { terminalEnvRegistry.ResetForTests() }

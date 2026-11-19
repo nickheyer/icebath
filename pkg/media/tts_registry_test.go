@@ -189,3 +189,8 @@ func TestTTSBuiltinSync(t *testing.T) {
 		}
 	})
 }
+
+// Registers a plugin TTS provider, a built in name ignored with a warning
+func RegisterTTSProvider(p TTSProvider, scope string) error {
+	return ttsRegistry.Register(p, scope)
+}

@@ -141,14 +141,6 @@ var imageGenRegistry = provider.NewProviderRegistry[ImageGenProvider](provider.P
 	Label: "Image gen", Logger: pkgLog(),
 })
 
-// ResetImageGenRegistry empties the image generation registry, the registry's _reset_for_tests
-func ResetImageGenRegistry() { imageGenRegistry.ResetForTests() }
-
-// Registers an image generation provider, a same name registration replacing the earlier one
-func RegisterImageGenProvider(p ImageGenProvider, scope string) error {
-	return imageGenRegistry.Register(p, scope)
-}
-
 // Registered image generation providers sorted by name
 func ListImageGenProviders(ctx context.Context, scope string) []ImageGenProvider {
 	return imageGenRegistry.ListProviders(ctx, scope)

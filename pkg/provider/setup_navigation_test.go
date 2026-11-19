@@ -234,3 +234,6 @@ func TestSanitizePastedInputStripsBracketedPasteMarkers(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// Installs the setup navigation state and menu handler around fn and restores both after
+func setupNavigationScope(fn func()) { guardedNavigationScope(false, fn) }

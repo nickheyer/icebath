@@ -90,17 +90,6 @@ func stringsToAny(list []string) []any {
 
 var generatedVideoKind = generatedSubdir + "/videos"
 
-// Decodes base64 video data into the generated videos cache
-func saveB64Video(env *tools.Env, b64, prefix, extension string) (string, error) {
-	if prefix == "" {
-		prefix = "video"
-	}
-	if extension == "" {
-		extension = "mp4"
-	}
-	return saveB64(env, generatedVideoKind, b64, prefix, extension)
-}
-
 // Writes raw video bytes into the generated videos cache
 func saveBytesVideo(env *tools.Env, raw []byte, prefix, extension string) (string, error) {
 	if prefix == "" {
@@ -410,11 +399,6 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 var videoGenRegistry = provider.NewProviderRegistry[VideoGenProvider](provider.ProviderRegistryOptions{
 	Label: "Video gen", Logger: pkgLog(),
 })
-
-// Registers a video generation provider, a same name registration replacing the earlier one
-func RegisterVideoGenProvider(p VideoGenProvider, scope string) error {
-	return videoGenRegistry.Register(p, scope)
-}
 
 // Registered video generation providers sorted by name
 func ListVideoGenProviders(ctx context.Context, scope string) []VideoGenProvider {

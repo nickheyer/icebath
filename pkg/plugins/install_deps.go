@@ -14,8 +14,6 @@ import (
 // Refusal reason of a dependency consent with the closed install failure class it reports
 type ConsentRefusal struct{ Text, FailureClass string }
 
-func (r *ConsentRefusal) Error() string { return r.Text }
-
 // Consent gate for the Node and Python dependencies a plugin declares, nothing installed on a decline
 func installPluginPythonDeps(ctx context.Context, manifest map[string]any, target string, console *Console, assumeYes bool) (bool, *ConsentRefusal) {
 	if runsAsPort(target) {

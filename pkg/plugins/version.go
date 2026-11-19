@@ -100,24 +100,6 @@ func VersionSatisfies(spec, current string) bool {
 	return true
 }
 
-// Reports whether every clause of a requires spec parses strictly
-func requiresSpecValid(spec string) bool {
-	for _, clause := range strings.Split(spec, ",") {
-		clause = strings.TrimSpace(clause)
-		if clause == "" {
-			continue
-		}
-		target := clause
-		if m := versionComparatorRe.FindStringSubmatch(clause); m != nil {
-			target = m[2]
-		}
-		if versionTuple(target) == nil {
-			return false
-		}
-	}
-	return true
-}
-
 // Load blocking reason when a requires_icebath spec rejects the running version, else empty
 func RequiresVersionError(spec string) string {
 	spec = strings.TrimSpace(spec)

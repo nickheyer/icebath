@@ -1108,3 +1108,16 @@ func TestUpdateJSONStoreKeepsStoredNumberTypesAndOrder(t *testing.T) {
 		t.Fatalf("store rewritten as\n%s\nwant\n%s", got, want)
 	}
 }
+
+// Characters currently retained in the window
+func (c *boundedOutputCollector) bufferedChars() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.headChars + c.tailChars
+}
+
+// Close stops the listener
+func (f *PortForward) Close() {
+	f.closed.Store(true)
+	f.listener.Close()
+}

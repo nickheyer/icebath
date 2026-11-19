@@ -415,12 +415,6 @@ func streamConverseWithCallbacks(next bedrockEventSource, cb bedrockStreamCallba
 	return parts.build(ordered, usage, stopReason, ""), interrupted, nil
 }
 
-// Stream events consumed with no callbacks into the response shape
-func normalizeConverseStreamEvents(next bedrockEventSource) (*bedrockConverseResult, error) {
-	out, _, err := streamConverseWithCallbacks(next, bedrockStreamCallbacks{})
-	return out, err
-}
-
 // Decoded ConverseStream frames as single key event maps, exception frames turned into stream errors
 func bedrockConverseEvents(body io.Reader, headers http.Header) bedrockEventSource {
 	reader := newAWSEventStreamReader(body)

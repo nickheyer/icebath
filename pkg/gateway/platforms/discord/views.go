@@ -261,13 +261,6 @@ func (v *uiView) stop() {
 	}
 }
 
-// Whether the view stopped or timed out
-func (v *uiView) isFinished() bool {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return v.finished
-}
-
 // View repr the error log names, discord.py style
 func (v *uiView) repr() string {
 	v.mu.Lock()
@@ -407,13 +400,6 @@ func (h *icebathView) gate(ctx context.Context, i *discordgo.Interaction, resolv
 		return false, h.adapter.respondEphemeral(ctx, i, unauthMsg)
 	}
 	return true, nil
-}
-
-// Whether a click already answered the view
-func (h *icebathView) isResolved() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.resolved
 }
 
 // First embed of a message, nil when it has none

@@ -380,3 +380,17 @@ func TestAFrameStampedAfterForgetDoesNotRebuildTheRing(t *testing.T) {
 		t.Fatal("ring rebuilt")
 	}
 }
+
+// Buffer occupancy for the ops and debug surface
+func ReplayStats() *pyjson.Object {
+	replay.Lock()
+	defer replay.Unlock()
+	drainReleasedLocked()
+	events := 0
+	for e := replay.order.Front(); e != nil; e = e.Next() {
+		events += len(e.Value.(*replayRing).frames)
+	}
+	return pyjson.ObjectOf("sessions", len(replay.buffers), "events", events, "bytes", replay.totalBytes,
+		"max_per_session", replayBufferMax, "max_bytes_per_session", replayBufferBytesMax,
+		"max_bytes_process", replayProcessBytesMax)
+}

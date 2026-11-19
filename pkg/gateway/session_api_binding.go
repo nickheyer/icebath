@@ -88,15 +88,6 @@ func runStepsOffLoop(ctx context.Context, a *SessionAuthority, steps writeSteps,
 	}
 }
 
-// Reserves an API source for a session from the authenticated API edge, driving its binding inline
-func bindAPISession(ctx context.Context, a *SessionAuthority, sessionID string, opts apiBindOptions) (SessionRef, error) {
-	result, err := runSteps(ctx, bindAPISteps(ctx, a, sessionID, opts))
-	if err != nil {
-		return SessionRef{}, err
-	}
-	return result.(SessionRef), nil
-}
-
 // True when a state_meta key holds a value
 func metaKeyHeld(ctx context.Context, conn state.SQLiteConn, key string) (bool, error) {
 	var one int

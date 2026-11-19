@@ -285,11 +285,6 @@ func RecordFeatureList(ctx context.Context, extras []string) {
 	})
 }
 
-// Records the platform id the sync ran for
-func RecordPlatform(ctx context.Context, platformID string) {
-	recordReceipt(ctx, func(r *pyjson.Object) { r.Set("platform", platformID) })
-}
-
 // JSONRecord is a check result that serializes itself into the receipt
 type JSONRecord interface {
 	ToJSON() map[string]any
@@ -323,14 +318,6 @@ func RecordRefusal(ctx context.Context, code, detail string) {
 	recordReceipt(ctx, func(r *pyjson.Object) {
 		r.Set("refusal", pyjson.ObjectOf("code", code, "detail", detail, "at", utcNowISO()))
 	})
-}
-
-// Deep copy of the in flight receipt, nil when nothing was begun
-func ReceiptSnapshot(ctx context.Context) map[string]any {
-	s := scopeOf(ctx)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return receiptPlain(s.current)
 }
 
 // Writes and rotates the receipt, a token restoring the outer receipt and panicking on reuse or another scope

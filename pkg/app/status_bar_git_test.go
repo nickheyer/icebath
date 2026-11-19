@@ -40,3 +40,10 @@ func TestCurrentGitBranchReadsHeadAndWorktreePointer(t *testing.T) {
 		t.Fatalf("a directory outside any repository gave %q", got)
 	}
 }
+
+// Empties the per directory branch cache so the next read walks the tree again
+func resetGitBranchCache() {
+	gitBranchCacheMu.Lock()
+	gitBranchCache = map[string]gitBranchHit{}
+	gitBranchCacheMu.Unlock()
+}

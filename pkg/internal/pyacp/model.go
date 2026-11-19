@@ -351,20 +351,6 @@ func Validate[T any](input any) (*T, error) {
 	return out, nil
 }
 
-// Model_validate of decoded JSON into the schema type of the given name
-func ValidateNamed(name string, input any) (any, error) {
-	t, ok := schemaTypes[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown schema model %s", name)
-	}
-	va := &validator{}
-	rv, _ := va.model(t, input, nil)
-	if len(va.errs) > 0 {
-		return nil, &ValidationError{Title: t.Name(), Errs: va.errs}
-	}
-	return rv.Addr().Interface(), nil
-}
-
 func quoteList(vals []string) string {
 	q := make([]string, len(vals))
 	for i, v := range vals {

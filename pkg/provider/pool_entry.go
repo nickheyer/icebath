@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"math"
-	"sort"
 	"strings"
 	"time"
 )
@@ -376,29 +375,6 @@ func (e PooledCredential) RuntimeBaseURL() string {
 	return e.BaseURL
 }
 
-func scopeValues(v any) map[string]bool {
-	out := map[string]bool{}
-	switch s := v.(type) {
-	case string:
-		for _, part := range strings.Fields(s) {
-			out[part] = true
-		}
-	case []any:
-		for _, item := range s {
-			if str, ok := item.(string); ok && strings.TrimSpace(str) != "" {
-				out[strings.TrimSpace(str)] = true
-			}
-		}
-	case []string:
-		for _, str := range s {
-			if strings.TrimSpace(str) != "" {
-				out[strings.TrimSpace(str)] = true
-			}
-		}
-	}
-	return out
-}
-
 // LabelFromToken picks the email like claim of a JWT as the display label
 func LabelFromToken(token, fallback string) string {
 	claims := DecodeJWTClaims(token)
@@ -579,13 +555,4 @@ func MergeModelCooldowns(maps ...any) map[string]float64 {
 		}
 	}
 	return merged
-}
-
-func sortedCooldownModels(m map[string]float64) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

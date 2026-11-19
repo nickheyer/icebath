@@ -236,12 +236,6 @@ func (l *Lockfile) Save() error {
 	return nil
 }
 
-// Pinned termux-docker image digest read once for every consumer
-func TermuxDockerDigest() string {
-	v, _ := NewLockfile(LockfilePath()).Version("termux-docker")
-	return v
-}
-
 // Facts is the installed state file, written only by pm
 type Facts struct {
 	Path     string
@@ -280,59 +274,6 @@ func (f *Facts) Get(name string) (map[string]any, bool) {
 }
 
 var sha256Hex = regexp.MustCompile(`^[a-f0-9]{64}$`)
-
-// Publishes every tool entry's tree digest once packaging stops changing its bytes, returning the count
-func (f *Facts) RefreshDigests(storeRoot string) (int, error) {
-	doc, err := readLockDocument(f.Path, true)
-	if err != nil {
-		return 0, err
-	}
-	packages := doc["packages"].(map[string]any)
-	root := LongRoot(resolvePath(storeRoot))
-	count := 0
-	for _, name := range sortedKeys(packages) {
-		fact, ok := packages[name].(map[string]any)
-		if !ok {
-			return 0, fmt.Errorf("invalid payload fact: %s", name)
-		}
-		_, hasEntry := fact["entry"]
-		if _, hasStamp := fact["stamp"]; !hasEntry && hasStamp {
-			continue
-		}
-		entryName, entryOK := fact["entry"].(string)
-		version, versionOK := fact["version"].(string)
-		target, targetOK := fact["target"].(string)
-		artifacts, artifactsOK := fact["artifacts"].([]any)
-		bad := !entryOK || entryName == "" || entryName == "." || entryName == ".." || strings.ContainsAny(entryName, `/\:`) ||
-			!versionOK || version == "" || !targetOK || target == "" || !artifactsOK || len(artifacts) == 0
-		for _, sha := range artifacts {
-			if s, isStr := sha.(string); !isStr || !sha256Hex.MatchString(s) {
-				bad = true
-			}
-		}
-		if bad {
-			return 0, fmt.Errorf("incomplete payload tool: %s", name)
-		}
-		entry := filepath.Join(root, entryName)
-		if st, err := os.Stat(entry); err != nil || !st.IsDir() || !isRelativeTo(LongRoot(resolvePath(entry)), root) {
-			return 0, fmt.Errorf("incomplete payload tool: %s", name)
-		}
-		digest, err := TreeDigest(entry)
-		if err != nil {
-			return 0, err
-		}
-		fact["digest"] = digest
-		count++
-	}
-	if count == 0 {
-		return 0, fmt.Errorf("payload facts carry no tool entries: %s", f.Path)
-	}
-	if err := writeLockDocument(f.Path, map[string]any{"schema": jsonInt(LockSchema), "packages": packages}); err != nil {
-		return 0, err
-	}
-	f.packages = packages
-	return count, nil
-}
 
 // Reports whether a tool fact matches the expected version and identity and its entry exists
 func (f *Facts) Installed(name string, expectedVersion *string, storeRoot string, expectedIdentity *Identity) bool {

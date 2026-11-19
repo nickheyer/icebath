@@ -738,9 +738,9 @@ func (c *CLI) showGatewayStatus() {
 func (c *CLI) printRandomTip() {
 	defer func() { _ = recover() }()
 	tip := getRandomTip(c.ctx)
-	tipColor := "#B8860B"
+	tipColor := "#6c7f92"
 	if skin := config.GetActiveSkin(c.ctx); skin != nil {
-		tipColor = skin.GetColor("banner_dim", "#B8860B")
+		tipColor = skin.GetColor("banner_dim", "#6c7f92")
 	}
 	c.consolePrint("[dim " + tipColor + "]" + c.t("cli.tip_line", map[string]any{"tip": tip}) + "[/]")
 }

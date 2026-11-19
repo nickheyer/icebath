@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	_ "modernc.org/sqlite"
 )
@@ -85,14 +84,6 @@ func (p *Proposal) SortedClasses() []string {
 type ApprovalRecord struct {
 	Command     string
 	Description string
-}
-
-// DefaultApprovalDBPath is the state database of the environment's home
-func DefaultApprovalDBPath(env *Env) string {
-	if env != nil && env.Home != "" {
-		return home.StatePath(env.Home)
-	}
-	return home.StatePath(home.Process())
 }
 
 // Decodes JSON text, ok false on malformed input

@@ -21,19 +21,6 @@ func capabilitiesOf(caps reasoningCaps) ReasoningCapabilities {
 	return ReasoningCapabilities{SupportsReasoning: caps.supports, SupportedEfforts: cloneStrings(caps.supportedEfforts), Mandatory: caps.mandatory}
 }
 
-// ParseOpenRouterReasoningCapabilities normalizes one catalog entry, false when supported_parameters is missing or malformed
-func ParseOpenRouterReasoningCapabilities(item any) (ReasoningCapabilities, bool) {
-	m, ok := asMap(item)
-	if !ok {
-		return ReasoningCapabilities{}, false
-	}
-	caps, known := parseReasoningCaps(m)
-	if !known {
-		return ReasoningCapabilities{}, false
-	}
-	return capabilitiesOf(caps), true
-}
-
 // ReasoningCapsDiskTTL is how long a disk mirrored catalog counts as fresh
 const ReasoningCapsDiskTTL = reasoningCapsDiskTTL
 
@@ -189,13 +176,6 @@ func (s *capsSource) warmAsync(ctx context.Context) {
 	warmReasoningCapsAsync(func() { s.fetchCaps(ctx, 6*time.Second, true) })
 }
 
-// Drops every profile's slots so the next read starts cold
-func (s *capsSource) reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.slot = &capsSlots{}
-}
-
 var (
 	openrouterCapsSource = newCapsSource(func(context.Context) string { return openRouterCatalogURL })
 )
@@ -222,11 +202,3 @@ func OpenRouterModelReasoningCapabilities(ctx context.Context, modelID string, t
 
 // WarmOpenRouterReasoningCapsAsync warms the OpenRouter capability cache in the background
 func WarmOpenRouterReasoningCapsAsync(ctx context.Context) { openrouterCapsSource.warmAsync(ctx) }
-
-// ResetReasoningCapsCatalogs drops every in process capability catalog and source slot
-func ResetReasoningCapsCatalogs() {
-	openrouterCapsSource.reset()
-	capsCatalogsMu.Lock()
-	defer capsCatalogsMu.Unlock()
-	capsCatalogs = map[string]*capsCatalog{}
-}

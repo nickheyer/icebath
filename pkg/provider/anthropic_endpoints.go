@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -196,11 +195,6 @@ func IsOAuthToken(key string) bool { return isOAuthToken(key) }
 func isNativeAnthropicHost(baseURL string) bool {
 	text := strings.TrimSpace(baseURL)
 	return text == "" || baseURLHostname(text) == "api.anthropic.com"
-}
-
-// Claude Code OAuth identity applies on the native host or the anthropic provider with an OAuth credential
-func anthropicRouteIsOAuth(baseURL, credential, providerName string) bool {
-	return AnthropicRouteIsOAuth(context.Background(), baseURL, credential, nil, providerName)
 }
 
 var claudeVersionRe = regexp.MustCompile(`(?i)claude[-_.](opus|sonnet|haiku|fable|mythos)[-_.](\d+)(?:[-_.](\d{1,2})(?:$|[-_.]))?`)

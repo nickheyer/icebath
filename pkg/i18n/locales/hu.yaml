@@ -561,12 +561,12 @@ gateway:
     not_git_repo: "✗ Nem git-tárhely — frissítés nem lehetséges."
     icebath_cmd_not_found: "✗ Nem sikerült megtalálni a `icebath` parancsot. A Icebath fut, de a frissítőparancs nem találta a futtatható fájlt a PATH-on vagy a jelenlegi Python interpreteren keresztül. Próbáld futtatni a `icebath update` parancsot manuálisan a terminálban."
     start_failed: "✗ Nem sikerült elindítani a frissítést: {error}"
-    starting: "☤ Icebath frissítés indítása… A folyamatot itt fogom közvetíteni."
+    starting: "❆ Icebath frissítés indítása… A folyamatot itt fogom közvetíteni."
     reply_failed: "✗ Nem sikerült elküldeni a választ a frissítési folyamatnak: {error}"
     reply_sent: "✓ `{label}` elküldve a frissítési folyamatnak."
     failed_notice: "❌ A Icebath frissítése nem sikerült; továbbra is az előző verzió fut. Futtasd a `icebath update` parancsot a gazdagépen a teljes hibaüzenetért, vagy próbáld újra később a /update parancsot."
     prompt_default: " (alapértelmezett: {default})"
-    prompt: "☤ **A frissítéshez a válaszod kell:**\n\n{prompt}{default_hint}\n\nVálaszolj: `{prefix}approve` (igen) vagy `{prefix}deny` (nem), vagy írd be közvetlenül a válaszodat."
+    prompt: "❆ **A frissítéshez a válaszod kell:**\n\n{prompt}{default_hint}\n\nVálaszolj: `{prefix}approve` (igen) vagy `{prefix}deny` (nem), vagy írd be közvetlenül a válaszodat."
     finished: "✅ A Icebath frissítése befejeződött."
     timed_out: "❌ A Icebath frissítése 30 perc után időtúllépéssel leállt."
     finished_success: "✅ A Icebath frissítése sikeresen befejeződött."
@@ -1555,7 +1555,7 @@ platform:
       resolved_by_user: "{icon} **{label}** — {user}"
     update_prompt:
 
-      title: "☤ A frissítéshez a válaszod kell"
+      title: "❆ A frissítéshez a válaszod kell"
       default_hint: "\n\nAlapértelmezett: `{default}`"
       answer_yes: "✓ Igen"
       answer_no: "✗ Nem"
@@ -2078,7 +2078,7 @@ cli:
     duration_dhm: "{days} n {hours} ó {minutes} p"
     duration_m_rest: "{minutes} p {rest}"
     duration_hm_rest: "{hours} ó {minutes} p {rest}"
-    no_active_agent: "(._.) Nincs aktív ügynök -- először küldj egy üzenetet."
+    no_active_agent: "◈ Nincs aktív ügynök -- először küldj egy üzenetet."
     n_more: "még {count}"
     more_not_shown: "további nem jelenik meg"
     yes_no_default_yes: "I/n"
@@ -2286,7 +2286,7 @@ cli:
     queued: "Munkamenet címe sorba állítva: {title} (az első üzenetnél mentődik)"
   undo:
 
-    invalid_count: "(._.) Érvénytelen szám: {value} — használd: /undo vagy /undo N."
+    invalid_count: "◈ Érvénytelen szám: {value} — használd: /undo vagy /undo N."
     removes_last_exchange: "Ez eltávolítja az utolsó felhasználó/asszisztens váltást az előzményekből."
     removes_last_turns: "Ez eltávolítja az utolsó {count} felhasználói kört az előzményekből."
   resume:
@@ -2344,7 +2344,7 @@ cli:
     out_of_credits_title: "⚡ Elfogyott a kredit"
   session:
 
-    fresh_start: "✨ (◕‿◕)✨ Tiszta lap! Képernyő törölve, beszélgetés visszaállítva."
+    fresh_start: "❆ Tiszta lap! Képernyő törölve, beszélgetés visszaállítva."
     model_reset_default: "(modell visszaállítva az alapértelmezettre: {model})"
     title_rejected: "Cím elutasítva: {error}"
     title_empty_untitled: "A cím a tisztítás után üres — a munkamenet cím nélkül indult."
@@ -2366,7 +2366,7 @@ cli:
     label_reasoning: "Gondolkodás"
     label_approvals: "Jóváhagyások"
     label_context: "Kontextus"
-    recent_intro: "(._.) Még nincs üzenet a jelenlegi beszélgetésben — itt vannak a legutóbbi munkamenetek, amelyeket folytathatsz:"
+    recent_intro: "◈ Még nincs üzenet a jelenlegi beszélgetésben — itt vannak a legutóbbi munkamenetek, amelyeket folytathatsz:"
     recent_header: "Legutóbbi munkamenetek:"
     column_title: "Cím"
     column_preview: "Előnézet"
@@ -2374,48 +2374,48 @@ cli:
     column_id: "ID"
     resume_usage: "Folytatáshoz használd: /resume <number>, /resume <session id> vagy /resume <session title>."
     resume_example: "Példa: /resume 2"
-    history_empty: "(._.) Még nincs beszélgetési előzmény."
+    history_empty: "◈ Még nincs beszélgetési előzmény."
     history_tools_header: "[Eszközök]"
     history_tools_hidden_one: "({count} eszközüzenet elrejtve)"
     history_tools_hidden_other: "({count} eszközüzenet elrejtve)"
-    history_title: "(^_^) Beszélgetési előzmények"
+    history_title: "❆ Beszélgetési előzmények"
     history_you_header: "[Te #{index}]"
     history_assistant_header: "[{agent_name} #{index}]"
     history_no_text: "(nincs szöveges válasz)"
     history_tool_calls_one: "({count} eszközhívást kért)"
     history_tool_calls_other: "({count} eszközhívást kért)"
-    new_session_titled: "(^_^)v Új munkamenet indult: {title}"
-    new_session: "(^_^)v Új munkamenet indult!"
-    save_nothing: "(;_;) Nincs menthető beszélgetés."
-    save_dir_failed: "(x_x) Nem sikerült létrehozni a mentési könyvtárat ({path}): {error}"
+    new_session_titled: "✓ Új munkamenet indult: {title}"
+    new_session: "✓ Új munkamenet indult!"
+    save_nothing: "◈ Nincs menthető beszélgetés."
+    save_dir_failed: "✘ Nem sikerült létrehozni a mentési könyvtárat ({path}): {error}"
     format_markdown: "Markdown"
-    save_ok: "(^_^)v Beszélgetés mentve: {path} ({label})"
+    save_ok: "✓ Beszélgetés mentve: {path} ({label})"
     save_resume_hint: "Az élő munkamenet folytatása: icebath --resume {session_id}"
-    save_failed: "(x_x) A mentés nem sikerült: {error}"
-    retry_no_messages: "(._.) Nincs újrapróbálható üzenet."
-    retry_no_user_message: "(._.) Nem található újrapróbálható felhasználói üzenet."
-    retry_unsafe: "(._.) Az üzenet nem próbálható újra biztonságosan: {error}"
-    retry_rewind_failed: "(x_x) A visszatekerés az újrapróbáláshoz nem sikerült; az előzmények nem változtak: {error}"
-    retrying: "(^_^)b Újrapróbálás: \"{preview}\""
-    undo_no_messages: "(._.) Nincs visszavonható üzenet."
-    undo_no_user_message: "(._.) Nem található visszavonható felhasználói üzenet."
-    undo_failed: "(x_x) A visszavonás nem sikerült; az előzmények nem változtak: {error}"
-    undo_ok_one: "(^_^)b {count} kör visszavonva ({messages} üzenet). Biztonsági mentés: \"{backup}\""
-    undo_ok_other: "(^_^)b {count} kör visszavonva ({messages} üzenet). Biztonsági mentés: \"{backup}\""
+    save_failed: "✘ A mentés nem sikerült: {error}"
+    retry_no_messages: "◈ Nincs újrapróbálható üzenet."
+    retry_no_user_message: "◈ Nem található újrapróbálható felhasználói üzenet."
+    retry_unsafe: "◈ Az üzenet nem próbálható újra biztonságosan: {error}"
+    retry_rewind_failed: "✘ A visszatekerés az újrapróbáláshoz nem sikerült; az előzmények nem változtak: {error}"
+    retrying: "✓ Újrapróbálás: \"{preview}\""
+    undo_no_messages: "◈ Nincs visszavonható üzenet."
+    undo_no_user_message: "◈ Nem található visszavonható felhasználói üzenet."
+    undo_failed: "✘ A visszavonás nem sikerült; az előzmények nem változtak: {error}"
+    undo_ok_one: "✓ {count} kör visszavonva ({messages} üzenet). Biztonsági mentés: \"{backup}\""
+    undo_ok_other: "✓ {count} kör visszavonva ({messages} üzenet). Biztonsági mentés: \"{backup}\""
     undo_remaining: "{count} üzenet maradt az előzményekben."
     yolo_state_locked_on: "zárolva BE"
     yolo_locked: "⚡ A YOLO {state} ebben a folyamatban (--yolo / ICEBATH_YOLO_MODE kapcsolóval indult). A /yolo nem tudja kikapcsolni — a jóváhagyások visszaállításához indítsd újra a kapcsoló nélkül."
     yolo_off: "⚠ YOLO mód {state} — a veszélyes parancsok jóváhagyást igényelnek."
     yolo_on: "⚡ YOLO mód {state} — minden parancs automatikusan jóváhagyva. Óvatosan használd."
-    compress_too_short: "(._.) Túl kevés a beszélgetés a tömörítéshez (legalább {min} üzenet kell)."
-    compress_no_agent: "(._.) Nincs aktív ügynök -- küldj először egy üzenetet."
+    compress_too_short: "◈ Túl kevés a beszélgetés a tömörítéshez (legalább {min} üzenet kell)."
+    compress_no_agent: "◈ Nincs aktív ügynök -- küldj először egy üzenetet."
     compress_busy: "Kontextus tömörítése..."
     compress_summarizing: "🗜️  Összegzés eddig a pontig: {count} üzenet, az utolsó {keep_last} váltás szó szerint megmarad..."
     compress_focus: "🗜️  {count} üzenet tömörítése, fókusz: \"{focus}\"..."
     compress_plain: "🗜️  {count} üzenet tömörítése..."
     compress_failed: "❌ A tömörítés nem sikerült: {error}"
     persist_prompt_summary: "{icon} {label}: {detail} → {outcome}"
-    goodbye: "Viszlát! ☤"
+    goodbye: "Viszlát! 󰆧"
     exit_resume_hint: "A munkamenet folytatása:"
     exit_label_session: "Munkamenet:     {session_id}"
     exit_label_title: "Cím:            {title}"
@@ -2467,7 +2467,7 @@ cli:
       scope_saved: "(mentve a konfigurációba)"
       scope_save_failed: "(csak munkamenet; a konfig mentése nem sikerült)"
       scope_session: "(erre a munkamenetre — a --global kapcsolóval tartós)"
-      unknown_argument: "(._.) Ismeretlen argumentum: {arg}"
+      unknown_argument: "◈ Ismeretlen argumentum: {arg}"
       usage: "Használat: {usage}"
       needs_active_session: "A {command} futtatásához aktív csevegési munkamenet kell."
       unavailable_no_session: "{label} nem érhető el (nincs aktív munkamenet)."
@@ -2514,17 +2514,17 @@ cli:
 
       usage: "Használat: /indicator [{styles}]"
       status: "Elfoglaltság-jelző stílusa: {style}"
-      unknown_style: "(._.) Ismeretlen jelzőstílus: {arg}"
+      unknown_style: "◈ Ismeretlen jelzőstílus: {arg}"
       label: "Elfoglaltság-jelző stílusa"
       note: "A TUI a következő újrarajzolásnál veszi át az új stílust."
     fast:
 
-      not_supported: "(._.) A /fast csak a gyors módot támogató modelleknél érhető el (OpenAI Priority Processing vagy Anthropic Fast Mode)."
+      not_supported: "◈ A /fast csak a gyors módot támogató modelleknél érhető el (OpenAI Priority Processing vagy Anthropic Fast Mode)."
       feature_generic: "Gyors mód"
       feature_anthropic: "Anthropic Fast Mode"
       feature_openai: "Priority Processing"
       feature_ultrafast: "OpenAI Ultrafast"
-      ultrafast_not_supported: "(._.) Az Ultrafast nem érhető el a(z) {model} modellhez ezen a fiókon vagy útvonalon."
+      ultrafast_not_supported: "◈ Az Ultrafast nem érhető el a(z) {model} modellhez ezen a fiókon vagy útvonalon."
       usage: "Használat: /fast [normal|fast|auto|cold|ultrafast|status] [--global]"
       status: "{feature}: {status}"
       set_to: "✓ {feature} beállítva: {value} {scope}"
@@ -2533,24 +2533,24 @@ cli:
       progress_compose: "┊ spritesheet összeállítása…"
       progress_save: "┊ mentés…"
       progress_drawing: "┊ {state} rajzolása…"
-      describe_prompt: "(o_o) Írd le a kisállatodat: "
-      usage: "(o_o) Használat: /hatch <leírás>  (pl. /hatch egy apró kiberróka)"
+      describe_prompt: "◈ Írd le a kisállatodat: "
+      usage: "◈ Használat: /hatch <leírás>  (pl. /hatch egy apró kiberróka)"
       default_name: "Kisállat"
-      designing: "(o_o) '{concept}' tervezése… (kb. egy percnyi képmodell-hívás)"
-      base_failed: "(x_x) Nem sikerült alapkinézetet generálni: {error}"
-      no_base_draft: "(x_x) Nem jött vissza alapvázlat — próbáld újra."
-      failed: "(x_x) A kikeltés nem sikerült: {error}"
-      hatched: "(^_^)b {name} kikelt, és be is fogadtad — hamarosan megjelenik!"
+      designing: "◈ '{concept}' tervezése… (kb. egy percnyi képmodell-hívás)"
+      base_failed: "✘ Nem sikerült alapkinézetet generálni: {error}"
+      no_base_draft: "✘ Nem jött vissza alapvázlat — próbáld újra."
+      failed: "✘ A kikeltés nem sikerült: {error}"
+      hatched: "✓ {name} kikelt, és be is fogadtad — hamarosan megjelenik!"
     pet:
 
-      is_out: "(^_^)b {name} kint van — hamarosan megjelenik."
-      put_away_named: "(-_-)zzZ {name} elrakva."
-      put_away: "(-_-)zzZ Kisállat elrakva."
-      usage_scale: "(o_o) Használat: /pet scale <szorzó>  (pl. /pet scale 0.5)"
-      scale_set: "(^_^) Kisállat mérete → {scale}."
-      fetching: "(o_o) '{name}' letöltése a petdexből…"
-      adopt_failed: "(x_x) Nem sikerült befogadni: '{name}': {error}"
-      error: "(x_x) {error}"
+      is_out: "✓ {name} kint van — hamarosan megjelenik."
+      put_away_named: "○ {name} elrakva."
+      put_away: "○ Kisállat elrakva."
+      usage_scale: "◈ Használat: /pet scale <szorzó>  (pl. /pet scale 0.5)"
+      scale_set: "✓ Kisállat mérete → {scale}."
+      fetching: "◈ '{name}' letöltése a petdexből…"
+      adopt_failed: "✘ Nem sikerült befogadni: '{name}': {error}"
+      error: "✘ {error}"
     diff:
 
       label_working: "Nem stage-elt"
@@ -2633,9 +2633,9 @@ cli:
       failed: "A /journey nem sikerült: {error}"
     paste:
 
-      no_image: "(._.) Nincs kép a vágólapon"
+      no_image: "◈ Nincs kép a vágólapon"
       attached: "📎 #{index}. kép csatolva a vágólapról"
-      extract_failed: "(>_<) A vágólapon van kép, de a kinyerése nem sikerült"
+      extract_failed: "◬ A vágólapon van kép, de a kinyerése nem sikerült"
     copy:
 
       nothing_yet: "Még nincs mit másolni."
@@ -2649,13 +2649,13 @@ cli:
     image:
 
       usage: "Használat: /image <útvonal>  pl. /image {example}"
-      not_found: "(>_<) A fájl nem található: {path}"
-      unsupported: "(._.) Nem támogatott képfájl: {name}"
+      not_found: "◬ A fájl nem található: {path}"
+      unsupported: "◈ Nem támogatott képfájl: {name}"
       attached: "📎 Kép csatolva: {name}"
       now_type_prompt: "Most írd be a promptot (vagy használd a --image kapcsolót egykérdéses módban): {text}"
     tools:
 
-      usage: "(._.) Használat: /tools {subcommand} <név> [név ...]"
+      usage: "◈ Használat: /tools {subcommand} <név> [név ...]"
       example_toolset: "Beépített eszközkészlet:  /tools {subcommand} web"
       example_mcp: "MCP-eszköz:               /tools {subcommand} github:create_issue"
       disabling: "Kikapcsolás: {names}..."
@@ -2706,7 +2706,7 @@ cli:
       compressed_redirect: "A(z) {session_id} munkamenet ebbe lett tömörítve: {resolved_id}; a leszármazottat folytatjuk az átiratoddal."
     sessions:
 
-      none_yet: "(._.) Még nincs korábbi munkamenet."
+      none_yet: "◈ Még nincs korábbi munkamenet."
     branch:
 
       branched_one: "⑂ Munkamenet elágaztatva: \"{title}\" ({count} felhasználói üzenet)"
@@ -2735,10 +2735,10 @@ cli:
       tools_in_worktree: "A terminál- és fájleszközök mostantól a worktree-ben dolgoznak."
     personality:
 
-      title: "(^o^)/ Személyiségek"
+      title: "❆ Személyiségek"
       none_option: "(nincs személyiségréteg)"
       usage: "Használat: /personality <név>   (* = aktív)"
-      unknown: "(._.) Ismeretlen személyiség: {name}"
+      unknown: "◈ Ismeretlen személyiség: {name}"
       available: "Elérhető: none, {available}"
       scope_saved: "(mentve a konfigurációba)"
       scope_session: "(csak erre a munkamenetre)"
@@ -2747,10 +2747,10 @@ cli:
       set_to: "{face} Személyiség beállítva: '{name}' {scope}"
     cron:
 
-      repeat_must_be_integer: "(._.) A --repeat értéke egész szám kell legyen"
-      unknown_command: "(._.) Ismeretlen cron parancs: {subcommand}"
+      repeat_must_be_integer: "◈ A --repeat értéke egész szám kell legyen"
+      unknown_command: "◈ Ismeretlen cron parancs: {subcommand}"
       available: "Elérhető: list, add, edit, pause, resume, run, remove"
-      overview_title: "(^_^) Ütemezett feladatok"
+      overview_title: "❆ Ütemezett feladatok"
       overview_commands: "Parancsok:"
       overview_usage: "/cron list\n/cron add \"every 2h\" \"Szerverállapot ellenőrzése\" [--skill blogwatcher]\n/cron edit <job_id> --schedule \"every 4h\" --prompt \"Új feladat\"\n/cron edit <job_id> --skill blogwatcher --skill maps\n/cron edit <job_id> --remove-skill blogwatcher\n/cron edit <job_id> --clear-skills\n/cron pause <job_id>\n/cron resume <job_id>\n/cron run <job_id>\n/cron remove <job_id>"
       current_jobs: "Jelenlegi feladatok:"
@@ -2758,7 +2758,7 @@ cli:
       skills_none: "Skillek: nincs"
       next_short: "Következő"
       no_jobs_hint: "Nincs ütemezett feladat. A '/cron add' paranccsal hozhatsz létre."
-      no_jobs: "(._.) Nincs ütemezett feladat."
+      no_jobs: "◈ Nincs ütemezett feladat."
       list_header: "Ütemezett feladatok:"
       id: "ID: {job_id}"
       name: "Név: {name}"
@@ -2771,24 +2771,24 @@ cli:
       status_delivery_failed: "delivery_failed: {error}"
       status_error: "hiba: {error}"
       last_run: "Utolsó futás: {when} ({status})"
-      usage_add: "(._.) Használat: /cron add <ütemezés> <prompt>"
-      need_prompt_or_skill: "(._.) Adj meg egy promptot vagy legalább egy skillt"
-      create_failed: "(x_x) A feladat létrehozása nem sikerült: {error}"
-      created: "(^_^)b Feladat létrehozva: {job_id}"
-      usage_edit: "(._.) Használat: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
-      job_not_found: "(._.) A feladat nem található: {job_id}"
-      update_failed: "(x_x) A feladat frissítése nem sikerült: {error}"
-      updated: "(^_^)b Feladat frissítve: {job_id}"
-      usage_action: "(._.) Használat: /cron {subcommand} <job_id>"
-      pause_failed: "(x_x) A feladat szüneteltetése nem sikerült: {error}"
-      resume_failed: "(x_x) A feladat folytatása nem sikerült: {error}"
-      run_failed: "(x_x) A feladat futtatása nem sikerült: {error}"
-      remove_failed: "(x_x) A feladat eltávolítása nem sikerült: {error}"
-      removed: "(^_^)b Feladat eltávolítva: {name} ({job_id})"
-      did_not_run: "(x_x) A feladat nem futott le: {name} ({job_id})\n  {reason}"
-      paused: "(^_^)b Feladat szüneteltetve: {name} ({job_id})"
-      resumed: "(^_^)b Feladat folytatva: {name} ({job_id})"
-      triggered: "(^_^)b Feladat elindítva: {name} ({job_id})"
+      usage_add: "◈ Használat: /cron add <ütemezés> <prompt>"
+      need_prompt_or_skill: "◈ Adj meg egy promptot vagy legalább egy skillt"
+      create_failed: "✘ A feladat létrehozása nem sikerült: {error}"
+      created: "✓ Feladat létrehozva: {job_id}"
+      usage_edit: "◈ Használat: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]"
+      job_not_found: "◈ A feladat nem található: {job_id}"
+      update_failed: "✘ A feladat frissítése nem sikerült: {error}"
+      updated: "✓ Feladat frissítve: {job_id}"
+      usage_action: "◈ Használat: /cron {subcommand} <job_id>"
+      pause_failed: "✘ A feladat szüneteltetése nem sikerült: {error}"
+      resume_failed: "✘ A feladat folytatása nem sikerült: {error}"
+      run_failed: "✘ A feladat futtatása nem sikerült: {error}"
+      remove_failed: "✘ A feladat eltávolítása nem sikerült: {error}"
+      removed: "✓ Feladat eltávolítva: {name} ({job_id})"
+      did_not_run: "✘ A feladat nem futott le: {name} ({job_id})\n  {reason}"
+      paused: "✓ Feladat szüneteltetve: {name} ({job_id})"
+      resumed: "✓ Feladat folytatva: {name} ({job_id})"
+      triggered: "✓ Feladat elindítva: {name} ({job_id})"
     suggestions:
 
       failed: "A suggestions parancs nem sikerült: {error}"
@@ -2797,10 +2797,10 @@ cli:
       failed: "A cron blueprint parancs nem sikerült: {error}"
     curator:
 
-      failed: "(._.) curator: {error}"
+      failed: "◈ curator: {error}"
     kanban:
 
-      failed: "(._.) kanban hiba: {error}"
+      failed: "◈ kanban hiba: {error}"
     memory:
 
       unknown_subcommand: "Ismeretlen /memory alparancs. Használható: pending, approve <id>, reject <id>, approval <on|off>."
@@ -2819,7 +2819,7 @@ cli:
     background:
 
       usage: "Használat: /bg <prompt>\nPélda: /bg Foglald össze a mai legjobb HN sztorikat\n(A beszélgetést érintő mellékkérdéshez használd a /btw <kérdés> parancsot.)\nA feladat külön munkamenetben fut, az eredmény itt jelenik meg, amint elkészül."
-      no_credentials: "(>_<) A háttérfeladat nem indítható: nincs érvényes hitelesítő adat."
+      no_credentials: "◬ A háttérfeladat nem indítható: nincs érvényes hitelesítő adat."
       started: "🔄 #{number} háttérfeladat elindítva: \"{preview}\""
       task_id: "Feladatazonosító: {task_id}"
       keep_chatting: "Folytathatod a beszélgetést — az eredmény itt jelenik meg, amint elkészül."
@@ -2835,7 +2835,7 @@ cli:
     btw:
 
       usage: "Használat: /btw <kérdés>\nPélda: /btw melyik fájlban volt az a hiba?\nGyors kérdésre válaszol erről a beszélgetésről anélkül, hogy megszakítaná.\n(Független háttérfeladathoz használd a /bg <prompt> parancsot.)"
-      no_credentials: "(>_<) A mellékkérdés nem válaszolható meg: nincs érvényes hitelesítő adat."
+      no_credentials: "◬ A mellékkérdés nem válaszolható meg: nincs érvényes hitelesítő adat."
       header: "💬 /btw: \"{preview}\""
       title_suffix: "(btw)"
       no_answer: "(Nem érkezett válasz)"
@@ -2954,8 +2954,8 @@ cli:
     prompt_compose:
 
       editor_header: "#! Írd meg lent a promptot. A '#!' kezdetű sorokat figyelmen kívül hagyjuk.\n#! Mentés és kilépés a küldéshez; hagyd üresen a megszakításhoz."
-      editor_failed: "(>_<) Nem sikerült megnyitni a szerkesztőt: {error}"
-      empty: "(._.) Üres prompt — nem küldtünk semmit."
+      editor_failed: "◬ Nem sikerült megnyitni a szerkesztőt: {error}"
+      empty: "◈ Üres prompt — nem küldtünk semmit."
     focus:
 
       usage: "Használat: /focus [on|off|status]"
@@ -2978,10 +2978,10 @@ cli:
       choice_update_desc: "kilépés a jelenlegi munkamenetből és a Icebath Agent frissítése"
       choice_cancel: "Mégse"
       choice_cancel_desc: "a jelenlegi munkamenet megtartása"
-      title: "☤  Icebath Agent frissítése"
+      title: "󰆧  Icebath Agent frissítése"
       detail: "Ez kilép a jelenlegi munkamenetből, és lefuttatja a `icebath update` parancsot."
       cancelled: "🟡 /update megszakítva."
-      launching: "☤ Frissítés indítása..."
+      launching: "󰆧 Frissítés indítása..."
     voice:
 
       unknown_subcommand: "Ismeretlen voice alparancs: {subcommand}"
@@ -3009,7 +3009,7 @@ cli:
     did_you_mean_many: "Erre gondoltál: {candidates}?"
   config:
 
-    title: "(^_^) Konfiguráció"
+    title: "❆ Konfiguráció"
     loaded: "(betöltve)"
     not_found: "(nem található)"
     microsoft_entra_id: "Microsoft Entra ID"
@@ -3038,7 +3038,7 @@ cli:
   context:
 
     header: "🧠 Kontextushasználat — {model}"
-    compute_failed: "(._.) Nem sikerült kiszámítani a kontextus felosztását: {error}"
+    compute_failed: "◈ Nem sikerült kiszámítani a kontextus felosztását: {error}"
   error:
 
     auth: "A {provider} elutasította a kulcsodat. Add meg újra a `icebath model` paranccsal."
@@ -3059,7 +3059,7 @@ cli:
     starting: "Icebath átjáró indítása (üzenetküldő platformok)..."
   gateway_status:
 
-    header: "(✿◠‿◠) Átjáró állapota"
+    header: "❆ Átjáró állapota"
     platform_config_header: "Üzenetküldő platformok konfigurációja:"
     enabled: "Bekapcsolva"
     not_configured: "Nincs konfigurálva ({env_var})"
@@ -3072,7 +3072,7 @@ cli:
     step_config: "2. Vagy add meg a beállításokat itt: {path}"
   help:
 
-    header: "(^_^)? Elérhető parancsok"
+    header: "❆ Elérhető parancsok"
     section_session: "Munkamenet"
     section_configuration: "Konfiguráció"
     section_tools_skills: "Eszközök és skillek"
@@ -3148,12 +3148,12 @@ cli:
     skill_load_failed: "Nem sikerült betölteni a(z) {command} skilljét"
   tools:
 
-    none_available: "(;_;) Nincs elérhető eszköz"
-    header: "(^_^)/ Elérhető eszközök"
-    total: "Összesen: {count} eszköz  ヽ(^o^)ノ"
+    none_available: "◈ Nincs elérhető eszköz"
+    header: "❆ Elérhető eszközök"
+    total: "Összesen: {count} eszköz"
   toolsets:
 
-    header: "(^_^)b Elérhető eszközkészletek"
+    header: "✓ Elérhető eszközkészletek"
     currently_enabled_legend: "(*) = jelenleg bekapcsolva"
     tip_enable_all: "Tipp: az 'all' vagy a '*' minden eszközkészletet bekapcsol"
     example: "Példa: icebath chat --toolsets web,terminal"
@@ -3164,7 +3164,7 @@ cli:
     reset_switch_hint: "Válts előbb a `/model` vagy a `icebath auth` paranccsal."
     checking_reset_credits: "⏳ Felhalmozott visszaállítási kreditek ellenőrzése..."
     codex_timeout: "❌ Időtúllépés a Codex háttérrendszer elérésekor — próbáld újra kicsit később."
-    no_api_calls: "(._.) Ebben a munkamenetben még nem volt API-hívás."
+    no_api_calls: "◈ Ebben a munkamenetben még nem volt API-hívás."
     header_session: "📊 Munkamenet tokenhasználata"
     label_model: "Modell:"
     label_input_tokens: "Bemeneti tokenek:"
@@ -3445,7 +3445,7 @@ tips:
   t016: "A /model paranccsal munkamenet közben válthatsz modellt — próbáld ki: /model sonnet vagy /model gpt-5."
   t017: "A /model --global véglegesen módosítja az alapértelmezett modelledet."
   t018: "A /personality pirate vicces személyiséget állít be — 14 beépített lehetőség a kawaii-tól a shakespeare-ig."
-  t019: "A /skin megváltoztatja a CLI témáját — próbáld ki: ares, mono, slate, poseidon vagy charizard."
+  t019: "A /skin megváltoztatja a CLI témáját — próbáld ki: taro, light, contrast, cyberpunk vagy dracula."
   t020: "A /statusbar állandó sávot kapcsol be, amely a modellt, a tokeneket, a kontextus telítettségét (%), a költséget és az időtartamot mutatja."
   t021: "A /tools disable browser ideiglenesen eltávolítja a böngészőeszközöket a jelenlegi munkamenetből."
   t022: "A /browser connect CDP-n keresztül csatolja a böngészőeszközöket a futó Chromium-alapú böngésződhöz."
@@ -3765,7 +3765,7 @@ tips:
   t336: "A /toolsets kilistázza az összes elérhető eszközkészletet, így tudod, mit fogad el a -t/--toolsets."
   t337: "A /voice tts a csak-TTS módot kapcsolja — az ügynök hangosan válaszol, de a promptjaidat továbbra is gépeled."
   t338: "A /reload-skills újraolvassa a ~/.icebath/skills/ mappát, így a bemásolt skillek a munkamenet újraindítása nélkül megjelennek."
-  t339: "A /indicator kaomoji|emoji|unicode|ascii kiválasztja a TUI elfoglaltságjelzőjének stílusát, amely az ügynök futása alatt látszik."
+  t339: "A /indicator unicode|emoji|ascii kiválasztja a TUI elfoglaltságjelzőjének stílusát, amely az ügynök futása alatt látszik."
   t340: "A /debug feltölt egy támogatási csomagot (rendszerinfó + naplók), és megosztható linkeket ad vissza — chatben is működik."
   t341: "A icebath -z \"<prompt>\" a legtisztább egylövetű mód: csak a végső válasz a stdout-on, semmi más — ideális szkriptekben csövezéshez."
   t342: "A icebath chat --pass-session-id beszúrja a munkamenet-azonosítót a rendszerpromptba, hogy az ügynök hivatkozhasson rá."

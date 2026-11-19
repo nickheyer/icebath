@@ -34,14 +34,6 @@ func (v *openAIVideo) get(key string) any {
 	return pyjson.Plain(val)
 }
 
-// Python class name the job attribute errors report
-func (v *openAIVideo) typeName() string {
-	if v.fields == nil {
-		return "str"
-	}
-	return "Video"
-}
-
 // Job id or the AttributeError text the SDK raises reading a missing id
 func (v *openAIVideo) id() (string, error) {
 	raw, ok := v.attr("id")

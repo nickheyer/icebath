@@ -147,3 +147,11 @@ func TestFeishuToolsNeedThePlatformCredentials(t *testing.T) {
 		t.Fatal("feishu tools not ready with both app credentials")
 	}
 }
+
+// Clears the detection cache and the record of started background detections
+func discordResetCapabilityCache() {
+	discordCapsMu.Lock()
+	defer discordCapsMu.Unlock()
+	discordCapsCache = map[string]*pyjson.Object{}
+	discordCapsBgStarted = map[string]bool{}
+}

@@ -9,9 +9,6 @@ import (
 
 const pformatWidth = 72
 
-// Text pprint.pformat gives a value at width 72 with dict insertion order kept
-func Pformat(v any) string { return pformatAt(pyValue(v), nil) }
-
 // pformat from a caller st sits in, pformat, PrettyPrinter.pformat and the recursive pprint frames under it
 func pformatAt(v any, st *state) string {
 	defer st.call()()

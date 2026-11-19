@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -38,12 +37,6 @@ func i18nT(key, lang string, kwargs map[string]any) string {
 	return i18n.T(context.Background(), key, lang, kwargs)
 }
 
-// Wraps text in ANSI codes when the process console takes color
-func cliColor(text string, codes ...string) string { return cliui.Color(text, codes...) }
-
-// Colors usage gauges in a header or legend line
-func colorizeGaugeBarsANSI(line string) string { return cliui.Default().ColorizeGaugeBarsANSI(line) }
-
 func pickerRadioItem(segs []PickerSegment) cliui.RadioItem {
 	item := make(cliui.RadioItem, len(segs))
 	for i, s := range segs {
@@ -75,21 +68,3 @@ func cursesRadiolist(title string, choices [][]PickerSegment, opts PickerRadioli
 
 // Reads non secret text with cursor editing on a terminal, an error being EOF or interrupt
 func lineInput(prompt string) (string, error) { return cliui.Default().LineInput(prompt) }
-
-// Multi select checklist returning sorted indices, cancel keeping the preselection
-func promptChecklist(title string, items []string, preSelected []int) ([]int, error) {
-	pre := map[int]bool{}
-	for _, i := range preSelected {
-		pre[i] = true
-	}
-	chosen, err := cliui.Default().CursesChecklist(context.Background(), title, items, pre, pre, nil)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]int, 0, len(chosen))
-	for i := range chosen {
-		out = append(out, i)
-	}
-	sort.Ints(out)
-	return out, nil
-}

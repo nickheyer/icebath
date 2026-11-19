@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -80,27 +79,6 @@ func argB(args map[string]any, key string, fallback bool) bool {
 		return b
 	}
 	return fallback
-}
-
-// List argument, nil when absent or not a list
-func argL(args map[string]any, key string) []any {
-	switch v := args[key].(type) {
-	case []any:
-		return v
-	case []string:
-		out := make([]any, len(v))
-		for i, s := range v {
-			out[i] = s
-		}
-		return out
-	case []map[string]any:
-		out := make([]any, len(v))
-		for i, m := range v {
-			out[i] = m
-		}
-		return out
-	}
-	return nil
 }
 
 // Text of json.dumps with ensure_ascii off and separators comma and colon without spaces
@@ -301,37 +279,6 @@ func postJSON(ctx context.Context, client *http.Client, target string, payload a
 	return resp.StatusCode, responseText(resp, raw), resp.Header, nil
 }
 
-// Gets a URL with query parameters and returns the status and decoded text
-func getText(ctx context.Context, client *http.Client, target string, params map[string]string, headers map[string]string) (int, string, error) {
-	u, err := url.Parse(target)
-	if err != nil {
-		return 0, "", err
-	}
-	q := u.Query()
-	for k, v := range params {
-		q.Set(k, v)
-	}
-	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return 0, "", err
-	}
-	req.Header.Set("User-Agent", icebathUserAgent())
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, "", err
-	}
-	defer resp.Body.Close()
-	raw, err := readBodyLimited(resp, 64<<20)
-	if err != nil {
-		return resp.StatusCode, "", err
-	}
-	return resp.StatusCode, responseText(resp, raw), nil
-}
-
 // Response body text for a failing reply, or HTTP code when the body is empty
 func httpStatusDetail(status int, body string) string {
 	if t := strings.TrimSpace(body); t != "" {
@@ -382,17 +329,6 @@ func decodePyJSON(text string) (any, error) {
 		return nil, err
 	}
 	return pyjson.Plain(v), nil
-}
-
-// Joined string list from a decoded JSON list
-func joinStrings(v any, sep string) string {
-	parts := []string{}
-	for _, item := range asList(v) {
-		if s := asStr(item); s != "" {
-			parts = append(parts, s)
-		}
-	}
-	return strings.Join(parts, sep)
 }
 
 // ---- result shapes -------------------------------------------------------------------------------
@@ -796,28 +732,8 @@ func (b *baseWebProvider) Extract(ctx context.Context, env *Env, urls []string, 
 // Web search providers by name, the global layer plus one layer per profile scope
 var webRegistry = providerregistry.New[WebProvider](providerregistry.Options{Label: "Web", ProviderCls: "WebSearchProvider", Logger: pkgLog()})
 
-// RegisterWebProvider adds or replaces a web provider by name in the global layer
-func RegisterWebProvider(p WebProvider) {
-	if err := webRegistry.Register(p, ""); err != nil {
-		panic(err)
-	}
-}
-
-// RegisterWebProviderScoped adds or replaces a web provider in one profile scope, empty for the global layer
-func RegisterWebProviderScoped(p WebProvider, scope string) error {
-	return webRegistry.Register(p, scope)
-}
-
 // Untyped view of the web search registry the plugin context register_web_search_provider drives
 func WebSearchRegistryScoped() providerregistry.ScopedRegistry { return webRegistry.Scoped() }
-
-// Generation pair of the web search registry for the scope env reads
-func WebSearchRegistryGeneration(env *Env) providerregistry.Generation {
-	return webRegistry.RegistryGeneration(context.Background(), webScope(env))
-}
-
-// Clears every web provider registration, for tests only
-func ResetWebRegistryForTests() { webRegistry.ResetForTests() }
 
 // Profile scope the env reads registrations under, the active home when env names none
 func webScope(env *Env) string {
@@ -1354,8 +1270,6 @@ func parallelSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 
 // payloadError marks a vendor payload that did not parse
 type payloadError struct{ err error }
-
-func (e *payloadError) Error() string { return e.err.Error() }
 
 // Parallel keyless extract over the public MCP endpoint, an unexpected payload shape raised to the caller
 func parallelExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, error) {

@@ -819,12 +819,3 @@ func routeProfileIsStaleCredentialError(ctx context.Context, route Route, status
 	}()
 	return p.IsStaleCredentialError(status, message)
 }
-
-// RequestRejectionHints gathers every registered profile's rejection lines for an endpoint whatever route reached it
-func RequestRejectionHints(ctx context.Context, statusCode int, baseURL string) []string {
-	var out []string
-	for _, p := range ListProviders(ctx) {
-		out = append(out, p.RequestRejectionHint(statusCode, baseURL)...)
-	}
-	return out
-}

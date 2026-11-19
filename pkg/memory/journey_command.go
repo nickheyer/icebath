@@ -37,18 +37,18 @@ const (
 // Line reader of the journey confirmations, swapped by tests
 var journeyInput = func(prompt string) (string, error) { return cliui.Default().Input(prompt) }
 
-// The active skin's primary color, the TUI theme primary, gold when no skin answers
+// The active skin's primary color, the TUI theme primary, the Blackwall accent when no skin answers
 func journeyPrimaryHex(ctx context.Context) (hex string) {
 	defer func() {
 		if r := recover(); r != nil {
-			hex = "#FFD700"
+			hex = "#e3122b"
 		}
 	}()
 	skin := config.GetActiveSkin(ctx)
 	if c := skin.GetColor("ui_primary", ""); c != "" {
 		return c
 	}
-	return skin.GetColor("banner_title", "#FFD700")
+	return skin.GetColor("banner_title", "#e3122b")
 }
 
 // Palette of the journey render, a seam the tests replace

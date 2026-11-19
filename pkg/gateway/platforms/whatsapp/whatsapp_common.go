@@ -49,7 +49,7 @@ var whatsappTruthy = map[string]bool{"true": true, "1": true, "yes": true, "on":
 const whatsappMaxMessageLength = 4096
 
 // Reply prefix of self chat replies when neither config nor env sets one
-const whatsappDefaultReplyPrefix = "☤ *Icebath Agent*\n────────────\n"
+const whatsappDefaultReplyPrefix = "❆ *Icebath Agent*\n────────────\n"
 
 var (
 	whatsappDeviceSuffix   = pyre.MustCompile(`:\d+(?=@)`)

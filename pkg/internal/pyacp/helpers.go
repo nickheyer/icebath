@@ -46,11 +46,6 @@ func UpdateAgentThoughtText(text string) *AgentThoughtChunk {
 	return UpdateAgentThought(TextBlock(text))
 }
 
-// Session notification carrying one update
-func NewSessionNotification(sessionID string, update SessionUpdate) *SessionNotification {
-	return &SessionNotification{SessionID: sessionID, Update: update}
-}
-
 // Optional fields of a tool call start or progress update
 type ToolCallFields struct {
 	Title     *string

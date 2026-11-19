@@ -200,18 +200,13 @@ func (c *sessionCard) queueRows(width int, rc renderCtx) []string {
 	return rows
 }
 
-// Busy mark in the style the user picked, a face, an emoji phase, the braille spinner or plain strokes
+// Busy mark in the style the user picked, the braille wheel, an emoji phase or plain strokes
 func (c *sessionCard) indicator(rc renderCtx) string {
 	switch c.app.store.ui.IndicatorStyle {
 	case "ascii":
 		return toneStyle(rc.t.Color.Accent).Render([]string{"|", "/", "-", `\`}[c.tick%4])
 	case "emoji":
 		return []string{"🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"}[(c.tick/2)%8]
-	case "unicode":
-		return render.Spinner(c.tick, rc.ut)
-	}
-	if kaomoji := faces(); len(kaomoji) > 0 {
-		return toneStyle(rc.t.Color.Accent).Render(kaomoji[(c.tick/12)%len(kaomoji)])
 	}
 	return render.Spinner(c.tick, rc.ut)
 }

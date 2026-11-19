@@ -112,3 +112,43 @@ func TestBrokenProbeNeverKillsThePass(t *testing.T) {
 		t.Fatalf("events = %v", events.all())
 	}
 }
+
+func TestPetKittyCellsTrustTheClientsTerminalNotTheGatewaysEnvironment(t *testing.T) {
+	directory := t.TempDir()
+	sheet := image.NewNRGBA(image.Rect(0, 0, pet.FrameW*pet.FramesPerState, pet.FrameH*len(pet.CodexStateRows)))
+	for i := range sheet.Pix {
+		sheet.Pix[i] = 0xff
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, sheet); err != nil {
+		t.Fatal(err)
+	}
+	sprite := filepath.Join(directory, "spritesheet.png")
+	if err := os.WriteFile(sprite, encoded.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	codex := &pet.InstalledPet{Slug: "codex", DisplayName: "Codex", Directory: directory, Spritesheet: sprite}
+	// The gateway is a detached daemon: its own environment says kitty here and must not decide for the client
+	t.Setenv("TERM_PROGRAM", "")
+	t.Setenv("KITTY_WINDOW_ID", "1")
+	t.Setenv("TERM", "xterm-kitty")
+	auto := map[string]any{"render_mode": "auto"}
+	if got := petKittyCells(codex, auto, string(pet.StateIdle), 0.33, "unicode"); got != nil {
+		t.Fatalf("a client on a half block terminal got a kitty payload: %v", got["graphics"])
+	}
+	if got := petKittyCells(codex, auto, string(pet.StateIdle), 0.33, ""); got != nil {
+		t.Fatal("a client that named no terminal got a kitty payload")
+	}
+	t.Setenv("KITTY_WINDOW_ID", "")
+	t.Setenv("TERM", "dumb")
+	got := petKittyCells(codex, auto, string(pet.StateIdle), 0.33, "kitty")
+	if got == nil || got["graphics"] != "kitty" || len(got["frames"].([]any)) == 0 || len(got["placeholder"].([]any)) == 0 {
+		t.Fatalf("a kitty client got %v", got)
+	}
+	if forced := petKittyCells(codex, map[string]any{"render_mode": "kitty"}, string(pet.StateIdle), 0.33, "unicode"); forced == nil {
+		t.Fatal("a configured kitty mode no longer overrides the client's terminal")
+	}
+	if off := petKittyCells(codex, map[string]any{"render_mode": "unicode"}, string(pet.StateIdle), 0.33, "kitty"); off != nil {
+		t.Fatal("a configured unicode mode sent a kitty payload")
+	}
+}

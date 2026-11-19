@@ -520,8 +520,3 @@ func pkceRefresh(env PoolEnv, cfg OAuthPKCEConfig, entry PooledCredential) (map[
 	}
 	return pkcePostToken(env, provider, cfg, data, "oauth_refresh_failed")
 }
-
-// PKCEProviderProfileHooks are the auth handler and refresh hooks a plugin registers for its provider
-func PKCEProviderProfileHooks(cfg OAuthPKCEConfig) ProviderProfileHooks {
-	return ProviderProfileHooks{AuthHandler: PKCEAuthHandler(cfg), RefreshCredential: PKCERefreshCredential(cfg)}
-}
