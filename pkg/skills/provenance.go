@@ -53,21 +53,6 @@ func SetReviewAttended(env *tools.Env, attended bool) {
 	}
 }
 
-// Reports a background review nobody attends
-func IsUnattendedReview(env *tools.Env) bool {
-	if !IsBackgroundReview(env) {
-		return false
-	}
-	if env.Values != nil {
-		if v, ok := env.Values.Load(reviewAttendedKey); ok {
-			if b, ok := v.(bool); ok && b {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // Resolved skill file paths the review fork read within one run
 type reviewReadMarks struct {
 	mu    sync.Mutex

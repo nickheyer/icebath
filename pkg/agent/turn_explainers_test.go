@@ -82,9 +82,6 @@ func TestTurnCompletionExplanationByExitReason(t *testing.T) {
 	if got := formatTurnCompletionExplanation(ctx, "session_persistence_failed", "weird", "", ""); !strings.Contains(got, "Icebath couldn't save this conversation, so it stopped") {
 		t.Fatalf("default cause: %q", got)
 	}
-	if got := EmptyResponseExplanationFor(ctx, "gpt-x"); !strings.HasPrefix(got, "gpt-x didn't produce a reply") {
-		t.Fatalf("named model: %q", got)
-	}
 }
 
 func TestDisplayFlagEnvOverridesAndConfigIsCached(t *testing.T) {

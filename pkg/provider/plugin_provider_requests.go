@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -56,24 +55,14 @@ type ProviderResponse struct {
 	Body    []byte
 }
 
-// Body decoded as UTF-8 with each invalid subpart replaced
-func (r ProviderResponse) Text() string { return loadDecodeReplace(r.Body) }
-
-// Body parsed as JSON
-func (r ProviderResponse) JSON() (any, error) {
-	var v any
-	err := json.Unmarshal(bytes.TrimPrefix(r.Body, []byte{0xEF, 0xBB, 0xBF}), &v)
-	return v, err
-}
-
-// ProviderRequestOptions carries the JSON body, headers, timeout and calling code files of a signed in request
+// ProviderRequestOptions carries the JSON body, headers, timeout and calling plugin of a signed in request
 type ProviderRequestOptions struct {
 	JSON    any
 	Headers map[string]string
 	// Zero is the 30 second default and a negative value waits without a timeout
 	Timeout time.Duration
-	// Source files on the calling stack innermost first, nil reads the Go call stack
-	Caller []string
+	// Directory of the calling plugin as the plugin host loaded it
+	PluginDir string
 }
 
 type pluginProviderSpec struct {
@@ -164,6 +153,22 @@ func pluginProviderRequestRoots() []string {
 	return roots
 }
 
+// The plugin directory in the form that lies under a plugins root and holds a manifest, empty for a project local or unknown directory
+func installedPluginDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	roots := pluginProviderRequestRoots()
+	for _, path := range pluginRequestPathForms(dir) {
+		for _, root := range roots {
+			if path != root && pathUnder(path, root) && (fileExists(filepath.Join(path, "plugin.yaml")) || fileExists(filepath.Join(path, "plugin.yml"))) {
+				return path
+			}
+		}
+	}
+	return ""
+}
+
 // Absolute and symlink resolved forms of a path, the absolute form standing in when resolution fails
 func pluginRequestPathForms(p string) []string {
 	abs, err := filepath.Abs(p)
@@ -181,54 +186,6 @@ func pluginRequestPathForms(p string) []string {
 func pathUnder(path, root string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-func isRegularFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.Mode().IsRegular()
-}
-
-// Plugin directory of the innermost calling file under a plugins root, empty when no caller is plugin code
-func callingPluginDir(callerFiles []string) string {
-	roots := pluginProviderRequestRoots()
-	for _, raw := range callerFiles {
-		for _, path := range pluginRequestPathForms(raw) {
-			root := ""
-			for _, r := range roots {
-				if pathUnder(path, r) {
-					root = r
-					break
-				}
-			}
-			if root == "" {
-				continue
-			}
-			for parent := filepath.Dir(path); parent != root && parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
-				if isRegularFile(filepath.Join(parent, "plugin.yaml")) || isRegularFile(filepath.Join(parent, "plugin.yml")) {
-					return parent
-				}
-			}
-			rel, _ := filepath.Rel(root, path)
-			return filepath.Join(root, strings.SplitN(rel, string(filepath.Separator), 2)[0])
-		}
-	}
-	return ""
-}
-
-// Source files of the Go call stack above the caller of the request function, innermost first
-func providerRequestStackFiles(skip int) []string {
-	pcs := make([]uintptr, 64)
-	frames := runtime.CallersFrames(pcs[:runtime.Callers(skip, pcs)])
-	var files []string
-	for {
-		frame, more := frames.Next()
-		if frame.File != "" {
-			files = append(files, frame.File)
-		}
-		if !more {
-			return files
-		}
-	}
 }
 
 // DeclaredAuthProviders lists the requires_auth providers of a manifest whose sign in the plugin uses
@@ -367,11 +324,7 @@ func providerRequestSend(req *http.Request, timeout time.Duration) (*ProviderRes
 
 // CredentialedProviderRequest sends method and URL with the calling plugin's provider sign in attached by Icebath
 func CredentialedProviderRequest(provider, method, rawURL string, opts ProviderRequestOptions) (*ProviderResponse, error) {
-	caller := opts.Caller
-	if caller == nil {
-		caller = providerRequestStackFiles(3)
-	}
-	pluginDir := callingPluginDir(caller)
+	pluginDir := installedPluginDir(opts.PluginDir)
 	if pluginDir == "" {
 		return nil, &ProviderRequestPermissionError{Message: "credentialed_provider_request must be called from an installed plugin's code"}
 	}

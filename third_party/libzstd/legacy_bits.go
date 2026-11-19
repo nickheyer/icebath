@@ -132,11 +132,6 @@ func newLfseDTable(maxTableLog uint) *lfseDTable {
 	return &lfseDTable{cells: make([]lfseCell, 1<<maxTableLog)}
 }
 
-func (dt *lfseDTable) copyFrom(o *lfseDTable) {
-	dt.tableLog, dt.fastMode = o.tableLog, o.fastMode
-	copy(dt.cells, o.cells)
-}
-
 type lfseDState struct {
 	state uint64
 	table []lfseCell

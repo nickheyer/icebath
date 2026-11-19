@@ -44,9 +44,6 @@ func newContext(m *Manifest, mgr *Manager) *Context {
 // NewContext binds a registration context to a manifest on a manager
 func NewContext(m *Manifest, mgr *Manager) *Context { return newContext(m, mgr) }
 
-// Plugin registration context of a manifest on a manager
-func NewPluginContext(m *Manifest, mgr *Manager) *Context { return newContext(m, mgr) }
-
 // Effective registry key used for every namespace of the plugin
 func (c *Context) PluginID() string { return c.manifest.ID() }
 

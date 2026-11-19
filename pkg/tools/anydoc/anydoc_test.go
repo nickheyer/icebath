@@ -34,8 +34,8 @@ func minimalDocx(t *testing.T, bodyXML string) []byte {
 	return buf.Bytes()
 }
 
-func TestCSVNamedFormat(t *testing.T) {
-	out, err := ToMarkdownBytes(context.Background(), []byte("a,b\n1,2\n"), "csv")
+func TestCSVNamedByItsExtension(t *testing.T) {
+	out, err := ToMarkdown(context.Background(), []byte("a,b\n1,2\n"), "table.csv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestCSVNamedFormat(t *testing.T) {
 
 func TestDocxDetectedFromContent(t *testing.T) {
 	data := minimalDocx(t, `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Title</w:t></w:r></w:p><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r><w:r><w:t xml:space="preserve"> plain</w:t></w:r></w:p>`)
-	out, err := ToMarkdownBytes(context.Background(), data, "")
+	out, err := ToMarkdown(context.Background(), data, "upload")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,18 +56,18 @@ func TestDocxDetectedFromContent(t *testing.T) {
 }
 
 func TestUnrecognizedContent(t *testing.T) {
-	_, err := ToMarkdownBytes(context.Background(), []byte("just some text"), "")
+	_, err := ToMarkdown(context.Background(), []byte("just some text"), "upload")
 	if !errors.Is(err, ErrNotDocument) {
 		t.Fatalf("want ErrNotDocument, got %v", err)
 	}
-	if err.Error() != "not a document anydoc reads" {
+	if err.Error() != "upload is not a document anydoc reads" {
 		t.Fatalf("unexpected message %q", err.Error())
 	}
 }
 
-func TestUnknownNamedFormat(t *testing.T) {
-	_, err := ToMarkdownBytes(context.Background(), []byte("x"), ".foo")
-	if !errors.Is(err, ErrNotDocument) || err.Error() != "not a document anydoc reads: no parser for the format foo" {
+func TestUnknownExtensionOverSignaturelessContent(t *testing.T) {
+	_, err := ToMarkdown(context.Background(), []byte("x"), "upload.foo")
+	if !errors.Is(err, ErrNotDocument) || err.Error() != "upload.foo is not a document anydoc reads" {
 		t.Fatalf("want ErrNotDocument, got %v", err)
 	}
 }
@@ -102,7 +102,7 @@ func TestPathUnrecognized(t *testing.T) {
 
 func TestTruncatedZipIsMalformed(t *testing.T) {
 	data := minimalDocx(t, `<w:p><w:r><w:t>x</w:t></w:r></w:p>`)
-	_, err := ToMarkdownBytes(context.Background(), data[:len(data)-40], "docx")
+	_, err := ToMarkdown(context.Background(), data[:len(data)-40], "report.docx")
 	var ce *ConvertError
 	if !errors.As(err, &ce) {
 		t.Fatalf("want ConvertError, got %v", err)

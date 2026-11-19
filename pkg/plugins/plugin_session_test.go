@@ -40,13 +40,13 @@ func TestPluginContextReadsTheCallingSessionsCwdAndSurface(t *testing.T) {
 	messaging := &tools.Env{Values: &sync.Map{}}
 	tools.BindSessionContext(messaging, map[string]string{"ICEBATH_SESSION_PLATFORM": "telegram", "ICEBATH_SESSION_KEY": "agent:main:telegram:dm:1"})
 	mctx := tools.WithToolEnv(context.Background(), messaging)
-	if surface, err := c.SessionSurface(mctx); err != nil || surface != "telegram" || SessionKey(mctx) != "agent:main:telegram:dm:1" {
-		t.Fatalf("messaging turn = %q %q %v", surface, SessionKey(mctx), err)
+	if surface, err := c.SessionSurface(mctx); err != nil || surface != "telegram" {
+		t.Fatalf("messaging turn = %q %v", surface, err)
 	}
 	terminal := t.TempDir()
 	t.Setenv("TERMINAL_CWD", "  "+terminal+"  ")
 	bare := tools.WithToolEnv(context.Background(), &tools.Env{Values: &sync.Map{}, Home: t.TempDir()})
-	if cwd, err := c.SessionCwd(bare); err != nil || cwd != terminal || SessionKey(bare) != "" || SessionSurface(bare) != "" {
+	if cwd, err := c.SessionCwd(bare); err != nil || cwd != terminal || SessionSurface(bare) != "" {
 		t.Fatalf("terminal tail = %q %v", cwd, err)
 	}
 	c.manager.cliRef = struct{ CLIHost }{}

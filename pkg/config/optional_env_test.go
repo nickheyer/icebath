@@ -13,7 +13,7 @@ func TestOptionalEnvTableFillsOnceBeforeItsFirstReadAndNeverOnWrites(t *testing.
 	table.Arm(func() []NamedEnvVar {
 		runs++
 		inside = table.Names()
-		if table.Has("C") || table.Len() != 3 {
+		if table.Has("C") || len(table.Names()) != 3 {
 			t.Error("a read made by the fill sees the table without its entries")
 		}
 		return []NamedEnvVar{{"B", EnvVar{Description: "filled b"}}, {"C", EnvVar{Description: "c"}}}
@@ -26,7 +26,7 @@ func TestOptionalEnvTableFillsOnceBeforeItsFirstReadAndNeverOnWrites(t *testing.
 	if !table.Has("C") || runs != 1 || !slices.Equal(inside, []string{"A", "B", "LATE"}) {
 		t.Fatalf("first read runs %d inside %v", runs, inside)
 	}
-	if got := table.Names(); !slices.Equal(got, []string{"A", "B", "LATE", "C"}) || table.Entry("B").Description != "filled b" || table.Len() != 4 {
+	if got := table.Names(); !slices.Equal(got, []string{"A", "B", "LATE", "C"}) || table.Entry("B").Description != "filled b" || len(got) != 4 {
 		t.Fatalf("names %v b %+v", got, table.Entry("B"))
 	}
 	if copied := table.Copy(); len(copied) != 4 || copied["C"].Description != "c" || len(table.Items()) != 4 || runs != 1 || len(published) != 1 || len(published[0]) != 2 {
@@ -105,4 +105,32 @@ func TestOptionalEnvTableConcurrentFirstReadersPublishOnce(t *testing.T) {
 	if publishes != 1 || runs < 1 || !slices.Equal(table.Names(), []string{"P"}) {
 		t.Fatalf("runs %d publishes %d names %v", runs, publishes, table.Names())
 	}
+}
+
+// Contents and armed fill as they stand, for a test that changes the table
+func (t *OptionalEnvTable) Snapshot() OptionalEnvState {
+	t.fillMu.Lock()
+	fill := t.fill
+	t.fillMu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	entries := make(map[string]EnvVar, len(t.entries))
+	for name, e := range t.entries {
+		entries[name] = e
+	}
+	return OptionalEnvState{entries: entries, order: append([]string(nil), t.order...), fill: fill}
+}
+
+// Puts back the contents and armed fill a snapshot captured
+func (t *OptionalEnvTable) Restore(s OptionalEnvState) {
+	t.fillMu.Lock()
+	t.fill = s.fill
+	t.fillMu.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.entries = make(map[string]EnvVar, len(s.entries))
+	for name, e := range s.entries {
+		t.entries[name] = e
+	}
+	t.order = append([]string(nil), s.order...)
 }

@@ -106,3 +106,11 @@ func TestWorkerConfigSnapshotKeepsKeyOrderAndPythonJSONText(t *testing.T) {
 		t.Fatalf("rebind %v", err)
 	}
 }
+
+func (p *SafeWorkerPolicy) PID() int { return p.pid }
+
+func (p *SafeWorkerPolicy) SafeMode() bool { return p.safeMode }
+
+func (p *SafeWorkerPolicy) IgnoreUserConfig() bool { return p.ignoreUserConfig }
+
+func (p *SafeWorkerPolicy) ConfigJSON() string { return p.configJSON }

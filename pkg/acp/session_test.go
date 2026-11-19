@@ -427,54 +427,6 @@ func TestOnlyRestoresAcpSessions(t *testing.T) {
 	}
 }
 
-func pruneIDs(t *testing.T, db *state.SessionDB) map[string]bool {
-	t.Helper()
-	zero := 0.0
-	rows, err := db.ListPruneCandidates(context.Background(), &zero, "acp", false, state.PruneFilters{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := map[string]bool{}
-	for _, row := range rows {
-		ids[pyStr(row.GetOr("id", nil))] = true
-	}
-	return ids
-}
-
-func TestEndAllSessionsStampsEndedAndUnlocksPrune(t *testing.T) {
-	db := provenanceDB(t)
-	a := &nsAgent{model: "test-model"}
-	m := NewSessionManager(func() any { return a }, db)
-	ctx := context.Background()
-	endedEarlier, liveOne, liveTwo := mustCreate(t, m, "/work"), mustCreate(t, m, "/work"), mustCreate(t, m, "/work")
-	for _, st := range []*SessionState{endedEarlier, liveOne, liveTwo} {
-		st.History = append(st.History, map[string]any{"role": "user", "content": "hello"})
-		m.SaveSession(ctx, st.SessionID)
-	}
-	if err := db.EndSession(endedEarlier.SessionID, "compression"); err != nil {
-		t.Fatal(err)
-	}
-	if got := pruneIDs(t, db); !reflect.DeepEqual(got, map[string]bool{endedEarlier.SessionID: true}) {
-		t.Fatalf("candidates before = %v", got)
-	}
-	if ended := m.EndAllSessions(ctx, ""); ended != 3 {
-		t.Fatalf("ended = %d", ended)
-	}
-	if got := getRow(t, db, endedEarlier.SessionID).GetOr("end_reason", nil); got != "compression" {
-		t.Fatalf("first end reason = %v", got)
-	}
-	for _, sid := range []string{liveOne.SessionID, liveTwo.SessionID} {
-		row := getRow(t, db, sid)
-		if row.GetOr("ended_at", nil) == nil || row.GetOr("end_reason", nil) != "acp_disconnect" {
-			t.Fatalf("row %s = %v", sid, row.Vals)
-		}
-	}
-	want := map[string]bool{endedEarlier.SessionID: true, liveOne.SessionID: true, liveTwo.SessionID: true}
-	if got := pruneIDs(t, db); !reflect.DeepEqual(got, want) {
-		t.Fatalf("candidates after = %v", got)
-	}
-}
-
 func TestRestoreReopensASessionEndedByPreviousProcess(t *testing.T) {
 	db := provenanceDB(t)
 	a := &nsAgent{model: "test-model"}
@@ -483,7 +435,9 @@ func TestRestoreReopensASessionEndedByPreviousProcess(t *testing.T) {
 	st := mustCreate(t, first, "/work")
 	st.History = append(st.History, map[string]any{"role": "user", "content": "hello"})
 	first.SaveSession(ctx, st.SessionID)
-	first.EndAllSessions(ctx, "")
+	if err := db.EndSession(st.SessionID, "acp_disconnect"); err != nil {
+		t.Fatal(err)
+	}
 	if getRow(t, db, st.SessionID).GetOr("ended_at", nil) == nil {
 		t.Fatal("session not ended")
 	}
@@ -494,15 +448,6 @@ func TestRestoreReopensASessionEndedByPreviousProcess(t *testing.T) {
 	row := getRow(t, db, st.SessionID)
 	if row == nil || row.GetOr("ended_at", nil) != nil || row.GetOr("end_reason", nil) != nil {
 		t.Fatalf("row = %v", row)
-	}
-}
-
-func TestEndAllSessionsWithoutDbIsANoop(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swap(t, &acquireSessionDB, func(ctx context.Context, path string) (*state.DB, error) { return nil, errNoStore })
-	m := NewSessionManager(mockFactory, nil)
-	if got := m.EndAllSessions(context.Background(), ""); got != 0 {
-		t.Fatalf("ended = %d", got)
 	}
 }
 

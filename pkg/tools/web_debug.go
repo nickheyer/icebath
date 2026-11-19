@@ -44,9 +44,6 @@ func NewDebugSession(env *Env, toolName, envVar string) *DebugSession {
 	return s
 }
 
-// Active reports whether calls are being recorded
-func (s *DebugSession) Active() bool { return s.enabled }
-
 // LogCall appends a tool call entry to the in memory log
 func (s *DebugSession) LogCall(callName string, callData map[string]any) {
 	if !s.enabled {

@@ -88,8 +88,4 @@ func TestIsolationModeAndRefusal(t *testing.T) {
 	if IsolationMode(ctx, cfg("host")) != IsolationInProcess {
 		t.Fatal("inside the host every loader imports directly")
 	}
-	h := t.TempDir()
-	if host, err := UserPluginHost(homeCtx(h)); host != nil || err != nil {
-		t.Fatalf("UserPluginHost in process = %v %v", host, err)
-	}
 }

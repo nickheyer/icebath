@@ -25,8 +25,6 @@ func (b *recordingSuspectBackend) MarkSuspect(reason string) {
 	b.reasons = append(b.reasons, reason)
 }
 
-func (b *recordingSuspectBackend) EnsureHealthy() bool { return true }
-
 func (b *recordingSuspectBackend) count() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()

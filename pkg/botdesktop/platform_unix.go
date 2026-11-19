@@ -51,5 +51,3 @@ func detachSession() {
 func newSessionAttr() *syscall.SysProcAttr { return &syscall.SysProcAttr{Setsid: true} }
 
 func isESRCH(err error) bool { return err == syscall.ESRCH }
-
-func isEPERM(err error) bool { return err == syscall.EPERM }

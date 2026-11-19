@@ -437,49 +437,9 @@ func (s *serverTask) markSuspect(reason string) {
 
 func (s *serverTask) markSuspectLocked(reason string) {
 	if s.suspectReason == "" && reason != "" {
-		pkgLog().Warn(fmt.Sprintf("MCP server '%s': connection marked suspect (%s); next call will health-check it", s.name, reason))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': connection marked suspect (%s)", s.name, reason))
 	}
 	s.suspectReason = reason
-}
-
-// Verifies a suspect connection before reuse, requesting a reconnect and returning false when it is dead
-func (s *serverTask) ensureHealthy(ctx context.Context, timeout time.Duration) bool {
-	s.mu.Lock()
-	reason := s.suspectReason
-	if reason == "" {
-		s.mu.Unlock()
-		return true
-	}
-	if s.session == nil {
-		s.suspectReason = ""
-		s.mu.Unlock()
-		s.reconnect.Set()
-		return false
-	}
-	s.mu.Unlock()
-	pctx, cancel := context.WithTimeout(ctx, timeout)
-	err := s.keepaliveProbe(pctx)
-	if err == nil && pctx.Err() != nil {
-		err = pctx.Err()
-	}
-	cancel()
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("MCP server '%s': suspect connection (%s) failed health check (%s: %s) — requesting reconnect (state: suspect → degraded)", s.name, reason, errTypeName(err), excStr(err)))
-		s.mu.Lock()
-		s.suspectReason = ""
-		s.markSuspectLocked("health check failed after " + reason)
-		s.session = nil
-		s.mu.Unlock()
-		s.ready.Clear()
-		s.reconnect.Set()
-		return false
-	}
-	pkgLog().Info(fmt.Sprintf("MCP server '%s': suspect connection passed health check (%s) — clearing suspicion", s.name, reason))
-	s.mu.Lock()
-	s.suspectReason = ""
-	s.mu.Unlock()
-	s.markSessionProven()
-	return true
 }
 
 // Registers a running RPC so a teardown can fail it fast, the returned func unregisters it

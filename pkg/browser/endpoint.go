@@ -125,11 +125,6 @@ func LiveCDPGeneration(homeKey string) int {
 	return liveGenerations[homeKey]
 }
 
-// Reports whether a websocket URL names a browser endpoint rather than a page
-func isBrowserEndpoint(wsURL string) bool {
-	return strings.Contains(strings.ToLower(wsURL), "/devtools/browser/")
-}
-
 // Reports whether a TCP connection to host:port opens within the timeout
 func tcpOpen(host string, port int, timeout time.Duration) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(strings.Trim(host, "[]"), fmt.Sprint(port)), timeout)

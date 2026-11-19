@@ -111,14 +111,6 @@ func (t *OptionalEnvTable) Names() []string {
 	return t.RawNames()
 }
 
-// Entry count after the armed fill ran
-func (t *OptionalEnvTable) Len() int {
-	t.ready()
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return len(t.order)
-}
-
 // Entries in insertion order after the armed fill ran
 func (t *OptionalEnvTable) Items() []NamedEnvVar {
 	t.ready()
@@ -127,18 +119,6 @@ func (t *OptionalEnvTable) Items() []NamedEnvVar {
 	out := make([]NamedEnvVar, len(t.order))
 	for i, name := range t.order {
 		out[i] = NamedEnvVar{Name: name, Entry: t.entries[name]}
-	}
-	return out
-}
-
-// Entries without their names in insertion order after the armed fill ran
-func (t *OptionalEnvTable) Values() []EnvVar {
-	t.ready()
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	out := make([]EnvVar, len(t.order))
-	for i, name := range t.order {
-		out[i] = t.entries[name]
 	}
 	return out
 }
@@ -194,32 +174,4 @@ func (t *OptionalEnvTable) Delete(name string) {
 			break
 		}
 	}
-}
-
-// Contents and armed fill as they stand, for a test that changes the table
-func (t *OptionalEnvTable) Snapshot() OptionalEnvState {
-	t.fillMu.Lock()
-	fill := t.fill
-	t.fillMu.Unlock()
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	entries := make(map[string]EnvVar, len(t.entries))
-	for name, e := range t.entries {
-		entries[name] = e
-	}
-	return OptionalEnvState{entries: entries, order: append([]string(nil), t.order...), fill: fill}
-}
-
-// Puts back the contents and armed fill a snapshot captured
-func (t *OptionalEnvTable) Restore(s OptionalEnvState) {
-	t.fillMu.Lock()
-	t.fill = s.fill
-	t.fillMu.Unlock()
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.entries = make(map[string]EnvVar, len(s.entries))
-	for name, e := range s.entries {
-		t.entries[name] = e
-	}
-	t.order = append([]string(nil), s.order...)
 }

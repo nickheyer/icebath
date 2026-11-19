@@ -246,8 +246,8 @@ func TestCompactionProgressStatusClassification(t *testing.T) {
 			t.Errorf("classified as progress %q", s)
 		}
 	}
-	if PreAPICompressionStatus(123456) != "📦 Pre-API compression: ~123,456 tokens near the context/output limit. Compacting before the next model call." {
-		t.Fatal(PreAPICompressionStatus(123456))
+	if preAPICompressionStatus(123456) != "📦 Pre-API compression: ~123,456 tokens near the context/output limit. Compacting before the next model call." {
+		t.Fatal(preAPICompressionStatus(123456))
 	}
 }
 

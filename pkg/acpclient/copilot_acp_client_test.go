@@ -41,7 +41,7 @@ func TestCopilotEarlyExitNeedsProductAndMarker(t *testing.T) {
 }
 
 func TestCopilotVendorKeepsFormerDefaults(t *testing.T) {
-	v := CopilotVendor()
+	v := copilotVendor()
 	if v.DefaultCommand != "copilot" || !slices.Equal(v.DefaultArgs, []string{"--acp", "--stdio"}) || v.MarkerBaseURL != "acp://copilot" ||
 		v.PlaceholderModel != "copilot-acp" || v.Label != "Copilot ACP" || v.AuthRequiredHint != nil ||
 		!slices.Equal(v.CommandEnvVars, []string{"ICEBATH_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH"}) || v.ArgsEnvVar != "ICEBATH_COPILOT_ACP_ARGS" {
@@ -56,22 +56,22 @@ func TestCopilotResolveCommandAndArgs(t *testing.T) {
 	t.Setenv("ICEBATH_COPILOT_ACP_COMMAND", "  ")
 	t.Setenv("COPILOT_CLI_PATH", "")
 	t.Setenv("ICEBATH_COPILOT_ACP_ARGS", "")
-	if got := CopilotResolveCommand(); got != "copilot" {
+	if got := (&Client{Vendor: copilotVendor()}).resolveCommand(); got != "copilot" {
 		t.Fatalf("command %q", got)
 	}
-	if got, err := CopilotResolveArgs(); err != nil || !slices.Equal(got, []string{"--acp", "--stdio"}) {
+	if got, err := (&Client{Vendor: copilotVendor()}).resolveArgs(); err != nil || !slices.Equal(got, []string{"--acp", "--stdio"}) {
 		t.Fatalf("args %v %v", got, err)
 	}
 	t.Setenv("COPILOT_CLI_PATH", " /opt/copilot ")
 	t.Setenv("ICEBATH_COPILOT_ACP_ARGS", `--acp --flag "a b"`)
-	if got := CopilotResolveCommand(); got != "/opt/copilot" {
+	if got := (&Client{Vendor: copilotVendor()}).resolveCommand(); got != "/opt/copilot" {
 		t.Fatalf("command %q", got)
 	}
-	if got, err := CopilotResolveArgs(); err != nil || !slices.Equal(got, []string{"--acp", "--flag", "a b"}) {
+	if got, err := (&Client{Vendor: copilotVendor()}).resolveArgs(); err != nil || !slices.Equal(got, []string{"--acp", "--flag", "a b"}) {
 		t.Fatalf("args %v %v", got, err)
 	}
 	t.Setenv("ICEBATH_COPILOT_ACP_COMMAND", "/usr/bin/new-copilot")
-	if got := CopilotResolveCommand(); got != "/usr/bin/new-copilot" {
+	if got := (&Client{Vendor: copilotVendor()}).resolveCommand(); got != "/usr/bin/new-copilot" {
 		t.Fatalf("command %q", got)
 	}
 }
@@ -79,17 +79,17 @@ func TestCopilotResolveCommandAndArgs(t *testing.T) {
 func TestCopilotModelFiltersDropDisabledEntries(t *testing.T) {
 	session := map[string]any{"sessionId": "s1", "configOptions": []any{map[string]any{"id": "model", "category": "model", "options": []any{
 		map[string]any{"value": "m-a"}, map[string]any{"value": "m-off", "_meta": map[string]any{"copilotEnablement": "disabled"}}}}}}
-	ids, err := CopilotSessionModelIDs(session)
+	ids, err := sessionModelIDs(session, copilotDisabled)
 	if err != nil || !slices.Equal(ids, []string{"m-a"}) {
 		t.Fatalf("ids %v %v", ids, err)
 	}
-	if _, _, ok, err := CopilotModelSelectionRequest(session, "m-off"); ok || err != nil {
+	if _, _, ok, err := modelSelectionRequest(session, "m-off", copilotPlaceholder, copilotDisabled); ok || err != nil {
 		t.Fatalf("disabled model selected %v", err)
 	}
-	if _, _, ok, err := CopilotModelSelectionRequest(session, "copilot-acp"); ok || err != nil {
+	if _, _, ok, err := modelSelectionRequest(session, "copilot-acp", copilotPlaceholder, copilotDisabled); ok || err != nil {
 		t.Fatalf("placeholder selected %v", err)
 	}
-	method, params, ok, err := CopilotModelSelectionRequest(session, " m-a ")
+	method, params, ok, err := modelSelectionRequest(session, " m-a ", copilotPlaceholder, copilotDisabled)
 	if !ok || err != nil || method != "session/set_config_option" {
 		t.Fatalf("method %q %v %v", method, ok, err)
 	}
@@ -98,14 +98,14 @@ func TestCopilotModelFiltersDropDisabledEntries(t *testing.T) {
 	}
 	legacy := map[string]any{"models": map[string]any{"availableModels": []any{
 		map[string]any{"modelId": "fast"}, map[string]any{"modelId": "gone", "_meta": map[string]any{"copilotEnablement": "DISABLED"}}}}}
-	if ids, err := CopilotLegacySessionModelIDs(legacy); err != nil || !slices.Equal(ids, []string{"fast"}) {
+	if ids, err := legacySessionModelIDs(legacy, copilotDisabled); err != nil || !slices.Equal(ids, []string{"fast"}) {
 		t.Fatalf("legacy %v %v", ids, err)
 	}
 	entries := []any{map[string]any{"value": "x"}, "skip", map[string]any{"value": "x"}, map[string]any{"value": "y", "_meta": map[string]any{"copilotEnablement": "disabled"}}}
-	if ids, err := CopilotEnabledIDList(entries, "value"); err != nil || !slices.Equal(ids, []string{"x"}) {
+	if ids, err := enabledIDList(entries, "value", copilotDisabled); err != nil || !slices.Equal(ids, []string{"x"}) {
 		t.Fatalf("enabled %v %v", ids, err)
 	}
-	if _, err := CopilotEnabledIDList([]any{map[string]any{"value": "z", "_meta": []any{1}}}, "value"); err == nil {
+	if _, err := enabledIDList([]any{map[string]any{"value": "z", "_meta": []any{1}}}, "value", copilotDisabled); err == nil {
 		t.Fatal("non dict meta must raise")
 	}
 }

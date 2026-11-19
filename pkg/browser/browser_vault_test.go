@@ -260,17 +260,6 @@ func TestVaultStoreUnknownKindRejected(t *testing.T) {
 	}
 }
 
-func TestVaultStoreHasItems(t *testing.T) {
-	_, _, store, _ := vaultStore(t)
-	if store.HasItems() {
-		t.Fatal("empty store has items")
-	}
-	addLogin(t, store, "https://example.com", "s3cret-pw")
-	if !store.HasItems() {
-		t.Fatal("store has no items after an add")
-	}
-}
-
 func TestVaultStoreNormalizeOrigin(t *testing.T) {
 	for in, want := range map[string]string{"https://Example.com:443/login?x=1": "https://example.com",
 		"http://localhost:8931/": "http://localhost:8931", "http://site.test:80": "http://site.test"} {

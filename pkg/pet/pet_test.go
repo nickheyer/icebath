@@ -36,18 +36,6 @@ func TestDerivePriorityOrder(t *testing.T) {
 	}
 }
 
-func TestTodosAllDone(t *testing.T) {
-	if TodosAllDone(nil) || TodosAllDone([]string{}) {
-		t.Fatal("an empty task list is not done")
-	}
-	if TodosAllDone([]string{"completed", "pending"}) || TodosAllDone([]string{"in_progress"}) {
-		t.Fatal("an open item is not done")
-	}
-	if !TodosAllDone([]string{"completed", "cancelled"}) || !TodosAllDone([]string{"completed"}) {
-		t.Fatal("every item terminal is done")
-	}
-}
-
 func TestStateRowIndexMapsToSupportedAtlasTaxonomies(t *testing.T) {
 	codex := map[State]int{StateIdle: 0, StateWave: 3, StateJump: 4, StateFailed: 5, StateWaiting: 6, StateRun: 7, StateReview: 8}
 	for state, want := range codex {

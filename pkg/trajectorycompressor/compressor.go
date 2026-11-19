@@ -586,11 +586,6 @@ func (c *Compressor) compress(ctx context.Context, trajectory any, async bool) (
 	return compressed, m, nil
 }
 
-// Compresses one trajectory into the target budget through the sync call_llm surface
-func (c *Compressor) CompressTrajectory(ctx context.Context, trajectory any) (any, *TrajectoryMetrics, error) {
-	return c.compress(ctx, trajectory, false)
-}
-
 // Compresses one trajectory into the target budget through the async call_llm surface
 func (c *Compressor) CompressTrajectoryAsync(ctx context.Context, trajectory any) (any, *TrajectoryMetrics, error) {
 	return c.compress(ctx, trajectory, true)

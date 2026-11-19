@@ -115,20 +115,6 @@ func TestOrderedToolsetNamesStaticOrderThenPlugins(t *testing.T) {
 	}
 }
 
-func TestOrderedToolsetNamesCustomToolsetAppended(t *testing.T) {
-	CreateCustomToolset("zz_custom_order_probe", "probe", []string{"terminal"}, nil)
-	t.Cleanup(func() {
-		toolsetsMu.Lock()
-		delete(Toolsets, "zz_custom_order_probe")
-		toolsetOrder = toolsetOrder[:len(toolsetOrder)-1]
-		toolsetsMu.Unlock()
-	})
-	got := NewRegistry().OrderedToolsetNames(context.Background(), "")
-	if got[len(got)-1] != "zz_custom_order_probe" || got[0] != "web" {
-		t.Fatalf("custom toolset not appended after the static table: %v", got)
-	}
-}
-
 func TestStaticToolsetWrappersMatchTheTable(t *testing.T) {
 	names := OrderedStaticToolsetNames()
 	if !reflect.DeepEqual(names, orderedToolsetNames()) || len(names) == 0 {

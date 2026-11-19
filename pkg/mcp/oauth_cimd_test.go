@@ -240,7 +240,7 @@ func TestCIMDCachedPinnedPortIsNotHandedToASiblingServer(t *testing.T) {
 func TestCIMDBuildOAuthAuthForwardsTheDocumentURL(t *testing.T) {
 	privateCIMDPorts(t)
 	setConsole(t, true)
-	p, err := BuildOAuthAuth(context.Background(), "srv", "https://mcp.example.com/mcp", map[string]any{}, HTTPOptions{})
+	p, err := getManager().getOrBuildProvider(context.Background(), "srv", "https://mcp.example.com/mcp", map[string]any{}, HTTPOptions{})
 	if err != nil || p.clientMetadataURL != cimdClientMetadataURL {
 		t.Fatalf("provider %+v %v", p, err)
 	}
@@ -249,7 +249,7 @@ func TestCIMDBuildOAuthAuthForwardsTheDocumentURL(t *testing.T) {
 func TestCIMDBuildOAuthAuthOmitsTheURLWhenDisabled(t *testing.T) {
 	oauthHome(t)
 	setConsole(t, true)
-	p, err := BuildOAuthAuth(context.Background(), "srv", "https://mcp.example.com/mcp", map[string]any{"cimd": false}, HTTPOptions{})
+	p, err := getManager().getOrBuildProvider(context.Background(), "srv", "https://mcp.example.com/mcp", map[string]any{"cimd": false}, HTTPOptions{})
 	if err != nil || p.clientMetadataURL != "" {
 		t.Fatalf("provider %+v %v", p, err)
 	}
@@ -275,7 +275,7 @@ func TestCIMDSDKChoosesCIMDOnlyWhenTheServerAdvertisesIt(t *testing.T) {
 	}{{boolPtr(true), true}, {boolPtr(false), false}, {nil, false}} {
 		privateCIMDPorts(t)
 		setConsole(t, true)
-		p, err := BuildOAuthAuth(context.Background(), "srv", "https://mcp.example.com/mcp", map[string]any{}, HTTPOptions{})
+		p, err := getManager().getOrBuildProvider(context.Background(), "srv", "https://mcp.example.com/mcp", map[string]any{}, HTTPOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}

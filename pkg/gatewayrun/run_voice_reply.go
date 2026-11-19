@@ -92,7 +92,7 @@ func (r *GatewayRunner) sendVoiceReply(ctx context.Context, event *gateway.Messa
 				err = fmt.Errorf("%s", pyrepr.Str(rec))
 			}
 		}()
-		ttsText := tools.StripMarkdownForTTS(text)
+		ttsText := tools.PrepareSpokenTextUncapped(text)
 		if ttsText == "" {
 			return nil
 		}

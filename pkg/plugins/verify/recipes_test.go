@@ -318,7 +318,7 @@ func fromDict(t *testing.T, raw any) *Recipe {
 
 func TestRecipeFromDict(t *testing.T) {
 	t.Run("roundtrip", func(t *testing.T) {
-		r := NewRecipe("X")
+		r := &Recipe{Name: "X", ReadinessPath: "/"}
 		r.Kind, r.Bootstrap, r.Port, r.Start = "node", []string{"npm install"}, intPtr(3000), strPtr("npm run dev")
 		recipeEqual(t, fromDict(t, r.ToDict()), r)
 	})

@@ -141,9 +141,6 @@ func hasXAICredentials(env *Env) bool {
 	return false
 }
 
-// Cheap xAI credential probe over the env key and the auth store tokens without any network call
-func HasXAICredentials(env *Env) bool { return hasXAICredentials(env) }
-
 // Built in backends and their cheap availability probes
 var builtinWebAvailability = map[string]func(env *Env) bool{
 	"exa":       func(env *Env) bool { return webHasEnv(env, "EXA_API_KEY") },

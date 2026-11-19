@@ -398,7 +398,7 @@ func (c *StreamingTTSConsumer) synthesiseAndWrite(clause string) error {
 	if c.streamer == nil || c.handleAborted() {
 		return nil
 	}
-	cleaned := strings.TrimSpace(tools.StripMarkdownForTTS(clause))
+	cleaned := strings.TrimSpace(tools.PrepareSpokenTextUncapped(clause))
 	if cleaned == "" {
 		return nil
 	}

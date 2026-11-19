@@ -21,7 +21,7 @@ func sdkToolCall() state.ToolCall {
 func TestNeedsDeepSeekToolReasoning(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Run("test_provider_deepseek", func(t *testing.T) {
-		if !echoAgent("deepseek", "deepseek-v4-flash", "").needsDeepseekToolReasoning() {
+		if ok, err := provider.MatchesReasoningEchoFamily("deepseek", "deepseek", "deepseek-v4-flash", ""); err != nil || !ok {
 			t.Fatal("deepseek provider not recognised")
 		}
 	})
@@ -116,7 +116,7 @@ func TestNeedsKimiToolReasoning(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Run("test_kimi_signals", func(t *testing.T) {
 		for _, c := range [][2]string{{"kimi-coding", ""}, {"kimi-coding-cn", ""}, {"custom", "https://api.kimi.com/v1"}, {"custom", "https://api.moonshot.ai/v1"}, {"custom", "https://api.moonshot.cn/v1"}} {
-			if !echoAgent(c[0], "kimi-k2", c[1]).needsKimiToolReasoning() {
+			if ok, err := provider.MatchesReasoningEchoFamily("kimi", c[0], "", c[1]); err != nil || !ok {
 				t.Fatalf("%v not kimi", c)
 			}
 		}

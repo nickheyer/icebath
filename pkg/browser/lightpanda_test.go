@@ -711,3 +711,12 @@ func TestLegacyBrowserUseCloudConfig(t *testing.T) {
 		}
 	}
 }
+
+func (s *LightpandaServer) Pid() int { return s.proc.pid() }
+
+// Drops the remembered help probe, the lru_cache clear
+func clearLightpandaProbe() {
+	lightpandaProbe.Lock()
+	lightpandaProbe.cached = false
+	lightpandaProbe.Unlock()
+}

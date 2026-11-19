@@ -89,14 +89,6 @@ func cuaPostSetupNoWindow(streamsToConsole bool) bool {
 	return flags
 }
 
-// Driver command named by the override variable, cua-driver otherwise
-func cuaDriverCmd() string {
-	if v := pystr.Strip(os.Getenv(cuaDriverCmdEnv)); v != "" {
-		return v
-	}
-	return "cua-driver"
-}
-
 // First non blank line of a version banner, stripped and bounded to limit characters
 func cuaVersionSummary(raw string, limit int) string {
 	for _, line := range pystr.Splitlines(raw, false) {

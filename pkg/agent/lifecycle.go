@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -24,8 +25,11 @@ var (
 	}
 )
 
-// Auxiliary call hooks reach the plugins
-func init() { provider.SetAuxLifecycleHooks(LifecycleHasHook, LifecycleInvokeHook) }
+// Auxiliary call hooks and skill lifecycle events reach the plugins
+func init() {
+	provider.SetAuxLifecycleHooks(LifecycleHasHook, LifecycleInvokeHook)
+	skills.RegisterLifecycleDispatch(skills.LifecycleDispatch{HasHook: LifecycleHasHook, InvokeHook: LifecycleInvokeHook})
+}
 
 // Carries the agent env for lifecycle readers, and as the session env when the surface bound none
 func withLifecycleEnv(ctx context.Context, env *tools.Env) context.Context {

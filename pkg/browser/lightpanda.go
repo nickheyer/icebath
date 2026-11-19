@@ -80,8 +80,6 @@ func (s *LightpandaServer) IsAlive() bool {
 	return !done
 }
 
-func (s *LightpandaServer) Pid() int { return s.proc.pid() }
-
 // Process wide servers by session name in insertion order
 var (
 	lightpandaMu    sync.Mutex
@@ -200,13 +198,6 @@ var lightpandaProbe struct {
 	binary    string
 	supported bool
 	cached    bool
-}
-
-// Drops the remembered help probe, the lru_cache clear
-func clearLightpandaProbe() {
-	lightpandaProbe.Lock()
-	lightpandaProbe.cached = false
-	lightpandaProbe.Unlock()
 }
 
 // Output of binary help within three seconds, stdout and stderr joined

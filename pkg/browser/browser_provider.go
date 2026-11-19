@@ -13,11 +13,3 @@ type BrowserProvider interface {
 	CloseSession(env *tools.Env, sessionID string) bool
 	EmergencyCleanup(env *tools.Env, sessionID string)
 }
-
-// Availability probe of a provider bound to the env it reads, the shape the registry's safe probe takes
-type boundAvailability struct {
-	BrowserProvider
-	env *tools.Env
-}
-
-func (b boundAvailability) IsAvailable() bool { return b.BrowserProvider.IsAvailable(b.env) }

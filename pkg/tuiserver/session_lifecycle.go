@@ -186,11 +186,6 @@ func wsSessionIsDetached(session *tuihost.Session) bool {
 	return transport != nil && transport == tuihost.DetachedWSTransport()
 }
 
-// Whether a parked WebSocket session is idle
-func wsSessionIsOrphaned(session *tuihost.Session) bool {
-	return wsSessionIsDetached(session) && !truthy(session.Get("running"))
-}
-
 // Pending WebSocket orphan reap timers by session id
 var pendingWSReaps = struct {
 	sync.Mutex

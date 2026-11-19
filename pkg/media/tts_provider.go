@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 
@@ -12,8 +13,6 @@ import (
 )
 
 const DefaultTTSOutputFormat = "mp3"
-
-var ValidTTSOutputFormats = map[string]bool{"mp3": true, "wav": true, "ogg": true, "opus": true, "flac": true}
 
 // Synthesis keyword arguments, a nil pointer meaning the provider default
 type TTSOptions struct {
@@ -95,19 +94,6 @@ func (TTSProviderDefaults) StreamsPCM() bool { return false }
 // No PCM sample rate unless the provider declares one
 func (TTSProviderDefaults) StreamSampleRate() any { return nil }
 
-// Output format clamped to the valid set, anything else the mp3 default
-func ResolveTTSOutputFormat(value any) string {
-	s, ok := value.(string)
-	if !ok {
-		return DefaultTTSOutputFormat
-	}
-	v := pystr.Lower(pystr.Strip(s))
-	if ValidTTSOutputFormats[v] {
-		return v
-	}
-	return DefaultTTSOutputFormat
-}
-
 // Python plugin TTS provider object proxied from the plugin host
 type hostedTTSProvider struct{ obj *plugins.HostedObject }
 
@@ -120,8 +106,24 @@ func adaptHostedTTSProvider(p any) any {
 	return hostedTTSProvider{obj: obj}
 }
 
+// Base class defaults of the provider, the members a plugin that declares only name and synthesize inherits
+func (h hostedTTSProvider) defaults() TTSProviderDefaults { return NewTTSProviderDefaults(h) }
+
 func (h hostedTTSProvider) attr(name string) (any, error) {
 	return h.obj.Get(context.Background(), name)
+}
+
+// Attribute of the hosted object and whether the object declares it, any other failing read raising like the Python attribute access
+func (h hostedTTSProvider) declared(name string) (any, bool) {
+	v, err := h.attr(name)
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "AttributeError" {
+		return nil, false
+	}
+	if err != nil {
+		panic(err)
+	}
+	return v, true
 }
 
 func (h hostedTTSProvider) mustCall(method string) any {
@@ -148,13 +150,21 @@ func (h hostedTTSProvider) DisplayName() string {
 }
 
 func (h hostedTTSProvider) GetSetupSchema() map[string]any {
+	if !h.obj.HasMethod("get_setup_schema") {
+		return h.defaults().GetSetupSchema()
+	}
 	if m, ok := h.mustCall("get_setup_schema").(map[string]any); ok {
 		return m
 	}
 	return map[string]any{"name": h.DisplayName(), "badge": "", "tag": "", "env_vars": []any{}}
 }
 
-func (h hostedTTSProvider) IsAvailable() bool { return pyTruthy(h.mustCall("is_available")) }
+func (h hostedTTSProvider) IsAvailable() bool {
+	if !h.obj.HasMethod("is_available") {
+		return h.defaults().IsAvailable()
+	}
+	return pyTruthy(h.mustCall("is_available"))
+}
 
 func hostedRows(v any) []map[string]any {
 	rows, _ := v.([]any)
@@ -168,19 +178,31 @@ func hostedRows(v any) []map[string]any {
 }
 
 func (h hostedTTSProvider) ListModels() []map[string]any {
+	if !h.obj.HasMethod("list_models") {
+		return h.defaults().ListModels()
+	}
 	return hostedRows(h.mustCall("list_models"))
 }
 
 func (h hostedTTSProvider) DefaultModel() string {
+	if !h.obj.HasMethod("default_model") {
+		return h.defaults().DefaultModel()
+	}
 	s, _ := h.mustCall("default_model").(string)
 	return s
 }
 
 func (h hostedTTSProvider) ListVoices() []map[string]any {
+	if !h.obj.HasMethod("list_voices") {
+		return h.defaults().ListVoices()
+	}
 	return hostedRows(h.mustCall("list_voices"))
 }
 
 func (h hostedTTSProvider) DefaultVoice() string {
+	if !h.obj.HasMethod("default_voice") {
+		return h.defaults().DefaultVoice()
+	}
 	s, _ := h.mustCall("default_voice").(string)
 	return s
 }
@@ -218,6 +240,9 @@ func (h hostedTTSProvider) Synthesize(ctx context.Context, text, outputPath stri
 }
 
 func (h hostedTTSProvider) Stream(ctx context.Context, text string, opts TTSOptions) (iter.Seq2[[]byte, error], error) {
+	if !h.obj.HasMethod("stream") {
+		return h.defaults().Stream(ctx, text, opts)
+	}
 	if opts.Format == "" {
 		opts.Format = "opus"
 	}
@@ -257,35 +282,41 @@ func (h hostedTTSProvider) Stream(ctx context.Context, text string, opts TTSOpti
 }
 
 func (h hostedTTSProvider) Warm(ctx context.Context) error {
+	if !h.obj.HasMethod("warm") {
+		return h.defaults().Warm(ctx)
+	}
 	_, err := h.obj.Call(ctx, "warm", nil, nil)
 	return err
 }
 
 func (h hostedTTSProvider) Release(ctx context.Context) error {
+	if !h.obj.HasMethod("release") {
+		return h.defaults().Release(ctx)
+	}
 	_, err := h.obj.Call(ctx, "release", nil, nil)
 	return err
 }
 
 func (h hostedTTSProvider) VoiceCompatible() bool {
-	v, err := h.attr("voice_compatible")
-	if err != nil {
-		panic(err)
+	v, declared := h.declared("voice_compatible")
+	if !declared {
+		return h.defaults().VoiceCompatible()
 	}
 	return pyTruthy(v)
 }
 
 func (h hostedTTSProvider) StreamsPCM() bool {
-	v, err := h.attr("streams_pcm")
-	if err != nil {
-		panic(err)
+	v, declared := h.declared("streams_pcm")
+	if !declared {
+		return h.defaults().StreamsPCM()
 	}
 	return pyTruthy(v)
 }
 
 func (h hostedTTSProvider) StreamSampleRate() any {
-	v, err := h.attr("stream_sample_rate")
-	if err != nil {
-		panic(err)
+	v, declared := h.declared("stream_sample_rate")
+	if !declared {
+		return h.defaults().StreamSampleRate()
 	}
 	return v
 }

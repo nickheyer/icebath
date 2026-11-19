@@ -143,24 +143,6 @@ func TestTTSIsCommandProviderConfig(t *testing.T) {
 	})
 }
 
-func TestTTSIterCommandProviders(t *testing.T) {
-	t.Run("test_iterates_only_user_command_providers", func(t *testing.T) {
-		cfg := map[string]any{"providers": map[string]any{
-			"openai":    map[string]any{"type": "command", "command": "shouldnt show up"},
-			"piper-cli": map[string]any{"type": "command", "command": "piper-cli"},
-			"voxcpm":    map[string]any{"type": "command", "command": "voxcpm"},
-			"broken":    map[string]any{"type": "command", "command": ""},
-		}}
-		var names []string
-		for _, p := range iterCommandTTSProviders(cfg) {
-			names = append(names, p[0].(string))
-		}
-		if !reflect.DeepEqual(names, []string{"piper-cli", "voxcpm"}) {
-			t.Fatalf("names = %v", names)
-		}
-	})
-}
-
 func TestTTSCommandConfigGetters(t *testing.T) {
 	t.Run("test_timeout_defaults", func(t *testing.T) {
 		if getCommandTTSTimeout(map[string]any{}) != float64(defaultCommandTTSTimeoutSeconds) {

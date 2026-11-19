@@ -110,30 +110,6 @@ func (s *Scope) skillsCfgGet(key string) any {
 	return cfg[key]
 }
 
-// Boolean skills config value with a default
-func (s *Scope) skillsCfgBool(key string, fallback bool) bool {
-	v := s.skillsCfgGet(key)
-	if v == nil {
-		return fallback
-	}
-	if b, ok := config.AsBool(v); ok {
-		return b
-	}
-	return fallback
-}
-
-// Integer skills config value with a default
-func (s *Scope) skillsCfgInt(key string, fallback int) int {
-	v := s.skillsCfgGet(key)
-	if v == nil {
-		return fallback
-	}
-	if i, ok := config.AsInt(v); ok {
-		return i
-	}
-	return fallback
-}
-
 // Display form of the home with the user directory shortened to a tilde
 func (s *Scope) displayHome() string {
 	return home.Display(s.Home)

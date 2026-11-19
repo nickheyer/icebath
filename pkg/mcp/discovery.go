@@ -1167,9 +1167,3 @@ func ServerKeys() []ServerKey {
 	}
 	return out
 }
-
-// Disconnect closes the named connections this scope owns and deregisters their tools
-func Disconnect(ctx context.Context, names []string) {
-	scope := mcpRegistryScope(ctx)
-	ShutdownMCPServers(ctx, &scope, names, shutdownTimeout)
-}

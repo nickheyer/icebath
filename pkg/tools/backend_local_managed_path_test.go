@@ -368,7 +368,7 @@ func TestBackgroundCommandKeepsSpawnPathDirsALoginProfileResets(t *testing.T) {
 		defer s.mu.Unlock()
 		return s.OutputBuffer, s.Exited
 	}
-	waitUntil(t, "the background session to exit", func() bool { _, done := output(); return done })
+	waitUntil(t, "the background session to exit and settle its checkpoint", func() bool { _, done := output(); return done && s.completionEvent.isSet() })
 	out, _ := output()
 	if !slices.Contains(strings.Fields(out), "parent-bin") {
 		t.Fatalf("%q", out)

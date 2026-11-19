@@ -98,13 +98,6 @@ func SetServerFilter(toolsets any) []string {
 	return serverFilter
 }
 
-// Current MCP spawn allowlist, nil spawns every configured server
-func ServerFilter() []string {
-	discoveryMu.Lock()
-	defer discoveryMu.Unlock()
-	return serverFilter
-}
-
 // Reports configured MCP servers or enabled plugin MCP packages, true when the config cannot be read
 func hasConfiguredServers(ctx context.Context) bool {
 	h := home.Dir(ctx)
@@ -115,11 +108,7 @@ func hasConfiguredServers(ctx context.Context) bool {
 	if servers, ok := raw["mcp_servers"].(map[string]any); ok && len(servers) > 0 {
 		return true
 	}
-	portable, err := pluginPortableServers(h)
-	if err != nil {
-		return true
-	}
-	return len(portable) > 0
+	return hasEnabledPluginMCP(ctx, raw)
 }
 
 // Reports whether a discovery run left a live session or a lazy registration behind

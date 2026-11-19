@@ -426,13 +426,6 @@ func ProtocolSection(h string, forceRefresh bool) string {
 	return section
 }
 
-// ResetProtocolCache drops every cached teammate section
-func ResetProtocolCache() {
-	sectionMu.Lock()
-	sectionCache = map[string]string{}
-	sectionMu.Unlock()
-}
-
 const epochPrefix = "Capability epoch: "
 
 var epochRe = regexp.MustCompile(`Capability epoch: ([0-9a-f]{12})`)

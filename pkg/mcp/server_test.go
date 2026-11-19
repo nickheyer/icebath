@@ -508,18 +508,6 @@ func TestServerFailInflightCallsFlagsTeardownRace(t *testing.T) {
 	}
 }
 
-func TestServerEnsureHealthyWithoutSessionRequestsReconnect(t *testing.T) {
-	isolateHome(t)
-	s := newServerTask("x", nil)
-	if !s.ensureHealthy(context.Background(), time.Second) {
-		t.Fatal("an unsuspected connection must pass")
-	}
-	s.markSuspect("keepalive failed")
-	if s.ensureHealthy(context.Background(), time.Second) || !s.reconnect.IsSet() || s.suspectReason != "" {
-		t.Fatal("a suspect without a session must hand recovery to the reconnect path")
-	}
-}
-
 func TestServerStdioWarnsOnIdentityHeaderAndMissingCommand(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("x", nil)

@@ -239,7 +239,7 @@ func quietSelectors(t *testing.T) *ToolsSetup {
 func TestImageGenSelectorDirectKeyPickWritesVendor(t *testing.T) {
 	s := quietSelectors(t)
 	cfg := config.Tree{"image_gen": map[string]any{}}
-	if err := s.selectPluginImageGenProvider("fal", cfg); err != nil {
+	if err := s.selectPluginGenProvider("image_gen", "fal", cfg); err != nil {
 		t.Fatal(err)
 	}
 	imageGen := section(cfg, "image_gen")
@@ -251,10 +251,10 @@ func TestImageGenSelectorDirectKeyPickWritesVendor(t *testing.T) {
 func TestImageAndVideoSelectorsShareTheSelectionContract(t *testing.T) {
 	s := quietSelectors(t)
 	cfg := config.Tree{"image_gen": map[string]any{}, "video_gen": map[string]any{}}
-	if err := s.selectPluginImageGenProvider("fal", cfg); err != nil {
+	if err := s.selectPluginGenProvider("image_gen", "fal", cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.selectPluginVideoGenProvider("fal", cfg); err != nil {
+	if err := s.selectPluginGenProvider("video_gen", "fal", cfg); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"image_gen", "video_gen"} {
@@ -274,7 +274,7 @@ func TestReconfigureDirectFalRowWritesVendorSelection(t *testing.T) {
 	s := quietReconfigure(t)
 	row := caseRow("name", "FAL.ai", "env_vars", []any{}, "imagegen_backend", "fal")
 	cfg := config.Tree{"image_gen": map[string]any{}}
-	if err := s.reconfigureProvider(row, cfg); err != nil {
+	if err := s.configureProvider(row, cfg, true); err != nil {
 		t.Fatal(err)
 	}
 	imageGen := section(cfg, "image_gen")
@@ -398,7 +398,7 @@ func TestImagegenModelPickerPluginPickerFallsBackWhenDefaultIsMissingFromCatalog
 		def:    "also-missing"}))
 	swapHook(t, &toolsPromptChoice, func(*ToolsSetup, string, []string, int) (int, error) { return 0, nil })
 	cfg := config.Tree{"image_gen": map[string]any{"model": "gpt-image-2-medium"}}
-	if err := s.configureImagegenModelForPlugin("openrouter", cfg); err != nil {
+	if err := s.configureGenModelForPlugin("image_gen", "openrouter", cfg); err != nil {
 		t.Fatal(err)
 	}
 	if got := section(cfg, "image_gen")["model"]; got != "openai/gpt-5.4-image-2" {

@@ -154,18 +154,6 @@ func boundsHints(elements []UIElement, imageWidth, imageHeight int) (*float64, s
 	return &scale, note
 }
 
-// Scale factor between element bounds and screenshot pixels, nil when they share a space
-func boundsScale(elements []UIElement, imageWidth, imageHeight int) *float64 {
-	s, _ := boundsHints(elements, imageWidth, imageHeight)
-	return s
-}
-
-// Note naming the native coordinate space, empty when bounds match the screenshot
-func boundsSpaceNote(elements []UIElement, imageWidth, imageHeight int) string {
-	_, n := boundsHints(elements, imageWidth, imageHeight)
-	return n
-}
-
 type captureView struct {
 	cap            *CaptureResult
 	visible        []UIElement

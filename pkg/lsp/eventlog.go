@@ -160,13 +160,3 @@ func logReleased(rt *Runtime, keys []clientKey, reason string) {
 	summary := forgetActive(keys)
 	emit(rt, "reaper", slog.LevelInfo, fmt.Sprintf("released %d client(s) (%s): %s", len(keys), reason, summary))
 }
-
-// Clears every announcement dedup bucket for tests
-func resetAnnounceCaches() {
-	announceMu.Lock()
-	for _, b := range []*map[announceKey]bool{&announcedActive, &announcedUnavailable, &announcedNoRoot,
-		&announcedSkipped, &announcedExcluded, &announcedUntrusted} {
-		*b = map[announceKey]bool{}
-	}
-	announceMu.Unlock()
-}

@@ -382,16 +382,6 @@ func dispatchToPluginProvider(ctx context.Context, env *tools.Env, prompt, aspec
 	return providerResult(result, "Provider returned a non-dict result"), true
 }
 
-// Model id when it names a Krea plugin model, empty otherwise
-func normalizeKreaModel(modelID any) string {
-	s, _ := modelID.(string)
-	candidate := pystr.Strip(s)
-	if candidate != "" && kreaModelIDs[candidate] {
-		return candidate
-	}
-	return ""
-}
-
 // Python class name of an image source refusal
 func imageResolutionTypeName(e *tools.ImageResolutionError) string {
 	switch e.Kind {

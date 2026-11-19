@@ -194,15 +194,6 @@ func nonMappingRootError(doc any) error {
 	return fmt.Errorf("the config root is %s where a mapping was expected", errchain.Kind(doc))
 }
 
-func containsSubstring(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
-
 // Python dict() of an agent section value, the TypeError or ValueError text when it cannot convert
 func pyDictOf(v any) (map[string]any, error) {
 	if !PyTruthy(v) {

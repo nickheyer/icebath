@@ -18,9 +18,6 @@ import (
 // Approval prompt handed to the shared gate, the gate resolving the per thread callback when nil
 var cuApprovalCallback tools.Asker
 
-// Installs the computer use specific approval prompt
-func SetComputerUseApprovalCallback(cb tools.Asker) { cuApprovalCallback = cb }
-
 var cuBlockedKeyCombos = [][]string{
 	{"backspace", "cmd", "shift"}, {"backspace", "cmd", "option"},
 	{"cmd", "ctrl", "q"}, {"cmd", "q", "shift"},
@@ -416,12 +413,6 @@ func ShutdownComputerUseBackends() {
 	}
 }
 
-// Tears down every cached backend and the dedup state between tests
-func resetBackendForTests() {
-	ShutdownComputerUseBackends()
-	resetScreenshotDedupState("", true)
-}
-
 // Recording backend the tests install through newComputerUseBackend
 type noopBackend struct {
 	BackendDefaults
@@ -432,70 +423,6 @@ type noopBackend struct {
 type noopCall struct {
 	name string
 	args map[string]any
-}
-
-func (b *noopBackend) record(name string, args map[string]any) *ActionResult {
-	b.mu.Lock()
-	b.calls = append(b.calls, noopCall{name, args})
-	b.mu.Unlock()
-	return &ActionResult{OK: true, Action: name, Meta: pyjson.NewObject()}
-}
-
-func (b *noopBackend) Start() error               { return nil }
-func (b *noopBackend) Stop() error                { return nil }
-func (b *noopBackend) IsAvailable() (bool, error) { return true, nil }
-
-func (b *noopBackend) Capture(mode string, app *string, pid, windowID *int) (*CaptureResult, error) {
-	b.record("capture", map[string]any{"mode": mode, "app": optStr(app), "pid": optInt(pid), "window_id": optInt(windowID)})
-	if mode == "" {
-		mode = "som"
-	}
-	a := ""
-	if app != nil {
-		a = *app
-	}
-	return &CaptureResult{Mode: mode, Width: 1024, Height: 768, App: a}, nil
-}
-
-func (b *noopBackend) Click(a ClickArgs) (*ActionResult, error) {
-	return b.record("click", map[string]any{"element": optInt(a.Element), "x": optInt(a.X), "y": optInt(a.Y), "button": a.Button,
-		"click_count": a.ClickCount, "modifiers": optStrs(a.Modifiers), "delivery_mode": optStr(a.DeliveryMode), "bring_to_front": a.BringToFront}), nil
-}
-
-func (b *noopBackend) Drag(a DragArgs) (*ActionResult, error) {
-	return b.record("drag", map[string]any{"from_element": optInt(a.FromElement), "to_element": optInt(a.ToElement), "from_xy": optXY(a.FromXY),
-		"to_xy": optXY(a.ToXY), "button": a.Button, "modifiers": optStrs(a.Modifiers), "delivery_mode": optStr(a.DeliveryMode), "bring_to_front": a.BringToFront}), nil
-}
-
-func (b *noopBackend) Scroll(a ScrollArgs) (*ActionResult, error) {
-	return b.record("scroll", map[string]any{"direction": a.Direction, "amount": a.Amount, "element": optInt(a.Element), "x": optInt(a.X),
-		"y": optInt(a.Y), "modifiers": optStrs(a.Modifiers), "delivery_mode": optStr(a.DeliveryMode), "bring_to_front": a.BringToFront}), nil
-}
-
-func (b *noopBackend) TypeText(text string, d DeliveryArgs) (*ActionResult, error) {
-	return b.record("type", map[string]any{"text": text, "delivery_mode": optStr(d.DeliveryMode), "bring_to_front": d.BringToFront}), nil
-}
-
-func (b *noopBackend) Key(keys string, d DeliveryArgs) (*ActionResult, error) {
-	return b.record("key", map[string]any{"keys": keys, "delivery_mode": optStr(d.DeliveryMode), "bring_to_front": d.BringToFront}), nil
-}
-
-func (b *noopBackend) ListApps() ([]any, error) {
-	b.record("list_apps", map[string]any{})
-	return []any{}, nil
-}
-
-func (b *noopBackend) ListWindows() ([]*pyjson.Object, error) {
-	b.record("list_windows", map[string]any{})
-	return []*pyjson.Object{}, nil
-}
-
-func (b *noopBackend) FocusApp(app string, raiseWindow bool) (*ActionResult, error) {
-	return b.record("focus_app", map[string]any{"app": app, "raise_window": raiseWindow}), nil
-}
-
-func (b *noopBackend) SetValue(value string, element *int) (*ActionResult, error) {
-	return b.record("set_value", map[string]any{"value": value, "element": optInt(element)}), nil
 }
 
 const cuForegroundSuffix = " [FOREGROUND — briefly raises the window / changes focus]"

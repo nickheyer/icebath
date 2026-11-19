@@ -93,12 +93,6 @@ func (p *CloudBrowserProvider) baseConfig(env *tools.Env) (*cloudConfig, error) 
 	return c, nil
 }
 
-func (p *CloudBrowserProvider) releaseHeaders(env *tools.Env, c *cloudConfig) (map[string]string, error) {
-	return p.hooks.headers(env, c)
-}
-
-func (p *CloudBrowserProvider) releaseBody(*cloudConfig) any { return nil }
-
 // Transport every cloud call shares, the platform trust store and the environment proxy as requests_verify gives it
 var cloudTransport = sync.OnceValue(func() *http.Transport {
 	return &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig(), ForceAttemptHTTP2: true}

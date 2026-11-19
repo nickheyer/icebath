@@ -385,12 +385,6 @@ type childProgressRelay struct {
 
 const childProgressBatchSize = 5
 
-func (r *childProgressRelay) refString(key string) string {
-	r.sessionRefMu.Lock()
-	defer r.sessionRefMu.Unlock()
-	return pyrepr.Str(r.sessionRef[key])
-}
-
 func (r *childProgressRelay) prefix() string {
 	r.sessionRefMu.Lock()
 	id, _ := r.sessionRef["delegation_id"].(string)

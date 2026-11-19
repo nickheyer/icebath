@@ -412,7 +412,7 @@ func TestOptOutNeverAdoptsCodexCLILogin(t *testing.T) {
 		t.Fatalf("relogin error papered over: %v", err)
 	}
 	_ = authFile
-	if !config.Equal(readAuthStore(t, h), before) {
+	if !reflect.DeepEqual(readAuthStore(t, h), before) {
 		t.Fatal("auth.json changed")
 	}
 }
@@ -933,7 +933,7 @@ func TestProfileRefreshOfRootGrantWritesThroughToRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	rootStore := readAuthStore(t, root)
-	if !config.Equal(providerTokens(rootStore), rotated) {
+	if !reflect.DeepEqual(providerTokens(rootStore), rotated) {
 		t.Fatalf("root singleton %v", providerTokens(rootStore))
 	}
 	rootRow := poolRows(t, root, "openai-codex")[0]
@@ -953,7 +953,7 @@ func TestProfileOwnedGrantStaysLocal(t *testing.T) {
 	if err := saveCodexTokens(env, rotated, "2026-08-16T00:00:00Z", "", true, true); err != nil {
 		t.Fatal(err)
 	}
-	if !config.Equal(providerTokens(readAuthStore(t, profile)), rotated) {
+	if !reflect.DeepEqual(providerTokens(readAuthStore(t, profile)), rotated) {
 		t.Fatal("profile grant not rotated locally")
 	}
 	if providerTokens(readAuthStore(t, root)) != nil {
@@ -964,10 +964,10 @@ func TestProfileOwnedGrantStaysLocal(t *testing.T) {
 	if err := saveCodexTokens(env, tokenPair("login"), "", "", true, false); err != nil {
 		t.Fatal(err)
 	}
-	if !config.Equal(providerTokens(readAuthStore(t, profile)), tokenPair("login")) {
+	if !reflect.DeepEqual(providerTokens(readAuthStore(t, profile)), tokenPair("login")) {
 		t.Fatal("fresh login not stored in the profile")
 	}
-	if !config.Equal(providerTokens(readAuthStore(t, root)), tokenPair("root")) {
+	if !reflect.DeepEqual(providerTokens(readAuthStore(t, root)), tokenPair("root")) {
 		t.Fatal("fresh login rewrote root")
 	}
 }
@@ -1029,11 +1029,11 @@ func TestConcurrentRefreshesOfSharedRootGrantSubmitOldTokenOnce(t *testing.T) {
 		t.Fatalf("endpoint saw %v", endpoint.seen)
 	}
 	for name, out := range results {
-		if !config.Equal(out, tokenPair("new")) {
+		if !reflect.DeepEqual(out, tokenPair("new")) {
 			t.Fatalf("%s got %v", name, out)
 		}
 	}
-	if !config.Equal(providerTokens(readAuthStore(t, root)), tokenPair("new")) {
+	if !reflect.DeepEqual(providerTokens(readAuthStore(t, root)), tokenPair("new")) {
 		t.Fatal("root not rotated")
 	}
 	if providerTokens(readAuthStore(t, profile)) != nil {

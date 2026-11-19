@@ -179,16 +179,6 @@ func LoadManagedEnv() map[string]string {
 	return out
 }
 
-// Signature of the managed config file, zero when there is no scope or file
-func managedConfigSignature() fileSig {
-	dir := ManagedDir()
-	if dir == "" {
-		return fileSig{}
-	}
-	sig, _, _ := signature(filepath.Join(dir, "config.yaml"))
-	return sig
-}
-
 // Process environment lookup for managed refs so a user cannot shadow a managed literal
 func processLookup(name string) (string, bool) { return os.LookupEnv(name) }
 

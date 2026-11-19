@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"

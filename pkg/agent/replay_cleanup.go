@@ -250,14 +250,6 @@ func toolResultDict(name, content, toolCallID, disposition string) map[string]an
 	return out
 }
 
-// Both tail strippers in canonical order, interrupted blocks then the dangling tail
-func SanitizeReplayHistory(history []map[string]any) []map[string]any {
-	if len(history) == 0 {
-		return history
-	}
-	return StripDanglingToolCallTail(StripInterruptedToolTails(history))
-}
-
 // Every destructive replay transform in the shared order, nil now reading the wall clock
 func CanonicalizeReplayHistory(history []map[string]any, now *float64) []map[string]any {
 	if len(history) == 0 {

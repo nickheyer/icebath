@@ -225,7 +225,7 @@ func TestShellHookBlockAndApproveThroughThePluginManager(t *testing.T) {
 	if err != nil || len(registered) != 1 {
 		t.Fatalf("registered %v, %v", registered, err)
 	}
-	if msg, err := GetPreToolCallBlockMessage(ctx, "terminal", map[string]any{"command": "rm"}, PreToolCallIDs{}); err != nil || msg != "blocked-by-shell" {
+	if msg, err := preToolBlockMessage(ctx, "terminal", map[string]any{"command": "rm"}, PreToolCallIDs{}); err != nil || msg != "blocked-by-shell" {
 		t.Fatalf("block message %q, %v", msg, err)
 	}
 	ResetShellHooksForTests()
@@ -234,16 +234,10 @@ func TestShellHookBlockAndApproveThroughThePluginManager(t *testing.T) {
 	if r, _ := RegisterShellHooksFromConfig(ctx, hooksCfg("pre_tool_call", map[string]any{"matcher": "terminal", "command": approve}), true, false); len(r) != 1 {
 		t.Fatalf("approve hook registered %v", r)
 	}
-	var seen [][3]string
-	InstallServices(&Services{InvokeLifecycleHook: shellHookLifecycle, RequestToolApproval: func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error) {
-		seen = append(seen, [3]string{toolName, message, ruleKey})
-		return map[string]any{"approved": false, "message": "denied by human"}, nil
-	}})
-	if msg, err := ResolvePreToolBlock(ctx, "terminal", map[string]any{"command": "rm"}, PreToolCallIDs{}); err != nil || msg != "denied by human" {
-		t.Fatalf("resolved %q, %v", msg, err)
-	}
-	if !reflect.DeepEqual(seen, [][3]string{{"terminal", "risky", "terminal:rm"}}) {
-		t.Fatalf("gate saw %v", seen)
+	InstallServices(&Services{InvokeLifecycleHook: shellHookLifecycle})
+	d, err := preToolCallDirectiveDetails(ctx, "terminal", map[string]any{"command": "rm"}, PreToolCallIDs{})
+	if err != nil || d.Action != "approve" || d.Message != "risky" || d.RuleKey != "terminal:rm" {
+		t.Fatalf("directive %+v, %v", d, err)
 	}
 }
 
@@ -520,7 +514,7 @@ func TestShellHookRegistrationIsPerProfileHome(t *testing.T) {
 	}
 	for _, label := range []string{"alpha", "beta", "alpha", "unapproved"} {
 		ctx := home.WithOverride(context.Background(), filepath.Join(root, label))
-		msg, err := GetPreToolCallBlockMessage(ctx, "write_file", map[string]any{"path": "x"}, PreToolCallIDs{})
+		msg, err := preToolBlockMessage(ctx, "write_file", map[string]any{"path": "x"}, PreToolCallIDs{})
 		want := label
 		if label == "unapproved" {
 			want = ""

@@ -84,11 +84,6 @@ func StampFailure(result map[string]any, reason string, retryable bool) map[stri
 	return result
 }
 
-// Failed turn display kind for a boundary row persisted before closers typed it, false for anything else
-func UntypedFailedTurnDisplayKind(role, content any) (string, bool) {
-	return state.UntypedFailedTurnDisplayKind(role, content)
-}
-
 // Boundary copy for a failed turn, partial whenever a tool may already have run
 func FailedTurnNoticeFor(turnMessages any) string {
 	for _, row := range pyIterRows(turnMessages) {

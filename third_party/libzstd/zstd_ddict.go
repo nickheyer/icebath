@@ -28,41 +28,6 @@ func newEntropyDTables() entropyDTables {
 		hufTable: newHufDTable()}
 }
 
-// NewDDict is ZSTD_createDDict_advanced, referencing dict when byRef and copying it otherwise
-func NewDDict(dict []byte, byRef bool, contentType DictContentType) (*DDict, ErrorCode) {
-	d := &DDict{entropy: newEntropyDTables(), dictSize: len(dict)}
-	if byRef || len(dict) == 0 {
-		d.content = &region{dict}
-	} else {
-		d.content = &region{append([]byte(nil), dict...)}
-	}
-	if err := d.loadEntropy(contentType); err != 0 {
-		return nil, err
-	}
-	return d, 0
-}
-
-// ZSTD_loadEntropy_intoDDict, entropy present only for a dictionary led by the dictionary magic
-func (d *DDict) loadEntropy(contentType DictContentType) ErrorCode {
-	d.dictID, d.entropyPresent = 0, false
-	if contentType == DictContentRaw {
-		return 0
-	}
-	b := d.content.b
-	if len(b) < 8 || readLE32(b, 0) != magicDictionary {
-		if contentType == DictContentFull {
-			return ErrDictionaryCorrupted
-		}
-		return 0
-	}
-	d.dictID = readLE32(b, 4)
-	if _, err := loadDEntropy(&d.entropy, b); err != 0 {
-		return ErrDictionaryCorrupted
-	}
-	d.entropyPresent = true
-	return 0
-}
-
 // DictID is ZSTD_getDictID_fromDDict
 func (d *DDict) DictID() uint32 { return d.dictID }
 

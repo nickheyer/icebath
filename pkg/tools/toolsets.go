@@ -622,19 +622,6 @@ func (r *Registry) ValidateToolset(ctx context.Context, scope, name string) bool
 	return ok
 }
 
-// CreateCustomToolset adds or replaces a runtime toolset in the table
-func CreateCustomToolset(name, description string, tools, includes []string) {
-	toolsetsMu.Lock()
-	defer toolsetsMu.Unlock()
-	if _, exists := Toolsets[name]; !exists {
-		toolsetOrder = append(toolsetOrder, name)
-	}
-	Toolsets[name] = ts(description, tools, includes...)
-	resolveMemoMu.Lock()
-	resolveMemo = map[resolveKey][]string{}
-	resolveMemoMu.Unlock()
-}
-
 // ToolsetDetail is a toolset with its resolved members for display
 type ToolsetDetail struct {
 	Name          string

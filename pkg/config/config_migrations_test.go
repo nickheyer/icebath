@@ -338,7 +338,7 @@ func TestV44RewritesOldCuratorDefaultsButKeepsUserValues(t *testing.T) {
 		"curator": map[string]any{"stale_after_days": 30, "archive_after_days": 180}}, "")
 	runFrom(t, h, 43)
 	cur := AsMap(rawMigrated(t, h)["curator"])
-	if !Equal(cur["stale_after_days"], AsMap(Defaults()["curator"])["stale_after_days"]) || cur["archive_after_days"] != 180 {
+	if !pyEq(cur["stale_after_days"], AsMap(Defaults()["curator"])["stale_after_days"]) || cur["archive_after_days"] != 180 {
 		t.Fatalf("curator %v", cur)
 	}
 }

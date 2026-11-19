@@ -84,13 +84,6 @@ func getManager() *OAuthManager {
 	return oauthManager
 }
 
-// Drops the process wide manager so the next use starts clean
-func resetOAuthManager() {
-	oauthManagerMu.Lock()
-	defer oauthManagerMu.Unlock()
-	oauthManager = nil
-}
-
 // Resolved home and server name an entry is keyed by, the context home when homeDir is empty
 func (m *OAuthManager) key(ctx context.Context, serverName, homeDir string) managerKey {
 	if homeDir == "" {

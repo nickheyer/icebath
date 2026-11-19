@@ -461,11 +461,6 @@ var optionalEnvDecl = []NamedEnvVar{
 // Optional env table of setup, the keys page and the child env policy, provider and platform entries joining later
 var OptionalEnvVars = NewOptionalEnvTable(optionalEnvDecl)
 
-// Reports whether name is a registered .env variable or a provider base url override
-func IsEnvKey(name string) bool {
-	return OptionalEnvVars.Has(name)
-}
-
 // Secrets of one home, the .env file layered over the process environment
 type Secrets struct {
 	path string
@@ -538,18 +533,3 @@ func (s *Secrets) First(names ...string) (string, string, bool) {
 
 // Error of a .env file that is not owner only readable
 var ErrEnvPermissions = errors.New(".env file is readable by other users")
-
-// Tightens the .env file to owner only permissions
-func SecureEnvFile(path string) error {
-	st, err := os.Stat(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	if st.Mode().Perm()&0o077 != 0 {
-		return os.Chmod(path, 0o600)
-	}
-	return nil
-}

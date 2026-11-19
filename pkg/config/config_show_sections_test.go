@@ -61,17 +61,17 @@ func TestOptionalEnvTableValuesAndFillMarkerSpanTables(t *testing.T) {
 	table := NewOptionalEnvTable([]NamedEnvVar{{"A", EnvVar{Description: "a"}}})
 	seen := 0
 	table.Arm(func() []NamedEnvVar {
-		seen = other.Len()
+		seen = len(other.Names())
 		return []NamedEnvVar{{"B", EnvVar{Description: "b"}}}
 	}, nil)
-	values := table.Values()
-	if len(values) != 2 || values[0].Description != "a" || values[1].Description != "b" {
-		t.Fatalf("values %#v", values)
+	items := table.Items()
+	if len(items) != 2 || items[0].Entry.Description != "a" || items[1].Entry.Description != "b" {
+		t.Fatalf("items %#v", items)
 	}
 	if seen != 1 {
 		t.Fatalf("a fill read another table with its fill run, saw %d entries", seen)
 	}
-	if other.Len() != 2 {
+	if len(other.Names()) != 2 {
 		t.Fatal("the other table never ran its own fill")
 	}
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 func TestMain(m *testing.M) {
@@ -119,40 +118,5 @@ func TestCLIReportsIncompletePairing(t *testing.T) {
 	}
 	if value, ok := dotenvValue(h, "WHATSAPP_ENABLED"); ok {
 		t.Fatalf("incomplete pairing enabled WhatsApp: %q", value)
-	}
-}
-
-func TestReadonlyInstallMirrorsToIcebathHome(t *testing.T) {
-	root := t.TempDir()
-	installRoot := filepath.Join(root, "install")
-	installBridge := filepath.Join(installRoot, "scripts", "whatsapp-bridge")
-	if err := os.MkdirAll(installBridge, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(filepath.Join(installBridge, "bridge.js"), []byte("// bridge\n"), 0o644)
-	os.WriteFile(filepath.Join(installBridge, "package.json"), []byte("{\"name\": \"whatsapp-bridge\"}\n"), 0o644)
-	h := filepath.Join(root, "icebath_home")
-	if err := os.MkdirAll(h, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", h)
-	t.Cleanup(pm.PatchRepoRoot(installRoot))
-	if err := os.Chmod(installBridge, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		os.Chmod(installBridge, 0o755)
-		os.Chmod(filepath.Join(h, "scripts", "whatsapp-bridge"), 0o755)
-	})
-	resolved := ResolveWhatsAppBridgeDir(context.Background())
-	expected := filepath.Join(h, "scripts", "whatsapp-bridge")
-	if resolved != expected {
-		t.Fatalf("resolved %s", resolved)
-	}
-	if raw, _ := os.ReadFile(filepath.Join(expected, "bridge.js")); string(raw) != "// bridge\n" {
-		t.Fatalf("bridge.js %q", raw)
-	}
-	if _, err := os.Stat(filepath.Join(expected, "package.json")); err != nil {
-		t.Fatal(err)
 	}
 }

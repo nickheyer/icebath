@@ -30,14 +30,6 @@ var (
 	formerCopilotWarned   atomic.Bool
 )
 
-// Logs the alias deprecation once per process on the silent py.warnings channel
-func warnFormerCopilotName(name string) {
-	if formerCopilotWarned.CompareAndSwap(false, true) {
-		pkgLog().Debug("DeprecationWarning: agent.copilot_acp_client." + name +
-			" is deprecated; subclass agent.acp_client.ACPClient instead.")
-	}
-}
-
 // True when the entry meta copilotEnablement reads disabled, AttributeError for a non dict entry or meta
 func copilotDisabled(entry any) (bool, error) {
 	meta, err := attrGet(entry, "_meta")
@@ -89,46 +81,4 @@ func copilotVendor() Vendor {
 	v.ModelEntryDisabled = copilotDisabled
 	v.EarlyExitError = copilotEarlyExitError
 	return v
-}
-
-// Copilot vendor a former alias client subclass customises, warning once for the deprecated alias
-func CopilotVendor() Vendor {
-	warnFormerCopilotName("CopilotACPClient")
-	return copilotVendor()
-}
-
-// Launch command from the Copilot command env vars, else copilot
-func CopilotResolveCommand() string {
-	warnFormerCopilotName("_resolve_command")
-	return (&Client{Vendor: copilotVendor()}).resolveCommand()
-}
-
-// Shell split Copilot args env var, else the acp stdio pair
-func CopilotResolveArgs() ([]string, error) {
-	warnFormerCopilotName("_resolve_args")
-	return (&Client{Vendor: copilotVendor()}).resolveArgs()
-}
-
-// Ordered unique ids of the entries the Copilot enablement filter keeps
-func CopilotEnabledIDList(entries any, key string) ([]string, error) {
-	warnFormerCopilotName("_enabled_id_list")
-	return enabledIDList(entries, key, copilotDisabled)
-}
-
-// Model ids session/new advertises with Copilot disabled entries dropped
-func CopilotSessionModelIDs(session any) ([]string, error) {
-	warnFormerCopilotName("_session_model_ids")
-	return sessionModelIDs(session, copilotDisabled)
-}
-
-// Legacy availableModels ids with Copilot disabled entries dropped
-func CopilotLegacySessionModelIDs(session any) ([]string, error) {
-	warnFormerCopilotName("_legacy_session_model_ids")
-	return legacySessionModelIDs(session, copilotDisabled)
-}
-
-// Model selection request skipping the copilot-acp default model id and Copilot disabled entries
-func CopilotModelSelectionRequest(session any, requestedModel string) (string, *pyjson.Object, bool, error) {
-	warnFormerCopilotName("_model_selection_request")
-	return modelSelectionRequest(session, requestedModel, copilotPlaceholder, copilotDisabled)
 }

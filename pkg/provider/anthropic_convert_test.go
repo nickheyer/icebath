@@ -34,3 +34,20 @@ func TestSetAnthropicLiveBlocksReplacesTheSidecar(t *testing.T) {
 		t.Fatalf("blocks %v %v", blocks, ok)
 	}
 }
+
+func TestUnsupportedInlineImageMediaType(t *testing.T) {
+	cases := map[string]string{
+		"data:image/png;base64,AAAA":     "",
+		"data:image/jpg;base64,AAAA":     "",
+		"data:image/webp;base64,AAAA":    "",
+		"data:image/svg+xml;base64,AAAA": "image/svg+xml",
+		"DATA:IMAGE/BMP;base64,AAAA":     "image/bmp",
+		"data:image/;base64,AAAA":        "image/unknown",
+		"https://example.com/a.bmp":      "",
+	}
+	for in, want := range cases {
+		if got := unsupportedInlineImageMediaType(in); got != want {
+			t.Errorf("%q: got %q want %q", in, got, want)
+		}
+	}
+}

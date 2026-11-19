@@ -200,13 +200,6 @@ var cuaDriverSupportsNoOverlay = func(ctx context.Context, env *tools.Env, drive
 	return value
 }
 
-// Clears the single entry no overlay probe cache
-func clearNoOverlayCache() {
-	noOverlayCache.Lock()
-	noOverlayCache.valid = false
-	noOverlayCache.Unlock()
-}
-
 // Command and args spawning the stdio MCP server as the driver manifest reports, mcp on any discovery failure
 func resolveMCPInvocation(ctx context.Context, env *tools.Env, driverCmd string, timeout float64) (string, []string) {
 	manifest := driverJSON(ctx, env, driverCmd, timeout, "manifest")
@@ -404,6 +397,3 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 	out.Set("reason", reason)
 	return out, nil
 }
-
-// Upstream release polling is retired, PM owns the pin
-func cuaDriverUpdateCheck() *pyjson.Object { return nil }

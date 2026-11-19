@@ -20,12 +20,6 @@ func directiveProfile(t *testing.T, cfg string) (context.Context, *Manager) {
 		InvokeLifecycleHook: func(ctx context.Context, hook string, kw map[string]any) []any {
 			return GetPluginManager(ctx).InvokeHook(ctx, hook, kw)
 		},
-		RequestToolApproval: func(_ context.Context, tool, msg, rule, turn, call, session string) (map[string]any, error) {
-			if rule == "explode" {
-				return nil, &runtimeError{"gate down"}
-			}
-			return map[string]any{"approved": rule == "ok", "message": ""}, nil
-		},
 		FailoverReason: func(v any) (any, bool) {
 			s, ok := v.(string)
 			return s, ok && (s == "rate_limit" || s == "context_overflow")
@@ -38,6 +32,15 @@ func directiveProfile(t *testing.T, cfg string) (context.Context, *Manager) {
 // Hook callback returning a fixed value
 func returns(v any) HookFunc {
 	return func(context.Context, map[string]any) (any, error) { return v, nil }
+}
+
+// Block message of the live pre tool directive, empty when the call may run
+func preToolBlockMessage(ctx context.Context, tool string, args map[string]any, ids PreToolCallIDs) (string, error) {
+	d, err := preToolCallDirectiveDetails(ctx, tool, args, ids)
+	if err != nil || d.Action != "block" {
+		return "", err
+	}
+	return d.Message, nil
 }
 
 func TestPreToolCallDirectivePrecedence(t *testing.T) {
@@ -57,31 +60,21 @@ func TestPreToolCallDirectivePrecedence(t *testing.T) {
 	if d.Action != "block" || d.Message != "veto" || d.ModifiedArgs["c"] != nil {
 		t.Fatalf("%+v", d)
 	}
-	if msg, _ := GetPreToolCallBlockMessage(ctx, "t", nil, PreToolCallIDs{}); msg != "veto" {
+	if msg, _ := preToolBlockMessage(ctx, "t", nil, PreToolCallIDs{}); msg != "veto" {
 		t.Fatalf("block message %q", msg)
 	}
 }
 
 func TestPreToolCallModifyLastWinsAndNoneWithoutHooks(t *testing.T) {
 	ctx, m := directiveProfile(t, "")
-	if _, args, _ := DispatchPreToolCallHooks(ctx, "t", map[string]any{"a": 1}, PreToolCallIDs{}); args != nil {
+	if d, _ := preToolCallDirectiveDetails(ctx, "t", map[string]any{"a": 1}, PreToolCallIDs{}); d.ModifiedArgs != nil {
 		t.Fatal("modified args without hooks")
 	}
 	addHook(m, "pre_tool_call", returns(map[string]any{"action": "modify", "args": map[string]any{"a": 2}}))
 	addHook(m, "pre_tool_call", returns(map[string]any{"action": "modify", "args": map[string]any{"a": 3}}))
 	addHook(m, "pre_tool_call", returns(map[string]any{"action": "modify", "args": "bad"}))
-	if msg, args, _ := DispatchPreToolCallHooks(ctx, "t", nil, PreToolCallIDs{}); msg != "" || !reflect.DeepEqual(args, map[string]any{"a": 3}) {
-		t.Fatalf("%q %v", msg, args)
-	}
-}
-
-func TestResolvePreToolBlockRunsApprovalGateFailClosed(t *testing.T) {
-	for rule, want := range map[string]string{"ok": "", "deny": "BLOCKED: plugin approval required for t", "explode": "BLOCKED: plugin approval gate failed for t"} {
-		ctx, m := directiveProfile(t, "")
-		addHook(m, "pre_tool_call", returns(map[string]any{"action": "approve", "rule_key": rule}))
-		if got, err := ResolvePreToolBlock(ctx, "t", nil, PreToolCallIDs{}); got != want || err != nil {
-			t.Fatalf("%s: %q %v", rule, got, err)
-		}
+	if d, _ := preToolCallDirectiveDetails(ctx, "t", nil, PreToolCallIDs{}); d.Action == "block" || !reflect.DeepEqual(d.ModifiedArgs, map[string]any{"a": 3}) {
+		t.Fatalf("%+v", d)
 	}
 }
 
@@ -92,7 +85,7 @@ func TestPreToolCallTimeoutFailClosed(t *testing.T) {
 	addHook(m, "pre_tool_call", func(context.Context, map[string]any) (any, error) { <-hold; return nil, nil })
 	t0 := time.Now()
 	for _, q := range []string{"x", "y"} {
-		if msg, _ := ResolvePreToolBlock(ctx, "web_search", map[string]any{"query": q}, PreToolCallIDs{}); msg != preToolCallTimeoutBlockMessage {
+		if msg, _ := preToolBlockMessage(ctx, "web_search", map[string]any{"query": q}, PreToolCallIDs{}); msg != preToolCallTimeoutBlockMessage {
 			t.Fatalf("msg %q", msg)
 		}
 	}
@@ -106,16 +99,13 @@ func TestToolWhitelistIsContextScoped(t *testing.T) {
 	seen := 0
 	addHook(m, "pre_tool_call", func(context.Context, map[string]any) (any, error) { seen++; return nil, nil })
 	limited := WithToolWhitelist(ctx, map[string]bool{"read_file": true}, "")
-	if msg, _ := ResolvePreToolBlock(limited, "read_file", nil, PreToolCallIDs{}); msg != "" || seen != 1 {
+	if msg, _ := preToolBlockMessage(limited, "read_file", nil, PreToolCallIDs{}); msg != "" || seen != 1 {
 		t.Fatalf("allowed tool %q seen %d", msg, seen)
 	}
-	if msg, _ := ResolvePreToolBlock(limited, "terminal", nil, PreToolCallIDs{}); msg != "Tool 'terminal' denied: not in this thread's tool whitelist" || seen != 1 {
+	if msg, _ := preToolBlockMessage(limited, "terminal", nil, PreToolCallIDs{}); msg != "Tool 'terminal' denied: not in this thread's tool whitelist" || seen != 1 {
 		t.Fatalf("denied %q", msg)
 	}
-	if msg, _ := ResolvePreToolBlock(ClearToolWhitelist(limited), "terminal", nil, PreToolCallIDs{}); msg != "" || seen != 2 {
-		t.Fatalf("cleared %q", msg)
-	}
-	if msg, _ := ResolvePreToolBlock(ctx, "terminal", nil, PreToolCallIDs{}); msg != "" {
+	if msg, _ := preToolBlockMessage(ctx, "terminal", nil, PreToolCallIDs{}); msg != "" || seen != 2 {
 		t.Fatalf("parent context restricted %q", msg)
 	}
 }

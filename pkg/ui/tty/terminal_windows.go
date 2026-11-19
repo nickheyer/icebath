@@ -75,9 +75,6 @@ func adoptInput(in *os.File) (func() error, error) {
 	}, nil
 }
 
-// Windows has no job control, so no shell can stop and continue the program
-func JobControl() bool { return false }
-
 // Refuses every stop request, Windows having no job control to take the program
 func (p *Program) suspend(string) bool { return false }
 

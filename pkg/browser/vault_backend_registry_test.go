@@ -85,7 +85,7 @@ func TestBuiltinNamesAndHandlePrefixesAreReserved(t *testing.T) {
 func TestReloadCannotChangePrefixAndLeaveAmbiguousRestore(t *testing.T) {
 	loginPluginServices(t)
 	scope := filepath.Join(t.TempDir(), "home")
-	pctx := plugins.NewPluginContext(&plugins.Manifest{Name: "login-example", Source: "bundled"}, plugins.NewManager(scope))
+	pctx := plugins.NewContext(&plugins.Manifest{Name: "login-example", Source: "bundled"}, plugins.NewManager(scope))
 	original := exampleBackend(t)
 	first, err := pctx.RegisterLoginBackend(original)
 	if err != nil || first == nil {
@@ -117,8 +117,8 @@ func TestLeaseReloadAndUnloadDoNotCrossProfiles(t *testing.T) {
 	dir := t.TempDir()
 	first, second := filepath.Join(dir, "first"), filepath.Join(dir, "second")
 	manifest := &plugins.Manifest{Name: "test-vault", Source: "bundled"}
-	firstCtx := plugins.NewPluginContext(manifest, plugins.NewManager(first))
-	secondCtx := plugins.NewPluginContext(manifest, plugins.NewManager(second))
+	firstCtx := plugins.NewContext(manifest, plugins.NewManager(first))
+	secondCtx := plugins.NewContext(manifest, plugins.NewManager(second))
 	original, replacement, sibling := exampleBackend(t), exampleBackend(t), exampleBackend(t)
 	a, err := firstCtx.RegisterLoginBackend(original)
 	if err != nil || a == nil {

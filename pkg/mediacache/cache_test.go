@@ -263,3 +263,8 @@ func TestCacheFunctionsUseTheGivenProfileHome(t *testing.T) {
 		t.Fatalf("cached %s %v", p, err)
 	}
 }
+
+// Browser screenshot cache directory of the home, created on demand
+func ScreenshotCacheDir(ctx context.Context, h string) (string, error) {
+	return screenshotCache.dir(ctx, h)
+}

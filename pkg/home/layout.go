@@ -48,29 +48,11 @@ func CacheDir(h string) string { return filepath.Join(h, "cache") }
 // Scratch directory a home hands to child processes as their temp dir
 func ScratchDir(h string) string { return pypath.PathJoin(h, "cache", "scratch") }
 
-// Hook output spill directory of a home
-func HookOutputsDir(h string) string { return filepath.Join(h, "hook_outputs") }
-
 // Pending approval directory of a home
 func PendingDir(h string) string { return filepath.Join(h, "pending") }
-
-// Scripts directory cron jobs run from
-func ScriptsDir(h string) string { return filepath.Join(h, "scripts") }
 
 // Sessions export directory of a home
 func SessionsDir(h string) string { return filepath.Join(h, "sessions") }
 
-// Trajectories directory of a home
-func TrajectoriesDir(h string) string { return filepath.Join(h, "trajectories") }
-
 // Locales directory of a home
 func LocalesDir(h string) string { return filepath.Join(h, "locales") }
-
-// Skins directory of a home
-func SkinsDir(h string) string { return filepath.Join(h, "skins") }
-
-// Shell hook allowlist file of a home
-func ShellHooksAllowlistPath(h string) string { return filepath.Join(h, "shell-hooks-allowlist.json") }
-
-// Marker file turning bundled skill seeding off for a home
-func NoBundledSkillsMarker(h string) string { return filepath.Join(h, ".no-bundled-skills") }

@@ -50,18 +50,12 @@ type Awaitable interface {
 // Awaitable backed by a plain function
 type AwaitFunc func(ctx context.Context) (any, error)
 
-// Runs the wrapped function
-func (f AwaitFunc) Await(ctx context.Context) (any, error) { return f(ctx) }
-
 // Error raised when an awaited plugin command result outlives its bound
 type PluginCommandTimeoutError struct{ Seconds float64 }
 
 func (e *PluginCommandTimeoutError) Error() string {
 	return fmt.Sprintf("Plugin command async handler did not complete within %.0fs", e.Seconds)
 }
-
-// Marks a context as served by a goroutine that must never block on an awaited plugin result
-func WithRunningLoop(ctx context.Context) context.Context { return pyctx.WithRunningLoop(ctx) }
 
 // Reports whether the caller marked its context as a running loop
 func runningLoop(ctx context.Context) bool { return pyctx.RunningLoop(ctx) }

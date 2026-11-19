@@ -33,11 +33,6 @@ type Recipe struct {
 	Evidence      []string
 }
 
-// Recipe with the dataclass defaults, kind unknown and readiness path slash
-func NewRecipe(name string) *Recipe {
-	return &Recipe{Name: name, Kind: "unknown", ReadinessPath: "/"}
-}
-
 // Python str of the port, True when a manifest stored the bool true
 func (r *Recipe) portText() string {
 	if r.PortTrue {

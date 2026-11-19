@@ -723,7 +723,7 @@ func streamTTS(ctx context.Context, textQueue TextQueue, stopEvent, ttsDoneEvent
 			if stopEvent.IsSet() {
 				return
 			}
-			cleaned := pystr.Strip(tools.StripMarkdownForTTS(sentence))
+			cleaned := pystr.Strip(tools.PrepareSpokenTextUncapped(sentence))
 			if cleaned == "" {
 				return
 			}

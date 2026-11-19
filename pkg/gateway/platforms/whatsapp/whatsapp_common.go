@@ -3,44 +3,16 @@ package whatsapp
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
-
-// Bridge directory for the CLI and adapter, a read only install tree mirrored under the home
-func ResolveWhatsAppBridgeDir(ctx context.Context) string {
-	installBridge := filepath.Join(pm.RepoRoot(), "scripts", "whatsapp-bridge")
-	homeBridge := filepath.Join(home.Dir(ctx), "scripts", "whatsapp-bridge")
-	probe := filepath.Join(installBridge, ".write_test")
-	if fh, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o666); err == nil {
-		fh.Close()
-		if os.Remove(probe) == nil {
-			return installBridge
-		}
-	}
-	if _, err := os.Stat(homeBridge); err == nil {
-		return homeBridge
-	}
-	if err := pyfs.Makedirs(filepath.Dir(homeBridge), 0o777, true); err != nil {
-		return installBridge
-	}
-	if err := pyfs.CopyTree(installBridge, homeBridge, false, false, nil); err != nil {
-		return installBridge
-	}
-	return homeBridge
-}
 
 // Values a string require mention setting counts as on
 var whatsappTruthy = map[string]bool{"true": true, "1": true, "yes": true, "on": true}

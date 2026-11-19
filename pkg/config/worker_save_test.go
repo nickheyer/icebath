@@ -94,3 +94,8 @@ func TestBypassWorkerSchemaDefaultBranchesAreNotOperatorState(t *testing.T) {
 		t.Fatalf("frozen %v", got)
 	}
 }
+
+// Live with the caller edits of desired relative to base applied, base standing in for the frozen snapshot
+func threeWay(live, desired, base any) any {
+	return threeWayFrozen(live, desired, base, base)
+}

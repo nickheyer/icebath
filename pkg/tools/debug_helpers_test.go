@@ -20,14 +20,14 @@ func TestDebugSessionDisabledNotActiveByDefault(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	os.Unsetenv("FAKE_DEBUG_VAR_XYZ")
 	ds := NewDebugSession(nil, "test_tool", "FAKE_DEBUG_VAR_XYZ")
-	if ds.Active() || ds.enabled {
+	if ds.enabled {
 		t.Fatal("debug session active without its env var")
 	}
 }
 
 func TestDebugSessionEnabledActiveWhenEnvSet(t *testing.T) {
 	ds := enabledDebugSession(t)
-	if !ds.Active() || !ds.enabled {
+	if !ds.enabled {
 		t.Fatal("debug session inactive with its env var set")
 	}
 }

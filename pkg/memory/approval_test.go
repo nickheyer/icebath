@@ -23,9 +23,24 @@ func waEnv(t *testing.T) *tools.Env {
 	return testEnv(t)
 }
 
+// Writes one dotted key into the user config of a home
+func setConfigKey(ctx context.Context, h, key string, value any) error {
+	doc, err := config.ReadUser(h)
+	if err != nil {
+		return err
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	if err := config.Tree(doc).Set(key, value); err != nil {
+		return err
+	}
+	return config.SaveUser(ctx, h, doc)
+}
+
 func setGate(t *testing.T, env *tools.Env, subsystem string, enabled bool) {
 	t.Helper()
-	if err := config.SetKey(context.Background(), env.Home, subsystem+".write_approval", enabled); err != nil {
+	if err := setConfigKey(context.Background(), env.Home, subsystem+".write_approval", enabled); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()
@@ -114,7 +129,7 @@ func TestCLIMemoryApproveWithoutLiveAgentUsesFreshStore(t *testing.T) {
 func TestLoadOnDiskStoreHonorsConfiguredLimitsAndPermissions(t *testing.T) {
 	env := waEnv(t)
 	for k, v := range map[string]any{"memory.memory_char_limit": 999, "memory.user_char_limit": 444, "memory.memory_enabled": false, "memory.user_profile_enabled": true} {
-		if err := config.SetKey(context.Background(), env.Home, k, v); err != nil {
+		if err := setConfigKey(context.Background(), env.Home, k, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -132,7 +147,7 @@ func TestLoadOnDiskStoreHonorsConfiguredLimitsAndPermissions(t *testing.T) {
 	os.WriteFile(filepath.Join(fresh.Home, "config.yaml"), []byte("memory: [unclosed"), 0o644)
 	config.ResetCache()
 	notInts := waEnv(t)
-	if err := config.SetKey(context.Background(), notInts.Home, "memory.memory_char_limit", "lots"); err != nil {
+	if err := setConfigKey(context.Background(), notInts.Home, "memory.memory_char_limit", "lots"); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()

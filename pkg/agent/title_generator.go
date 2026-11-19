@@ -267,14 +267,6 @@ func registerTitleUpgrade(t *memory.ContextThread) bool {
 	return true
 }
 
-// Whether the upgrade went through start and is still referenced
-func titleUpgradeStarted(t *memory.ContextThread) bool {
-	titleUpgradeMu.Lock()
-	defer titleUpgradeMu.Unlock()
-	_, ok := titleUpgradeThreads[weak.Make(t)]
-	return ok
-}
-
 // Joins the title upgrades still running within one shared deadline
 var waitForTitleUpgrades = func(timeout time.Duration) {
 	deadline := time.Now().Add(timeout)

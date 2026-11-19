@@ -20,16 +20,3 @@ func TestHostStderrPumpTagsEachLineWithTheProfile(t *testing.T) {
 		t.Fatalf("blank and whitespace only lines are skipped: %s", out)
 	}
 }
-
-// Only a provider object proxy counts as hosted, never a callable proxy or a plain value
-func TestIsHostedObjectNamesOnlyObjectProxies(t *testing.T) {
-	if !IsHostedObject(&HostedObject{}) {
-		t.Fatal("object proxy")
-	}
-	var none *HostedObject
-	for _, v := range []any{&HostedCallable{}, none, "x", nil} {
-		if IsHostedObject(v) {
-			t.Fatalf("%T counted as hosted", v)
-		}
-	}
-}

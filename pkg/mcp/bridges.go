@@ -17,6 +17,11 @@ var checkPackageForMalware = func(command string, args []string) (string, error)
 	return skills.CheckPackageForMalware(command, args)
 }
 
+// Whether the config enables a plugin package that ships MCP servers, a manifest scan that loads no plugin
+var hasEnabledPluginMCP = func(ctx context.Context, rawConfig map[string]any) bool {
+	return plugins.HasEnabledAgentPluginMCP(ctx, rawConfig)
+}
+
 // Env var names some profile's external secret source applied
 func secretSourceNames() []string { return provider.SecretSourceNames() }
 

@@ -455,29 +455,6 @@ func TestActiveProfileName(t *testing.T) {
 	}
 }
 
-func TestParseServerConfig(t *testing.T) {
-	captureLogs(t)
-	remote, err := ParseServerConfig("r", map[string]any{"url": "https://x/mcp", "headers": map[string]any{"A": "b"}, "trust": "weird",
-		"tools": map[string]any{"include": []any{"a*"}, "prompts": "off"}, "lifecycle": map[string]any{"max_lifetime_seconds": 90}, "auth": " OAuth "}, config.Tree{})
-	if err != nil || !remote.IsHTTP() || remote.KeepaliveInterval != 180 || remote.Trust != TrustUntrusted || remote.Prompts || !remote.Resources ||
-		!remote.ToolsInclude["a*"] || remote.MaxLifetime != 90 || remote.Auth != "oauth" || remote.ConnectTimeout != 60 || remote.Protocol != "auto" || remote.SSLVerify != true {
-		t.Fatalf("remote %+v %v", remote, err)
-	}
-	stdio, _ := ParseServerConfig("s", map[string]any{"command": "npx", "args": []any{"-y", 3}, "keepalive_interval": 1, "lazy": "yes",
-		"supports_parallel_tool_calls": true, "protocol": " Legacy ", "connect_timeout": "15"}, config.Tree{})
-	if stdio.IsHTTP() || stdio.KeepaliveInterval != 5 || !stdio.Lazy || !stdio.SupportsParallelToolCalls || stdio.Protocol != "legacy" ||
-		stdio.ConnectTimeout != 15 || !reflect.DeepEqual(stdio.Args, []string{"-y", "3"}) || stdio.Trust != TrustFull {
-		t.Fatalf("stdio %+v", stdio)
-	}
-	quiet, _ := ParseServerConfig("q", map[string]any{"command": "x"}, config.Tree{})
-	if quiet.KeepaliveInterval != 0 {
-		t.Fatal("stdio keepalive must be opt in")
-	}
-	if _, err := ParseServerConfig("b", map[string]any{"command": "x", "tool_costs": map[string]any{"t": -1}}, config.Tree{}); err == nil {
-		t.Fatal("malformed costs accepted")
-	}
-}
-
 func TestStderrTeeAndTail(t *testing.T) {
 	h := isolateHome(t)
 	ctx := context.Background()

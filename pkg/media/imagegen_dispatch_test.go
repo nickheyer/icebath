@@ -61,19 +61,6 @@ func TestExtractHTTPStatusMockShapes(t *testing.T) {
 	}
 }
 
-func TestKreaModelNormalization(t *testing.T) {
-	for _, id := range []string{"krea-2-medium", "krea-2-large", "krea-2-medium-turbo"} {
-		if normalizeKreaModel(id) != id {
-			t.Fatal(id)
-		}
-	}
-	for _, id := range []any{"fal-ai/flux-2/klein/9b", "fal-ai/nano-banana-pro", nil, "", 123} {
-		if normalizeKreaModel(id) != "" {
-			t.Fatal(id)
-		}
-	}
-}
-
 // Runs the FAL path with a native result and a recording upscaler
 func runUpscaleOptIn(t *testing.T, model string, upscale any, upscaled any) (map[string]any, []string) {
 	t.Helper()

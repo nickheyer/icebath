@@ -208,11 +208,6 @@ func OptionalSkillsDir(ctx context.Context, def string) string {
 	return PackagedDir(ctx, "ICEBATH_OPTIONAL_SKILLS", def, "optional-skills")
 }
 
-// Optional MCP catalog directory honoring package manager wrappers
-func OptionalMCPsDir(ctx context.Context, def string) string {
-	return PackagedDir(ctx, "ICEBATH_OPTIONAL_MCPS", def, "optional-mcps")
-}
-
 // Bundled skills directory honoring package manager wrappers
 func BundledSkillsDir(ctx context.Context, def string) string {
 	return PackagedDir(ctx, "ICEBATH_BUNDLED_SKILLS", def, "skills")
@@ -246,14 +241,6 @@ func CandidateNodeCommandNames(command string) []string {
 	return []string{base + ".cmd", base + ".exe", base}
 }
 
-// Reports whether path exists through any symlink and the process may execute it
-func IsExecutableFile(path string) bool {
-	if _, err := os.Stat(path); err != nil {
-		return false
-	}
-	return executableByProcess(path)
-}
-
 // Reports whether a legacy managed Node tree with node, npm or npx sits in the home
 func ManagedNodeTreePresent(ctx context.Context, h string) bool {
 	for _, dir := range NodeDirs(ctx, h) {
@@ -279,60 +266,4 @@ func InstallRoot() string {
 		return ""
 	}
 	return pypath.PathParent(r)
-}
-
-// Module roots whose import failure means the shipped tree is inconsistent
-var FirstPartyModuleRoots = map[string]bool{
-	"agent": true, "acp_adapter": true, "cli": true, "cron": true, "gateway": true, "model_tools": true,
-	"plugins": true, "providers": true, "tools": true, "toolsets": true, "run_agent": true,
-	"tui_gateway": true, "utils": true,
-}
-
-// Reports whether the first dotted segment of name ships with the agent
-func IsFirstPartyModule(name string) bool {
-	root, _, _ := strings.Cut(name, ".")
-	return root != "" && (FirstPartyModuleRoots[root] || strings.HasPrefix(root, "icebath_"))
-}
-
-// Python import failure a child runtime reported, ModuleNotFound marking the missing module subclass
-type ImportError struct {
-	Name           string
-	Msg            string
-	ModuleNotFound bool
-}
-
-func (e *ImportError) Error() string { return e.Msg }
-
-// Recovery guidance lines when err is a first party import failure of a half updated tree, else none
-func PartialUpdateHint(err error) []string {
-	ie, ok := err.(*ImportError)
-	if !ok || ie == nil || ie.ModuleNotFound || !IsFirstPartyModule(ie.Name) {
-		return nil
-	}
-	reinstall := "If that also fails, reinstall: curl -fsSL icebath.app | sh"
-	if runtime.GOOS == "windows" {
-		reinstall = "If that also fails, reinstall: irm icebath.app | iex"
-	}
-	return []string{
-		"",
-		"This looks like a partially-updated install: one module was refreshed and a related one was not.",
-		"Re-run the update to bring the whole tree to the same version:",
-		"    icebath update",
-		reinstall,
-	}
-}
-
-// Prints the error and its partial update guidance to w or stderr, true when guidance applied
-func EmitPartialUpdateHint(err error, w io.Writer) bool {
-	lines := PartialUpdateHint(err)
-	if len(lines) == 0 {
-		return false
-	}
-	if w == nil {
-		w = os.Stderr
-	}
-	for _, line := range append([]string{"Error: " + err.Error()}, lines...) {
-		fmt.Fprintln(w, line)
-	}
-	return true
 }

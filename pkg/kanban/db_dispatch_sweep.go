@@ -747,15 +747,6 @@ type CrashSweepOutcome struct {
 	RateLimited []string
 }
 
-// Reclaims running tasks whose host local worker pid is dead and books each death
-func DetectCrashedWorkers(ctx context.Context, conn state.SQLiteConn, board *string) ([]string, error) {
-	outcome, err := detectCrashedWorkersFull(ctx, conn, board)
-	if err != nil {
-		return nil, err
-	}
-	return outcome.Crashed, nil
-}
-
 // Crash sweep with the breaker accounting and the worker exited observers fired after every commit
 func detectCrashedWorkersFull(ctx context.Context, conn state.SQLiteConn, board *string) (*CrashSweepOutcome, error) {
 	sweep, err := reclaimDeadWorkers(ctx, conn, board)

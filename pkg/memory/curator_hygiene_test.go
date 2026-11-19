@@ -142,6 +142,7 @@ func TestCuratorOnlyOneProcessClaimsADuePass(t *testing.T) {
 	if curatorExists(curatorRunClaimPath(ctx)) {
 		t.Fatal("claim not released after the pass")
 	}
+	curatorReviewThreads.Wait()
 	due()
 	if MaybeRunCurator(ctx, nil, nil) == nil {
 		t.Fatal("the next due pass could not claim again")

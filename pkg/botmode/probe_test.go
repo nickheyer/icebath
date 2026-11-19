@@ -450,3 +450,10 @@ func TestAliasFormsAndHandles(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// ResetProtocolCache drops every cached teammate section
+func ResetProtocolCache() {
+	sectionMu.Lock()
+	sectionCache = map[string]string{}
+	sectionMu.Unlock()
+}

@@ -67,12 +67,6 @@ func DispatchForPlugin(ctx context.Context, scope, toolName string, args, kwargs
 	return DispatcherOf(ctx).RegistryDispatch(ctx, call), nil
 }
 
-// Escalates a plugin flagged tool call to the human gate under its tool correlation ids
-func RequestPluginToolApproval(ctx context.Context, env *Env, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error) {
-	bound := WithObservabilityContext(env, turnID, toolCallID, sessionID)
-	return GuardResultDict(RequestToolApproval(ctx, bound, toolName, message, ruleKey)), nil
-}
-
 // Python result dict of a guard verdict in the check_dangerous_command shape
 func GuardResultDict(r GuardResult) map[string]any {
 	out := map[string]any{"approved": r.Approved}

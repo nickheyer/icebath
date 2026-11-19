@@ -82,10 +82,10 @@ func TestRelockWritesNothingWhenCurrentAndNamesNewOptInExtras(t *testing.T) {
 		t.Fatalf("relocks %+v", relocks)
 	}
 	text := out.String()
-	if !strings.Contains(text, "out of date") || strings.Contains(text, "✗") || !strings.Contains(text, "activate") {
+	if !strings.Contains(text, "out of date") || strings.Contains(text, "✗") || !strings.Contains(text, "run `icebath pm install`") {
 		t.Fatalf("out %q", text)
 	}
-	if !strings.Contains(text, "all,beta") || strings.Contains(text, "alpha") {
+	if !strings.Contains(text, "icebath pm install --extra beta") || strings.Contains(text, "alpha") {
 		t.Fatalf("opt in hint %q", text)
 	}
 }

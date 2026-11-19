@@ -140,25 +140,3 @@ func (a *AIAgent) supportsReasoningExtraBody(ctx context.Context) bool {
 
 // Must echo tier of the active reasoning replay route, never true on a route that ignores the field
 func (a *AIAgent) needsThinkingReasoningPad() bool { return a.reasoningReplayRoute().Pad }
-
-// Echo family checks with the raw provider and no model for Kimi as the rule table expects
-func (a *AIAgent) needsKimiToolReasoning() bool {
-	return reasoningEchoFamily("kimi", a.provider, "", a.baseURL)
-}
-
-func (a *AIAgent) needsDeepseekToolReasoning() bool {
-	return reasoningEchoFamily("deepseek", pystr.Lower(a.provider), a.model, a.baseURL)
-}
-
-func (a *AIAgent) needsMimoToolReasoning() bool {
-	return reasoningEchoFamily("mimo", pystr.Lower(a.provider), a.model, a.baseURL)
-}
-
-// Echo family match raising like Python on an unknown family
-func reasoningEchoFamily(family, providerName, model, baseURL string) bool {
-	ok, err := provider.MatchesReasoningEchoFamily(family, providerName, model, baseURL)
-	if err != nil {
-		panic(err)
-	}
-	return ok
-}

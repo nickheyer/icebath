@@ -288,3 +288,10 @@ func TestOAuthManagerRejectedDocumentStaysRejectedAfterARestart(t *testing.T) {
 		t.Fatalf("restarted manager presents %q", again.clientMetadataURL)
 	}
 }
+
+// Drops the process wide manager so the next use starts clean
+func resetOAuthManager() {
+	oauthManagerMu.Lock()
+	defer oauthManagerMu.Unlock()
+	oauthManager = nil
+}

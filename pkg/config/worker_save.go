@@ -73,11 +73,6 @@ func schemaDefaultBranch(snapshot, defaults any) any {
 	return kept
 }
 
-// Live with the caller edits of desired relative to base applied, base standing in for the frozen snapshot
-func threeWay(live, desired, base any) any {
-	return threeWayFrozen(live, desired, base, base)
-}
-
 // Live with the edits applied, a branch the live file lost since base staying lost unless it came only from defaults
 func threeWayFrozen(live, desired, base, frozen any) any {
 	if pyEq(desired, base) {

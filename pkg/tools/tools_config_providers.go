@@ -1083,14 +1083,6 @@ func (s *ToolsSetup) configureGenModelForPlugin(section, pluginName string, cfg 
 	return s.pickModelFromCatalog(cat, def, section, pluginName, cfg, indent)
 }
 
-func (s *ToolsSetup) configureImagegenModelForPlugin(pluginName string, cfg config.Tree) error {
-	return s.configureGenModelForPlugin("image_gen", pluginName, cfg)
-}
-
-func (s *ToolsSetup) configureVideogenModelForPlugin(pluginName string, cfg config.Tree) error {
-	return s.configureGenModelForPlugin("video_gen", pluginName, cfg)
-}
-
 // Stored public URL choice of xAI Imagine for an image or video section
 func (s *ToolsSetup) configureXAIImagineStorage(sectionName string, cfg config.Tree) error {
 	storageCfg := cfgSection(config.Tree(cfgSection(config.Tree(cfgSection(cfg, sectionName)), "xai")), "storage")
@@ -1137,14 +1129,6 @@ func (s *ToolsSetup) selectPluginGenProvider(section, pluginName string, cfg con
 		return s.configureXAIImagineStorage(section, cfg)
 	}
 	return nil
-}
-
-func (s *ToolsSetup) selectPluginImageGenProvider(pluginName string, cfg config.Tree) error {
-	return s.selectPluginGenProvider("image_gen", pluginName, cfg)
-}
-
-func (s *ToolsSetup) selectPluginVideoGenProvider(pluginName string, cfg config.Tree) error {
-	return s.selectPluginGenProvider("video_gen", pluginName, cfg)
 }
 
 // Static STT model list of a provider, false when the catalog has none
@@ -1472,11 +1456,6 @@ func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree,
 		return s.finishProviderSelection(provider, cfg)
 	}
 	return nil
-}
-
-// Reconfigures a provider, re-prompting every key
-func (s *ToolsSetup) reconfigureProvider(provider *pyjson.Object, cfg config.Tree) error {
-	return s.configureProvider(provider, cfg, true)
 }
 
 // Interactive vision backend choice over auxiliary.vision, auto clearing every pinned key

@@ -3,7 +3,6 @@ package config
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -587,20 +586,6 @@ func stripValue(value, def any, path []string, keep map[string]bool) (any, bool)
 		return nil, true
 	}
 	return Clone(value), false
-}
-
-// Reports whether two YAML shaped values are equal, numbers compared by value
-func Equal(a, b any) bool {
-	if af, ok := AsFloat(a); ok {
-		if bf, ok := AsFloat(b); ok {
-			_, as := a.(string)
-			_, bs := b.(string)
-			if !as && !bs {
-				return af == bf
-			}
-		}
-	}
-	return reflect.DeepEqual(a, b)
 }
 
 // Sorted keys of a map

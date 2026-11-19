@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 )
 
 var testChoices = []any{
@@ -60,7 +62,7 @@ func TestAskChoiceThroughTheClarifyPanel(t *testing.T) {
 	if _, ok, _ := AskChoice(typed("", false), "q", testChoices); ok {
 		t.Fatal("a cancelled panel must answer None")
 	}
-	if _, ok, _ := AskChoice(WithRunningLoop(typed("default", true)), "q", testChoices); ok {
+	if _, ok, _ := AskChoice(pyctx.WithRunningLoop(typed("default", true)), "q", testChoices); ok {
 		t.Fatal("an event loop handler must answer None")
 	}
 	if _, ok, _ := AskChoice(typed("default", true), "q", nil); ok {

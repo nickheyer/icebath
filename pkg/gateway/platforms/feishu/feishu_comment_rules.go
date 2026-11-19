@@ -33,15 +33,6 @@ var validPolicies = []string{"allowlist", "pairing"}
 // StringSet is a frozenset of strings, nil stands for None
 type StringSet map[string]struct{}
 
-// NewStringSet builds a non nil set from the given members
-func NewStringSet(members ...string) StringSet {
-	s := StringSet{}
-	for _, m := range members {
-		s[m] = struct{}{}
-	}
-	return s
-}
-
 // Has reports set membership
 func (s StringSet) Has(m string) bool {
 	_, ok := s[m]
@@ -109,11 +100,6 @@ type MtimeCache struct {
 	resolve func(context.Context) string
 	mu      sync.Mutex
 	entries map[string]mtimeEntry
-}
-
-// NewMtimeCache caches a fixed path
-func NewMtimeCache(path string) *MtimeCache {
-	return NewMtimeCacheFunc(func(context.Context) string { return path })
 }
 
 // NewMtimeCacheFunc caches whatever path the resolver returns at each access

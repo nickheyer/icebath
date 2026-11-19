@@ -178,14 +178,6 @@ func takeReserved(port int) net.Listener {
 	return ln
 }
 
-// Reports whether a port is parked
-func isReserved(port int) bool {
-	reservedMu.Lock()
-	defer reservedMu.Unlock()
-	_, ok := reservedListeners[port]
-	return ok
-}
-
 // Picks an ephemeral callback port and keeps it bound
 func reserveCallbackPort() (int, error) {
 	port, _, err := bindReserved(0)

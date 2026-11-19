@@ -69,7 +69,7 @@ func TestInTreeSidecarCannotForgeCatalogProvenance(t *testing.T) {
 	if got := noErr(catalogAnnotation(w.h, target)); got != "" {
 		t.Fatalf("annotation %q", got)
 	}
-	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); len(fields) != 0 {
+	if fields := noErr(CatalogRowFields(w.h, target, catalogPins(w.ctx), nil)); len(fields) != 0 {
 		t.Fatalf("row fields %v", fields)
 	}
 	real, _, _, err := installCatalogEntry(w.ctx, GetLiveCatalogEntry(w.ctx, "cat-plugin"), CatalogInstallOptions{})
@@ -87,7 +87,7 @@ func TestRefInstallRecordsInstalledShaSoUpdateIsOffered(t *testing.T) {
 	if sidecar := noErr(readCatalogSidecar(w.h, target)); sidecar == nil || sidecar["sha"] != w.sha2 {
 		t.Fatalf("sidecar %v", sidecar)
 	}
-	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); fields["update_available"] != true {
+	if fields := noErr(CatalogRowFields(w.h, target, catalogPins(w.ctx), nil)); fields["update_available"] != true {
 		t.Fatalf("row fields %v", fields)
 	}
 	result, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
@@ -118,14 +118,14 @@ func TestAnnotatedTagPinKeepsReviewedTrustAndReadsAsAtPin(t *testing.T) {
 	if sidecar := noErr(readCatalogSidecar(w.h, target)); sidecar == nil || sidecar["sha"] != w.sha1 || sidecar["pin"] != tagObject {
 		t.Fatalf("sidecar %v", sidecar)
 	}
-	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); fields["update_available"] != false {
+	if fields := noErr(CatalogRowFields(w.h, target, catalogPins(w.ctx), nil)); fields["update_available"] != false {
 		t.Fatalf("row fields %v", fields)
 	}
 	if result, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || result["unchanged"] != true {
 		t.Fatalf("update %v %v", result, err)
 	}
 	w.pin = w.sha2
-	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); fields["update_available"] != true {
+	if fields := noErr(CatalogRowFields(w.h, target, catalogPins(w.ctx), nil)); fields["update_available"] != true {
 		t.Fatalf("bumped row fields %v", fields)
 	}
 }
@@ -158,4 +158,10 @@ func TestCatalogRowsMapsResolvesTheLiveCatalogOnce(t *testing.T) {
 	if len(pins) != 0 || len(versions) != 0 || len(titles) != 0 {
 		t.Fatalf("failure maps %v %v %v", pins, versions, titles)
 	}
+}
+
+// Pins of the live catalog as the plugin listing resolves them
+func catalogPins(ctx context.Context) map[string]string {
+	pins, _, _ := CatalogRowsMaps(ctx)
+	return pins
 }

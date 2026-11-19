@@ -136,11 +136,6 @@ func DocumentCacheDir(ctx context.Context, h string) (string, error) {
 	return documentCache.dir(ctx, h)
 }
 
-// Browser screenshot cache directory of the home, created on demand
-func ScreenshotCacheDir(ctx context.Context, h string) (string, error) {
-	return screenshotCache.dir(ctx, h)
-}
-
 // Deletes cached images older than the age in hours and returns the count
 func CleanupImageCache(ctx context.Context, h string, maxAgeHours float64) (int, error) {
 	return imageCache.cleanup(ctx, h, maxAgeHours)

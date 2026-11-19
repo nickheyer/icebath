@@ -51,15 +51,6 @@ func relayRecordedCwd(env *tools.Env, key string) (string, error) {
 	return cleanRelayCwd(v), nil
 }
 
-// Absolute form of a host path as Path.resolve gives it, the path itself when it cannot be resolved
-func resolveHostPath(p string) string {
-	resolved, err := pypath.Resolve(p)
-	if err != nil {
-		return p
-	}
-	return resolved
-}
-
 // Logical session and turn cwd for relay scopes, keeping remote paths as declared and omitting unknown ones
 func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*string, *string) {
 	var env *tools.Env

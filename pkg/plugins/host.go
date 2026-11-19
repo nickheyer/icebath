@@ -1310,12 +1310,6 @@ func holdsLiveHandle(value any) bool {
 	return found
 }
 
-// Reports whether obj is a provider object proxy whose methods run in the plugin host
-func IsHostedObject(obj any) bool {
-	o, ok := obj.(*HostedObject)
-	return ok && o != nil
-}
-
 // Plugin output and child logs into the plugin log tagged with the profile
 func pumpHostStderr(stream io.Reader, label string) {
 	r := bufio.NewReader(stream)

@@ -179,17 +179,6 @@ func SetMappingClass(m map[string]any, class string) {
 	}
 }
 
-// Python dict subclass name recorded for a mapping, empty for a plain dict
-func MappingClass(m map[string]any) string {
-	meta := lookupMeta(m)
-	if meta == nil {
-		return ""
-	}
-	mapMetaMu.Lock()
-	defer mapMetaMu.Unlock()
-	return meta.class
-}
-
 // Records that a string key of a mapping stands for a non str Python key such as True, 1 or None
 func SetMappingPyKey(m map[string]any, key string, pyKey any) {
 	if meta := attachMeta(m); meta != nil {

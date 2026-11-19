@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,6 +16,9 @@ import (
 	"sync"
 	"time"
 	"weak"
+
+	"github.com/nickheyer/icebath/pkg/internal/pybase64"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -419,7 +421,7 @@ func rasterizeSVGDataURL(u string) string {
 	}
 	var raw []byte
 	if strings.Contains(strings.ToLower(header), ";base64") {
-		decoded, err := base64.StdEncoding.DecodeString(payload)
+		decoded, err := pybase64.B64Decode(payload)
 		if err != nil {
 			return ""
 		}

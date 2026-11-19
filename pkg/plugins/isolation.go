@@ -49,11 +49,3 @@ func InProcessImportRefusal(ctx context.Context, what, source string, cfg map[st
 	return what + " runs only in-process, and plugins.isolation is 'host' (third-party plugin code " +
 		"never runs inside the Icebath process); set plugins.isolation: in_process to load it"
 }
-
-// Plugin host of the active profile when plugins.isolation is host, else nil
-func UserPluginHost(ctx context.Context) (*PluginHost, error) {
-	if IsolationMode(ctx, nil) != IsolationHost {
-		return nil, nil
-	}
-	return GetPluginManager(ctx).pluginHost()
-}

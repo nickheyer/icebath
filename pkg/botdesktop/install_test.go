@@ -148,9 +148,11 @@ func TestSecondInstallForSameProfileIsRefused(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("worker never finished")
 	}
-	if err := AssertNotRunning(env); err != nil {
+	key, err := Claim(env)
+	if err != nil {
 		t.Fatalf("slot still held: %v", err)
 	}
+	Release(key)
 }
 
 func TestClaimIsAtomicAndRefusesASecondClaim(t *testing.T) {

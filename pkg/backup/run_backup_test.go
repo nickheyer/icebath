@@ -655,12 +655,6 @@ func TestResolveBackupOutputPathAppendsZipAndNamesDirectories(t *testing.T) {
 	}
 }
 
-func TestRetiredForeignDBHolderPIDsReportsUnknown(t *testing.T) {
-	if got := retiredForeignDBHolderPIDs(filepath.Join(t.TempDir(), "state.db")); got != nil {
-		t.Fatalf("%v", got)
-	}
-}
-
 func TestIterExternalFilesSkipsLinksCachesAndRuntimeNames(t *testing.T) {
 	tmp := t.TempDir()
 	writeTree(t, tmp, map[string]string{"base/a.json": "{}", "base/node_modules/x.js": "x", "base/sub/b.txt": "b",
@@ -734,4 +728,11 @@ func TestSwapGatewayServiceReplacesAndRestoresTheReviveSeams(t *testing.T) {
 	if ensureGatewayService == nil || isServiceRunning == nil {
 		t.Fatal("restore left the seams empty")
 	}
+}
+
+// Routes the print calls of the writerless helpers into w until the returned restore runs
+func SwapOutput(w io.Writer) (restore func()) {
+	old := stdout
+	stdout = w
+	return func() { stdout = old }
 }

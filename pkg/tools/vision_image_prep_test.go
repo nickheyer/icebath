@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"compress/zlib"
-	"encoding/base64"
 	"encoding/binary"
 	"image"
 	"image/color"
@@ -93,23 +92,6 @@ func TestLanczosMatchesPillow(t *testing.T) {
 	}
 	if got := resizeRaster(&raster{img: pal, mode: "P"}, 4, 3).img.(*image.Paletted).Pix; !bytes.Equal(got, pilPDown) {
 		t.Fatalf("P nearest\n got %v\nwant %v", got, pilPDown)
-	}
-}
-
-func TestUnsupportedInlineImageMediaType(t *testing.T) {
-	cases := map[string]string{
-		"data:image/png;base64,AAAA":     "",
-		"data:image/jpg;base64,AAAA":     "",
-		"data:image/webp;base64,AAAA":    "",
-		"data:image/svg+xml;base64,AAAA": "image/svg+xml",
-		"DATA:IMAGE/BMP;base64,AAAA":     "image/bmp",
-		"data:image/;base64,AAAA":        "image/unknown",
-		"https://example.com/a.bmp":      "",
-	}
-	for in, want := range cases {
-		if got := UnsupportedInlineImageMediaType(in); got != want {
-			t.Errorf("%q: got %q want %q", in, got, want)
-		}
 	}
 }
 
@@ -486,36 +468,5 @@ func TestNormalizeToSupportedImage(t *testing.T) {
 	}
 	if _, _, msg := normalizeToSupportedImage(env, filepath.Join(dir, "missing.tiff"), "image/tiff"); !strings.Contains(msg, "'image/tiff' is not supported") {
 		t.Fatalf("unsupported format message %q", msg)
-	}
-}
-
-func TestRasterizeSVGDataURL(t *testing.T) {
-	env := &Env{Home: t.TempDir(), Config: config.Defaults(), Values: &sync.Map{}}
-	prev := rasterizeSVGToPNG
-	t.Cleanup(func() { rasterizeSVGToPNG = prev })
-	var seen []string
-	rasterizeSVGToPNG = func(svgPath, outPath string) bool {
-		b, _ := os.ReadFile(svgPath)
-		seen = append(seen, string(b))
-		return os.WriteFile(outPath, isrcPNG, 0o644) == nil
-	}
-	svg := `<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>`
-	got, ok := RasterizeSVGDataURL(env, "data:image/svg+xml;base64,"+base64.StdEncoding.EncodeToString([]byte(svg)))
-	if !ok || got != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(isrcPNG) {
-		t.Fatalf("base64 svg: %q %v", got, ok)
-	}
-	if _, ok := RasterizeSVGDataURL(env, "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E"); !ok {
-		t.Fatal("percent encoded svg")
-	}
-	if len(seen) != 2 || seen[0] != svg || seen[1] != `<svg xmlns="http://www.w3.org/2000/svg"/>` {
-		t.Fatalf("svg payloads %q", seen)
-	}
-	entries, _ := os.ReadDir(filepath.Join(env.Home, "cache", "vision"))
-	if len(entries) != 0 {
-		t.Fatalf("temp files left behind: %d", len(entries))
-	}
-	rasterizeSVGToPNG = func(string, string) bool { return false }
-	if _, ok := RasterizeSVGDataURL(env, "data:image/svg+xml;base64,"+base64.StdEncoding.EncodeToString([]byte(svg))); ok {
-		t.Fatal("no rasterizer must report false")
 	}
 }

@@ -132,7 +132,7 @@ func TestOAuthStorageCorruptTokensWarningNeverEchoesTokenMaterial(t *testing.T) 
 func TestOAuthBuildScopePassedThrough(t *testing.T) {
 	oauthHome(t)
 	setConsole(t, true)
-	p, err := BuildOAuthAuth(context.Background(), "scoped", "https://example.com/mcp", map[string]any{"scope": "read write admin"}, HTTPOptions{})
+	p, err := getManager().getOrBuildProvider(context.Background(), "scoped", "https://example.com/mcp", map[string]any{"scope": "read write admin"}, HTTPOptions{})
 	if err != nil || p == nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestOAuthBuildScopePassedThrough(t *testing.T) {
 func TestOAuthBuildTokenResponseAccepts201Created(t *testing.T) {
 	dir := oauthHome(t)
 	setConsole(t, true)
-	p, err := BuildOAuthAuth(context.Background(), "supabase", "https://mcp.supabase.com/mcp", nil, HTTPOptions{})
+	p, err := getManager().getOrBuildProvider(context.Background(), "supabase", "https://mcp.supabase.com/mcp", nil, HTTPOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestOAuthBuildTokenResponseAccepts201Created(t *testing.T) {
 func TestOAuthBuildFailedTokenExchangeCarriesBoundedRedactedExcerpt(t *testing.T) {
 	oauthHome(t)
 	setConsole(t, true)
-	p, err := BuildOAuthAuth(context.Background(), "supabase", "https://mcp.supabase.com/mcp", nil, HTTPOptions{})
+	p, err := getManager().getOrBuildProvider(context.Background(), "supabase", "https://mcp.supabase.com/mcp", nil, HTTPOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestOAuthWaitForCallbackRaisesOnTimeoutInsteadOfInput(t *testing.T) {
 func TestOAuthBuildNonInteractiveWithoutCachedTokensFailsFast(t *testing.T) {
 	oauthHome(t)
 	setConsole(t, false)
-	_, err := BuildOAuthAuth(context.Background(), "atlassian", "https://mcp.atlassian.com/v1/mcp", nil, HTTPOptions{})
+	_, err := getManager().getOrBuildProvider(context.Background(), "atlassian", "https://mcp.atlassian.com/v1/mcp", nil, HTTPOptions{})
 	var ne *OAuthNonInteractiveError
 	if !errors.As(err, &ne) || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("error %v", err)
@@ -562,7 +562,7 @@ func TestOAuthResolveRedirectURI(t *testing.T) {
 func TestOAuthBuildPreservesServerURLPath(t *testing.T) {
 	oauthHome(t)
 	setConsole(t, true)
-	p, err := BuildOAuthAuth(context.Background(), "notion", "https://mcp.notion.com/mcp", map[string]any{}, HTTPOptions{})
+	p, err := getManager().getOrBuildProvider(context.Background(), "notion", "https://mcp.notion.com/mcp", map[string]any{}, HTTPOptions{})
 	if err != nil || p.serverURL != "https://mcp.notion.com/mcp" {
 		t.Fatalf("provider %+v %v", p, err)
 	}

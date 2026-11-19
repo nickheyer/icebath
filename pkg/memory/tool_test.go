@@ -432,7 +432,7 @@ func TestInvalidTargetsLeaveFilesAndPendingQueueUnchanged(t *testing.T) {
 				for _, target := range []string{"memory", "user"} {
 					before[target], _ = os.ReadFile(s.PathFor(target))
 				}
-				if err := config.SetKey(context.Background(), env.Home, "memory.write_approval", origin != "direct"); err != nil {
+				if err := setConfigKey(context.Background(), env.Home, "memory.write_approval", origin != "direct"); err != nil {
 					t.Fatal(err)
 				}
 				if origin != "direct" {
@@ -660,10 +660,10 @@ func TestMemoryToolRegisteredAndStoreWritesUnderThePlatformLock(t *testing.T) {
 // Memory section flags written to the environment home config
 func writeMemoryConfig(t *testing.T, env *tools.Env, memoryEnabled, userEnabled any) {
 	t.Helper()
-	if err := config.SetKey(context.Background(), env.Home, "memory.memory_enabled", memoryEnabled); err != nil {
+	if err := setConfigKey(context.Background(), env.Home, "memory.memory_enabled", memoryEnabled); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.SetKey(context.Background(), env.Home, "memory.user_profile_enabled", userEnabled); err != nil {
+	if err := setConfigKey(context.Background(), env.Home, "memory.user_profile_enabled", userEnabled); err != nil {
 		t.Fatal(err)
 	}
 }

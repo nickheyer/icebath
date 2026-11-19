@@ -463,20 +463,3 @@ func buildProviderOptions(ctx context.Context, cfg map[string]any, storage *Toke
 		ClientMetadataURL: cimdURL,
 	}, nil
 }
-
-// OAuth authenticator for a remote MCP server whose requests share the transport's TLS and proxy settings
-func BuildOAuthAuth(ctx context.Context, serverName, serverURL string, oauthConfig map[string]any, transport HTTPOptions) (*OAuthProvider, error) {
-	cfg, storage := prepareOAuthConfig(ctx, serverName, serverURL, oauthConfig)
-	if !isInteractive(ctx) && !storage.HasCachedTokens() {
-		return nil, &OAuthNonInteractiveError{fmt.Sprintf("MCP OAuth for '%s': non-interactive environment and no cached tokens found. The OAuth flow "+
-			"requires browser authorization. Run `icebath mcp login %s` interactively first to complete "+
-			"initial authorization, then cached tokens will be reused.", serverName, serverName)}
-	}
-	opts, err := buildProviderOptions(ctx, cfg, storage, true)
-	if err != nil {
-		return nil, err
-	}
-	opts.ServerURL = serverURL
-	opts.HTTP = transport
-	return newOAuthProvider(*opts)
-}

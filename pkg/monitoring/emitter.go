@@ -309,16 +309,3 @@ func GetEmitter() *MonitoringEmitter {
 
 // Emits through the process wide emitter
 func Emit(event any) { GetEmitter().Emit(event) }
-
-// Swaps the process wide emitter, closing the previous one
-func ResetEmitterForTests(em *MonitoringEmitter) {
-	emitterMu.Lock()
-	defer emitterMu.Unlock()
-	if emitter != nil && em != emitter {
-		func() {
-			defer func() { recover() }()
-			emitter.Close()
-		}()
-	}
-	emitter = em
-}

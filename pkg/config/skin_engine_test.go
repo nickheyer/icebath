@@ -147,3 +147,9 @@ func TestInstallSkinColorFilterWrapsEveryColorRead(t *testing.T) {
 		t.Fatal("a removed filter must leave colors untouched")
 	}
 }
+
+// Names of the built in skins in definition order
+func BuiltinSkinNames() []string {
+	_, order := builtinSkinTable()
+	return append([]string{}, order...)
+}

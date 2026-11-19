@@ -690,3 +690,15 @@ func TestEvidenceRecorderHookRecordsVerifyRun(t *testing.T) {
 		t.Fatalf("status = %v", got)
 	}
 }
+
+// Detected verify command of the shell command in the workspace of cwd as evidence, nil when it is none
+func classifyVerificationCommand(command, cwd, sessionID string, exitCode int, output string, pipelineStatus []int) (*VerificationEvidence, error) {
+	if command == "" {
+		return nil, nil
+	}
+	facts := verifyProjectFacts(cwd)
+	if facts == nil {
+		return nil, nil
+	}
+	return classifyInWorkspace(command, facts, cwd, sessionID, exitCode, output, pipelineStatus)
+}

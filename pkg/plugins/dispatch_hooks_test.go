@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 )
 
 type runtimeError struct{ msg string }
@@ -342,7 +344,7 @@ func TestAsyncHookResultIsAwaitedAlongsideSync(t *testing.T) {
 	if got := m.InvokeHook(context.Background(), "pre_gateway_dispatch", nil); !reflect.DeepEqual(got, []any{"sync", "async"}) {
 		t.Fatalf("got %v", got)
 	}
-	if got := m.InvokeHook(WithRunningLoop(context.Background()), "pre_gateway_dispatch", nil); !reflect.DeepEqual(got, []any{"sync", "async"}) {
+	if got := m.InvokeHook(pyctx.WithRunningLoop(context.Background()), "pre_gateway_dispatch", nil); !reflect.DeepEqual(got, []any{"sync", "async"}) {
 		t.Fatalf("running loop got %v", got)
 	}
 }
@@ -364,7 +366,7 @@ func TestAInvokeHookAwaitsOnCallerAndBoundsPolicyHooks(t *testing.T) {
 }
 
 func TestResolvePluginCommandResult(t *testing.T) {
-	ctx := WithRunningLoop(context.Background())
+	ctx := pyctx.WithRunningLoop(context.Background())
 	if v, err := ResolvePluginCommandResult(ctx, AwaitFunc(func(context.Context) (any, error) { return "done", nil })); v != "done" || err != nil {
 		t.Fatalf("%v %v", v, err)
 	}

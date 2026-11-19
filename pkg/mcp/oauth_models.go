@@ -497,20 +497,10 @@ func (d *dumpBuilder) value(key string, v any) *dumpBuilder {
 
 func strPtr(s string) *string { return &s }
 
-func int64Ptr(n int64) *int64 { return &n }
-
 // Dereferenced string, empty for nil
 func derefStr(s *string) string {
 	if s == nil {
 		return ""
-	}
-	return *s
-}
-
-// Python str of an optional string, None for nil
-func pyOptStr(s *string) string {
-	if s == nil {
-		return "None"
 	}
 	return *s
 }
@@ -706,12 +696,6 @@ func (md *OAuthClientMetadata) dump() *jsonObject {
 		list("grant_types", md.GrantTypes, true)
 	d.o.set("application_type", md.ApplicationType)
 	return d.o
-}
-
-// Copy of the metadata whose scope can change without touching the original
-func (md *OAuthClientMetadata) clone() *OAuthClientMetadata {
-	c := *md
-	return &c
 }
 
 // OAuthClientInfo is the authorization server's record of a registered client

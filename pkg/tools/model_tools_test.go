@@ -520,6 +520,20 @@ func TestBlockAndApproveDirectivesCarryTheirModifiedArgs(t *testing.T) {
 	if block, modified := silent.dispatchPreToolCallHooks(context.Background(), env, "web_search", map[string]any{"q": "test"}, ToolHookIDs{}, nil, DispatchOptions{}); block != "" || modified != nil {
 		t.Fatalf("a block without a message applied %q %v", block, modified)
 	}
+	gated := NewDispatcher(NewRegistry())
+	gated.PreToolCall = append(gated.PreToolCall, func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, trace []map[string]any) PreToolDirective {
+		return PreToolDirective{Action: "approve", Message: "why", RuleKey: "write_file:ssh"}
+	})
+	human := approvalTestEnv(t, "gate-session", nil, map[string]any{"interactive": true})
+	human.Ask = &scriptedAsker{answer: "deny"}
+	if block, _ := gated.dispatchPreToolCallHooks(context.Background(), human, "write_file", map[string]any{}, ToolHookIDs{TurnID: "turn-1", ToolCallID: "call-1"}, nil, DispatchOptions{}); !strings.Contains(strings.ToLower(block), "denied") {
+		t.Fatalf("a denied approve directive let the call through: %q", block)
+	}
+	ApproveSession("gate-session", "plugin_rule:write_file:ssh")
+	human.Ask = forbiddenAsker{t}
+	if block, _ := gated.dispatchPreToolCallHooks(context.Background(), human, "write_file", map[string]any{}, ToolHookIDs{}, nil, DispatchOptions{}); block != "" {
+		t.Fatalf("the plugin rule key did not reach the gate: %q", block)
+	}
 }
 
 func TestRequestMiddlewareTraceEntriesAreRecordedAsGiven(t *testing.T) {

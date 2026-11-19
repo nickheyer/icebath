@@ -9,15 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
-// Old updater shim that reports no uv tool install so a relaunch picks the new updater
-func IsUVToolInstall() bool { return false }
-
-// Old updater shim that reports every method as supported so the old updater does no legacy work
-func IsUnsupportedInstallMethod(string) bool { return false }
-
-// Old updater shim that offers no obsolete install advice for any method
-func FormatUnsupportedInstallWarning(string) string { return "" }
-
 var nixManagedSystems = map[string]bool{"nixos": true, "home-manager": true}
 
 // Nix store root marking an install built by nix, a var so tests point it at a temp tree

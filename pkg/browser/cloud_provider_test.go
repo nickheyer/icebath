@@ -72,20 +72,17 @@ func TestBrowserUseAndFirecrawlNeedTheirKey(t *testing.T) {
 	}
 }
 
-// TestRegistryResolution none without credentials, local short circuit, browser-use preferred over browserbase
+// TestRegistryResolution none without credentials, browser-use preferred over browserbase
 func TestBundledRegistryResolution(t *testing.T) {
 	env := bundledProviders(t)
-	if p := resolveBrowserProvider(context.Background(), env, ""); p != nil {
-		t.Fatalf("resolved %s without credentials", p.Name())
-	}
-	if p := resolveBrowserProvider(context.Background(), env, "local"); p != nil {
-		t.Fatal("local resolved a provider")
+	if p, err := getCloudProvider(env); err != nil || p != nil {
+		t.Fatalf("resolved %v without credentials: %v", p, err)
 	}
 	t.Setenv("BROWSER_USE_API_KEY", "k1")
 	t.Setenv("BROWSERBASE_API_KEY", "k2")
 	t.Setenv("BROWSERBASE_PROJECT_ID", "p")
-	if p := resolveBrowserProvider(context.Background(), env, ""); p == nil || p.Name() != "browser-use" {
-		t.Fatalf("resolved %v", p)
+	if p, err := getCloudProvider(env); err != nil || p == nil || p.Name() != "browser-use" {
+		t.Fatalf("resolved %v: %v", p, err)
 	}
 }
 

@@ -20,6 +20,7 @@ var redactPolicy = struct {
 }{env: map[string]*string{}, cfg: map[string]*string{}}
 
 func init() {
+	config.RegisterRedactionSwitch(RedactEnabled)
 	config.RegisterPolicyNote(func(setter, homeKey string, raw any) {
 		switch setter {
 		case "note_env_policy":

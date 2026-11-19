@@ -106,11 +106,6 @@ func unknownPluginMessage(name string, downloadedOnly bool) string {
 		"To add one: `icebath plugins install <owner/repo>`.", name, scope)
 }
 
-// UnknownPluginMessage is the exported no plugin named message for the migration tests of other packages
-func UnknownPluginMessage(name string, downloadedOnly bool) string {
-	return unknownPluginMessage(name, downloadedOnly)
-}
-
 // Removes a key and its bare leaf from a name set
 func discardKeyAndLeaf(names map[string]bool, key string) {
 	delete(names, key)

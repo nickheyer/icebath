@@ -106,3 +106,13 @@ func TestReapedForgetsActiveAnnouncement(t *testing.T) {
 		t.Fatalf("%+v", h.all())
 	}
 }
+
+// Clears every announcement dedup bucket for tests
+func resetAnnounceCaches() {
+	announceMu.Lock()
+	for _, b := range []*map[announceKey]bool{&announcedActive, &announcedUnavailable, &announcedNoRoot,
+		&announcedSkipped, &announcedExcluded, &announcedUntrusted} {
+		*b = map[announceKey]bool{}
+	}
+	announceMu.Unlock()
+}

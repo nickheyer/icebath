@@ -67,7 +67,7 @@ func TestDockerConfigMigrateBacksUpAndMigratesLegacyConfig(t *testing.T) {
 		t.Fatalf("status %d stdout %q stderr %q", code, out, errOut)
 	}
 	raw := rawMigrated(t, h)
-	if !pyEq(raw["_config_version"], latestConfigVersion()) || !Equal(raw["delegation"], map[string]any{"max_concurrent_children": 8}) {
+	if !pyEq(raw["_config_version"], latestConfigVersion()) || !pyEq(raw["delegation"], map[string]any{"max_concurrent_children": 8}) {
 		t.Fatalf("raw %v", raw)
 	}
 	if _, ok := AsMap(raw["model_catalog"])["ttl_hours"]; ok {

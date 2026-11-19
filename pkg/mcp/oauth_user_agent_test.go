@@ -30,15 +30,8 @@ func TestOAuthUserAgentIsStripped(t *testing.T) {
 	}
 }
 
-// Builders the user agent cases run through, the direct auth builder and the manager
+// Builders the user agent cases run through
 var userAgentBuilders = map[string]func(t *testing.T, cfg map[string]any) *OAuthProvider{
-	"build_oauth_auth": func(t *testing.T, cfg map[string]any) *OAuthProvider {
-		p, err := BuildOAuthAuth(ForceInteractiveOAuth(context.Background()), "srv", "https://mcp.example.com/mcp", cfg, HTTPOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return p
-	},
 	"oauth_manager": func(t *testing.T, cfg map[string]any) *OAuthProvider {
 		resetOAuthManager()
 		return managerProvider(t, context.Background(), "srv", "https://mcp.example.com/mcp", cfg)
@@ -103,7 +96,7 @@ func TestOAuthUserAgentUnconfiguredFallsBackToTheDefault(t *testing.T) {
 
 func TestOAuthUserAgentDoesNotDisturbTokenAuthPreparation(t *testing.T) {
 	freshManager(t)
-	p := userAgentBuilders["build_oauth_auth"](t, map[string]any{"user_agent": "UA/1", "client_id": "pre", "client_secret": "shh",
+	p := userAgentBuilders["oauth_manager"](t, map[string]any{"user_agent": "UA/1", "client_id": "pre", "client_secret": "shh",
 		"token_endpoint_auth_method": "client_secret_basic"})
 	readyForTokenRequests(t, p)
 	info, err := validateClientInfo(map[string]any{"client_id": "pre", "client_secret": "shh", "token_endpoint_auth_method": "client_secret_basic",

@@ -142,16 +142,12 @@ func TestSkillViewBackgroundReviewSkipsDedupAndMarksRead(t *testing.T) {
 
 func TestSkillProvenanceOrigins(t *testing.T) {
 	env := &tools.Env{Values: &sync.Map{}}
-	if CurrentWriteOrigin(env) != "foreground" || IsBackgroundReview(env) || IsUnattendedReview(env) {
+	if CurrentWriteOrigin(env) != "foreground" || IsBackgroundReview(env) {
 		t.Fatal("default origin is not foreground")
 	}
 	SetCurrentWriteOrigin(env, BackgroundReview)
-	if !IsBackgroundReview(env) || !IsUnattendedReview(env) {
+	if !IsBackgroundReview(env) {
 		t.Fatal("background review not detected")
-	}
-	SetReviewAttended(env, true)
-	if IsUnattendedReview(env) {
-		t.Fatal("attended review reported unattended")
 	}
 	SetCurrentWriteOrigin(env, "")
 	if CurrentWriteOrigin(env) != "foreground" {

@@ -664,3 +664,8 @@ func TestWeekOldKernelDirsGoAndFreshOnesStay(t *testing.T) {
 		}
 	}
 }
+
+func (k *sessionKernel) alive() bool {
+	p := k.proc.Load()
+	return p != nil && p.running()
+}

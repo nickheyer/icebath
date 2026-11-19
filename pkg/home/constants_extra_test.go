@@ -3,7 +3,6 @@ package home
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net"
 	"os"
@@ -480,13 +479,9 @@ func TestPackagedDirsHonorWrappersThenDefaultThenHome(t *testing.T) {
 	t.Setenv(EnvHome, tmp)
 	ctx := context.Background()
 	t.Setenv("ICEBATH_OPTIONAL_SKILLS", "")
-	t.Setenv("ICEBATH_OPTIONAL_MCPS", " ")
 	t.Setenv("ICEBATH_BUNDLED_SKILLS", filepath.Join(tmp, "nix", "skills")+" ")
 	if got := OptionalSkillsDir(ctx, ""); got != filepath.Join(tmp, "optional-skills") {
 		t.Fatalf("optional skills = %q", got)
-	}
-	if got := OptionalMCPsDir(ctx, filepath.Join(tmp, "checkout")); got != filepath.Join(tmp, "checkout") {
-		t.Fatalf("optional mcps = %q", got)
 	}
 	if got := BundledSkillsDir(ctx, filepath.Join(tmp, "checkout")); got != filepath.Join(tmp, "nix", "skills") {
 		t.Fatalf("bundled skills = %q", got)
@@ -532,51 +527,6 @@ func TestNodeLayoutHelpers(t *testing.T) {
 	os.WriteFile(filepath.Join(dirs[1], CandidateNodeCommandNames("node")[0]), nil, 0o644)
 	if !ManagedNodeTreePresent(context.Background(), tmp) {
 		t.Fatal("node file not detected")
-	}
-}
-
-func TestIsExecutableFile(t *testing.T) {
-	hcPosixOnly(t)
-	tmp, _ := hcFresh(t)
-	exe, plain := filepath.Join(tmp, "exe"), filepath.Join(tmp, "plain")
-	os.WriteFile(exe, nil, 0o755)
-	os.WriteFile(plain, nil, 0o644)
-	os.Symlink(filepath.Join(tmp, "gone"), filepath.Join(tmp, "dangling"))
-	if !IsExecutableFile(exe) || IsExecutableFile(plain) || IsExecutableFile(filepath.Join(tmp, "dangling")) {
-		t.Fatal("executable verdicts wrong")
-	}
-}
-
-func TestPartialUpdateHintOnlyForFirstPartyImportErrors(t *testing.T) {
-	for name, want := range map[string]bool{
-		"agent": true, "agent.foo": true, "icebath_cli.main": true, "tui_gateway.x": true,
-		"agentops": false, "": false, "requests": false, ".agent": false,
-	} {
-		if IsFirstPartyModule(name) != want {
-			t.Errorf("IsFirstPartyModule(%q) != %v", name, want)
-		}
-	}
-	half := &ImportError{Name: "agent.turn", Msg: "cannot import name 'x' from 'agent.turn'"}
-	if lines := PartialUpdateHint(half); len(lines) != 5 || lines[3] != "    icebath update" {
-		t.Fatalf("hint = %q", lines)
-	}
-	for _, err := range []error{
-		&ImportError{Name: "agent.turn", Msg: "No module named 'agent.turn'", ModuleNotFound: true},
-		&ImportError{Name: "requests", Msg: "cannot import"},
-		errors.New("plain"),
-		nil,
-	} {
-		if PartialUpdateHint(err) != nil {
-			t.Errorf("hint for %v", err)
-		}
-	}
-	var buf bytes.Buffer
-	if !EmitPartialUpdateHint(half, &buf) || !strings.HasPrefix(buf.String(), "Error: cannot import name 'x' from 'agent.turn'\n\nThis looks like") {
-		t.Fatalf("emitted %q", buf.String())
-	}
-	buf.Reset()
-	if EmitPartialUpdateHint(errors.New("plain"), &buf) || buf.Len() != 0 {
-		t.Fatal("emitted for a plain error")
 	}
 }
 

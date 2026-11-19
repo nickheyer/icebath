@@ -22,14 +22,6 @@ import (
 const EmptyResponseExplanation = "{model} didn't produce a reply this time, even after retries. " +
 	"Send `continue` to try again, or switch models with /model."
 
-// Localized empty response explanation with the model name or the model filled in
-func EmptyResponseExplanationFor(ctx context.Context, model string) string {
-	if model == "" {
-		model = i18n.T(ctx, "explainer.shared.the_model", "", nil)
-	}
-	return i18n.T(ctx, "explainer.empty_response", "", map[string]any{"model": model})
-}
-
 var exitReasonExplanations = map[string]string{
 	"empty_response_exhausted":          "explainer.empty_response",
 	"all_retries_exhausted_no_response": "explainer.exit.all_retries_exhausted_no_response",

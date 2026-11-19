@@ -27,12 +27,6 @@ func installHome(t *testing.T) string {
 	return h
 }
 
-func TestOldUpdaterShimsDoNoWork(t *testing.T) {
-	if IsUVToolInstall() || IsUnsupportedInstallMethod("pip") || FormatUnsupportedInstallWarning("pip") != "" {
-		t.Fatal("retired probes must report nothing")
-	}
-}
-
 func TestRecommendedUpdateCommandDefaultsToIcebathUpdate(t *testing.T) {
 	h := installHome(t)
 	tree := t.TempDir()

@@ -176,14 +176,6 @@ func (r *kanbanReject) Error() string { return r.payload }
 // Rejection whose payload is the tool error for the message
 func reject(message string) error { return &kanbanReject{kanbanToolError(message)} }
 
-// Rejects with the message as a tool error unless the condition holds
-func check(cond bool, message string) error {
-	if !cond {
-		return reject(message)
-	}
-	return nil
-}
-
 // JSON error object the model reads for a failed tool call
 func kanbanToolError(message string) string {
 	return tools.ToolResult(pyjson.ObjectOf("error", message))

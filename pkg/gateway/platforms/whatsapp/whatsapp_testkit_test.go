@@ -303,7 +303,7 @@ func fakeSpawn(t *testing.T, fn func(args bridgeArgs, logFH *os.File, env map[st
 // Adapter built without the constructor, the __new__ adapter of the Python cases
 func newBareAdapter(t *testing.T, script, session string, port int) *WhatsAppAdapter {
 	t.Helper()
-	if !strings.HasPrefix(os.Getenv("ICEBATH_HOME"), os.TempDir()) {
+	if !strings.HasPrefix(os.Getenv("ICEBATH_HOME"), testTempRoot()) {
 		hermeticHome(t)
 	}
 	cfg := &gateway.PlatformConfig{Extra: map[string]any{}}
@@ -315,6 +315,14 @@ func newBareAdapter(t *testing.T, script, session string, port int) *WhatsAppAda
 	a.AllowFrom, a.GroupAllowFrom = map[string]bool{}, map[string]bool{}
 	flushStatus(t)
 	return a
+}
+
+// Directory the temp dirs of a case are made in, GOTMPDIR as testing TempDir honours it or the system temp dir
+func testTempRoot() string {
+	if dir := os.Getenv("GOTMPDIR"); dir != "" {
+		return dir
+	}
+	return os.TempDir()
 }
 
 // Hermetic profile home for one case, logging to stderr so no log file writer outlives the case

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -328,9 +329,9 @@ func TestDeliveryParityModuleInvokeMiddlewareLazilyDiscovers(t *testing.T) {
 		c.RegisterMiddleware("llm_request", func(map[string]any) (any, error) { return "mw-ok", nil })
 		return nil
 	})
-	results := InvokeMiddleware(ctx, "llm_request", "", map[string]any{"request": map[string]any{}})
-	if !m.discovered || !reflect.DeepEqual(results, []any{"mw-ok"}) {
-		t.Fatalf("discovered %v results %v", m.discovered, results)
+	ApplyLLMRequestMiddleware(ctx, map[string]any{}, nil)
+	if !m.discovered {
+		t.Fatal("the request middleware entry ran without discovering the plugins")
 	}
 }
 
@@ -386,7 +387,7 @@ func TestAsyncHookCallbacksAsyncHookResolvesUnderARunningLoop(t *testing.T) {
 			return "from-async:" + scope, nil
 		}), nil
 	})
-	ctx := WithRunningLoop(context.WithValue(context.Background(), casesScopeKey{}, "profile-b"))
+	ctx := pyctx.WithRunningLoop(context.WithValue(context.Background(), casesScopeKey{}, "profile-b"))
 	got := m.InvokeHook(ctx, "post_tool_call", map[string]any{"tool_name": "t", "args": map[string]any{}, "result": "r", "duration_ms": 1})
 	if !reflect.DeepEqual(got, []any{"from-async:profile-b"}) {
 		t.Fatalf("got %v", got)
@@ -430,21 +431,9 @@ func casesDirectives(t *testing.T, results ...any) (context.Context, *Manager) {
 	return ctx, m
 }
 
-// Directive profile whose approval gate is gate, the fake a case installs over request_tool_approval
-func casesGate(t *testing.T, gate func(tool, reason, rule, turn, call string) (map[string]any, error), results ...any) context.Context {
-	t.Helper()
-	ctx, _ := casesDirectives(t, results...)
-	s := *installedServices()
-	s.RequestToolApproval = func(_ context.Context, tool, msg, rule, turn, call, _ string) (map[string]any, error) {
-		return gate(tool, msg, rule, turn, call)
-	}
-	InstallServices(&s)
-	return ctx
-}
-
 func TestPreToolCallBlockingBlockMessageReturnedForValidDirective(t *testing.T) {
 	ctx, _ := casesDirectives(t, map[string]any{"action": "block", "message": "blocked by plugin"})
-	if msg, err := GetPreToolCallBlockMessage(ctx, "todo", map[string]any{}, PreToolCallIDs{TaskID: "t1"}); err != nil || msg != "blocked by plugin" {
+	if msg, err := preToolBlockMessage(ctx, "todo", map[string]any{}, PreToolCallIDs{TaskID: "t1"}); err != nil || msg != "blocked by plugin" {
 		t.Fatalf("message %q err %v", msg, err)
 	}
 }
@@ -462,10 +451,10 @@ func TestPreToolCallDirectiveFirstPartyObserverReceivesPreToolCall(t *testing.T)
 		return []any{}
 	}
 	InstallServices(&s)
-	action, message, err := GetPreToolCallDirective(ctx, "write_file", map[string]any{"path": "README.md"},
+	d, err := preToolCallDirectiveDetails(ctx, "write_file", map[string]any{"path": "README.md"},
 		PreToolCallIDs{TaskID: "task-1", SessionID: "session-1", ToolCallID: "call-1"})
-	if err != nil || action != "" || message != "" {
-		t.Fatalf("directive %q %q %v", action, message, err)
+	if err != nil || d.Action != "" || d.Message != "" {
+		t.Fatalf("directive %+v %v", d, err)
 	}
 	if len(observed) != 1 || observed[0].hook != "pre_tool_call" {
 		t.Fatalf("observed %v", observed)
@@ -478,15 +467,15 @@ func TestPreToolCallDirectiveFirstPartyObserverReceivesPreToolCall(t *testing.T)
 
 func TestPreToolCallDirectiveApproveDirectiveReturned(t *testing.T) {
 	ctx, _ := casesDirectives(t, map[string]any{"action": "approve", "message": "needs human ok"})
-	if action, message, err := GetPreToolCallDirective(ctx, "write_file", map[string]any{}, PreToolCallIDs{}); err != nil || action != "approve" || message != "needs human ok" {
-		t.Fatalf("directive %q %q %v", action, message, err)
+	if d, err := preToolCallDirectiveDetails(ctx, "write_file", map[string]any{}, PreToolCallIDs{}); err != nil || d.Action != "approve" || d.Message != "needs human ok" {
+		t.Fatalf("directive %+v %v", d, err)
 	}
 }
 
 func TestPreToolCallDirectiveApproveWithoutMessageIsValid(t *testing.T) {
 	ctx, _ := casesDirectives(t, map[string]any{"action": "approve"})
-	if action, message, err := GetPreToolCallDirective(ctx, "write_file", map[string]any{}, PreToolCallIDs{}); err != nil || action != "approve" || message != "" {
-		t.Fatalf("directive %q %q %v", action, message, err)
+	if d, err := preToolCallDirectiveDetails(ctx, "write_file", map[string]any{}, PreToolCallIDs{}); err != nil || d.Action != "approve" || d.Message != "" {
+		t.Fatalf("directive %+v %v", d, err)
 	}
 }
 
@@ -517,53 +506,18 @@ func TestPreToolCallDirectiveFirstApproveWinsAmongApprovesAndKeepsLaterModify(t 
 	}
 }
 
-func TestResolvePreToolBlockApproveGateReceivesToolObservabilityContext(t *testing.T) {
-	seen := map[string]string{}
-	ctx := casesGate(t, func(_, _, _, turn, call string) (map[string]any, error) {
-		seen["turn_id"], seen["tool_call_id"] = turn, call
-		return map[string]any{"approved": true, "message": nil}, nil
-	}, map[string]any{"action": "approve", "message": "why"})
-	msg, err := ResolvePreToolBlock(ctx, "write_file", map[string]any{}, PreToolCallIDs{TurnID: "turn-1", ToolCallID: "call-1"})
-	if err != nil || msg != "" {
-		t.Fatalf("block %q %v", msg, err)
-	}
-	if !reflect.DeepEqual(seen, map[string]string{"turn_id": "turn-1", "tool_call_id": "call-1"}) {
-		t.Fatalf("seen %v", seen)
-	}
-}
-
-func TestResolvePreToolBlockApprovePassesPluginRuleKeyToGate(t *testing.T) {
-	seen := map[string]string{}
-	ctx := casesGate(t, func(tool, reason, rule, _, _ string) (map[string]any, error) {
-		seen["tool_name"], seen["reason"], seen["rule_key"] = tool, reason, rule
-		return map[string]any{"approved": true, "message": nil}, nil
-	}, map[string]any{"action": "approve", "message": "why", "rule_key": "write_file:ssh"})
-	if msg, err := ResolvePreToolBlock(ctx, "write_file", map[string]any{}, PreToolCallIDs{}); err != nil || msg != "" {
-		t.Fatalf("block %q %v", msg, err)
-	}
-	if !reflect.DeepEqual(seen, map[string]string{"tool_name": "write_file", "reason": "why", "rule_key": "write_file:ssh"}) {
-		t.Fatalf("seen %v", seen)
-	}
-}
-
-func TestResolvePreToolBlockApproveGateExceptionFailsClosed(t *testing.T) {
-	ctx := casesGate(t, func(_, _, _, _, _ string) (map[string]any, error) {
-		return nil, &runtimeError{"gate crashed"}
-	}, map[string]any{"action": "approve", "message": "why"})
-	if msg, err := ResolvePreToolBlock(ctx, "terminal", map[string]any{}, PreToolCallIDs{}); err != nil || !strings.Contains(msg, "gate failed") {
-		t.Fatalf("block %q %v", msg, err)
-	}
-}
-
 // Block message and merged args of one pre_tool_call dispatch over hooks returning results
 func casesDispatch(t *testing.T, tool string, args map[string]any, results ...any) (string, map[string]any) {
 	t.Helper()
 	ctx, _ := casesDirectives(t, results...)
-	msg, modified, err := DispatchPreToolCallHooks(ctx, tool, args, PreToolCallIDs{})
+	d, err := preToolCallDirectiveDetails(ctx, tool, args, PreToolCallIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return msg, modified
+	if d.Action != "block" {
+		return "", d.ModifiedArgs
+	}
+	return d.Message, d.ModifiedArgs
 }
 
 func modifyTo(args map[string]any) map[string]any {
@@ -656,15 +610,7 @@ func TestGetPreVerifyContinueMessageForwardsScopeSignalsToHooks(t *testing.T) {
 func TestThreadToolWhitelistAllowedToolPassesThroughToHooks(t *testing.T) {
 	ctx, _ := casesDirectives(t)
 	limited := WithToolWhitelist(ctx, map[string]bool{"memory": true, "skill_manage": true}, "")
-	if msg, err := GetPreToolCallBlockMessage(limited, "memory", map[string]any{}, PreToolCallIDs{}); err != nil || msg != "" {
-		t.Fatalf("message %q err %v", msg, err)
-	}
-}
-
-func TestThreadToolWhitelistClearRestoresUnrestrictedBehavior(t *testing.T) {
-	ctx, _ := casesDirectives(t)
-	cleared := ClearToolWhitelist(WithToolWhitelist(ctx, map[string]bool{"memory": true}, ""))
-	if msg, err := GetPreToolCallBlockMessage(cleared, "terminal", map[string]any{}, PreToolCallIDs{}); err != nil || msg != "" {
+	if msg, err := preToolBlockMessage(limited, "memory", map[string]any{}, PreToolCallIDs{}); err != nil || msg != "" {
 		t.Fatalf("message %q err %v", msg, err)
 	}
 }
@@ -672,12 +618,12 @@ func TestThreadToolWhitelistClearRestoresUnrestrictedBehavior(t *testing.T) {
 func TestThreadToolWhitelistWhitelistIsThreadLocal(t *testing.T) {
 	ctx, _ := casesDirectives(t)
 	limited := WithToolWhitelist(ctx, map[string]bool{"memory": true}, "")
-	if msg, _ := GetPreToolCallBlockMessage(limited, "terminal", map[string]any{}, PreToolCallIDs{}); msg == "" {
+	if msg, _ := preToolBlockMessage(limited, "terminal", map[string]any{}, PreToolCallIDs{}); msg == "" {
 		t.Fatal("the whitelisted context let terminal through")
 	}
 	worker := make(chan string)
 	go func() {
-		msg, _ := GetPreToolCallBlockMessage(ctx, "terminal", map[string]any{}, PreToolCallIDs{})
+		msg, _ := preToolBlockMessage(ctx, "terminal", map[string]any{}, PreToolCallIDs{})
 		worker <- msg
 	}()
 	if msg := <-worker; msg != "" {
@@ -790,7 +736,7 @@ func casesWriteEnginePlugin(t *testing.T, h, engine string) {
 
 func TestPluginCommandResultResolutionAwaitsAsyncResultWithRunningLoop(t *testing.T) {
 	handler := AwaitFunc(func(context.Context) (any, error) { return "threaded-ok", nil })
-	if got, err := ResolvePluginCommandResult(WithRunningLoop(context.Background()), handler); err != nil || got != "threaded-ok" {
+	if got, err := ResolvePluginCommandResult(pyctx.WithRunningLoop(context.Background()), handler); err != nil || got != "threaded-ok" {
 		t.Fatalf("got %v %v", got, err)
 	}
 }
@@ -808,7 +754,7 @@ func TestPluginCommandResultResolutionRunningLoopTimeoutDoesNotHangForever(t *te
 		}
 		return "should-not-reach", nil
 	})
-	_, err := ResolvePluginCommandResult(WithRunningLoop(context.Background()), slow)
+	_, err := ResolvePluginCommandResult(pyctx.WithRunningLoop(context.Background()), slow)
 	var timeout *PluginCommandTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("slow handler returned %v", err)

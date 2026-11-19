@@ -206,14 +206,14 @@ func TestConfigureImagegenModelAndPluginPickers(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "veo", def: "veo-3",
 		models: []map[string]any{{"id": "veo-3", "speed": "60s"}}}))
 	s, out = newTestToolsSetup(t, "\n")
-	if err := s.configureVideogenModelForPlugin("veo", cfg); err != nil {
+	if err := s.configureGenModelForPlugin("video_gen", "veo", cfg); err != nil {
 		t.Fatal(err)
 	}
 	assertLinesInOrder(t, out.String(), "  Choose veo model:", " 1.   veo-3  60s      ← currently in use\n")
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "fluxy", def: "f1",
 		models: []map[string]any{{"id": "f1"}}}))
 	s, out = newTestToolsSetup(t, "\n")
-	if err := s.configureImagegenModelForPlugin("fluxy", cfg); err != nil {
+	if err := s.configureGenModelForPlugin("image_gen", "fluxy", cfg); err != nil {
 		t.Fatal(err)
 	}
 	assertLinesInOrder(t, out.String(), " 1. f1        ← currently in use\n")
@@ -248,7 +248,7 @@ func TestSelectPluginGenProviderWritesTheVendor(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, fakePickerRegistry(nil, &fakePickerProvider{name: "xai"}))
 	s, out := newTestToolsSetup(t, "2\n")
 	cfg := config.Tree{"video_gen": map[string]any{}}
-	if err := s.selectPluginVideoGenProvider("xai", cfg); err != nil {
+	if err := s.selectPluginGenProvider("video_gen", "xai", cfg); err != nil {
 		t.Fatal(err)
 	}
 	if !pyjson.Equal(cfg["video_gen"], map[string]any{"provider": "xai", "xai": map[string]any{"storage": map[string]any{"enabled": false}}}) {
@@ -415,7 +415,7 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	openaiTTS := catalogProviders(catalogCategory("tts"))[1]
 	unsetEnv(t, "VOICE_TOOLS_OPENAI_KEY")
 	secretAnswers(s, "sk-voice")
-	if err := s.reconfigureProvider(openaiTTS, cfg); err != nil {
+	if err := s.configureProvider(openaiTTS, cfg, true); err != nil {
 		t.Fatal(err)
 	}
 	os.Unsetenv("VOICE_TOOLS_OPENAI_KEY")

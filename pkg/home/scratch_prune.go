@@ -228,11 +228,6 @@ func deniedDir(dir string, err error) string {
 	return ""
 }
 
-// True when path or anything beneath it was written at or after cutoff, or could not be inspected
-func SubtreeTouchedSince(path string, cutoff float64) bool {
-	return SubtreeTouchState(path, cutoff) != stateIdle
-}
-
 // Whether path is root or lies beneath it
 func under(path, root string) bool {
 	return path == root || strings.HasPrefix(path, strings.TrimRight(root, string(os.PathSeparator))+string(os.PathSeparator))

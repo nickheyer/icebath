@@ -1,4 +1,4 @@
-// Serves every go test binary a private user home under the temp dir in place of the developer's real one
+// Serves every go test binary a private user home under the temp dir in place of the developer's real one, and takes the developer's terminal away from it
 package homeguard
 
 import (
@@ -47,6 +47,9 @@ var guard struct {
 
 func init() {
 	if testing.Testing() {
+		if os.Getenv(tempRootEnv) == "" {
+			leaveTerminal()
+		}
 		isolate()
 	}
 }

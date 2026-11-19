@@ -830,17 +830,6 @@ func floatObj(f float64) any {
 	return f
 }
 
-// Escape a UnicodeError message gives one character, x for Latin-1, u for the BMP and U beyond
-func unicodeErrorChar(r rune) string {
-	switch {
-	case r < 0x100:
-		return fmt.Sprintf("\\x%02x", r)
-	case r < 0x10000:
-		return fmt.Sprintf("\\u%04x", r)
-	}
-	return fmt.Sprintf("\\U%08x", r)
-}
-
 // The one NaN object SafeConstructor.nan_value is, every .nan scalar loading to it
 var yamlNaNValue = &pyNaN{neg: true}
 

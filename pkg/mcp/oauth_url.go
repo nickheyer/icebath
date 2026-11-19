@@ -167,9 +167,6 @@ func netlocPort(netloc string) (int, bool, error) {
 	return n, true, nil
 }
 
-// Reports whether a netloc carries a username or password
-func netlocHasUserinfo(netloc string) bool { return strings.Contains(netloc, "@") }
-
 // Joins an absolute path reference onto a base like urllib.parse.urljoin, removing dot segments
 func pyURLJoinAbsPath(base, ref string) string {
 	if base == "" {

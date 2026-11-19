@@ -485,24 +485,6 @@ type requestClock struct {
 
 type requestClockKey struct{}
 
-// Context whose cancellation fires once the clock has run for timeout, the clock itself not yet started
-func withRequestClock(ctx context.Context, timeout time.Duration) (context.Context, *requestClock, context.CancelFunc) {
-	child, cancel := context.WithCancelCause(ctx)
-	clock := &requestClock{budget: timeout, pauses: 1, cancel: cancel}
-	child = context.WithValue(child, requestClockKey{}, clock)
-	return child, clock, func() {
-		clock.mu.Lock()
-		if clock.timer != nil {
-			clock.timer.Stop()
-		}
-		clock.mu.Unlock()
-		cancel(context.Canceled)
-	}
-}
-
-// Starts the clock running
-func (c *requestClock) start() { c.resume() }
-
 // Stops the clock, keeping the remaining budget
 func (c *requestClock) pause() {
 	c.mu.Lock()

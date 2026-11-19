@@ -75,7 +75,7 @@ func captureHook(t *testing.T, name string, fn plugins.HookFunc) {
 	ctx := context.Background()
 	mgr := plugins.GetPluginManager(ctx)
 	mgr.DiscoverAndLoad(ctx, false)
-	reg := plugins.NewPluginContext(&plugins.Manifest{Name: "kanban-test", Key: "kanban-test"}, mgr).RegisterHook(name, fn, false)
+	reg := plugins.NewContext(&plugins.Manifest{Name: "kanban-test", Key: "kanban-test"}, mgr).RegisterHook(name, fn, false)
 	t.Cleanup(func() { reg.Dispose() })
 }
 

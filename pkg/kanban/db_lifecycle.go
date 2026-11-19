@@ -455,15 +455,6 @@ func runsFromRows(rows []*Row) ([]*Run, error) {
 	return out, nil
 }
 
-// One run by id, nil when absent
-func GetRun(ctx context.Context, conn state.SQLiteConn, runID int64) (*Run, error) {
-	row, err := QueryOne(ctx, conn, "SELECT * FROM task_runs WHERE id = ?", runID)
-	if err != nil || row == nil {
-		return nil, err
-	}
-	return RunFromRow(row)
-}
-
 // Most recent run of a task regardless of outcome, nil when none
 func LatestRun(ctx context.Context, conn state.SQLiteConn, taskID string) (*Run, error) {
 	row, err := QueryOne(ctx, conn, "SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC, id DESC LIMIT 1", taskID)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -226,7 +227,7 @@ func TestStatusSnapshotNeverAdoptsCodexCLITokens(t *testing.T) {
 	stale := map[string]any{"access_token": jwtExpiringIn(-60)}
 	h, env := singletonOnlyCodexHome(t, stale, map[string]any{"access_token": jwtExpiringIn(86400), "refresh_token": "cli-refresh"})
 	GetCodexAuthStatus(env)
-	if !config.Equal(singletonTokens(t, h), stale) {
+	if !reflect.DeepEqual(singletonTokens(t, h), stale) {
 		t.Fatal("a status read persisted the Codex CLI login into auth.json")
 	}
 	resolved, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{})
@@ -259,13 +260,13 @@ func TestStatusSnapshotNeverRefreshesAnExpiredSingleton(t *testing.T) {
 	if status["logged_in"] != true || status["api_key"] != expired["access_token"] || status["source"] != "icebath-auth-store" {
 		t.Fatalf("status %v", status)
 	}
-	if !config.Equal(singletonTokens(t, h), expired) {
+	if !reflect.DeepEqual(singletonTokens(t, h), expired) {
 		t.Fatal("status read rewrote the singleton")
 	}
 	if _, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{ForceRefresh: true, ReadOnly: true}); err != nil {
 		t.Fatal(err)
 	}
-	if len(refreshCalls) != 0 || !config.Equal(singletonTokens(t, h), expired) {
+	if len(refreshCalls) != 0 || !reflect.DeepEqual(singletonTokens(t, h), expired) {
 		t.Fatal("read only did not win over force refresh")
 	}
 	if _, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{}); err != nil {

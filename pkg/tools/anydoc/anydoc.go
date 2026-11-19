@@ -85,25 +85,15 @@ func compile(ctx context.Context) error {
 // ToMarkdown converts a file's bytes, detecting the format from content with the path extension as fallback
 func ToMarkdown(ctx context.Context, data []byte, path string) (string, error) {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	out, err := convert(ctx, data, ext, true)
+	out, err := convert(ctx, data, ext)
 	if errors.Is(err, ErrNotDocument) {
 		return "", fmt.Errorf("%s is %w", path, ErrNotDocument)
 	}
 	return out, err
 }
 
-// ToMarkdownBytes converts in memory bytes, format naming the parser or empty to detect it from content
-func ToMarkdownBytes(ctx context.Context, data []byte, format string) (string, error) {
-	format = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(format)), ".")
-	out, err := convert(ctx, data, format, false)
-	if errors.Is(err, ErrNotDocument) && format != "" {
-		return "", fmt.Errorf("%w: no parser for the format %s", ErrNotDocument, format)
-	}
-	return out, err
-}
-
-// Runs one conversion in a fresh module instance
-func convert(ctx context.Context, data []byte, ext string, extIsFallback bool) (string, error) {
+// Runs one conversion in a fresh module instance, content deciding the format and ext standing in when content has no signature
+func convert(ctx context.Context, data []byte, ext string) (string, error) {
 	if err := compile(ctx); err != nil {
 		return "", fmt.Errorf("anydoc module failed to compile: %w", err)
 	}
@@ -132,11 +122,7 @@ func convert(ctx context.Context, data []byte, ext string, extIsFallback bool) (
 		return "", err
 	}
 	defer dealloc.Call(ctx, uint64(statusPtr), 4)
-	fallback := uint64(0)
-	if extIsFallback {
-		fallback = 1
-	}
-	results, err := call.Call(ctx, uint64(dataPtr), uint64(len(data)), uint64(extPtr), uint64(len(ext)), fallback, uint64(statusPtr))
+	results, err := call.Call(ctx, uint64(dataPtr), uint64(len(data)), uint64(extPtr), uint64(len(ext)), 1, uint64(statusPtr))
 	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			return "", fmt.Errorf("anydoc conversion trapped: %w: %s", err, msg)

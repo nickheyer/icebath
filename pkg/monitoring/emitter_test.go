@@ -90,3 +90,16 @@ func TestFullQueueDropsOldestAndSubscriberPanicIsIsolated(t *testing.T) {
 		t.Fatalf("delivered %d dispatched %d", got, em.Stats().Dispatched)
 	}
 }
+
+// Swaps the process wide emitter, closing the previous one
+func ResetEmitterForTests(em *MonitoringEmitter) {
+	emitterMu.Lock()
+	defer emitterMu.Unlock()
+	if emitter != nil && em != emitter {
+		func() {
+			defer func() { recover() }()
+			emitter.Close()
+		}()
+	}
+	emitter = em
+}

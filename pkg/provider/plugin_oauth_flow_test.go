@@ -100,12 +100,8 @@ func (f *pluginFlow) plugin(name string, oauth []any, display string) pluginFlow
 	if err := os.WriteFile(filepath.Join(root, "plugin.yaml"), raw, 0o644); err != nil {
 		f.t.Fatal(err)
 	}
-	module := filepath.Join(root, "api.py")
-	if err := os.WriteFile(module, []byte("def call(provider, url, method='POST', **kwargs): ...\n"), 0o644); err != nil {
-		f.t.Fatal(err)
-	}
 	return func(provider, target string, opts ...func(*ProviderRequestOptions)) (*ProviderResponse, error) {
-		o := ProviderRequestOptions{Caller: []string{module}}
+		o := ProviderRequestOptions{PluginDir: root}
 		for _, fn := range opts {
 			fn(&o)
 		}
@@ -239,7 +235,8 @@ func TestBearerReachesTheDeclaredHostAndNeverThePlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, _ := result.JSON()
+	var payload any
+	_ = json.Unmarshal(result.Body, &payload)
 	if result.Status != 200 || fmt.Sprint(payload) != "map[ok:true]" {
 		t.Fatalf("status=%d payload=%v", result.Status, payload)
 	}

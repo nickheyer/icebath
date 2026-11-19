@@ -114,11 +114,6 @@ func recordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errTe
 	return blocked, nil
 }
 
-// RecordTaskFailure is the dispatcher failure funnel other packages call
-func RecordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errText string, f RecordFailureOptions) (bool, error) {
-	return recordTaskFailure(ctx, conn, taskID, errText, f)
-}
-
 // Records the timed out outcome of a kanban worker whose iteration budget ran out
 func RecordBudgetExhausted(ctx context.Context, kanbanTask string, apiCallCount, maxIterations int) error {
 	conn, err := Connect(ctx, "", nil)

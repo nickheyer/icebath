@@ -477,19 +477,6 @@ func pickDisplay(env *tools.Env) (int, error) {
 	return 0, errors.New("no free X display number in the Bot Desktop band")
 }
 
-// Picks a display under the host wide allocation lock
-func allocateDisplay(env *tools.Env) (int, error) {
-	if err := os.MkdirAll(filepath.Dir(allocLock), 0o700); err != nil {
-		return 0, err
-	}
-	unlock, err := flockPath(allocLock)
-	if err != nil {
-		return 0, err
-	}
-	defer unlock()
-	return pickDisplay(env)
-}
-
 // Base env with the running screen DISPLAY, XAUTHORITY and DBUS merged in, unchanged when it is down
 func DesktopEnv(env *tools.Env, base map[string]string) map[string]string {
 	out := map[string]string{}

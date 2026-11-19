@@ -80,7 +80,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("ICEBATH_HOME", dir)
-	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, joinTitleUpgrades)
+	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, joinTitleUpgrades, joinBackgroundJobs)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -96,6 +96,29 @@ func joinTitleUpgrades(t *testing.T) func() {
 			if thread := wp.Value(); thread != nil && thread.Alive() {
 				t.Errorf("title upgrade %q was still running 30s after the test", thread.Name)
 			}
+		}
+	}
+}
+
+// Joins the compression workers a case abandoned on timeout and the delegations it left dispatched, so none resolves the home of a later case
+func joinBackgroundJobs(t *testing.T) func() {
+	return func() {
+		running := func() (int, int) {
+			compressAdmissionLock.Lock()
+			defer compressAdmissionLock.Unlock()
+			return compressAdmittedCount, tools.AsyncDelegationActiveCount()
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			compressions, delegations := running()
+			if compressions == 0 && delegations == 0 {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("%d compression worker(s) and %d delegation(s) were still running 30s after the test", compressions, delegations)
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
 		}
 	}
 }

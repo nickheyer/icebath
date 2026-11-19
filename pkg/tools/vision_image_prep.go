@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,26 +51,6 @@ const (
 
 // Pillow MAX_IMAGE_PIXELS, opening anything over twice this is refused as a decompression bomb
 const pilMaxImagePixels = 1024 * 1024 * 1024 / 4 / 3
-
-// UnsupportedInlineImageMediaType names the image subtype of a data URL the inline wire paths reject, empty when accepted
-func UnsupportedInlineImageMediaType(u string) string {
-	header := strings.ToLower(strings.SplitN(u, ",", 2)[0])
-	if !strings.HasPrefix(header, "data:image/") {
-		return ""
-	}
-	subtype := strings.TrimSpace(strings.SplitN(header[len("data:image/"):], ";", 2)[0])
-	if subtype == "" {
-		subtype = "unknown"
-	}
-	mediaType := "image/" + subtype
-	if subtype == "jpg" {
-		mediaType = "image/jpeg"
-	}
-	if anthropicSupportedMediaTypes[mediaType] {
-		return ""
-	}
-	return mediaType
-}
 
 // Suffix of the final path component the way pathlib reports it
 func pySuffix(p string) string {
@@ -1171,55 +1149,6 @@ var rasterizeSVGToPNG = func(svgPath, outPath string) bool {
 		}
 	}
 	return false
-}
-
-// Python default base64 decode that discards characters outside the alphabet
-func lenientB64Decode(s string) ([]byte, error) {
-	var sb strings.Builder
-	for _, r := range s {
-		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '+' || r == '/' || r == '=' {
-			sb.WriteRune(r)
-		}
-	}
-	return base64.StdEncoding.DecodeString(sb.String())
-}
-
-// RasterizeSVGDataURL converts an SVG data URL to a PNG data URL, false when it cannot be decoded or rasterized
-func RasterizeSVGDataURL(env *Env, u string) (string, bool) {
-	header, payload, _ := strings.Cut(u, ",")
-	var raw []byte
-	if strings.Contains(strings.ToLower(header), ";base64") {
-		decoded, err := lenientB64Decode(payload)
-		if err != nil {
-			return "", false
-		}
-		raw = decoded
-	} else {
-		unquoted, err := url.PathUnescape(strings.ReplaceAll(payload, "+", "%2B"))
-		if err != nil {
-			return "", false
-		}
-		raw = []byte(unquoted)
-	}
-	outDir, err := secureCacheDir(env, "cache/vision", "temp_vision_images")
-	if err != nil {
-		return "", false
-	}
-	stem := filepath.Join(outDir, "inline_"+uuid.NewString())
-	svgPath, pngPath := stem+".svg", stem+".png"
-	defer os.Remove(svgPath)
-	defer os.Remove(pngPath)
-	if err := os.WriteFile(svgPath, raw, 0o644); err != nil {
-		return "", false
-	}
-	if !rasterizeSVGToPNG(svgPath, pngPath) {
-		return "", false
-	}
-	out, err := os.ReadFile(pngPath)
-	if err != nil {
-		return "", false
-	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(out), true
 }
 
 // Reports whether a provider and base URL point at the managed local server

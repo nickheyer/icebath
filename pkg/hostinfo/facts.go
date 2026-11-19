@@ -89,13 +89,6 @@ func cached[T any](compute func() T) func() T {
 
 var cacheResets []func()
 
-// ClearCaches clears every cached host fact
-func ClearCaches() {
-	for _, reset := range cacheResets {
-		reset()
-	}
-}
-
 // ParseCPUInfo returns the first model name or Hardware line of cpuinfo, else the device tree model
 func ParseCPUInfo(text, deviceTreeModel string) string {
 	for _, key := range []string{"model name", "Hardware"} {

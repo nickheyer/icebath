@@ -419,7 +419,7 @@ func TestShellHookToolHooksReceiveOnlyTheOwningWorkersIdentity(t *testing.T) {
 		return payload, text[i+1:]
 	}
 	for _, s := range scopes {
-		msg, err := GetPreToolCallBlockMessage(s.ctx, "kanban_complete", map[string]any{}, PreToolCallIDs{TaskID: "turn-id", SessionID: "session-id", ToolCallID: "call-id"})
+		msg, err := preToolBlockMessage(s.ctx, "kanban_complete", map[string]any{}, PreToolCallIDs{TaskID: "turn-id", SessionID: "session-id", ToolCallID: "call-id"})
 		if err != nil || msg != "verified gate fired" {
 			t.Fatalf("block %q %v", msg, err)
 		}

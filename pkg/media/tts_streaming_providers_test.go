@@ -76,12 +76,14 @@ func registerFakeStreamer(t *testing.T, name string, available bool) {
 	streamingRegistryMu.Lock()
 	old, had := streamingRegistry[name]
 	streamingRegistryMu.Unlock()
-	RegisterStreamingTTSProvider(name, StreamingTTSClass{
+	streamingRegistryMu.Lock()
+	streamingRegistry[name] = StreamingTTSClass{
 		Available: func(context.Context, *tools.Env) bool { return available },
 		New: func(*tools.Env, map[string]any, any) (StreamingTTSProvider, error) {
 			return newFakeStreamer(func(*fakeStreamer, string) iter.Seq2[[]byte, error] { return pcmGenerator(nil, []byte("\x00\x00")) }), nil
 		},
-	})
+	}
+	streamingRegistryMu.Unlock()
 	t.Cleanup(func() {
 		streamingRegistryMu.Lock()
 		defer streamingRegistryMu.Unlock()

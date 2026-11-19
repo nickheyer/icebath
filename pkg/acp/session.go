@@ -265,32 +265,6 @@ func (m *SessionManager) SaveSession(ctx context.Context, sessionID string) {
 	}
 }
 
-// Stamps ended at on every live session and returns how many were ended
-func (m *SessionManager) EndAllSessions(ctx context.Context, endReason string) int {
-	if endReason == "" {
-		endReason = "acp_disconnect"
-	}
-	db := m.GetDB(ctx)
-	if db == nil {
-		return 0
-	}
-	m.lock.Lock()
-	ids := slices.Clone(m.order)
-	m.lock.Unlock()
-	ended := 0
-	for _, sid := range ids {
-		if err := db.EndSession(sid, endReason); err != nil {
-			pkgLog().Debug(fmt.Sprintf("Failed to end ACP session %s\n%s", sid, err))
-			continue
-		}
-		ended++
-	}
-	if ended > 0 {
-		pkgLog().Info(fmt.Sprintf("Ended %d ACP session(s) on shutdown (%s)", ended, endReason))
-	}
-	return ended
-}
-
 // Registers a new state in memory, binds its cwd for tools and persists it when asked
 func (m *SessionManager) installState(ctx context.Context, sessionID string, a any, cwd, model string, history []map[string]any, persist bool) *SessionState {
 	st := &SessionState{SessionID: sessionID, Agent: a, Cwd: cwd, Model: model, History: history, CancelEvent: &pythread.Event{}}

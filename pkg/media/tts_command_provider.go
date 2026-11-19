@@ -605,23 +605,6 @@ func getCommandTTSTimeout(cfg map[string]any) float64 {
 	return commandTimeout(cfg, defaultCommandTTSTimeoutSeconds)
 }
 
-// Name and config of every declared command type provider, sorted by name
-func iterCommandTTSProviders(ttsConfig any) [][2]any {
-	providers := getProviderSection(ttsConfig, "providers")
-	names := make([]string, 0, len(providers))
-	for n := range providers {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	var out [][2]any
-	for _, n := range names {
-		if !builtinTTSProviders[pystr.Lower(n)] && isCommandProviderConfig(providers[n]) {
-			out = append(out, [2]any{n, providers[n]})
-		}
-	}
-	return out
-}
-
 // Output format from the output path suffix when valid, then format or output_format
 func getCommandTTSOutputFormat(cfg map[string]any, outputPath string) string {
 	suffix := ""

@@ -95,19 +95,6 @@ func formatThousandsAny(v any) string {
 	return fmt.Sprint(v)
 }
 
-// Routine compression status lines, formatted from the same wording the emission sites use
-func PreAPICompressionStatus(tokens int) string {
-	return "📦 Pre-API compression: ~" + groupThousands(tokens) + " tokens near the context/output limit. Compacting before the next model call."
-}
-
-func PreflightCompressionStatus(tokens, threshold int) string {
-	return "📦 Preflight compression: ~" + groupThousands(tokens) + " tokens >= " + groupThousands(threshold) + " threshold. This may take a moment."
-}
-
-func IdleCompactionStatus(idleSeconds any, tokens int) string {
-	return fmt.Sprintf("💤 Resumed after %vs idle — compacting ~%s tokens before continuing.", idleSeconds, groupThousands(tokens))
-}
-
 func CompressionRetryTooLargeStatus(tokens, attempt, limit int) string {
 	return fmt.Sprintf("🗜️ Context too large (~%s tokens) — compressing (%d/%d)...", groupThousands(tokens), attempt, limit)
 }
@@ -133,8 +120,8 @@ func ContextOverflowBlockedWarning(tokens, threshold any, reason string) string 
 
 // Every routine compression status line in its emitted wording for the gateway noise filter
 func RoutineCompressionStatusSamples() []string {
-	return []string{CompactionStatus, CompactionHeartbeatStatus, CompactionDoneStatus, PreAPICompressionStatus(123456),
-		PreflightCompressionStatus(120000, 100000), IdleCompactionStatus(3600, 120000), CompressionRetryTooLargeStatus(250000, 1, 3),
+	return []string{CompactionStatus, CompactionHeartbeatStatus, CompactionDoneStatus, preAPICompressionStatus(123456),
+		preflightCompressionStatus(120000, 100000), idleCompactionStatus(3600, 120000), CompressionRetryTooLargeStatus(250000, 1, 3),
 		CompressionRetryMessagesStatus(30, 12), CompressionRetryTokensStatus(250000, 120000), CompressionRetryContextReducedStatus(120000, 250000)}
 }
 

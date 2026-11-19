@@ -246,7 +246,6 @@ type suspectBackend struct {
 }
 
 func (s *suspectBackend) MarkSuspect(reason string) { s.reasons++; s.last = reason }
-func (s *suspectBackend) EnsureHealthy() bool       { return true }
 
 func TestIsLocalValidationError(t *testing.T) {
 	if !IsLocalValidationError(&LocalValidationError{Message: "bad request shape"}) {

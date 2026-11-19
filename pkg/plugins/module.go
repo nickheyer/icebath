@@ -22,7 +22,6 @@ import (
 // Higher package collaborators the top level wiring installs so pkg/plugins never imports them
 type Services struct {
 	InvokeLifecycleHook               func(ctx context.Context, hookName string, kwargs map[string]any) []any
-	RequestToolApproval               func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error)
 	FailoverReason                    func(value any) (any, bool)
 	MemoryProviderDir                 func(h, name string) (string, bool)
 	HostObject                        func(kind string, obj any) (name string, ok bool)
@@ -413,11 +412,6 @@ func WithToolWhitelist(ctx context.Context, allowed map[string]bool, denyFmt str
 	return context.WithValue(ctx, toolWhitelistKey{}, &toolWhitelist{allowed: allowed, format: denyFmt})
 }
 
-// Lifts any tool whitelist for work under the returned context
-func ClearToolWhitelist(ctx context.Context) context.Context {
-	return context.WithValue(ctx, toolWhitelistKey{}, (*toolWhitelist)(nil))
-}
-
 // Resolved pre_tool_call outcome
 type PreToolCallDirective struct {
 	Action, Message, RuleKey string
@@ -496,68 +490,6 @@ func preToolCallDirectiveDetails(ctx context.Context, toolName string, args map[
 // PreToolCallDirectiveDetails exports preToolCallDirectiveDetails for the tool dispatcher bridge
 func PreToolCallDirectiveDetails(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (PreToolCallDirective, error) {
 	return preToolCallDirectiveDetails(ctx, toolName, args, ids)
-}
-
-// Back compatible directive and message pair of the pre_tool_call hooks
-func GetPreToolCallDirective(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (string, string, error) {
-	d, err := preToolCallDirectiveDetails(ctx, toolName, args, ids)
-	return d.Action, d.Message, err
-}
-
-// Block message of the pre_tool_call hooks, empty when nothing blocks
-func GetPreToolCallBlockMessage(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (string, error) {
-	action, message, err := GetPreToolCallDirective(ctx, toolName, args, ids)
-	if action != "block" {
-		message = ""
-	}
-	return message, err
-}
-
-// Final block message of the pre_tool_call hooks after the approval gate, empty to proceed
-func ResolvePreToolBlock(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (string, error) {
-	msg, _, err := DispatchPreToolCallHooks(ctx, toolName, args, ids)
-	return msg, err
-}
-
-// Fail closed approval logic turning a directive into a block message, empty to proceed
-func resolveBlockFromDetails(ctx context.Context, d PreToolCallDirective, toolName string, ids PreToolCallIDs) string {
-	if d.Action == "block" {
-		return d.Message
-	}
-	if d.Action != "approve" {
-		return ""
-	}
-	ruleKey := d.RuleKey
-	if ruleKey == "" {
-		ruleKey = toolName
-	}
-	s := installedServices()
-	if s == nil || s.RequestToolApproval == nil {
-		return "BLOCKED: plugin approval gate failed for " + toolName
-	}
-	result, err := guardedValue(func() (any, error) {
-		return s.RequestToolApproval(ctx, toolName, d.Message, ruleKey, ids.TurnID, ids.ToolCallID, ids.SessionID)
-	})
-	decision, _ := result.(map[string]any)
-	if err != nil {
-		return "BLOCKED: plugin approval gate failed for " + toolName
-	}
-	if !config.PyTruthy(decision["approved"]) {
-		if msg := decision["message"]; config.PyTruthy(msg) {
-			return fmt.Sprint(msg)
-		}
-		return "BLOCKED: plugin approval required for " + toolName
-	}
-	return ""
-}
-
-// Invokes pre_tool_call hooks once returning the resolved block message and the merged modify args
-func DispatchPreToolCallHooks(ctx context.Context, toolName string, args map[string]any, ids PreToolCallIDs) (string, map[string]any, error) {
-	d, err := preToolCallDirectiveDetails(ctx, toolName, args, ids)
-	if err != nil {
-		return "", nil, err
-	}
-	return resolveBlockFromDetails(ctx, d, toolName, ids), d.ModifiedArgs, nil
 }
 
 // Scope signals forwarded to pre_verify hooks

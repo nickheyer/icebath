@@ -102,7 +102,7 @@ func providerRequestSignIn(t *testing.T, h, token string) {
 	}
 }
 
-// Nested plugin module whose mint call carries its own file as the calling frame
+// Installed plugin whose mint call names its own directory as the plugin host does
 func providerRequestPlugin(t *testing.T, h string, declares bool) func(string) (*ProviderResponse, error) {
 	t.Helper()
 	name, manifest := "undeclared", "name: voice\n"
@@ -110,19 +110,15 @@ func providerRequestPlugin(t *testing.T, h string, declares bool) func(string) (
 		name, manifest = "voice", manifest+"requires_auth: [openai-codex]\n"
 	}
 	root := filepath.Join(h, "plugins", name)
-	if err := os.MkdirAll(filepath.Join(root, "lib"), 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	module := filepath.Join(root, "lib", "plugin_api.py")
 	if err := os.WriteFile(filepath.Join(root, "plugin.yaml"), []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(module, []byte("def mint(url): ...\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return func(target string) (*ProviderResponse, error) {
 		return CredentialedProviderRequest("openai-codex", "POST", target, ProviderRequestOptions{
-			JSON: map[string]any{"session": map[string]any{}}, Caller: []string{module}})
+			JSON: map[string]any{"session": map[string]any{}}, PluginDir: root})
 	}
 }
 
@@ -134,7 +130,8 @@ func TestTokenAttachedForAllowlistedOriginAndNeverReturned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, err := result.JSON()
+	var payload any
+	err = json.Unmarshal(result.Body, &payload)
 	if result.Status != 200 || err != nil || payload.(map[string]any)["value"] != "ek_ephemeral" {
 		t.Fatalf("status=%d payload=%v err=%v", result.Status, payload, err)
 	}

@@ -222,7 +222,7 @@ func TestStaleEndpointSessionIsRebuilt(t *testing.T) {
 func TestSessionInactivityTimeoutDefault(t *testing.T) {
 	t.Setenv("BROWSER_INACTIVITY_TIMEOUT", "")
 	os.Unsetenv("BROWSER_INACTIVITY_TIMEOUT")
-	want := ConfigDefaults()["inactivity_timeout"]
+	want := config.Defaults().Sub("browser").Get("inactivity_timeout")
 	if got := getSessionInactivityTimeout(&tools.Env{Config: config.Tree{}}); got != want {
 		t.Fatalf("timeout %d want %v", got, want)
 	}

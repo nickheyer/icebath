@@ -71,14 +71,14 @@ func TestFailedTurnNoticeNeverClaimsNotProcessedAfterATool(t *testing.T) {
 
 func TestUntypedFailedTurnDisplayKindMatchesExactNotices(t *testing.T) {
 	for _, notice := range []string{FailedTurnNotice, PartialFailedTurnNotice, AutomationInterruptedNotice} {
-		if kind, ok := UntypedFailedTurnDisplayKind("assistant", "  "+notice+"\n"); !ok || kind != FailedTurnDisplayKind {
+		if kind, ok := state.UntypedFailedTurnDisplayKind("assistant", "  "+notice+"\n"); !ok || kind != FailedTurnDisplayKind {
 			t.Fatalf("notice %q not typed", notice)
 		}
 	}
-	if _, ok := UntypedFailedTurnDisplayKind("assistant", "Quote: "+FailedTurnNotice); ok {
+	if _, ok := state.UntypedFailedTurnDisplayKind("assistant", "Quote: "+FailedTurnNotice); ok {
 		t.Fatal("a reply quoting the notice stays a reply")
 	}
-	if _, ok := UntypedFailedTurnDisplayKind("user", FailedTurnNotice); ok {
+	if _, ok := state.UntypedFailedTurnDisplayKind("user", FailedTurnNotice); ok {
 		t.Fatal("only assistant rows are boundaries")
 	}
 }

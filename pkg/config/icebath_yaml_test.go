@@ -461,3 +461,29 @@ func TestSafeDumpWritesBytesAsBinaryLiteralBlocks(t *testing.T) {
 		t.Errorf("a named byte slice is no bytes object, got %v", err)
 	}
 }
+
+// Python value the document holds under YAML 1.1 rules, the loaded view of the editable data
+func (d *RoundtripDoc) Value() (any, error) {
+	if d.Node == nil || len(d.Node.Content) == 0 {
+		return nil, nil
+	}
+	text, err := encodeRoundtripNode(d.Node)
+	if err != nil {
+		return nil, err
+	}
+	return SafeLoad(text)
+}
+
+// Assigns a plain value at one top level key the way a mapping item assignment does
+func (d *RoundtripDoc) Set(key string, value any) error {
+	root, err := d.Root()
+	if err != nil {
+		return err
+	}
+	node, err := rtNode(value, 0)
+	if err != nil {
+		return err
+	}
+	mappingSet(root, key, node)
+	return nil
+}

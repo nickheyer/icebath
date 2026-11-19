@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -947,4 +948,12 @@ func TestModelSwitchMarkerNotTitleableInstantTitleSkipsMarkerUsesRealMessage(t *
 	if got := applyInstantTitle(ctx, db, "sess-1", "南京市秦淮区 小时级天气预报", nil, nil); got != "南京市秦淮区 小时级天气预报" {
 		t.Fatalf("title %q", got)
 	}
+}
+
+// Whether the upgrade went through start and is still referenced
+func titleUpgradeStarted(t *memory.ContextThread) bool {
+	titleUpgradeMu.Lock()
+	defer titleUpgradeMu.Unlock()
+	_, ok := titleUpgradeThreads[weak.Make(t)]
+	return ok
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +11,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyast"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -315,17 +316,6 @@ func (s *Scope) DisabledSkillNames(platform string) map[string]bool {
 		delete(disabled, n)
 	}
 	return disabled
-}
-
-// Reports whether any of the names is disabled for the platform
-func (s *Scope) isSkillDisabled(platform string, names ...string) bool {
-	disabled := s.DisabledSkillNames(platform)
-	for _, n := range names {
-		if n != "" && disabled[n] {
-			return true
-		}
-	}
-	return false
 }
 
 // Path with symlinks resolved, the cleaned absolute path when resolution fails

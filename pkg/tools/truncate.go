@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -134,16 +133,4 @@ func TruncateHeadTail(text string, maxChars int, label string) string {
 	head, tail := HeadTailSplit(maxChars)
 	omitted := len(runes) - head - tail
 	return string(runes[:head]) + TruncationNotice(omitted, len(runes), label, "chars") + string(runes[len(runes)-tail:])
-}
-
-// Truncates a tool result to the tool's own result cap or the configured output byte cap
-func TruncateResult(env *Env, name, result string) string {
-	limit := Default.MaxResultSize(context.Background(), ScopeKey(envHome(env)), name, 0)
-	if limit < 0 {
-		return result
-	}
-	if limit == 0 {
-		limit = ToolOutputLimits(env).MaxBytes
-	}
-	return TruncateHeadTail(result, limit, "OUTPUT")
 }

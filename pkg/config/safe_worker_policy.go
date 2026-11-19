@@ -20,11 +20,6 @@ type SafeWorkerPolicy struct {
 	configJSON       string
 }
 
-func (p *SafeWorkerPolicy) PID() int               { return p.pid }
-func (p *SafeWorkerPolicy) SafeMode() bool         { return p.safeMode }
-func (p *SafeWorkerPolicy) IgnoreUserConfig() bool { return p.ignoreUserConfig }
-func (p *SafeWorkerPolicy) ConfigJSON() string     { return p.configJSON }
-
 var (
 	workerPolicy     atomic.Pointer[SafeWorkerPolicy]
 	workerPolicyBind sync.Mutex

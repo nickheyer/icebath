@@ -318,7 +318,4 @@ func TestRuntimeHelpersSmall(t *testing.T) {
 	if (&AIAgent{apiMode: "chat_completions"}).codexSilentHangHint(nil) != "" {
 		t.Fatal("hint only for codex responses")
 	}
-	if (&AIAgent{apiMode: "chat_completions"}).isProviderStreamParseError(nil) {
-		t.Fatal("parse error only on anthropic messages")
-	}
 }

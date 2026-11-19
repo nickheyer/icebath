@@ -754,13 +754,6 @@ func (s *cuaDriverSession) capabilitiesDiscovered() bool {
 	return len(s.capabilities) > 0
 }
 
-// Driver advertised capability vocabulary version, empty on old builds
-func (s *cuaDriverSession) capabilityVersionText() string {
-	s.state.Lock()
-	defer s.state.Unlock()
-	return s.capabilityVersion
-}
-
 // MCP and stdio failures recoverable by reconnecting
 func cuaIsClosedSessionError(err error) bool {
 	var closed cuaClosedResourceError

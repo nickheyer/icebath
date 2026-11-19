@@ -262,18 +262,6 @@ func editorDocument(root *ry.Node) *yaml.Node {
 	return doc
 }
 
-// Python value the document holds under YAML 1.1 rules, the loaded view of the editable data
-func (d *RoundtripDoc) Value() (any, error) {
-	if d.Node == nil || len(d.Node.Content) == 0 {
-		return nil, nil
-	}
-	text, err := encodeRoundtripNode(d.Node)
-	if err != nil {
-		return nil, err
-	}
-	return SafeLoad(text)
-}
-
 // Root mapping of the document, created empty for an empty document
 func (d *RoundtripDoc) Root() (*yaml.Node, error) {
 	if d.Node == nil || len(d.Node.Content) == 0 || (d.Node.Content[0].Kind == yaml.ScalarNode && d.Node.Content[0].Tag == "!!null") {
@@ -286,20 +274,6 @@ func (d *RoundtripDoc) Root() (*yaml.Node, error) {
 		return nil, fmt.Errorf("top-level YAML must be a mapping, got %s", PyTypeName(v))
 	}
 	return root, nil
-}
-
-// Assigns a plain value at one top level key the way a mapping item assignment does
-func (d *RoundtripDoc) Set(key string, value any) error {
-	root, err := d.Root()
-	if err != nil {
-		return err
-	}
-	node, err := rtNode(value, 0)
-	if err != nil {
-		return err
-	}
-	mappingSet(root, key, node)
-	return nil
 }
 
 // Writes the document with two space mappings, indented block sequences and untouched source lines kept

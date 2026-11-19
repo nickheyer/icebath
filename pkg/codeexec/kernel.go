@@ -357,11 +357,6 @@ func (p *kernelProc) running() bool {
 	}
 }
 
-func (k *sessionKernel) alive() bool {
-	p := k.proc.Load()
-	return p != nil && p.running()
-}
-
 // True only once a spawned process exited, a kernel still spawning is pending and not dead
 func (k *sessionKernel) dead() bool {
 	p := k.proc.Load()

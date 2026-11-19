@@ -280,11 +280,6 @@ var (
 
 type activeParentKey struct{}
 
-// Context carrying the host owned parent agent of the current turn
-func BindSubagentParent(ctx context.Context, parent any) context.Context {
-	return context.WithValue(ctx, activeParentKey{}, parent)
-}
-
 // Resolver of a weakly held parent agent, nil once the agent is collected
 type SubagentParentRef func() any
 

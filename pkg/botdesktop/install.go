@@ -63,25 +63,6 @@ func tryFlock(path string) (*os.File, error) {
 // Slot key of the profile the env stands for
 func installKey(env *tools.Env) string { return home.Key(envHome(env)) }
 
-// Returns InstallBusy when this process or another one holds the install slot of the profile
-func AssertNotRunning(env *tools.Env) error {
-	installLock.Lock()
-	_, busy := installRunning[installKey(env)]
-	installLock.Unlock()
-	if busy {
-		return &InstallBusy{Msg: "an install is already running for this profile"}
-	}
-	fh, err := tryFlock(filepath.Join(StateDir(env), "install.lock"))
-	if err != nil {
-		return err
-	}
-	if fh == nil {
-		return &InstallBusy{Msg: "an install is already running for this profile (another process)"}
-	}
-	fh.Close()
-	return nil
-}
-
 // Atomically takes the install slot of the profile and returns its key, InstallBusy when taken
 func Claim(env *tools.Env) (string, error) {
 	key := installKey(env)

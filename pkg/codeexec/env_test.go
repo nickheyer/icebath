@@ -266,3 +266,9 @@ func TestDamagedRuntimeRecordRaisesFromChildEnvStrip(t *testing.T) {
 		t.Fatalf("child=%v err=%v, want %q", child, err, want)
 	}
 }
+
+func (c *probeCache[V]) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.order, c.items = nil, nil
+}

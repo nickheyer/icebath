@@ -131,12 +131,6 @@ func builtinSkinTable() (map[string]any, []string) {
 	return builtinSkins, builtinSkinOrder
 }
 
-// Names of the built in skins in definition order
-func BuiltinSkinNames() []string {
-	_, order := builtinSkinTable()
-	return append([]string{}, order...)
-}
-
 func builtinSkin(name string) (map[string]any, bool) {
 	if name == "default" {
 		name = DefaultSkinName

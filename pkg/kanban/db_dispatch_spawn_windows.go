@@ -12,6 +12,3 @@ import (
 func workerSpawnAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 }
-
-// Windows grants execution by extension, so every regular file found on PATH qualifies
-func executableAccess(string) bool { return true }

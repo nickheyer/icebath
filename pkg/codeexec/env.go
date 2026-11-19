@@ -291,12 +291,6 @@ func (c *probeCache[V]) put(key string, value V) {
 	c.items[key] = value
 }
 
-func (c *probeCache[V]) clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.order, c.items = nil, nil
-}
-
 var (
 	usablePythonCache probeCache[bool]
 )

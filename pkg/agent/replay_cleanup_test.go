@@ -36,12 +36,12 @@ func TestMixedDanglingBatchUsesTruthfulPerCallWording(t *testing.T) {
 	}
 }
 
-func TestSanitizeReplayHistoryCombinesBoth(t *testing.T) {
+func TestCanonicalizeReplayHistoryCombinesBothStrippers(t *testing.T) {
 	history := []map[string]any{
 		replayUser("first"), replayAssistantTC("terminal"), replayTool("[Command interrupted]"),
 		replayUser("second"), replayAssistantTC("read_file"),
 	}
-	out := SanitizeReplayHistory(history)
+	out := CanonicalizeReplayHistory(history, nil)
 	if !reflect.DeepEqual(out[:2], []map[string]any{replayUser("first"), replayAssistantTC("terminal")}) {
 		t.Fatalf("prefix %v", out[:2])
 	}
@@ -50,9 +50,9 @@ func TestSanitizeReplayHistoryCombinesBoth(t *testing.T) {
 	}
 }
 
-func TestSanitizeReplayHistoryNoopOnCleanHistory(t *testing.T) {
+func TestCanonicalizeReplayHistoryNoopOnCleanHistory(t *testing.T) {
 	history := []map[string]any{replayUser("hi"), {"role": "assistant", "content": "hello"}}
-	if out := SanitizeReplayHistory(history); !reflect.DeepEqual(out, history) {
+	if out := CanonicalizeReplayHistory(history, nil); !reflect.DeepEqual(out, history) {
 		t.Fatalf("out %v", out)
 	}
 }

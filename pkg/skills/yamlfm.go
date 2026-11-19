@@ -259,12 +259,3 @@ func icebathMeta(fm map[string]any) map[string]any {
 	}
 	return map[string]any{}
 }
-
-// Serializes a mapping as YAML text without sorting keys
-func yamlDump(v any) string {
-	b, err := yaml.Marshal(v)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}

@@ -213,7 +213,7 @@ func TestAtOrAboveFloorMigratesIdenticallyToPreFloor(t *testing.T) {
 			t.Fatalf("stamp %v", raw["_config_version"])
 		}
 		for key, want := range tc.expected {
-			if !Equal(raw[key], want) {
+			if !pyEq(raw[key], want) {
 				t.Fatalf("parity drift on %s: %#v want %#v", key, raw[key], want)
 			}
 		}
@@ -271,10 +271,10 @@ func TestVersionBumpKeepsConfigLean(t *testing.T) {
 				t.Fatalf("start %d materialised %s into a lean config", start, key)
 			}
 		}
-		if v, _ := CfgGet(loaded, "curator", "enabled"); !Equal(v, AsMap(Defaults()["curator"])["enabled"]) {
+		if v, _ := CfgGet(loaded, "curator", "enabled"); !pyEq(v, AsMap(Defaults()["curator"])["enabled"]) {
 			t.Fatalf("curator.enabled %v", v)
 		}
-		if v, _ := CfgGet(loaded, "display", "compact"); !Equal(v, AsMap(Defaults()["display"])["compact"]) {
+		if v, _ := CfgGet(loaded, "display", "compact"); !pyEq(v, AsMap(Defaults()["display"])["compact"]) {
 			t.Fatalf("display.compact %v", v)
 		}
 	}

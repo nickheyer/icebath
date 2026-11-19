@@ -752,18 +752,6 @@ func verifySessionKey(sessionID string) string {
 	return sessionID
 }
 
-// Detected verify command of the shell command in the workspace of cwd as evidence, nil when it is none
-func classifyVerificationCommand(command, cwd, sessionID string, exitCode int, output string, pipelineStatus []int) (*VerificationEvidence, error) {
-	if command == "" {
-		return nil, nil
-	}
-	facts := verifyProjectFacts(cwd)
-	if facts == nil {
-		return nil, nil
-	}
-	return classifyInWorkspace(command, facts, cwd, sessionID, exitCode, output, pipelineStatus)
-}
-
 // Evidence of a detected command or of an ad hoc script when the project detects no command
 func classifyInWorkspace(command string, facts map[string]any, cwd, sessionID string, exitCode int, output string, pipelineStatus []int) (*VerificationEvidence, error) {
 	verifyCommands, _ := facts["verifyCommands"].([]string)

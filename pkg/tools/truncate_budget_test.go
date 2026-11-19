@@ -104,15 +104,6 @@ func TestToolOutputLimits(t *testing.T) {
 	}
 }
 
-func TestTruncateResultUsesRegistryCap(t *testing.T) {
-	env := limitsEnv(t, map[string]any{"max_bytes": 1000})
-	text := sampleText()
-	assertHeadTail(t, TruncateResult(env, "no_such_tool", text), 1000, 10000)
-	Default.Register(probeDef("zz_truncate_probe", 500))
-	defer Default.Remove("zz_truncate_probe")
-	assertHeadTail(t, TruncateResult(env, "zz_truncate_probe", text), 500, 10000)
-}
-
 func TestResolveThreshold(t *testing.T) {
 	env := &Env{Home: t.TempDir(), Config: config.Tree{}}
 	cfg := BudgetConfig{DefaultResultSize: DefaultResultSizeChars, ToolOverrides: map[string]int{"read_file": 1}}

@@ -134,7 +134,7 @@ func TestMembershipPreservesTerminalDeliveryAndRevokesDepartedPeers(t *testing.T
 			if tuihost.AttachSessionTransport(session, b) || tuihost.SessionTransportContains(session, b) {
 				t.Fatal("a dead peer regained authority")
 			}
-			if tuihost.AttachSessionTransport(session, tuihost.ProcessStdioTransport()) {
+			if tuihost.AttachSessionTransport(session, tuihost.ModuleStdioTransport()) {
 				t.Fatal("stdio joined a websocket session")
 			}
 			if reaped, detached := closeSessionsForTransport(ctx, b, "ws_disconnect"); reaped != 0 || detached != 0 {

@@ -53,8 +53,3 @@ func EnvFloat(key string, def float64) float64 {
 		return f, err == nil
 	})
 }
-
-// Whether an environment variable holds a truthy spelling, an unset variable reading as false
-func EnvBool(key string) bool {
-	return isTruthyString(os.Getenv(key))
-}

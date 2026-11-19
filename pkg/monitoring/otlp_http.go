@@ -38,22 +38,6 @@ type InMemorySpanExporter struct {
 	spans []*Span
 }
 
-func (m *InMemorySpanExporter) Export(spans []*Span) error {
-	m.mu.Lock()
-	m.spans = append(m.spans, spans...)
-	m.mu.Unlock()
-	return nil
-}
-
-func (m *InMemorySpanExporter) Shutdown() error { return nil }
-
-// FinishedSpans returns a copy of every span exported so far
-func (m *InMemorySpanExporter) FinishedSpans() []*Span {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]*Span{}, m.spans...)
-}
-
 // BatchSpanProcessor queues spans and exports them in bounded batches on a schedule, on flush and on shutdown
 type BatchSpanProcessor struct {
 	exporter      SpanExporter
@@ -148,11 +132,6 @@ type TracerProvider struct {
 // NewTracerProvider pairs a resource with a batch processor
 func NewTracerProvider(resource map[string]string, processor *BatchSpanProcessor) *TracerProvider {
 	return &TracerProvider{resource: resource, processor: processor}
-}
-
-// NewSimpleTracerProvider exports every span as it ends, the in memory test provider
-func NewSimpleTracerProvider(resource map[string]string, exporter SpanExporter) *TracerProvider {
-	return &TracerProvider{resource: resource, exporter: exporter}
 }
 
 // Resource returns the provider's resource attributes

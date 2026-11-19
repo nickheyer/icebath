@@ -606,7 +606,7 @@ func (s *setValueHome) unset(key string) error {
 
 func (s *setValueHome) assertDoc(want map[string]any) {
 	s.t.Helper()
-	if got := s.doc(); !config.Equal(got, want) {
+	if got := s.doc(); !reflect.DeepEqual(got, want) {
 		s.t.Fatalf("config %v want %v", got, want)
 	}
 }

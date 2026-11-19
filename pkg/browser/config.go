@@ -21,28 +21,6 @@ const Toolset = "browser"
 // Env.Values key the agent runtime sets to a bool saying screenshots may ride inside tool results
 const NativeVisionValueKey = "vision.native"
 
-// Default browser section as the config schema carries it
-func ConfigDefaults() map[string]any {
-	return map[string]any{
-		"inactivity_timeout":          120,
-		"command_timeout":             30,
-		"headed":                      false,
-		"allow_private_urls":          false,
-		"engine":                      "auto",
-		"executable_path":             "",
-		"user_data_dir":               "",
-		"chromium_args":               []any{},
-		"auto_local_for_private_urls": true,
-		"cdp_url":                     "",
-		"use_real_profile":            false,
-		"real_profile_autoclose":      false,
-		"real_profile_pin":            "",
-		"dialog_policy":               "must_respond",
-		"dialog_timeout_s":            300,
-		"camofox":                     map[string]any{},
-	}
-}
-
 const (
 	defaultInactivityTimeout = 120
 	defaultCommandTimeout    = 30
@@ -217,14 +195,6 @@ func (s settings) autoLocalForPrivateURLs() bool {
 // Real profile consent, read on every call
 func (s settings) useRealProfile() bool { return pyrepr.Truthy(s.section().Get("use_real_profile")) }
 
-func (s settings) realProfileAutoclose() bool {
-	return truthy(s.section().Get("real_profile_autoclose"))
-}
-
-func (s settings) realProfilePin() string {
-	return strings.TrimSpace(s.section().String("real_profile_pin", ""))
-}
-
 // Private address access granted by browser.allow_private_urls
 func (s settings) allowPrivateURLs() bool { return truthy(s.section().Get("allow_private_urls")) }
 
@@ -257,67 +227,6 @@ func (s settings) dialogPolicyConfig() (string, float64) {
 		timeout = DefaultDialogTimeoutS
 	}
 	return policy, timeout
-}
-
-// Agent image input mode, auto, native or text
-func (s settings) imageInputMode() string {
-	if s.env == nil || s.env.Config == nil {
-		return "auto"
-	}
-	mode := strings.ToLower(strings.TrimSpace(s.env.Config.String("agent.image_input_mode", "auto")))
-	switch mode {
-	case "native", "text":
-		return mode
-	}
-	return "auto"
-}
-
-// Reports whether screenshots ride inside this tool's results for the session's main model
-func (s settings) nativeVision() bool {
-	switch s.imageInputMode() {
-	case "native":
-		return true
-	case "text":
-		return false
-	}
-	if s.env != nil && s.env.Values != nil {
-		if v, ok := s.env.Values.Load(NativeVisionValueKey); ok {
-			if b, ok := v.(bool); ok {
-				return b
-			}
-		}
-	}
-	if s.env != nil && s.env.Config != nil {
-		vision := s.env.Config.Sub("auxiliary").Sub("vision")
-		provider := strings.ToLower(strings.TrimSpace(vision.String("provider", "auto")))
-		if (provider != "" && provider != "auto") || strings.TrimSpace(vision.String("model", "")) != "" {
-			return false
-		}
-	}
-	return s.env != nil && s.env.AuxClient() == nil
-}
-
-// Embed byte budget for a screenshot baked into history, clamped to 64 KiB through 4 MiB
-func (s settings) embedTargetBytes() int {
-	const def, min, max = 256 * 1024, 64 * 1024, 4 * 1024 * 1024
-	if s.env == nil || s.env.Config == nil {
-		return def
-	}
-	raw := s.env.Config.Get("vision.embed_target_bytes")
-	if _, isBool := raw.(bool); isBool {
-		return def
-	}
-	n, ok := config.AsInt(raw)
-	if !ok {
-		return def
-	}
-	if n < min {
-		return min
-	}
-	if n > max {
-		return max
-	}
-	return n
 }
 
 // Shared truthy reading of config scalars and strings

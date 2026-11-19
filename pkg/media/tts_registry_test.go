@@ -153,28 +153,6 @@ func TestTTSProviderContract(t *testing.T) {
 	})
 }
 
-func TestTTSResolveOutputFormat(t *testing.T) {
-	formats := make([]string, 0, len(ValidTTSOutputFormats))
-	for f := range ValidTTSOutputFormats {
-		formats = append(formats, f)
-	}
-	sort.Strings(formats)
-	t.Run("test_valid_passes_through", func(t *testing.T) {
-		for _, valid := range formats {
-			t.Run(valid, func(t *testing.T) {
-				if got := ResolveTTSOutputFormat(valid); got != valid {
-					t.Fatalf("resolve_output_format(%q) = %q", valid, got)
-				}
-			})
-		}
-	})
-	t.Run("test_non_string_returns_default", func(t *testing.T) {
-		if ResolveTTSOutputFormat(123) != DefaultTTSOutputFormat || ResolveTTSOutputFormat([]any{}) != DefaultTTSOutputFormat {
-			t.Fatal("non string format not defaulted")
-		}
-	})
-}
-
 func TestTTSBuiltinSync(t *testing.T) {
 	t.Run("test_registry_builtins_match_dispatcher_builtins", func(t *testing.T) {
 		for n := range ttsRegistryBuiltinNames {

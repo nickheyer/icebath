@@ -35,13 +35,6 @@ const (
 // Writer behind the print calls of the snapshot helpers that take no writer, swapped by tests
 var stdout io.Writer = os.Stdout
 
-// Routes the print calls of the writerless helpers into w until the returned restore runs
-func SwapOutput(w io.Writer) (restore func()) {
-	old := stdout
-	stdout = w
-	return func() { stdout = old }
-}
-
 // Wall clock of archive names and snapshot ids, a seam tests skew forward instead of sleeping
 var backupNow = time.Now
 
@@ -96,9 +89,6 @@ func (e *BackupInProgressError) PyTypeName() string { return "BackupInProgressEr
 type sqliteSnapshotError struct{ rel string }
 
 func (e *sqliteSnapshotError) Error() string { return e.rel }
-
-// Holder scan of the retired updater path, always unknown so an old updater never restores over live holders
-func retiredForeignDBHolderPIDs(string) []int { return nil }
 
 // How to restore a state snapshot through the slash command
 func snapshotRecoveryHint() string {

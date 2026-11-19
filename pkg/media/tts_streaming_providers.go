@@ -105,13 +105,6 @@ var (
 	streamingProviderPriority = []string{"elevenlabs", "gemini", "openai", "xai"}
 )
 
-// Files a chunked streamer class under a provider name
-func RegisterStreamingTTSProvider(name string, class StreamingTTSClass) {
-	streamingRegistryMu.Lock()
-	streamingRegistry[name] = class
-	streamingRegistryMu.Unlock()
-}
-
 // Builds the registered streamer of a name when its credentials are usable, nil otherwise
 var tryInstantiate = func(ctx context.Context, env *tools.Env, name string, ttsConfig map[string]any) StreamingTTSProvider {
 	streamingRegistryMu.RLock()

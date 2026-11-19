@@ -76,13 +76,6 @@ func ReadBattery(useCache bool) BatteryStatus {
 	return status
 }
 
-// ClearBatteryCache drops the memoised reading
-func ClearBatteryCache() {
-	batteryMu.Lock()
-	batteryCached = nil
-	batteryMu.Unlock()
-}
-
 // BatteryCategory buckets a reading into good, warn, bad, critical or dim for the status bar colour
 func BatteryCategory(status BatteryStatus) string {
 	if !status.Available || status.Percent == nil {

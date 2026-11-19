@@ -248,3 +248,17 @@ func TestCommentTurnRuleReadsFollowRoutedAndLaunchScopes(t *testing.T) {
 		t.Fatalf("routed pairing turn = %#v allowed=%v", rule, allowed)
 	}
 }
+
+// NewStringSet builds a non nil set from the given members
+func NewStringSet(members ...string) StringSet {
+	s := StringSet{}
+	for _, m := range members {
+		s[m] = struct{}{}
+	}
+	return s
+}
+
+// NewMtimeCache caches a fixed path
+func NewMtimeCache(path string) *MtimeCache {
+	return NewMtimeCacheFunc(func(context.Context) string { return path })
+}

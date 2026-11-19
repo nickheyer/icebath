@@ -3,7 +3,6 @@ package containerinit
 import (
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Image layout the init, the verbs and the bootstrap share, vars so tests can point them at a temp tree
@@ -51,15 +50,6 @@ func productBinaryFor(exe string) string {
 func truthy(v string) bool {
 	switch v {
 	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
-		return true
-	}
-	return false
-}
-
-// True for the lowercase yes spellings Python env checks accept
-func envFlag(name string) bool {
-	switch strings.ToLower(os.Getenv(name)) {
-	case "1", "true", "yes":
 		return true
 	}
 	return false

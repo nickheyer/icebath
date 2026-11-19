@@ -8,11 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Route key of the session whose turn runs in ctx, empty outside one
-func SessionKey(ctx context.Context) string {
-	return tools.SessionEnv(tools.ToolEnvFrom(ctx), "ICEBATH_SESSION_KEY")
-}
-
 // Frozen launch policy platform and cwd of the turn running in ctx, false outside a policy
 func activeSessionPolicy(ctx context.Context) (string, string, bool) {
 	s := installedServices()

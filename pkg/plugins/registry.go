@@ -293,11 +293,6 @@ func RenderSystemPromptSections(ctx context.Context, sessionInfo map[string]any)
 	return ensurePluginsDiscovered(ctx, false).RenderSystemPromptSections(sessionInfo)
 }
 
-// Invokes a middleware observer kind on the active profile's manager after lazy discovery
-func InvokeMiddleware(ctx context.Context, kind, payloadKey string, kwargs map[string]any) []any {
-	return deliveryManager(ctx).InvokeMiddleware(kind, payloadKey, kwargs)
-}
-
 // Reports whether the active profile has middleware of a kind after lazy discovery
 func HasMiddleware(ctx context.Context, kind string) bool {
 	return deliveryManager(ctx).HasMiddleware(kind)

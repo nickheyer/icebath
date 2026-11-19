@@ -23,16 +23,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-// Installs the job creator and suggestion registrar the skills blueprint bridge calls
+// Installs the suggestion registrar the skills blueprint bridge calls
 func init() {
 	skills.RegisterCronBlueprintHooks(
-		func(ctx context.Context, jobSpec *pyjson.Object) (map[string]any, error) {
-			job, err := openCronStore(home.Dir(ctx), time.Now).createJobWithSchedulerRegistration(ctx, jobSpec)
-			if err != nil {
-				return nil, err
-			}
-			return jobAsMap(job)
-		},
 		func(ctx context.Context, title, description, source string, jobSpec *pyjson.Object, dedupKey string) (map[string]any, error) {
 			rec, err := openCronStore(home.Dir(ctx), time.Now).AddSuggestion(title, description, source, jobSpec, dedupKey)
 			if err != nil || rec == nil {

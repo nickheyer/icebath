@@ -68,10 +68,9 @@ func (e *DeadlineExpiredError) Error() string {
 // Timeout marks the error as a net.Error style timeout
 func (e *DeadlineExpiredError) Timeout() bool { return true }
 
-// SuspectableBackend is a stateful backend flagged on timeout so its owner health checks it before reuse
+// SuspectableBackend is a stateful backend flagged on timeout so its owner recovers the connection before reuse
 type SuspectableBackend interface {
 	MarkSuspect(reason string)
-	EnsureHealthy() bool
 }
 
 func markBackendSuspect(backend any, label string, timeout time.Duration) {

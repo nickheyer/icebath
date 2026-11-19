@@ -860,16 +860,6 @@ func (s *VaultStore) ListItems() ([]VaultItemMeta, error) {
 	return out, err
 }
 
-func (s *VaultStore) HasItems() bool {
-	has := false
-	err := s.locked(func() error {
-		items, err := s.readAll()
-		has = len(items) > 0
-		return err
-	})
-	return err == nil && has
-}
-
 // Record as a mapping, an error for anything else
 func recObject(rec any) (*pyjson.Object, error) {
 	if o, ok := rec.(*pyjson.Object); ok {

@@ -138,11 +138,6 @@ func (a *AIAgent) disableCodexReasoningReplay(messages []map[string]any, keepRep
 	return map[string]int{"messages": strippedMessages, "items": strippedItems}
 }
 
-// True for a malformed Anthropic event stream frame on the anthropic_messages wire
-func (a *AIAgent) isProviderStreamParseError(err error) bool {
-	return a.apiMode == "anthropic_messages" && provider.IsProviderStreamParseError(err)
-}
-
 // Surfaces a compact warning naming the failed auxiliary task and the summarized error
 func (a *AIAgent) emitAuxiliaryFailure(task string, err error) {
 	detail := func() (d string) {

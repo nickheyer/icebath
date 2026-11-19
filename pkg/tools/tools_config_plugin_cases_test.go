@@ -168,7 +168,7 @@ func TestReconfigureWritesProviderReconfigureWithEnvVarsAlreadySetWritesProvider
 	t.Setenv("XAI_FAKE_API_KEY", "sk-fake")
 	cfg := config.Tree{}
 	row := caseRow("name", "xAI", "env_vars", []any{caseRow("key", "XAI_FAKE_API_KEY", "prompt", "xAI key")}, "video_gen_plugin_name", "xai_fake")
-	if err := s.reconfigureProvider(row, cfg); err != nil {
+	if err := s.configureProvider(row, cfg, true); err != nil {
 		t.Fatal(err)
 	}
 	videoGen := section(cfg, "video_gen")

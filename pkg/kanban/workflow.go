@@ -20,11 +20,6 @@ type Column struct {
 	DragTarget bool
 }
 
-// Column with the default question mark glyph that is offered as a drag target
-func NewColumn(key, label string) Column {
-	return Column{Key: key, Label: label, Icon: "?", DragTarget: true}
-}
-
 // Manual move allow list keyed by source column in insertion order
 type ManualMoves struct {
 	srcs []string
@@ -52,9 +47,6 @@ func FrozenManual(rows ...ManualRow) ManualMoves {
 	}
 	return m
 }
-
-// Source columns in insertion order
-func (m ManualMoves) Sources() []string { return slices.Clone(m.srcs) }
 
 // Destinations allowed from src sorted, nil when src has no row
 func (m ManualMoves) Get(src string) []string {
@@ -88,44 +80,6 @@ func (w Workflow) Keys() []string {
 		out[i] = c.Key
 	}
 	return out
-}
-
-// First column with the key, false when none
-func (w Workflow) Column(key string) (Column, bool) {
-	for _, c := range w.Columns {
-		if c.Key == key {
-			return c, true
-		}
-	}
-	return Column{}, false
-}
-
-// Column with the key or the ValueError naming the unknown column
-func (w Workflow) require(key string) (Column, error) {
-	col, ok := w.Column(key)
-	if !ok {
-		return Column{}, fmt.Errorf("unknown kanban workflow column %s", errchain.Show(key))
-	}
-	return col, nil
-}
-
-// Reports whether a human may request src to dst, archiving always allowed and archived a valid restore source
-func (w Workflow) CanMove(src, dst string) (bool, error) {
-	if src != Archived {
-		if _, err := w.require(src); err != nil {
-			return false, err
-		}
-	}
-	if src == dst {
-		return false, nil
-	}
-	if dst == Archived {
-		return true, nil
-	}
-	if _, err := w.require(dst); err != nil {
-		return false, err
-	}
-	return w.Manual.dsts[src][dst], nil
 }
 
 // ValueError for duplicate keys, a reserved archived column or moves naming unknown columns

@@ -4,6 +4,3 @@ package tuihost
 func DetachSessionTransport(session *Session, transport Transport) bool {
 	return detachSessionTransport(session, transport)
 }
-
-// The stdio transport of the process, the real stdout peer
-func ProcessStdioTransport() Transport { return stdioTransport() }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -288,10 +287,7 @@ func rawConfigTree(ctx context.Context) config.Tree {
 // The higher package collaborators pkg/plugins reaches through its Services
 func pluginServices() *plugins.Services {
 	s := &plugins.Services{
-		InvokeLifecycleHook: agent.LifecycleInvokeHook,
-		RequestToolApproval: func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error) {
-			return tools.RequestPluginToolApproval(ctx, callerToolsEnv(ctx), toolName, message, ruleKey, turnID, toolCallID, sessionID)
-		},
+		InvokeLifecycleHook:        agent.LifecycleInvokeHook,
 		FailoverReason:             failoverReason,
 		MemoryProviderDir:          memory.ProviderDirForHome,
 		HostObject:                 hostedObjectName,
@@ -358,8 +354,7 @@ func pluginServices() *plugins.Services {
 			return out
 		},
 		CredentialedProviderRequest: func(ctx context.Context, pluginDir, name, method, url string, json any, headers map[string]string, timeout time.Duration) (*plugins.ProviderRequestAnswer, error) {
-			resp, err := provider.CredentialedProviderRequest(name, method, url, provider.ProviderRequestOptions{JSON: json, Headers: headers, Timeout: timeout,
-				Caller: []string{filepath.Join(pluginDir, "plugin.yaml")}})
+			resp, err := provider.CredentialedProviderRequest(name, method, url, provider.ProviderRequestOptions{JSON: json, Headers: headers, Timeout: timeout, PluginDir: pluginDir})
 			if err != nil {
 				return nil, err
 			}

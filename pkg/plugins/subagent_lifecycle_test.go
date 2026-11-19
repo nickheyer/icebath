@@ -308,7 +308,7 @@ func TestSubagentLifecycleRoutingAndToolsets(t *testing.T) {
 // bind_subagent_parent scoping and the per context service the plugin context exposes
 func TestSubagentParentBindingAndContextService(t *testing.T) {
 	parent := &fakeParent{session: "p"}
-	ctx := BindSubagentParent(context.Background(), parent)
+	ctx := BindSubagentParentRef(context.Background(), func() any { return parent })
 	if GetActiveSubagentParent(ctx) != parent || GetActiveSubagentParent(context.Background()) != nil {
 		t.Fatal("binding")
 	}

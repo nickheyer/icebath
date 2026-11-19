@@ -2,7 +2,6 @@ package acp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 )
@@ -108,19 +107,6 @@ type loopTask struct {
 
 // Asks the task to stop at its next await
 func (t *loopTask) Cancel() { t.cancel() }
-
-// Whether the task ended by cancellation
-func (t *loopTask) cancelled() bool { return errors.Is(t.err, context.Canceled) }
-
-// Whether the task has finished
-func (t *loopTask) finished() bool {
-	select {
-	case <-t.done:
-		return true
-	default:
-		return false
-	}
-}
 
 // Schedules fn as a coroutine of the loop, onDone running on the loop once it finished
 func (l *coLoop) createTask(parent context.Context, fn func(ctx context.Context) (any, error), onDone func(t *loopTask)) *loopTask {

@@ -196,7 +196,7 @@ func TestCloseTransportRebindsSessionToRemainingViewer(t *testing.T) {
 	if fanout == nil || !fanout.Contains(main) || fanout.Contains(popout) {
 		t.Fatalf("transport after close %v", session.Get("transport"))
 	}
-	if pendingReap("multi-sid") != nil || wsSessionIsOrphaned(session) {
+	if pendingReap("multi-sid") != nil || wsSessionIsDetached(session) {
 		t.Fatal("watched session was handed to the orphan reaper")
 	}
 	tuihost.Emit(context.Background(), "message.delta", "multi-sid", map[string]any{"text": "still here"})
@@ -239,19 +239,6 @@ func TestCloseTransportSkipsDeadRemainingViewers(t *testing.T) {
 	}
 	if pendingReap("dead-viewer-sid") == nil {
 		t.Fatal("orphan reap was not armed")
-	}
-}
-
-func TestWsOrphanReapSparesReattachedSession(t *testing.T) {
-	cases := map[string]map[string]any{
-		"reattached": {"transport": &orphanRacePeer{id: 40}, "running": false},
-		"mid_turn":   {"transport": tuihost.DetachedWSTransport(), "running": true},
-		"done":       {"transport": tuihost.DetachedWSTransport(), "running": false, "_finalized": true},
-	}
-	for name, fields := range cases {
-		if wsSessionIsOrphaned(tuihost.NewSession(fields)) {
-			t.Fatalf("%s session reads as orphaned", name)
-		}
 	}
 }
 

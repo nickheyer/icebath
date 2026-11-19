@@ -48,3 +48,10 @@ func TestBatteryCategoryThresholds(t *testing.T) {
 		t.Fatalf("discharging label %q", got)
 	}
 }
+
+// ClearBatteryCache drops the memoised reading
+func ClearBatteryCache() {
+	batteryMu.Lock()
+	batteryCached = nil
+	batteryMu.Unlock()
+}

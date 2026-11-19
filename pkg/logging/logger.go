@@ -83,9 +83,6 @@ func init() { minLevel.Store(LevelWarning) }
 // Level at or below which every logger drops its records, zero leaving all levels enabled
 var disableLevel atomic.Int64
 
-// Drops records at or below level on every logger, the manager wide logging.disable switch
-func Disable(level int) { disableLevel.Store(int64(level)) }
-
 // Logger for a slash separated package name, the root logger for an empty name or root
 func GetLogger(name string) *Logger {
 	if name == "" || name == "root" {

@@ -1311,12 +1311,6 @@ func CatalogRowFields(h, dir string, pins, versions map[string]string) (map[stri
 	return row, nil
 }
 
-// Catalog name to pinned sha from the live catalog
-func CatalogPins(ctx context.Context) map[string]string {
-	pins, _, _ := CatalogRowsMaps(ctx)
-	return pins
-}
-
 // Pins, versions and titles maps from one live catalog resolution, all empty when it fails
 func CatalogRowsMaps(ctx context.Context) (map[string]string, map[string]string, map[string]string) {
 	pins, versions, titles := map[string]string{}, map[string]string{}, map[string]string{}

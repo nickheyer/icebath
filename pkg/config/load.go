@@ -254,29 +254,3 @@ func SaveUser(ctx context.Context, h string, doc map[string]any) error {
 	}
 	return AtomicConfigReplace(ctx, h, GetConfigPath(h), doc, "")
 }
-
-// Sets one dotted key in the user config of a home
-func SetKey(ctx context.Context, h, key string, value any) error {
-	raw, err := ReadUser(h)
-	if err != nil {
-		return err
-	}
-	tree := Tree(raw)
-	if err := tree.Set(key, value); err != nil {
-		return err
-	}
-	return SaveUser(ctx, h, map[string]any(tree))
-}
-
-// Removes one dotted key from the user config of a home, reporting whether it existed
-func UnsetKey(ctx context.Context, h, key string) (bool, error) {
-	raw, err := ReadUser(h)
-	if err != nil {
-		return false, err
-	}
-	tree := Tree(raw)
-	if !tree.Unset(key) {
-		return false, nil
-	}
-	return true, SaveUser(ctx, h, map[string]any(tree))
-}

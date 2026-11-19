@@ -55,7 +55,7 @@ func pluginResumeChild(phase string) (string, error) {
 	}
 	manager := plugins.GetPluginManager(ctx)
 	manager.MarkDiscoveredForTests()
-	pc := plugins.NewPluginContext(&plugins.Manifest{Name: "example-plugin", Key: "example-plugin", Source: "user"}, manager)
+	pc := plugins.NewContext(&plugins.Manifest{Name: "example-plugin", Key: "example-plugin", Source: "user"}, manager)
 	callsPath := os.Getenv("TEST_CALLS")
 	readCalls := func() int {
 		raw, err := os.ReadFile(callsPath)

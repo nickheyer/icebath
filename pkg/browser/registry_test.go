@@ -45,43 +45,6 @@ func registerClouds(t *testing.T, providers ...*fakeCloudProvider) {
 	}
 }
 
-func TestResolveNoneWithNoCredsReturnsNone(t *testing.T) {
-	registerClouds(t, newFakeCloud("browser-use", false), newFakeCloud("browserbase", false), newFakeCloud("firecrawl", true))
-	if p := resolveBrowserProvider(context.Background(), nil, ""); p != nil {
-		t.Fatalf("resolved %s", p.Name())
-	}
-}
-
-func TestExplicitLocalReturnsNone(t *testing.T) {
-	registerClouds(t, newFakeCloud("browser-use", true))
-	if p := resolveBrowserProvider(context.Background(), nil, "local"); p != nil {
-		t.Fatalf("resolved %s", p.Name())
-	}
-}
-
-func TestLegacyWalkPrefersBrowserUseOverBrowserbase(t *testing.T) {
-	registerClouds(t, newFakeCloud("browserbase", true), newFakeCloud("browser-use", true))
-	if p := resolveBrowserProvider(context.Background(), nil, ""); p == nil || p.Name() != "browser-use" {
-		t.Fatalf("resolved %v", p)
-	}
-}
-
-func TestConfiguredProviderWinsEvenWhenUnavailable(t *testing.T) {
-	registerClouds(t, newFakeCloud("browser-use", true), newFakeCloud("firecrawl", false))
-	if p := resolveBrowserProvider(context.Background(), nil, "firecrawl"); p == nil || p.Name() != "firecrawl" {
-		t.Fatalf("resolved %v", p)
-	}
-}
-
-func TestUnregisteredConfiguredProviderFallsBackToTheLegacyWalk(t *testing.T) {
-	exploding := newFakeCloud("browser-use", true)
-	exploding.explode = true
-	registerClouds(t, exploding, newFakeCloud("browserbase", true))
-	if p := resolveBrowserProvider(context.Background(), nil, "missing"); p == nil || p.Name() != "browserbase" {
-		t.Fatalf("resolved %v", p)
-	}
-}
-
 type fakePageBackend struct {
 	provider.ProviderDefaults
 	name    string
