@@ -113,11 +113,11 @@ func TestSessionContextPredicates(t *testing.T) {
 	if getCurrentSessionKey(&Env{Values: &sync.Map{}}, "default") != "proc-key" {
 		t.Fatal("reset restores the env fallback")
 	}
-	SetInteractiveContext(env, true)
+	env.Values.Store("session.interactive", true)
 	if !isInteractiveCLI(env) {
 		t.Fatal("bound interactive flag")
 	}
-	ResetInteractiveContext(env)
+	env.Values.Delete("session.interactive")
 	if isInteractiveCLI(env) {
 		t.Fatal("reset interactive flag")
 	}

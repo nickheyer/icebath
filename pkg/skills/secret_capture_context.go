@@ -10,7 +10,7 @@ var secretCaptureContextCallback ContextSecretCaptureFunc
 // Installs the process wide secret capture callback that reads the caller's session from its context
 func SetContextSecretCaptureCallback(cb ContextSecretCaptureFunc) {
 	secretCaptureMu.Lock()
-	secretCaptureContextCallback, secretCaptureCallback = cb, nil
+	secretCaptureContextCallback = cb
 	secretCaptureMu.Unlock()
 }
 
@@ -23,5 +23,5 @@ func processSecretCapture(ctx context.Context) SecretCaptureFunc {
 			return contextual(ctx, name, prompt, metadata)
 		}
 	}
-	return secretCaptureCallback
+	return nil
 }

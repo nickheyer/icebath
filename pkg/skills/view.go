@@ -86,24 +86,7 @@ type SecretCaptureFunc func(name, prompt string, metadata map[string]any) (map[s
 
 type turnSecretCaptureKey struct{}
 
-var (
-	secretCaptureMu       sync.RWMutex
-	secretCaptureCallback SecretCaptureFunc
-)
-
-// Installs the process wide secret capture callback the CLI surface provides
-func SetSecretCaptureCallback(cb SecretCaptureFunc) {
-	secretCaptureMu.Lock()
-	secretCaptureCallback, secretCaptureContextCallback = cb, nil
-	secretCaptureMu.Unlock()
-}
-
-// SecretCaptureCallback returns the process wide secret capture callback, nil when no surface installed one
-func SecretCaptureCallback() SecretCaptureFunc {
-	secretCaptureMu.RLock()
-	defer secretCaptureMu.RUnlock()
-	return secretCaptureCallback
-}
+var secretCaptureMu sync.RWMutex
 
 // Binds a secret capture callback for one turn, winning over the process wide callback
 func WithTurnSecretCapture(ctx context.Context, cb SecretCaptureFunc) context.Context {

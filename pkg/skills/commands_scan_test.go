@@ -366,12 +366,12 @@ func TestBuildSkillInvocationMessageSecureSetup(t *testing.T) {
 	t.Setenv("TENOR_API_KEY", "")
 	os.Unsetenv("TENOR_API_KEY")
 	var calls []string
-	SetSecretCaptureCallback(func(name, prompt string, metadata map[string]any) (map[string]any, error) {
+	SetContextSecretCaptureCallback(func(_ context.Context, name, prompt string, metadata map[string]any) (map[string]any, error) {
 		calls = append(calls, name)
 		os.Setenv(name, "stored-in-test")
 		return map[string]any{"success": true, "stored_as": name, "validated": false, "skipped": false}, nil
 	})
-	t.Cleanup(func() { SetSecretCaptureCallback(nil) })
+	t.Cleanup(func() { SetContextSecretCaptureCallback(nil) })
 	makeCmdSkill(t, skills, "test-skill", "required_environment_variables:\n  - name: TENOR_API_KEY\n    prompt: Tenor API key\n", "", "")
 	s.ScanSkillCommands()
 	if msg := mustInvoke(t, s, "/test-skill", "do stuff"); !strings.Contains(msg, "test-skill") || len(calls) != 1 || calls[0] != "TENOR_API_KEY" {
@@ -383,11 +383,11 @@ func TestGatewayLoadsSkillButReturnsSetupGuidance(t *testing.T) {
 	s, skills, _ := cmdScope(t)
 	t.Setenv("TENOR_API_KEY", "")
 	os.Unsetenv("TENOR_API_KEY")
-	SetSecretCaptureCallback(func(string, string, map[string]any) (map[string]any, error) {
+	SetContextSecretCaptureCallback(func(context.Context, string, string, map[string]any) (map[string]any, error) {
 		t.Error("gateway flow should not try secure in-band secret capture")
 		return nil, nil
 	})
-	t.Cleanup(func() { SetSecretCaptureCallback(nil) })
+	t.Cleanup(func() { SetContextSecretCaptureCallback(nil) })
 	t.Setenv("ICEBATH_SESSION_PLATFORM", "telegram")
 	s.Platform = "telegram"
 	makeCmdSkill(t, skills, "test-skill", "required_environment_variables:\n  - name: TENOR_API_KEY\n    prompt: Tenor API key\n", "", "")

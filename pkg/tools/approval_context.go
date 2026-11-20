@@ -61,18 +61,6 @@ func loadSessionString(env *Env, key string) (string, bool) {
 	return s, ok
 }
 
-// SetInteractiveContext binds interactive mode for the session instead of mutating the process environment
-func SetInteractiveContext(env *Env, interactive bool) {
-	storeSessionValue(env, "session.interactive", interactive)
-}
-
-// ResetInteractiveContext drops the bound interactive flag so the process environment decides again
-func ResetInteractiveContext(env *Env) {
-	if env != nil && env.Values != nil {
-		env.Values.Delete("session.interactive")
-	}
-}
-
 // Reports a one shot chat or ACP session, bound flag first and process environment second
 func isInteractiveCLI(env *Env) bool {
 	return sessionFlag(env, "interactive", "ICEBATH_INTERACTIVE")

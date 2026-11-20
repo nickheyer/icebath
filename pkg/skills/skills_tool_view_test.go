@@ -57,8 +57,14 @@ func unsetEnv(t *testing.T, name string) {
 // Installs a secret capture callback for the test duration
 func withCapture(t *testing.T, cb SecretCaptureFunc) {
 	t.Helper()
-	SetSecretCaptureCallback(cb)
-	t.Cleanup(func() { SetSecretCaptureCallback(nil) })
+	if cb == nil {
+		SetContextSecretCaptureCallback(nil)
+	} else {
+		SetContextSecretCaptureCallback(func(_ context.Context, name, prompt string, metadata map[string]any) (map[string]any, error) {
+			return cb(name, prompt, metadata)
+		})
+	}
+	t.Cleanup(func() { SetContextSecretCaptureCallback(nil) })
 }
 
 const tenorReq = "required_environment_variables:\n  - name: TENOR_API_KEY\n    prompt: Tenor API key\n"
