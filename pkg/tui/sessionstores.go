@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -77,16 +78,16 @@ func (a *app) goodVibesHeart(t theme) string {
 func (a *app) voiceLabel() (string, wm.SegmentStyle) {
 	switch {
 	case a.voiceRecording:
-		return tr("session.main.voiceRec"), wm.Bad
+		return tr(txt.SessionMainVoiceRec), wm.Bad
 	case a.voiceProcessing:
-		return tr("session.main.voiceStt"), wm.Hot
+		return tr(txt.SessionMainVoiceStt), wm.Hot
 	}
-	label := tr("session.main.voiceOff")
+	label := tr(txt.SessionMainVoiceOff)
 	if a.voiceEnabled {
-		label = tr("session.main.voiceOn")
+		label = tr(txt.SessionMainVoiceOn)
 	}
 	if a.voiceTTS {
-		label += tr("session.main.voiceTtsSuffix")
+		label += tr(txt.SessionMainVoiceTtsSuffix)
 	}
 	return label, wm.Dim
 }
@@ -175,17 +176,17 @@ func rememberOperation(ids []string, opID string) []string {
 func connectionStateWord(state tuigateway.ConnectionTargetState) string {
 	switch state {
 	case "initiated":
-		return tr("connection.state.initiated")
+		return tr(txt.ConnectionStateInitiated)
 	case "connected":
-		return tr("connection.state.connected")
+		return tr(txt.ConnectionStateConnected)
 	case "skipped":
-		return tr("connection.state.skipped")
+		return tr(txt.ConnectionStateSkipped)
 	case "failed":
-		return tr("connection.state.failed")
+		return tr(txt.ConnectionStateFailed)
 	case "not_connected":
-		return tr("connection.state.notConnected")
+		return tr(txt.ConnectionStateNotConnected)
 	}
-	return tr("connection.state.pending")
+	return tr(txt.ConnectionStatePending)
 }
 
 // Transcript line of a settled target and its outcome

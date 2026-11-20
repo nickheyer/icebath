@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -44,7 +45,7 @@ func (a *app) languageCommands() []slashCommand {
 					for i, l := range res.Languages {
 						ids[i] = l.ID
 					}
-					r.sys(tr("slashCmd.session.language.unknown", value, strings.Join(ids, ", ")))
+					r.sys(tr(txt.SlashCmdSessionLanguageUnknown, value, strings.Join(ids, ", ")))
 					return nil
 				}
 				return a.setLanguage(r, res.Resolved)
@@ -59,18 +60,18 @@ func (a *app) setLanguage(r *slashRun, value string) tea.Cmd {
 		if res == nil || res.Value == nil {
 			return nil
 		}
-		id, warning, gw, idle := res.Value.Text, res.Warning, a.gw, tr("status.ready")
+		id, warning, gw, idle := res.Value.Text, res.Warning, a.gw, tr(txt.StatusReady)
 		return func() tea.Msg {
 			syncTUILocale(func(method string, params map[string]any) (any, error) {
 				return gw.request(context.Background(), method, params, 0)
 			}, id)
 			return asyncDoneMsg{run: func() tea.Cmd {
 				if a.store.ui.Status == idle {
-					a.store.ui.Status = tr("status.ready")
+					a.store.ui.Status = tr(txt.StatusReady)
 				}
-				a.card.view.invalidate()
+				a.languageChanged()
 				if !r.stale() {
-					r.sys(tr("slashCmd.session.language.switched", id))
+					r.sys(tr(txt.SlashCmdSessionLanguageSwitched, id))
 					if warning != "" {
 						r.sys(warning)
 					}
@@ -89,8 +90,8 @@ func (a *app) openLanguagePicker(r *slashRun) tea.Cmd {
 		}
 		languages := res.Languages
 		list := cards.NewList(a.cardEnv(), cards.ListSpec{
-			Title: "language", Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:language", Context: languageContext, Primary: "tui.language.use",
-			Columns: []render.Column{{Title: ""}, {Title: "id"}, {Title: "language", Flex: 1}, {Title: "source"}, {Title: "covers"}},
+			Title: tr(txt.HubsTitleLanguage), Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:language", Context: languageContext, Primary: "tui.language.use",
+			Columns: []render.Column{{Title: ""}, {Title: tr(txt.HubsColId)}, {Title: tr(txt.HubsColLanguage), Flex: 1}, {Title: tr(txt.HubsColSource)}, {Title: tr(txt.HubsColCovers)}},
 			Rows: func() [][]string {
 				out := make([][]string, len(languages))
 				for i, l := range languages {
@@ -106,7 +107,7 @@ func (a *app) openLanguagePicker(r *slashRun) tea.Cmd {
 				}
 				return out
 			},
-			Empty: func() string { return tr("slashCmd.session.language.none") },
+			Empty: func() string { return tr(txt.SlashCmdSessionLanguageNone) },
 			Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 				"tui.language.use": func(l *cards.List, i int) tea.Cmd {
 					return tea.Batch(wm.RequestDismissOf(l), a.setLanguage(r, languages[i].ID))

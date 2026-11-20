@@ -96,13 +96,12 @@ func ValidateWebBackends(cfg map[string]any, issues *[]ConfigIssue, removedNote 
 
 // Container roots absent from the defaults whose readers fix their shape
 var KnownContainerTypes = map[string]string{
-	"custom_providers":                 "list",
-	"providers":                        "mapping",
-	"model.aliases":                    "mapping",
-	"model_aliases":                    "mapping",
-	"plugins.enabled":                  "list",
-	"plugins.disabled":                 "list",
-	"model_catalog.excluded_providers": "list",
+	"custom_providers": "list",
+	"providers":        "mapping",
+	"model.aliases":    "mapping",
+	"model_aliases":    "mapping",
+	"plugins.enabled":  "list",
+	"plugins.disabled": "list",
 }
 
 // List slots whose readers accept a bare name as a one item list

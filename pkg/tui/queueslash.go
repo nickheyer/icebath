@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // What a /queue line asks for, a management verb or a prompt to queue
@@ -21,8 +23,8 @@ var (
 	queueListVerbs   = map[string]bool{"list": true, "ls": true, "show": true}
 	queueRemoveVerbs = map[string]bool{"rm": true, "remove": true, "delete": true, "del": true, "pop": true, "drop": true}
 	queueEditVerbs   = map[string]bool{"edit": true, "set": true}
-	queueUsageKeys   = map[string]string{"add": "slashCmd.core.queue.usageAdd", "edit": "slashCmd.core.queue.usageEdit",
-		"move": "slashCmd.core.queue.usageMove", "remove": "slashCmd.core.queue.usageRemove"}
+	queueUsageKeys   = map[string]txt.Key{"add": txt.SlashCmdCoreQueueUsageAdd, "edit": txt.SlashCmdCoreQueueUsageEdit,
+		"move": txt.SlashCmdCoreQueueUsageMove, "remove": txt.SlashCmdCoreQueueUsageRemove}
 	queueIndexRe   = regexp.MustCompile(`^\d+$`)
 	queueEditHead  = regexp.MustCompile(`^\S+\s+\S+\s*`)
 	queueSpaceRuns = regexp.MustCompile(`\s+`)
@@ -141,12 +143,12 @@ func (r *slashRun) applyQueuePlan(plan queuePlan) tea.Cmd {
 	a := r.a
 	rows, err := a.queue.queuedDisplay()
 	if err != nil {
-		r.sys("error: " + err.Error())
+		r.sys(errorLine(err.Error()))
 		return nil
 	}
 	queue, err := a.queue.getQueue(nil)
 	if err != nil {
-		r.sys("error: " + err.Error())
+		r.sys(errorLine(err.Error()))
 		return nil
 	}
 	size, local := len(rows), len(queue.items)
@@ -156,10 +158,10 @@ func (r *slashRun) applyQueuePlan(plan queuePlan) tea.Cmd {
 		r.sys(tr(queueUsageKeys[plan.text]))
 	case "list":
 		if size == 0 {
-			r.sys(tr("slashCmd.core.queue.empty") + "  " + tr("slashCmd.core.queue.usage"))
+			r.sys(tr(txt.SlashCmdCoreQueueEmpty) + "  " + tr(txt.SlashCmdCoreQueueUsage))
 			return nil
 		}
-		lines := []string{tr("slashCmd.core.queue.pendingHeader", strconv.Itoa(size))}
+		lines := []string{tr(txt.SlashCmdCoreQueuePendingHeader, strconv.Itoa(size))}
 		for i, row := range rows {
 			lines = append(lines, "  "+strconv.Itoa(i+1)+". "+queueClip(row))
 		}
@@ -169,47 +171,47 @@ func (r *slashRun) applyQueuePlan(plan queuePlan) tea.Cmd {
 		for i := size - 1; i >= 0; i-- {
 			cmd, err := a.queue.removeQ(i)
 			if err != nil {
-				r.sys("error: " + err.Error())
+				r.sys(errorLine(err.Error()))
 				return tea.Batch(cmds...)
 			}
 			cmds = append(cmds, cmd)
 		}
-		key := "slashCmd.core.queue.clearedOther"
+		key := txt.SlashCmdCoreQueueClearedOther
 		if size == 1 {
-			key = "slashCmd.core.queue.clearedOne"
+			key = txt.SlashCmdCoreQueueClearedOne
 		}
 		r.sys(tr(key, strconv.Itoa(size)))
 		return tea.Batch(cmds...)
 	case "remove":
 		if outOfRange(plan.index) {
-			r.sys(tr("slashCmd.core.queue.notFound", strconv.Itoa(plan.index), strconv.Itoa(size)))
+			r.sys(tr(txt.SlashCmdCoreQueueNotFound, strconv.Itoa(plan.index), strconv.Itoa(size)))
 			return nil
 		}
 		if plan.index <= local && queue.items[plan.index-1].InFlight {
-			r.sys(tr("slashCmd.core.queue.alreadyStarted", strconv.Itoa(plan.index)))
+			r.sys(tr(txt.SlashCmdCoreQueueAlreadyStarted, strconv.Itoa(plan.index)))
 			return nil
 		}
 		preview := queueClip(rows[plan.index-1])
 		cmd, err := a.queue.removeQ(plan.index - 1)
 		if err != nil {
-			r.sys("error: " + err.Error())
+			r.sys(errorLine(err.Error()))
 			return nil
 		}
-		r.sys(tr("slashCmd.core.queue.removed", strconv.Itoa(plan.index), preview))
+		r.sys(tr(txt.SlashCmdCoreQueueRemoved, strconv.Itoa(plan.index), preview))
 		return cmd
 	case "compose":
 		if outOfRange(plan.index) {
-			r.sys(tr("slashCmd.core.queue.notFound", strconv.Itoa(plan.index), strconv.Itoa(size)))
+			r.sys(tr(txt.SlashCmdCoreQueueNotFound, strconv.Itoa(plan.index), strconv.Itoa(size)))
 			return nil
 		}
 		draft, err := a.queue.queueDraft(plan.index - 1)
 		if err != nil {
-			r.sys("error: " + err.Error())
+			r.sys(errorLine(err.Error()))
 			return nil
 		}
 		index := plan.index - 1
 		if err := a.queue.setQueueEdit(&index); err != nil {
-			r.sys("error: " + err.Error())
+			r.sys(errorLine(err.Error()))
 			return nil
 		}
 		a.queueEdit = &index
@@ -217,37 +219,37 @@ func (r *slashRun) applyQueuePlan(plan queuePlan) tea.Cmd {
 		return a.card.composer.SetValue(draft)
 	case "edit":
 		if outOfRange(plan.index) {
-			r.sys(tr("slashCmd.core.queue.notFound", strconv.Itoa(plan.index), strconv.Itoa(size)))
+			r.sys(tr(txt.SlashCmdCoreQueueNotFound, strconv.Itoa(plan.index), strconv.Itoa(size)))
 			return nil
 		}
 		if plan.index > local {
-			r.sys(tr("slashCmd.core.queue.gatewayFifo"))
+			r.sys(tr(txt.SlashCmdCoreQueueGatewayFifo))
 			return nil
 		}
 		item := queue.items[plan.index-1]
 		if item.InFlight {
-			r.sys(tr("slashCmd.core.queue.alreadyStarted", strconv.Itoa(plan.index)))
+			r.sys(tr(txt.SlashCmdCoreQueueAlreadyStarted, strconv.Itoa(plan.index)))
 			return nil
 		}
 		text, display := item.Text, item.Display
 		item.Text, item.Display = plan.text, plan.display
 		if err := pendingJournal.save(*item); err != nil {
 			item.Text, item.Display = text, display
-			r.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
+			r.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 			return nil
 		}
-		r.sys(tr("slashCmd.core.queue.updated", strconv.Itoa(plan.index), queueClip(plan.text)))
+		r.sys(tr(txt.SlashCmdCoreQueueUpdated, strconv.Itoa(plan.index), queueClip(plan.text)))
 	case "move":
 		if outOfRange(plan.index) || outOfRange(plan.to) {
-			r.sys(tr("slashCmd.core.queue.moveOutOfRange", strconv.Itoa(size)))
+			r.sys(tr(txt.SlashCmdCoreQueueMoveOutOfRange, strconv.Itoa(size)))
 			return nil
 		}
 		if plan.index > local || plan.to > local {
-			r.sys(tr("slashCmd.core.queue.gatewayFifo"))
+			r.sys(tr(txt.SlashCmdCoreQueueGatewayFifo))
 			return nil
 		}
 		if queue.items[plan.index-1].InFlight || queue.items[plan.to-1].InFlight {
-			r.sys(tr("slashCmd.core.queue.alreadyStarted", strconv.Itoa(plan.index)))
+			r.sys(tr(txt.SlashCmdCoreQueueAlreadyStarted, strconv.Itoa(plan.index)))
 			return nil
 		}
 		if plan.index != plan.to {
@@ -259,12 +261,12 @@ func (r *slashRun) applyQueuePlan(plan queuePlan) tea.Cmd {
 				stamp := a.queue.nextCreatedAt(floor)
 				item.CreatedAt, floor = &stamp, stamp
 				if err := pendingJournal.save(*item); err != nil {
-					r.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
+					r.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 					return nil
 				}
 			}
 		}
-		r.sys(tr("slashCmd.core.queue.moved", strconv.Itoa(plan.index), strconv.Itoa(plan.to)))
+		r.sys(tr(txt.SlashCmdCoreQueueMoved, strconv.Itoa(plan.index), strconv.Itoa(plan.to)))
 	}
 	return nil
 }

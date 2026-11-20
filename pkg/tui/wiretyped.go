@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Whether the attached gateway reported another build or contract version than this process runs
@@ -17,7 +18,7 @@ var gatewayOtherBuild atomic.Bool
 // Text of an answer that does not fit its contract, naming the other gateway build when that is the cause
 func misfitText(text string) string {
 	if gatewayOtherBuild.Load() {
-		return tr("gatewayMsg.otherBuild.misfit", text)
+		return tr(txt.GatewayMsgOtherBuildMisfit, text)
 	}
 	return text
 }
@@ -33,7 +34,7 @@ func ask[P, R any](via rpcVia, sys func(string), m tuigateway.Method[P, R], para
 		}
 		r, err := m.Result(res)
 		if err != nil {
-			sys("error: " + misfitText(tr("session.common.invalidResponse", m.Name())) + " " + err.Error())
+			sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, m.Name())) + " " + err.Error()))
 			return then(nil)
 		}
 		return then(&r)
@@ -53,7 +54,7 @@ func callWithin[P, R any](gw turnGateway, m tuigateway.Method[P, R], params P, t
 		}
 		r, err := m.Result(v)
 		if err != nil {
-			return then(nil, fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", m.Name())), err))
+			return then(nil, fmt.Errorf("%s %w", misfitText(tr(txt.SessionCommonInvalidResponse, m.Name())), err))
 		}
 		return then(&r, nil)
 	})

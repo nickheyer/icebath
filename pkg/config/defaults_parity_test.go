@@ -55,6 +55,7 @@ agent.session_stall_timeout
 agent.stall_guards
 agent.stream_drain_timeout
 agent.stream_max_lifetime
+agent.stream_stale_timeout
 agent.task_completion_guidance
 agent.text_verbosity
 agent.tool_use_enforcement
@@ -283,6 +284,7 @@ compression.threshold_tokens
 computer_use.allow_unsigned_driver
 computer_use.autostart
 computer_use.ax_max_elements
+computer_use.backend
 computer_use.capability_manifest
 computer_use.capture_after_mode
 computer_use.cua_telemetry
@@ -300,19 +302,24 @@ context_file_read_timeout
 credential_pool_strategies
 cron.allow_agent_scheduling
 cron.catch_up_missed
+cron.cleanup_timeout_seconds
 cron.delivery.notify
+cron.failure_nudge_threshold
 cron.failure_repeat_alert_hours
 cron.max_parallel_jobs
 cron.media_send_timeout_seconds
 cron.mirror_delivery
+cron.misfire_grace_minutes
 cron.model
 cron.model_provider
 cron.output_retention
 cron.preflight
 cron.provider
 cron.require_restart_safe_scope
+cron.retry_unreachable
 cron.script_timeout_seconds
 cron.session_db_timeout_seconds
+cron.standalone_send_timeout_seconds
 cron.wrap_response
 curator.archive_after_days
 curator.archive_ttl_days
@@ -379,6 +386,7 @@ discord.voice_fx.ambient_gain
 discord.voice_fx.ambient_path
 discord.voice_fx.duck_gain
 discord.voice_fx.enabled
+discord.voice_fx.lead_silence_ms
 discord.voice_fx.speech_gain
 discord.voice_playback_timeout_seconds
 discord.websocket_event_max_silence_seconds
@@ -458,12 +466,14 @@ gateway.loop_watchdog
 gateway.loop_watchdog_max_strikes
 gateway.loop_watchdog_probe_interval_s
 gateway.loop_watchdog_probe_timeout_s
+gateway.managed_workers
 gateway.max_inbound_media_bytes
 gateway.media_delivery_allow_dirs
 gateway.message_timestamps.enabled
 gateway.multiplex_profiles
 gateway.platform_connect_timeout
 gateway.profile_routes
+gateway.proxy_url
 gateway.respawn_storm.max_starts
 gateway.respawn_storm.window_seconds
 gateway.restart_loop_guard.max_gap_seconds
@@ -472,6 +482,7 @@ gateway.restart_loop_guard.window_seconds
 gateway.scale_to_zero.idle_timeout_minutes
 gateway.service_install_choice
 gateway.signal_interrupt_grace_timeout
+gateway.standalone
 gateway.startup_watchdog
 gateway.startup_watchdog_timeout_seconds
 gateway.strict
@@ -490,6 +501,7 @@ human_delay.min_ms
 human_delay.mode
 kanban.auto_decompose
 kanban.auto_decompose_per_tick
+kanban.auto_promote_children
 kanban.auto_subscribe_on_create
 kanban.default_assignee
 kanban.dispatch_in_gateway
@@ -500,6 +512,7 @@ kanban.done_sub_retention_days
 kanban.failure_limit
 kanban.max_in_progress
 kanban.max_in_progress_per_profile
+kanban.max_spawn
 kanban.notify_in_gateway
 kanban.orchestrator_profile
 kanban.reconcile_orphans
@@ -560,6 +573,7 @@ moa.save_traces
 moa.trace_dir
 model
 model_catalog.enabled
+model_catalog.excluded_providers
 model_catalog.providers
 model_catalog.ttl_minutes
 model_catalog.url
@@ -592,7 +606,6 @@ plugins.auto_update_check_hours
 plugins.clone_timeout_seconds
 plugins.hook_callback_timeout
 plugins.host.launcher
-plugins.isolation
 plugins.load_timeout_seconds
 prefill_messages_file
 privacy.redact_pii
@@ -625,6 +638,8 @@ secrets.onepassword.enabled
 secrets.onepassword.env
 secrets.onepassword.override_existing
 secrets.onepassword.service_account_token_env
+secrets.preserve_existing
+secrets.profile_alias
 security.acked_advisories
 security.allow_data_training_tiers_noninteractive
 security.allow_lazy_installs
@@ -661,12 +676,14 @@ sessions.ws_orphan_activity_stale_s
 sessions.ws_orphan_reap_grace_s
 skills.auto_load
 skills.create_dir
+skills.disabled
 skills.external_dirs
 skills.guard_agent_created
 skills.inline_shell
 skills.inline_shell_timeout
 skills.ledger
 skills.ledger_max_bytes
+skills.platform_disabled
 skills.project_discovery
 skills.template_vars
 skills.tier1_advisory
@@ -730,6 +747,7 @@ terminal.container_cpu
 terminal.container_disk
 terminal.container_memory
 terminal.container_persistent
+terminal.credential_files
 terminal.cwd
 terminal.daemon_term_grace_seconds
 terminal.daytona_image
@@ -790,10 +808,18 @@ tts.gemini.model
 tts.gemini.persona_prompt_file
 tts.gemini.voice
 tts.keep_warm_seconds
+tts.kittentts.clean_text
 tts.kittentts.model
+tts.kittentts.speed
 tts.kittentts.voice
+tts.minimax.bitrate
+tts.minimax.emotion
 tts.minimax.model
+tts.minimax.pitch
+tts.minimax.sample_rate
+tts.minimax.speed
 tts.minimax.voice_id
+tts.minimax.vol
 tts.mistral.model
 tts.mistral.voice_id
 tts.neutts.device
@@ -804,7 +830,11 @@ tts.openai.consent_attestation
 tts.openai.model
 tts.openai.pcm_sample_rate
 tts.openai.voice
+tts.piper.normalize_audio
+tts.piper.speaker_id
+tts.piper.use_cuda
 tts.piper.voice
+tts.piper.volume
 tts.provider
 tts.streaming.min_len
 tts.xai.auto_speech_tags
@@ -937,8 +967,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 68 || Version != 68 {
-		t.Errorf("schema version %v, want 68", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 69 || Version != 69 {
+		t.Errorf("schema version %v, want 69", Defaults()["_config_version"])
 	}
 }
 

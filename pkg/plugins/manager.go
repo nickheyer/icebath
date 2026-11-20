@@ -22,6 +22,8 @@ type LoadedPlugin struct {
 	Enabled              bool
 	Error                string
 	Deferred             bool
+	// Whether the enable gate left the plugin out, its error then saying why it was not tried
+	Skipped bool
 }
 
 // Discovers, loads and invokes the plugins of one home

@@ -3,8 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"os"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -13,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -133,7 +132,7 @@ func TestApprovalDialogAnswersTheServerRequest(t *testing.T) {
 		}
 	}
 	drain(a, d.pick("deny"))
-	if a.store.overlay.Approval != nil || a.store.turn.Outcome != tr("session.approval.denied") {
+	if a.store.overlay.Approval != nil || a.store.turn.Outcome != tr(txt.SessionApprovalDenied) {
 		t.Fatalf("approval %v outcome %q", a.store.overlay.Approval, a.store.turn.Outcome)
 	}
 }
@@ -177,29 +176,6 @@ func TestBuiltInWidgetsOpenFromTheirCommands(t *testing.T) {
 	drain(a, a.dispatchSubmission("/grid-test 99"))
 	if !strings.Contains(screen(a), "usage: /grid-test") {
 		t.Fatal("refused size printed no usage")
-	}
-}
-
-func TestEveryCatalogKeyTheAppNamesExists(t *testing.T) {
-	keyRe := regexp.MustCompile(`\btr\("([A-Za-z0-9_.]+)"`)
-	names := []string{"prompt.approval.once", "prompt.approval.session", "prompt.approval.always", "prompt.approval.deny",
-		"slashCmd.wake.reason.disabled", "slashCmd.wake.reason.disabledForSurface", "slashCmd.wake.reason.notOwner", "slashCmd.wake.reason.owned",
-		"slashCmd.wake.reason.unavailable", "slashCmd.ops.rollback.keptUserEdits", "slashCmd.ops.rollback.keptOversize", "slashCmd.ops.rollback.failedDeletes"}
-	for _, file := range []string{"app.go", "slash.go", "slash_commands.go", "slash_session.go", "slash_control.go", "dialogs.go", "pickers.go", "composerio.go", "sessioncard.go", "transcriptview.go", "widgets.go"} {
-		src, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, m := range keyRe.FindAllStringSubmatch(string(src), -1) {
-			if !strings.HasSuffix(m[1], ".") {
-				names = append(names, m[1])
-			}
-		}
-	}
-	for _, name := range names {
-		if !hasKey(name) {
-			t.Errorf("catalog has no key %q", name)
-		}
 	}
 }
 

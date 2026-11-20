@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -36,8 +38,8 @@ var enCatalog = func() enCatalogFile {
 }()
 
 // English entries whose wording depends on an argument, chosen in code
-var enLogic = map[string]func(args []any) string{
-	"status.sessionCount": func(args []any) string {
+var enLogic = map[txt.Key]func(args []any) string{
+	txt.StatusSessionCount: func(args []any) string {
 		word := "sessions"
 		if n, isNumber := argNumber(arg(args, 0)); isNumber && n == 1 {
 			word = "session"
@@ -104,10 +106,48 @@ type tuiCatalog struct {
 
 var catalog = &tuiCatalog{lang: defaultLocale}
 
-// Switches the active locale, keeping only the pack keys English has
-func applyLocale(lang string, messages map[string]string) {
-	if lang == "" {
-		lang = defaultLocale
+// Text of the catalog entry with a name made at run time, the fallback when the catalog holds no such entry
+func trOr(name, fallback string, args ...any) string { return lang.Or(name, fallback, args...) }
+
+// Text of a count, one key for exactly one and the other key for any other count, the count as argument 0
+func trCount(one, other txt.Key, n int, args ...any) string {
+	key := other
+	if n == 1 {
+		key = one
+	}
+	return tr(key, append([]any{n}, args...)...)
+}
+
+// Text of a count, nothing for none
+func trSome(one, other txt.Key, n int) string {
+	if n == 0 {
+		return ""
+	}
+	return trCount(one, other, n)
+}
+
+// Line that words a failure in the active language
+func errorLine(text string) string { return tr(txt.CommonError, text) }
+
+// Line that words a warning in the active language
+func warningLine(text string) string { return tr(txt.CommonWarning, text) }
+
+// Reports whether a transcript line reads as an error, in English or in the active language
+func isErrorLine(text string) bool {
+	return strings.HasPrefix(text, "error:") || strings.HasPrefix(text, strings.TrimRight(tr(txt.CommonError, ""), " "))
+}
+
+// Language id of the pack in force
+func activeLocale() string {
+	catalog.mu.RLock()
+	defer catalog.mu.RUnlock()
+	return catalog.lang
+}
+
+// Switches the active locale, keeping only the pack keys English has, and names it to the kit for its casing rules
+func applyLocale(id string, messages map[string]string) {
+	if id == "" {
+		id = defaultLocale
 	}
 	kept := map[string]string{}
 	for k, v := range messages {
@@ -118,31 +158,40 @@ func applyLocale(lang string, messages map[string]string) {
 		}
 	}
 	catalog.mu.Lock()
-	catalog.lang, catalog.pack = lang, kept
+	catalog.lang, catalog.pack = id, kept
 	catalog.mu.Unlock()
+	lang.Use(id)
 }
 
-// Text of a key in the active locale, then English, then the key itself
-func tr(key string, args ...any) string {
+func init() { lang.Install(tr) }
+
+// Text of a key in the active locale, then English. Every key is an entry of the English catalog, so there is always a text
+func tr(key txt.Key, args ...any) string {
+	name := key.Name()
 	catalog.mu.RLock()
-	text, packed := catalog.pack[key]
+	text, packed := catalog.pack[name]
 	catalog.mu.RUnlock()
-	if _, isString := enCatalog.Strings[key]; isString {
+	if english, isString := enCatalog.Strings[name]; isString {
 		if packed {
 			return text
 		}
-		return enCatalog.Strings[key]
+		return english
 	}
-	if template, isFormat := enCatalog.Formats[key]; isFormat {
-		if packed {
-			return formatPositional(text, args)
-		}
-		if logic, coded := enLogic[key]; coded {
-			return logic(args)
-		}
-		return formatPositional(template, args)
+	if packed {
+		return formatPositional(text, args)
 	}
-	return key
+	if logic, coded := enLogic[key]; coded {
+		return logic(args)
+	}
+	return formatPositional(enCatalog.Formats[name], args)
+}
+
+// English text of a key, whatever the active locale
+func english(key txt.Key) string {
+	if text, isString := enCatalog.Strings[key.Name()]; isString {
+		return text
+	}
+	return enCatalog.Formats[key.Name()]
 }
 
 // Language id of display.language the way the backend normalizes it, English for an empty one

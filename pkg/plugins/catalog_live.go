@@ -34,7 +34,7 @@ const (
 )
 
 // Curated display fields a published doc older than the field does not carry
-var curatedCatalogFields = []string{"onboarding", "title"}
+var curatedCatalogFields = []string{"onboarding", "title", "default"}
 
 var (
 	liveFetchMu          sync.Mutex
@@ -312,6 +312,8 @@ func withCuratedFields(live, tree *PluginCatalogEntry, raw map[string]any) *Plug
 			merged.Onboarding = tree.Onboarding
 		case "title":
 			merged.Title = tree.Title
+		case "default":
+			merged.Default = tree.Default
 		}
 	}
 	if !changed {

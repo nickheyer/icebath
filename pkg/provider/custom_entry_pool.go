@@ -44,17 +44,29 @@ func EntryScopedPool(pool *Pool, poolKey string, entry map[string]any) *Pool {
 	return view
 }
 
-// PoolForAuxProvider loads a pool for an auxiliary read, entry scoped for a pinned custom name
-func PoolForAuxProvider(provider, poolKey string, cfg map[string]any, load func(string) *Pool) *Pool {
+// PoolForAuxProvider loads a pool for an auxiliary read, entry scoped when the provider or its pool key names a custom entry
+func PoolForAuxProvider(ctx context.Context, provider, poolKey string, cfg map[string]any, load func(string) *Pool) *Pool {
 	pool := load(poolKey)
-	if pool == nil || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(provider)), CustomPoolPrefix) {
+	if pool == nil {
 		return pool
 	}
-	var entry map[string]any
-	if match := namedCustomEntry(provider, cfg); match != nil {
-		entry = match.entry
+	match := customEntryForIdentity(ctx, provider, cfg)
+	if match == nil {
+		match = customEntryForIdentity(ctx, poolKey, cfg)
 	}
-	return EntryScopedPool(pool, poolKey, entry)
+	if match == nil {
+		return pool
+	}
+	return EntryScopedPool(pool, poolKey, match.entry)
+}
+
+// Whether config can resolve an identity to a custom entry, false for empty, auto, bare custom and main
+func mayNameCustomEntry(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "auto", "custom", "main":
+		return false
+	}
+	return true
 }
 
 // Built-in provider's own address when poolKey is a built-in's pool id, false when the pool belongs to a custom entry alone
@@ -76,7 +88,7 @@ func builtinPoolAddress(ctx context.Context, poolKey string) (string, bool) {
 // Configured custom endpoint a provider identity names the way the runtime resolves it, nil for a built-in, bare custom and auto
 func customEntryForIdentity(ctx context.Context, provider string, cfg map[string]any) *namedEntry {
 	name := strings.ToLower(strings.TrimSpace(provider))
-	if name == "" || name == "auto" || name == "custom" || name == "main" {
+	if !mayNameCustomEntry(name) {
 		return nil
 	}
 	if strings.HasPrefix(name, CustomPoolPrefix) {

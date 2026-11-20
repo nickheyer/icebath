@@ -13,6 +13,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const describeResult = `{"session_create":{"sources":["tui"],"parameters":["source","request_id"]}}`
@@ -352,7 +354,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		req := goRequest(c, "session.create", map[string]any{})
 		eventually(t, "the request", func() bool { return len(s.sentRaw()) > 0 })
 		s.closeWith(1011)
-		if _, err := req.wait(t); err == nil || err.Error() != tr("libText.gateway.websocketClosedWithCode", 1011) {
+		if _, err := req.wait(t); err == nil || err.Error() != tr(txt.LibTextGatewayWebsocketClosedWithCode, 1011) {
 			t.Fatalf("err %v", err)
 		}
 	})
@@ -361,7 +363,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		req := goRequest(c, "session.create", map[string]any{})
 		eventually(t, "the request", func() bool { return len(s.sentRaw()) > 0 })
 		c.kill("test.shutdown")
-		if _, err := req.wait(t); err == nil || err.Error() != tr("libText.gateway.closed") {
+		if _, err := req.wait(t); err == nil || err.Error() != tr(txt.LibTextGatewayClosed) {
 			t.Fatalf("err %v", err)
 		}
 	})
@@ -371,7 +373,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		eventually(t, "the stale request", func() bool { return len(first.sentRaw()) > 0 })
 		t.Setenv("ICEBATH_TUI_GATEWAY_URL", "ws://gateway-new.test/api/ws?token=xyz")
 		next := goRequest(c, "session.create", map[string]any{})
-		if _, err := stale.wait(t); err == nil || err.Error() != tr("libText.gateway.attachUrlChanged") {
+		if _, err := stale.wait(t); err == nil || err.Error() != tr(txt.LibTextGatewayAttachUrlChanged) {
 			t.Fatalf("stale %v", err)
 		}
 		eventually(t, "the second socket", func() bool { return d.count() == 2 })

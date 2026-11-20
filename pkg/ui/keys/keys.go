@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 )
 
 // Something a key may fire, handled by the manager, the app or the focused card depending on its context
@@ -32,6 +33,12 @@ type Action struct {
 	// Stays out of the palette, for editing and movement keys
 	Quiet bool
 }
+
+// LabelText is the legend word of the action in the language of the application, the registered word when the application has none
+func (a Action) LabelText() string { return lang.OfID("keys.", a.ID, ".label", a.Label) }
+
+// DocText is the one line description of the action in the language of the application, the registered line when the application has none
+func (a Action) DocText() string { return lang.OfID("keys.", a.ID, ".doc", a.Doc) }
 
 // Keybinds in force, with the registry they are drawn from and the file they are kept in
 type Map struct {

@@ -36,7 +36,7 @@ type HostedProfileCall struct {
 func (p *HostedProfile) Call(ctx context.Context, attr string, args []any, kwargs map[string]any) (any, error) {
 	m := GetPluginManager(ctx)
 	if m == nil {
-		return nil, &PluginHostUnavailable{Reason: "plugins.isolation is no longer 'host'; restart Icebath"}
+		return nil, &PluginHostUnavailable{Reason: "no plugin manager serves this profile; restart Icebath"}
 	}
 	host, err := m.hostForDir(p.PluginDir)
 	if err != nil {

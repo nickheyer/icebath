@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -94,9 +96,9 @@ func (s *PromptStash) ComposerHint() string {
 	case 0:
 		return ""
 	case 1:
-		return "Ctrl+S to restore: " + s.items[0].Preview
+		return tr(txt.PromptStashRestoreHint, s.items[0].Preview)
 	default:
-		return "Ctrl+S to browse " + strconv.Itoa(n) + " stashed drafts"
+		return tr(txt.PromptStashBrowseHint, n)
 	}
 }
 
@@ -107,7 +109,7 @@ func (s *PromptStash) Stash(text string, images []any) bool {
 	}
 	preview := BuildPreview(text, PromptStashPreviewWidth)
 	if preview == "" {
-		preview = "(images only)"
+		preview = tr(txt.PromptStashImagesOnly)
 	}
 	entry := StashEntry{Text: text, Images: append([]any{}, images...), StashedAt: s.clock(), Preview: preview}
 	s.items = append([]StashEntry{entry}, s.items...)

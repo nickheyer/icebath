@@ -168,6 +168,8 @@ func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) 
 			return err
 		}
 	}
+	// The comment preserving writers carry the file's mode across the replace, so world bits it ever had would stay
+	DropOtherAccess(ctx, path)
 	return nil
 }
 

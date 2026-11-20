@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // How long values read from the gateway answer completion before they are read again
@@ -129,7 +130,7 @@ func localArgOffers(c *slashCommand, a slashArg) []cards.Offer {
 	}
 	var out []cards.Offer
 	for _, v := range values {
-		out = append(out, cards.Offer{Text: v, Display: v, Meta: c.help})
+		out = append(out, cards.Offer{Text: v, Display: v, Meta: c.helpText()})
 	}
 	return matchOffers(out, a.partial)
 }
@@ -199,7 +200,7 @@ func modelArgOffers(r *tuigateway.ModelOptionsResult, kind string) []cards.Offer
 
 // Session ids with their titles, new first, as session.list answers them
 func sessionArgOffers(sessions []listedSession) []cards.Offer {
-	out := []cards.Offer{{Text: "new", Display: "new", Meta: tr("session.lifecycle.newLiveSessionStarted")}}
+	out := []cards.Offer{{Text: "new", Display: "new", Meta: tr(txt.SessionLifecycleNewLiveSessionStarted)}}
 	for _, s := range sessions {
 		if s.ID != "" {
 			out = append(out, cards.Offer{Text: s.ID, Display: s.ID, Meta: s.Title})
@@ -237,7 +238,7 @@ func (a *app) mergeNameOffers(input string, offers []cards.Offer) []cards.Offer 
 	}
 	for _, c := range a.localCommands {
 		if strings.HasPrefix("/"+c.name, strings.ToLower(input)) {
-			add(cards.Offer{Text: "/" + c.name, Display: "/" + c.name, Meta: c.help})
+			add(cards.Offer{Text: "/" + c.name, Display: "/" + c.name, Meta: c.helpText()})
 		}
 	}
 	if a.catalog != nil {
@@ -284,9 +285,9 @@ func (a *app) argOffers(input string, then func([]cards.Offer, int) tea.Cmd) tea
 func unavailableOffer(err error) []cards.Offer {
 	meta := rpcErrorMessage(err)
 	if meta == "" {
-		meta = tr("libText.completion.unavailableMeta")
+		meta = tr(txt.LibTextCompletionUnavailableMeta)
 	}
-	return []cards.Offer{{Display: tr("libText.completion.unavailable"), Meta: meta}}
+	return []cards.Offer{{Display: tr(txt.LibTextCompletionUnavailable), Meta: meta}}
 }
 
 // Offers of completion rows, only the skills when asked

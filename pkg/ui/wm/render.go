@@ -15,7 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -180,14 +182,14 @@ func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 // Dim invitation in the middle of a stage holding no cards, naming the key of every bound hint action
 func (m *Model) paintEmpty(dx int, veil float64) {
 	t := m.theme
-	parts := []string{"nothing open"}
+	parts := []string{lang.T(txt.KitWmNothingOpen)}
 	for _, id := range m.empty {
 		a, ok := m.keys.Action(id)
 		k := m.keys.Display(id)
 		if !ok || k == "" {
 			continue
 		}
-		parts = append(parts, k+" "+a.Label)
+		parts = append(parts, k+" "+a.LabelText())
 	}
 	text := strings.Join(parts, " "+t.Glyphs.Sep+" ")
 	st := m.stage()
@@ -981,7 +983,7 @@ func (m *Model) hintText(h Hint) (string, string) {
 	label := h.Label
 	if label == "" {
 		if a, ok := m.keys.Action(h.Action); ok {
-			label = a.Label
+			label = a.LabelText()
 		}
 	}
 	return key, label

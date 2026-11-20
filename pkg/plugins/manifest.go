@@ -496,21 +496,8 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 	return ids, meta
 }
 
-// Kind implied by provider markers in an init file, empty when none match
-func detectKindFromSource(src string) string {
-	for _, marker := range []string{"register_memory_provider", "MemoryProvider", "register_cron_scheduler", "CronScheduler", "register_computer_use_provider", "ComputerUseProvider"} {
-		if strings.Contains(src, marker) {
-			return "exclusive"
-		}
-	}
-	if strings.Contains(src, "register_provider") && strings.Contains(src, "ProviderProfile") {
-		return "model-provider"
-	}
-	return ""
-}
-
-// Normalized kind with undeclared provider plugins detected from their init file
-func manifestKind(data map[string]any, key, dir string) string {
+// Normalized kind a manifest declares, standalone for an absent or unknown one
+func manifestKind(data map[string]any, key string) string {
 	kind := "standalone"
 	if raw, ok := data["kind"].(string); ok {
 		kind = strings.ToLower(strings.TrimSpace(raw))
@@ -518,13 +505,6 @@ func manifestKind(data map[string]any, key, dir string) string {
 	if !validPluginKinds[kind] {
 		pkgLog().Warn(fmt.Sprintf("Plugin %s: unknown kind '%s' (valid: %s); treating as 'standalone'", key, config.PyStr(data["kind"]), strings.Join(sortedKeys(validPluginKinds), ", ")))
 		kind = "standalone"
-	}
-	if _, declared := data["kind"]; kind == "standalone" && !declared {
-		if b, err := os.ReadFile(filepath.Join(dir, "__init__.py")); err == nil {
-			if d := detectKindFromSource(string(b[:min(len(b), 8192)])); d != "" {
-				kind = d
-			}
-		}
 	}
 	return kind
 }
@@ -651,7 +631,7 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 		m.ProvidesHooks = stringList(data["hooks"])
 	}
 	m.ProvidesMiddlewar = stringList(data["provides_middleware"])
-	m.Kind = manifestKind(data, key, dir)
+	m.Kind = manifestKind(data, key)
 	m.ProvidesLocales, m.LocaleMetadata = parseProvidesLocales(data["provides_locales"], key)
 	m.RequiresIcebath = manifestRequires(data)
 	m.Capabilities = ParseDeclaredCapabilities(data["capabilities"], name)

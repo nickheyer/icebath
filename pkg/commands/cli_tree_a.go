@@ -501,4 +501,12 @@ func (c *CLI) addCron(root *cobra.Command) {
 	c.newCmd(cron, "doctor", "Check scheduled jobs for common health issues", "")
 	tick := c.newCmd(cron, "tick", "Run due jobs once and exit", "")
 	acceptHooks(tick)
+	classify := c.newCmd(cron, "classify", "Score candidate items by urgency and print only the urgent ones",
+		"Classify items by urgency; emit only urgent ones. Reads a JSON list of candidate items (or {\"items\": [...]}, or one object) from stdin or --input-file, scores the whole batch 0-10 in one call to the auxiliary monitor model (auxiliary.monitor in config.yaml) and prints only the items at or above --threshold. Nothing urgent prints nothing, which a cron job delivers as silence. Exit status: 0 surfaced or silent, 1 unreadable input, 2 input that is not a JSON list or object, 4 the scoring call failed.")
+	sf(classify, "criteria", "", "", "Plain-language importance criteria.")
+	_ = classify.MarkFlagRequired("criteria")
+	inf(classify, "threshold", "", 7, "Minimum score (0-10) to surface. Default 7.")
+	sf(classify, "input-file", "", "", "Read items JSON from this file instead of stdin.")
+	sf(classify, "format", "", "text", "Output format for surfaced items.")
+	c.choice(classify, "format", "text", "json")
 }

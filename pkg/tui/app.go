@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -472,7 +473,7 @@ func (a *app) afterUpdate() tea.Cmd {
 			a.terminalHints = nil
 		}
 		if err := a.queue.reconcileReceipts(); err != nil {
-			a.sys("error: " + err.Error())
+			a.sys(errorLine(err.Error()))
 		}
 	}
 	if attach := a.attachKey(); attach != a.seenAttach {
@@ -538,7 +539,7 @@ func (a *app) drainQueue() tea.Cmd {
 	}
 	item, err := a.queue.dequeue(false)
 	if err != nil {
-		a.sys("error: " + err.Error())
+		a.sys(errorLine(err.Error()))
 		return nil
 	}
 	if item == nil {
@@ -672,28 +673,28 @@ func (a *app) onGatewayExit(code int) {
 			a.recoverSid = stored
 		}
 		wasConnected := ui.GatewayConnected == nil || *ui.GatewayConnected
-		ui.Busy, ui.Compacting, ui.GatewayConnected, ui.Status = false, false, &off, tr("session.status.reconnecting")
+		ui.Busy, ui.Compacting, ui.GatewayConnected, ui.Status = false, false, &off, tr(txt.SessionStatusReconnecting)
 		if ui.Sid != "" && wasConnected {
-			a.turn.pushActivity(tr("userMessages.backend.connectionLostActivity"), "warn", "")
-			a.sys(tr("userMessages.backend.connectionLost"))
+			a.turn.pushActivity(tr(txt.UserMessagesBackendConnectionLostActivity), "warn", "")
+			a.sys(tr(txt.UserMessagesBackendConnectionLost))
 		}
 		return
 	}
 	plan := planGatewayRecovery(stored, a.recoverSid, a.recoveryAttempts, a.store.nowMillis())
 	a.recoveryAttempts = plan.Attempts
-	ui.Busy, ui.Compacting, ui.GatewayConnected, ui.Status = false, false, &off, tr("libText.gateway.exited")
+	ui.Busy, ui.Compacting, ui.GatewayConnected, ui.Status = false, false, &off, tr(txt.LibTextGatewayExited)
 	a.recoverSid = plan.Sid
 	if plan.Recover && plan.Sid != "" {
-		a.turn.pushActivity(tr("userMessages.backend.restartingActivity"), "warn", "")
-		a.sys(tr("userMessages.backend.restarting"))
+		a.turn.pushActivity(tr(txt.UserMessagesBackendRestartingActivity), "warn", "")
+		a.sys(tr(txt.UserMessagesBackendRestarting))
 		return
 	}
-	ui.Status = tr("session.status.stopped")
+	ui.Status = tr(txt.SessionStatusStopped)
 	if !a.gaveUp {
 		a.gaveUp = true
-		a.turn.pushActivity(tr("userMessages.backend.gaveUpActivity"), "error", "")
+		a.turn.pushActivity(tr(txt.UserMessagesBackendGaveUpActivity), "error", "")
 		last, _ := lastStderrLine(a.gw.logTail(20))
-		a.sys("error: " + backendGaveUp(&code, last))
+		a.sys(errorLine(backendGaveUp(&code, last)))
 	}
 }
 
@@ -724,7 +725,7 @@ func (a *app) setInput(update func(string) string) {
 
 func (a *app) enqueue(text, display string, destination submissionDestination) {
 	if _, err := a.queue.enqueue(text, display, &destination, nil); err != nil {
-		a.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
+		a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 	}
 }
 
@@ -763,16 +764,20 @@ func (a *app) setVoiceRecordKey(k voiceRecordKey) { a.voiceKey = k; a.bindVoiceK
 func (a *app) setBellOnComplete(on bool)          { a.bellComplete = on }
 func (a *app) setBellOnPrompt(on bool)            { a.bellPrompt = on }
 func (a *app) inlineImageRetry()                  { a.images.retry() }
-func (a *app) recoverSidRef() *string             { return &a.recoverSid }
-func (a *app) bellOnComplete() bool               { return a.bellComplete }
-func (a *app) bellOnPrompt() bool                 { return a.bellPrompt }
-func (a *app) setLastUserMsg(text string)         { a.lastUserMsg = text }
-func (a *app) setSessionStartedAt(ms float64)     { a.sessionStart, a.droppedTurns = ms, 0 }
-func (a *app) setStickyPrompt(text string)        { a.stickyPrompt = text }
-func (a *app) scroll() scrollHandle               { return a.card.view }
-func (a *app) onFreshSessionStarted(string)       { a.gaveUp = false }
-func (a *app) onGatewayReady()                    { a.gaveUp = false }
-func (a *app) leftRunning(sid string)             { a.background.handoff(sid) }
+
+// Drops the rows drawn in the language in force before, a pack arriving after the first rows are on screen
+func (a *app) languageChanged() { a.card.view.invalidate() }
+
+func (a *app) recoverSidRef() *string         { return &a.recoverSid }
+func (a *app) bellOnComplete() bool           { return a.bellComplete }
+func (a *app) bellOnPrompt() bool             { return a.bellPrompt }
+func (a *app) setLastUserMsg(text string)     { a.lastUserMsg = text }
+func (a *app) setSessionStartedAt(ms float64) { a.sessionStart, a.droppedTurns = ms, 0 }
+func (a *app) setStickyPrompt(text string)    { a.stickyPrompt = text }
+func (a *app) scroll() scrollHandle           { return a.card.view }
+func (a *app) onFreshSessionStarted(string)   { a.gaveUp = false }
+func (a *app) onGatewayReady()                { a.gaveUp = false }
+func (a *app) leftRunning(sid string)         { a.background.handoff(sid) }
 func (a *app) expand(text string) string {
 	if a.expandWith != nil {
 		return a.expandWith(text)
@@ -795,9 +800,9 @@ func (a *app) uncaught(err error) {
 	if err == nil {
 		return
 	}
-	a.sys("error: " + rpcErrorMessage(err))
+	a.sys(errorLine(rpcErrorMessage(err)))
 	a.turn.idle(false)
-	a.store.ui.Busy, a.store.ui.Status = false, tr("status.ready")
+	a.store.ui.Busy, a.store.ui.Status = false, tr(txt.StatusReady)
 }
 
 // Follows typing, the streamed reply batching faster while the user edits the prompt
@@ -824,8 +829,8 @@ func (a *app) send(text string, show bool, display string, opts submitOpts) tea.
 	if opts.QueueItem == nil && opts.Destination.Sid != "" {
 		item, err := a.queue.stage(text, display, opts.Destination, opts.Attachments)
 		if err != nil {
-			a.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
-			a.store.ui.Status = tr("canonical.queue.statusInputNotSaved")
+			a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
+			a.store.ui.Status = tr(txt.CanonicalQueueStatusInputNotSaved)
 			return nil
 		}
 		opts.QueueItem = item
@@ -886,9 +891,9 @@ func (a *app) shellExec(command string, destination submissionDestination, item 
 		if !focused() {
 			return nil
 		}
-		a.store.ui.Busy, a.store.ui.Status = false, tr("status.ready")
+		a.store.ui.Busy, a.store.ui.Status = false, tr(txt.StatusReady)
 		if err != nil {
-			a.sys("error: " + describeShellExecError(err))
+			a.sys(errorLine(describeShellExecError(err)))
 			return nil
 		}
 		out := trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
@@ -896,7 +901,7 @@ func (a *app) shellExec(command string, destination submissionDestination, item 
 			a.sys(out)
 		}
 		if r.Code != 0 || out == "" {
-			a.sys(fmt.Sprintf("exit %d", r.Code))
+			a.sys(tr(txt.CommonExitCode, r.Code))
 		}
 		return nil
 	})
@@ -927,7 +932,7 @@ func (a *app) handleBusyInput(item *queueItem, fallbackToFront bool, control bus
 			_, err = a.queue.enqueue(item.Text, item.Display, &destination, item.Attachments)
 		}
 		if err != nil {
-			a.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
+			a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 		}
 		return nil
 	}
@@ -936,7 +941,7 @@ func (a *app) handleBusyInput(item *queueItem, fallbackToFront bool, control bus
 		if staged.Settle == nil {
 			var err error
 			if staged, err = a.queue.stage(item.Text, item.Display, &destination, item.Attachments); err != nil {
-				a.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
+				a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 				return nil
 			}
 		}
@@ -990,8 +995,8 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 	text, attachments := prepareSubmission(full, tokens)
 	clearInput := func() { a.clearComposerTokens() }
 	notSaved := func(err error) tea.Cmd {
-		a.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
-		a.store.ui.Status = tr("canonical.queue.statusInputNotSaved")
+		a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
+		a.store.ui.Status = tr(txt.CanonicalQueueStatusInputNotSaved)
 		a.card.composer.SetValue(full)
 		return nil
 	}
@@ -1005,7 +1010,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 					return notSaved(err)
 				}
 				clearInput()
-				a.sys(tr("slashCmd.core.queue.queued", previewOf(plan.display)))
+				a.sys(tr(txt.SlashCmdCoreQueueQueued, previewOf(plan.display)))
 				return nil
 			}
 		}
@@ -1045,7 +1050,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 			if editedWhileBusy {
 				if control.mode == "queue" && !a.gw.canonical() {
 					if err := a.queue.prependQ(item, &control.destination); err != nil {
-						a.sys(tr("canonical.queue.notSavedDraftKept", err.Error()))
+						a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 					}
 					return nil
 				}
@@ -1124,7 +1129,7 @@ func (a *app) interruptKey() tea.Cmd {
 		return a.die(0)
 	}
 	a.lastInterrupt = now
-	return wm.Notify("press again to exit", wm.Info)
+	return wm.Notify(tr(txt.SessionNoticesPressAgainToExit), wm.Info)
 }
 
 // Escape, a second press within the window discards the draft or stops the turn, any other steps towards the earlier prompts or leaves a queued input being edited
@@ -1163,7 +1168,7 @@ func (a *app) dieFor(code int, reason string) tea.Cmd {
 	}
 	a.quitting = true
 	a.exitReason = reason
-	a.store.ui.Status = "closing…"
+	a.store.ui.Status = tr(txt.SessionStatusClosing)
 	done := func() tea.Msg { return exitMsg{code: code} }
 	return tea.Batch(
 		tea.Sequence(a.life.closeForExit(), done),
@@ -1188,7 +1193,7 @@ func (a *app) commands() []wm.Command {
 		{ID: "terminal.tab", Title: "terminal as a tab", Run: func() tea.Cmd { return a.openTerminal("", true) }},
 		{ID: "session.compact", Title: "compact", When: idle, Run: func() tea.Cmd { return a.slash("/compress", nil, false) }},
 		{ID: "run.cancel", Title: "interrupt the turn", When: func() bool { return a.store.ui.Busy }, Run: a.interruptTurn},
-		{ID: "tui.exit", When: func() bool { return a.card.composer.Empty() && !a.store.ui.Busy }, Run: func() tea.Cmd { return a.die(0) }},
+		{ID: "tui.exit", When: func() bool { return idle() && a.card.composer.Value() == "" && a.card.composer.Empty() }, Run: func() tea.Cmd { return a.die(0) }},
 		{ID: "tui.queue.drop", When: a.hasQueued, Run: a.dropQueued},
 		{ID: "tui.queue.send", When: a.queueHeadWaits, Run: a.sendQueueHead},
 		{ID: "tui.queue.delete", When: func() bool { return a.queueEdit != nil }, Run: a.deleteQueueEdit},
@@ -1211,10 +1216,10 @@ func (a *app) dropQueued() tea.Cmd {
 	}
 	cmd, err := a.queue.removeQ(len(shown) - 1)
 	if err != nil {
-		a.sys("error: " + err.Error())
+		a.sys(errorLine(err.Error()))
 		return nil
 	}
-	return tea.Batch(cmd, wm.Notify("dropped the newest queued input", wm.Info))
+	return tea.Batch(cmd, wm.Notify(tr(txt.CanonicalQueueDroppedNewest), wm.Info))
 }
 
 // Fact of the status bar, its text, color role and the command a click runs
@@ -1278,7 +1283,7 @@ func (a *app) barStatus() wm.Status {
 	case ui.GatewayConnected != nil && !*ui.GatewayConnected:
 		lane.Signal, lane.Detail = wm.Failed, displayStatus(trimJS(ui.Status))
 	case a.dialogs.waiting():
-		lane.Signal, lane.Detail = wm.Blocked, "waiting on you"
+		lane.Signal, lane.Detail = wm.Blocked, tr(txt.StatusWaitingOnYou)
 	case ui.Busy:
 		lane.Signal, lane.Detail = wm.Working, displayStatus(trimJS(ui.Status))
 	}
@@ -1339,7 +1344,7 @@ func (a *app) barFacts(cols, folderCols int) []statusFact {
 		facts = append(facts, statusFact{text: batteryText(b), style: batteryStyle(b), rank: rankBattery})
 	}
 	if a.liveSessions > 0 && ui.StatusBar != "off" {
-		facts = append(facts, statusFact{text: tr("status.sessionCount", a.liveSessions), style: wm.Cool, action: "open.sessions", rank: rankSessions})
+		facts = append(facts, statusFact{text: tr(txt.StatusSessionCount, a.liveSessions), style: wm.Cool, action: "open.sessions", rank: rankSessions})
 	}
 	if pin := a.stashIndicator(); pin != "" {
 		facts = append(facts, statusFact{text: pin, style: wm.Plain, rank: rankStash})
@@ -1360,7 +1365,7 @@ func (a *app) sessionFacts(cols int) []statusFact {
 		case n >= 5:
 			style = wm.Hot
 		}
-		facts = append(facts, statusFact{text: tr("status.compressions", n), style: style, rank: rankCompressions})
+		facts = append(facts, statusFact{text: tr(txt.StatusCompressions, n), style: style, rank: rankCompressions})
 	}
 	if pct := usage.CacheHitPct; pct != nil && cols >= cacheHitCols && ui.statusField("cache_hit") {
 		style := wm.Dim
@@ -1397,16 +1402,16 @@ func (a *app) turnFacts(cols int) []statusFact {
 		facts = append(facts, statusFact{text: "✓ " + idle, style: wm.Dim, rank: rankIdle, turn: true})
 	}
 	if n := len(ui.BgTasks); n > 0 && cols >= bgTasksCols && ui.statusField("bg_tasks") {
-		facts = append(facts, statusFact{text: tr("status.bgTasks", n), style: wm.Dim, rank: rankBgTasks, turn: true})
+		facts = append(facts, statusFact{text: tr(txt.StatusBgTasks, n), style: wm.Dim, rank: rankBgTasks, turn: true})
 	}
 	subagents := val(usageOf(ui.Usage).ActiveSubagents)
 	if subagents > 0 && cols >= subagentsCols && ui.statusField("bg_subagents") {
 		facts = append(facts, statusFact{text: fmt.Sprintf("⛓ %d", subagents), style: wm.Dim, rank: rankSubagents, turn: true})
 	}
 	if !ui.Busy && subagents > 0 {
-		hint := tr("status.resumesWhenSubagentFinishes")
+		hint := tr(txt.StatusResumesWhenSubagentFinishes)
 		if subagents != 1 {
-			hint = tr("status.resumesWhenSubagentsFinish", subagents)
+			hint = tr(txt.StatusResumesWhenSubagentsFinish, subagents)
 		}
 		facts = append(facts, statusFact{text: hint, style: wm.Dim, rank: rankResume, turn: true, faint: true})
 	}
@@ -1440,11 +1445,13 @@ func (a *app) armStatusClock() tea.Cmd {
 func displayStatus(status string) string {
 	switch status {
 	case "ready":
-		return tr("status.ready")
+		return tr(txt.StatusReady)
 	case "running…":
-		return tr("status.running")
-	case enCatalog.Strings["status.summoning"]:
-		return tr("status.summoning")
+		return tr(txt.StatusRunning)
+	case "interrupted":
+		return tr(txt.StatusInterrupted)
+	case english(txt.StatusSummoning):
+		return tr(txt.StatusSummoning)
 	}
 	return status
 }
@@ -1471,7 +1478,7 @@ func modelLabel(info *tuigateway.SessionInfo) string {
 		model += " " + effort
 	}
 	if val(info.Fast) {
-		model += " " + tr("status.fast")
+		model += " " + tr(txt.StatusFast)
 	}
 	return model
 }
@@ -1491,7 +1498,7 @@ func contextDial(raw *tuigateway.Usage, full, percent bool) (string, wm.SegmentS
 	case pct >= 0.5:
 		style = wm.Warm
 	}
-	text := "ctx "
+	text := tr(txt.StatusContextLabel) + " "
 	if val(usage.ContextEstimated) {
 		text += "~"
 	}
@@ -1555,13 +1562,13 @@ func (a *app) frameStatus() string {
 	ui := a.store.ui
 	var parts []string
 	if total := usageOf(ui.Usage).Total; total > 0 {
-		parts = append(parts, compactNumber(float64(total))+" tokens")
+		parts = append(parts, tr(txt.StatusTokens, compactNumber(float64(total))))
 	}
 	if n := a.store.turn.ReasoningTokens; n > 0 && ui.Busy {
-		parts = append(parts, compactNumber(float64(n))+" reasoning")
+		parts = append(parts, tr(txt.StatusReasoningTokens, compactNumber(float64(n))))
 	}
 	if !a.card.view.follow {
-		parts = append(parts, "scrolled")
+		parts = append(parts, tr(txt.StatusScrolled))
 	}
 	return strings.Join(parts, " · ")
 }

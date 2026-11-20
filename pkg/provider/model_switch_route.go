@@ -183,7 +183,7 @@ func namesKnownProvider(ctx context.Context, name string, st *modelSwitch) bool 
 }
 
 // Routes a model declared in provider config to its provider, true when routed
-func routeConfiguredProvider(st *modelSwitch) (*ModelSwitchResult, bool) {
+func routeConfiguredProvider(ctx context.Context, st *modelSwitch) (*ModelSwitchResult, bool) {
 	matches := configuredProviderMatches(st.NewModel, st.UserProviders, st.CustomProviders)
 	if len(matches) == 0 {
 		return nil, false
@@ -204,8 +204,14 @@ func routeConfiguredProvider(st *modelSwitch) (*ModelSwitchResult, bool) {
 	st.TargetProvider = slugs[0]
 	st.NewModel = matches[configuredMatchIndex(matches, st.TargetProvider)].Model
 	pkgLog().Debug(fmt.Sprintf("Configured-provider detection routed '%s' to %s", st.NewModel, st.TargetProvider))
+	// An entry under a built in name with its own base URL is the user's endpoint and persists as its custom
+	// identity, a tuning only one keeps the built in
 	if _, ok := st.UserProviders[st.TargetProvider]; ok {
-		st.ExplicitProvider = st.TargetProvider
+		if persisted := PersistedProviderID(ctx, st.TargetProvider, st.UserProviders); persisted != st.TargetProvider {
+			st.TargetProvider = persisted
+		} else {
+			st.ExplicitProvider = st.TargetProvider
+		}
 	}
 	return nil, true
 }
@@ -250,7 +256,7 @@ func routeFromModelInput(ctx context.Context, st *modelSwitch) (*ModelSwitchResu
 	if st.ResolvedAlias != "" || resolvedInCurrentCatalog || st.TargetProvider != current {
 		return nil, nil
 	}
-	fail, configRouted := routeConfiguredProvider(st)
+	fail, configRouted := routeConfiguredProvider(ctx, st)
 	if fail != nil {
 		return fail, nil
 	}

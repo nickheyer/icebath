@@ -1,11 +1,12 @@
 package wm
 
 import (
-	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Part of a frame under the pointer
@@ -691,9 +692,9 @@ func (m *Model) endSelection() tea.Cmd {
 		return nil
 	}
 	n := strings.Count(text, "\n") + 1
-	label := "copied 1 line"
+	label := lang.T(txt.KitWmCopiedLine)
 	if n > 1 {
-		label = "copied " + strconv.Itoa(n) + " lines"
+		label = lang.T(txt.KitWmCopiedLines, n)
 	}
 	return tea.Batch(clip.Copy(text), m.Toast(label, Success, 0))
 }

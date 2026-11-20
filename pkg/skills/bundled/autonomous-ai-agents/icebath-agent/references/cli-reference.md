@@ -91,6 +91,8 @@ icebath sessions list|browse|rename ID TITLE|delete ID|export OUT|prune|stats
 ```
 icebath cron list|create SCHED|edit ID|pause|resume|run ID|remove|status
     Schedules: '30m', 'every 2h', '0 9 * * *', ISO timestamp
+icebath cron classify --criteria TEXT [--threshold 7] [--input-file F] [--format text|json]
+    Scores a JSON list of items (stdin) 0-10 with the auxiliary.monitor model, prints only the urgent ones
 icebath webhook subscribe NAME|list|remove NAME|test NAME
 ```
 Webhook payloads/routes: `references/webhooks.md`.

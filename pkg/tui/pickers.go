@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -72,10 +73,10 @@ func init() { wm.HiddenText = hiddenRowsText }
 func hiddenRowsText(above, below int) string {
 	var parts []string
 	if above > 0 {
-		parts = append(parts, trimJS(tr("pickers.common.moreAbove", above)))
+		parts = append(parts, trimJS(tr(txt.PickersCommonMoreAbove, above)))
 	}
 	if below > 0 {
-		parts = append(parts, trimJS(tr("pickers.common.moreBelow", below)))
+		parts = append(parts, trimJS(tr(txt.PickersCommonMoreBelow, below)))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -140,11 +141,11 @@ func (a *app) loadModelPicker(refresh bool) tea.Cmd {
 func (a *app) pickModel(refresh, allowGlobal bool, onSelect func(arg string) tea.Cmd, closed func() tea.Cmd) tea.Cmd {
 	sid := a.store.ui.Sid
 	params := tuigateway.ModelOptionsParams{IncludeUnconfigured: true, SessionID: sid, Refresh: refresh}
-	a.store.ui.Status = tr("pickers.model.loading")
+	a.store.ui.Status = tr(txt.PickersModelLoading)
 	return ask(a.events.rpc, a.sys, tuigateway.ModelOptions, params, func(r *tuigateway.ModelOptionsResult) tea.Cmd {
 		a.store.ui.Status = a.store.statusFromBusy()
 		if r != nil && len(r.Providers) == 0 {
-			a.sys(tr("pickers.model.noProviders"))
+			a.sys(tr(txt.PickersModelNoProviders))
 		}
 		if r == nil || len(r.Providers) == 0 {
 			if closed != nil {
@@ -198,10 +199,10 @@ func (mp *modelPicker) show() {
 		p.Masked, p.Hold, p.OnText, p.OnBack = true, true, mp.saveKey, mp.back
 		p.SetItems(nil)
 	case modelStageEffort:
-		p.Placeholder, p.OnBack = tr("pickers.model.effort.prompt"), mp.back
+		p.Placeholder, p.OnBack = tr(txt.PickersModelEffortPrompt), mp.back
 		p.SetItems(mp.effortItems())
 	default:
-		p.Placeholder = tr("pickers.model.prompt")
+		p.Placeholder = tr(txt.PickersModelPrompt)
 		p.Extra = append(p.Extra, wm.Hint{Action: "tui.models.disconnect"})
 		p.SetItems(mp.listItems())
 	}
@@ -216,16 +217,16 @@ func (mp *modelPicker) listItems() []wm.Item {
 		row := "provider:" + slug
 		switch {
 		case p.Unauthenticated():
-			suffix := tr("pickers.model.provider.needsSetup")
+			suffix := tr(txt.PickersModelProviderNeedsSetup)
 			if p.AuthType == "api_key" {
-				suffix = tr("pickers.model.provider.noKey")
+				suffix = tr(txt.PickersModelProviderNoKey)
 			}
 			mp.owner[row] = slug
 			items = append(items, wm.Item{ID: row, Title: "○ " + name, Detail: suffix, Stay: true, Run: func() tea.Cmd { return mp.signIn(slug) }})
 			continue
 		case len(p.Models) == 0:
 			mp.owner[row] = slug
-			items = append(items, wm.Item{ID: row, Title: "● " + name, Detail: tr("pickers.model.modelStage.noneListed"), Stay: true, Run: func() tea.Cmd { return nil }})
+			items = append(items, wm.Item{ID: row, Title: "● " + name, Detail: tr(txt.PickersModelModelStageNoneListed), Stay: true, Run: func() tea.Cmd { return nil }})
 		}
 		for _, model := range p.Models {
 			id := slug + "/" + model
@@ -250,7 +251,7 @@ func (mp *modelPicker) effortItems() []wm.Item {
 	for _, level := range reasoningLadder {
 		items = append(items, row(level, level))
 	}
-	return append(items, row(tr("pickers.model.reasoning.none"), "none"), row(tr("pickers.model.reasoning.keepCurrent"), ""))
+	return append(items, row(tr(txt.PickersModelReasoningNone), "none"), row(tr(txt.PickersModelReasoningKeepCurrent), ""))
 }
 
 // Lines under the rows: what a question removes, the step in hand, a failure, what is awaited, the warning of the provider of the lit row and where the pick is saved
@@ -261,17 +262,17 @@ func (mp *modelPicker) notes() []wm.Note {
 		name = providerName(*p)
 	}
 	if mp.p.Asking() {
-		return []wm.Note{dim(tr("pickers.model.disconnect.removesCredentials", name)), dim(tr("pickers.model.disconnect.reauthLater"))}
+		return []wm.Note{dim(tr(txt.PickersModelDisconnectRemovesCredentials, name)), dim(tr(txt.PickersModelDisconnectReauthLater))}
 	}
 	var out []wm.Note
 	switch mp.stage {
 	case modelStageKey:
-		out = append(out, wm.Note{Text: tr("pickers.model.key.title", name)}, dim(tr("pickers.model.key.note")))
+		out = append(out, wm.Note{Text: tr(txt.PickersModelKeyTitle, name)}, dim(tr(txt.PickersModelKeyNote)))
 	case modelStageEffort:
-		out = append(out, dim(tr("pickers.model.effort.subtitle", mp.model)))
+		out = append(out, dim(tr(txt.PickersModelEffortSubtitle, mp.model)))
 	}
 	if mp.failure != "" {
-		out = append(out, wm.Note{Text: tr("pickers.common.error", mp.failure), Style: wm.Bad})
+		out = append(out, wm.Note{Text: tr(txt.PickersCommonError, mp.failure), Style: wm.Bad})
 	}
 	if mp.waiting != "" {
 		out = append(out, dim(mp.waiting))
@@ -283,18 +284,18 @@ func (mp *modelPicker) notes() []wm.Note {
 		warning := ""
 		if it, lit := mp.p.Lit(); lit {
 			if p := mp.provider(mp.owner[it.ID]); p != nil && p.Warning != "" {
-				warning = tr("pickers.model.provider.warning", p.Warning)
+				warning = tr(txt.PickersModelProviderWarning, p.Warning)
 			}
 		}
 		out = append(out, wm.Note{Text: warning, Style: wm.Warm})
 	}
-	scope := tr("pickers.model.persist.scopeSession")
+	scope := tr(txt.PickersModelPersistScopeSession)
 	if mp.allowGlobal && mp.global {
-		scope = tr("pickers.model.persist.scopeGlobal")
+		scope = tr(txt.PickersModelPersistScopeGlobal)
 	}
-	line := tr("pickers.model.persist.label", scope)
+	line := tr(txt.PickersModelPersistLabel, scope)
 	if !mp.allowGlobal {
-		line += tr("pickers.model.persist.onlySuffix")
+		line += tr(txt.PickersModelPersistOnlySuffix)
 	}
 	return append(out, dim(line))
 }
@@ -335,7 +336,7 @@ func (mp *modelPicker) saveKey(text string) tea.Cmd {
 	if key == "" {
 		return nil
 	}
-	mp.failure, mp.waiting, mp.p.Busy = "", tr("pickers.model.key.saving"), true
+	mp.failure, mp.waiting, mp.p.Busy = "", tr(txt.PickersModelKeySaving), true
 	params := tuigateway.ModelSaveKeyParams{Slug: slug, APIKey: key, SessionID: mp.sid}
 	return call(mp.a.gw, tuigateway.ModelSaveKey, params, func(res *tuigateway.ModelSaveKeyResult, err error) tea.Cmd {
 		waited := mp.stage == modelStageKey && mp.slug == slug
@@ -347,7 +348,7 @@ func (mp *modelPicker) saveKey(text string) tea.Cmd {
 		case err != nil:
 			failure = rpcErrorMessage(err)
 		case res.Provider.Slug == "":
-			failure = tr("pickers.model.failedToSaveKey")
+			failure = tr(txt.PickersModelFailedToSaveKey)
 		}
 		if failure != "" {
 			if waited {
@@ -415,13 +416,13 @@ func (mp *modelPicker) askDisconnect() tea.Cmd {
 	mp.slug, mp.failure = slug, ""
 	mp.p.SetQuery("")
 	mp.p.Select(it.ID)
-	mp.p.Ask(tr("pickers.model.disconnect.title", providerName(*p)), func() tea.Cmd { return mp.disconnect(slug) })
+	mp.p.Ask(tr(txt.PickersModelDisconnectTitle, providerName(*p)), func() tea.Cmd { return mp.disconnect(slug) })
 	return nil
 }
 
 // Removes the credentials of a provider and marks it signed out in place, its models gone and its row saying how to sign in again
 func (mp *modelPicker) disconnect(slug string) tea.Cmd {
-	mp.waiting, mp.p.Busy = tr("pickers.model.disconnect.disconnecting"), true
+	mp.waiting, mp.p.Busy = tr(txt.PickersModelDisconnectDisconnecting), true
 	params := tuigateway.ModelDisconnectParams{Slug: slug, SessionID: mp.sid}
 	return call(mp.a.gw, tuigateway.ModelDisconnect, params, func(res *tuigateway.ModelDisconnectResult, err error) tea.Cmd {
 		mp.waiting, mp.p.Busy = "", false
@@ -435,9 +436,9 @@ func (mp *modelPicker) disconnect(slug string) tea.Cmd {
 		}
 		signedIn := false
 		p.Authenticated, p.Models, p.TotalModels = &signedIn, nil, 0
-		p.Warning = tr("pickers.model.runModelToConfigure")
+		p.Warning = tr(txt.PickersModelRunModelToConfigure)
 		if p.KeyEnv != "" {
-			p.Warning = tr("pickers.model.pasteKeyToActivate", p.KeyEnv)
+			p.Warning = tr(txt.PickersModelPasteKeyToActivate, p.KeyEnv)
 		}
 		if mp.stage == modelStageList {
 			mp.p.SetItems(mp.listItems())
@@ -474,11 +475,7 @@ type sessionRow struct {
 
 // Word for the state of a live session, the state as sent when the packs have no word for it
 func sessionStatusLabel(status string) string {
-	key := "pickers.session.status." + status
-	if label := tr(key); label != key {
-		return label
-	}
-	return status
+	return trOr("pickers.session.status."+status, status)
 }
 
 // Model a draft model argument names, without its provider path, the word for the model in effect when none was picked
@@ -495,7 +492,7 @@ func draftModelLabel(arg string) string {
 	}
 	model := strings.Join(name, " ")
 	if model == "" {
-		return tr("pickers.session.currentOrDefault")
+		return tr(txt.PickersSessionCurrentOrDefault)
 	}
 	if cut := strings.LastIndex(model, "/"); cut >= 0 && cut < len(model)-1 {
 		return model[cut+1:]
@@ -533,11 +530,11 @@ func (l *sessionLifecycle) closeHeld(sid string, then func(detached bool, err er
 // Closes a live session from the switcher: the gateway's session.close on the method table, and on the shared gateway this view's own hold dropped with
 // the close stamp, the owner ending an idle session once its last viewer left
 func (a *app) closeLiveView(id string, then func(closed bool, err error) tea.Cmd) tea.Cmd {
-	a.store.ui.Status = tr("session.status.closingSession")
+	a.store.ui.Status = tr(txt.SessionStatusClosingSession)
 	settle := func(closed bool, err error) tea.Cmd {
 		a.store.ui.Status = a.store.statusFromBusy()
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 		}
 		return then(closed, err)
 	}
@@ -555,9 +552,9 @@ func (a *app) startPromptSession(prompt, modelArg string) tea.Cmd {
 	if trimmed == "" {
 		return nil
 	}
-	return a.life.newLiveSession(tr("session.lifecycle.newLiveSessionStarted"), "", func(sid string) tea.Cmd {
+	return a.life.newLiveSession(tr(txt.SessionLifecycleNewLiveSessionStarted), "", func(sid string) tea.Cmd {
 		if sid == "" {
-			a.sys("error: " + tr("session.main.failedToStartLiveSession"))
+			a.sys(errorLine(tr(txt.SessionMainFailedToStartLiveSession)))
 			return nil
 		}
 		destination, err := a.store.captureDestination()
@@ -580,7 +577,7 @@ func (a *app) applyDraftModel(sid, requested string, destination submissionDesti
 		return func() tea.Cmd { return a.applyDraftModel(sid, requested, destination, token, dispatch) }
 	}
 	misfit := func() tea.Cmd {
-		a.sys("error: " + tr("session.main.invalidModelSwitchResponse"))
+		a.sys(errorLine(tr(txt.SessionMainInvalidModelSwitchResponse)))
 		return nil
 	}
 	if !a.gw.canonical() {
@@ -590,9 +587,9 @@ func (a *app) applyDraftModel(sid, requested string, destination submissionDesti
 				return nil
 			}
 			if res.ConfirmRequired {
-				detail := firstText(res.ConfirmMessage, res.Warning, tr("slashCmd.session.model.expensiveDetail"))
-				a.store.overlay.Confirm = &confirmReq{CancelLabel: tr("slashCmd.session.model.cancel"), ConfirmLabel: tr("slashCmd.session.model.switchAnyway"),
-					Danger: true, Detail: detail, OnConfirm: again("confirmed"), Title: tr("slashCmd.session.model.expensiveTitle")}
+				detail := firstText(res.ConfirmMessage, res.Warning, tr(txt.SlashCmdSessionModelExpensiveDetail))
+				a.store.overlay.Confirm = &confirmReq{CancelLabel: tr(txt.SlashCmdSessionModelCancel), ConfirmLabel: tr(txt.SlashCmdSessionModelSwitchAnyway),
+					Danger: true, Detail: detail, OnConfirm: again("confirmed"), Title: tr(txt.SlashCmdSessionModelExpensiveTitle)}
 				return nil
 			}
 			model := setWord(res)
@@ -600,9 +597,9 @@ func (a *app) applyDraftModel(sid, requested string, destination submissionDesti
 				return misfit()
 			}
 			if a.store.isCurrentDestination(destination) {
-				a.sys(tr("session.main.modelSwitched", model))
+				a.sys(tr(txt.SessionMainModelSwitched, model))
 				if res.Warning != "" {
-					a.sys("warning: " + res.Warning)
+					a.sys(warningLine(res.Warning))
 				}
 				a.store.ui.Info = patchedInfo(a.store.ui.Info, tuigateway.SessionInfo{Model: &model})
 			}
@@ -612,7 +609,7 @@ func (a *app) applyDraftModel(sid, requested string, destination submissionDesti
 	never := func() bool { return false }
 	return a.store.mutateCanonicalSession(a.gw, sid, "model", requested, never, confirm, func(m *mutationOutcome, err error) tea.Cmd {
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 			return nil
 		}
 		if m == nil || m.Result == nil {
@@ -628,7 +625,7 @@ func (a *app) applyDraftModel(sid, requested string, destination submissionDesti
 		}
 		if a.store.isCurrentDestination(destination) {
 			if err := a.store.applyModelResult(result, a.sys); err != nil {
-				a.sys("error: " + rpcErrorMessage(err))
+				a.sys(errorLine(rpcErrorMessage(err)))
 				return nil
 			}
 		}
@@ -723,7 +720,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 				if history {
 					histErr = ""
 					if storedErr != nil {
-						histErr = tr("pickers.session.errors.couldNotLoadResumable")
+						histErr = tr(txt.PickersSessionErrorsCouldNotLoadResumable)
 					} else {
 						stored = storedRows
 					}
@@ -751,13 +748,13 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 		return tea.Batch(wm.RequestDismissOf(l), a.startPromptSession(text, draftModel))
 	}
 	list = cards.NewList(a.cardEnv(), cards.ListSpec{
-		Title: "sessions", Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:sessions", Context: sessionsContext, Shared: []string{sessionsAllContext}, Primary: "tui.sessions.open",
-		Columns: []render.Column{{Title: ""}, {Title: "session", Flex: 2, Max: 48}, {Title: "last message", Flex: 3}, {Title: "msgs", Right: true}, {Title: "when", Right: true}},
+		Title: tr(txt.HubsTitleSessions), Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:sessions", Context: sessionsContext, Shared: []string{sessionsAllContext}, Primary: "tui.sessions.open",
+		Columns: []render.Column{{Title: ""}, {Title: tr(txt.HubsColSession), Flex: 2, Max: 48}, {Title: tr(txt.HubsColLastMessage), Flex: 3}, {Title: tr(txt.HubsColMsgs), Right: true}, {Title: tr(txt.HubsColWhen), Right: true}},
 		Rows: func() [][]string {
 			out := make([][]string, len(rows))
 			for i, r := range rows {
 				if r.fresh {
-					out[i] = []string{"+", tr("pickers.session.row.new") + " · " + tr("pickers.session.draftModel", draftModelLabel(draftModel)), tr("pickers.session.row.startNew"), "", ""}
+					out[i] = []string{"+", tr(txt.PickersSessionRowNew) + " · " + tr(txt.PickersSessionDraftModel, draftModelLabel(draftModel)), tr(txt.PickersSessionRowStartNew), "", ""}
 					continue
 				}
 				mark := " "
@@ -775,7 +772,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 					title += " · " + sessionStatusLabel(r.status)
 				}
 				if r.id == closing {
-					title = tr("pickers.session.row.closing")
+					title = tr(txt.PickersSessionRowClosing)
 				}
 				count := ""
 				if r.count > 0 {
@@ -787,7 +784,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 		},
 		Banner: func() string {
 			if text := firstText(actionErr, liveErr, histErr); text != "" {
-				return tr("pickers.common.error", text)
+				return tr(txt.PickersCommonError, text)
 			}
 			return ""
 		},
@@ -797,12 +794,12 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 			case i < 0 || i >= len(rows):
 				return every
 			case rows[i].fresh:
-				return append([]wm.Hint{{Action: "edit.apply", Label: "start"}, {Action: "tui.sessions.draft.model"},
-					{Action: "tui.sessions.draft.down", Pair: "tui.sessions.draft.up", Label: "move"}}, every...)
+				return append([]wm.Hint{{Action: "edit.apply", Label: tr(txt.HintsLabelStart)}, {Action: "tui.sessions.draft.model"},
+					{Action: "tui.sessions.draft.down", Pair: "tui.sessions.draft.up", Label: tr(txt.HintsLabelMove)}}, every...)
 			case rows[i].live:
-				return append([]wm.Hint{{Action: "tui.sessions.open", Label: "switch"}, {Action: "tui.sessions.close"}}, every...)
+				return append([]wm.Hint{{Action: "tui.sessions.open", Label: tr(txt.HintsLabelSwitch)}, {Action: "tui.sessions.close"}}, every...)
 			}
-			return append([]wm.Hint{{Action: "tui.sessions.open", Label: "resume"}, {Action: "tui.sessions.delete"}}, every...)
+			return append([]wm.Hint{{Action: "tui.sessions.open", Label: tr(txt.HintsLabelResume)}, {Action: "tui.sessions.delete"}}, every...)
 		},
 		Input: &cards.ListInput{
 			Row: func(i int) bool { return i >= 0 && i < len(rows) && rows[i].fresh }, Col: 2, Contexts: []string{sessionsDraftContext},
@@ -823,7 +820,7 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 						a.leftRunning(a.store.ui.Sid)
 					}
 					return tea.Batch(wm.RequestDismissOf(l), a.life.activateLiveSession(row.id))
-				case a.life.guardBusySessionSwitch(tr("session.lifecycle.switchSessions")):
+				case a.life.guardBusySessionSwitch(tr(txt.SessionLifecycleSwitchSessions)):
 					return wm.RequestDismissOf(l)
 				}
 				return tea.Batch(wm.RequestDismissOf(l), a.resumeByID(row.id, nil))
@@ -845,10 +842,10 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 						actionErr = rpcErrorMessage(err)
 						return repaint()
 					case !closed && a.gw.canonical():
-						actionErr = tr("pickers.session.errors.notAttached")
+						actionErr = tr(txt.PickersSessionErrorsNotAttached)
 						return repaint()
 					case !closed:
-						actionErr = tr("pickers.session.errors.alreadyClosed")
+						actionErr = tr(txt.PickersSessionErrorsAlreadyClosed)
 						return repaint()
 					}
 					return load(true, func() tea.Cmd {
@@ -870,13 +867,13 @@ func (a *app) openSessionSwitcher() tea.Cmd {
 					return nil
 				}
 				if row.current {
-					return wm.Notify("the session in view stays, switch away from it first", wm.Warn)
+					return wm.Notify(tr(txt.PickersSessionStaysInView), wm.Warn)
 				}
 				name := row.title
 				if name == "" {
 					name = sessionLabel(row.id)
 				}
-				l.Confirm("delete "+name+"?", func() tea.Cmd {
+				l.Confirm(tr(txt.PickersSessionDeleteConfirm, name), func() tea.Cmd {
 					return a.deleteStoredSession(row.id, func() tea.Cmd { return load(true, repaint) })
 				})
 				return nil
@@ -936,18 +933,18 @@ func hubRequest[P, R any](a *app, m tuigateway.Method[P, R], params P, command s
 		if errors.As(err, &refused) && refused.HasCode && refused.Code == -32601 {
 			return call(a.gw, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: command, SessionID: sid}, func(res *tuigateway.SlashExecResult, err error) tea.Cmd {
 				if err != nil {
-					a.sys("error: " + describeSlashExecError(command, err))
+					a.sys(errorLine(describeSlashExecError(command, err)))
 					return nil
 				}
 				out := res.Output
 				if out == "" {
-					out = "/" + command + ": no output"
+					out = tr(txt.SlashCmdCoreNoOutputFor, command)
 				}
 				return a.showOutput(out, command)
 			})
 		}
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 			return nil
 		}
 		return show(r)
@@ -971,13 +968,13 @@ func (a *app) openSkillsHub() tea.Cmd {
 			return call(a.gw, tuigateway.SkillsManage, tuigateway.SkillsManageParams{Action: "inspect", Query: name}, func(res *tuigateway.SkillsManageResult, err error) tea.Cmd {
 				switch {
 				case err != nil:
-					details[name] = []string{tr("hubs.list.errorLine", rpcErrorMessage(err))}
+					details[name] = []string{tr(txt.HubsListErrorLine, rpcErrorMessage(err))}
 				case res.Info == nil:
 					details[name] = []string{name}
 				default:
 					lines := strings.Split(res.Info.Description, "\n")
 					if res.Info.Path != "" {
-						lines = append(lines, "", tr("hubs.skills.pathLine", res.Info.Path))
+						lines = append(lines, "", tr(txt.HubsSkillsPathLine, res.Info.Path))
 					}
 					details[name] = lines
 				}
@@ -997,8 +994,8 @@ func (a *app) openSkillsHub() tea.Cmd {
 			return tea.Batch(cmds...)
 		}
 		list := cards.NewList(a.cardEnv(), cards.ListSpec{
-			Title: "skills", Glyph: a.toolkit.Glyphs.Tools, Key: "tui:skills", Context: skillsContext, Primary: "tui.skills.inspect",
-			Columns: []render.Column{{Title: "skill", Flex: 3}, {Title: "category", Flex: 2}},
+			Title: tr(txt.HubsTitleSkills), Glyph: a.toolkit.Glyphs.Tools, Key: "tui:skills", Context: skillsContext, Primary: "tui.skills.inspect",
+			Columns: []render.Column{{Title: tr(txt.HubsColSkill), Flex: 3}, {Title: tr(txt.HubsColCategory), Flex: 2}},
 			Rows: func() [][]string {
 				out := make([][]string, len(rows))
 				for i, s := range rows {
@@ -1013,9 +1010,9 @@ func (a *app) openSkillsHub() tea.Cmd {
 				if lines, loaded := details[rows[i].name]; loaded {
 					return lines
 				}
-				return []string{tr("hubs.skills.loadingOne")}
+				return []string{tr(txt.HubsSkillsLoadingOne)}
 			},
-			Empty: func() string { return tr("userMessages.skills.noneInstalled") },
+			Empty: func() string { return tr(txt.UserMessagesSkillsNoneInstalled) },
 			Quick: open,
 			Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 				"tui.skills.inspect": func(l *cards.List, i int) tea.Cmd {
@@ -1034,7 +1031,7 @@ func (a *app) openSkillsHub() tea.Cmd {
 						if res == nil {
 							return nil
 						}
-						return tea.Batch(wm.Notify(tr("slashCmd.ops.skills.installed", name), wm.Success), a.events.loadSlashCatalog(a.store.ui.Sid))
+						return tea.Batch(wm.Notify(tr(txt.SlashCmdOpsSkillsInstalled, name), wm.Success), a.events.loadSlashCatalog(a.store.ui.Sid))
 					})
 				},
 			},
@@ -1086,8 +1083,8 @@ func (a *app) openPluginsHub() tea.Cmd {
 			})
 		}
 		list := cards.NewList(a.cardEnv(), cards.ListSpec{
-			Title: "plugins", Glyph: a.toolkit.Glyphs.Ext, Key: "tui:plugins", Context: pluginsContext, Primary: "tui.plugins.toggle",
-			Columns: []render.Column{{Title: "on"}, {Title: "plugin", Max: 32}, {Title: "source"}, {Title: "what it adds", Flex: 1}},
+			Title: tr(txt.HubsTitlePlugins), Glyph: a.toolkit.Glyphs.Ext, Key: "tui:plugins", Context: pluginsContext, Primary: "tui.plugins.toggle",
+			Columns: []render.Column{{Title: tr(txt.HubsColOn)}, {Title: tr(txt.HubsColPlugin), Max: 32}, {Title: tr(txt.HubsColSource)}, {Title: tr(txt.HubsColWhatItAdds), Flex: 1}},
 			Rows: func() [][]string {
 				shown, _ := listed()
 				out := make([][]string, len(shown))
@@ -1106,13 +1103,13 @@ func (a *app) openPluginsHub() tea.Cmd {
 				case len(plugins) == 0:
 					return ""
 				case every:
-					return tr("hubs.plugins.allScope", len(plugins))
+					return tr(txt.HubsPluginsAllScope, len(plugins))
 				case bundledCount > 0:
-					return tr("hubs.plugins.userScope", userCount) + tr("hubs.plugins.bundledSuffix", bundledCount)
+					return tr(txt.HubsPluginsUserScope, userCount) + tr(txt.HubsPluginsBundledSuffix, bundledCount)
 				}
-				return tr("hubs.plugins.userScope", userCount)
+				return tr(txt.HubsPluginsUserScope, userCount)
 			},
-			Empty: func() string { return tr("hubs.plugins.empty") + "\n" + tr("hubs.plugins.installHint") },
+			Empty: func() string { return tr(txt.HubsPluginsEmpty) + "\n" + tr(txt.HubsPluginsInstallHint) },
 			Quick: toggle,
 			Free:  map[string]bool{"tui.plugins.scope": true},
 			Actions: map[string]func(l *cards.List, i int) tea.Cmd{

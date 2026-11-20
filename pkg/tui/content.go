@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Values of a catalog group in key order, each in the active locale, numbered groups in their numbering
@@ -18,8 +20,10 @@ func catalogGroup(group string) []string {
 	}
 	sort.Strings(keys)
 	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, tr(k))
+	for _, name := range keys {
+		if key, known := txt.Named(name); known {
+			out = append(out, tr(key))
+		}
 	}
 	return out
 }

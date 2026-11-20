@@ -3,8 +3,6 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -46,81 +44,10 @@ func DiscoverEntrypointManifests(ctx context.Context) []*Manifest {
 			}
 		}
 		manifests = append(manifests, &Manifest{Name: ep.Name, Version: ep.DistVersion, Description: ep.DistSummary,
-			Source: "entrypoint", Path: ep.Value, Key: ep.Name, Kind: classifyEntrypointValueKind(ctx, ep.Value),
+			Source: "entrypoint", Path: ep.Value, Key: ep.Name, Kind: "standalone",
 			Capabilities: ParseDeclaredCapabilities(capabilities, ep.Name), ManifestVersion: 1})
 	}
 	return manifests
-}
-
-// Kind of an entry point target from an import free scan of its module source, standalone when unresolvable
-func classifyEntrypointValueKind(ctx context.Context, value string) string {
-	moduleName, _, _ := strings.Cut(value, ":")
-	moduleName = strings.TrimSpace(moduleName)
-	if moduleName == "" {
-		return "standalone"
-	}
-	if kind := detectKindFromSource(resolveModuleSource(ctx, moduleName, 8192)); kind != "" {
-		return kind
-	}
-	return "standalone"
-}
-
-// First limit characters of the source file behind a module origin, empty when it has none
-func readSourceFromOrigin(origin string, limit int) string {
-	if strings.HasSuffix(origin, ".pyc") || strings.HasSuffix(origin, ".pyo") {
-		origin = sourceFromCache(origin)
-	}
-	if origin == "" || !strings.HasSuffix(origin, ".py") {
-		return ""
-	}
-	raw, err := os.ReadFile(origin)
-	if err != nil {
-		return ""
-	}
-	text := []rune(strings.ToValidUTF8(string(stripBOM(raw)), "�"))
-	if len(text) > limit {
-		text = text[:limit]
-	}
-	return string(text)
-}
-
-// Source path a bytecode cache file was compiled from, empty for a path outside a pycache directory
-func sourceFromCache(path string) string {
-	dir, file := splitLast(path)
-	parent, cache := splitLast(dir)
-	if cache != "__pycache__" {
-		return ""
-	}
-	stem := strings.TrimSuffix(strings.TrimSuffix(file, ".pyc"), ".pyo")
-	dots := strings.Count(stem, ".")
-	if dots != 1 && dots != 2 {
-		return ""
-	}
-	name, _, _ := strings.Cut(stem, ".")
-	return parent + string(os.PathSeparator) + name + ".py"
-}
-
-// Directory and last element of a path
-func splitLast(path string) (string, string) {
-	i := strings.LastIndexAny(path, `/\`)
-	if i < 0 {
-		return "", path
-	}
-	return path[:i], path[i+1:]
-}
-
-// First limit characters of the source of a module found without importing it, empty when unresolvable
-func resolveModuleSource(ctx context.Context, moduleName string, limit int) string {
-	origin, ok := ResolveModuleOrigin(ctx, moduleName)
-	if !ok {
-		return ""
-	}
-	return readSourceFromOrigin(origin, limit)
-}
-
-// Source path of a module of the selected environment found without importing it, false when it has none
-func ResolveModuleOrigin(ctx context.Context, moduleName string) (string, bool) {
-	return pm.ResolveModuleOrigin(ctx, moduleName)
 }
 
 // Manifests of the installed plugin entry points for the discovery sweep

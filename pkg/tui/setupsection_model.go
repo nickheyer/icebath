@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -33,7 +34,7 @@ func (a *app) openHostedModel(entry string) tea.Cmd { return a.openHostedFlow("m
 
 // Runs a setup section or first run mode on the gateway with its questions asked here
 func (a *app) openHostedFlow(flow, entry string) tea.Cmd {
-	a.store.ui.Status = tr("setupFlow.flow.starting")
+	a.store.ui.Status = tr(txt.SetupFlowFlowStarting)
 	params := tuigateway.SetupHostedStartParams{Flow: tuigateway.SetupHostedFlow(flow), Entry: entry}
 	return ask(a.events.rpc, a.sys, tuigateway.SetupHostedStart, params, func(res *tuigateway.SetupHostedStartResult) tea.Cmd {
 		if res == nil || res.Job == "" {
@@ -98,7 +99,7 @@ func (a *app) pollHostedFlow(f *hostedFlow) tea.Cmd {
 			f.asked = q.ID
 			return tea.Batch(f.endWait(a), a.askHosted(f, q))
 		}
-		a.store.ui.Status = tr("setupFlow.flow.working")
+		a.store.ui.Status = tr(txt.SetupFlowFlowWorking)
 		f.progress = res.Progress
 		var shown tea.Cmd
 		switch {
@@ -113,12 +114,12 @@ func (a *app) pollHostedFlow(f *hostedFlow) tea.Cmd {
 
 // Dialog shown while the flow works on its own, its stop or escape ending the flow
 func (a *app) showHostedWait(f *hostedFlow) tea.Cmd {
-	d := &dialogCard{app: a, kind: "setupWait", requestID: f.job, focus: -1, marks: map[int]bool{}, title: tr("setupFlow.flow.waitTitle"),
-		body: f.waitBody(), choices: []dialogChoice{{label: tr("setupFlow.flow.keepWaiting"), value: "wait"},
-			{label: tr("setupFlow.flow.stop"), value: "stop"}}}
+	d := &dialogCard{app: a, kind: "setupWait", requestID: f.job, focus: -1, marks: map[int]bool{}, title: tr(txt.SetupFlowFlowWaitTitle),
+		body: f.waitBody(), choices: []dialogChoice{{label: tr(txt.SetupFlowFlowKeepWaiting), value: "wait"},
+			{label: tr(txt.SetupFlowFlowStop), value: "stop"}}}
 	stop := func() tea.Cmd {
 		f.wait = nil
-		a.sys(tr("setupFlow.flow.stopping"))
+		a.sys(tr(txt.SetupFlowFlowStopping))
 		return ask(a.events.rpc, a.sys, tuigateway.SetupHostedCancel, tuigateway.SetupHostedCancelParams{Job: f.job},
 			func(*tuigateway.SetupHostedCancelResult) tea.Cmd { return nil })
 	}
@@ -213,7 +214,7 @@ func (a *app) askHosted(f *hostedFlow, q *tuigateway.SetupHostedQuestion) tea.Cm
 	case "checklist":
 		rows := q.Rows
 		d := &dialogCard{app: a, kind: "setupChecklist", requestID: f.job, focus: -1, marks: map[int]bool{}, title: title, multi: true,
-			body: []string{tr("setupFlow.flow.checklistHint")}}
+			body: []string{tr(txt.SetupFlowFlowChecklistHint)}}
 		for i, row := range rows {
 			d.choices = append(d.choices, dialogChoice{label: row, value: strconv.Itoa(i)})
 		}
@@ -246,7 +247,7 @@ func (a *app) askHosted(f *hostedFlow, q *tuigateway.SetupHostedQuestion) tea.Cm
 			return cancel()
 		}
 		settled = true
-		a.sys(tr("setupFlow.flow.running", strings.Join(argv, " ")))
+		a.sys(tr(txt.SetupFlowFlowRunning, strings.Join(argv, " ")))
 		return tty.Exec(exec.Command(argv[0], argv[1:]...), func(err error) tea.Msg {
 			return asyncDoneMsg{run: func() tea.Cmd { return a.answerHosted(f, id, commandAnswer(err)) }}
 		})
@@ -278,16 +279,16 @@ func (a *app) hostedFlowDone(res *tuigateway.SetupHostedPollResult) tea.Cmd {
 	model, provider := res.Model, res.Provider
 	switch {
 	case !res.Ok:
-		a.sys(tr("setupFlow.flow.stopped"))
+		a.sys(tr(txt.SetupFlowFlowStopped))
 		return nil
 	case model == "":
 		return nil
 	case a.store.ui.Sid != "":
 		if res.Changed {
-			a.sys(tr("setupFlow.model.savedLive", model, provider))
+			a.sys(tr(txt.SetupFlowModelSavedLive, model, provider))
 		}
 		return nil
 	}
-	a.sys(tr("setupFlow.model.saved", model, provider))
+	a.sys(tr(txt.SetupFlowModelSaved, model, provider))
 	return a.newSession(nil)
 }

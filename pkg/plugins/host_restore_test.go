@@ -1,10 +1,8 @@
 package plugins
 
 import (
-	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -62,24 +60,5 @@ func TestDeclaredReturnAndHostObjectBase(t *testing.T) {
 		if _, ok := hostDeclaredReturns[ref]; !ok {
 			t.Errorf("%s base %s has no declared return table", method, ref)
 		}
-	}
-}
-
-func TestIsolationMode(t *testing.T) {
-	ctx := context.Background()
-	t.Setenv(HostProcessEnv, "")
-	cfg := func(v any) map[string]any { return map[string]any{"plugins": map[string]any{"isolation": v}} }
-	for value, want := range map[any]string{"host": IsolationHost, " Host ": IsolationHost, "in-process": IsolationInProcess, nil: IsolationInProcess, "": IsolationInProcess} {
-		if got := IsolationMode(ctx, cfg(value)); got != want {
-			t.Errorf("IsolationMode(%v) = %q, want %q", value, got, want)
-		}
-	}
-	logs := captureLogs(t)
-	if got := IsolationMode(ctx, cfg("sandbox")); got != IsolationInProcess || !strings.Contains(logs.String(), "plugins.isolation=sandbox is not one of host, in_process; loading plugins in-process") {
-		t.Fatalf("unknown mode = %q, log %q", got, logs.String())
-	}
-	t.Setenv(HostProcessEnv, "1")
-	if IsolationMode(ctx, cfg("host")) != IsolationInProcess {
-		t.Fatal("inside the host every loader imports directly")
 	}
 }

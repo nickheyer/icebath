@@ -54,7 +54,7 @@ func worktreeStatusLines(ctx context.Context, active *Worktree, inRepo bool) []s
 // Lines of a prune answer, the reclaimed or planned actions with their count and the trees kept for a reason
 func worktreePruneLines(ctx context.Context, res *tuigateway.WorktreePruneResult, dryRun bool) []string {
 	if res.Error != nil {
-		return []string{"error: " + *res.Error}
+		return []string{errorLine(*res.Error)}
 	}
 	lines := append([]string{}, res.Actions...)
 	if len(lines) > 0 {
@@ -106,7 +106,7 @@ func (a *app) worktreeNew(r *slashRun, cwd, name string) tea.Cmd {
 	params := tuigateway.WorktreeCreateParams{Cwd: cwd, Name: name, PID: int64(os.Getpid())}
 	return call(a.gw, tuigateway.WorktreeCreate, params, func(res *tuigateway.WorktreeCreateResult, err error) tea.Cmd {
 		if err != nil {
-			r.sys("error: " + rpcErrorMessage(err))
+			r.sys(errorLine(rpcErrorMessage(err)))
 			return nil
 		}
 		if res.RepoRoot == nil {
@@ -141,7 +141,7 @@ func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 		r.sys(strings.Join(lines, "\n"))
 		return call(a.gw, tuigateway.WorktreeRecord, ref, func(_ *tuigateway.WorktreeRecordResult, err error) tea.Cmd {
 			if err != nil {
-				r.sys("error: " + rpcErrorMessage(err))
+				r.sys(errorLine(rpcErrorMessage(err)))
 			}
 			return nil
 		})
@@ -181,7 +181,7 @@ func (a *app) settleRefusedWorktree(r *slashRun, ref tuigateway.WorktreeRef) tea
 	return call(a.gw, tuigateway.WorktreeSettle, ref, func(res *tuigateway.WorktreeSettleResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
-			r.sys("error: " + rpcErrorMessage(err))
+			r.sys(errorLine(rpcErrorMessage(err)))
 		case len(res.Lines) > 0:
 			r.sys(strings.Join(res.Lines, "\n"))
 		}
@@ -273,7 +273,7 @@ func (a *app) worktreeCommands() []slashCommand {
 					return r.ran()
 				}
 				failed := func(err error) tea.Cmd {
-					r.sys("error: " + rpcErrorMessage(err))
+					r.sys(errorLine(rpcErrorMessage(err)))
 					return nil
 				}
 				switch handler {

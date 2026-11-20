@@ -72,6 +72,7 @@ type CuratorReviewRequest struct {
 	QuietMode           bool
 	SkipContextFiles    bool
 	SkipMemory          bool
+	MemoryAgentContext  string
 	MemoryNudgeInterval int
 	SkillNudgeInterval  int
 	ACPCommand          string
@@ -1539,10 +1540,13 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 	cfg, err := config.LoadReadonly(ctx, h, configLookup(&tools.Env{Home: h}))
 	var res *CuratorReviewResult
 	if err == nil {
+		// A curation run can compact, so under compression.checkpoint_required it keeps the provider it checkpoints with, scoped as a fork
+		compression, _ := cfg["compression"].(map[string]any)
 		req := CuratorReviewRequest{
 			Prompt: prompt, Model: model, Provider: prov, RequestOverrides: overrides,
 			ReasoningConfig: config.ResolveReasoningConfig(map[string]any(cfg), model), EnabledToolsets: []string{"skills"},
-			MaxIterations: 9999, Platform: "curator", WriteOrigin: backgroundReviewOrigin, QuietMode: true, SkipContextFiles: true, SkipMemory: true,
+			MaxIterations: 9999, Platform: "curator", WriteOrigin: backgroundReviewOrigin, QuietMode: true, SkipContextFiles: true,
+			SkipMemory: !isTruthyValue(compression["checkpoint_required"], false), MemoryAgentContext: "subagent",
 		}
 		if rt != nil {
 			route := rt.Route()

@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -217,7 +218,7 @@ func (a *app) shedRenderCaches(all bool) {
 
 // Line that names the level, the heap and where the automatic dump went
 func memoryDumpNotice(level string, snap memorySnapshot, dump heapDumpResult) string {
-	return tr("chatBits.entry.memoryDump", level, render.Bytes(int64(snap.heap)), dumpPathOr(dump, tr("chatBits.entry.dumpFailed")))
+	return tr(txt.ChatBitsEntryMemoryDump, level, render.Bytes(int64(snap.heap)), dumpPathOr(dump, tr(txt.ChatBitsEntryDumpFailed)))
 }
 
 // Profile of a dump, its facts file when no profile was written, the fallback when the dump failed
@@ -235,7 +236,7 @@ func (a *app) memoryWarned(snap memorySnapshot) {
 	heap := render.Bytes(int64(snap.heap))
 	recordParentLifecycle(fmt.Sprintf("memory-warning fast heap growth heap=%s rss=%s", heap, render.Bytes(int64(snap.rss))))
 	a.post(asyncDoneMsg{run: func() tea.Cmd {
-		a.sys(tr("chatBits.entry.heapClimbing", heap))
+		a.sys(tr(txt.ChatBitsEntryHeapClimbing, heap))
 		return nil
 	}})
 }
@@ -256,7 +257,7 @@ func (a *app) memoryCritical(snap memorySnapshot, dump heapDumpResult) {
 	lines := []string{
 		fmt.Sprintf("icebath lifecycle: memory critical exit heap=%s rss=%s", heap, rss),
 		memoryDumpNotice(levelCritical, snap, dump),
-		tr("chatBits.entry.exitingOom"),
+		tr(txt.ChatBitsEntryExitingOom),
 	}
 	var once sync.Once
 	say := func() {

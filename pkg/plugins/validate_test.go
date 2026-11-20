@@ -49,7 +49,7 @@ func vtPlugin(t *testing.T, root string, manifest map[string]any, initPy string)
 	return dir
 }
 
-// Every native check, the source audits and isolation audit included
+// Every native check, the source audits included
 func vtNativeChecks(t *testing.T, dir string) *ValidationReport {
 	t.Helper()
 	report, err := validatePluginDir(context.Background(), dir, nil)
@@ -106,7 +106,7 @@ func TestPortableValidationFailsOrphanAndReportsAvailability(t *testing.T) {
 	for _, c := range report.Checks {
 		found = found || (c.Name == "server availability: worker" && c.OK && c.Detail == "missing_app")
 	}
-	if !found || len(asked) != 1 || report.Isolation == nil || report.Isolation.Verdict != VerdictPortable {
+	if !found || len(asked) != 1 {
 		t.Fatalf("availability not reported: %+v asked=%d", report.Checks, len(asked))
 	}
 }
@@ -142,13 +142,12 @@ func TestValidateReportJSONKeyOrder(t *testing.T) {
 	r := &ValidationReport{}
 	r.add("manifest", true, "plugin.yaml parses")
 	r.warn("w")
-	r.Isolation = &IsolationReport{Verdict: VerdictHost, Reasons: []string{}, Notes: []string{"n"}, CtxMethods: map[string]bool{"register_tool": true}}
 	raw, err := json.Marshal(r.ToDict())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"ok":true,"checks":[{"name":"manifest","ok":true,"detail":"plugin.yaml parses"}],"warnings":["w"],"isolation":{"verdict":"host","host_ready":true,"reasons":[],"notes":["n"],"ctx_methods":["register_tool"]}}`
-	if string(raw) != want || r.Isolation.Summary() != "runs in the plugin host (plugins.isolation: host)" {
+	want := `{"ok":true,"checks":[{"name":"manifest","ok":true,"detail":"plugin.yaml parses"}],"warnings":["w"]}`
+	if string(raw) != want {
 		t.Fatalf("%s", raw)
 	}
 }

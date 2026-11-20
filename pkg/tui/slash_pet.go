@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -79,12 +80,12 @@ func petCall[P, R any](r *slashRun, m tuigateway.Method[P, R], params P, then fu
 			return nil
 		}
 		if err != nil {
-			r.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+			r.sys(tr(txt.SlashCmdSessionPetError, rpcErrorMessage(err)))
 			return nil
 		}
 		res, misfit := m.Result(v)
 		if misfit != nil {
-			r.sys(tr("slashCmd.session.pet.error", misfitText(tr("pickers.common.invalidResponse", m.Name()))+" "+misfit.Error()))
+			r.sys(tr(txt.SlashCmdSessionPetError, misfitText(tr(txt.PickersCommonInvalidResponse, m.Name()))+" "+misfit.Error()))
 			return nil
 		}
 		return then(&res)
@@ -97,7 +98,7 @@ var localPets = tuigateway.PetGalleryParams{LocalOnly: true}
 // Slash command of the animated pet, every subcommand on the pet verbs
 func (a *app) petCommands() []slashCommand {
 	subs := []string{"toggle", "list", "select", "off", "scale", "rename", "remove", "export", "info"}
-	return []slashCommand{{name: "pet", help: tr("slashCmd.session.pet.help"),
+	return []slashCommand{{name: "pet", help: tr(txt.SlashCmdSessionPetHelp), helpFn: helpOf(txt.SlashCmdSessionPetHelp),
 		usage:   "[toggle|list|select <slug>|off|scale <n>|rename [slug] <name>|remove [slug]|export [slug] [path]|info|<slug>]",
 		suggest: func(string) []string { return subs },
 		run:     func(r *slashRun) tea.Cmd { return tea.Batch(r.ran(), a.runPet(r)) }}}
@@ -118,7 +119,7 @@ func (a *app) runPet(r *slashRun) tea.Cmd {
 		return a.openPetGallery(r)
 	case low == "off":
 		return petCall(r, tuigateway.PetDisable, tuigateway.ProfileParams{}, func(*tuigateway.PetOkResult) tea.Cmd {
-			r.sys(tr("slashCmd.session.pet.putAway"))
+			r.sys(tr(txt.SlashCmdSessionPetPutAway))
 			return nil
 		})
 	case low == "info":
@@ -127,7 +128,7 @@ func (a *app) runPet(r *slashRun) tea.Cmd {
 		return a.petScale(r, rest)
 	case first == "select":
 		if rest == "" {
-			r.sys(tr("slashCmd.session.pet.usageSelect"))
+			r.sys(tr(txt.SlashCmdSessionPetUsageSelect))
 			return nil
 		}
 		return a.petSelect(r, rest)
@@ -149,19 +150,19 @@ func (a *app) petToggle(r *slashRun) tea.Cmd {
 		if g.enabled {
 			return petCall(r, tuigateway.PetDisable, tuigateway.ProfileParams{}, func(*tuigateway.PetOkResult) tea.Cmd {
 				if cur != nil {
-					r.sys(tr("slashCmd.session.pet.putAwayNamed", cur.name))
+					r.sys(tr(txt.SlashCmdSessionPetPutAwayNamed, cur.name))
 				} else {
-					r.sys(tr("slashCmd.session.pet.putAway"))
+					r.sys(tr(txt.SlashCmdSessionPetPutAway))
 				}
 				return nil
 			})
 		}
 		if cur == nil {
-			r.sys(tr("slashCmd.session.pet.error", tr("slashCmd.session.pet.noneInstalled")))
+			r.sys(tr(txt.SlashCmdSessionPetError, tr(txt.SlashCmdSessionPetNoneInstalled)))
 			return nil
 		}
 		return petCall(r, tuigateway.PetEnable, tuigateway.ProfileParams{}, func(*tuigateway.PetOkResult) tea.Cmd {
-			r.sys(tr("slashCmd.session.pet.isOut", cur.name))
+			r.sys(tr(txt.SlashCmdSessionPetIsOut, cur.name))
 			return nil
 		})
 	})
@@ -169,7 +170,7 @@ func (a *app) petToggle(r *slashRun) tea.Cmd {
 
 // Adopts a petdex pet by slug, installing it first when needed, a store refusal said as the CLI says it
 func (a *app) petSelect(r *slashRun, slug string) tea.Cmd {
-	r.sys(tr("slashCmd.session.pet.fetching", slug))
+	r.sys(tr(txt.SlashCmdSessionPetFetching, slug))
 	return call(r.a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: slug}, func(res *tuigateway.PetSlugResult, err error) tea.Cmd {
 		if r.stale() {
 			return nil
@@ -177,14 +178,14 @@ func (a *app) petSelect(r *slashRun, slug string) tea.Cmd {
 		var refusal *rpcError
 		prefix := "could not adopt '" + slug + "': "
 		if errors.As(err, &refusal) && refusal.Code == 5031 && strings.HasPrefix(refusal.Message, prefix) {
-			r.sys(tr("slashCmd.session.pet.adoptFailed", slug, strings.TrimPrefix(refusal.Message, prefix)))
+			r.sys(tr(txt.SlashCmdSessionPetAdoptFailed, slug, strings.TrimPrefix(refusal.Message, prefix)))
 			return nil
 		}
 		if err != nil {
-			r.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+			r.sys(tr(txt.SlashCmdSessionPetError, rpcErrorMessage(err)))
 			return nil
 		}
-		r.sys(tr("slashCmd.session.pet.isOut", cmp.Or(res.DisplayName, slug)))
+		r.sys(tr(txt.SlashCmdSessionPetIsOut, cmp.Or(res.DisplayName, slug)))
 		return nil
 	})
 }
@@ -192,12 +193,12 @@ func (a *app) petSelect(r *slashRun, slug string) tea.Cmd {
 // Persists the pet scale the gateway clamps to the engine bounds
 func (a *app) petScale(r *slashRun, value string) tea.Cmd {
 	if value == "" {
-		r.sys(tr("slashCmd.session.pet.usageScale"))
+		r.sys(tr(txt.SlashCmdSessionPetUsageScale))
 		return nil
 	}
 	return petCall(r, tuigateway.PetScale, tuigateway.PetScaleParams{Scale: value}, func(res *tuigateway.PetScaleResult) tea.Cmd {
 		shown := strconv.FormatFloat(res.Scale, 'g', 6, 64)
-		r.sys(tr("slashCmd.session.pet.scaleSet", shown))
+		r.sys(tr(txt.SlashCmdSessionPetScaleSet, shown))
 		return nil
 	})
 }
@@ -216,11 +217,11 @@ func (a *app) petRename(r *slashRun, rest string) tea.Cmd {
 			target = g.current()
 		}
 		if target == nil || name == "" {
-			r.sys(tr("slashCmd.session.pet.usageRename"))
+			r.sys(tr(txt.SlashCmdSessionPetUsageRename))
 			return nil
 		}
 		return petCall(r, tuigateway.PetRename, tuigateway.PetRenameParams{Slug: target.slug, Name: name}, func(out *tuigateway.PetSlugResult) tea.Cmd {
-			r.sys(tr("slashCmd.session.pet.renamed", target.name, name, cmp.Or(out.Slug, target.slug)))
+			r.sys(tr(txt.SlashCmdSessionPetRenamed, target.name, name, cmp.Or(out.Slug, target.slug)))
 			return nil
 		})
 	})
@@ -233,21 +234,21 @@ func (a *app) petRemove(r *slashRun, slug string) tea.Cmd {
 		target := g.current()
 		if slug != "" {
 			if target = g.installed(slug); target == nil {
-				r.sys(tr("slashCmd.session.pet.notInstalled", slug))
+				r.sys(tr(txt.SlashCmdSessionPetNotInstalled, slug))
 				return nil
 			}
 		}
 		if target == nil {
-			r.sys(tr("slashCmd.session.pet.usageRemove"))
+			r.sys(tr(txt.SlashCmdSessionPetUsageRemove))
 			return nil
 		}
-		return a.confirmDestructive(tr("slashCmd.session.pet.removeTitle", target.name), tr("slashCmd.session.pet.removeDetail"),
-			tr("slashCmd.session.pet.removeConfirm"), tr("slashCmd.session.pet.cancel"), func() tea.Cmd {
+		return a.confirmDestructive(tr(txt.SlashCmdSessionPetRemoveTitle, target.name), tr(txt.SlashCmdSessionPetRemoveDetail),
+			tr(txt.SlashCmdSessionPetRemoveConfirm), tr(txt.SlashCmdSessionPetCancel), func() tea.Cmd {
 				return petCall(r, tuigateway.PetRemove, tuigateway.PetSlugParams{Slug: target.slug}, func(out *tuigateway.PetSlugResult) tea.Cmd {
 					if out.Ok {
-						r.sys(tr("slashCmd.session.pet.removed", target.name))
+						r.sys(tr(txt.SlashCmdSessionPetRemoved, target.name))
 					} else {
-						r.sys(tr("slashCmd.session.pet.notInstalled", target.slug))
+						r.sys(tr(txt.SlashCmdSessionPetNotInstalled, target.slug))
 					}
 					return nil
 				})
@@ -269,24 +270,24 @@ func (a *app) petExport(r *slashRun, rest string) tea.Cmd {
 			target = g.current()
 		}
 		if target == nil {
-			r.sys(tr("slashCmd.session.pet.usageExport"))
+			r.sys(tr(txt.SlashCmdSessionPetUsageExport))
 			return nil
 		}
 		return petCall(r, tuigateway.PetExport, tuigateway.PetSlugParams{Slug: target.slug}, func(out *tuigateway.PetExportResult) tea.Cmd {
 			data, err := base64.StdEncoding.DecodeString(out.ZipBase64)
 			if err != nil {
-				r.sys(tr("slashCmd.session.pet.error", err.Error()))
+				r.sys(tr(txt.SlashCmdSessionPetError, err.Error()))
 				return nil
 			}
 			dest, err := a.exportPath(path, cmp.Or(out.Filename, target.slug+".zip"))
 			if err != nil {
-				r.sys(tr("slashCmd.session.pet.error", err.Error()))
+				r.sys(tr(txt.SlashCmdSessionPetError, err.Error()))
 				return nil
 			}
 			write := func() tea.Cmd { return a.writePetExport(target.name, dest, data) }
 			if _, err := os.Stat(dest); err == nil {
-				return a.confirmDestructive(tr("slashCmd.session.pet.replaceTitle", dest), tr("slashCmd.session.pet.replaceDetail"),
-					tr("slashCmd.session.pet.replaceConfirm"), tr("slashCmd.session.pet.cancel"), write)
+				return a.confirmDestructive(tr(txt.SlashCmdSessionPetReplaceTitle, dest), tr(txt.SlashCmdSessionPetReplaceDetail),
+					tr(txt.SlashCmdSessionPetReplaceConfirm), tr(txt.SlashCmdSessionPetCancel), write)
 			}
 			return write()
 		})
@@ -329,10 +330,10 @@ func (a *app) writePetExport(name, dest string, data []byte) tea.Cmd {
 		err := os.WriteFile(dest, data, 0o644)
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if err != nil {
-				a.sys(tr("slashCmd.session.pet.error", err.Error()))
+				a.sys(tr(txt.SlashCmdSessionPetError, err.Error()))
 				return nil
 			}
-			a.sys(tr("slashCmd.session.pet.exported", name, dest))
+			a.sys(tr(txt.SlashCmdSessionPetExported, name, dest))
 			return nil
 		}}
 	}
@@ -342,13 +343,13 @@ func (a *app) writePetExport(name, dest string, data []byte) tea.Cmd {
 func (a *app) petInfo(r *slashRun) tea.Cmd {
 	return petCall(r, tuigateway.PetInfoMeta, tuigateway.ProfileParams{}, func(meta *tuigateway.PetInfoMetaResult) tea.Cmd {
 		if !meta.Enabled {
-			r.sys(tr("slashCmd.session.pet.infoOff"))
+			r.sys(tr(txt.SlashCmdSessionPetInfoOff))
 			return nil
 		}
 		known := tuigateway.PetInfoParams{KnownRevision: meta.SpritesheetRevision}
 		return petCall(r, tuigateway.PetInfo, known, func(info *tuigateway.PetInfoResult) tea.Cmd {
 			if !info.Enabled {
-				r.sys(tr("slashCmd.session.pet.infoOff"))
+				r.sys(tr(txt.SlashCmdSessionPetInfoOff))
 				return nil
 			}
 			shown := strconv.FormatFloat(info.Scale, 'g', 6, 64)
@@ -359,13 +360,13 @@ func (a *app) petInfo(r *slashRun) tea.Cmd {
 				}
 			}
 			rows := [][2]string{
-				{tr("slashCmd.session.pet.infoSlug"), info.Slug},
-				{tr("slashCmd.session.pet.infoScale"), shown},
-				{tr("slashCmd.session.pet.infoSheet"), fmt.Sprintf("%s · %d×%d", info.Mime, info.FrameW, info.FrameH)},
-				{tr("slashCmd.session.pet.infoFrames"), strings.Join(frames, " · ")},
-				{tr("slashCmd.session.pet.infoRows"), strings.Join(info.StateRows, " · ")},
-				{tr("slashCmd.session.pet.infoRevision"), info.SpritesheetRevision},
-				{tr("slashCmd.session.pet.infoDrawing"), a.petView().drawing()},
+				{tr(txt.SlashCmdSessionPetInfoSlug), info.Slug},
+				{tr(txt.SlashCmdSessionPetInfoScale), shown},
+				{tr(txt.SlashCmdSessionPetInfoSheet), fmt.Sprintf("%s · %d×%d", info.Mime, info.FrameW, info.FrameH)},
+				{tr(txt.SlashCmdSessionPetInfoFrames), strings.Join(frames, " · ")},
+				{tr(txt.SlashCmdSessionPetInfoRows), strings.Join(info.StateRows, " · ")},
+				{tr(txt.SlashCmdSessionPetInfoRevision), info.SpritesheetRevision},
+				{tr(txt.SlashCmdSessionPetInfoDrawing), a.petView().drawing()},
 			}
 			a.panel(cmp.Or(info.DisplayName, info.Slug), []panelSection{{Rows: rows}})
 			return nil
@@ -375,7 +376,7 @@ func (a *app) petInfo(r *slashRun) tea.Cmd {
 
 // Gallery picker of pet.gallery, typed text narrowing it and enter adopting the pet under the cursor
 func (a *app) openPetGallery(r *slashRun) tea.Cmd {
-	return tea.Batch(wm.Notify(tr("pickers.pet.loading"), wm.Info), petCall(r, tuigateway.PetGallery, tuigateway.PetGalleryParams{}, func(res *tuigateway.PetGalleryResult) tea.Cmd {
+	return tea.Batch(wm.Notify(tr(txt.PickersPetLoading), wm.Info), petCall(r, tuigateway.PetGallery, tuigateway.PetGalleryParams{}, func(res *tuigateway.PetGalleryResult) tea.Cmd {
 		g := parsePetGallery(res)
 		var shown []petEntry
 		for _, e := range g.pets {
@@ -384,7 +385,7 @@ func (a *app) openPetGallery(r *slashRun) tea.Cmd {
 			}
 		}
 		if len(shown) == 0 {
-			r.sys(tr("pickers.pet.noneAvailable"))
+			r.sys(tr(txt.PickersPetNoneAvailable))
 			return nil
 		}
 		rank := func(e petEntry) int {
@@ -412,21 +413,21 @@ func (a *app) openPetGallery(r *slashRun) tea.Cmd {
 			}
 			detail := e.slug
 			if !e.installed && e.curated {
-				detail += tr("pickers.pet.officialTag")
+				detail += tr(txt.PickersPetOfficialTag)
 			}
 			slug := e.slug
 			items = append(items, wm.Item{ID: "pet:" + slug, Title: mark + " " + e.name, Detail: detail, Run: func() tea.Cmd { return a.adoptPet(slug) }})
 		}
-		count := tr("pickers.pet.petCountOther", len(shown))
+		count := tr(txt.PickersPetPetCountOther, len(shown))
 		if len(shown) == 1 {
-			count = tr("pickers.pet.petCountOne", 1)
+			count = tr(txt.PickersPetPetCountOne, 1)
 		}
 		byID := map[string]petEntry{}
 		for _, e := range shown {
 			byID["pet:"+e.slug] = e
 		}
 		picker := wm.NewPalette(a.toolkit, items)
-		picker.Placeholder = tr("pickers.pet.title") + " · " + count
+		picker.Placeholder = tr(txt.PickersPetTitle) + " · " + count
 		picker.Filter = func(query string, it wm.Item) bool {
 			needle, e := strings.ToLower(trimJS(query)), byID[it.ID]
 			return needle == "" || strings.Contains(strings.ToLower(e.slug), needle) || strings.Contains(strings.ToLower(e.name), needle)
@@ -437,9 +438,9 @@ func (a *app) openPetGallery(r *slashRun) tea.Cmd {
 
 // Adopts the pet picked in the gallery, it lighting up once the pet view takes the new selection
 func (a *app) adoptPet(slug string) tea.Cmd {
-	return tea.Batch(wm.Notify(tr("pickers.pet.adopting"), wm.Info), call(a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: slug}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
+	return tea.Batch(wm.Notify(tr(txt.PickersPetAdopting), wm.Info), call(a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: slug}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 		if err != nil {
-			a.sys(tr("pickers.common.error", rpcErrorMessage(err)))
+			a.sys(tr(txt.PickersCommonError, rpcErrorMessage(err)))
 		}
 		return nil
 	}))

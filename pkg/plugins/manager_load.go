@@ -69,6 +69,11 @@ type PlatformDeclarations interface {
 
 type discoveryHeldKey struct{ m *Manager }
 
+// Context for work inside an unload callback, which only ever runs with the discovery lock of this manager held
+func (m *Manager) discoveryHeldContext(ctx context.Context) context.Context {
+	return context.WithValue(pluginHomeScope(ctx, m.home), discoveryHeldKey{m}, true)
+}
+
 type discoverySuppressedKey struct{}
 
 // Context in which discovery is a no op so the scope manager stays undiscovered
@@ -327,7 +332,7 @@ func (m *Manager) gateManifest(ctx context.Context, mf *Manifest, disabled, enab
 		err = m.registerDeferredPlatform(ctx, mf)
 	default:
 		m.mu.Lock()
-		m.putPluginLocked(mf.ID(), &LoadedPlugin{Manifest: mf, Enabled: verdict.Enabled, Error: verdict.Error})
+		m.putPluginLocked(mf.ID(), &LoadedPlugin{Manifest: mf, Enabled: verdict.Enabled, Error: verdict.Error, Skipped: true})
 		m.mu.Unlock()
 	}
 	logGate(verdict)
@@ -509,6 +514,19 @@ func (m *Manager) ListPlugins() []map[string]any {
 			"tools": len(p.ToolsRegistered), "hooks": len(p.HooksRegistered), "middleware": len(p.MiddlewareRegistered),
 			"commands": len(p.CommandsRegistered), "error": errVal,
 		})
+	}
+	return out
+}
+
+// Plugins whose load was tried and failed, each as its name and its failure, sorted by key
+func (m *Manager) LoadFailures() [][2]string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out [][2]string
+	for _, key := range sortedKeys(m.plugins) {
+		if p := m.plugins[key]; p.Error != "" && !p.Skipped && !p.Deferred {
+			out = append(out, [2]string{p.Manifest.Name, p.Error})
+		}
 	}
 	return out
 }

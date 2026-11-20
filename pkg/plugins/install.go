@@ -688,11 +688,7 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 		shouldEnable = &disabled
 		console.Print("[dim]--no-deps: skipping dependency consent; the plugin stays disabled.[/dim]")
 	}
-	svc := installedServices()
-	if svc == nil || svc.DefinesMemoryProvider == nil {
-		return &ServiceMissingError{Name: "DefinesMemoryProvider"}
-	}
-	isMemoryProvider := svc.DefinesMemoryProvider(target)
+	isMemoryProvider := GuestProvides(target, CategoryMemoryProvider)
 	if shouldEnable == nil && !alreadyActive {
 		prompt := fmt.Sprintf("  Enable '%s' now? [y/N]: ", installedName)
 		if isMemoryProvider {
@@ -738,7 +734,8 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 	default:
 		console.Print(fmt.Sprintf("[dim]Plugin installed but not enabled. Run `icebath plugins enable %s` to activate.[/dim]", installedName))
 	}
-	if svc.RequiresAuthNotice == nil {
+	svc := installedServices()
+	if svc == nil || svc.RequiresAuthNotice == nil {
 		return &ServiceMissingError{Name: "RequiresAuthNotice"}
 	}
 	if notice := svc.RequiresAuthNotice(installedManifest); notice != "" {

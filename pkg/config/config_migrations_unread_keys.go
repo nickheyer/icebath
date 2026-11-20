@@ -18,12 +18,11 @@ var unreadKeys = [][]string{
 	{"paste_collapse_threshold_fallback"},
 }
 
-// Drops the settings nothing reads and keeps the rest of their sections
-func migrateTo68(r *migrationRun) error {
-	cfg := r.read()
+// DropUnreadKeys removes every setting nothing in this product reads from a config mapping and returns the dotted paths it removed, the rest of their sections staying
+func DropUnreadKeys(doc map[string]any) []string {
 	var removed []string
 	for _, path := range unreadKeys {
-		holder := cfg
+		holder := doc
 		for _, section := range path[:len(path)-1] {
 			holder, _ = holder[section].(map[string]any)
 		}
@@ -33,6 +32,13 @@ func migrateTo68(r *migrationRun) error {
 			removed = append(removed, strings.Join(path, "."))
 		}
 	}
+	return removed
+}
+
+// Drops the settings nothing reads and keeps the rest of their sections
+func migrateTo68(r *migrationRun) error {
+	cfg := r.read()
+	removed := DropUnreadKeys(cfg)
 	if len(removed) == 0 {
 		return nil
 	}

@@ -9,7 +9,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Rows above the active card, the strip and the blank row under it
@@ -361,5 +363,5 @@ func (g *Tabs) Animate(dt float64) bool {
 
 // Actions of the active tab, then the tab switching one that reaches the manager even past a raw tab
 func (g *Tabs) Hints() []Hint {
-	return append(append([]Hint(nil), hintsOf(g.current())...), Hint{Action: "tabs.cycle", Label: "next tab"})
+	return append(append([]Hint(nil), hintsOf(g.current())...), Hint{Action: "tabs.cycle", Label: lang.T(txt.KitHintNextTab)})
 }

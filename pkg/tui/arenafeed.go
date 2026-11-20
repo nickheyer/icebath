@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 	"github.com/nickheyer/icebath/pkg/vxl/arena"
 )
@@ -90,7 +91,7 @@ func (f *arenaFeed) observe(ev gatewayEventMsg) {
 	case "error":
 		stamped := infoOf(f.a.store.ui.Info).ExecutionGeneration != nil
 		if failure, _ := tuigateway.ErrorEvent.Payload(p); f.a.store.ui.Busy && !(isGenericErrorEvent(ev) && stamped) {
-			f.outcome, f.failure = arena.OutcomeFailed, firstText(failure.Message, "the turn failed")
+			f.outcome, f.failure = arena.OutcomeFailed, firstText(failure.Message, tr(txt.SessionArenaTurnFailed))
 		}
 	}
 }
@@ -244,9 +245,9 @@ func (f *arenaFeed) Interrupt(s *arena.Snapshot, m arena.Member) tea.Cmd {
 		case r == nil:
 			return nil
 		case !r.Found:
-			return wm.Notify(m.Name+" already finished", wm.Info)
+			return wm.Notify(tr(txt.SessionArenaAlreadyFinished, m.Name), wm.Info)
 		}
-		return wm.Notify(m.Name+" interrupted", wm.Success)
+		return wm.Notify(tr(txt.SessionArenaInterrupted, m.Name), wm.Success)
 	})
 }
 
@@ -265,10 +266,10 @@ func (f *arenaFeed) Steer(s *arena.Snapshot, m arena.Member, text string) tea.Cm
 			return nil
 		}
 		if r.Status == "rejected" {
-			return wm.Notify(m.Name+" took no guidance, it already finished", wm.Warn)
+			return wm.Notify(tr(txt.SessionArenaNoGuidance, m.Name), wm.Warn)
 		}
 		f.journal.Guide(s.Sprint, m.Name, text, a.store.now())
-		return wm.Notify("guidance queued for "+m.Name+" at its next tool boundary", wm.Success)
+		return wm.Notify(tr(txt.SessionArenaGuidanceQueued, m.Name), wm.Success)
 	})
 }
 
@@ -283,7 +284,7 @@ func (f *arenaFeed) Open(s *arena.Snapshot, m arena.Member) tea.Cmd {
 		case err != nil:
 			return wm.Notify(rpcErrorMessage(err), wm.Error)
 		case !r.Available || r.Text == "":
-			return wm.Notify(m.Name+" has written no output yet", wm.Info)
+			return wm.Notify(tr(txt.ProcessesNoOutput, m.Name), wm.Info)
 		}
 		return a.page(r.Text, m.Name+" · "+truncateEnd(m.Task, 40))
 	})
@@ -298,9 +299,9 @@ func (f *arenaFeed) Pause(paused bool) tea.Cmd {
 		}
 		a.store.applyDelegationPause(r.Paused)
 		if r.Paused {
-			return wm.Notify(tr("slashCmd.ops.agents.paused"), wm.Info)
+			return wm.Notify(tr(txt.SlashCmdOpsAgentsPaused), wm.Info)
 		}
-		return wm.Notify(tr("slashCmd.ops.agents.resumed"), wm.Info)
+		return wm.Notify(tr(txt.SlashCmdOpsAgentsResumed), wm.Info)
 	})
 }
 

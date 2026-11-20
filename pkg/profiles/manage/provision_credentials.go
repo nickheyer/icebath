@@ -17,41 +17,6 @@ import (
 // Config sections the voice setup of the launch profile lives in
 var voiceSections = []string{"stt", "tts", "voice"}
 
-// Voice sections whose defaults name every setting they have, so a copied key the defaults lack is one the config schema dropped
-var closedVoiceSections = map[string]bool{"voice": true}
-
-// Copy of a config mapping holding only the settings its defaults define, a nested mapping the defaults define filtered the same way
-func definedSettings(section, defaults map[string]any) map[string]any {
-	out := make(map[string]any, len(section))
-	var order []string
-	for _, key := range config.MappingKeys(section) {
-		expected, defined := defaults[key]
-		if !defined {
-			continue
-		}
-		value := section[key]
-		if nested, isMapping := value.(map[string]any); isMapping {
-			if nestedDefaults, isMapping := expected.(map[string]any); isMapping {
-				value = definedSettings(nested, nestedDefaults)
-			}
-		}
-		out[key] = value
-		order = append(order, key)
-	}
-	config.SetMappingKeys(out, order)
-	return out
-}
-
-// Launch value of a voice section as a create copies it, a closed section without the settings the config schema dropped
-func mirroredVoiceSection(name string, value any) any {
-	section, isMapping := value.(map[string]any)
-	defaults, known := config.Defaults()[name].(map[string]any)
-	if !closedVoiceSections[name] || !isMapping || !known {
-		return value
-	}
-	return definedSettings(section, defaults)
-}
-
 // Runs one best effort item of the credential mirror, a failure logged and reading as not done, a config outage raised to the step
 func mirrorItem(label string, fn func() (bool, error)) bool {
 	var done bool
@@ -87,7 +52,7 @@ func envOverStub(src, dst string) bool {
 	return len(config.LoadEnvFile(src)) > 0 && len(config.LoadEnvFile(dst)) == 0
 }
 
-// Copies the launch profile's speech and voice sections the new profile lacks, as the launch file writes them less any setting the schema dropped
+// Copies the launch profile's speech and voice sections the new profile lacks, as the launch file writes them less every setting the config schema retired
 func mirrorVoiceSections(ctx context.Context, path string) (bool, error) {
 	launchRaw, err := config.ReadUserConfigRaw(ctx, config.GetConfigPath(home.Dir(ctx)))
 	if err != nil {
@@ -95,8 +60,14 @@ func mirrorVoiceSections(ctx context.Context, path string) (bool, error) {
 	}
 	sections := map[string]any{}
 	for _, key := range voiceSections {
-		if value := mirroredVoiceSection(key, launchRaw[key]); truthy(value) {
+		if value := launchRaw[key]; truthy(value) {
 			sections[key] = value
+		}
+	}
+	config.DropUnreadKeys(sections)
+	for _, key := range voiceSections {
+		if value, copied := sections[key]; copied && !truthy(value) {
+			delete(sections, key)
 		}
 	}
 	if len(sections) == 0 {

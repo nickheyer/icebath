@@ -13,7 +13,7 @@ import (
 
 // Pins the requested model, a pick the model switch refuses recorded as the result's model error instead of a failed step
 func pinModel(ctx context.Context, path string, req ProfileCreateRequest, result *ProvisionResult) (bool, error) {
-	err := WriteProfileModel(ctx, path, req.Provider, req.Model, req.ModelValidateIn, "")
+	err := WriteProfileModel(ctx, path, req.Provider, req.Model)
 	var rejected *provider.ModelAssignmentRejected
 	if errors.As(err, &rejected) {
 		result.ModelError = rejected.Error()
@@ -37,17 +37,13 @@ func rawScopedConfig(ctx context.Context) (map[string]any, error) {
 	return config.NormalizeRootModelKeys(raw), nil
 }
 
-// Writes a validated main model assignment into a profile's config, validateIn naming the home whose catalog and secrets vouch for the pick
-func WriteProfileModel(ctx context.Context, profileDir, providerName, model, validateIn, baseURL string) error {
-	validateHome := validateIn
-	if validateHome == "" {
-		validateHome = profileDir
-	}
-	foreign := resolvePath(validateHome) != resolvePath(home.Process())
+// Writes a validated main model assignment into a profile's config, the profile's own catalog and secrets vouching for the pick
+func WriteProfileModel(ctx context.Context, profileDir, providerName, model string) error {
+	foreign := resolvePath(profileDir) != resolvePath(home.Process())
 	if foreign {
-		provider.HydrateProfileSecretSources(validateHome)
+		provider.HydrateProfileSecretSources(profileDir)
 	}
-	validating := provider.ProfileConfigScope(ctx, validateHome, "")
+	validating := provider.ProfileConfigScope(ctx, profileDir, "")
 	if foreign {
 		validating = provider.WithMultiplexContext(validating, true)
 	}
@@ -56,7 +52,7 @@ func WriteProfileModel(ctx context.Context, profileDir, providerName, model, val
 	if err != nil {
 		return err
 	}
-	selection, err := provider.ValidatedMainModelSelection(validating, cfg, providerName, model, baseURL)
+	selection, err := provider.ValidatedMainModelSelection(validating, cfg, providerName, model, "")
 	if err != nil {
 		return err
 	}

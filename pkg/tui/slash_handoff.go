@@ -2,9 +2,11 @@ package tui
 
 import (
 	"errors"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -44,7 +46,7 @@ func refusalDetail(err error) string {
 // Queues the session for the platform and polls until the gateway completed, failed or outlasted the wait
 func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 	if r.sid == "" {
-		r.sys(tr("slashCmd.core.status.noActiveSession"))
+		r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
 		return nil
 	}
 	if a.store.ui.Busy {
@@ -66,7 +68,7 @@ func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 			r.sys(commandText(a.ctx, "handoff.queued", map[string]any{"title": w.title, "platform": platform, "home": home}) + "\n" +
 				commandText(a.ctx, "handoff.waiting", nil))
 			w.state, w.pendingDeadline = "pending", time.Now().Add(handoffPendingTimeout)
-			w.previousStatus, a.store.ui.Status = a.store.ui.Status, tr("slashCmd.handoff.status")
+			w.previousStatus, a.store.ui.Status = a.store.ui.Status, tr(txt.SlashCmdHandoffStatus)
 			return a.pollHandoff(w)
 		})
 	})
@@ -122,13 +124,13 @@ func (a *app) advanceHandoff(w *handoffWatch, current, failure string) tea.Cmd {
 	switch current {
 	case "completed":
 		a.store.ui.Status = w.previousStatus
-		return a.leaveHandedOffSession(w, commandText(a.ctx, "handoff.complete", map[string]any{"platform": w.platform})+"\n"+tr("slashCmd.handoff.resumeHint", w.title))
+		return a.leaveHandedOffSession(w, commandText(a.ctx, "handoff.complete", map[string]any{"platform": w.platform})+"\n"+tr(txt.SlashCmdHandoffResumeHint, w.title))
 	case "failed":
 		a.store.ui.Status = w.previousStatus
 		if failure == "" {
 			failure = commandText(a.ctx, "handoff.unknown_error", nil)
 		}
-		w.r.sys(commandText(a.ctx, "handoff.failed", map[string]any{"error": failure}) + "\n" + tr("slashCmd.handoff.intactRetry"))
+		w.r.sys(commandText(a.ctx, "handoff.failed", map[string]any{"error": failure}) + "\n" + tr(txt.SlashCmdHandoffIntactRetry))
 		return nil
 	case "pending":
 		if now.After(w.pendingDeadline) {
@@ -139,7 +141,7 @@ func (a *app) advanceHandoff(w *handoffWatch, current, failure string) tea.Cmd {
 					}
 				}
 				a.store.ui.Status = w.previousStatus
-				w.r.sys(commandText(a.ctx, "handoff.timed_out", nil) + "\n" + tr("slashCmd.handoff.intact"))
+				w.r.sys(commandText(a.ctx, "handoff.timed_out", nil) + "\n" + tr(txt.SlashCmdHandoffIntact))
 				return nil
 			})
 		}
@@ -151,7 +153,7 @@ func (a *app) advanceHandoff(w *handoffWatch, current, failure string) tea.Cmd {
 		if now.After(w.runningDeadline) {
 			a.store.ui.Status = w.previousStatus
 			w.r.sys(commandText(a.ctx, "handoff.taking_long", nil) + "\n" + commandText(a.ctx, "handoff.check_platform", map[string]any{"platform": w.platform}) +
-				"\n" + tr("slashCmd.handoff.noLongerWaiting") + "\n" + commandText(a.ctx, "handoff.retry_when_settled", nil))
+				"\n" + tr(txt.SlashCmdHandoffNoLongerWaiting) + "\n" + commandText(a.ctx, "handoff.retry_when_settled", nil))
 			return nil
 		}
 	}
@@ -168,7 +170,7 @@ func (a *app) leaveHandedOffSession(w *handoffWatch, report string) tea.Cmd {
 		if !viewed {
 			return nil
 		}
-		a.store.ui.Status = tr("slashCmd.core.clear.forgingSession")
+		a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
 		return a.life.startNewSession(report, "", true, nil)
 	}
 	if a.gw.canonical() && w.subscriptionHeld != "" {
@@ -184,7 +186,7 @@ func (a *app) handoffCommands() []slashCommand {
 			run: func(r *slashRun) tea.Cmd {
 				platform := strings.ToLower(trimJS(r.arg))
 				if platform == "" {
-					r.sys(commandText(a.ctx, "handoff.usage", nil) + "\n" + commandText(a.ctx, "handoff.usage_detail_1", nil) + "\n" + tr("slashCmd.handoff.usageDetail"))
+					r.sys(commandText(a.ctx, "handoff.usage", nil) + "\n" + commandText(a.ctx, "handoff.usage_detail_1", nil) + "\n" + tr(txt.SlashCmdHandoffUsageDetail))
 					return r.ran()
 				}
 				return tea.Batch(r.ran(), a.startHandoff(r, platform))

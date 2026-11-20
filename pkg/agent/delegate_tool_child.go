@@ -143,7 +143,10 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	o.EnabledToolsets, o.DisabledToolsets = childToolsets, childDisabled
 	o.QuietMode, o.EphemeralSystemPrompt = true, childPrompt
 	o.LogPrefix, o.Platform, o.SideAgent = fmt.Sprintf("[subagent-%d]", spec.TaskIndex), "subagent", true
-	o.SkipContextFiles, o.SkipMemory = true, true
+	// A child runs without a memory provider, but under compression.checkpoint_required it arms the same gate, read in
+	// the delegated profile scope as the child reads it, and would die at its first compaction, so it keeps the
+	// provider scoped as a fork
+	o.SkipContextFiles, o.SkipMemory, o.MemoryAgentContext = true, !CheckpointRequiredFromConfig(buildCtx), "subagent"
 	if progressCB != nil {
 		o.ThinkingCallback = func(text string) {
 			if text != "" {

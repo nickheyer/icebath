@@ -65,7 +65,7 @@ func setIf(kwargs map[string]any, key, value string) {
 func (p *hostedProvider) Name() string { return p.name }
 
 // Gives the provider back after an availability probe so its guest stops when nothing else uses it
-func (p *hostedProvider) dismiss() { p.obj.Dismiss() }
+func (p *hostedProvider) dismiss(ctx context.Context) { p.obj.Dismiss(ctx) }
 
 // Profile creation notice forwarded to a plugin that takes it
 func (p *hostedProvider) OnProfileCreated(ctx context.Context, profileName, home string) error {

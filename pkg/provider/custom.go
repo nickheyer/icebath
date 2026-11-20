@@ -53,6 +53,17 @@ func resolveUserProvider(name string, userConfig map[string]any) *ProviderDef {
 	if len(userConfig) == 0 {
 		return nil
 	}
+	// Callers lowercase the requested name while the config key keeps the user's case, and the definition
+	// takes the config key as its id so later reads of the mapping by that id still hit
+	if _, held := userConfig[name]; !held {
+		wanted := strings.ToLower(strings.TrimSpace(name))
+		for _, key := range config.MappingKeys(userConfig) {
+			if strings.ToLower(strings.TrimSpace(key)) == wanted {
+				name = key
+				break
+			}
+		}
+	}
 	entry, ok := userConfig[name].(map[string]any)
 	if !ok {
 		return nil
@@ -698,9 +709,52 @@ func (r *resolver) shadowedByBuiltin(requestedNorm string) bool {
 	return strings.ToLower(strings.TrimSpace(canonical)) == requestedNorm
 }
 
+// Entries of a providers mapping whose key spells the name in any case, the only entries a bare built in name may mean
+func builtinNamedEntries(requestedNorm string, providers map[string]any) map[string]any {
+	named := map[string]any{}
+	var order []string
+	for _, key := range config.MappingKeys(providers) {
+		if normalizeCustomProviderName(key) == requestedNorm {
+			named[key] = providers[key]
+			order = append(order, key)
+		}
+	}
+	config.SetMappingKeys(named, order)
+	return named
+}
+
+// Config key of the enabled providers entry a bare built in name routes to, the entry winning when it declares its own endpoint
+func (r *resolver) builtinNameUserEntry(name string, providers map[string]any) (string, bool) {
+	wanted := normalizeCustomProviderName(name)
+	if wanted == "" || wanted == "auto" || len(providers) == 0 || !r.shadowedByBuiltin(wanted) {
+		return "", false
+	}
+	named := builtinNamedEntries(wanted, providers)
+	for _, key := range config.MappingKeys(named) {
+		if entry, isMap := named[key].(map[string]any); isMap && IsProviderEnabled(entry) && entryURL(entry) != "" {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// BuiltinNameUserEntry is the one predicate the model switch and the doctor read so validation and the next turn agree on where a built in name runs
+func BuiltinNameUserEntry(ctx context.Context, name string, providers map[string]any) (string, bool) {
+	return modelsResolver(ctx).builtinNameUserEntry(name, providers)
+}
+
+// PersistedProviderID is the model.provider a switch saves, a bare built in name that resolved to the user's providers entry becoming that entry's custom identity
+func PersistedProviderID(ctx context.Context, provider string, providers map[string]any) string {
+	owner, owned := BuiltinNameUserEntry(ctx, provider, providers)
+	if !owned {
+		return provider
+	}
+	return CustomProviderSlug(owner, owner)
+}
+
 // Scans the keyed providers mapping for the requested name and returns the resolved entry and config key
 func (r *resolver) matchNewStyleProvider(requestedNorm string, providers map[string]any, resolveCredentials bool) (map[string]any, string, bool) {
-	for _, epName := range sortedKeys(providers) {
+	for _, epName := range config.MappingKeys(providers) {
 		entry, ok := providers[epName].(map[string]any)
 		if !ok || !IsProviderEnabled(entry) {
 			continue
@@ -766,16 +820,25 @@ type ConfigPath struct {
 // Resolved entry and config path for the first usable match, providers first then the legacy list
 func (r *resolver) selectNamedCustomProvider(requestedProvider string, cfg map[string]any, resolveCredentials bool) (map[string]any, *ConfigPath) {
 	requestedNorm := normalizeCustomProviderName(requestedProvider)
-	if requestedNorm == "" || requestedNorm == "auto" || r.shadowedByBuiltin(requestedNorm) {
+	if requestedNorm == "" || requestedNorm == "auto" {
 		return nil, nil
 	}
+	shadowed := r.shadowedByBuiltin(requestedNorm)
 	if cfg == nil {
 		cfg = r.cfg
 	}
 	if providers, ok := cfg["providers"].(map[string]any); ok {
+		// A bare built in name in any case means the user's entry under that key when the entry declares
+		// its own endpoint, while a tuning only block without a base URL keeps the built in
+		if shadowed {
+			providers = builtinNamedEntries(requestedNorm, providers)
+		}
 		if found, key, ok := r.matchNewStyleProvider(requestedNorm, providers, resolveCredentials); ok {
 			return found, &ConfigPath{Section: "providers", Key: key}
 		}
+	}
+	if shadowed {
+		return nil, nil
 	}
 	if _, isDict := cfg["custom_providers"].(map[string]any); isDict {
 		pkgLog().Warn("custom_providers in config.yaml is a dict, not a list. Each entry must be prefixed with '-' in YAML. Run 'icebath doctor' for details.")
@@ -796,7 +859,7 @@ func (r *resolver) selectNamedCustomProvider(requestedProvider string, cfg map[s
 func compatibleEntryPath(cfg map[string]any, entry map[string]any) *ConfigPath {
 	if key := cfgString(entry["provider_key"]); key != "" {
 		if providers, ok := cfg["providers"].(map[string]any); ok {
-			for _, k := range sortedKeys(providers) {
+			for _, k := range config.MappingKeys(providers) {
 				if strings.TrimSpace(k) == key {
 					return &ConfigPath{Section: "providers", Key: k}
 				}

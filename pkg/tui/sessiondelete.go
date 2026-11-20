@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Deletes a stored session, by the revision fenced session.mutate on the shared gateway, a refusal handing back the read's attachment
@@ -11,11 +12,11 @@ func (a *app) deleteStoredSession(id string, deleted func() tea.Cmd) tea.Cmd {
 	if !a.gw.canonical() {
 		return call(a.gw, tuigateway.SessionDelete, tuigateway.SessionDeleteParams{SessionID: id}, func(result *tuigateway.SessionDeleteResult, err error) tea.Cmd {
 			if err != nil {
-				a.sys("error: " + rpcErrorMessage(err))
+				a.sys(errorLine(rpcErrorMessage(err)))
 				return nil
 			}
 			if result.Deleted != id {
-				a.sys("error: " + misfitText(tr("session.common.invalidResponse", "session.delete")))
+				a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, "session.delete"))))
 				return nil
 			}
 			return deleted()
@@ -31,14 +32,14 @@ func (a *app) deleteStoredSession(id string, deleted func() tea.Cmd) tea.Cmd {
 	}
 	return a.store.mutateCanonicalRead(a.gw, id, "delete", map[string]any{}, func() bool { return false }, onRead, func(m *mutationOutcome, err error) tea.Cmd {
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 			if release != nil {
 				return a.events.quietRequest(tuigateway.CanonicalSessionDetach.Name(), wireParams(*release))
 			}
 			return nil
 		}
 		if m == nil || m.Result == nil {
-			a.sys("error: " + misfitText(tr("session.common.invalidResponse", "session.mutate")))
+			a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, "session.mutate"))))
 			return nil
 		}
 		return deleted()

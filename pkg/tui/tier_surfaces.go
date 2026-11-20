@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -67,9 +68,9 @@ func setupSectionRefusal(key string) (string, bool) {
 // Quick Setup detail of this build, the messaging step named only when platforms are linked
 func quickSetupDetail() string {
 	if linktier.Linked(linktier.Plugins) {
-		return tr("setupFlow.quick.detail")
+		return tr(txt.SetupFlowQuickDetail)
 	}
-	return tr("setupFlow.quick.core_detail")
+	return tr(txt.SetupFlowQuickCoreDetail)
 }
 
 // Pet card of the app, the empty one in a build without pets
@@ -156,7 +157,7 @@ func setupHelpLine() string {
 	flows := keep("quick", "blank", "import")
 	last := flows[len(flows)-1]
 	if len(flows) > 1 {
-		last = strings.Join(flows[:len(flows)-1], ", ") + " or " + last
+		last = tr(txt.CommonListOr, strings.Join(flows[:len(flows)-1], ", "), last)
 	}
-	return "configure a section: " + strings.Join(keep("model", "aux", "agent", "tts", "terminal", "tools", "gateway"), ", ") + ", or start over with " + last
+	return tr(txt.SetupFlowHelpLine, strings.Join(keep("model", "aux", "agent", "tts", "terminal", "tools", "gateway"), ", "), last)
 }

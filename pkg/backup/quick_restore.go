@@ -138,7 +138,16 @@ func restoreSnapshotEntry(ctx context.Context, rel, src, dst string) (bool, erro
 				return errEntryRefused
 			}
 		default:
-			return pyfs.Copy2(src, dst)
+			if err := pyfs.Copy2(src, dst); err != nil {
+				return err
+			}
+			// The copy carries the mode the snapshot was taken with, and the secrets file is owner only as an import leaves it
+			switch pypath.PathName(dst) {
+			case "config.yaml":
+				config.DropOtherAccess(ctx, dst)
+			case ".env":
+				return os.Chmod(dst, 0o600)
+			}
 		}
 		return nil
 	}()

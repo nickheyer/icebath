@@ -2,9 +2,10 @@ package wm
 
 import (
 	"slices"
-	"strconv"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Drops a card from the tabs, the tab beside it shown when it was the active one
@@ -33,7 +34,7 @@ func (g *Tabs) held(key string) Card {
 // New tab group around a card, numbered so its key is unique
 func (m *Model) newGroup(c Card) *Tabs {
 	m.groups++
-	return NewTabs(m.theme, "TABS "+strconv.Itoa(m.groups), m.theme.Glyphs.Card, c)
+	return NewTabs(m.theme, lang.T(txt.KitWmTabsTitle, m.groups), m.theme.Glyphs.Card, c)
 }
 
 // Tile beside a tiled entry, the next one in order, else the one before it

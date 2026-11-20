@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Opens a terminal window on a pty in the session's folder, the user's shell or one command line, as a tab of the focused window when asked
@@ -44,7 +45,7 @@ func (a *app) closeTerminals() {
 // Commands that open a terminal window or a terminal tab
 func (a *app) terminalCommands() []slashCommand {
 	return []slashCommand{
-		{name: "terminal", help: tr("slashCmd.core.help.terminal"), usage: "[command]", run: func(r *slashRun) tea.Cmd { return a.openTerminal(r.arg, false) }},
-		{name: "terminal-tab", help: tr("slashCmd.core.help.terminalTab"), usage: "[command]", run: func(r *slashRun) tea.Cmd { return a.openTerminal(r.arg, true) }},
+		{name: "terminal", help: tr(txt.SlashCmdCoreHelpTerminal), helpFn: helpOf(txt.SlashCmdCoreHelpTerminal), usage: "[command]", run: func(r *slashRun) tea.Cmd { return a.openTerminal(r.arg, false) }},
+		{name: "terminal-tab", help: tr(txt.SlashCmdCoreHelpTerminalTab), helpFn: helpOf(txt.SlashCmdCoreHelpTerminalTab), usage: "[command]", run: func(r *slashRun) tea.Cmd { return a.openTerminal(r.arg, true) }},
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -20,18 +21,18 @@ type setupSection struct {
 // Sections in the order the setup menu lists them
 func setupSections() []setupSection {
 	sections := []setupSection{
-		{"model", tr("setupFlow.model.title"), tr("setupFlow.model.detail"), func(a *app) tea.Cmd { return a.openHostedModel("") }},
-		{"aux", tr("setupFlow.aux.title"), tr("setupFlow.aux.detail"), func(a *app) tea.Cmd { return a.openHostedModel("aux-config") }},
+		{"model", tr(txt.SetupFlowModelTitle), tr(txt.SetupFlowModelDetail), func(a *app) tea.Cmd { return a.openHostedModel("") }},
+		{"aux", tr(txt.SetupFlowAuxTitle), tr(txt.SetupFlowAuxDetail), func(a *app) tea.Cmd { return a.openHostedModel("aux-config") }},
 	}
 	for _, spec := range []sectionSpec{agentSection(), ttsSection(), terminalSection()} {
 		sections = append(sections, setupSection{spec.key, spec.title, spec.detail, func(a *app) tea.Cmd { return a.runSection(spec) }})
 	}
 	sections = append(sections, toolsSetupSection())
 	for _, hosted := range []setupSection{
-		{key: "gateway", title: tr("setupFlow.gateway.title"), detail: tr("setupFlow.gateway.detail")},
-		{key: "quick", title: tr("setupFlow.quick.title"), detail: quickSetupDetail()},
-		{key: "blank", title: tr("setupFlow.blank.title"), detail: tr("setupFlow.blank.detail")},
-		{key: "import", title: tr("setupFlow.import.title"), detail: tr("setupFlow.import.detail")},
+		{key: "gateway", title: tr(txt.SetupFlowGatewayTitle), detail: tr(txt.SetupFlowGatewayDetail)},
+		{key: "quick", title: tr(txt.SetupFlowQuickTitle), detail: quickSetupDetail()},
+		{key: "blank", title: tr(txt.SetupFlowBlankTitle), detail: tr(txt.SetupFlowBlankDetail)},
+		{key: "import", title: tr(txt.SetupFlowImportTitle), detail: tr(txt.SetupFlowImportDetail)},
 	} {
 		hosted.open = func(a *app) tea.Cmd { return a.openHostedFlow(hosted.key, "") }
 		sections = append(sections, hosted)
@@ -58,7 +59,7 @@ func (a *app) openSetup(section string) tea.Cmd {
 			}
 			keys[i] = s.key
 		}
-		a.sys(tr("setupFlow.unknownSection", section, strings.Join(keys, ", ")))
+		a.sys(tr(txt.SetupFlowUnknownSection, section, strings.Join(keys, ", ")))
 		return nil
 	}
 	items := make([]wm.Item, len(sections))
@@ -66,6 +67,6 @@ func (a *app) openSetup(section string) tea.Cmd {
 		items[i] = wm.Item{ID: "setup:" + s.key, Title: s.title, Detail: s.detail, Run: func() tea.Cmd { return s.open(a) }}
 	}
 	p := wm.NewPalette(a.toolkit, items)
-	p.Placeholder = tr("setupFlow.placeholder")
+	p.Placeholder = tr(txt.SetupFlowPlaceholder)
 	return a.wm.ShowOverlay(p)
 }

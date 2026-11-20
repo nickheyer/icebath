@@ -13,7 +13,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Spring the selection highlight glides between rows with, quick enough to keep up with a held key
@@ -46,10 +48,10 @@ type inquiry struct {
 var HiddenText = func(above, below int) string {
 	var parts []string
 	if above > 0 {
-		parts = append(parts, "↑ "+strconv.Itoa(above)+" more")
+		parts = append(parts, lang.T(txt.KitWmMoreAbove, above))
 	}
 	if below > 0 {
-		parts = append(parts, "↓ "+strconv.Itoa(below)+" more")
+		parts = append(parts, lang.T(txt.KitWmMoreBelow, below))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -538,7 +540,7 @@ func (p *Palette) View(w, h int) string {
 		// A sheet too short to keep its padding hands the rows of the padding over, the notes stay in its middle
 		lines = make([]string, max(h-len(notes), 0)/2)
 	case len(p.matches) == 0:
-		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render("  no match"))
+		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render("  "+lang.T(txt.KitWmNoMatch)))
 	default:
 		lit := p.top + p.highlightRow()
 		for i := p.top; i < len(p.matches) && i < p.top+p.limit(); i++ {
@@ -609,22 +611,24 @@ func (p *Palette) Hints() []Hint {
 	}
 	closing := Hint{Action: "palette.close"}
 	if p.OnBack != nil {
-		closing.Label = "back"
+		closing.Label = lang.T(txt.KitHintBack)
 	}
 	out := append([]Hint(nil), p.Extra...)
 	if len(p.items) == 0 {
 		if closing.Label == "" {
-			closing.Label = "cancel"
+			closing.Label = lang.T(txt.KitHintCancel)
 		}
-		return append(out, Hint{Action: "palette.pick", Label: "confirm"}, closing)
+		return append(out, Hint{Action: "palette.pick", Label: lang.T(txt.KitHintConfirm)}, closing)
 	}
-	return append(out, Hint{Action: "palette.down", Pair: "palette.up", Label: "move"}, Hint{Action: "palette.pick"}, closing)
+	return append(out, Hint{Action: "palette.down", Pair: "palette.up", Label: lang.T(txt.KitHintMove)}, Hint{Action: "palette.pick"}, closing)
 }
 
 // Action the palette lists and the keymap fires, the manager's own or one the app registers
 type Command struct {
 	ID    string
 	Title string
+	// Title at the moment it is shown, for a title that follows the language of the application
+	Text func() string
 	// Reports whether the command applies right now, always when nil
 	When func() bool
 	Run  func() tea.Cmd
@@ -632,6 +636,14 @@ type Command struct {
 
 // Reports whether the command applies right now
 func (c Command) Ready() bool { return c.When == nil || c.When() }
+
+// TitleText is the title of the command in the language of the application, the title it carries when the application has none
+func (c Command) TitleText() string {
+	if c.Text != nil {
+		return c.Text()
+	}
+	return lang.OfID("palette.", c.ID, ".title", c.Title)
+}
 
 // Commands the manager answers on its own, before those the app registered
 func (m *Model) builtin() []Command {
@@ -817,7 +829,7 @@ func (m *Model) OpenPalette() tea.Cmd {
 		}
 		listed[c.ID] = true
 		id, run := c.ID, c.Run
-		items = append(items, Item{ID: id, Title: c.Title, Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return run() }})
+		items = append(items, Item{ID: id, Title: c.TitleText(), Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return run() }})
 	}
 	if e := m.focused(); e != nil {
 		title := e.card.Title()
@@ -827,7 +839,7 @@ func (m *Model) OpenPalette() tea.Cmd {
 			}
 			listed[a.ID] = true
 			id := a.ID
-			items = append(items, Item{ID: id, Title: title + ": " + a.Label, Detail: a.Doc, Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
+			items = append(items, Item{ID: id, Title: title + ": " + a.LabelText(), Detail: a.DocText(), Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
 		}
 	}
 	rank := map[string]int{}
@@ -836,6 +848,6 @@ func (m *Model) OpenPalette() tea.Cmd {
 	}
 	slices.SortStableFunc(items, func(a, b Item) int { return rank[b.ID] - rank[a.ID] })
 	p := NewPalette(m.theme, items)
-	p.Placeholder = "command"
+	p.Placeholder = lang.T(txt.KitWmCommandPlaceholder)
 	return m.ShowOverlay(p)
 }

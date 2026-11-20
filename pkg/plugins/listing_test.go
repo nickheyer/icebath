@@ -140,7 +140,7 @@ func TestCmdShowPrintsDetailsAndFailsForUnknownPlugins(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"events v1.0.0", "Emitter", "Status: not enabled", "Source: user", "Key: events", "Runs in: Icebath process", "Emits: a.b, c.d", "Listens: (none)"} {
+	for _, want := range []string{"events v1.0.0", "Emitter", "Status: not enabled", "Source: user", "Key: events", "Emits: a.b, c.d", "Listens: (none)"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

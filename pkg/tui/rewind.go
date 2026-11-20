@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -132,9 +133,9 @@ func rewindBusyText(err error, intent string) string {
 		return ""
 	}
 	if field, _ := rerr.Data["field"].(string); field == "compression" {
-		return tr("slashCmd.core.busy.compressing", intent)
+		return tr(txt.SlashCmdCoreBusyCompressing, intent)
 	}
-	return tr("slashCmd.core.busy.replying", intent)
+	return tr(txt.SlashCmdCoreBusyReplying, intent)
 }
 
 // Whether every image file can be read from this machine
@@ -153,7 +154,7 @@ func imagesReadable(paths []string) bool {
 func (a *app) prefillPrompt(stored string) tea.Cmd {
 	text, images := splitImageNotes(stored)
 	if len(images) > 0 && attachURLEnv() != "" && !imagesReadable(images) {
-		a.sys(tr("slashCmd.core.rewind.imagesKeptAsNotes", len(images)))
+		a.sys(tr(txt.SlashCmdCoreRewindImagesKeptAsNotes, len(images)))
 		text, images = stored, nil
 	}
 	if draft := a.card.composer.Value(); trimJS(draft) != "" {
@@ -172,7 +173,7 @@ func (a *app) cancelPendingRewind(announce bool) bool {
 	}
 	a.rewindPending = nil
 	if announce {
-		a.sys(tr("slashCmd.core.rewind.cancelled"))
+		a.sys(tr(txt.SlashCmdCoreRewindCancelled))
 	}
 	return true
 }
@@ -217,9 +218,9 @@ func (a *app) backtrackEscape() (tea.Cmd, bool) {
 func (a *app) rewindHintRows(rc renderCtx) []string {
 	switch {
 	case a.rewindPending != nil && a.rewindPending.sid == a.store.ui.Sid:
-		return []string{"  " + toneStyle(rc.t.Color.Accent).Render(tr("prompt.rewind.pending", strconv.Itoa(a.rewindPending.target.turn)))}
+		return []string{"  " + toneStyle(rc.t.Color.Accent).Render(tr(txt.PromptRewindPending, strconv.Itoa(a.rewindPending.target.turn)))}
 	case a.rewindPrimed != "" && a.rewindPrimed == a.store.ui.Sid && a.rewindPrimeCount > 0:
-		return []string{"  " + toneStyle(rc.t.Color.Muted).Render(tr("prompt.rewind.prime"))}
+		return []string{"  " + toneStyle(rc.t.Color.Muted).Render(tr(txt.PromptRewindPrime))}
 	}
 	return nil
 }
@@ -231,13 +232,13 @@ func (a *app) withRewindTargets(then func(sid string, targets []rewindTarget, tu
 	sid := a.store.ui.Sid
 	switch {
 	case sid == "":
-		a.sys(tr("slashCmd.core.rewind.nothing"))
+		a.sys(tr(txt.SlashCmdCoreRewindNothing))
 		return nil
 	case !a.gw.canonical():
-		a.sys(tr("slashCmd.core.rewind.unsupported"))
+		a.sys(tr(txt.SlashCmdCoreRewindUnsupported))
 		return nil
 	case a.store.ui.Busy:
-		a.sys(tr("slashCmd.core.busy.replying", "rewind"))
+		a.sys(tr(txt.SlashCmdCoreBusyReplying, "rewind"))
 		return nil
 	}
 	return call(a.gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: sid}, func(snapshot *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
@@ -245,7 +246,7 @@ func (a *app) withRewindTargets(then func(sid string, targets []rewindTarget, tu
 			return nil
 		}
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 			return nil
 		}
 		targets, turns := rewindTargets(snapshot)
@@ -265,10 +266,10 @@ func (a *app) rewindToPrompt(number int, typed string, fork bool) tea.Cmd {
 	return a.withRewindTargets(func(sid string, targets []rewindTarget, turns int) tea.Cmd {
 		switch {
 		case turns == 0:
-			a.sys(tr("slashCmd.core.rewind.nothing"))
+			a.sys(tr(txt.SlashCmdCoreRewindNothing))
 			return nil
 		case number < 1 || number > turns:
-			a.sys(tr("slashCmd.core.rewind.invalid", typed, strconv.Itoa(turns)))
+			a.sys(tr(txt.SlashCmdCoreRewindInvalid, typed, strconv.Itoa(turns)))
 			return nil
 		}
 		for _, target := range targets {
@@ -280,7 +281,7 @@ func (a *app) rewindToPrompt(number int, typed string, fork bool) tea.Cmd {
 			}
 			return a.armRewind(sid, target)
 		}
-		a.sys(tr("slashCmd.core.rewind.notEditable", strconv.Itoa(number)))
+		a.sys(tr(txt.SlashCmdCoreRewindNotEditable, strconv.Itoa(number)))
 		return nil
 	})
 }
@@ -289,7 +290,7 @@ func (a *app) rewindToPrompt(number int, typed string, fork bool) tea.Cmd {
 func (a *app) openRewindPicker() tea.Cmd {
 	return a.withRewindTargets(func(sid string, targets []rewindTarget, _ int) tea.Cmd {
 		if len(targets) == 0 {
-			a.sys(tr("slashCmd.core.rewind.noPrevious"))
+			a.sys(tr(txt.SlashCmdCoreRewindNoPrevious))
 			return nil
 		}
 		newest := make([]rewindTarget, len(targets))
@@ -298,8 +299,8 @@ func (a *app) openRewindPicker() tea.Cmd {
 		}
 		behind := a.typedBehindList()
 		list := cards.NewList(a.cardEnv(), cards.ListSpec{
-			Title: "rewind", Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:rewind", Context: rewindContext, Primary: "tui.rewind.edit",
-			Columns: []render.Column{{Title: "#", Right: true}, {Title: "prompt", Flex: 1}},
+			Title: tr(txt.HubsTitleRewind), Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:rewind", Context: rewindContext, Primary: "tui.rewind.edit",
+			Columns: []render.Column{{Title: "#", Right: true}, {Title: tr(txt.HubsColPrompt), Flex: 1}},
 			Rows: func() [][]string {
 				out := make([][]string, len(newest))
 				for i, t := range newest {
@@ -312,7 +313,7 @@ func (a *app) openRewindPicker() tea.Cmd {
 				typed, _ := splitImageNotes(newest[i].text)
 				return strings.Split(typed, "\n")
 			},
-			Empty: func() string { return tr("slashCmd.core.rewind.noPrevious") },
+			Empty: func() string { return tr(txt.SlashCmdCoreRewindNoPrevious) },
 			Typed: func(l *cards.List, text string, pasted bool) tea.Cmd {
 				return tea.Batch(wm.RequestDismissOf(l), behind(text, pasted))
 			},
@@ -364,9 +365,9 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 	}
 	keepEdit := func(rearm, unknown bool) tea.Cmd {
 		if stale() {
-			key := "slashCmd.core.rewind.editNotSent"
+			key := txt.SlashCmdCoreRewindEditNotSent
 			if unknown {
-				key = "slashCmd.core.rewind.editNotSentUnknown"
+				key = txt.SlashCmdCoreRewindEditNotSentUnknown
 			}
 			a.sys(tr(key))
 			return nil
@@ -390,7 +391,7 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 			if !stale() {
 				line := rewindBusyText(err, "rewind")
 				if line == "" {
-					line = "error: " + rpcErrorMessage(err)
+					line = errorLine(rpcErrorMessage(err))
 				}
 				a.sys(line)
 			}
@@ -403,7 +404,7 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 		if removed <= 0 {
 			restored := keepEdit(false, false)
 			if !stale() {
-				a.sys(tr("slashCmd.core.rewind.nothing"))
+				a.sys(tr(txt.SlashCmdCoreRewindNothing))
 			}
 			return restored
 		}
@@ -429,7 +430,7 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 				})
 				a.store.ui.Info = info
 			}
-			a.sys(tr("slashCmd.core.rewind.done", strconv.Itoa(target.turn), strconv.FormatInt(removed, 10)))
+			a.sys(tr(txt.SlashCmdCoreRewindDone, strconv.Itoa(target.turn), strconv.FormatInt(removed, 10)))
 			return send()
 		})
 	})
@@ -442,7 +443,7 @@ func (a *app) forkFromPrompt(sid string, target rewindTarget) tea.Cmd {
 			return nil
 		}
 		filled := a.prefillPrompt(target.text)
-		a.sys(tr("slashCmd.core.rewind.forked", strconv.Itoa(target.turn)))
+		a.sys(tr(txt.SlashCmdCoreRewindForked, strconv.Itoa(target.turn)))
 		return filled
 	}
 	if target.through == 0 {
@@ -455,7 +456,7 @@ func (a *app) forkFromPrompt(sid string, target rewindTarget) tea.Cmd {
 			if !stale() {
 				line := rewindBusyText(err, "rewind")
 				if line == "" {
-					line = "error: " + rpcErrorMessage(err)
+					line = errorLine(rpcErrorMessage(err))
 				}
 				a.sys(line)
 			}
@@ -466,7 +467,7 @@ func (a *app) forkFromPrompt(sid string, target rewindTarget) tea.Cmd {
 		}
 		child := val(m.Result.BranchedSessionID)
 		if child == "" {
-			a.sys("error: " + misfitText(tr("session.common.invalidResponse", "branch")))
+			a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, "branch"))))
 			return nil
 		}
 		return a.resumeByID(child, func(err error) tea.Cmd {
@@ -522,7 +523,7 @@ func (a *app) typedBehindList() func(text string, pasted bool) tea.Cmd {
 func (a *app) pasteBehindList(content string, live func() bool, next func() tea.Cmd) tea.Cmd {
 	gone := func() tea.Cmd {
 		if trimJS(content) != "" {
-			a.sys(tr("canonical.queue.pasteNotApplied"))
+			a.sys(tr(txt.CanonicalQueuePasteNotApplied))
 		}
 		return next()
 	}

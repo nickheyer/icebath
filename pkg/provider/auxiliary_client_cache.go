@@ -458,17 +458,18 @@ func auxGetCachedClient(ctx context.Context, req auxCachedClientRequest) (AuxCli
 	return client, auxCompatModel(client, req.Model, defaultModel), nil
 }
 
-// Pool a cached client miss derives its key from, entry scoped for a pinned custom name
+// Pool a cached client miss derives its key from, entry scoped when the provider or its pool key names a custom entry
 func auxCachedClientPool(ctx context.Context, provider string) (*Pool, error) {
 	var cfg map[string]any
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(provider)), "custom:") {
+	normalized := auxNormalizeAuxProvider(ctx, provider)
+	if mayNameCustomEntry(provider) || mayNameCustomEntry(normalized) {
 		tree, err := auxLoadConfigFn(ctx)
 		if err != nil {
 			return nil, err
 		}
 		cfg = tree
 	}
-	return PoolForAuxProvider(provider, auxNormalizeAuxProvider(ctx, provider), cfg, func(k string) *Pool {
+	return PoolForAuxProvider(ctx, provider, normalized, cfg, func(k string) *Pool {
 		return auxLoadPoolWithCredentials(ctx, k, " (peek)")
 	}), nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Continuation of an asynchronous step, run on the update loop once its work finished
@@ -58,7 +59,7 @@ func modelPayload(arg string) (map[string]any, error) {
 	parts = parts[1:]
 	payload := map[string]any{"model": model}
 	if strings.HasPrefix(model, "--") {
-		return nil, errors.New(tr("canonical.controls.modelUsage"))
+		return nil, errors.New(tr(txt.CanonicalControlsModelUsage))
 	}
 	for len(parts) > 0 {
 		flag := parts[0]
@@ -78,7 +79,7 @@ func modelPayload(arg string) (map[string]any, error) {
 			parts = parts[1:]
 			continue
 		}
-		return nil, errors.New(tr("canonical.controls.unsupportedModelOption", flag))
+		return nil, errors.New(tr(txt.CanonicalControlsUnsupportedModelOption, flag))
 	}
 	return payload, nil
 }
@@ -189,9 +190,9 @@ func (s *tuiStore) mutateCanonicalSession(gw turnGateway, sid, operation, arg st
 // Opens the confirm card of a guarded model target
 func (s *tuiStore) openModelConfirmation(detail, target string, onConfirm func() tea.Cmd) {
 	if detail == "" {
-		detail = tr("slashCmd.session.model.expensiveDetail")
+		detail = tr(txt.SlashCmdSessionModelExpensiveDetail)
 	}
-	s.overlay.Confirm = &confirmReq{CancelLabel: tr("slashCmd.session.model.cancel"), ConfirmLabel: tr("slashCmd.session.model.switchAnyway"), Danger: true, Detail: detail, OnConfirm: onConfirm, Title: tr("slashCmd.session.model.confirmTitle", target)}
+	s.overlay.Confirm = &confirmReq{CancelLabel: tr(txt.SlashCmdSessionModelCancel), ConfirmLabel: tr(txt.SlashCmdSessionModelSwitchAnyway), Danger: true, Detail: detail, OnConfirm: onConfirm, Title: tr(txt.SlashCmdSessionModelConfirmTitle, target)}
 }
 
 // Whether a newer epoch or generation superseded a control's answer
@@ -214,10 +215,10 @@ func (s *tuiStore) isSupersededControl(operation string, result *tuigateway.Sess
 func (s *tuiStore) applyModelResult(result *tuigateway.SessionMutateResult, sys func(string)) error {
 	model := val(result.Model)
 	if model == "" {
-		return errors.New(tr("session.main.invalidModelSwitchResponse"))
+		return errors.New(tr(txt.SessionMainInvalidModelSwitchResponse))
 	}
 	if val(result.Status) == "deferred" {
-		sys(tr("slashCmd.session.model.switchedDeferred", model))
+		sys(tr(txt.SlashCmdSessionModelSwitchedDeferred, model))
 		return nil
 	}
 	generation := max(val(infoOf(s.ui.Info).ExecutionGeneration), val(result.ExecutionGeneration))
@@ -225,55 +226,12 @@ func (s *tuiStore) applyModelResult(result *tuigateway.SessionMutateResult, sys 
 	if result.Note != nil {
 		sys(*result.Note)
 	} else {
-		sys(tr("session.main.modelSwitched", model))
+		sys(tr(txt.SessionMainModelSwitched, model))
 	}
 	if result.Effort != nil {
-		sys(tr("slashCmd.session.reasoning.current", *result.Effort))
+		sys(tr(txt.SlashCmdSessionReasoningCurrent, *result.Effort))
 	}
 	return nil
-}
-
-// Switches the session's model on the owner, asking first for a guarded target, then runs onApplied when one is given
-func (s *tuiStore) switchCanonicalModel(gw turnGateway, sid, arg string, sys func(string), onApplied func() tea.Cmd, confirm string, then func(error) tea.Cmd) tea.Cmd {
-	baseline := s.ui.Info
-	stale := func() bool { return s.ui.Sid != sid }
-	return s.mutateCanonicalSession(gw, sid, "model", arg, stale, confirm, func(m *mutationOutcome, err error) tea.Cmd {
-		if err != nil {
-			return then(err)
-		}
-		if m == nil || stale() || s.isSupersededControl("model", m.Result, m.ExpectedGeneration, baseline) {
-			return then(nil)
-		}
-		result := m.Result
-		if token := result.Confirm; val(result.Status) == "confirmation_required" && token != nil {
-			if confirm != "" {
-				sys(tr("slashCmd.session.model.confirmStale"))
-				return then(nil)
-			}
-			target := val(result.TargetModel)
-			if result.TargetModel == nil {
-				target = splitArgs(arg)[0]
-			}
-			detail := val(result.ConfirmMessage)
-			s.openModelConfirmation(detail, target, func() tea.Cmd {
-				return s.switchCanonicalModel(gw, sid, arg, sys, onApplied, *token, func(err error) tea.Cmd {
-					if err != nil {
-						sys("error: " + rpcErrorMessage(err))
-					}
-					return nil
-				})
-			})
-			return then(nil)
-		}
-		if err := s.applyModelResult(result, sys); err != nil {
-			return then(err)
-		}
-		var cmd tea.Cmd
-		if onApplied != nil && val(result.Status) != "deferred" {
-			cmd = onApplied()
-		}
-		return tea.Batch(cmd, then(nil))
-	})
 }
 
 // Switches the session's model for the slash command, asking once for a guarded target and reporting a confirmed pick the owner refused again
@@ -295,7 +253,7 @@ func (r *slashRun) canonicalModel(arg, confirm string) tea.Cmd {
 		if token := result.Confirm; val(result.Status) == "confirmation_required" && token != nil {
 			detail := val(result.ConfirmMessage)
 			if confirm != "" {
-				r.fail(errors.New(trimJS(detail + "\n\n" + tr("slashCmd.session.model.confirmStale"))))
+				r.fail(errors.New(trimJS(detail + "\n\n" + tr(txt.SlashCmdSessionModelConfirmStale))))
 				return nil
 			}
 			target := val(result.TargetModel)

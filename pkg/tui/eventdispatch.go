@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -174,7 +175,7 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.handleVoiceTranscript(transcript)
 		}
 	case "voice.interrupted":
-		h.setStatus(tr("gatewayMsg.status.voiceInterrupted"))
+		h.setStatus(tr(txt.GatewayMsgStatusVoiceInterrupted))
 		h.turn.restoreStatusAfter(statusNoteHold)
 		if h.gw.canonical() {
 			speech.latch()
@@ -197,7 +198,7 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		}
 	case "display.lease":
 		if lease, ok := eventPayload(h, tuigateway.DisplayLeaseEvent, p); ok {
-			h.setStatus(tr("screen.control", screenHolder(lease.Lease)))
+			h.setStatus(tr(txt.ScreenControl, screenHolder(lease.Lease)))
 			h.turn.restoreStatusAfter(statusNoteHold)
 		}
 	case "display.install.log":
@@ -217,14 +218,14 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.turn.reportGatewayStartTimeout(timeout.StderrTail, h.setStatus)
 		}
 	case "gateway.protocol_error":
-		h.setStatus(tr("gatewayMsg.status.protocolWarning"))
+		h.setStatus(tr(txt.GatewayMsgStatusProtocolWarning))
 		h.turn.restoreStatusAfter(statusNoteHold)
 		if !h.turn.protocolWarned {
 			h.turn.protocolWarned = true
-			h.turn.pushActivity(tr("gatewayMsg.protocol.noiseDetected"), "info", "")
+			h.turn.pushActivity(tr(txt.GatewayMsgProtocolNoiseDetected), "info", "")
 		}
 		if noise, ok := ev.Local.(gatewayProtocolError); ok && noise.Preview != "" {
-			h.turn.pushActivity(tr("gatewayMsg.protocol.noise", jsSlice(noise.Preview, 0, protocolPreview)), "info", "")
+			h.turn.pushActivity(tr(txt.GatewayMsgProtocolNoise, jsSlice(noise.Preview, 0, protocolPreview)), "info", "")
 		}
 	case "reasoning.delta":
 		if delta, ok := eventPayload(h, tuigateway.ReasoningDeltaEvent, p); ok && delta.Text != "" {
@@ -242,15 +243,15 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case "moa.aggregating":
 	case "moa.progress":
 		if progress, ok := eventPayload(h, tuigateway.MoaProgressEvent, p); ok {
-			h.turn.pushActivity(tr("gatewayMsg.moa.refs", progress.RefsDone, progress.RefsTotal), "info", "MoA")
+			h.turn.pushActivity(tr(txt.GatewayMsgMoaRefs, progress.RefsDone, progress.RefsTotal), "info", "MoA")
 		}
 	case "moa.phase":
 		if phase, ok := eventPayload(h, tuigateway.MoaPhaseEvent, p); ok && phase.Phase == "aggregator" {
-			h.turn.pushActivity(tr("gatewayMsg.moa.aggregating"), "info", "MoA")
+			h.turn.pushActivity(tr(txt.GatewayMsgMoaAggregating), "info", "MoA")
 		}
 	case tuigateway.ToolGeneratingEvent.Name():
 		if generating, ok := eventPayload(h, tuigateway.ToolGeneratingEvent, p); ok && generating.Name != "" {
-			h.turn.pushTrail(tr("tool.drafting", generating.Name))
+			h.turn.pushTrail(tr(txt.ToolDrafting, generating.Name))
 		}
 	case "reaction":
 		h.store.flashGoodVibes()
@@ -349,11 +350,11 @@ func (h *eventHandler) statusUpdate(update tuigateway.StatusUpdatePayload) {
 		brief := "ready"
 		switch {
 		case strings.HasPrefix(text, "✓"):
-			brief = tr("gatewayMsg.goal.complete")
+			brief = tr(txt.GatewayMsgGoalComplete)
 		case strings.HasPrefix(text, "↻"):
-			brief = tr("gatewayMsg.goal.continuing")
+			brief = tr(txt.GatewayMsgGoalContinuing)
 		case strings.HasPrefix(text, "⏸"):
-			brief = tr("gatewayMsg.goal.paused")
+			brief = tr(txt.GatewayMsgGoalPaused)
 		}
 		h.setStatus(brief)
 		h.turn.restoreStatusAfter(goalStatusHold)
@@ -413,18 +414,18 @@ func toolProgressText(p tuigateway.ToolProgressPayload) string {
 		return message
 	}
 	if message == "" {
-		return tr("tool.progressPercent", *p.Percent)
+		return tr(txt.ToolProgressPercent, *p.Percent)
 	}
-	return tr("tool.progressMessage", message, *p.Percent)
+	return tr(txt.ToolProgressMessage, message, *p.Percent)
 }
 
 // Activity line of a tool output the injection scanner flagged, its findings named
 func toolRiskText(p tuigateway.ToolOutputRiskPayload) string {
 	name := toolTrailLabel(strings.TrimPrefix(p.Name, "mcp__"))
 	if len(p.Findings) == 0 {
-		return tr("tool.outputRisk", name, p.Risk)
+		return tr(txt.ToolOutputRisk, name, p.Risk)
 	}
-	return tr("tool.outputRiskFindings", name, p.Risk, strings.Join(p.Findings, ", "))
+	return tr(txt.ToolOutputRiskFindings, name, p.Risk, strings.Join(p.Findings, ", "))
 }
 
 // Closes the prompt cards of a request the gateway cancelled, with its timeout notice
@@ -513,10 +514,10 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 func (h *eventHandler) handleErrorEvent(failure tuigateway.ErrorPayload, versionedGenericError bool) {
 	message := failure.Message
 	if message == "" {
-		message = tr("gatewayMsg.error.unknown")
+		message = tr(txt.GatewayMsgErrorUnknown)
 	}
 	if versionedGenericError {
-		h.app.sys("error: " + message)
+		h.app.sys(errorLine(message))
 		return
 	}
 	h.turn.recordError()
@@ -524,10 +525,10 @@ func (h *eventHandler) handleErrorEvent(failure tuigateway.ErrorPayload, version
 	h.turn.pushActivity(message, "error", "")
 	if noProviderRe.MatchString(message) {
 		h.app.panel(setupRequiredTitle(), buildSetupRequiredSections())
-		h.setStatus(tr("session.status.setupRequired"))
+		h.setStatus(tr(txt.SessionStatusSetupRequired))
 		return
 	}
-	h.app.sys("error: " + describeRPCError(errors.New(message)))
+	h.app.sys(errorLine(describeRPCError(errors.New(message))))
 	h.setStatus("ready")
 }
 
@@ -575,7 +576,7 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 		info.StoredSessionID = &storedSid
 	}
 	h.store.ui.Info = info
-	if h.store.ui.Status == tr("session.status.startingAgent") {
+	if h.store.ui.Status == tr(txt.SessionStatusStartingAgent) {
 		h.store.ui.Status = "ready"
 	}
 	h.store.ui.StoredSid = storedSid
@@ -667,7 +668,7 @@ func eventPayload[T any](h *eventHandler, ev tuigateway.Event[T], p map[string]a
 
 // Prints an event payload or request that does not fit its contract as an invalid response naming the field
 func (h *eventHandler) misfit(name string, err error) {
-	h.app.sys("error: " + misfitText(tr("session.common.invalidResponse", name)) + " " + err.Error())
+	h.app.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, name)) + " " + err.Error()))
 }
 
 // Model pick that did not apply at the turn boundary, a refusal named or a guarded target asked again
@@ -684,7 +685,7 @@ func (h *eventHandler) applyDeferredPickOutcome(update tuigateway.SessionMutateR
 		if reason == "" {
 			reason = "refused"
 		}
-		h.app.sys(tr("slashCmd.session.model.deferredRefused", val(update.TargetModel), reason))
+		h.app.sys(tr(txt.SlashCmdSessionModelDeferredRefused, val(update.TargetModel), reason))
 		return
 	}
 	confirm := val(update.Confirm)
@@ -709,11 +710,11 @@ func (h *eventHandler) applyDeferredPickOutcome(update tuigateway.SessionMutateR
 	h.store.openModelConfirmation(val(update.ConfirmMessage), target, func() tea.Cmd {
 		return h.store.mutateCanonicalSession(h.gw, sid, "model", arg, func() bool { return false }, confirm, func(m *mutationOutcome, err error) tea.Cmd {
 			if err != nil {
-				h.app.sys("error: " + err.Error())
+				h.app.sys(errorLine(err.Error()))
 				return nil
 			}
 			if m != nil && val(m.Result.Status) == "confirmation_required" {
-				h.app.sys(tr("slashCmd.session.model.confirmStale"))
+				h.app.sys(tr(txt.SlashCmdSessionModelConfirmStale))
 			}
 			return nil
 		})
@@ -743,9 +744,9 @@ func (h *eventHandler) resumeProgress(sid string, p map[string]any) {
 	}
 	switch progress.Status {
 	case "loading":
-		h.setStatus(tr("gatewayMsg.status.loadingHistory"))
+		h.setStatus(tr(txt.GatewayMsgStatusLoadingHistory))
 	case "complete":
-		h.setStatus(tr("gatewayMsg.status.historyLoaded", strconv.FormatInt(val(progress.MessageCount), 10)))
+		h.setStatus(tr(txt.GatewayMsgStatusHistoryLoaded, strconv.FormatInt(val(progress.MessageCount), 10)))
 		h.turn.restoreStatusAfter(statusNoteHold)
 	}
 }
@@ -760,5 +761,5 @@ func (h *eventHandler) sessionReclaimed(p map[string]any) {
 	if stored == "" {
 		stored = live
 	}
-	h.app.sys("warning: " + tr("session.lifecycle.reclaimed", reclaimed.Reason, stored))
+	h.app.sys(warningLine(tr(txt.SessionLifecycleReclaimed, reclaimed.Reason, stored)))
 }

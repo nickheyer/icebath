@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -256,9 +257,9 @@ func (d *Sections) head(t theme.Theme, s Section, shown string, w int) string {
 		mark = t.Glyphs.Caret
 	}
 	hot := d.Hover == "sec:"+s.ID
-	title := lipgloss.NewStyle().Foreground(t.Ice).Bold(true).Render(strings.ToUpper(s.Title))
+	title := lipgloss.NewStyle().Foreground(t.Ice).Bold(true).Render(lang.Upper(s.Title))
 	if hot {
-		title = lipgloss.NewStyle().Foreground(t.Text).Background(t.Steel).Bold(true).Render(" " + strings.ToUpper(s.Title) + " ")
+		title = lipgloss.NewStyle().Foreground(t.Text).Background(t.Steel).Bold(true).Render(" " + lang.Upper(s.Title) + " ")
 	}
 	left := lipgloss.NewStyle().Foreground(t.TextDim).Render(mark) + " " + title
 	right := render.Dim(s.Count, t)

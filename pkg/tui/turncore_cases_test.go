@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 func TestTurnStoreLiveProgressHelpers(t *testing.T) {
@@ -164,7 +166,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		}
 		took := 0.94
 		c.recordToolComplete("t1", "", "", &took, nil, "", nil, toolVerdict{})
-		if !reflect.DeepEqual(c.store.turn.StreamPendingTools, []string{`Read File("main.go") (0.9s) ✓`}) || !reflect.DeepEqual(c.store.turn.TurnTrail, []string{analyzingToolOutput}) {
+		if !reflect.DeepEqual(c.store.turn.StreamPendingTools, []string{`Read File("main.go") (0.9s) ✓`}) || !reflect.DeepEqual(c.store.turn.TurnTrail, []string{analyzingToolOutput()}) {
 			t.Fatalf("pending %#v trail %#v", c.store.turn.StreamPendingTools, c.store.turn.TurnTrail)
 		}
 		result := c.recordMessageComplete(tuigateway.MessageCompletePayload{Text: ptr("done")})
@@ -212,7 +214,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 			t.Fatalf("sealed before the answer %v %#v", err, appended)
 		}
 		c.settleInterrupt(cmd().(interruptReplyMsg))
-		if len(appended) != 1 || !c.store.ui.Busy || c.store.ui.Status != tr("session.status.interrupting") {
+		if len(appended) != 1 || !c.store.ui.Busy || c.store.ui.Status != tr(txt.SessionStatusInterrupting) {
 			t.Fatalf("appended %#v busy %v status %q", appended, c.store.ui.Busy, c.store.ui.Status)
 		}
 		if gw.calls[0]["params"].(map[string]any)["execution_generation"] != int64(7) {

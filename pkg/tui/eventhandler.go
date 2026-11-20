@@ -3,13 +3,13 @@ package tui
 import (
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -159,9 +159,9 @@ func (h *eventHandler) rpc(method string, params map[string]any, then func(map[s
 		result, isObject := v.(map[string]any)
 		switch {
 		case err != nil:
-			h.app.sys("error: " + rpcErrorMessage(err))
+			h.app.sys(errorLine(rpcErrorMessage(err)))
 		case !isObject:
-			h.app.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
+			h.app.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, method))))
 		}
 		if then == nil {
 			return nil
@@ -242,7 +242,7 @@ func (h *eventHandler) flushAbandonedClarify() {
 	if answers == nil {
 		answers = map[string]string{}
 	}
-	h.app.appendMessage(msg{Role: "system", Text: formatAbandonedClarify(clarify.Questions, answers, tr("gatewayMsg.clarify.timedOut"))})
+	h.app.appendMessage(msg{Role: "system", Text: formatAbandonedClarify(clarify.Questions, answers, tr(txt.GatewayMsgClarifyTimedOut))})
 	h.store.overlay.Clarify = nil
 }
 
@@ -282,7 +282,7 @@ func (h *eventHandler) persistSpawnTree(snap spawnSnapshot) tea.Cmd {
 			top = append(top, s.Goal)
 		}
 	}
-	label := strconv.Itoa(len(subagents)) + " subagents"
+	label := tr(txt.StatusSubagentsCount, len(subagents))
 	if len(top) > 0 {
 		label = strings.Join(top, " · ")
 	}
@@ -351,7 +351,7 @@ func (h *eventHandler) maybeNudgeAgents() {
 		return
 	}
 	h.agentsNudgedThisTurn = true
-	h.turn.pushActivity(tr("gatewayMsg.agents.workingNudge"), "info", "")
+	h.turn.pushActivity(tr(txt.GatewayMsgAgentsWorkingNudge), "info", "")
 }
 
 // Fetches the delegation caps, at most every five seconds unless forced
@@ -398,7 +398,7 @@ func (h *eventHandler) refreshSlashCatalogOnSkillsChange(ev gatewayEventMsg) boo
 
 // Starts a fresh session with the forging status, then runs after
 func (h *eventHandler) forgeSession(after func() tea.Cmd) tea.Cmd {
-	h.store.ui.Status = tr("gatewayMsg.status.forgingSession")
+	h.store.ui.Status = tr(txt.GatewayMsgStatusForgingSession)
 	return h.app.newSession(after)
 }
 
@@ -415,7 +415,7 @@ func (h *eventHandler) noteGatewayBuild(ready tuigateway.GatewayReadyPayload) fu
 	}
 	h.toldBuild = &ready.Build
 	return func() tea.Cmd {
-		h.app.sys(tr("gatewayMsg.otherBuild.line"))
+		h.app.sys(tr(txt.GatewayMsgOtherBuildLine))
 		return nil
 	}
 }
@@ -446,12 +446,12 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 			}
 			return tell()
 		}))
-		h.store.ui.Status = tr("gatewayMsg.status.recoveringSession")
+		h.store.ui.Status = tr(txt.GatewayMsgStatusRecoveringSession)
 		return
 	}
 	resumed := func(error) tea.Cmd { return tell() }
 	if h.startupResumeID != "" {
-		h.store.ui.Status = tr("session.status.resuming")
+		h.store.ui.Status = tr(txt.SessionStatusResuming)
 		h.queue(h.app.resumeByID(h.startupResumeID, resumed))
 		return
 	}
@@ -461,7 +461,7 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 		}
 		return ask(h.rpc, h.app.sys, tuigateway.SessionMostRecent, tuigateway.SessionMostRecentParams{}, func(r *tuigateway.SessionMostRecentResult) tea.Cmd {
 			if r != nil && val(r.SessionID) != "" {
-				h.store.ui.Status = tr("gatewayMsg.status.resumingMostRecent")
+				h.store.ui.Status = tr(txt.GatewayMsgStatusResumingMostRecent)
 				return h.app.resumeByID(*r.SessionID, resumed)
 			}
 			return h.forgeSession(tell)
@@ -498,9 +498,9 @@ func (h *eventHandler) handleVoiceTranscript(p tuigateway.VoiceTranscriptPayload
 		h.app.setVoiceRecording(false)
 		h.app.setVoiceProcessing(false)
 		if p.StopPhrase {
-			h.app.sys(tr("gatewayMsg.voice.stopPhrase"))
+			h.app.sys(tr(txt.GatewayMsgVoiceStopPhrase))
 		} else {
-			h.app.sys(tr("gatewayMsg.voice.noSpeechLimit"))
+			h.app.sys(tr(txt.GatewayMsgVoiceNoSpeechLimit))
 		}
 		return
 	}
@@ -547,7 +547,7 @@ func (h *eventHandler) handleWakeDetected(p tuigateway.WakeDetectedPayload) {
 		return ask(h.rpc, h.app.sys, tuigateway.WakeResume, tuigateway.WakeControlParams{}, done[tuigateway.WakeResumeResult])
 	}
 	fail := func(err error) tea.Cmd {
-		h.app.sys(tr("gatewayMsg.wake.failed", rpcErrorMessage(err)))
+		h.app.sys(tr(txt.GatewayMsgWakeFailed, rpcErrorMessage(err)))
 		return resume()
 	}
 	wakeProfile := strings.TrimFunc(val(p.Profile), isJSSpace)
@@ -556,7 +556,7 @@ func (h *eventHandler) handleWakeDetected(p tuigateway.WakeDetectedPayload) {
 		ownProfile = name
 	}
 	if wakeProfile != "" && wakeProfile != ownProfile {
-		h.app.sys(tr("gatewayMsg.wake.otherProfile", wakeProfile))
+		h.app.sys(tr(txt.GatewayMsgWakeOtherProfile, wakeProfile))
 		h.queue(resume())
 		return
 	}

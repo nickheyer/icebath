@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Commands of the spawn tree, its window with pause and status words, the replay of finished trees and their diff
@@ -24,17 +25,17 @@ func (a *app) agentsCommands() []slashCommand {
 						}
 						a.store.applyDelegationPause(res.Paused)
 						if res.Paused {
-							r.sys(tr("slashCmd.ops.agents.paused"))
+							r.sys(tr(txt.SlashCmdOpsAgentsPaused))
 						} else {
-							r.sys(tr("slashCmd.ops.agents.resumed"))
+							r.sys(tr(txt.SlashCmdOpsAgentsResumed))
 						}
 						return nil
 					})
 				case "status":
 					d := a.store.delegation
-					state := tr("slashCmd.ops.agents.stateActive")
+					state := tr(txt.SlashCmdOpsAgentsStateActive)
 					if d.Paused {
-						state = tr("slashCmd.ops.agents.statePaused")
+						state = tr(txt.SlashCmdOpsAgentsStatePaused)
 					}
 					limit := func(v *float64) string {
 						if v == nil {
@@ -42,15 +43,15 @@ func (a *app) agentsCommands() []slashCommand {
 						}
 						return strconv.FormatFloat(*v, 'f', -1, 64)
 					}
-					r.sys(tr("slashCmd.ops.agents.status", state, limit(d.MaxSpawnDepth), limit(d.MaxConcurrentChildren)))
+					r.sys(tr(txt.SlashCmdOpsAgentsStatus, state, limit(d.MaxSpawnDepth), limit(d.MaxConcurrentChildren)))
 					if failed := a.store.failedDelegations(); len(failed) > 0 {
-						r.sys(tr("slashCmd.ops.agents.failedHeader", len(failed)))
+						r.sys(tr(txt.SlashCmdOpsAgentsFailedHeader, len(failed)))
 						for _, f := range failed {
 							goal := f.Goal
 							if goal == "" {
-								goal = tr("hubs.agents.subagentFallback")
+								goal = tr(txt.HubsAgentsSubagentFallback)
 							}
-							r.sys(tr("slashCmd.ops.agents.failedLine", goal, agentStatusLabel(failedDelegationStatus(f)), firstText(val(f.Error), "-")))
+							r.sys(tr(txt.SlashCmdOpsAgentsFailedLine, goal, agentStatusLabel(failedDelegationStatus(f)), firstText(val(f.Error), "-")))
 						}
 					}
 					return nil
@@ -60,7 +61,7 @@ func (a *app) agentsCommands() []slashCommand {
 		{name: "processes", aliases: []string{"ps"}, help: "list the background processes of the session, read their output or kill one",
 			run: func(r *slashRun) tea.Cmd {
 				if r.sid == "" {
-					r.sys(tr("processes.none"))
+					r.sys(tr(txt.ProcessesNone))
 					return nil
 				}
 				return a.openProcesses(r.sid)
@@ -87,7 +88,7 @@ func (a *app) replayCommand(r *slashRun) tea.Cmd {
 				return nil
 			}
 			if len(res.Entries) == 0 {
-				r.sys(tr("slashCmd.ops.replay.noneOnDisk"))
+				r.sys(tr(txt.SlashCmdOpsReplayNoneOnDisk))
 				return nil
 			}
 			return a.openSavedSpawnTrees(res.Entries)
@@ -96,21 +97,21 @@ func (a *app) replayCommand(r *slashRun) tea.Cmd {
 	if strings.HasPrefix(lower, "load ") {
 		path := trimJS(raw[len("load "):])
 		if path == "" {
-			r.sys(tr("slashCmd.ops.replay.usageLoad"))
+			r.sys(tr(txt.SlashCmdOpsReplayUsageLoad))
 			return nil
 		}
 		return a.loadSpawnTree(path, r.rpc, r.sys)
 	}
 	history := a.store.spawnHistory
 	if len(history) == 0 {
-		r.sys(tr("slashCmd.ops.replay.noneThisSession"))
+		r.sys(tr(txt.SlashCmdOpsReplayNoneThisSession))
 		return nil
 	}
 	index := 1
 	if raw != "" && lower != "last" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > len(history) {
-			r.sys(tr("slashCmd.ops.replay.indexOutOfRange", len(history)))
+			r.sys(tr(txt.SlashCmdOpsReplayIndexOutOfRange, len(history)))
 			return nil
 		}
 		index = parsed
@@ -127,7 +128,7 @@ func (a *app) replayDiffCommand(r *slashRun) tea.Cmd {
 		}
 	}
 	if len(parts) != 2 {
-		r.sys(tr("slashCmd.ops.replayDiff.usage"))
+		r.sys(tr(txt.SlashCmdOpsReplayDiffUsage))
 		return nil
 	}
 	history := a.store.spawnHistory
@@ -139,7 +140,7 @@ func (a *app) replayDiffCommand(r *slashRun) tea.Cmd {
 	}
 	baseline, candidate := resolve(parts[0]), resolve(parts[1])
 	if baseline == nil || candidate == nil {
-		r.sys(tr("slashCmd.ops.replayDiff.unresolved", len(history)))
+		r.sys(tr(txt.SlashCmdOpsReplayDiffUnresolved, len(history)))
 		return nil
 	}
 	return a.openSpawnTree(0, &spawnDiffPair{baseline: *baseline, candidate: *candidate})

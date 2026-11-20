@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Drops the gateway socket and blocks every reconnect until the returned func, which the update loop calls, starts the owner again
@@ -86,7 +87,7 @@ func (a *app) restoreSnapshot(snapID string) tea.Cmd {
 			}
 			previous := ui.Sid
 			a.turn.reset()
-			ui.Busy, ui.Compacting, ui.Status = false, false, tr("session.status.reconnecting")
+			ui.Busy, ui.Compacting, ui.Status = false, false, tr(txt.SessionStatusReconnecting)
 			a.recoverSid = stored
 			if !res.SessionKept {
 				a.recoverSid, a.events.startupResumeID = "", ""

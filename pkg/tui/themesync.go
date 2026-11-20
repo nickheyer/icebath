@@ -2,13 +2,14 @@ package tui
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
 )

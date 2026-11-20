@@ -120,6 +120,7 @@ func ModelDerivedAPIMode(ctx context.Context, provider, model, apiKey string) (s
 
 // Shapes the final api mode and base URL and gathers capabilities, metadata, warnings and request overrides
 func buildSwitchResult(ctx context.Context, st *modelSwitch) ModelSwitchResult {
+	st.TargetProvider = PersistedProviderID(ctx, st.TargetProvider, st.UserProviders)
 	if derived, ok := ModelDerivedAPIMode(ctx, st.TargetProvider, st.NewModel, st.APIKey); ok {
 		st.APIMode = derived
 	}
@@ -221,8 +222,14 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 		pyStrOrEmpty(modelCfg["base_url"]), result.BaseURL, pyStrOrEmpty(modelCfg["provider"]), result.TargetProvider) {
 		stale = append(stale, "context_length", "supports_vision")
 	}
-	if SelectionRouteChanged(modelCfg, result) {
-		stale = append(stale, "api_key", "api", "key_env", "api_key_env")
+	// A non custom target reads its credential from the environment, the login store or the pool, so an inline key is
+	// a leftover there, while a custom target keeps its inline key and its key pointer across a same route pick
+	routeChanged := SelectionRouteChanged(modelCfg, result)
+	if !strings.HasPrefix(strings.ToLower(pyStripSpace(result.TargetProvider)), "custom") || routeChanged {
+		stale = append(stale, "api_key", "api")
+	}
+	if routeChanged {
+		stale = append(stale, "key_env", "api_key_env")
 	}
 	for _, key := range stale {
 		if _, held := modelCfg[key]; held {

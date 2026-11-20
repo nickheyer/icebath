@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/tty"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Exit status of a program the operating system ended with the signal, 128 plus its number
@@ -124,17 +125,17 @@ func resumeCommand(storedSid string, info *tuigateway.SessionInfo) string {
 func (a *app) exitSummary() string {
 	ui := a.store.ui
 	if ui.StoredSid == "" {
-		return "\n" + tr("exitSummary.noSession") + "\n"
+		return "\n" + tr(txt.ExitSummaryNoSession) + "\n"
 	}
 	title := strings.TrimSpace(ui.SessionTitle)
 	if title == "" {
-		title = tr("exitSummary.untitled")
+		title = tr(txt.ExitSummaryUntitled)
 	}
 	rows := [][2]string{
-		{tr("exitSummary.title"), title},
-		{tr("exitSummary.id"), ui.StoredSid},
-		{tr("exitSummary.turns"), strconv.Itoa(a.sessionTurns())},
-		{tr("exitSummary.duration"), fmtDuration(a.store.nowMillis() - a.sessionStart)},
+		{tr(txt.ExitSummaryTitle), title},
+		{tr(txt.ExitSummaryId), ui.StoredSid},
+		{tr(txt.ExitSummaryTurns), strconv.Itoa(a.sessionTurns())},
+		{tr(txt.ExitSummaryDuration), fmtDuration(a.store.nowMillis() - a.sessionStart)},
 	}
 	width := 0
 	for _, r := range rows {
@@ -145,7 +146,7 @@ func (a *app) exitSummary() string {
 	for _, r := range rows {
 		fmt.Fprintf(&sb, "%s%s  %s\n", r[0], strings.Repeat(" ", width-ansi.StringWidth(r[0])), r[1])
 	}
-	fmt.Fprintf(&sb, "\n%s\n  %s\n", tr("exitSummary.resume"), resumeCommand(ui.StoredSid, ui.Info))
+	fmt.Fprintf(&sb, "\n%s\n  %s\n", tr(txt.ExitSummaryResume), resumeCommand(ui.StoredSid, ui.Info))
 	return sb.String()
 }
 

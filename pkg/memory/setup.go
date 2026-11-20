@@ -245,6 +245,13 @@ func externalCheckPasses(ctx context.Context, check string) bool {
 	return exec.CommandContext(cctx, argv[0], argv[1:]...).Run() == nil
 }
 
+// Gives back the providers a setup command loaded to describe and configure them
+func dismissSetupProviders(ctx context.Context, providers []setupProvider) {
+	for _, p := range providers {
+		DismissProvider(ctx, p.Provider)
+	}
+}
+
 // Discovered providers that load, each with its setup hint
 func (m *MemorySetup) getAvailableProviders(ctx context.Context) []setupProvider {
 	var out []setupProvider
@@ -312,7 +319,9 @@ func (m *MemorySetup) postSetupHook(ctx context.Context, p Provider, cfg map[str
 
 // Setup for one named provider without the picker
 func (m *MemorySetup) CmdSetupProvider(ctx context.Context, name string) error {
-	match := findSetupProvider(m.availableProviders(ctx), name)
+	providers := m.availableProviders(ctx)
+	defer dismissSetupProviders(ctx, providers)
+	match := findSetupProvider(providers, name)
 	if match == nil {
 		m.printf("\n  Memory provider '%s' not found.\n", name)
 		if install := m.catalogInstallHint(ctx, name); install != "" {
@@ -476,6 +485,7 @@ func pyEqual(a, b any) bool { return pyrepr.Repr(a) == pyrepr.Repr(b) }
 // Interactive provider picker and schema walk that saves activation, provider config and secrets
 func (m *MemorySetup) CmdSetup(ctx context.Context) error {
 	providers := m.availableProviders(ctx)
+	defer dismissSetupProviders(ctx, providers)
 	if len(providers) == 0 {
 		m.printf("\n  No memory provider plugins detected.\n")
 		m.printf("  Install a plugin to %s and try again.\n\n", home.Display(home.PluginsDir(envHome(m.Env))))
@@ -601,6 +611,7 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 	}
 	m.printf("  Provider:  %s\n", shown)
 	providers := m.availableProviders(ctx)
+	defer dismissSetupProviders(ctx, providers)
 	var p Provider
 	if match := findSetupProvider(providers, providerName); match != nil {
 		p = match.Provider

@@ -142,19 +142,19 @@ type auxRecoveryPool interface {
 	MarkExhaustedAndRotate(req RotationRequest) (PooledCredential, bool)
 }
 
-// Recovery pool seam, the entry scoped view for a pinned custom name and the whole pool otherwise
+// Recovery pool seam, the entry scoped view when the provider or its pool key names a custom entry and the whole pool otherwise
 var auxRecoveryPoolFn = func(ctx context.Context, provider, normalized string) (auxRecoveryPool, error) {
 	var pool *Pool
 	err := auxRecoverRaise(func() {
 		var cfg map[string]any
-		if strings.HasPrefix(pystr.Lower(pystr.Strip(provider)), "custom:") {
+		if mayNameCustomEntry(provider) || mayNameCustomEntry(normalized) {
 			tree, err := auxLoadConfigFn(ctx)
 			if err != nil {
 				panic(err)
 			}
 			cfg = tree
 		}
-		pool = PoolForAuxProvider(provider, normalized, cfg, func(key string) *Pool { return auxLoadProviderPoolFn(ctx, key) })
+		pool = PoolForAuxProvider(ctx, provider, normalized, cfg, func(key string) *Pool { return auxLoadProviderPoolFn(ctx, key) })
 	})
 	if err != nil || pool == nil {
 		return nil, err

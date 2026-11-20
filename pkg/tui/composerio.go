@@ -2,7 +2,7 @@ package tui
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -160,11 +161,11 @@ func (a *app) attachImagePath(path string) tea.Cmd {
 	}
 	return a.stageImage(path, func(image *stagedImage, err error) tea.Cmd {
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 			return nil
 		}
 		if image == nil {
-			a.sys("error: no image at " + path)
+			a.sys(errorLine(tr(txt.ComposerNoImageAt, path)))
 			return nil
 		}
 		return a.attachImageToken(image)
@@ -191,7 +192,7 @@ func (a *app) restoreImage(paths []string, done int, destination submissionDesti
 	}
 	dropped := func() tea.Cmd {
 		if a.store.isCurrentDestination(destination) {
-			a.sys(tr("canonical.queue.imagesNotRestored", len(paths)-done))
+			a.sys(tr(txt.CanonicalQueueImagesNotRestored, len(paths)-done))
 		}
 		return nil
 	}
@@ -200,7 +201,7 @@ func (a *app) restoreImage(paths []string, done int, destination submissionDesti
 	}
 	return a.stageImageWhile(paths[done], destination, current, dropped, func(image *stagedImage, err error) tea.Cmd {
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 		}
 		if err != nil || image == nil {
 			return nil
@@ -224,7 +225,7 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 			}
 			if err != nil {
 				if !quiet {
-					a.sys(tr("canonical.queue.clipboardImageFailed", rpcErrorMessage(err)))
+					a.sys(tr(txt.CanonicalQueueClipboardImageFailed, rpcErrorMessage(err)))
 				}
 				return nil
 			}
@@ -232,7 +233,7 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 				if !quiet {
 					message := r.Message
 					if message == "" {
-						message = "No image found in clipboard"
+						message = tr(txt.ComposerNoClipboardImage)
 					}
 					a.sys(message)
 				}
@@ -244,7 +245,7 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 	return func() tea.Msg {
 		out := clipboardImageMsg{quiet: quiet, destination: destination, revision: revision}
 		if ClipboardImage == nil {
-			out.err = fmt.Errorf("this build has no clipboard image reader")
+			out.err = errors.New(tr(txt.ComposerNoClipboardReader))
 			return out
 		}
 		dir, err := os.MkdirTemp("", "icebath-clipboard-")
@@ -266,7 +267,7 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 				out.missing, out.noDesktop = ClipboardImageBlocker()
 			}
 		case <-ctx.Done():
-			out.err = fmt.Errorf("reading the clipboard image took longer than %s", clipboardImageLimit)
+			out.err = errors.New(tr(txt.ComposerClipboardImageSlow, clipboardImageLimit))
 		}
 		return out
 	}
@@ -286,7 +287,7 @@ func (a *app) onClipboardImage(m clipboardImageMsg) tea.Cmd {
 	if m.err != nil {
 		cleanup()
 		if !m.quiet {
-			a.sys(tr("canonical.queue.clipboardImageFailed", m.err.Error()))
+			a.sys(tr(txt.CanonicalQueueClipboardImageFailed, m.err.Error()))
 		}
 		return nil
 	}
@@ -294,11 +295,11 @@ func (a *app) onClipboardImage(m clipboardImageMsg) tea.Cmd {
 		cleanup()
 		switch {
 		case m.missing != "":
-			a.sys(tr("composer.clipboardImageTool", m.missing))
+			a.sys(tr(txt.ComposerClipboardImageTool, m.missing))
 		case m.noDesktop:
-			a.sys(tr("composer.clipboardNoDesktop"))
+			a.sys(tr(txt.ComposerClipboardNoDesktop))
 		case !m.quiet:
-			a.sys("No image found in clipboard")
+			a.sys(tr(txt.ComposerNoClipboardImage))
 		}
 		return nil
 	}
@@ -306,7 +307,7 @@ func (a *app) onClipboardImage(m clipboardImageMsg) tea.Cmd {
 		cleanup()
 		if err != nil || image == nil {
 			if !m.quiet && err != nil {
-				a.sys(tr("canonical.queue.clipboardImageFailed", rpcErrorMessage(err)))
+				a.sys(tr(txt.CanonicalQueueClipboardImageFailed, rpcErrorMessage(err)))
 			}
 			return nil
 		}
@@ -458,14 +459,14 @@ func (a *app) clearAttachments() tea.Cmd {
 		value = strings.ReplaceAll(value, t.Label, "")
 	}
 	set := a.card.composer.SetValue(strings.TrimSpace(value))
-	return tea.Batch(set, a.syncTokens(), wm.Notify("attachments cleared", wm.Info))
+	return tea.Batch(set, a.syncTokens(), wm.Notify(tr(txt.ComposerAttachmentsCleared), wm.Info))
 }
 
 // Opens the draft in the external editor, the screen handed over until it exits
 func (a *app) openEditor() tea.Cmd {
 	destination, err := a.store.captureDestination()
 	if err != nil {
-		a.sys(tr("session.input.failedToOpenEditorWith", err.Error()))
+		a.sys(tr(txt.SessionInputFailedToOpenEditorWith, err.Error()))
 		return nil
 	}
 	a.editorRevision, a.editorTarget = a.composerRevision(), destination
@@ -475,7 +476,7 @@ func (a *app) openEditor() tea.Cmd {
 // Sends the saved draft, queued for its own session instead when the draft or session changed meanwhile
 func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 	if m.err != nil {
-		a.sys(tr("session.input.failedToOpenEditorWith", m.err.Error()))
+		a.sys(tr(txt.SessionInputFailedToOpenEditorWith, m.err.Error()))
 		return nil
 	}
 	text := strings.TrimRightFunc(m.text, isJSSpace)
@@ -500,7 +501,7 @@ func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 // Runs the shell commands a person typed between braces and hands their output on in order, one that cannot run refusing the whole send, its input
 // kept in the queue as unconfirmed so the model never reads a stand-in for output the person expected
 func (a *app) interpolate(typed []typedInterpolation, destination submissionDestination, item *queueItem, then func(outputs []string) tea.Cmd) tea.Cmd {
-	a.store.ui.Status = "interpolating…"
+	a.store.ui.Status = tr(txt.SessionStatusInterpolating)
 	outputs := make([]string, len(typed))
 	pending, refused := len(typed), false
 	cmds := make([]tea.Cmd, len(typed))
@@ -515,8 +516,8 @@ func (a *app) interpolate(typed []typedInterpolation, destination submissionDest
 				refused = true
 				item.settle(false)
 				if a.store.isCurrentDestination(destination) {
-					a.sys(tr("session.common.interpolationFailed", describeShellExecError(err)))
-					a.store.ui.Busy, a.store.ui.Status = false, tr("status.ready")
+					a.sys(tr(txt.SessionCommonInterpolationFailed, describeShellExecError(err)))
+					a.store.ui.Busy, a.store.ui.Status = false, tr(txt.StatusReady)
 				}
 				return nil
 			}
@@ -539,7 +540,7 @@ func (a *app) setDetails(mode string) tea.Cmd {
 	}
 	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections = mode, true, sections
 	a.card.view.invalidate()
-	return tea.Batch(a.saveSetting("details_mode", mode), wm.Notify("details "+mode, wm.Info))
+	return tea.Batch(a.saveSetting("details_mode", mode), wm.Notify(tr(txt.ComposerDetailsMode, mode), wm.Info))
 }
 
 // Opens reasoning as it arrives or leaves it folded
@@ -556,26 +557,26 @@ func (a *app) toggleThinking() tea.Cmd {
 	sections["thinking"] = next
 	ui.Sections = sections
 	a.card.view.invalidate()
-	return tea.Batch(a.saveSetting("details_mode.thinking", next), wm.Notify("thinking "+next, wm.Info))
+	return tea.Batch(a.saveSetting("details_mode.thinking", next), wm.Notify(tr(txt.ComposerThinkingMode, next), wm.Info))
 }
 
 // Turns yolo of the session in view on or off without spending a turn
 func (a *app) toggleYolo() tea.Cmd {
 	sid := a.store.ui.Sid
 	if sid == "" {
-		a.sys(tr("session.input.yoloNeedsSession"))
+		a.sys(tr(txt.SessionInputYoloNeedsSession))
 		return nil
 	}
 	return call(a.gw, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "yolo", SessionID: sid}, func(res *tuigateway.ConfigSetResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 		case setWord(res) == "1":
-			a.sys(tr("session.input.yoloOn"))
+			a.sys(tr(txt.SessionInputYoloOn))
 		case setWord(res) == "0":
-			a.sys(tr("session.input.yoloOff"))
+			a.sys(tr(txt.SessionInputYoloOff))
 		default:
-			a.sys(tr("session.input.yoloToggleFailed"))
+			a.sys(tr(txt.SessionInputYoloToggleFailed))
 		}
 		return nil
 	})
@@ -657,9 +658,9 @@ func (a *app) pasteHintRows(rc renderCtx) []string {
 	hint := ""
 	switch {
 	case a.pasteSpan != nil:
-		hint = tr("composer.pasteCollapseHint")
+		hint = tr(txt.ComposerPasteCollapseHint)
 	case hasPasteChip(a.card.composer.Value(), a.tokens):
-		hint = tr("composer.pasteExpandHint")
+		hint = tr(txt.ComposerPasteExpandHint)
 	default:
 		return nil
 	}
@@ -831,7 +832,7 @@ func (a *app) updateExtras(m tea.Msg) (bool, tea.Cmd) {
 // transcribing the last capture saying so
 func (a *app) toggleVoiceRecording() tea.Cmd {
 	if !a.voiceEnabled {
-		a.sys(tr("session.input.voiceModeOff"))
+		a.sys(tr(txt.SessionInputVoiceModeOff))
 		return nil
 	}
 	starting := !a.voiceRecording
@@ -846,7 +847,7 @@ func (a *app) toggleVoiceRecording() tea.Cmd {
 	params := tuigateway.VoiceRecordParams{Action: action, SessionID: a.store.ui.Sid}
 	return call(a.gw, tuigateway.VoiceRecord, params, func(r *tuigateway.VoiceRecordResult, err error) tea.Cmd {
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 		}
 		if !starting || (err == nil && r.Status == "recording") {
 			return nil
@@ -855,7 +856,7 @@ func (a *app) toggleVoiceRecording() tea.Cmd {
 		a.setVoiceRecording(false)
 		a.setVoiceProcessing(busy)
 		if busy {
-			a.sys(tr("session.input.voiceStillTranscribing"))
+			a.sys(tr(txt.SessionInputVoiceStillTranscribing))
 		}
 		return nil
 	})

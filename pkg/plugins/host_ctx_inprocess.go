@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Context methods served to a hosted plugin only under in process isolation beyond the object taking ones
-var hostInProcessServed = map[string]bool{"register_cli_command": true, "post_message": true, "apost_message": true,
+// Context methods the host serves for a guest through wire callbacks beyond the object taking ones
+var hostCallbackServed = map[string]bool{"register_cli_command": true, "post_message": true, "apost_message": true,
 	"register_approval_transport": true, "register_platform": true, "register_slack_action_handler": true}
 
 // Passive dependency probe running a hosted check_fn, its exception raised as a panic the way the Go probes recover

@@ -101,7 +101,7 @@ var guestServedMethods = func() map[string]bool {
 	for name := range HostInProcessObjectBases {
 		served[name] = true
 	}
-	for name := range hostInProcessServed {
+	for name := range hostCallbackServed {
 		served[name] = true
 	}
 	return served
@@ -149,21 +149,16 @@ func (m *Manager) GuestHosts() []*PluginHost {
 	return hosts
 }
 
-// Starts the guest of a manifest, runs its register function onto pctx and stops the guest when the plugin unloads
+// Starts the guest of a manifest and runs its register function onto pctx, the guest stopping when the plugin unloads and no category instance of it is in use
 func (m *Manager) loadGuest(ctx context.Context, mf *Manifest, pctx *Context) (string, error) {
 	host, err := m.guestHost(mf)
 	if err != nil {
 		return "", err
 	}
 	if err := host.Load(ctx, mf, pctx); err != nil {
-		host.Shutdown()
 		return "", err
 	}
-	_, err = pctx.OnUnload(func() error {
-		host.Shutdown()
-		return nil
-	})
-	return filepath.Join(mf.Path, mf.Entry[0]), err
+	return filepath.Join(mf.Path, mf.Entry[0]), nil
 }
 
 // Starts the guest in the form its manifest selects

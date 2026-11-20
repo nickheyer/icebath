@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const maxImageBytes = 20 * 1024 * 1024
@@ -55,7 +56,7 @@ func imageFormat(data []byte) (string, string, error) {
 	case len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP":
 		return "image/webp", ".webp", nil
 	}
-	return "", "", errors.New(tr("canonical.images.unsupported"))
+	return "", "", errors.New(tr(txt.CanonicalImagesUnsupported))
 }
 
 // Whether a rune ends a line for the dot of a JavaScript regex
@@ -160,11 +161,11 @@ func resolveImagePath(raw, base string) (string, string, error) {
 			continue
 		}
 		if info.Size() > maxImageBytes {
-			return "", "", errors.New(tr("canonical.images.tooLarge"))
+			return "", "", errors.New(tr(txt.CanonicalImagesTooLarge))
 		}
 		return path, c.remainder, nil
 	}
-	return "", "", errors.New(tr("canonical.images.notFound", value))
+	return "", "", errors.New(tr(txt.CanonicalImagesNotFound, value))
 }
 
 // Folder a typed path is relative to, the session's, else the one the TUI was launched from
@@ -210,7 +211,7 @@ func stageImageFile(raw, base string, remote bool, gw turnGateway, destination s
 		return nil, err
 	}
 	if len(data) > maxImageBytes {
-		return nil, errors.New(tr("canonical.images.tooLarge"))
+		return nil, errors.New(tr(txt.CanonicalImagesTooLarge))
 	}
 	mime, ext, err := imageFormat(data)
 	if err != nil {
@@ -225,11 +226,11 @@ func stageImageFile(raw, base string, remote bool, gw turnGateway, destination s
 		}
 		attached, err := tuigateway.CanonicalImageAttachBytes.Result(raw)
 		if err != nil {
-			return nil, fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", tuigateway.CanonicalImageAttachBytes.Name())), err)
+			return nil, fmt.Errorf("%s %w", misfitText(tr(txt.SessionCommonInvalidResponse, tuigateway.CanonicalImageAttachBytes.Name())), err)
 		}
 		owned := attached.Path
 		if owned == "" {
-			return nil, errors.New(tr("canonical.images.noOwnerPath"))
+			return nil, errors.New(tr(txt.CanonicalImagesNoOwnerPath))
 		}
 		return &stagedImage{imageAttachment: imageAttachment{Path: owned, Mime: mime}, Name: name, Remainder: remainder}, nil
 	}

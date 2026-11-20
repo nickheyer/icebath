@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // One goal bar row, its glyph, label, detail and title
@@ -25,16 +26,6 @@ type loopLine struct {
 // Repaint tick of the loop countdown for one snapshot generation
 type loopTickMsg struct{ gen int }
 
-func countNoun(n int, noun string) string {
-	if n == 0 {
-		return ""
-	}
-	if n == 1 {
-		return strconv.Itoa(n) + " " + noun
-	}
-	return strconv.Itoa(n) + " " + noun + "s"
-}
-
 // Goal bar line of an active or paused goal, parked with its barrier, nil once done or cleared
 func goalLineOf(goal *tuigateway.GoalSnapshot) *goalLine {
 	if goal == nil || (goal.Status != "active" && goal.Status != "paused") {
@@ -42,9 +33,9 @@ func goalLineOf(goal *tuigateway.GoalSnapshot) *goalLine {
 	}
 	var parts []string
 	for _, p := range []string{
-		strconv.FormatInt(goal.TurnsUsed, 10) + "/" + strconv.FormatInt(goal.MaxTurns, 10) + " turns",
-		countNoun(len(goal.Subgoals), "subgoal"),
-		countNoun(len(goal.Gates), "gate"),
+		tr(txt.ControlsGoalTurns, goal.TurnsUsed, goal.MaxTurns),
+		trSome(txt.ControlsGoalSubgoalsOne, txt.ControlsGoalSubgoalsOther, len(goal.Subgoals)),
+		trSome(txt.ControlsGoalGatesOne, txt.ControlsGoalGatesOther, len(goal.Gates)),
 	} {
 		if p != "" {
 			parts = append(parts, p)
@@ -55,26 +46,26 @@ func goalLineOf(goal *tuigateway.GoalSnapshot) *goalLine {
 		var until string
 		switch barrier.Type {
 		case "until":
-			until = "until " + clockText(val(barrier.UntilAt))
+			until = tr(txt.ControlsGoalUntil, clockText(val(barrier.UntilAt)))
 		case "pid":
-			until = "on pid " + strconv.FormatInt(val(barrier.PID), 10)
+			until = tr(txt.ControlsGoalOnPid, val(barrier.PID))
 		default:
-			until = "on session " + val(barrier.SessionID)
+			until = tr(txt.ControlsGoalOnSession, val(barrier.SessionID))
 		}
 		reason := ""
 		if barrier.Reason != "" {
 			reason = " · " + barrier.Reason
 		}
-		return &goalLine{Detail: until + reason + " · " + turns, Glyph: "⏳", Label: "goal parked", Title: goal.Title}
+		return &goalLine{Detail: until + reason + " · " + turns, Glyph: "⏳", Label: tr(txt.ControlsGoalParked), Title: goal.Title}
 	}
 	if goal.Status == "paused" {
 		reason := ""
 		if paused := val(goal.PausedReason); paused != "" {
 			reason = paused + " · "
 		}
-		return &goalLine{Detail: reason + turns, Glyph: "⏸", Label: "goal paused", Title: goal.Title}
+		return &goalLine{Detail: reason + turns, Glyph: "⏸", Label: tr(txt.ControlsGoalPaused), Title: goal.Title}
 	}
-	return &goalLine{Detail: turns, Glyph: "⊙", Label: "goal", Title: goal.Title}
+	return &goalLine{Detail: turns, Glyph: "⊙", Label: tr(txt.ControlsGoalLabel), Title: goal.Title}
 }
 
 // Shortest decimal text of a duration count
@@ -113,7 +104,7 @@ func cadence(loop *tuigateway.LoopSnapshot) string {
 	default:
 		every = countText(s) + "s"
 	}
-	return "every " + every
+	return tr(txt.ControlsLoopEvery, every)
 }
 
 // Loop bar line of an active or paused loop at a moment, nil once done or cleared
@@ -121,33 +112,30 @@ func loopLineOf(loop *tuigateway.LoopSnapshot, nowMs float64) *loopLine {
 	if loop == nil || (loop.Status != "active" && loop.Status != "paused") {
 		return nil
 	}
-	fired := strconv.FormatInt(loop.TicksFired, 10)
-	runs := fired + " run"
+	runs := trCount(txt.ControlsLoopRunsOne, txt.ControlsLoopRunsOther, int(loop.TicksFired))
 	if loop.Times != 0 {
-		runs = fired + "/" + strconv.FormatInt(loop.Times, 10) + " runs"
-	} else if loop.TicksFired != 1 {
-		runs += "s"
+		runs = tr(txt.ControlsLoopRunsOf, loop.TicksFired, loop.Times)
 	}
 	if loop.Status == "paused" {
 		reason := ""
 		if paused := val(loop.PausedReason); paused != "" {
 			reason = paused + " · "
 		}
-		return &loopLine{Detail: reason + runs, Glyph: "⏸", Label: "loop paused", Prompt: loop.Prompt}
+		return &loopLine{Detail: reason + runs, Glyph: "⏸", Label: tr(txt.ControlsLoopPaused), Prompt: loop.Prompt}
 	}
 	remaining := loop.NextDueAt - nowMs/1000
 	var when string
 	switch {
 	case loop.AwaitingResponse:
-		when = "running now"
+		when = tr(txt.ControlsLoopRunningNow)
 	case loop.DeferredByGoal:
-		when = "deferred to the goal"
+		when = tr(txt.ControlsLoopDeferred)
 	case remaining > 0:
-		when = "next in " + countdown(remaining)
+		when = tr(txt.ControlsLoopNextIn, countdown(remaining))
 	default:
-		when = "due, waiting for idle"
+		when = tr(txt.ControlsLoopDue)
 	}
-	return &loopLine{Detail: cadence(loop) + " · " + runs + " · " + when, Glyph: "↻", Label: "loop", Prompt: loop.Prompt}
+	return &loopLine{Detail: cadence(loop) + " · " + runs + " · " + when, Glyph: "↻", Label: tr(txt.ControlsLoopLabel), Prompt: loop.Prompt}
 }
 
 // Goal line of the current session, nil when the snapshot belongs to another session

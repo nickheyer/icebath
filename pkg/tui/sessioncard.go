@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -78,9 +79,9 @@ func (c *sessionCard) Title() string {
 // Name of the session without its title, the short session id when it has one
 func (c *sessionCard) untitled() string {
 	if sid := c.app.store.ui.Sid; sid != "" {
-		return "session " + sessionLabel(sid)
+		return tr(txt.SessionCardTitleOf, sessionLabel(sid))
 	}
-	return "session"
+	return tr(txt.SessionCardTitle)
 }
 
 func (c *sessionCard) Glyph() string       { return c.app.uiTheme().Glyphs.Session }
@@ -362,9 +363,9 @@ func (c *sessionCard) queueRows(width int, rc renderCtx) []string {
 		return nil
 	}
 	muted, edit := toneStyle(rc.t.Color.Muted), c.app.queueEdit
-	header := toneStyle(rc.t.Color.Label).Render("  " + tr("chatBits.queued.header", len(shown)))
+	header := toneStyle(rc.t.Color.Label).Render("  " + tr(txt.ChatBitsQueuedHeader, len(shown)))
 	if edit != nil {
-		header += muted.Render(tr("chatBits.queued.editing", *edit+1))
+		header += muted.Render(tr(txt.ChatBitsQueuedEditing, *edit+1))
 	}
 	rows := []string{header}
 	start, end := queueWindow(len(shown), edit)
@@ -379,7 +380,7 @@ func (c *sessionCard) queueRows(width int, rc renderCtx) []string {
 		rows = append(rows, toneStyle(tone).Render(mark+truncateEnd(strings.ReplaceAll(shown[i], "\n", " "), max(width-6, 8))))
 	}
 	if end < len(shown) {
-		rows = append(rows, muted.Render("    "+tr("chatBits.queued.more", len(shown)-end)))
+		rows = append(rows, muted.Render("    "+tr(txt.ChatBitsQueuedMore, len(shown)-end)))
 	}
 	return rows
 }
@@ -397,11 +398,11 @@ func (c *sessionCard) quickHelpRows(width, room int, rc renderCtx) []string {
 		return nil
 	}
 	t := rc.t
-	commands := [][2]string{{"/help", tr("help.commands.help")}, {"/clear", tr("help.commands.clear")}, {"/resume", tr("help.commands.resume")},
-		{"/details", tr("help.commands.details")}, {"/copy", tr("help.commands.copy")}, {"/quit", tr("help.commands.quit")}}
+	commands := [][2]string{{"/help", tr(txt.HelpCommandsHelp)}, {"/clear", tr(txt.HelpCommandsClear)}, {"/resume", tr(txt.HelpCommandsResume)},
+		{"/details", tr(txt.HelpCommandsDetails)}, {"/copy", tr(txt.HelpCommandsCopy)}, {"/quit", tr(txt.HelpCommandsQuit)}}
 	hotkeys := c.app.hotkeyRows()
 	hotkeys = hotkeys[:min(len(hotkeys), quickHelpHotkeys)]
-	title, tail := tr("help.quickHelp"), tr("help.quickHelpTail")
+	title, tail := tr(txt.HelpQuickHelp), tr(txt.HelpQuickHelpTail)
 	label, inner := 0, ansi.StringWidth(title+tail)
 	for _, row := range slices.Concat(commands, hotkeys) {
 		label = max(label, ansi.StringWidth(row[0]))
@@ -416,11 +417,11 @@ func (c *sessionCard) quickHelpRows(width, room int, rc renderCtx) []string {
 	}
 	head := toneStyle(t.Color.Accent).Bold(true)
 	lines := []string{toneStyle(t.Color.Primary).Bold(true).Render(title) + toneStyle(t.Color.Muted).Render(truncateEnd(tail, max(inner-ansi.StringWidth(title), 1))),
-		"", head.Render(tr("help.commonCommands"))}
+		"", head.Render(tr(txt.HelpCommonCommands))}
 	for _, row := range commands {
 		lines = append(lines, pair(row))
 	}
-	lines = append(lines, "", head.Render(tr("help.hotkeys")))
+	lines = append(lines, "", head.Render(tr(txt.HelpHotkeys)))
 	for _, row := range hotkeys {
 		lines = append(lines, pair(row))
 	}
@@ -460,7 +461,7 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 		left += c.indicator(rc) + " "
 		switch {
 		case ui.Compacting:
-			status = tr("status.compacting") + "…"
+			status = tr(txt.StatusCompacting) + "…"
 		case raw == "running…" && len(c.app.store.turn.Tools) == 0:
 			status = spinnerVerbs[(c.tick/45)%len(spinnerVerbs)] + "…"
 		}
@@ -480,7 +481,7 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 	left += toneStyle(tone).Render(status)
 	shown := ui.StatusBar != "off"
 	if shown && ui.FocusView {
-		left += muted.Render(" · ") + toneStyle(t.Color.Warn).Render(tr("status.focus"))
+		left += muted.Render(" · ") + toneStyle(t.Color.Warn).Render(tr(txt.StatusFocus))
 	}
 	right, capturing := "", false
 	switch {
@@ -498,13 +499,13 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 	case c.app.store.voicePartial != "":
 		right, capturing = toneStyle(t.Color.Accent).Render("● "+c.app.store.voicePartial), true
 	case c.app.voiceRecording:
-		right, capturing = toneStyle(t.Color.Error).Render("● recording"), true
+		right, capturing = toneStyle(t.Color.Error).Render(tr(txt.ComposerRecording)), true
 	case c.app.voiceProcessing:
-		right, capturing = toneStyle(t.Color.Accent).Render("● transcribing…"), true
+		right, capturing = toneStyle(t.Color.Accent).Render(tr(txt.ComposerTranscribing)), true
 	case len(imageAttachments(c.composer.Value(), c.app.tokens)) > 0:
-		right = toneStyle(t.Color.Accent).Render(countNoun(len(imageAttachments(c.composer.Value(), c.app.tokens)), "image") + " attached")
+		right = toneStyle(t.Color.Accent).Render(trCount(txt.ComposerImagesAttachedOne, txt.ComposerImagesAttachedOther, len(imageAttachments(c.composer.Value(), c.app.tokens))))
 	case ui.BusyInputMode != "" && ui.Busy:
-		right = muted.Render("enter: " + ui.BusyInputMode)
+		right = muted.Render(tr(txt.ComposerEnterMode, ui.BusyInputMode))
 	}
 	tail := ""
 	if extra := c.composer.Status(); extra != "" {
@@ -647,11 +648,11 @@ func (c *sessionCard) Hints() []wm.Hint {
 	var queued []wm.Hint
 	switch {
 	case c.app.queueEdit != nil:
-		queued = []wm.Hint{{Action: "tui.queue.delete"}, {Action: "session.stop", Label: "cancel"}}
+		queued = []wm.Hint{{Action: "tui.queue.delete"}, {Action: "session.stop", Label: tr(txt.HintsLabelCancel)}}
 	case c.app.queueHeadWaits():
 		queued = []wm.Hint{{Action: "tui.queue.send"}}
 	case c.app.hasQueued():
-		queued = []wm.Hint{{Action: "composer.up", Label: "edit queued"}, {Action: "tui.queue.drop"}}
+		queued = []wm.Hint{{Action: "composer.up", Label: tr(txt.HintsLabelEditQueued)}, {Action: "tui.queue.drop"}}
 	}
 	return slices.Concat(lead, queued, edits)
 }

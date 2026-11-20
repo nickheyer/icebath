@@ -55,7 +55,9 @@ func RunCommentAgent(ctx context.Context, prompt string, toolsets []any, onRunti
 		return ""
 	}
 	history := onRuntime(CommentAgentRuntime{Model: model, Provider: text("provider"), BaseURL: text("base_url")})
-	agentKwargs := map[string]any{"model": model, "quiet_mode": true, "skip_context_files": true, "skip_memory": true, "max_iterations": int64(15),
+	// The memory provider is skipped unless compression.checkpoint_required needs it to checkpoint with, scoped as a fork
+	agentKwargs := map[string]any{"model": model, "quiet_mode": true, "skip_context_files": true,
+		"skip_memory": !agent.CheckpointRequiredFromConfig(ctx), "memory_agent_context": "subagent", "max_iterations": int64(15),
 		"enabled_toolsets": toolsets}
 	for _, k := range []string{"base_url", "api_key", "provider", "api_mode", "credential_pool", "reasoning_config"} {
 		agentKwargs[k] = kwargs[k]

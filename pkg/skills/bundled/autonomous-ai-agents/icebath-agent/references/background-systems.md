@@ -36,9 +36,16 @@ the `cronjob` tool, the `icebath cron` CLI (`list`, `add`, `edit`,
   job), `context_from` (chain job A's output into job B), `workdir`
   (run in a specific dir with its `AGENTS.md` / `CLAUDE.md` loaded),
   multi-platform delivery.
+- **Urgency filter:** `icebath cron classify --criteria "..."` reads a
+  JSON list of candidate items on stdin (or `--input-file`), scores the
+  batch 0-10 in one call to the `auxiliary.monitor` model and prints only
+  the items at or above `--threshold` (default 7). Nothing urgent prints
+  nothing, so a `no_agent` script that ends in it stays silent on quiet
+  intervals; a failed scoring call exits 4 and the job reports it.
 - **Invariants:** 3-minute hard interrupt per run, `.tick.lock` file
-  prevents duplicate ticks across processes, cron sessions pass
-  `skip_memory=True` by default, and cron deliveries are framed with a
+  prevents duplicate ticks across processes, cron sessions keep memory
+  on (`skip_memory=False`; the memory provider is initialized with
+  `agent_context="cron"` and skips writes), and cron deliveries are framed with a
   header/footer instead of being mirrored into the target gateway
   session (keeps role alternation intact).
 

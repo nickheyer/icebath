@@ -22,8 +22,6 @@ import (
 const (
 	pluginDirStampTTL    = time.Second
 	pluginDirMtimeTickNS = int64(2_000_000_000)
-	pluginIsolationHost  = "host"
-	pluginIsolationInPro = "in_process"
 )
 
 // Bundled model provider plugin directories in sorted discovery order with the profiles each registers
@@ -705,7 +703,7 @@ func declaresModelProviderKind(pluginDir string) bool {
 // Whether a plugin manifest declares the model provider kind, the exported form plugins reach through Services
 func DeclaresModelProviderKind(pluginDir string) bool { return declaresModelProviderKind(pluginDir) }
 
-// Python str of a YAML scalar for the manifest and isolation comparisons
+// Python str of a YAML scalar for the manifest comparisons
 func pyScalarStr(v any) string {
 	switch t := v.(type) {
 	case nil:
@@ -784,23 +782,16 @@ func importPluginDir(ctx context.Context, layer *homeLayer, pluginDir, source, h
 	if done {
 		return
 	}
-	hosted := isolationMode(LoadConfigSafe(ctx, home.Dir(ctx))) == pluginIsolationHost
 	profiles, err := loadExternalProviderPluginFn(ctx, pluginDir, source, homeKey)
 	for _, p := range profiles {
 		registerIntoLayer(layer, p)
 	}
 	if err != nil {
-		if hosted {
-			pkgLog().Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), err))
-		} else {
-			pkgLog().Warn(fmt.Sprintf("Failed to load %s provider plugin %s: %s", source, filepath.Base(pluginDir), err))
-		}
+		pkgLog().Warn(fmt.Sprintf("Failed to load %s provider plugin %s: %s", source, filepath.Base(pluginDir), err))
 		noteLoadResult(layer, pluginDir, err)
 		return
 	}
-	if !hosted {
-		noteLoadResult(layer, pluginDir, nil)
-	}
+	noteLoadResult(layer, pluginDir, nil)
 	layer.mu.Lock()
 	layer.hosted[moduleName] = true
 	layer.mu.Unlock()
@@ -826,24 +817,6 @@ func PluginLoadError(ctx context.Context, plugin string) string {
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.errors[plugin]
-}
-
-// Plugin isolation mode from config, in process unless plugins.isolation names the host
-func isolationMode(cfg map[string]any) string {
-	if os.Getenv("ICEBATH_PLUGIN_HOST_PROCESS") == "1" {
-		return pluginIsolationInPro
-	}
-	plugins, _ := cfg["plugins"].(map[string]any)
-	raw, ok := plugins["isolation"]
-	if !ok || raw == nil || raw == "" || raw == false {
-		return pluginIsolationInPro
-	}
-	mode := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(pyScalarStr(raw))), "-", "_")
-	if mode != pluginIsolationHost && mode != pluginIsolationInPro {
-		pkgLog().Warn(fmt.Sprintf("plugins.isolation=%s is not one of host, in_process; loading plugins in-process", pyRepr(raw)))
-		return pluginIsolationInPro
-	}
-	return mode
 }
 
 // Every bundled plugin profile in discovery order, the source both discovery and the catalog read

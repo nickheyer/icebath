@@ -10,23 +10,26 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 const (
-	streamBatch         = 16 * time.Millisecond
-	streamIdleBatch     = 16 * time.Millisecond
-	streamScrollBatch   = 96 * time.Millisecond
-	streamTypingBatch   = 80 * time.Millisecond
-	reasoningPulse      = 700 * time.Millisecond
-	interruptCooldown   = 1500 * time.Millisecond
-	activityLimit       = 8
-	trailLimit          = 8
-	reasoningTextCap    = 80_000
-	reasoningTextKeep   = 60_000
-	analyzingToolOutput = "analyzing tool output…"
+	streamBatch       = 16 * time.Millisecond
+	streamIdleBatch   = 16 * time.Millisecond
+	streamScrollBatch = 96 * time.Millisecond
+	streamTypingBatch = 80 * time.Millisecond
+	reasoningPulse    = 700 * time.Millisecond
+	interruptCooldown = 1500 * time.Millisecond
+	activityLimit     = 8
+	trailLimit        = 8
+	reasoningTextCap  = 80_000
+	reasoningTextKeep = 60_000
 )
+
+// Trail row shown between the last finished call and the next thing the model does, in the active language
+func analyzingToolOutput() string { return tr(txt.ToolAnalyzing) }
 
 var (
 	diffSegmentFence = regexp.MustCompile("^```diff\\n([\\s\\S]*?)\\n```$")
@@ -103,7 +106,7 @@ func rpcErrorMessage(err error) string {
 	if err != nil && err.Error() != "" {
 		return describeRPCError(err)
 	}
-	return tr("rpc.requestFailed")
+	return tr(txt.RpcRequestFailed)
 }
 
 // Trail rows of a finished call, one per label with the verbose blocks on the last
@@ -434,7 +437,7 @@ func (c *turnController) interruptTurn(deps interruptDeps, keepBusy bool) (tea.C
 			if handle, err = tuigateway.CanonicalSessionInterrupt.Result(value); err == nil {
 				reply.handle = &handle
 			} else {
-				err = fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", tuigateway.CanonicalSessionInterrupt.Name())), err)
+				err = fmt.Errorf("%s %w", misfitText(tr(txt.SessionCommonInvalidResponse, tuigateway.CanonicalSessionInterrupt.Name())), err)
 			}
 		}
 		reply.err = err
@@ -452,7 +455,7 @@ func (c *turnController) settleInterrupt(m interruptReplyMsg) {
 	}
 	if m.err != nil {
 		if isActiveTurn() {
-			m.deps.Sys(tr("canonical.submit.interruptFailed", rpcErrorMessage(m.err)))
+			m.deps.Sys(tr(txt.CanonicalSubmitInterruptFailed, rpcErrorMessage(m.err)))
 		}
 		return
 	}
@@ -484,12 +487,12 @@ func (c *turnController) sealInterrupt(deps interruptDeps, keepBusy bool) {
 		deps.AppendMessage(msg{Role: "assistant", Text: text, Tools: tools})
 		c.sealed = &sealedInterrupt{Partial: partial, Text: &text}
 	} else {
-		deps.Sys(tr("session.turn.interrupted"))
+		deps.Sys(tr(txt.SessionTurnInterrupted))
 		c.sealed = &sealedInterrupt{}
 	}
 	c.clearStatusTimer()
 	if keepBusy {
-		c.store.ui.Busy, c.store.ui.Status = true, tr("session.status.interrupting")
+		c.store.ui.Busy, c.store.ui.Status = true, tr(txt.SessionStatusInterrupting)
 		return
 	}
 	c.store.ui.Status = "interrupted"
@@ -807,9 +810,9 @@ func (c *turnController) recordMoaReference(label, text string, index, count int
 		return
 	}
 	c.closeReasoningSegment()
-	header := "◇ Reference — " + label
+	header := tr(txt.ChatBitsReferenceHeader, label)
 	if index != 0 && count != 0 {
-		header = "◇ Reference " + strconv.FormatInt(index, 10) + "/" + strconv.FormatInt(count, 10) + " — " + label
+		header = tr(txt.ChatBitsReferenceHeaderOf, index, count, label)
 	}
 	thinking := header
 	if body := strings.TrimFunc(text, isJSSpace); body != "" {
@@ -859,7 +862,7 @@ func (c *turnController) recordInlineDiffToolComplete(diffText, toolID, fallback
 	c.publishToolState()
 }
 
-// Removes a call from the active set and returns its trail rows marked with the verdict
+// Removes a call from the active set and returns its trail rows marked with the verdict, none for a call whose row a settled prompt put into the transcript
 func (c *turnController) completeTool(toolID, fallbackName, summary string, duration *float64, resultText string, eventLabels []toolLabel, v toolVerdict) []string {
 	var done *activeTool
 	if i := slices.IndexFunc(c.activeTools, func(t activeTool) bool { return t.ID == toolID }); i >= 0 {
@@ -883,10 +886,14 @@ func (c *turnController) completeTool(toolID, fallbackName, summary string, dura
 		took = &elapsed
 	}
 	lines := toolTrailLines(done, name, labels, summary, resultText, took, v)
+	if c.persistedToolLabels[label] {
+		delete(c.persistedToolLabels, label)
+		lines = nil
+	}
 	c.activeTools = slices.DeleteFunc(slices.Clone(c.activeTools), func(t activeTool) bool { return t.ID == toolID })
 	next := slices.DeleteFunc(slices.Clone(c.turnTools), func(item string) bool { return sameToolTrailGroup(label, item) })
 	if len(c.activeTools) == 0 {
-		next = append(next, analyzingToolOutput)
+		next = append(next, analyzingToolOutput())
 	}
 	c.turnTools = next[max(0, len(next)-trailLimit):]
 	return lines

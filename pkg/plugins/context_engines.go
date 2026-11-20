@@ -70,7 +70,7 @@ func DiscoverContextEngines(ctx context.Context) ([]ContextEngineInfo, error) {
 		})
 		out = append(out, ContextEngineInfo{Name: d[0], Description: ReadPluginDescription(child), Available: available})
 		if engine != nil {
-			engine.Dismiss()
+			engine.Dismiss(ctx)
 		}
 	}
 	return out, nil

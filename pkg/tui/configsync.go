@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -105,6 +106,7 @@ type configApp interface {
 	setVoiceTTS(on bool)
 	setVoiceRecordKey(k voiceRecordKey)
 	inlineImageRetry()
+	languageChanged()
 }
 
 // Refused MCP revision and when it may be retried
@@ -213,10 +215,17 @@ func (c *configSync) hydrateFullConfig(gen int, sid string) tea.Cmd {
 			}
 			language := cfg.Display.Language
 			return tea.Batch(cmd, func() tea.Msg {
+				before := activeLocale()
 				syncTUILocale(func(method string, params map[string]any) (any, error) {
 					return gw.request(context.Background(), method, params, 0)
 				}, language)
-				return nil
+				if activeLocale() == before {
+					return nil
+				}
+				return asyncDoneMsg{run: func() tea.Cmd {
+					c.app.languageChanged()
+					return nil
+				}}
 			})
 		}}
 	}
@@ -322,7 +331,7 @@ func (c *configSync) onPoll(m configPollMsg) tea.Cmd {
 				r := quietAsk(gw, tuigateway.ReloadMCP, tuigateway.ReloadMCPParams{SessionID: optionalText(sid), Confirm: true})
 				return asyncDoneMsg{run: func() tea.Cmd {
 					if r != nil {
-						c.turnActivity(tr("status.mcpReloaded"))
+						c.turnActivity(tr(txt.StatusMcpReloaded))
 					}
 					return nil
 				}}
@@ -358,7 +367,7 @@ func (c *configSync) syncMcpReload(sid, nextMcpRev string) tea.Cmd {
 			if r != nil && r.Status == "reloaded" {
 				state.accepted = firstText(val(r.LoadedRev), nextMcpRev)
 				state.refused = nil
-				c.turnActivity(tr("status.mcpReloaded"))
+				c.turnActivity(tr(txt.StatusMcpReloaded))
 				return nil
 			}
 			failures := 1

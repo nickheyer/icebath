@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -297,6 +298,12 @@ func localCompleteFields(ctx context.Context, t *TurnRunner, callID any, toolNam
 		fields.Set("inline_diff", strings.Join(rendered, "\n"))
 	} else {
 		fields.Set("inline_diff", nil)
+	}
+	failed, _, _ := tools.ToolOutcome(ctx, *toolName, result)
+	if path := tuigateway.ToolImagePath(*toolName, argMap, result, failed); path != "" {
+		fields.Set("image_path", path)
+	} else {
+		fields.Set("image_path", nil)
 	}
 	if todo := localTodoState(*toolName, result); todo != nil {
 		for _, k := range todo.Keys {

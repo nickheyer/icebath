@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -106,9 +107,9 @@ func roomErrorText(err error) string {
 	}
 	switch data["reason"] {
 	case "runtime_coordination_required":
-		return tr("rooms.error.noDriver")
+		return tr(txt.RoomsErrorNoDriver)
 	case "permission_denied":
-		return tr("rooms.error.denied")
+		return tr(txt.RoomsErrorDenied)
 	}
 	return rpcErrorMessage(err)
 }
@@ -131,8 +132,8 @@ type roomsPanel struct {
 func (a *app) openRooms() tea.Cmd {
 	p := &roomsPanel{app: a, loading: true}
 	p.List = cards.NewList(a.cardEnv(), cards.ListSpec{
-		Title: tr("rooms.title"), Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:rooms", Context: roomsContext, Primary: "tui.rooms.open",
-		Columns: []render.Column{{Title: "room", Flex: 2, Max: 32}, {Title: "members", Flex: 3, Max: 48}, {Title: "log", Max: 6}, {Title: "where", Max: 24}},
+		Title: tr(txt.RoomsTitle), Glyph: a.toolkit.Glyphs.Sessions, Key: "tui:rooms", Context: roomsContext, Primary: "tui.rooms.open",
+		Columns: []render.Column{{Title: tr(txt.HubsColRoom), Flex: 2, Max: 32}, {Title: tr(txt.HubsColMembers), Flex: 3, Max: 48}, {Title: tr(txt.HubsColLog), Max: 6}, {Title: tr(txt.HubsColWhere), Max: 24}},
 		Rows:    p.rows,
 		Detail:  p.detail,
 		Free:    map[string]bool{"tui.rooms.new": true, "tui.rooms.history": true},
@@ -184,10 +185,10 @@ func (p *roomsPanel) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 // Trailer of the panel, the load in flight
 func (p *roomsPanel) Status() string {
 	if p.loading {
-		return tr("rooms.loading")
+		return tr(txt.RoomsLoading)
 	}
 	if p.history {
-		return tr("rooms.showingDisbanded")
+		return tr(txt.RoomsShowingDisbanded)
 	}
 	return ""
 }
@@ -196,11 +197,11 @@ func (p *roomsPanel) Status() string {
 func (r roomInfo) where() string {
 	switch {
 	case r.Disbanded:
-		return tr("rooms.where.disbanded")
+		return tr(txt.RoomsWhereDisbanded)
 	case r.Replica:
-		return tr("rooms.where.from", r.Home)
+		return tr(txt.RoomsWhereFrom, r.Home)
 	}
-	return tr("rooms.where.here")
+	return tr(txt.RoomsWhereHere)
 }
 
 // Rows of the rooms, disbanded ones dimmed
@@ -224,15 +225,15 @@ func (p *roomsPanel) detail(i int) []string {
 		return nil
 	}
 	r := p.rooms[i]
-	out := []string{tr("rooms.detail.id", r.ID)}
+	out := []string{tr(txt.RoomsDetailId, r.ID)}
 	for _, m := range r.Members {
-		out = append(out, tr("rooms.detail.member", m.label(), m.Profile))
+		out = append(out, tr(txt.RoomsDetailMember, m.label(), m.Profile))
 	}
 	if r.Replica {
-		out = append(out, tr("rooms.detail.replica", r.Home))
+		out = append(out, tr(txt.RoomsDetailReplica, r.Home))
 	}
 	if r.Updated > 0 {
-		out = append(out, tr("rooms.detail.updated", whenText(r.Updated)))
+		out = append(out, tr(txt.RoomsDetailUpdated, whenText(r.Updated)))
 	}
 	return out
 }
@@ -240,9 +241,9 @@ func (p *roomsPanel) detail(i int) []string {
 // Line of an empty panel, the load in flight or how to create the first room
 func (p *roomsPanel) empty() string {
 	if p.loading {
-		return tr("rooms.loading")
+		return tr(txt.RoomsLoading)
 	}
-	return tr("rooms.empty")
+	return tr(txt.RoomsEmpty)
 }
 
 // Legend of the room under the cursor, continue here offered only for a shared room
@@ -281,7 +282,7 @@ func (p *roomsPanel) selected(i int) (roomInfo, bool) {
 
 // Toast of a failed request
 func (p *roomsPanel) fail(err error) tea.Cmd {
-	return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
+	return wm.Notify(tr(txt.RoomsErrorLine, roomErrorText(err)), wm.Error)
 }
 
 // Reads the gateway's room capabilities, then the rooms, a failure leaving the rows as they were
@@ -379,9 +380,9 @@ func (p *roomsPanel) create(_ *cards.List, _ int) tea.Cmd {
 		return nil
 	}
 	if len(p.seatable)+len(p.gateways) < roomMinMembers {
-		return wm.Notify(tr("rooms.new.tooFewProfiles", float64(roomMinMembers)), wm.Warn)
+		return wm.Notify(tr(txt.RoomsNewTooFewProfiles, float64(roomMinMembers)), wm.Warn)
 	}
-	return p.app.wm.ShowOverlay(wm.NewPrompt(p.app.toolkit, tr("rooms.new.name"), "", func(text string) tea.Cmd {
+	return p.app.wm.ShowOverlay(wm.NewPrompt(p.app.toolkit, tr(txt.RoomsNewName), "", func(text string) tea.Cmd {
 		name := strings.TrimSpace(text)
 		if name == "" {
 			return p.back("", wm.Info)
@@ -426,29 +427,29 @@ func (p *roomsPanel) pickMembers(name string, chosen []roomSeat) tea.Cmd {
 	more := func(seat roomSeat) tea.Cmd { return p.pickMembers(name, append(append([]roomSeat{}, chosen...), seat)) }
 	items := []wm.Item{}
 	if len(chosen) >= roomMinMembers {
-		items = append(items, wm.Item{ID: "rooms:create", Title: tr("rooms.new.createItem", name), Detail: strings.Join(taken, ", "),
+		items = append(items, wm.Item{ID: "rooms:create", Title: tr(txt.RoomsNewCreateItem, name), Detail: strings.Join(taken, ", "),
 			Run: func() tea.Cmd { return p.createRoom(name, chosen) }})
 	}
 	if len(chosen) < roomMaxMembers {
 		for _, profile := range p.seatable {
 			if !slices.Contains(taken, profile) {
-				items = append(items, wm.Item{ID: "rooms:seat:" + profile, Title: profile, Detail: tr("rooms.new.seat"),
+				items = append(items, wm.Item{ID: "rooms:seat:" + profile, Title: profile, Detail: tr(txt.RoomsNewSeat),
 					Run: func() tea.Cmd { return more(localSeat(profile)) }})
 			}
 		}
 		for _, peer := range p.gateways {
 			if !slices.Contains(taken, peer) {
-				items = append(items, wm.Item{ID: "rooms:peer:" + peer, Title: peer, Detail: tr("rooms.new.seatPeer", peer),
+				items = append(items, wm.Item{ID: "rooms:peer:" + peer, Title: peer, Detail: tr(txt.RoomsNewSeatPeer, peer),
 					Run: func() tea.Cmd { return more(peerSeat(peer, "")) }})
 			}
 		}
 		if len(p.gateways) > 0 {
-			items = append(items, wm.Item{ID: "rooms:peer:profile", Title: tr("rooms.new.peerProfile"), Detail: tr("rooms.new.peerProfileDetail"),
+			items = append(items, wm.Item{ID: "rooms:peer:profile", Title: tr(txt.RoomsNewPeerProfile), Detail: tr(txt.RoomsNewPeerProfileDetail),
 				Run: func() tea.Cmd {
-					return p.app.wm.ShowOverlay(wm.NewPrompt(p.app.toolkit, tr("rooms.new.peerProfilePrompt"), "", func(text string) tea.Cmd {
+					return p.app.wm.ShowOverlay(wm.NewPrompt(p.app.toolkit, tr(txt.RoomsNewPeerProfilePrompt), "", func(text string) tea.Cmd {
 						peer, profile, _ := strings.Cut(strings.TrimSpace(text), "/")
 						if !slices.Contains(p.gateways, peer) || profile == "" {
-							return tea.Batch(wm.Notify(tr("rooms.new.peerProfileUnknown", text), wm.Warn), p.pickMembers(name, chosen))
+							return tea.Batch(wm.Notify(tr(txt.RoomsNewPeerProfileUnknown, text), wm.Warn), p.pickMembers(name, chosen))
 						}
 						return more(peerSeat(peer, profile))
 					}))
@@ -457,9 +458,9 @@ func (p *roomsPanel) pickMembers(name string, chosen []roomSeat) tea.Cmd {
 	}
 	picker := wm.NewPalette(p.app.toolkit, items)
 	if len(chosen) == 0 {
-		picker.Placeholder = tr("rooms.new.pickFirst", name)
+		picker.Placeholder = tr(txt.RoomsNewPickFirst, name)
 	} else {
-		picker.Placeholder = tr("rooms.new.pickMore", strings.Join(taken, ", "))
+		picker.Placeholder = tr(txt.RoomsNewPickMore, strings.Join(taken, ", "))
 	}
 	return p.app.wm.ShowOverlay(picker)
 }
@@ -474,7 +475,7 @@ func (p *roomsPanel) createRoom(name string, chosen []roomSeat) tea.Cmd {
 	params := tuigateway.GroupsCreateParams{RoomID: roomID, Name: name, Members: members}
 	return panelCall(p, tuigateway.GroupsCreate, params, func(res *tuigateway.GroupsCreateResult) tea.Cmd {
 		created := roomOf(res.Room)
-		return tea.Batch(p.app.wm.Dismiss(), p.load(), wm.Notify(tr("rooms.notice.created", created.Name), wm.Success), p.app.openRoom(created, p.self))
+		return tea.Batch(p.app.wm.Dismiss(), p.load(), wm.Notify(tr(txt.RoomsNoticeCreated, created.Name), wm.Success), p.app.openRoom(created, p.self))
 	})
 }
 
@@ -502,7 +503,7 @@ func (p *roomsPanel) disband(l *cards.List, i int) tea.Cmd {
 	if !ok || r.Disbanded {
 		return nil
 	}
-	l.Confirm(tr("rooms.disband.confirm", r.Name), func() tea.Cmd {
+	l.Confirm(tr(txt.RoomsDisbandConfirm, r.Name), func() tea.Cmd {
 		return p.app.disbandRoom(r, func(notice string, level wm.Level) tea.Cmd { return p.back(notice, level) })
 	})
 	return nil
@@ -523,9 +524,9 @@ func (p *roomsPanel) promote(l *cards.List, i int) tea.Cmd {
 	if !ok || !r.Replica || r.Disbanded {
 		return nil
 	}
-	l.Confirm(tr("rooms.promote.confirm", r.Name, r.Home), func() tea.Cmd {
+	l.Confirm(tr(txt.RoomsPromoteConfirm, r.Name, r.Home), func() tea.Cmd {
 		return panelCall(p, tuigateway.GroupsPromote, tuigateway.GroupsPromoteParams{RoomID: r.ID, Confirm: ptr(true)}, func(*tuigateway.GroupsPromoteResult) tea.Cmd {
-			return p.back(tr("rooms.notice.promoted", r.Name), wm.Success)
+			return p.back(tr(txt.RoomsNoticePromoted, r.Name), wm.Success)
 		})
 	})
 	return nil
@@ -533,7 +534,7 @@ func (p *roomsPanel) promote(l *cards.List, i int) tea.Cmd {
 
 // Asks a new name for a room and renames it, the answer handed to back
 func (a *app) renameRoom(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cmd {
-	return a.wm.ShowOverlay(wm.NewPrompt(a.toolkit, tr("rooms.rename.prompt", r.Name), r.Name, func(text string) tea.Cmd {
+	return a.wm.ShowOverlay(wm.NewPrompt(a.toolkit, tr(txt.RoomsRenamePrompt, r.Name), r.Name, func(text string) tea.Cmd {
 		name := strings.TrimSpace(text)
 		if name == "" || name == r.Name {
 			return back("", wm.Info)
@@ -541,12 +542,12 @@ func (a *app) renameRoom(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cm
 		params := tuigateway.GroupsRenameParams{RoomID: r.ID, EventID: "rename-" + uuid.NewString(), Name: name}
 		return call(a.gw, tuigateway.GroupsRename, params, func(res *tuigateway.GroupsRenameResult, err error) tea.Cmd {
 			if err != nil {
-				return back(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
+				return back(tr(txt.RoomsErrorLine, roomErrorText(err)), wm.Error)
 			}
 			if val(res.Queued) {
-				return back(tr("rooms.notice.queued", r.Home), wm.Info)
+				return back(tr(txt.RoomsNoticeQueued, r.Home), wm.Info)
 			}
-			return back(tr("rooms.notice.renamed", name), wm.Success)
+			return back(tr(txt.RoomsNoticeRenamed, name), wm.Success)
 		})
 	}))
 }
@@ -556,12 +557,12 @@ func (a *app) stopRoom(r roomInfo) tea.Cmd {
 	params := tuigateway.GroupsStopParams{RoomID: r.ID, CancelID: ptr("stop-" + uuid.NewString())}
 	return call(a.gw, tuigateway.GroupsStop, params, func(res *tuigateway.GroupsStopResult, err error) tea.Cmd {
 		if err != nil {
-			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
+			return wm.Notify(tr(txt.RoomsErrorLine, roomErrorText(err)), wm.Error)
 		}
 		if val(res.Queued) {
-			return wm.Notify(tr("rooms.notice.queued", r.Home), wm.Info)
+			return wm.Notify(tr(txt.RoomsNoticeQueued, r.Home), wm.Info)
 		}
-		return wm.Notify(tr("rooms.notice.stopped", r.Name, float64(res.Cancelled)), wm.Success)
+		return wm.Notify(tr(txt.RoomsNoticeStopped, r.Name, float64(res.Cancelled)), wm.Success)
 	})
 }
 
@@ -570,68 +571,68 @@ func (a *app) disbandRoom(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.C
 	params := tuigateway.GroupsDisbandParams{RoomID: r.ID, CancelID: ptr("disband-" + uuid.NewString())}
 	return call(a.gw, tuigateway.GroupsDisband, params, func(res *tuigateway.GroupsDisbandResult, err error) tea.Cmd {
 		if err != nil {
-			return back(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
+			return back(tr(txt.RoomsErrorLine, roomErrorText(err)), wm.Error)
 		}
 		if val(res.Queued) {
-			return back(tr("rooms.notice.queued", r.Home), wm.Info)
+			return back(tr(txt.RoomsNoticeQueued, r.Home), wm.Info)
 		}
-		return back(tr("rooms.notice.disbanded", r.Name), wm.Success)
+		return back(tr(txt.RoomsNoticeDisbanded, r.Name), wm.Success)
 	})
 }
 
 // Peer gateways with the room's share state, picking one shares the room with it or stops sharing
 func (a *app) roomPeers(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cmd {
 	if r.Replica {
-		return wm.Notify(tr("rooms.peers.onlyHome", r.Home), wm.Info)
+		return wm.Notify(tr(txt.RoomsPeersOnlyHome, r.Home), wm.Info)
 	}
 	return call(a.gw, tuigateway.CanonicalGroupsPeers, tuigateway.GroupsPeersParams{RoomID: ptr(r.ID)}, func(res *tuigateway.GroupsPeersResult, err error) tea.Cmd {
 		if err != nil {
-			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
+			return wm.Notify(tr(txt.RoomsErrorLine, roomErrorText(err)), wm.Error)
 		}
 		shares := map[string]tuigateway.RoomShare{}
 		for _, share := range res.Shares {
 			shares[strings.SplitN(share.Peer, "/", 2)[0]] = share
 		}
 		if len(res.Peers) == 0 {
-			return wm.Notify(tr("rooms.peers.none"), wm.Info)
+			return wm.Notify(tr(txt.RoomsPeersNone), wm.Info)
 		}
 		items := []wm.Item{}
 		for _, peer := range res.Peers {
 			name := peer.Name
 			share, shared := shares[name]
-			detail := tr("rooms.peers.notShared", peer.URL)
+			detail := tr(txt.RoomsPeersNotShared, peer.URL)
 			switch {
 			case !peer.Key:
-				detail = tr("rooms.peers.noKey", name)
+				detail = tr(txt.RoomsPeersNoKey, name)
 			case shared && share.State == "removing":
-				detail = tr("rooms.peers.removing")
+				detail = tr(txt.RoomsPeersRemoving)
 			case shared && share.Error != nil:
-				detail = tr("rooms.peers.failing", *share.Error)
+				detail = tr(txt.RoomsPeersFailing, *share.Error)
 			case shared && share.SyncedAt != nil:
-				detail = tr("rooms.peers.synced", whenText(*share.SyncedAt))
+				detail = tr(txt.RoomsPeersSynced, whenText(*share.SyncedAt))
 			case shared:
-				detail = tr("rooms.peers.waiting")
+				detail = tr(txt.RoomsPeersWaiting)
 			}
-			method, notice := tuigateway.CanonicalGroupsShare, "rooms.notice.shared"
+			method, notice := tuigateway.CanonicalGroupsShare, txt.RoomsNoticeShared
 			if shared && share.State != "removing" {
-				method, notice = tuigateway.CanonicalGroupsUnshare, "rooms.notice.unshared"
+				method, notice = tuigateway.CanonicalGroupsUnshare, txt.RoomsNoticeUnshared
 			}
 			items = append(items, wm.Item{ID: "rooms:peer:" + name, Title: name, Detail: detail, Run: func() tea.Cmd {
 				return call(a.gw, method, tuigateway.GroupsShareParams{RoomID: r.ID, Peer: name}, func(_ *tuigateway.GroupsShareResult, err error) tea.Cmd {
 					if err != nil {
-						return back(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
+						return back(tr(txt.RoomsErrorLine, roomErrorText(err)), wm.Error)
 					}
 					return back(tr(notice, r.Name, name), wm.Success)
 				})
 			}})
 		}
 		picker := wm.NewPalette(a.toolkit, items)
-		picker.Placeholder = tr("rooms.peers.pick", r.Name)
+		picker.Placeholder = tr(txt.RoomsPeersPick, r.Name)
 		return a.wm.ShowOverlay(picker)
 	})
 }
 
 // Command that opens the rooms list
 func (a *app) roomsCommands() []slashCommand {
-	return []slashCommand{{name: "rooms", help: tr("slashCmd.core.help.rooms"), run: func(*slashRun) tea.Cmd { return a.openRooms() }}}
+	return []slashCommand{{name: "rooms", help: tr(txt.SlashCmdCoreHelpRooms), helpFn: helpOf(txt.SlashCmdCoreHelpRooms), run: func(*slashRun) tea.Cmd { return a.openRooms() }}}
 }

@@ -397,7 +397,7 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 			}
 		}
 	}
-	if editCardTools[name] {
+	if editCardTools[name] || name == "clarify" {
 		row["content"] = m["content"]
 	}
 	for _, k := range []string{"tool_call_id", "timestamp", "display_metadata"} {

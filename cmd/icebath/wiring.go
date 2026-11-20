@@ -119,6 +119,7 @@ func installProcessWiring() {
 	gatewaycli.SealedSteward = selfupdate.SealedSteward
 	tui.ClipboardImage, tui.ClipboardImageBlocker = app.SaveClipboardImage, app.ClipboardImageBlocker
 	tui.PluginWidgets = pluginWidgets
+	tui.ScanPluginWidgets = scanPluginWidgets
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
 	gatewayrun.ServeSessionSocket = serveSessionSocket
 	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
@@ -313,7 +314,6 @@ func pluginServices() *plugins.Services {
 		PortableServerAvailability: mcp.PortableServerAvailability,
 		MaskedSecretPrompt:         provider.MaskedSecretPrompt,
 		ServerAvailabilityReason:   mcp.ServerAvailabilityReason,
-		DefinesMemoryProvider:      memory.DefinesMemoryProvider,
 		PrepareMemoryProviderDependencies: func(ctx context.Context, name string) error {
 			return memory.PrepareMemoryProviderDependenciesForPlugin(ctx, processToolsEnv(ctx), name)
 		},

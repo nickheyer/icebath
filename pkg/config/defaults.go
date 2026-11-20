@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 68
+const Version = 69
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -50,6 +50,7 @@ func defaultsLiteral() Tree {
 			"storage": "icebath-home",
 		},
 		"agent": map[string]any{
+			"stream_stale_timeout":       180,
 			"max_turns":                  nil,
 			"budget_warning_ratio":       nil,
 			"run_budget_seconds":         nil,
@@ -112,6 +113,7 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"terminal": map[string]any{
+			"credential_files":                []any{},
 			"backend":                         "local",
 			"degraded_mode":                   "warn",
 			"cwd":                             ".",
@@ -563,12 +565,20 @@ func defaultsLiteral() Tree {
 				"voice_id": "c69964a6-ab8b-4f8a-9465-ec0925096ec8",
 			},
 			"minimax": map[string]any{
-				"model":    "speech-02-hd",
-				"voice_id": "English_expressive_narrator",
+				"speed":       1.0,
+				"vol":         1.0,
+				"pitch":       0,
+				"emotion":     "neutral",
+				"sample_rate": 32000,
+				"bitrate":     128000,
+				"model":       "speech-02-hd",
+				"voice_id":    "English_expressive_narrator",
 			},
 			"kittentts": map[string]any{
-				"model": "KittenML/kitten-tts-nano-0.8-int8",
-				"voice": "Jasper",
+				"speed":      1.0,
+				"clean_text": true,
+				"model":      "KittenML/kitten-tts-nano-0.8-int8",
+				"voice":      "Jasper",
 			},
 			"neutts": map[string]any{
 				"ref_audio": "",
@@ -577,7 +587,11 @@ func defaultsLiteral() Tree {
 				"device":    "cpu",
 			},
 			"piper": map[string]any{
-				"voice": "en_US-lessac-medium",
+				"speaker_id":      0,
+				"volume":          1.0,
+				"normalize_audio": true,
+				"use_cuda":        false,
+				"voice":           "en_US-lessac-medium",
 			},
 			"deepinfra": map[string]any{
 				"model": "",
@@ -757,6 +771,8 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"skills": map[string]any{
+			"disabled":             []any{},
+			"platform_disabled":    map[string]any{},
 			"external_dirs":        []any{},
 			"create_dir":           "",
 			"project_discovery":    true,
@@ -827,6 +843,7 @@ func defaultsLiteral() Tree {
 			"voice_channel_inactivity_timeout_seconds": 300,
 			"voice_playback_timeout_seconds":           120,
 			"voice_fx": map[string]any{
+				"lead_silence_ms": 0,
 				"enabled":         false,
 				"ambient_enabled": true,
 				"ambient_path":    "",
@@ -882,7 +899,6 @@ func defaultsLiteral() Tree {
 			"load_timeout_seconds":    10,
 			"auto_update_check_hours": 24,
 			"auto_apply":              false,
-			"isolation":               "in_process",
 			"host": map[string]any{
 				"launcher": []any{},
 			},
@@ -914,13 +930,18 @@ func defaultsLiteral() Tree {
 			"allow_lazy_installs": true,
 		},
 		"cron": map[string]any{
-			"catch_up_missed":        true,
-			"allow_agent_scheduling": false,
-			"preflight":              true,
-			"model":                  "",
-			"model_provider":         "",
-			"provider":               "",
-			"wrap_response":          true,
+			"cleanup_timeout_seconds":         10,
+			"failure_nudge_threshold":         3,
+			"retry_unreachable":               true,
+			"standalone_send_timeout_seconds": 60,
+			"misfire_grace_minutes":           10,
+			"catch_up_missed":                 true,
+			"allow_agent_scheduling":          false,
+			"preflight":                       true,
+			"model":                           "",
+			"model_provider":                  "",
+			"provider":                        "",
+			"wrap_response":                   true,
 			"delivery": map[string]any{
 				"notify": true,
 			},
@@ -934,6 +955,8 @@ func defaultsLiteral() Tree {
 			"failure_repeat_alert_hours": 6,
 		},
 		"kanban": map[string]any{
+			"auto_promote_children":          true,
+			"max_spawn":                      nil,
 			"auto_subscribe_on_create":       true,
 			"notify_in_gateway":              true,
 			"dispatch_in_gateway":            true,
@@ -978,10 +1001,11 @@ func defaultsLiteral() Tree {
 			"backup_count": 3,
 		},
 		"model_catalog": map[string]any{
-			"enabled":     true,
-			"url":         "https://icebath.app/api/model-catalog.json",
-			"ttl_minutes": 20,
-			"providers":   map[string]any{},
+			"excluded_providers": []any{},
+			"enabled":            true,
+			"url":                "https://icebath.app/api/model-catalog.json",
+			"ttl_minutes":        20,
+			"providers":          map[string]any{},
 		},
 		"model_overrides": map[string]any{},
 		"models_dev": map[string]any{
@@ -1019,6 +1043,9 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"gateway": map[string]any{
+			"managed_workers":                false,
+			"proxy_url":                      "",
+			"standalone":                     false,
 			"unmanaged_idle_exit_seconds":    600,
 			"signal_interrupt_grace_timeout": 1,
 			"service_install_choice":         nil,
@@ -1148,6 +1175,8 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"secrets": map[string]any{
+			"preserve_existing": []any{},
+			"profile_alias":     true,
 			"bitwarden": map[string]any{
 				"enabled":           false,
 				"access_token_env":  "BWS_ACCESS_TOKEN",
@@ -1181,6 +1210,7 @@ func defaultsLiteral() Tree {
 			"placement":          "auto",
 		},
 		"computer_use": map[string]any{
+			"backend":               "cua",
 			"cua_telemetry":         false,
 			"autostart":             false,
 			"native_wayland":        false,

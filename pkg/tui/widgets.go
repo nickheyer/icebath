@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -210,7 +211,7 @@ func (h *widgetHost) onScanned(m widgetsLoadedMsg) tea.Cmd {
 	var lines []string
 	for _, id := range ids {
 		if !h.known[id] {
-			lines = append(lines, tr("session.main.widgetLive", id))
+			lines = append(lines, tr(txt.SessionMainWidgetLive, id))
 		}
 	}
 	var gone []string
@@ -221,10 +222,10 @@ func (h *widgetHost) onScanned(m widgetsLoadedMsg) tea.Cmd {
 	}
 	sort.Strings(gone)
 	for _, id := range gone {
-		lines = append(lines, tr("session.main.widgetRemoved", id))
+		lines = append(lines, tr(txt.SessionMainWidgetRemoved, id))
 	}
 	for _, failure := range m.failures {
-		lines = append(lines, tr("session.main.widgetFailedToLoad", failure.Plugin, failure.Message))
+		lines = append(lines, tr(txt.SessionMainWidgetFailedToLoad, failure.Plugin, failure.Message))
 	}
 	closing := h.follow(defs)
 	h.known = found

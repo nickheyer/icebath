@@ -20,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -50,7 +51,7 @@ type hatchJob struct {
 
 // Slash command that hatches a new pet from a description on the pet verbs, cancel stopping a run
 func (a *app) hatchCommands() []slashCommand {
-	return []slashCommand{{name: "hatch", aliases: []string{"generate-pet"}, help: tr("slashCmd.session.hatch.help"), usage: "[description|cancel]",
+	return []slashCommand{{name: "hatch", aliases: []string{"generate-pet"}, help: tr(txt.SlashCmdSessionHatchHelp), helpFn: helpOf(txt.SlashCmdSessionHatchHelp), usage: "[description|cancel]",
 		suggest: func(string) []string { return []string{"cancel"} },
 		run: func(r *slashRun) tea.Cmd {
 			concept := trimJS(r.arg)
@@ -59,7 +60,7 @@ func (a *app) hatchCommands() []slashCommand {
 				return tea.Batch(r.ran(), a.petView().cancelHatch())
 			case concept == "":
 				ran := r.ran()
-				r.sys(tr("slashCmd.session.hatch.usage"))
+				r.sys(tr(txt.SlashCmdSessionHatchUsage))
 				return ran
 			}
 			return tea.Batch(r.ran(), a.petView().startHatch(concept))
@@ -75,7 +76,7 @@ func longPet[P, R any](p *petView, m tuigateway.Method[P, R], params P, timeout 
 		if err == nil {
 			r, misfit := m.Result(raw)
 			if misfit != nil {
-				err = fmt.Errorf("%s %w", misfitText(tr("session.common.invalidResponse", m.Name())), misfit)
+				err = fmt.Errorf("%s %w", misfitText(tr(txt.SessionCommonInvalidResponse, m.Name())), misfit)
 			} else {
 				res = &r
 			}
@@ -87,16 +88,16 @@ func longPet[P, R any](p *petView, m tuigateway.Method[P, R], params P, timeout 
 // Starts a hatch, the base look on pet.generate then every animation row on pet.hatch, adopting the new pet
 func (p *petView) startHatch(concept string) tea.Cmd {
 	if p.hatch != nil {
-		p.a.sys(tr("slashCmd.session.hatch.busy"))
+		p.a.sys(tr(txt.SlashCmdSessionHatchBusy))
 		return nil
 	}
 	name := pet.DisplayNameFor(concept)
 	if name == "" {
-		name = tr("slashCmd.session.hatch.defaultName")
+		name = tr(txt.SlashCmdSessionHatchDefaultName)
 	}
 	job := &hatchJob{concept: concept, name: name, phase: "draft"}
 	p.hatch = job
-	p.a.sys(tr("slashCmd.session.hatch.designing", concept))
+	p.a.sys(tr(txt.SlashCmdSessionHatchDesigning, concept))
 	draft := tuigateway.PetGenerateParams{Prompt: concept, Count: 1}
 	return longPet(p, tuigateway.PetGenerate, draft, hatchDraftTimeout, func(res *tuigateway.PetGenerateResult, err error) tea.Cmd {
 		if p.hatch != job {
@@ -104,11 +105,11 @@ func (p *petView) startHatch(concept string) tea.Cmd {
 		}
 		switch {
 		case job.cancelled:
-			return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
+			return p.endHatch(job, tr(txt.SlashCmdSessionHatchCancelled))
 		case err != nil:
-			return p.endHatch(job, tr("slashCmd.session.hatch.baseFailed", rpcErrorMessage(err)))
+			return p.endHatch(job, tr(txt.SlashCmdSessionHatchBaseFailed, rpcErrorMessage(err)))
 		case len(res.Drafts) == 0:
-			return p.endHatch(job, tr("slashCmd.session.hatch.noBaseDraft"))
+			return p.endHatch(job, tr(txt.SlashCmdSessionHatchNoBaseDraft))
 		}
 		first := res.Drafts[0]
 		job.token, job.cancelKey, job.phase = cmp.Or(res.Token, job.token), uuid.NewString(), "rows"
@@ -127,26 +128,26 @@ func (p *petView) startHatch(concept string) tea.Cmd {
 			}
 			switch {
 			case err != nil && job.cancelled:
-				return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
+				return p.endHatch(job, tr(txt.SlashCmdSessionHatchCancelled))
 			case err != nil:
-				return p.endHatch(job, tr("slashCmd.session.hatch.failed", rpcErrorMessage(err)))
+				return p.endHatch(job, tr(txt.SlashCmdSessionHatchFailed, rpcErrorMessage(err)))
 			case slug == "":
-				return p.endHatch(job, tr("slashCmd.session.hatch.failed", misfitText(tr("pickers.common.invalidResponse", "pet.hatch"))))
+				return p.endHatch(job, tr(txt.SlashCmdSessionHatchFailed, misfitText(tr(txt.PickersCommonInvalidResponse, "pet.hatch"))))
 			case job.cancelled:
 				return call(p.a.gw, tuigateway.PetRemove, tuigateway.PetSlugParams{Slug: slug}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 					if err != nil {
-						p.a.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+						p.a.sys(tr(txt.SlashCmdSessionPetError, rpcErrorMessage(err)))
 					}
-					return p.endHatch(job, tr("slashCmd.session.hatch.cancelled"))
+					return p.endHatch(job, tr(txt.SlashCmdSessionHatchCancelled))
 				})
 			}
 			display := cmp.Or(res.DisplayName, name)
 			return p.claimSlug(job, slug, name, func(final string) tea.Cmd {
 				return call(p.a.gw, tuigateway.PetSelect, tuigateway.PetSlugParams{Slug: final}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 					if err != nil {
-						return p.endHatch(job, tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+						return p.endHatch(job, tr(txt.SlashCmdSessionPetError, rpcErrorMessage(err)))
 					}
-					return p.endHatch(job, tr("slashCmd.session.hatch.hatched", display))
+					return p.endHatch(job, tr(txt.SlashCmdSessionHatchHatched, display))
 				})
 			})
 		}))
@@ -160,7 +161,7 @@ func (p *petView) claimSlug(job *hatchJob, slug, name string, then func(string) 
 		return then(slug)
 	}
 	fail := func(err error) tea.Cmd {
-		return p.endHatch(job, tr("slashCmd.session.hatch.failed", rpcErrorMessage(err)))
+		return p.endHatch(job, tr(txt.SlashCmdSessionHatchFailed, rpcErrorMessage(err)))
 	}
 	return call(p.a.gw, tuigateway.PetRemove, tuigateway.PetSlugParams{Slug: want}, func(_ *tuigateway.PetSlugResult, err error) tea.Cmd {
 		if err != nil {
@@ -188,14 +189,14 @@ func (p *petView) endHatch(job *hatchJob, line string) tea.Cmd {
 func (p *petView) cancelHatch() tea.Cmd {
 	job := p.hatch
 	if job == nil {
-		p.a.sys(tr("slashCmd.session.hatch.notRunning"))
+		p.a.sys(tr(txt.SlashCmdSessionHatchNotRunning))
 		return nil
 	}
 	if job.cancelled {
 		return nil
 	}
 	job.cancelled = true
-	p.a.sys(tr("slashCmd.session.hatch.stopping"))
+	p.a.sys(tr(txt.SlashCmdSessionHatchStopping))
 	return p.sendCancel(job)
 }
 
@@ -210,7 +211,7 @@ func (p *petView) sendCancel(job *hatchJob) tea.Cmd {
 	}
 	return call(p.a.gw, tuigateway.PetCancel, tuigateway.PetCancelParams{Token: token}, func(_ *tuigateway.PetOkResult, err error) tea.Cmd {
 		if err != nil && p.hatch == job {
-			p.a.sys(tr("slashCmd.session.pet.error", rpcErrorMessage(err)))
+			p.a.sys(tr(txt.SlashCmdSessionPetError, rpcErrorMessage(err)))
 		}
 		return nil
 	})
@@ -258,13 +259,13 @@ func (p *petView) rowProgress(payload tuigateway.PetHatchProgressPayload) tea.Cm
 		if total, err := strconv.Atoi(payload.Total); err == nil {
 			job.total = total
 		}
-		p.a.sys("  " + tr("slashCmd.session.hatch.drawing", state))
+		p.a.sys("  " + tr(txt.SlashCmdSessionHatchDrawing, state))
 	case "compose":
 		job.phase = "compose"
-		p.a.sys("  " + tr("slashCmd.session.hatch.composing"))
+		p.a.sys("  " + tr(txt.SlashCmdSessionHatchComposing))
 	case "save":
 		job.phase = "save"
-		p.a.sys("  " + tr("slashCmd.session.hatch.saving"))
+		p.a.sys("  " + tr(txt.SlashCmdSessionHatchSaving))
 	}
 	return nil
 }
@@ -281,7 +282,7 @@ func (p *petView) previewDraft(job *hatchJob, uri string) tea.Cmd {
 				return nil
 			}
 			if err != nil {
-				p.a.sys("  " + tr("slashCmd.session.hatch.previewFailed", err.Error()))
+				p.a.sys("  " + tr(txt.SlashCmdSessionHatchPreviewFailed, err.Error()))
 				return nil
 			}
 			job.preview = rows
@@ -294,7 +295,7 @@ func (p *petView) previewDraft(job *hatchJob, uri string) tea.Cmd {
 func draftPreview(uri string) ([]string, error) {
 	_, data, found := strings.Cut(uri, ",")
 	if !found {
-		return nil, errors.New(misfitText(tr("pickers.common.invalidResponse", "dataUri")))
+		return nil, errors.New(misfitText(tr(txt.PickersCommonInvalidResponse, "dataUri")))
 	}
 	raw, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
@@ -313,21 +314,21 @@ func (p *petView) hatchBox(t theme) []string {
 	if job == nil {
 		return nil
 	}
-	status := tr("slashCmd.session.hatch.boxDesigning")
+	status := tr(txt.SlashCmdSessionHatchBoxDesigning)
 	switch job.phase {
 	case "rows":
-		status = tr("slashCmd.session.hatch.boxRows")
+		status = tr(txt.SlashCmdSessionHatchBoxRows)
 		if job.total > 0 {
-			status = tr("slashCmd.session.hatch.boxDrawing", job.state, job.done, job.total)
+			status = tr(txt.SlashCmdSessionHatchBoxDrawing, job.state, job.done, job.total)
 		}
 	case "compose":
-		status = tr("slashCmd.session.hatch.boxComposing")
+		status = tr(txt.SlashCmdSessionHatchBoxComposing)
 	case "save":
-		status = tr("slashCmd.session.hatch.boxSaving")
+		status = tr(txt.SlashCmdSessionHatchBoxSaving)
 	}
-	hint := tr("slashCmd.session.hatch.boxCancel")
+	hint := tr(txt.SlashCmdSessionHatchBoxCancel)
 	if job.cancelled {
-		hint = tr("slashCmd.session.hatch.boxStopping")
+		hint = tr(txt.SlashCmdSessionHatchBoxStopping)
 	}
 	width := hatchPreviewCols
 	for _, line := range []string{status, hint} {

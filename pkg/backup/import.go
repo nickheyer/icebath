@@ -549,6 +549,10 @@ func importMembersExclusive(ctx context.Context, w io.Writer, zr *pyzip.ZipReade
 			} else if err := extractMember(zr, member, target, newMode, newModeOK); err != nil {
 				return err
 			}
+			// Extraction keeps the mode of the live file it replaces
+			if pypath.PathName(target) == "config.yaml" {
+				config.DropOtherAccess(ctx, target)
+			}
 			if secretFileNames[pypath.PathName(target)] {
 				if err := os.Chmod(target, 0o600); err != nil {
 					return err

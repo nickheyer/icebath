@@ -263,12 +263,9 @@ func admissionSetupCase(t *testing.T, picker bool) {
 	tmp, core, h := admissionWorld(t, "existing_dep", "provider_dep", "modern_dep", "other_dep")
 	plugins := filepath.Join(h, "plugins")
 	incumbent, candidate := filepath.Join(plugins, "incumbent"), filepath.Join(plugins, "candidate")
-	for _, dir := range []string{incumbent, candidate} {
-		admissionWrite(t, filepath.Join(dir, "__init__.py"), "# MemoryProvider fixture\n")
-	}
-	admissionWrite(t, filepath.Join(incumbent, "plugin.yaml"), "name: incumbent\npython_dependencies: [\"existing_dep==1.0\"]\n")
+	admissionWrite(t, filepath.Join(incumbent, "plugin.yaml"), "name: incumbent\nkind: exclusive\nruntime: program\nentry: provider\npython_dependencies: [\"existing_dep==1.0\"]\n")
 	candidateManifest := filepath.Join(candidate, "plugin.yaml")
-	admissionWrite(t, candidateManifest, "name: candidate\npip_dependencies: [\"provider_dep==1.0\", \"provider_dep==2.0\"]\n")
+	admissionWrite(t, candidateManifest, "name: candidate\nkind: exclusive\nruntime: program\nentry: provider\npip_dependencies: [\"provider_dep==1.0\", \"provider_dep==2.0\"]\n")
 	cfgPath := filepath.Join(h, "config.yaml")
 	admissionWrite(t, cfgPath, "memory:\n  provider: incumbent\n  setting: keep\nplugins:\n  enabled:\n  - incumbent\n")
 	otherHome := filepath.Join(h, "profiles", "other")
@@ -317,14 +314,14 @@ func admissionSetupCase(t *testing.T, picker bool) {
 	if admissionSelected(t, core) != original {
 		t.Fatal("refused candidate selected a new environment")
 	}
-	for _, malformed := range []string{"name: [broken", "name: candidate\npython_dependencies: 9\n"} {
+	for _, malformed := range []string{"name: candidate\nkind: exclusive\nruntime: program\nentry: provider\npython_dependencies: 9\n"} {
 		admissionWrite(t, candidateManifest, malformed)
 		if code := setup(); code != 1 || len(recorder.calls) != 0 {
 			t.Fatalf("%q: exit %d\n%s", malformed, code, out.String())
 		}
 		unchanged("malformed manifest")
 	}
-	admissionWrite(t, candidateManifest, "name: candidate\npip_dependencies: [\"provider_dep==1.0\"]\n")
+	admissionWrite(t, candidateManifest, "name: candidate\nkind: exclusive\nruntime: program\nentry: provider\npip_dependencies: [\"provider_dep==1.0\"]\n")
 	offered = []setupProvider{{"candidate", "local", &regProvider{name: "candidate"}}}
 	if code := setup(); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
@@ -346,8 +343,7 @@ func admissionSetupCase(t *testing.T, picker bool) {
 		t.Fatal("other profile config changed")
 	}
 	modern := filepath.Join(plugins, "modern")
-	admissionWrite(t, filepath.Join(modern, "__init__.py"), "# MemoryProvider fixture\n")
-	admissionWrite(t, filepath.Join(modern, "plugin.yaml"), "name: modern\n")
+	admissionWrite(t, filepath.Join(modern, "plugin.yaml"), "name: modern\nkind: exclusive\nruntime: program\nentry: provider\n")
 	admissionWrite(t, filepath.Join(modern, "pyproject.toml"), "[project]\nname=\"modern-provider\"\nversion=\"1\"\nrequires-python=\">=3.14\"\n"+
 		"dependencies=[\"modern_dep==1.0\"]\n[tool.uv]\npackage=false\n")
 	offered = []setupProvider{{"modern", "local", &regProvider{name: "modern"}}}

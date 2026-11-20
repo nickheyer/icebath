@@ -94,6 +94,11 @@ func discardTree(h, tree string) error {
 	return nil
 }
 
+// Removes the plugin tree at target from a home together with its install metadata
+func RemoveInstalledPlugin(ctx context.Context, h, target string) error {
+	return removePluginCore(ctx, h, target)
+}
+
 // Removes one plugin and its install metadata without splitting their state
 func removePluginCore(ctx context.Context, h, target string) error {
 	metadata, err := readInstallMetadata(h)

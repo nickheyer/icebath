@@ -6,11 +6,11 @@ import (
 )
 
 func TestBuiltinAuxTaskKeysFollowDeclarationOrder(t *testing.T) {
-	want := "vision,compression,approval,mcp,title_generation,review,memory_query_rewrite,tts_audio_tags,voice_chat,triage_specifier,kanban_decomposer,profile_describer,curator"
+	want := "vision,compression,approval,mcp,title_generation,review,memory_query_rewrite,tts_audio_tags,voice_chat,triage_specifier,kanban_decomposer,profile_describer,curator,monitor"
 	if got := strings.Join(BuiltinAuxTaskKeys(), ","); got != want {
 		t.Fatalf("keys %s", got)
 	}
-	if auxTasks[3].Name != "MCP" || auxTasks[13].Desc != "skill-usage review pass" {
+	if auxTasks[3].Name != "MCP" || auxTasks[12].Desc != "skill-usage review pass" {
 		t.Fatalf("rows %+v", auxTasks)
 	}
 	if delegationTaskKey != "delegation" || delegationTaskName != "Delegation" || delegationTaskDesc != "subagent model (delegate_task)" {

@@ -133,7 +133,7 @@ store; a provider call that needs the user's sign in goes through
 | Identity | `PluginID`, `PluginKey`, `Name`, `Dir`, `ProfileName`, `Manifest` |
 | Settings | `Config`, `SetConfig`, `HasPlugin`, `HasCapability` |
 | Registration | `RegisterTool`, `RegisterHook`, `RegisterMiddleware`, `RegisterCommand`, `RegisterCLICommand`, `RegisterProvider`, `RegisterLoginBackend`, `RegisterTerminalBackend`, `RegisterCronScheduler`, `RegisterPlatform`, `RegisterSlackActionHandler`, `RegisterApprovalTransport`, `RegisterWidget`, `RegisterSkill`, `RegisterLocale`, `RegisterLocaleDir`, `RegisterSystemPromptSection`, `RegisterAutomationBlueprint`, `RegisterAuxiliaryTask`, `RegisterRedactionPatterns`, `Subscribe`, `Emit`, `OnUnload` |
-| Session | `DispatchTool`, `CallMCP`, `InjectMessage`, `InjectMessageAt`, `PostMessage`, `AskChoice`, `SideQuestion`, `SessionCwd`, `SessionSurface`, `CurrentCronExecution`, `Facade`, `Call` |
+| Session | `DispatchTool`, `CallMCP`, `InjectMessage`, `InjectMessageAt`, `PostMessage`, `AskChoice`, `SideQuestion`, `SessionCwd`, `SessionSurface`, `CurrentCronExecution`, `RewriteMemoryQuery` (memory provider plugins only), `Facade`, `Call` |
 | Granted input and output | `ReadFile`, `WriteFile`, `ListDir`, `Remove`, `HTTP`, `ProviderRequest`, `Env` |
 
 A registration returns a `*Handle`; `Handle.Dispose` removes it before unload,
@@ -162,6 +162,15 @@ fails the registration. A method reads the object icebath addressed with
 | `login_backend` | `name`, `prefix`, `list_items`, `get_meta`, `resolve_password` | `vault.<name>.enabled` |
 | `cron_scheduler` | `name`, `start` | `cron.provider` |
 | `computer_use` | `name`, `is_available`, `create_backend` | `computer_use.backend` |
+
+A `memory` provider may also define `on_profile_created(profile_name, home)`
+and `on_profile_renamed(old_name, new_name, home)`: icebath calls them on the
+provider a profile's config selects right after that profile is created or
+renamed, with the profile's home and secrets bound, and stops the plugin again
+unless a session uses it. `Host.RewriteMemoryQuery` turns the latest user
+message into one retrieval question through the `memory_query_rewrite`
+auxiliary task (`auxiliary.memory_query_rewrite`); an empty answer means the
+message itself is the query.
 
 **Typed surfaces** build the provider object for you:
 

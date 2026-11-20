@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 func TestSameToolTrailGroup(t *testing.T) {
@@ -37,7 +39,7 @@ func TestBoundedLiveRenderText(t *testing.T) {
 	})
 	t.Run("keeps the live tail by line budget", func(t *testing.T) {
 		out := boundedLiveRenderText("a\nb\nc\nd", 100, 2)
-		if !strings.Contains(out, "c\nd") || !strings.Contains(out, tr("libText.text.omittedLinesChars", tr("libText.text.showingLiveTail"), "2", "4")) || strings.Contains(out, "a\nb") {
+		if !strings.Contains(out, "c\nd") || !strings.Contains(out, tr(txt.LibTextTextOmittedLinesChars, tr(txt.LibTextTextShowingLiveTail), "2", "4")) || strings.Contains(out, "a\nb") {
 			t.Fatalf("out %q", out)
 		}
 	})
@@ -54,7 +56,7 @@ func TestEdgePreview(t *testing.T) {
 func TestPasteTokenLabel(t *testing.T) {
 	t.Run("builds readable long-paste labels with counts", func(t *testing.T) {
 		label := pasteTokenLabel("Vampire Bondage ropes slipped from her neck, still stained with blood", 250)
-		if !strings.HasPrefix(label, "[[ ") || !strings.Contains(label, tr("libText.text.pasteLinesChip", "250")) || !strings.HasSuffix(label, " ]]") {
+		if !strings.HasPrefix(label, "[[ ") || !strings.Contains(label, tr(txt.LibTextTextPasteLinesChip, "250")) || !strings.HasSuffix(label, " ]]") {
 			t.Fatalf("label %q", label)
 		}
 	})

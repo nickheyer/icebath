@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Key of a server request id, a text id as it is and a numeric id in its shortest decimal form
@@ -131,7 +132,7 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 			return true
 		}
 		s.overlay.Clarify = &clarifyReq{Answers: clarifyAnswersOf(p.Answers), Questions: questions, RequestID: id}
-		open(tr("session.status.waitingForInput"))
+		open(tr(txt.SessionStatusWaitingForInput))
 	case tuigateway.ApprovalRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.ApprovalRequest)
 		if !ok {
@@ -139,42 +140,42 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 		}
 		description := p.Description
 		if description == "" {
-			description = tr("session.request.dangerousCommand")
+			description = tr(txt.SessionRequestDangerousCommand)
 		}
 		choices := make([]string, len(p.Choices))
 		for i, c := range p.Choices {
 			choices[i] = string(c)
 		}
 		s.overlay.Approval = &approvalReq{AllowPermanent: p.AllowPermanent == nil || *p.AllowPermanent, Choices: choices, Command: p.Command, Description: description, OpenURL: val(p.OpenURL), RequestID: id, SmartDenied: val(p.SmartDenied)}
-		open(tr("session.status.approvalNeeded"))
+		open(tr(txt.SessionStatusApprovalNeeded))
 	case tuigateway.SudoRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.SudoRequest)
 		if !ok {
 			return true
 		}
 		s.overlay.Sudo = &sudoReq{Command: p.Command, RequestID: id}
-		open(tr("session.status.sudoPasswordNeeded"))
+		open(tr(txt.SessionStatusSudoPasswordNeeded))
 	case tuigateway.DisplayInstallSudoRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.DisplayInstallSudoRequest)
 		if !ok {
 			return true
 		}
 		s.overlay.Sudo = &sudoReq{ProfileKey: p.ProfileKey, RequestID: id}
-		open(tr("session.status.sudoPasswordNeeded"))
+		open(tr(txt.SessionStatusSudoPasswordNeeded))
 	case tuigateway.SecretRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.SecretRequest)
 		if !ok {
 			return true
 		}
 		s.overlay.Secret = &secretReq{EnvVar: p.EnvVar, Prompt: p.Prompt, RequestID: id}
-		open(tr("session.status.secretInputNeeded"))
+		open(tr(txt.SessionStatusSecretInputNeeded))
 	case tuigateway.VaultUnlockRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.VaultUnlockRequest)
 		if !ok {
 			return true
 		}
 		s.overlay.VaultUnlock = &vaultUnlockReq{Backend: p.Backend, DisplayName: p.DisplayName, RequestID: id}
-		open(tr("session.status.unlockVault", p.DisplayName))
+		open(tr(txt.SessionStatusUnlockVault, p.DisplayName))
 	case tuigateway.VaultSaveLoginRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.VaultSaveLoginRequest)
 		if !ok {
@@ -182,7 +183,7 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 		}
 		site := firstText(p.Site, p.Origin)
 		s.overlay.VaultSaveLogin = &vaultSaveLoginReq{Origin: p.Origin, RequestID: id, Site: site}
-		open(tr("session.status.saveLogin", site))
+		open(tr(txt.SessionStatusSaveLogin, site))
 	case tuigateway.VaultCodeRequest.Name():
 		p, ok := requestParams(r, sink, tuigateway.VaultCodeRequest)
 		if !ok {
@@ -190,7 +191,7 @@ func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
 		}
 		site := val(p.Site)
 		s.overlay.VaultCode = &vaultCodeReq{Hint: val(p.Hint), RequestID: id, Site: site}
-		open(tr("session.status.verificationCode", site))
+		open(tr(txt.SessionStatusVerificationCode, site))
 	default:
 		return false
 	}

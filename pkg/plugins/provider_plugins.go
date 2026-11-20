@@ -43,7 +43,7 @@ func LoadProviderPluginProfiles(ctx context.Context, pluginDir, moduleName strin
 func (p *HostedProfile) CreateClient(ctx context.Context, args []any, kwargs map[string]any) (*HostedObject, error) {
 	m := GetPluginManager(ctx)
 	if m == nil {
-		return nil, &PluginHostUnavailable{Reason: "plugins.isolation is no longer 'host'; restart Icebath"}
+		return nil, &PluginHostUnavailable{Reason: "no plugin manager serves this profile; restart Icebath"}
 	}
 	host, err := m.hostForDir(p.PluginDir)
 	if err != nil {
@@ -51,6 +51,7 @@ func (p *HostedProfile) CreateClient(ctx context.Context, args []any, kwargs map
 	}
 	params := map[string]any{"path": p.PluginDir, "module_name": p.Module, "profile": p.Name,
 		"args": host.encodeArgs(nonNilArgs(args)), "kwargs": host.encodeArgs(nonNilKwargs(kwargs))}
+	host.retainForProfiles()
 	reload := func(ctx context.Context) (map[string]any, error) {
 		if _, err := host.ensureStarted(ctx); err != nil {
 			return nil, err

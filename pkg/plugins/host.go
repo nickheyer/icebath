@@ -34,7 +34,7 @@ const (
 	hostExitWaitTimeout = 500 * time.Millisecond
 )
 
-// One host process for one manager, running the Python code of that profile plugins
+// Guest of one plugin of a manager, started on first use and restarted after an unexpected exit
 type PluginHost struct {
 	manager     *Manager
 	home        string
@@ -58,9 +58,13 @@ type PluginHost struct {
 	parents     map[int64]parentCallableSlot
 	parentIDs   int64
 	guest       *guestSpec
-	// Plugins loaded for good through this host and category instances handed out and not dismissed, what keeps the guest running
+	// Plugins loaded for good through this host, one more once it serves a model provider profile, and category instances handed out and not dismissed, what keeps the guest running
 	loaded    int
 	instances int
+	// Serializes counting a use with the idle shutdown, so a guest never stops under a load that started first; taken after the discovery lock of the manager, never before it
+	lifeMu sync.Mutex
+	// Counts the model provider profiles of this guest as one use, once
+	profileUse sync.Once
 }
 
 // One started child with its exit status once known
@@ -438,8 +442,10 @@ func (h *PluginHost) Shutdown() {
 
 // Runs the register function of a plugin in its guest and replays its registrations onto the plugin context
 func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context) error {
+	h.retain(false)
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
+		h.release(ctx, false)
 		return err
 	}
 	key := mf.ID()
@@ -459,17 +465,18 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context) erro
 	}
 	h.stateMu.Unlock()
 	if err != nil {
-		return h.unavailableAsExit(err)
+		failure := h.unavailableAsExit(err)
+		h.release(ctx, false)
+		return failure
 	}
-	h.stateMu.Lock()
-	h.loaded++
-	h.stateMu.Unlock()
-	_, err = pctx.OnUnload(func() error {
-		h.stateMu.Lock()
-		h.loaded--
-		h.stateMu.Unlock()
-		return h.unload(key)
-	})
+	unload := func(ctx context.Context) error {
+		err := h.unload(key)
+		h.release(ctx, false)
+		return err
+	}
+	if _, err = pctx.OnUnload(func() error { return unload(h.manager.discoveryHeldContext(h.baseCtx)) }); err != nil {
+		_ = unload(ctx)
+	}
 	return err
 }
 
@@ -502,38 +509,67 @@ func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, baseRef, captu
 			"base": baseRef, "capture": capture, "forward": pctx != nil && !pctx.captureOnly, "manifest": manifest,
 		}, pctx)
 	}
+	h.retain(true)
 	obj, err := h.reloadableInstance(ctx, capture, name, baseRef, load, beforeReload)
-	if obj != nil {
-		obj.instance = true
-		h.stateMu.Lock()
-		h.instances++
-		h.stateMu.Unlock()
+	if obj == nil {
+		h.release(ctx, true)
+		return nil, err
 	}
+	obj.instance = true
 	return obj, err
 }
 
-// Gives back a category instance that was loaded only to look at it and stops its guest when no loaded plugin and no other instance uses it
-func (o *HostedObject) Dismiss() {
-	o.mu.Lock()
-	counted := o.instance
-	o.instance = false
-	o.mu.Unlock()
-	if !counted {
-		return
-	}
-	h := o.host
+// Counts one use of the guest, a loaded plugin or a category instance, before the load that needs it starts
+func (h *PluginHost) retain(instance bool) {
+	h.lifeMu.Lock()
+	defer h.lifeMu.Unlock()
 	h.stateMu.Lock()
-	h.instances--
+	defer h.stateMu.Unlock()
+	if instance {
+		h.instances++
+	} else {
+		h.loaded++
+	}
+}
+
+// Counts the model provider profiles this guest serves as one use for the life of the manager, so an idle shutdown never stops a guest a model call runs in
+func (h *PluginHost) retainForProfiles() {
+	h.profileUse.Do(func() { h.retain(false) })
+}
+
+// Gives one use of the guest back and stops the guest when no loaded plugin and no category instance is left, under the discovery lock of the manager so the registrations it drops and a load that starts meanwhile never interleave
+func (h *PluginHost) release(ctx context.Context, instance bool) {
+	ctx, unlock := h.manager.lockDiscovery(ctx)
+	defer unlock()
+	h.lifeMu.Lock()
+	defer h.lifeMu.Unlock()
+	h.stateMu.Lock()
+	if instance {
+		h.instances--
+	} else {
+		h.loaded--
+	}
 	idle := h.instances <= 0 && h.loaded <= 0
 	h.stateMu.Unlock()
 	if idle {
-		h.releaseCategoryRegistrations()
+		h.releaseCategoryRegistrations(ctx)
 		h.Shutdown()
 	}
 }
 
-// Drops what the category loads of this host registered beside their provider, the hooks of a memory collector and the slash commands of an engine collector, none of which outlive the guest
-func (h *PluginHost) releaseCategoryRegistrations() {
+// Gives back a category instance that was loaded only to look at it and stops its guest when no loaded plugin and no other instance uses it
+func (o *HostedObject) Dismiss(ctx context.Context) {
+	o.mu.Lock()
+	counted := o.instance
+	o.instance = false
+	o.mu.Unlock()
+	if counted {
+		o.host.release(ctx, true)
+	}
+}
+
+// Drops what the category loads of this host registered beside their provider, the hooks of a memory collector and the slash commands of an engine collector, none of which outlive the guest; ctx holds the discovery lock
+func (h *PluginHost) releaseCategoryRegistrations(ctx context.Context) {
 	h.stateMu.Lock()
 	contexts := make([]*Context, 0, len(h.contexts))
 	for _, c := range h.contexts {
@@ -544,7 +580,7 @@ func (h *PluginHost) releaseCategoryRegistrations() {
 	for _, c := range contexts {
 		switch {
 		case c.collector != nil:
-			c.collector.dropHooks(h.baseCtx, c.manager)
+			c.collector.dropHooks(ctx, c.manager)
 		case c.engineCollector != nil:
 			c.engineCollector.dropCommands(c.manager)
 		}
@@ -607,6 +643,7 @@ func (h *PluginHost) instanceRef(ctx context.Context, key, method string, params
 
 // Runs a model provider profile overridden method or callable field in the child
 func (h *PluginHost) ProfileCall(ctx context.Context, pluginDir, moduleName, profile, attr string, args []any, kwargs map[string]any) (any, error) {
+	h.retainForProfiles()
 	if _, err := h.ensureStarted(ctx); err != nil {
 		return nil, err
 	}
@@ -694,7 +731,7 @@ func (h *PluginHost) callIn(ctx context.Context, forcedBase, method string, para
 }
 
 // Queues an object release for the next call, dropped when the object belonged to an earlier child
-func (h *PluginHost) release(generation int, ref int64) {
+func (h *PluginHost) queueRelease(generation int, ref int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if generation == h.generation {
@@ -995,7 +1032,7 @@ func (h *PluginHost) resolveResultRef(ref map[string]any, base string) (any, err
 		h.mu.Lock()
 		generation := h.generation
 		h.mu.Unlock()
-		h.release(generation, id)
+		h.queueRelease(generation, id)
 		typ := wireStr(ref["type"])
 		if typ == "" {
 			typ = "object"
@@ -1119,7 +1156,7 @@ func (s *objectSlot) track(o *HostedObject) {
 	if s.tracked {
 		s.cleanup.Stop()
 	}
-	s.cleanup = runtime.AddCleanup(o, func(r releaseRef) { r.host.release(r.generation, r.ref) },
+	s.cleanup = runtime.AddCleanup(o, func(r releaseRef) { r.host.queueRelease(r.generation, r.ref) },
 		releaseRef{host: s.host, generation: s.generation, ref: s.ref})
 	s.tracked = true
 }

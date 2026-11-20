@@ -324,7 +324,7 @@ func rtP3Ops(t *testing.T) map[string]rtOp {
 func rtP3Case(t *testing.T, seed int64) *roundtrip.Case {
 	t.Helper()
 	c := rtGen(t, seed, roundtrip.GenOptions{NoNullLeaves: true, ExcludeTop: []string{"display", "delegation", "agent"}})
-	text, err := roundtrip.BeforeVersion(c.Text, "display:\n  skin: contrast\n  compact: true\ndelegation:\n  max_iterations: 50\n"+
+	text, err := roundtrip.BeforeVersion(c.Text, "display:\n  skin: contrast\n  bell_on_complete: true\ndelegation:\n  max_iterations: 50\n"+
 		"agent:\n  verify_on_stop: false\n")
 	if err != nil {
 		t.Fatal(err)

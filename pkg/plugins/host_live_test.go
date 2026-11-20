@@ -12,38 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const probePlugin = `
-import json, os
-from agent.image_gen_provider import ImageGenProvider
-
-class Painter(ImageGenProvider):
-    @property
-    def name(self):
-        return "hostpainter"
-    def generate(self, prompt, aspect_ratio="landscape", **kw):
-        return {"success": True, "image": f"{prompt}@{os.getpid()}"}
-
-SEEN = []
-
-def register(ctx):
-    ctx.register_tool(name="hostprobe_pid", toolset="hostprobe", schema={"name": "hostprobe_pid",
-        "description": "d", "parameters": {"type": "object", "properties": {}}},
-        handler=lambda args, **kw: json.dumps({"pid": os.getpid(), "seen": SEEN, "x": args.get("x")}))
-    ctx.register_tool(name="hostprobe_nested", toolset="hostprobe", schema={"name": "hostprobe_nested",
-        "description": "d", "parameters": {"type": "object", "properties": {}}},
-        handler=lambda args, **kw: ctx.dispatch_tool("hostprobe_pid", {"x": "nested"}))
-    ctx.register_tool(name="hostprobe_crash", toolset="hostprobe", schema={"name": "hostprobe_crash",
-        "description": "d", "parameters": {"type": "object", "properties": {}}},
-        handler=lambda args, **kw: os._exit(3))
-    ctx.register_hook("post_tool_call", lambda tool_name=None, **kw: SEEN.append(tool_name))
-    ctx.register_image_gen_provider(Painter())
-`
-
-const platformPlugin = `
-def register(ctx):
-    ctx.register_platform("x", "X", adapter_factory=lambda cfg: None, check_fn=lambda: True)
-`
-
 // Scoped registry over hosted objects of one provider base, recording each registration
 type hostedRegistry struct {
 	base string

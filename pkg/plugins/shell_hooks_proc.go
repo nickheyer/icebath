@@ -23,14 +23,15 @@ type shellHookRun struct {
 	done           chan struct{}
 }
 
-// Starts argv with piped stdio in its own process group, the payload written then stdin closed
-func startShellHookProcess(argv []string, env map[string]string, stdin []byte) (*shellHookRun, error) {
+// Starts argv with piped stdio in its own process group and the working directory dir, the process directory when dir is empty, the payload written then stdin closed
+func startShellHookProcess(argv []string, dir string, env map[string]string, stdin []byte) (*shellHookRun, error) {
 	path, err := shellHookExecutable(argv[0], env)
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(path, argv[1:]...)
 	cmd.Args[0] = argv[0]
+	cmd.Dir = dir
 	cmd.Env = shellHookEnviron(env)
 	shellHookProcAttr(cmd)
 	inR, inW, err := os.Pipe()

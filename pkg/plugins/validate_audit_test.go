@@ -165,50 +165,6 @@ func TestDocumentedSessionHelperAndOwnInstallPathFallbackAreNotFlagged(t *testin
 	}
 }
 
-func TestIsolationHostAuditReadsTheHostBoundaryTable(t *testing.T) {
-	root := t.TempDir()
-	for name, body := range map[string]string{"platformprobe": platformPlugin, "fine": probePlugin} {
-		vtWrite(t, filepath.Join(root, name, "plugin.yaml"), "name: "+name+"\nversion: '1.0'\n")
-		vtWrite(t, filepath.Join(root, name, "__init__.py"), body)
-	}
-	fine, err := auditPluginDir(filepath.Join(root, "fine"), nil)
-	if err != nil || fine.Verdict != VerdictHost {
-		t.Fatalf("fine %+v %v", fine, err)
-	}
-	blocked, err := auditPluginDir(filepath.Join(root, "platformprobe"), nil)
-	if err != nil || blocked.Verdict != VerdictInProcess || !strings.Contains(blocked.Reasons[0], "register_platform") {
-		t.Fatalf("blocked %+v %v", blocked, err)
-	}
-}
-
-func TestIsolationVisitorFlagsPatchesRegistryCallsAndSyntaxErrors(t *testing.T) {
-	visit, msg, err := isolationVisitSource("x.py", "x = (\n", false)
-	if err != nil || visit != nil || msg != "'(' was never closed" {
-		t.Fatalf("%v %q %v", visit, msg, err)
-	}
-	src := "import tools.registry as reg\nfrom gateway import platform_registry\nimport providers\n" +
-		"reg.TOOLS = {}\nsetattr(providers, 'x', 1)\nreg.register('t')\nplatform_registry.register('p')\n" +
-		"providers.register_provider(object())\nctx.register_hook('pre_llm_call', f)\nctx.emit('e')\n" +
-		"class P:\n    def create_client(self):\n        pass\n"
-	visit, _, err = isolationVisitSource("m.py", src, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{
-		"m.py:4 patches tools.registry.TOOLS (an Icebath module attribute; the host's copy is not the one Icebath runs)",
-		"m.py:5 setattr() on providers (patches an Icebath module)",
-		"m.py:6 calls tools.registry.register() directly instead of through ctx (registers in the host, not in Icebath)",
-		"m.py:7 calls gateway.platform_registry.register() directly instead of through ctx (registers in the host, not in Icebath)",
-		"m.py:11 P.create_client() returns a live SDK client (model-provider profiles cross the host as data + methods)",
-	}
-	if !reflect.DeepEqual(visit.Reasons, want) {
-		t.Fatalf("%q", visit.Reasons)
-	}
-	if !visit.CtxMethods["register_hook"] || !visit.CtxMethods["emit"] || !visit.CtxMethods["register_provider"] {
-		t.Fatalf("%v", visit.CtxMethods)
-	}
-}
-
 func TestPluginValidateTreatsTheModelSetupHelpersAsPublic(t *testing.T) {
 	dir := t.TempDir()
 	vtWrite(t, filepath.Join(dir, "plugin.yaml"), "name: fake-provider\nkind: model-provider\n")

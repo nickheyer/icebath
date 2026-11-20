@@ -14,6 +14,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -48,11 +50,11 @@ func isPDFPath(raw, base string) (string, string, bool) {
 func renderPDFPages(path, pages string) (*pdfRender, error) {
 	info, err := exec.LookPath("pdfinfo")
 	if err != nil {
-		return nil, errors.New(tr("pdf.popplerMissing"))
+		return nil, errors.New(tr(txt.PdfPopplerMissing))
 	}
 	render, err := exec.LookPath("pdftoppm")
 	if err != nil {
-		return nil, errors.New(tr("pdf.popplerMissing"))
+		return nil, errors.New(tr(txt.PdfPopplerMissing))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), pdfRenderLimit)
 	defer cancel()
@@ -67,13 +69,13 @@ func renderPDFPages(path, pages string) (*pdfRender, error) {
 		}
 	}
 	if total < 1 {
-		return nil, errors.New(tr("pdf.noPages", path))
+		return nil, errors.New(tr(txt.PdfNoPages, path))
 	}
 	first, last := 1, min(total, pdfMaxPages)
 	if pages = strings.TrimSpace(pages); pages != "" {
 		m := pdfRangeRe.FindStringSubmatch(pages)
 		if m == nil {
-			return nil, errors.New(tr("pdf.badRange", pages))
+			return nil, errors.New(tr(txt.PdfBadRange, pages))
 		}
 		first, _ = strconv.Atoi(m[1])
 		last = first
@@ -81,10 +83,10 @@ func renderPDFPages(path, pages string) (*pdfRender, error) {
 			last, _ = strconv.Atoi(m[2])
 		}
 		if first < 1 || last < first || last > total {
-			return nil, errors.New(tr("pdf.rangeOutside", pages, strconv.Itoa(total)))
+			return nil, errors.New(tr(txt.PdfRangeOutside, pages, strconv.Itoa(total)))
 		}
 		if last-first+1 > pdfMaxPages {
-			return nil, errors.New(tr("pdf.rangeTooLong", strconv.Itoa(pdfMaxPages)))
+			return nil, errors.New(tr(txt.PdfRangeTooLong, strconv.Itoa(pdfMaxPages)))
 		}
 	}
 	dir, err := os.MkdirTemp("", "icebath-pdf-")
@@ -109,7 +111,7 @@ func (a *app) attachPDFPages(path, pages string) tea.Cmd {
 		rendered, err := renderPDFPages(path, pages)
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if err != nil {
-				a.sys("error: " + err.Error())
+				a.sys(errorLine(err.Error()))
 				return nil
 			}
 			cmds := make([]tea.Cmd, 0, len(rendered.files)+1)
@@ -120,9 +122,9 @@ func (a *app) attachPDFPages(path, pages string) tea.Cmd {
 				_ = os.RemoveAll(rendered.dir)
 				return nil
 			})
-			a.sys(tr("pdf.attached", strconv.Itoa(rendered.first), strconv.Itoa(rendered.last), strconv.Itoa(rendered.total), filepath.Base(path)))
+			a.sys(tr(txt.PdfAttached, strconv.Itoa(rendered.first), strconv.Itoa(rendered.last), strconv.Itoa(rendered.total), filepath.Base(path)))
 			if pages == "" && rendered.last < rendered.total {
-				a.sys(tr("pdf.morePages", path, strconv.Itoa(rendered.last+1), strconv.Itoa(min(rendered.total, rendered.last+pdfMaxPages))))
+				a.sys(tr(txt.PdfMorePages, path, strconv.Itoa(rendered.last+1), strconv.Itoa(min(rendered.total, rendered.last+pdfMaxPages))))
 			}
 			return tea.Sequence(cmds...)
 		}}

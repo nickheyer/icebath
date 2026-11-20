@@ -741,7 +741,7 @@ func copyDistPayload(ctx context.Context, staged, target string, m *profiles.Dis
 			return err
 		}
 	}
-	dropOtherAccess(ctx, filepath.Join(target, "config.yaml"))
+	config.DropOtherAccess(ctx, filepath.Join(target, "config.yaml"))
 	example := filepath.Join(target, profiles.EnvExampleFilename)
 	if _, err := os.Stat(example); len(m.EnvRequires) > 0 && err != nil {
 		if err := os.WriteFile(example, []byte(textForWrite(envTemplateFromManifest(m))), 0o666); err != nil {

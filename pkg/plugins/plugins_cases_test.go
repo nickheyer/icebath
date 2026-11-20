@@ -242,21 +242,6 @@ func TestPluginDiscoveryForceRediscoverClearsAllPluginRegistries(t *testing.T) {
 	}
 }
 
-func TestPluginLoadingUserMemoryPluginAutoCoercedToExclusive(t *testing.T) {
-	h := casesHome(t, "  enabled: [mempalace]\n")
-	mv2Write(t, filepath.Join(h, "plugins", "mempalace", "plugin.yaml"), "name: mempalace\n")
-	mv2Write(t, filepath.Join(h, "plugins", "mempalace", "__init__.py"),
-		"class MemPalaceProvider:\n    pass\ndef register(ctx):\n    ctx.register_memory_provider('mempalace', MemPalaceProvider)\n")
-	m := casesDiscover(t, h)
-	entry := m.plugins["mempalace"]
-	if entry == nil || entry.Manifest.Kind != "exclusive" {
-		t.Fatalf("expected auto-coerced kind exclusive, got %+v", entry)
-	}
-	if entry.Enabled || entry.Module != "" || !strings.Contains(strings.ToLower(entry.Error), "exclusive") {
-		t.Fatalf("entry %+v", entry)
-	}
-}
-
 func TestPluginLoadingBundledCronProviderIsNotLoadedByGeneralManager(t *testing.T) {
 	h := casesHome(t, "  enabled: [chronos]\n")
 	chronos := filepath.Join(os.Getenv("ICEBATH_BUNDLED_PLUGINS"), "cron_providers", "chronos")
@@ -266,16 +251,6 @@ func TestPluginLoadingBundledCronProviderIsNotLoadedByGeneralManager(t *testing.
 		if strings.HasSuffix(key, "chronos") {
 			t.Fatalf("general manager recorded %s", key)
 		}
-	}
-}
-
-func TestPluginLoadingUserCronPluginAutoCoercedToExclusive(t *testing.T) {
-	h := casesHome(t, "  enabled: [mycron]\n")
-	mv2Write(t, filepath.Join(h, "plugins", "mycron", "plugin.yaml"), "name: mycron\n")
-	mv2Write(t, filepath.Join(h, "plugins", "mycron", "__init__.py"), "def register(ctx):\n    ctx.register_cron_scheduler(object())\n")
-	entry := casesDiscover(t, h).plugins["mycron"]
-	if entry == nil || entry.Manifest.Kind != "exclusive" || entry.Module != "" || entry.Enabled {
-		t.Fatalf("entry %+v", entry)
 	}
 }
 

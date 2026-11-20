@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -33,9 +34,9 @@ func userDisplay(text string) string {
 	}
 	prefix = jsSlice(prefix, 0, 80)
 	if prefix == "" {
-		prefix = tr("libText.messages.messageFallback")
+		prefix = tr(txt.LibTextMessagesMessageFallback)
 	}
-	return tr("libText.messages.longMessage", prefix)
+	return tr(txt.LibTextMessagesLongMessage, prefix)
 }
 
 // Folded block of an asynchronous delegation batch result, headed by its display text or the finished agent count
@@ -43,12 +44,12 @@ func delegationResultMsg(text string, meta *tuigateway.DisplayMetadata, createdA
 	if meta == nil {
 		meta = &tuigateway.DisplayMetadata{}
 	}
-	label := tr("libText.messages.backgroundAgentWorkFinished")
+	label := tr(txt.LibTextMessagesBackgroundAgentWorkFinished)
 	switch count := meta.TaskCount; {
 	case count != nil && *count == 1:
-		label = tr("libText.messages.backgroundAgentsFinishedOne", *count)
+		label = tr(txt.LibTextMessagesBackgroundAgentsFinishedOne, *count)
 	case count != nil:
-		label = tr("libText.messages.backgroundAgentsFinishedOther", *count)
+		label = tr(txt.LibTextMessagesBackgroundAgentsFinishedOther, *count)
 	}
 	if display := val(meta.DisplayText); strings.TrimSpace(display) != "" {
 		label = display
@@ -60,13 +61,13 @@ func delegationResultMsg(text string, meta *tuigateway.DisplayMetadata, createdA
 func clarifySettledRows(questions []clarifyQuestion, answers map[string]string) (string, string) {
 	rows := make([]string, len(questions))
 	for i, q := range questions {
-		answer := tr("session.main.skipped")
+		answer := tr(txt.SessionMainSkipped)
 		if trimJS(answers[q.QID]) != "" {
 			answer = clarifyAnswerText(answers[q.QID], q.MultiSelect)
 		}
 		rows[i] = q.Question + " → " + answer
 	}
-	return buildToolTrailLine("clarify", countNoun(len(questions), "question"), toolVerdict{}, "", nil), strings.Join(rows, "\n")
+	return buildToolTrailLine("clarify", trCount(txt.PromptClarifyQuestionsOne, txt.PromptClarifyQuestionsOther, len(questions)), toolVerdict{}, "", nil), strings.Join(rows, "\n")
 }
 
 // Stored result of a clarify tool call, as much of it as the transcript reads
@@ -111,9 +112,9 @@ func storedClarifyRows(content string) (trail, text string, abandoned, found boo
 	case outcome == "submitted":
 		return trail, text, false, true
 	case outcome == "cancelled":
-		reason = tr("gatewayMsg.clarify.cancelled")
+		reason = tr(txt.GatewayMsgClarifyCancelled)
 	case outcome == "timed_out":
-		reason = tr("gatewayMsg.clarify.timedOut")
+		reason = tr(txt.GatewayMsgClarifyTimedOut)
 	case result.Notice != nil:
 		reason = *result.Notice
 	}
@@ -160,20 +161,20 @@ func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 		case "hidden":
 			continue
 		case "model_switch":
-			event(tr("libText.messages.modelChanged"))
+			event(tr(txt.LibTextMessagesModelChanged))
 			continue
 		case "auto_continue":
-			event(tr("libText.messages.resumedInterruptedTurn"))
+			event(tr(txt.LibTextMessagesResumedInterruptedTurn))
 			continue
 		case "personality_switch":
-			event(tr("libText.messages.personalityChanged"))
+			event(tr(txt.LibTextMessagesPersonalityChanged))
 			continue
 		case "async_delegation_complete":
 			out = append(out, delegationResultMsg(text, row.DisplayMetadata, createdAt))
 			pending = nil
 			continue
 		case "process_complete":
-			label := tr("libText.messages.backgroundProcessFinished")
+			label := tr(txt.LibTextMessagesBackgroundProcessFinished)
 			if row.DisplayMetadata != nil && row.DisplayMetadata.DisplayText != nil {
 				label = *row.DisplayMetadata.DisplayText
 			}

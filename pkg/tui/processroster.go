@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -79,23 +80,26 @@ func lastOutputLine(preview string) string {
 	return ""
 }
 
+// Word of a process status in the active language, the status itself when the catalog has no word for it
+func processStatusWord(status string) string { return trOr("processes.status."+status, status) }
+
 // Detail of a row, the last output while running, otherwise how it ended and how long ago
 func processVerdict(row processRow, exitCode *int64) string {
 	if row.Status == "running" {
 		if row.Detail != "" {
-			return "last: " + row.Detail
+			return tr(txt.ProcessesLastOutput, row.Detail)
 		}
-		return "starting"
+		return tr(txt.ProcessesStarting)
 	}
-	verdict := row.Status
+	verdict := processStatusWord(row.Status)
 	if row.Status != "killed" && row.Status != "lost" {
 		code := "?"
 		if exitCode != nil {
 			code = strconv.FormatInt(*exitCode, 10)
 		}
-		verdict = "exit " + code
+		verdict = tr(txt.CommonExitCode, code)
 	}
-	return verdict + " · " + strconv.FormatFloat(row.SinceExitSeconds, 'f', -1, 64) + "s ago"
+	return tr(txt.ProcessesEndedAgo, verdict, strconv.FormatFloat(row.SinceExitSeconds, 'f', -1, 64))
 }
 
 // Rows of running processes and those that exited within the retain window, running ones first
@@ -117,7 +121,7 @@ func buildProcessRows(processes []tuigateway.ProcessEntry, nowMs float64) []proc
 		}
 		command := collapseProcessText(entry.Command)
 		if command == "" {
-			command = "background process"
+			command = tr(txt.ProcessesBackgroundProcess)
 		}
 		preview := val(entry.OutputPreview)
 		row := processRow{
@@ -187,13 +191,13 @@ func registerProcessKeys(km *keys.Map) {
 func processStateText(entry tuigateway.ProcessEntry) string {
 	status := processStatus(entry)
 	if status == "running" {
-		return "running · " + strconv.FormatInt(val(entry.UptimeSeconds), 10) + "s"
+		return tr(txt.ProcessesRunningFor, val(entry.UptimeSeconds))
 	}
 	if status == "killed" || status == "lost" {
-		return status
+		return processStatusWord(status)
 	}
 	if entry.ExitCode != nil {
-		return status + " · exit " + strconv.FormatInt(*entry.ExitCode, 10)
+		return tr(txt.ProcessesStatusExit, processStatusWord(status), *entry.ExitCode)
 	}
 	return status
 }
@@ -203,7 +207,7 @@ func (a *app) openProcesses(sid string) tea.Cmd {
 	params := tuigateway.SessionIDParams{SessionID: sid}
 	return call(a.gw, tuigateway.ProcessList, params, func(r *tuigateway.ProcessListResult, err error) tea.Cmd {
 		if err != nil {
-			a.sys("error: " + rpcErrorMessage(err))
+			a.sys(errorLine(rpcErrorMessage(err)))
 			return nil
 		}
 		entries := r.Processes
@@ -219,8 +223,8 @@ func (a *app) openProcesses(sid string) tea.Cmd {
 		}
 		a.store.applyProcessSnapshot(sid, entries)
 		list := cards.NewList(a.cardEnv(), cards.ListSpec{
-			Title: tr("hubs.agents.processes"), Glyph: a.toolkit.Glyphs.Jobs, Key: "tui:processes", Context: processesContext, Primary: "tui.processes.read",
-			Columns: []render.Column{{Title: tr("exitSummary.id")}, {Title: tr("processes.column.state")}, {Title: tr("processes.column.command"), Flex: 3}},
+			Title: tr(txt.HubsAgentsProcesses), Glyph: a.toolkit.Glyphs.Jobs, Key: "tui:processes", Context: processesContext, Primary: "tui.processes.read",
+			Columns: []render.Column{{Title: tr(txt.ExitSummaryId)}, {Title: tr(txt.ProcessesColumnState)}, {Title: tr(txt.ProcessesColumnCommand), Flex: 3}},
 			Rows: func() [][]string {
 				out := make([][]string, len(entries))
 				for i, e := range entries {
@@ -234,12 +238,12 @@ func (a *app) openProcesses(sid string) tea.Cmd {
 				}
 				return []string{lastOutputLine(val(entries[i].OutputTail))}
 			},
-			Empty: func() string { return tr("processes.none") },
+			Empty: func() string { return tr(txt.ProcessesNone) },
 			Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 				"tui.processes.read": func(l *cards.List, i int) tea.Cmd {
 					e := entries[i]
 					if strings.TrimSpace(val(e.OutputTail)) == "" {
-						return wm.Notify(tr("processes.noOutput", e.SessionID), wm.Info)
+						return wm.Notify(tr(txt.ProcessesNoOutput, e.SessionID), wm.Info)
 					}
 					return a.page(val(e.OutputTail), e.SessionID+" · "+truncateEnd(collapseProcessText(e.Command), 40))
 				},
@@ -249,15 +253,15 @@ func (a *app) openProcesses(sid string) tea.Cmd {
 					return call(a.gw, tuigateway.ProcessKill, kill, func(k *tuigateway.ProcessKillResult, err error) tea.Cmd {
 						switch {
 						case err != nil:
-							return wm.Notify(tr("processes.killFailed", id, rpcErrorMessage(err)), wm.Error)
+							return wm.Notify(tr(txt.ProcessesKillFailed, id, rpcErrorMessage(err)), wm.Error)
 						case k.Status == "killed":
-							return tea.Batch(refresh(l), wm.Notify(tr("processes.killed", id), wm.Success))
+							return tea.Batch(refresh(l), wm.Notify(tr(txt.ProcessesKilled, id), wm.Success))
 						case k.Status == "already_exited":
-							return tea.Batch(refresh(l), wm.Notify(tr("processes.alreadyExited", id), wm.Info))
+							return tea.Batch(refresh(l), wm.Notify(tr(txt.ProcessesAlreadyExited, id), wm.Info))
 						case k.Status == "not_found":
-							return tea.Batch(refresh(l), wm.Notify(tr("processes.notFound", id), wm.Warn))
+							return tea.Batch(refresh(l), wm.Notify(tr(txt.ProcessesNotFound, id), wm.Warn))
 						}
-						return wm.Notify(tr("processes.killFailed", id, val(k.Error)), wm.Error)
+						return wm.Notify(tr(txt.ProcessesKillFailed, id, val(k.Error)), wm.Error)
 					})
 				},
 			},

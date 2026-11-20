@@ -40,3 +40,13 @@ func pluginWidgets(ctx context.Context) []tui.Widget {
 	}
 	return out
 }
+
+// Widgets of the plugins after a scan of the plugins, forced anew when asked and else run only the first time, with the plugins that failed to load
+func scanPluginWidgets(ctx context.Context, force bool) ([]tui.Widget, []tui.WidgetLoadFailure) {
+	plugins.DiscoverPlugins(ctx, force)
+	var failed []tui.WidgetLoadFailure
+	for _, failure := range plugins.GetPluginManager(ctx).LoadFailures() {
+		failed = append(failed, tui.WidgetLoadFailure{Plugin: failure[0], Message: failure[1]})
+	}
+	return pluginWidgets(ctx), failed
+}

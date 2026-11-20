@@ -144,7 +144,7 @@ func TestBackendCachePerSessionReleaseAndShutdown(t *testing.T) {
 		return b, nil
 	}
 	t.Cleanup(func() { newComputerUseBackend = prev; resetBackendForTests() })
-	env := cuPluginHome(t, t.TempDir(), nil, "", "")
+	env := cuPluginHome(t, t.TempDir(), nil, "")
 	env.Config = config.Tree{}
 	ctx := context.Background()
 	a1, err := getBackend(ctx, env, "a")
@@ -191,7 +191,7 @@ func TestInjectedBackendFoldsIntoEmptySession(t *testing.T) {
 	cuBackendMu.Lock()
 	cuInjectedBackend = injected
 	cuBackendMu.Unlock()
-	env := cuPluginHome(t, t.TempDir(), nil, "", "")
+	env := cuPluginHome(t, t.TempDir(), nil, "")
 	got, err := getBackend(context.Background(), env, "")
 	if err != nil || got != injected || injected.starts != 0 {
 		t.Fatalf("empty session got %v err %v starts %d", got, err, injected.starts)

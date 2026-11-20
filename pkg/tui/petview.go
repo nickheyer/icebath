@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -582,7 +583,7 @@ func (p *petView) drawing() string {
 	case p.surface != nil && p.placedAt != nil:
 		return p.surface.Protocol().String()
 	}
-	return tr("slashCmd.session.pet.drawingCells")
+	return tr(txt.SlashCmdSessionPetDrawingCells)
 }
 
 // Screen cell where the session window content starts, set before it paints

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Sequences the IDE keybindings send, the modified keys of the kitty keyboard protocol the composer acts on
@@ -380,14 +382,14 @@ func readIDEKeybindings(path string) (entries []json.RawMessage, exists bool, is
 func configureTerminalKeybindings(terminal, goos string, env func(string) string, homeDir string, now time.Time) terminalSetupResult {
 	meta := ideTerminals[terminal]
 	if isRemoteShellSession(setLookup(env)) {
-		return terminalSetupResult{message: tr("libText.terminalSetup.mustRunLocally", meta.label)}
+		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupMustRunLocally, meta.label)}
 	}
 	configDir := ideConfigDir(meta.appName, goos, env, homeDir)
 	if configDir == "" {
-		return terminalSetupResult{message: tr("libText.terminalSetup.settingsPathUnknown", meta.label)}
+		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupSettingsPathUnknown, meta.label)}
 	}
 	failed := func(err error) terminalSetupResult {
-		return terminalSetupResult{message: tr("libText.terminalSetup.configureFailed", meta.label, err.Error())}
+		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupConfigureFailed, meta.label, err.Error())}
 	}
 	file := filepath.Join(configDir, "keybindings.json")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -396,9 +398,9 @@ func configureTerminalKeybindings(terminal, goos string, env func(string) string
 	entries, exists, isArray, err := readIDEKeybindings(file)
 	switch {
 	case err != nil:
-		return terminalSetupResult{message: tr("libText.terminalSetup.readFailed", meta.label, err.Error())}
+		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupReadFailed, meta.label, err.Error())}
 	case !isArray:
-		return terminalSetupResult{message: tr("libText.terminalSetup.keybindingsNotArray", meta.label, file)}
+		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupKeybindingsNotArray, meta.label, file)}
 	}
 	migrated := migrateLegacyIDEBindings(entries)
 	existing := make([]ideBinding, 0, len(entries))
@@ -424,11 +426,11 @@ func configureTerminalKeybindings(terminal, goos string, env func(string) string
 		}
 	}
 	if len(conflicts) > 0 {
-		return terminalSetupResult{message: tr("libText.terminalSetup.conflicts", file, strings.Join(conflicts, ", "))}
+		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupConflicts, file, strings.Join(conflicts, ", "))}
 	}
 	added := len(missing)
 	if added == 0 && migrated == 0 {
-		return terminalSetupResult{success: true, message: tr("libText.terminalSetup.alreadyConfigured", meta.label)}
+		return terminalSetupResult{success: true, message: tr(txt.LibTextTerminalSetupAlreadyConfigured, meta.label)}
 	}
 	if exists {
 		stamp := strings.NewReplacer(":", "-", ".", "-").Replace(now.UTC().Format("2006-01-02T15:04:05.000Z"))
@@ -455,20 +457,20 @@ func configureTerminalKeybindings(terminal, goos string, env func(string) string
 	}
 	var parts []string
 	if added > 0 {
-		key := "libText.terminalSetup.addedOther"
+		key := txt.LibTextTerminalSetupAddedOther
 		if added == 1 {
-			key = "libText.terminalSetup.addedOne"
+			key = txt.LibTextTerminalSetupAddedOne
 		}
 		parts = append(parts, tr(key, strconv.Itoa(added), meta.label))
 	}
 	if migrated > 0 {
-		key := "libText.terminalSetup.migratedOther"
+		key := txt.LibTextTerminalSetupMigratedOther
 		if migrated == 1 {
-			key = "libText.terminalSetup.migratedOne"
+			key = txt.LibTextTerminalSetupMigratedOne
 		}
 		parts = append(parts, tr(key, strconv.Itoa(migrated)))
 	}
-	return terminalSetupResult{success: true, requiresRestart: true, message: tr("libText.terminalSetup.summaryIn", strings.Join(parts, ", "), file)}
+	return terminalSetupResult{success: true, requiresRestart: true, message: tr(txt.LibTextTerminalSetupSummaryIn, strings.Join(parts, ", "), file)}
 }
 
 // Copies a file under another name with the same permissions
@@ -520,16 +522,16 @@ type terminalHint struct{ key, message, tone string }
 func terminalParityHints(goos string, env func(string) string, homeDir string) []terminalHint {
 	var hints []terminalHint
 	if ide := detectIDETerminal(env); ide != "" && shouldPromptForTerminalSetup(goos, env, homeDir) {
-		hints = append(hints, terminalHint{"ide-setup", tr("libText.terminalParity.ideSetup", ide), "info"})
+		hints = append(hints, terminalHint{"ide-setup", tr(txt.LibTextTerminalParityIdeSetup, ide), "info"})
 	}
 	if env("TERM_PROGRAM") == "Apple_Terminal" || env("TERM_SESSION_ID") != "" {
-		hints = append(hints, terminalHint{"apple-terminal", tr("libText.terminalParity.appleTerminal"), "warn"})
+		hints = append(hints, terminalHint{"apple-terminal", tr(txt.LibTextTerminalParityAppleTerminal), "warn"})
 	}
 	if env("TMUX") != "" {
-		hints = append(hints, terminalHint{"tmux", tr("libText.terminalParity.tmux"), "warn"})
+		hints = append(hints, terminalHint{"tmux", tr(txt.LibTextTerminalParityTmux), "warn"})
 	}
 	if isRemoteShellSession(setLookup(env)) {
-		hints = append(hints, terminalHint{"remote", tr("libText.terminalParity.remote"), "warn"})
+		hints = append(hints, terminalHint{"remote", tr(txt.LibTextTerminalParityRemote), "warn"})
 	}
 	return hints
 }
@@ -550,7 +552,7 @@ func terminalHintsCmd() tea.Msg {
 func (r *slashRun) terminalSetup() tea.Cmd {
 	target := strings.ToLower(trimJS(r.arg))
 	if _, known := ideTerminals[target]; target != "" && target != "auto" && !known {
-		r.sys(tr("slashCmd.core.terminalSetup.usage"))
+		r.sys(tr(txt.SlashCmdCoreTerminalSetupUsage))
 		return nil
 	}
 	return func() tea.Msg {
@@ -558,12 +560,12 @@ func (r *slashRun) terminalSetup() tea.Cmd {
 			terminal := target
 			if terminal == "" || terminal == "auto" {
 				if terminal = detectIDETerminal(os.Getenv); terminal == "" {
-					return terminalSetupResult{message: tr("libText.terminalSetup.noSupportedIde")}
+					return terminalSetupResult{message: tr(txt.LibTextTerminalSetupNoSupportedIde)}
 				}
 			}
 			home, err := os.UserHomeDir()
 			if err != nil {
-				return terminalSetupResult{message: tr("slashCmd.core.terminalSetup.failed", err.Error())}
+				return terminalSetupResult{message: tr(txt.SlashCmdCoreTerminalSetupFailed, err.Error())}
 			}
 			return configureTerminalKeybindings(terminal, runtime.GOOS, os.Getenv, home, time.Now())
 		}()
@@ -573,7 +575,7 @@ func (r *slashRun) terminalSetup() tea.Cmd {
 			}
 			r.sys(result.message)
 			if result.success && result.requiresRestart {
-				r.sys(tr("slashCmd.core.terminalSetup.restartIde"))
+				r.sys(tr(txt.SlashCmdCoreTerminalSetupRestartIde))
 			}
 			return nil
 		}}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -72,6 +73,13 @@ type promptSubmitter struct {
 
 // Marks the session busy at the choke point every submit funnels through
 func (s *tuiStore) markSubmitting() { s.ui.Busy, s.ui.Status = true, "running…" }
+
+// Ends the busy state of a submission that began a turn of its own and was not taken, a turn that runs after all marks the session busy again through its events
+func (s *tuiStore) releaseUntaken(ownsTurn func() bool) {
+	if ownsTurn() {
+		s.ui.Busy = false
+	}
+}
 
 // Starts the turn this client owns, its bubble with the images sent along and busy state, each turn its own image revision so a file attached again is drawn again
 func (p *promptSubmitter) beginOwnedTurn(text, displayOverride, displayText string, show bool, images []string) {
@@ -152,9 +160,9 @@ func (p *promptSubmitter) settleCorrection(item *queueItem, status tuigateway.Co
 	item.settle(accepted)
 	if focused() {
 		if accepted {
-			p.deps.sys(tr("canonical.submit.correction", string(status)))
+			p.deps.sys(tr(txt.CanonicalSubmitCorrection, string(status)))
 		} else {
-			p.deps.sys(tr("canonical.submit.correctionRejected"))
+			p.deps.sys(tr(txt.CanonicalSubmitCorrectionRejected))
 		}
 	}
 	return true
@@ -168,7 +176,7 @@ func (p *promptSubmitter) voiceStopped(sid string) {
 }
 
 // Settles an admission receipt against the destination it was sent for
-func (p *promptSubmitter) settleAdmissionReply(item *queueItem, receipt *tuigateway.AdmissionReceipt, destination submissionDestination, focused func() bool, owner submissionDestination, sid string) tea.Cmd {
+func (p *promptSubmitter) settleAdmissionReply(item *queueItem, receipt *tuigateway.AdmissionReceipt, destination submissionDestination, focused, ownsTurn func() bool, owner submissionDestination, sid string) tea.Cmd {
 	accepted := receipt != nil && destination.StoredSid != "" && receipt.Ref.SessionID == destination.StoredSid && receipt.Ref.ProfileID == firstText(destination.OwnerHome, destination.ProfileHome)
 	item.settle(accepted)
 	var cmd tea.Cmd
@@ -176,8 +184,11 @@ func (p *promptSubmitter) settleAdmissionReply(item *queueItem, receipt *tuigate
 		cmd = p.refreshExecutionStatus(focused, owner, sid)
 	}
 	if !accepted && focused() {
-		p.deps.sys(tr("canonical.submit.admissionNotConfirmed"))
-		p.store.ui.Status = tr("canonical.submit.statusAdmissionUnconfirmed")
+		p.deps.sys(tr(txt.CanonicalSubmitAdmissionNotConfirmed))
+		p.store.ui.Status = tr(txt.CanonicalSubmitStatusAdmissionUnconfirmed)
+	}
+	if !accepted {
+		p.store.releaseUntaken(ownsTurn)
 	}
 	return cmd
 }
@@ -188,7 +199,7 @@ func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner subm
 	settle := func(a *attachment, err error) tea.Cmd {
 		if err != nil {
 			if focused() {
-				p.deps.sys(tr("canonical.submit.executionUnconfirmed", err.Error()))
+				p.deps.sys(tr(txt.CanonicalSubmitExecutionUnconfirmed, err.Error()))
 			}
 			return nil
 		}
@@ -230,16 +241,17 @@ func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner subm
 }
 
 // Delivers a queue entry on the method table route, which takes no submission id so the entry is never resent
-func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, focused func() bool) tea.Cmd {
+func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, focused, ownsTurn func() bool) tea.Cmd {
 	if focused() {
-		p.deps.sys(tr("canonical.submit.legacyDelivery"))
+		p.deps.sys(tr(txt.CanonicalSubmitLegacyDelivery))
 	}
 	unconfirmed := func(err error) tea.Cmd {
 		item.settle(false)
 		if focused() {
-			p.deps.sys(tr("canonical.submit.legacyUnconfirmedWith", err.Error()))
-			p.store.ui.Status = tr("canonical.submit.statusDeliveryUnconfirmed")
+			p.deps.sys(tr(txt.CanonicalSubmitLegacyUnconfirmedWith, err.Error()))
+			p.store.ui.Status = tr(txt.CanonicalSubmitStatusDeliveryUnconfirmed)
 		}
+		p.store.releaseUntaken(ownsTurn)
 		return nil
 	}
 	attempted := true
@@ -260,9 +272,12 @@ func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, 
 			if stopped {
 				p.store.ui.Busy, p.store.ui.Status = false, "ready"
 			} else if !accepted {
-				p.deps.sys(tr("canonical.submit.legacyUnconfirmed"))
-				p.store.ui.Status = tr("canonical.submit.statusDeliveryUnconfirmed")
+				p.deps.sys(tr(txt.CanonicalSubmitLegacyUnconfirmed))
+				p.store.ui.Status = tr(txt.CanonicalSubmitStatusDeliveryUnconfirmed)
 			}
+		}
+		if !accepted {
+			p.store.releaseUntaken(ownsTurn)
 		}
 		return nil
 	})
@@ -289,14 +304,14 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 	focused := func() bool { return p.store.isCurrentDestination(owner) }
 	ownsTurn := func() bool { return focused() && !opts.BehindTurn }
 	if sid == "" {
-		p.deps.sys("session not ready yet")
+		p.deps.sys(tr(txt.SessionNoticesNotReady))
 		return nil
 	}
 	if item := opts.QueueItem; item != nil && item.LegacyAttempted != nil && *item.LegacyAttempted {
 		item.settle(false)
 		if focused() {
-			p.deps.sys(tr("canonical.submit.deliveryNotResent"))
-			p.store.ui.Status = tr("canonical.submit.statusDeliveryUnconfirmed")
+			p.deps.sys(tr(txt.CanonicalSubmitDeliveryNotResent))
+			p.store.ui.Status = tr(txt.CanonicalSubmitStatusDeliveryUnconfirmed)
 		}
 		return nil
 	}
@@ -331,7 +346,7 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 		if item != nil && item.ControlMethod != "" && len(item.Attachments) > 0 {
 			item.settle(false)
 			if focused() {
-				p.deps.sys(tr("canonical.submit.busyTextOnly"))
+				p.deps.sys(tr(txt.CanonicalSubmitBusyTextOnly))
 			}
 			return nil, nil
 		}
@@ -348,26 +363,27 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 			case item != nil:
 				item.settle(false)
 				if focused() {
-					p.deps.sys(tr("canonical.submit.inputRetained", err.Error()))
-					p.store.ui.Status = tr("canonical.submit.statusAdmissionUnconfirmed")
+					p.deps.sys(tr(txt.CanonicalSubmitInputRetained, err.Error()))
+					p.store.ui.Status = tr(txt.CanonicalSubmitStatusAdmissionUnconfirmed)
 				}
+				p.store.releaseUntaken(ownsTurn)
 				return nil
 			case isSessionBusyError(err):
 				p.deps.enqueue(submitText, displayOverride, *destination)
 				if !focused() {
 					return nil
 				}
-				p.store.ui.Busy, p.store.ui.Status = true, "queued for next turn"
+				p.store.ui.Busy, p.store.ui.Status = true, tr(txt.StatusQueuedForNextTurn)
 				ellipsis := ""
 				if len(units(submitText)) > 50 {
 					ellipsis = "…"
 				}
-				p.deps.sys(`queued: "` + jsSlice(submitText, 0, 50) + ellipsis + `"`)
+				p.deps.sys(tr(txt.SlashCmdCoreQueueQueued, jsSlice(submitText, 0, 50)+ellipsis))
 				return nil
 			case !focused():
 				return nil
 			}
-			p.deps.sys("error: " + err.Error())
+			p.deps.sys(errorLine(err.Error()))
 			p.store.ui.Busy, p.store.ui.Status = false, "ready"
 			return nil
 		}
@@ -439,14 +455,14 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 				case r.VoiceStopped:
 					return stopped()
 				case item != nil:
-					return p.settleAdmissionReply(item, r.AdmissionReceipt, *destination, focused, owner, sid)
+					return p.settleAdmissionReply(item, r.AdmissionReceipt, *destination, focused, ownsTurn, owner, sid)
 				}
 				return nil
 			}), nil
 		case len(attachments) > 0:
 			return resolved(func() tea.Cmd { return fail(tuigateway.UnknownParam(tuigateway.PromptSubmit.Name(), "attachments")) }), nil
 		case item != nil:
-			return p.submitLegacy(item, sid, submitText, focused), nil
+			return p.submitLegacy(item, sid, submitText, focused, ownsTurn), nil
 		}
 		params := tuigateway.PromptSubmitParams{SessionID: sid, Text: text}
 		if voice {
@@ -494,9 +510,9 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 					opts.QueueItem.settle(false)
 				}
 				if focused() {
-					p.deps.sys(tr("canonical.submit.imageNotSubmitted", err.Error()))
+					p.deps.sys(tr(txt.CanonicalSubmitImageNotSubmitted, err.Error()))
 					if ownsTurn() {
-						p.store.ui.Busy, p.store.ui.Status = false, tr("canonical.submit.statusImageNotSubmitted")
+						p.store.ui.Busy, p.store.ui.Status = false, tr(txt.CanonicalSubmitStatusImageNotSubmitted)
 					}
 				}
 				return nil

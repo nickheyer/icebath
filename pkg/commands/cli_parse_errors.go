@@ -77,11 +77,85 @@ func argparseFlagError(cmd *cobra.Command, err error) error {
 		if short := missing.GetSpecifiedShortnames(); short != "" {
 			token = "-" + short
 		}
-		return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + token}
+		return argparseUnknownOption(cmd, token)
 	case errors.As(err, &syntax):
-		return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + syntax.GetSpecifiedFlag()}
+		return argparseUnknownOption(cmd, syntax.GetSpecifiedFlag())
 	}
 	return err
+}
+
+// Error for an option a command does not declare: what its own parser raises first over the rest of its command line, a refused positional value or the required arguments left unfilled, else the unrecognized option the top parser reports
+func argparseUnknownOption(cmd *cobra.Command, token string) error {
+	if c, ok := cliRegistry.Load(cmd.Root()); ok {
+		cli := c.(*CLI)
+		if words, given, reached := cli.ownArguments(cmd); reached {
+			specs := cli.positionals[cmd]
+			if err := positionalValueError(cmd, specs, words); err != nil {
+				return err
+			}
+			if missing := argparseMissingRequired(cmd, specs, words, func(f *pflag.Flag) bool { return given[f.Name] }); len(missing) > 0 {
+				return &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: " + strings.Join(missing, ", ")}
+			}
+		}
+	}
+	return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + token}
+}
+
+// Positional words and declared flags of a command's own part of the command line, an undeclared option taking no value the way argparse sets it aside, reached false when the command line never arrives at the command
+func (c *CLI) ownArguments(cmd *cobra.Command) (words []string, given map[string]bool, reached bool) {
+	level := c.Root
+	given = map[string]bool{}
+	literal := false
+	for i := 0; i < len(c.argv); i++ {
+		tok := c.argv[i]
+		switch {
+		case literal:
+			if level == cmd {
+				words = append(words, tok)
+			}
+		case tok == "--":
+			literal = true
+		case strings.HasPrefix(tok, "--"):
+			name, _, hasValue := strings.Cut(tok[2:], "=")
+			f := level.Flags().Lookup(name)
+			if f == nil {
+				continue
+			}
+			if level == cmd {
+				given[f.Name] = true
+			}
+			if !hasValue && f.NoOptDefVal == "" && i+1 < len(c.argv) {
+				i++
+			}
+		case strings.HasPrefix(tok, "-") && len(tok) > 1:
+			for j, r := range tok[1:] {
+				f := level.Flags().ShorthandLookup(string(r))
+				if f == nil {
+					break
+				}
+				if level == cmd {
+					given[f.Name] = true
+				}
+				if f.NoOptDefVal == "" {
+					if j+1 == len(tok)-1 && i+1 < len(c.argv) {
+						i++
+					}
+					break
+				}
+			}
+		default:
+			if level != cmd {
+				if next := findSubcommand(level, tok); next != nil {
+					level = next
+					continue
+				}
+			}
+			if level == cmd {
+				words = append(words, tok)
+			}
+		}
+	}
+	return words, given, level == cmd
 }
 
 // Type conversion message argparse prints for a rejected option value
@@ -162,10 +236,87 @@ func argparseOneRequired(cmd *cobra.Command) error {
 	return nil
 }
 
-// Wraps a command's argument validator with the argparse group checks and the unrecognized option check
+// Declared actions of a command's parser, none for a command the parser table never declared
+func apDeclared(cmd *cobra.Command) []apAction {
+	if own, found := argparseOwn.Load(cmd); found {
+		return own.(*apParser).Acts
+	}
+	if p, ok := argparseTree[apPath(cmd)]; ok {
+		return p.Acts
+	}
+	return nil
+}
+
+// Names of the required arguments the given words and the flags given reports as set leave unfilled, positionals and options in the parser's declaration order and undeclared ones after them
+func argparseMissingRequired(cmd *cobra.Command, specs []posSpec, args []string, given func(*pflag.Flag) bool) []string {
+	unfilled := map[int]bool{}
+	for _, i := range unfilledPositionals(specs, args) {
+		unfilled[i] = true
+	}
+	marked := func(f *pflag.Flag) bool {
+		required := f.Annotations[cobra.BashCompOneRequiredFlag]
+		return len(required) > 0 && required[0] == "true"
+	}
+	var names []string
+	listed := map[string]bool{}
+	position := 0
+	for _, a := range apDeclared(cmd) {
+		switch a.Kind {
+		case 'p':
+			if unfilled[position] {
+				names = append(names, specs[position].display())
+				delete(unfilled, position)
+			}
+			position++
+		case 'f':
+			f := apFlag(cmd, a.Opts)
+			if f == nil || listed[f.Name] || cmd.DisableFlagParsing {
+				continue
+			}
+			listed[f.Name] = true
+			if !given(f) && (a.Required || marked(f)) {
+				names = append(names, strings.Join(a.Opts, "/"))
+			}
+		}
+	}
+	if !cmd.DisableFlagParsing {
+		fs := cmd.Flags()
+		sorted := fs.SortFlags
+		fs.SortFlags = false
+		fs.VisitAll(func(f *pflag.Flag) {
+			if !listed[f.Name] && !given(f) && marked(f) {
+				names = append(names, actionName(f))
+			}
+		})
+		fs.SortFlags = sorted
+	}
+	for i, s := range specs {
+		if unfilled[i] {
+			names = append(names, s.display())
+		}
+	}
+	return names
+}
+
+// Refuses a parse that left a required positional or option unfilled, naming every one of them in a single error
+func argparseRequired(cmd *cobra.Command, specs []posSpec, args []string) error {
+	if missing := argparseMissingRequired(cmd, specs, args, func(f *pflag.Flag) bool { return f.Changed }); len(missing) > 0 {
+		return &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: " + strings.Join(missing, ", ")}
+	}
+	return nil
+}
+
+// Wraps a command's argument validator with the checks every argparse parser runs, in its order: exclusive groups and positional values while consuming, then required arguments, required groups and unrecognized options
 func (c *CLI) withArgparseGroups(inner cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := argparseExclusive(cmd); err != nil {
+			return err
+		}
+		specs := c.positionals[cmd]
+		if err := positionalValueError(cmd, specs, args); err != nil {
+			return err
+		}
+		if err := argparseRequired(cmd, specs, args); err != nil {
 			return err
 		}
 		if inner != nil {

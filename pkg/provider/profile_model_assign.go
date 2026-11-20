@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -42,12 +41,7 @@ func NormalizeMainModelAssignment(ctx context.Context, provider, model string) (
 
 // Main slot pick validated through the model switch against cfg, a refused pick returning ModelAssignmentRejected
 func ValidatedMainModelSelection(ctx context.Context, cfg map[string]any, provider, model, baseURL string) (ModelSwitchResult, error) {
-	result, err := validatedMainModelSelection(ctx, cfg, provider, model, baseURL, "", nil)
-	var refused *HTTPException
-	if errors.As(err, &refused) && refused.StatusCode == 400 {
-		return ModelSwitchResult{}, &ModelAssignmentRejected{Msg: refused.Detail}
-	}
-	return result, err
+	return validatedMainModelSelection(ctx, cfg, provider, model, baseURL, "", nil)
 }
 
 // Model block with a validated main slot selection applied for the home in ctx

@@ -71,7 +71,13 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 	case "register_memory_provider", "register_cli_command":
 		return nil, nil
 	case "rewrite_memory_query":
-		return hostCtxCall(ctx, h, c, method, args, kwargs)
+		return hostMethod(method, []pyParam{req("user_message")},
+			func(ctx context.Context, _ *PluginHost, _ *Context, a, _ map[string]any) (any, error) {
+				if MemoryQueryRewrite == nil {
+					return "", nil
+				}
+				return MemoryQueryRewrite(ctx, argStr(a["user_message"])), nil
+			})(ctx, h, c, args, kwargs)
 	case "register_skill":
 		if !mc.registerSkills {
 			return nil, nil
@@ -101,18 +107,8 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 	return result, nil
 }
 
-// Rewrite of a user message into one memory retrieval question, installed by the memory package for memory provider plugins
+// Rewrite of a user message into one memory retrieval question, installed by the memory package and served to memory provider plugins only
 var MemoryQueryRewrite func(ctx context.Context, userMessage string) string
-
-func init() {
-	hostCtxDispatch["rewrite_memory_query"] = hostMethod("rewrite_memory_query", []pyParam{req("user_message")},
-		func(ctx context.Context, _ *PluginHost, _ *Context, a, _ map[string]any) (any, error) {
-			if MemoryQueryRewrite == nil {
-				return "", nil
-			}
-			return MemoryQueryRewrite(ctx, argStr(a["user_message"])), nil
-		})
-}
 
 // Replays one plugin context method by Python name, an AttributeError for a name the context lacks
 func hostCtxCall(ctx context.Context, h *PluginHost, c *Context, method string, args []any, kwargs map[string]any) (any, error) {

@@ -140,7 +140,7 @@ func TestComputerUseBindsEachCallersContextOnTheBackend(t *testing.T) {
 		return config.Tree{"computer_use": map[string]any{"permission_mode": mode}}, nil
 	}
 	t.Cleanup(func() { loadCUConfig = prevConfig })
-	env := cuPluginHome(t, t.TempDir(), nil, "", "")
+	env := cuPluginHome(t, t.TempDir(), nil, "")
 	marked := func(mark string) context.Context { return context.WithValue(context.Background(), callMarkKey{}, mark) }
 	first, err := getBackend(marked("start"), env, "s")
 	if err != nil {

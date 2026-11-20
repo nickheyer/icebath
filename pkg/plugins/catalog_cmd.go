@@ -376,6 +376,11 @@ func catalogIcebathError(entry *PluginCatalogEntry) string {
 	return fmt.Sprintf("%s needs Icebath %s; this is %s.", entry.Name, entry.RequiresIcebath, RunningVersion)
 }
 
+// Whether this OS and this icebath can run a catalog entry, the verdict of the install gate
+func CatalogEntryRunsHere(ctx context.Context, entry *PluginCatalogEntry) bool {
+	return refuseIncompatibleCatalogEntry(ctx, entry) == nil
+}
+
 // Operation error when the entry is compiled in or the catalog says it cannot run here by platform or version
 func refuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEntry) error {
 	if _, builtIn := bundledPlugin(entry.Name); builtIn {
@@ -1266,17 +1271,6 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 	}
 	for _, warning := range report.Warnings {
 		console.Print(fmt.Sprintf("[yellow]⚠ %s[/yellow]", warning))
-	}
-	if report.Isolation != nil {
-		iso := report.Isolation
-		mark := "[dim]◇[/dim]"
-		if iso.HostReady() {
-			mark = "[green]◆[/green]"
-		}
-		console.Print(fmt.Sprintf("%s Isolation [dim]— %s[/dim]", mark, iso.Summary()))
-		for _, note := range iso.Notes {
-			console.Print(fmt.Sprintf("  [dim]· %s[/dim]", note))
-		}
 	}
 	console.Print("")
 	if report.OK() {

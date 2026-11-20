@@ -75,7 +75,7 @@ func TestParkedMemoryProviderIsReportedAndNeverReinstalled(t *testing.T) {
 	if err := os.MkdirAll(plugin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_ = os.WriteFile(filepath.Join(plugin, "__init__.py"), []byte("from agent.memory_provider import MemoryProvider\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(plugin, "plugin.yaml"), []byte("name: parkedmem\nkind: exclusive\nruntime: program\nentry: provider\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(h, "config.yaml"), []byte("memory:\n  provider: parkedmem\nplugins:\n  disabled: [parkedmem]\n  disabled_by_update:\n"+
 		"    parkedmem: {enabled: true, reason: requires Python <3.14}\n"), 0o644)
 	saved := reportMissingMemoryProvider

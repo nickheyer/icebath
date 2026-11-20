@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -34,6 +35,12 @@ var BootHomeSteps = []PostUpdateStep{
 	{"state_db_guard", StepStateDBGuard},
 	{"drop_live_plugin_catalog", StepDropLivePluginCatalog},
 	{"expose_cli", StepExposeCLI},
+	{"install_default_plugins", defaults.StepInstall},
+}
+
+// Gives the default plugin installer the identity of the installed code its settled mark is recorded under
+func init() {
+	defaults.Identity = func(ctx context.Context) string { return CurrentInstallIdentity(ctx, pm.InstallRoot()) }
 }
 
 // Collaborators of the config migration step, the module attributes tests patch

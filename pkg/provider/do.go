@@ -27,7 +27,7 @@ var (
 		ReasonSSLCertVerification:  "The provider's security certificate could not be verified",
 		ReasonImageTooLarge:        "Request still exceeded the provider's size limit after shrinking images",
 	}
-	ladderStopHints     = map[string]string{"cli": "press Esc to stop", "tui": "press Esc to stop", "api_server": "cancel the request to stop", "cron": ""}
+	ladderStopHints     = map[string]string{"cli": "press Esc to stop", "tui": "press Esc twice to stop", "api_server": "cancel the request to stop", "cron": ""}
 	vendorResetHeaders  = []string{"x-ratelimit-reset-requests", "x-ratelimit-reset-tokens", "anthropic-ratelimit-requests-reset", "anthropic-ratelimit-tokens-reset"}
 	durationComponentRe = regexp.MustCompile(`(\d+(?:\.\d+)?)(ms|h|m|s)`)
 	durationUnitSeconds = map[string]float64{"h": 3600, "m": 60, "s": 1, "ms": 0.001}

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -19,7 +20,7 @@ type flowRun struct {
 
 // Starts a gateway setup flow and walks its questions until it ends
 func (a *app) runSetupFlow(flow, title string, params map[string]string) tea.Cmd {
-	a.store.ui.Status = tr("setupFlow.section.loading")
+	a.store.ui.Status = tr(txt.SetupFlowSectionLoading)
 	start := tuigateway.SetupFlowStartParams{Flow: flow, Params: params}
 	return ask(a.events.rpc, a.sys, tuigateway.SetupFlowStart, start, func(res *tuigateway.SetupFlowStartResult) tea.Cmd {
 		if res == nil {
@@ -45,9 +46,9 @@ func (a *app) stepSetupFlow(run *flowRun, answer *tuigateway.SetupFlowAnswer) te
 			a.store.ui.Status = a.store.statusFromBusy()
 			switch {
 			case res.Ok:
-				a.sys(tr("setupFlow.flow.done", run.title))
+				a.sys(tr(txt.SetupFlowFlowDone, run.title))
 			case res.Error != "":
-				a.sys(tr("setupFlow.flow.failed", run.title, res.Error))
+				a.sys(tr(txt.SetupFlowFlowFailed, run.title, res.Error))
 			}
 			return nil
 		}
@@ -111,7 +112,7 @@ func (a *app) askFlowQuestion(run *flowRun, question *tuigateway.SetupFlowQuesti
 	}
 	placeholder := text
 	if question.DefaultText != "" {
-		placeholder = tr("setupFlow.section.keep", text, question.DefaultText)
+		placeholder = tr(txt.SetupFlowSectionKeep, text, question.DefaultText)
 	}
 	p := wm.NewPrompt(a.toolkit, placeholder, "", func(entered string) tea.Cmd {
 		return a.answerFlow(run, question, sent, tuigateway.SetupFlowAnswer{Text: trimJS(entered)})
@@ -138,15 +139,15 @@ func flowTokenStatus(question *tuigateway.SetupFlowQuestion, chosen map[int]bool
 		total += question.Tokens[name]
 	}
 	if total >= 1000 {
-		return tr("setupFlow.flow.tokensK", strconv.FormatFloat(float64(total)/1000, 'f', 1, 64))
+		return tr(txt.SetupFlowFlowTokensK, strconv.FormatFloat(float64(total)/1000, 'f', 1, 64))
 	}
-	return tr("setupFlow.flow.tokens", total)
+	return tr(txt.SetupFlowFlowTokens, total)
 }
 
 // Toggle list of a multi choice, a row flipping its mark and the save row answering with the marked rows
 func (a *app) askFlowChecklist(run *flowRun, question *tuigateway.SetupFlowQuestion, text string, chosen map[int]bool, sent *bool) tea.Cmd {
 	toggled := false
-	items := []wm.Item{{ID: "flow:" + run.session + ":save", Title: tr("setupFlow.flow.save"), Detail: flowTokenStatus(question, chosen), Run: func() tea.Cmd {
+	items := []wm.Item{{ID: "flow:" + run.session + ":save", Title: tr(txt.SetupFlowFlowSave), Detail: flowTokenStatus(question, chosen), Run: func() tea.Cmd {
 		indices := []int64{}
 		for i := range question.Items {
 			if chosen[i] {
@@ -180,6 +181,6 @@ func (a *app) askFlowChecklist(run *flowRun, question *tuigateway.SetupFlowQuest
 
 // Toolsets per platform with the provider, key and model of each tool, run as the tools flow on the gateway
 func toolsSetupSection() setupSection {
-	title := tr("setupFlow.tools.title")
-	return setupSection{"tools", title, tr("setupFlow.tools.detail"), func(a *app) tea.Cmd { return a.runSetupFlow("tools", title, nil) }}
+	title := tr(txt.SetupFlowToolsTitle)
+	return setupSection{"tools", title, tr(txt.SetupFlowToolsDetail), func(a *app) tea.Cmd { return a.runSetupFlow("tools", title, nil) }}
 }

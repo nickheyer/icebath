@@ -317,8 +317,8 @@ func TestConfigGetPhantomKeyNotice(t *testing.T) {
 	})
 	t.Run("test_unseeded_live_key_notice_hedges_instead_of_asserting_unread", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.write("gateway:\n  proxy_url: http://127.0.0.1:1\n")
-		if err := c.command(config.ConfigArgs{Command: "get", Key: "gateway.proxy_url"}); err != nil {
+		c.write("gateway:\n  mirror_endpoint: http://127.0.0.1:1\n")
+		if err := c.command(config.ConfigArgs{Command: "get", Key: "gateway.mirror_endpoint"}); err != nil {
 			t.Fatal(err)
 		}
 		out, errOut := c.drain()
@@ -454,7 +454,7 @@ func TestSchemaValidation(t *testing.T) {
 			want       any
 			suggestion string
 		}{
-			{"gateway.proxy_url", "http://127.0.0.1:1", "http://127.0.0.1:1", ""},
+			{"gateway.mirror_endpoint", "http://127.0.0.1:1", "http://127.0.0.1:1", ""},
 			{"agent.max_turnz", "50", 50, "agent.max_turns"},
 			{"gateway.filter_silence_narration", "false", false, ""},
 		} {

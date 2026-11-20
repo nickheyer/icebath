@@ -69,7 +69,14 @@ func BackupConfig(ctx context.Context, configPath, reason string, keep int) (str
 	if err := os.MkdirAll(root, 0o777); err != nil {
 		return fail(err), nil
 	}
-	sweepLegacySiblings(configPath, root)
+	sweepLegacySiblings(ctx, configPath, root)
+	// Copies taken before backups were secured kept their source's mode and a reason that never fires again never
+	// rotates them out, so only their world bits go, a shared group home keeping its backups group readable
+	for _, old := range ListConfigBackups(configPath, "") {
+		if st, err := os.Lstat(old); err == nil && st.Mode()&os.ModeSymlink == 0 {
+			DropOtherAccess(ctx, old)
+		}
+	}
 	existing := ListConfigBackups(configPath, reason)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -91,6 +98,8 @@ func BackupConfig(ctx context.Context, configPath, reason string, keep int) (str
 	if err := pyshutil.Copy2(configPath, dest); err != nil {
 		return fail(err), nil
 	}
+	// The copy carries the source mode, so a config an editor left world readable would yield a world readable copy of its credentials
+	SecureFile(ctx, "", dest)
 	all := append([]string{dest}, existing...)
 	start := keep
 	if start < 0 {
@@ -129,8 +138,8 @@ func LoadNewestGoodBackup(ctx context.Context, configPath string) (map[string]an
 	return nil, nil
 }
 
-// Moves legacy backup siblings of config.yaml into the backups dir
-func sweepLegacySiblings(configPath, root string) {
+// Moves legacy backup siblings of config.yaml into the backups dir and makes them owner only
+func sweepLegacySiblings(ctx context.Context, configPath, root string) {
 	for _, pattern := range legacySiblingGlobs {
 		matches, _ := filepath.Glob(filepath.Join(filepath.Dir(configPath), pattern))
 		for _, old := range matches {
@@ -138,9 +147,12 @@ func sweepLegacySiblings(configPath, root string) {
 			if err != nil || !st.Mode().IsRegular() {
 				continue
 			}
-			if err := os.Rename(old, filepath.Join(root, filepath.Base(old))); err != nil {
+			moved := filepath.Join(root, filepath.Base(old))
+			if err := os.Rename(old, moved); err != nil {
 				pkgLog().Debug(fmt.Sprintf("Could not move legacy backup %s: %s", old, pyOSErrorString(err)))
+				continue
 			}
+			SecureFile(ctx, "", moved)
 		}
 	}
 }

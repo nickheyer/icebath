@@ -21,7 +21,7 @@ func TestRuntimeReadKeyOwnersInOrder(t *testing.T) {
 	if !IsRuntimeReadKey([]string{"browser", "cloud_provider"}, owners) || *scans != 0 {
 		t.Fatal("selection key refused")
 	}
-	for _, key := range [][]string{{"computer_use", "backend"}} {
+	for _, key := range [][]string{{"cron", "inflight_max_minutes"}, {"display", "arena", "fps"}} {
 		if !IsRuntimeReadKey(key, owners) {
 			t.Fatalf("core runtime key %v refused", key)
 		}
@@ -29,7 +29,7 @@ func TestRuntimeReadKeyOwnersInOrder(t *testing.T) {
 	if IsRuntimeReadKey([]string{"browser", "cloud_providerz"}, owners) || *scans != 1 {
 		t.Fatal("typo accepted or plugin scan skipped")
 	}
-	if IsRuntimeReadKey([]string{"computer_use", "backendz"}, owners) {
+	if IsRuntimeReadKey([]string{"cron", "inflight_max_minutez"}, owners) {
 		t.Fatal("sibling of a core runtime key accepted")
 	}
 }

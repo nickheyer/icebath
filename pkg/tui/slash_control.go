@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -17,7 +18,7 @@ func (r *slashRun) printCompressSummary(summary *tuigateway.CompressionSummary) 
 	}
 	switch {
 	case summary.Headline == "":
-		r.sys(tr("canonical.controls.compressed"))
+		r.sys(tr(txt.CanonicalControlsCompressed))
 	case summary.Noop:
 		r.sys(summary.Headline)
 	default:
@@ -34,7 +35,7 @@ func (r *slashRun) printCompressSummary(summary *tuigateway.CompressionSummary) 
 func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 	a := r.a
 	if r.sid == "" {
-		r.sys(tr("slashCmd.core.status.noActiveSession"))
+		r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
 		return nil
 	}
 	baseline, busy := a.store.ui.Info, a.store.ui.Busy
@@ -53,7 +54,7 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 		if operation == "branch" {
 			child := val(result.BranchedSessionID)
 			if child == "" {
-				r.fail(errors.New(misfitText(tr("session.common.invalidResponse", "branch"))))
+				r.fail(errors.New(misfitText(tr(txt.SessionCommonInvalidResponse, "branch"))))
 				return nil
 			}
 			return a.resumeByID(child, func(err error) tea.Cmd {
@@ -71,7 +72,7 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 							title = fallback
 						}
 					}
-					a.sys(tr("slashCmd.session.branch.branched", title))
+					a.sys(tr(txt.SlashCmdSessionBranchBranched, title))
 					return nil
 				})
 			})
@@ -95,7 +96,7 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 			attached := snapshotAttachment(snapshot)
 			info := patchedInfo(baseline, *attached.Info)
 			if !sameStamp(info.AuthorityEpoch, infoOf(baseline).AuthorityEpoch) || val(info.ExecutionGeneration) < val(result.ExecutionGeneration) {
-				r.fail(errors.New(tr("canonical.controls.compressedStale")))
+				r.fail(errors.New(tr(txt.CanonicalControlsCompressedStale)))
 				return nil
 			}
 			a.setHistoryItems(func([]msg) []msg {
@@ -185,16 +186,16 @@ func (a *app) controlCommands() []slashCommand {
 				}
 				removed := val(res.Removed)
 				if removed <= 0 {
-					r.sys(tr("slashCmd.session.compress.nothing"))
+					r.sys(tr(txt.SlashCmdSessionCompressNothing))
 					return nil
 				}
-				key := "slashCmd.session.compress.compressedOther"
+				key := txt.SlashCmdSessionCompressCompressedOther
 				if removed == 1 {
-					key = "slashCmd.session.compress.compressedOne"
+					key = txt.SlashCmdSessionCompressCompressedOne
 				}
 				suffix := ""
 				if res.Usage != nil && res.Usage.Total > 0 {
-					suffix = tr("slashCmd.session.compress.tokSuffix", compactNumber(float64(res.Usage.Total)))
+					suffix = tr(txt.SlashCmdSessionCompressTokSuffix, compactNumber(float64(res.Usage.Total)))
 				}
 				r.sys(tr(key, strconv.FormatInt(removed, 10)) + suffix)
 				return nil
@@ -208,11 +209,11 @@ func (a *app) controlCommands() []slashCommand {
 				if res == nil || res.SessionID == "" {
 					return nil
 				}
-				r.sys(tr("slashCmd.session.branch.branched", res.Title))
+				r.sys(tr(txt.SlashCmdSessionBranchBranched, res.Title))
 				return a.resumeByID(res.SessionID, nil)
 			})
 		}},
-		{name: "setup", help: setupHelpLine(), usage: "[section] [provider]", suggest: func(string) []string {
+		{name: "setup", help: setupHelpLine(), helpFn: setupHelpLine, usage: "[section] [provider]", suggest: func(string) []string {
 			keys := []string{}
 			for _, s := range setupSections() {
 				keys = append(keys, s.key)
@@ -222,14 +223,14 @@ func (a *app) controlCommands() []slashCommand {
 		{name: "wake", help: "toggle the wake word listener", usage: "[on|off|status]", suggest: func(string) []string { return []string{"on", "off", "status"} }, run: func(r *slashRun) tea.Cmd {
 			withHint := func(line, hint string) string {
 				if trimJS(hint) != "" {
-					return tr("slashCmd.wake.withHint", line, trimJS(hint))
+					return tr(txt.SlashCmdWakeWithHint, line, trimJS(hint))
 				}
 				return line
 			}
 			detail := func(phrase, provider string) string {
 				out := ""
 				if phrase != "" {
-					out = " " + tr("slashCmd.wake.forPhrase", phrase)
+					out = " " + tr(txt.SlashCmdWakeForPhrase, phrase)
 				}
 				if provider != "" {
 					out += " · " + provider
@@ -246,22 +247,22 @@ func (a *app) controlCommands() []slashCommand {
 					if !res.Started {
 						reason := res.Reason
 						base := reason
-						if key, known := map[string]string{"disabled": "disabled", "disabled_for_surface": "disabledForSurface", "not_owner": "notOwner", "owned": "owned", "unavailable": "unavailable"}[reason]; known {
-							base = tr("slashCmd.wake.reason." + key)
+						if key, known := map[string]txt.Key{"disabled": txt.SlashCmdWakeReasonDisabled, "disabled_for_surface": txt.SlashCmdWakeReasonDisabledForSurface, "not_owner": txt.SlashCmdWakeReasonNotOwner, "owned": txt.SlashCmdWakeReasonOwned, "unavailable": txt.SlashCmdWakeReasonUnavailable}[reason]; known {
+							base = tr(key)
 						} else if reason == "" {
-							base = tr("slashCmd.wake.reason.unknown")
+							base = tr(txt.SlashCmdWakeReasonUnknown)
 						}
 						if owner := val(res.OwnerSurface); owner != "" {
-							base += " (" + tr("slashCmd.wake.ownedBy", owner) + ")"
+							base += " (" + tr(txt.SlashCmdWakeOwnedBy, owner) + ")"
 						}
-						r.sys(withHint(tr("slashCmd.wake.notStarted", base), res.Hint))
+						r.sys(withHint(tr(txt.SlashCmdWakeNotStarted, base), res.Hint))
 						return nil
 					}
 					saved := ""
 					if res.EnabledPersisted {
-						saved = " · " + tr("slashCmd.wake.enabledInConfig")
+						saved = " · " + tr(txt.SlashCmdWakeEnabledInConfig)
 					}
-					r.sys(tr("slashCmd.wake.listening", detail(res.Phrase, res.Provider)+saved))
+					r.sys(tr(txt.SlashCmdWakeListening, detail(res.Phrase, res.Provider)+saved))
 					return nil
 				})
 			case "off":
@@ -272,20 +273,20 @@ func (a *app) controlCommands() []slashCommand {
 					}
 					saved := detail(res.Phrase, res.Provider)
 					if res.DisabledPersisted {
-						saved += " · " + tr("slashCmd.wake.disabledInConfig")
+						saved += " · " + tr(txt.SlashCmdWakeDisabledInConfig)
 					}
 					if res.Stopped {
-						r.sys(tr("slashCmd.wake.listenerOff", saved))
+						r.sys(tr(txt.SlashCmdWakeListenerOff, saved))
 						return nil
 					}
 					reason := val(res.Reason)
 					switch reason {
 					case "not_owner":
-						reason = tr("slashCmd.wake.notOwnerStop")
+						reason = tr(txt.SlashCmdWakeNotOwnerStop)
 					case "":
-						reason = tr("slashCmd.wake.notRunning")
+						reason = tr(txt.SlashCmdWakeNotRunning)
 					}
-					r.sys(tr("slashCmd.wake.nothingToStop", reason, saved))
+					r.sys(tr(txt.SlashCmdWakeNothingToStop, reason, saved))
 					return nil
 				})
 			case "", "status":
@@ -296,25 +297,25 @@ func (a *app) controlCommands() []slashCommand {
 					details := detail(res.Phrase, res.Provider)
 					switch {
 					case res.Listening && res.AudioSilent:
-						r.sys(withHint(tr("slashCmd.wake.listening", details)+" · "+tr("slashCmd.wake.micSilent"), res.Hint))
+						r.sys(withHint(tr(txt.SlashCmdWakeListening, details)+" · "+tr(txt.SlashCmdWakeMicSilent), res.Hint))
 					case res.Listening:
-						r.sys(tr("slashCmd.wake.listening", details))
+						r.sys(tr(txt.SlashCmdWakeListening, details))
 					case val(res.OwnerSurface) != "" && !res.OwnedByCaller:
-						r.sys(tr("slashCmd.wake.offOwnedBy", val(res.OwnerSurface), details))
+						r.sys(tr(txt.SlashCmdWakeOffOwnedBy, val(res.OwnerSurface), details))
 					case !res.Available:
-						r.sys(withHint(tr("slashCmd.wake.unavailable"), res.Hint))
+						r.sys(withHint(tr(txt.SlashCmdWakeUnavailable), res.Hint))
 					default:
-						r.sys(tr("slashCmd.wake.off", details))
+						r.sys(tr(txt.SlashCmdWakeOff, details))
 					}
 					return nil
 				})
 			}
-			r.sys(tr("slashCmd.wake.usage"))
+			r.sys(tr(txt.SlashCmdWakeUsage))
 			return nil
 		}},
 		{name: "usage", help: "session usage", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
-				r.sys(tr("slashCmd.core.status.noActiveSession"))
+				r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
 				return nil
 			}
 			if !a.gw.canonical() {
@@ -344,15 +345,15 @@ func (a *app) controlCommands() []slashCommand {
 				}
 				var counters tuigateway.SessionUsagePayload
 				if err := tuigateway.Loose(wireParams(res), &counters); err != nil {
-					r.sys("error: " + misfitText(tr("session.common.invalidResponse", "session.stats")) + " " + err.Error())
+					r.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, "session.stats")) + " " + err.Error()))
 					return nil
 				}
 				usage := usageOf(usageOfCounters(counters))
 				if usage.Calls == 0 {
-					r.sys(tr("slashCmd.session.usage.noCalls"))
+					r.sys(tr(txt.SlashCmdSessionUsageNoCalls))
 				} else {
 					a.store.ui.Usage = mergeUsageStable(a.store.ui.Usage, usage)
-					a.panel(tr("slashCmd.session.usage.usageTitle"), append(usageTotalsSections(usage), rateLimitSections(res.RateLimit, a.store.now())...))
+					a.panel(tr(txt.SlashCmdSessionUsageUsageTitle), append(usageTotalsSections(usage), rateLimitSections(res.RateLimit, a.store.now())...))
 				}
 				totalsShown = true
 				showLimits()
@@ -366,7 +367,7 @@ func (a *app) controlCommands() []slashCommand {
 				action = "status"
 			}
 			if a.gw.canonical() && r.sid == "" && action != "status" {
-				r.sys(tr("slashCmd.session.voice.noActiveSession"))
+				r.sys(tr(txt.SlashCmdSessionVoiceNoActiveSession))
 				return nil
 			}
 			params := tuigateway.VoiceToggleParams{Action: tuigateway.VoiceToggleAction(action), SessionID: r.sid}
@@ -383,19 +384,19 @@ func (a *app) controlCommands() []slashCommand {
 				label := a.voiceKeyLabel()
 				onOffWord := func(on bool) string {
 					if on {
-						return tr("slashCmd.session.voice.on")
+						return tr(txt.SlashCmdSessionVoiceOn)
 					}
-					return tr("slashCmd.session.voice.off")
+					return tr(txt.SlashCmdSessionVoiceOff)
 				}
 				switch {
 				case action == "status":
-					r.sys(tr("slashCmd.session.voice.statusTitle"))
-					r.sys(tr("slashCmd.session.voice.statusMode", onOffWord(a.voiceEnabled)))
-					r.sys(tr("slashCmd.session.voice.statusTts", onOffWord(res.TTS)))
-					r.sys(tr("slashCmd.session.voice.statusRecordKey", label))
+					r.sys(tr(txt.SlashCmdSessionVoiceStatusTitle))
+					r.sys(tr(txt.SlashCmdSessionVoiceStatusMode, onOffWord(a.voiceEnabled)))
+					r.sys(tr(txt.SlashCmdSessionVoiceStatusTts, onOffWord(res.TTS)))
+					r.sys(tr(txt.SlashCmdSessionVoiceStatusRecordKey, label))
 					if details := res.Details; details != "" {
 						r.sys("")
-						r.sys(tr("slashCmd.session.voice.requirements"))
+						r.sys(tr(txt.SlashCmdSessionVoiceRequirements))
 						for _, line := range strings.Split(details, "\n") {
 							if trimJS(line) != "" {
 								r.sys("    " + line)
@@ -403,39 +404,39 @@ func (a *app) controlCommands() []slashCommand {
 						}
 					}
 				case action == "tts" && res.TTS:
-					r.sys(tr("slashCmd.session.voice.ttsEnabled"))
+					r.sys(tr(txt.SlashCmdSessionVoiceTtsEnabled))
 				case action == "tts":
-					r.sys(tr("slashCmd.session.voice.ttsDisabled"))
+					r.sys(tr(txt.SlashCmdSessionVoiceTtsDisabled))
 				case a.voiceEnabled:
 					if res.TTS {
-						r.sys(tr("slashCmd.session.voice.enabledWithTts"))
+						r.sys(tr(txt.SlashCmdSessionVoiceEnabledWithTts))
 					} else {
-						r.sys(tr("slashCmd.session.voice.enabled"))
+						r.sys(tr(txt.SlashCmdSessionVoiceEnabled))
 					}
-					r.sys(tr("slashCmd.session.voice.recordHint", label))
+					r.sys(tr(txt.SlashCmdSessionVoiceRecordHint, label))
 					if hint := res.StopHint; hint != "" {
 						r.sys("  " + hint)
 					}
-					r.sys(tr("slashCmd.session.voice.ttsHint"))
-					r.sys(tr("slashCmd.session.voice.offHint"))
+					r.sys(tr(txt.SlashCmdSessionVoiceTtsHint))
+					r.sys(tr(txt.SlashCmdSessionVoiceOffHint))
 				default:
-					r.sys(tr("slashCmd.session.voice.disabled"))
+					r.sys(tr(txt.SlashCmdSessionVoiceDisabled))
 				}
 				return nil
 			})
 		}},
 		{name: "title", help: "set or show the session title", usage: "[title]", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
-				r.sys(tr("slashCmd.core.title.noActiveSession"))
+				r.sys(tr(txt.SlashCmdCoreTitleNoActiveSession))
 				return nil
 			}
 			title := trimJS(r.arg)
 			show := func(current string) {
 				if trimJS(current) == "" {
-					r.sys(tr("slashCmd.core.title.none"))
+					r.sys(tr(txt.SlashCmdCoreTitleNone))
 					return
 				}
-				r.sys(tr("slashCmd.core.title.current", trimJS(current)))
+				r.sys(tr(txt.SlashCmdCoreTitleCurrent, trimJS(current)))
 			}
 			switch {
 			case a.gw.canonical() && title == "":
@@ -470,7 +471,7 @@ func (a *app) controlCommands() []slashCommand {
 						next = set
 					}
 					a.store.ui.SessionTitle = next
-					r.sys(tr("slashCmd.core.title.set", next, ""))
+					r.sys(tr(txt.SlashCmdCoreTitleSet, next, ""))
 					return nil
 				})
 			case title == "":
@@ -491,10 +492,10 @@ func (a *app) controlCommands() []slashCommand {
 				}
 				suffix := ""
 				if val(res.Pending) {
-					suffix = tr("slashCmd.core.title.queuedSuffix")
+					suffix = tr(txt.SlashCmdCoreTitleQueuedSuffix)
 				}
 				a.store.ui.SessionTitle = next
-				r.sys(tr("slashCmd.core.title.set", next, suffix))
+				r.sys(tr(txt.SlashCmdCoreTitleSet, next, suffix))
 				return nil
 			})
 		}},

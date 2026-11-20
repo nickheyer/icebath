@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Subagent list of the session it belongs to, as subagent.list reports it
@@ -48,7 +49,7 @@ func mergeAgentRoster(events []subagentProgress, data tuigateway.SubagentListRes
 		case had && previous.Goal != "":
 			next.Goal = previous.Goal
 		default:
-			next.Goal = "Starting agent"
+			next.Goal = tr(txt.HubsAgentsStartingGoal)
 		}
 		if s.DelegationID != nil {
 			next.DelegationID = *s.DelegationID

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Collapsed paste or attached image the composer shows as a label in the draft
@@ -50,7 +51,7 @@ var (
 var pasteSnippetRe = regexp.MustCompile(`\[\[[^\n]*?\]\]`)
 
 // Label of the image token with that index
-func imageToken(index int) string { return tr("libText.attachments.imageToken", index) }
+func imageToken(index int) string { return tr(txt.LibTextAttachmentsImageToken, index) }
 
 // Images whose labels are still in the draft, with their staged path and mime
 func imageAttachments(value string, tokens []composerToken) []imageAttachment {

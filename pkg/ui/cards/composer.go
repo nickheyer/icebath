@@ -15,8 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -532,7 +534,7 @@ func (c *Composer) Action(id string) tea.Cmd {
 		}
 	case "composer.attachments.clear":
 		c.attachments = nil
-		return wm.Notify("attachments cleared", wm.Info)
+		return wm.Notify(lang.T(txt.ComposerAttachmentsCleared), wm.Info)
 	case "composer.copy":
 		if c.ta.HasSelection() {
 			return clip.Copy(c.ta.SelectedText())

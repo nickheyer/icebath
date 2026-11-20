@@ -59,7 +59,6 @@ func catWorldNamed(t *testing.T, name, v1, v2 string) *catWorldT {
 	scanOnInstallEnabled = func(string) bool { return false }
 	txOAuthSurface(t)
 	next := *services.Load()
-	next.DefinesMemoryProvider = func(string) bool { return false }
 	next.RequiresAuthNotice = func(map[string]any) string { return "" }
 	next.DeclaresModelProviderKind = func(string) bool { return false }
 	next.PluginOAuthKey = func(string) string { return "" }

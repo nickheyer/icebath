@@ -178,7 +178,7 @@ func CmdShow(ctx context.Context, name string, out io.Writer) error {
 	return cmdShow(ctx, name, NewConsole(out))
 }
 
-// Details of one plugin with its isolation, sign in notice and declared emits and listens
+// Details of one plugin with its sign in notice and declared emits and listens
 func cmdShow(ctx context.Context, name string, console *Console) error {
 	h := home.Dir(ctx)
 	match, err := findPluginEntry(ctx, name)
@@ -222,20 +222,6 @@ func cmdShow(ctx context.Context, name string, console *Console) error {
 	console.Print("[dim]Status:[/dim] " + status)
 	console.Print("[dim]Source:[/dim] " + match.Source)
 	console.Print("[dim]Key:[/dim] " + match.Key)
-	if match.Dir != "" && match.Source != "bundled" {
-		audit, err := auditPluginDir(match.Dir, manifest)
-		if err != nil {
-			return err
-		}
-		mode := IsolationMode(ctx, nil)
-		runsIn := "Icebath process"
-		if mode == IsolationHost && audit.HostReady() {
-			runsIn = "plugin host"
-		} else if mode == IsolationHost {
-			runsIn = "refused (plugins.isolation: host)"
-		}
-		console.Print(fmt.Sprintf("[dim]Runs in:[/dim] %s [dim]— %s[/dim]", runsIn, audit.Summary()))
-	}
 	svc := installedServices()
 	if svc == nil || svc.RequiresAuthNotice == nil {
 		return &ServiceMissingError{Name: "RequiresAuthNotice"}

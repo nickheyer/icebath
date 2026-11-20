@@ -475,6 +475,7 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 		*issues = append(*issues, "model.default '"+defaultModel+"' is vendor-prefixed but model.provider is '"+providerRaw+"'. "+
 			"Either set model.provider to 'openrouter', or drop the vendor prefix.")
 	}
+	doctorWarnBuiltinNameOwnedByEntry(ctx, d, providerRaw, cfg["providers"], issues)
 	if runtimeProvider != "" && runtimeProvider != "auto" && runtimeProvider != "custom" {
 		if has, cerr := doctorProviderHasCredentials(ctx, d.Home, runtimeProvider); cerr == nil && !has {
 			doctorFailAndIssue(d.W, "model.provider '"+runtimeProvider+"' is set but no API key is configured",
@@ -484,6 +485,27 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 		}
 	}
 	return nil
+}
+
+// Reports a model.provider that names a built in while a providers entry under that key declares its own base URL, the endpoint the turn runs on
+func doctorWarnBuiltinNameOwnedByEntry(ctx context.Context, d *Doctor, providerRaw string, providers any, issues *[]string) {
+	entries, _ := providers.(map[string]any)
+	owner, owned := provider.BuiltinNameUserEntry(ctx, providerRaw, entries)
+	if !owned {
+		return
+	}
+	entry, _ := entries[owner].(map[string]any)
+	url := ""
+	for _, key := range []string{"base_url", "api", "url"} {
+		if value := entry[key]; pyrepr.Truthy(value) {
+			url = pystr.Strip(pyrepr.Str(value))
+			break
+		}
+	}
+	doctorCheckWarn(d.W, "model.provider '"+providerRaw+"' runs on your providers."+owner+" endpoint, not the built-in", "("+url+")")
+	*issues = append(*issues, "model.provider '"+providerRaw+"' names a built-in, but providers."+owner+" declares its own base_url, "+
+		"so requests go to "+url+" (with that entry's credential when it declares one). Run 'icebath config set model.provider "+
+		provider.CustomProviderSlug(owner, owner)+"' to say so explicitly, or remove providers."+owner+".base_url to use the built-in provider.")
 }
 
 // Resolves every routed auxiliary task block through the runtime resolver and reports the ones that fail

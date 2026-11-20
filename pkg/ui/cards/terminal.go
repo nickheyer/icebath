@@ -17,7 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/term"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -1096,9 +1098,9 @@ func (t *Terminal) Status() string {
 func (t *Terminal) Hints() []wm.Hint {
 	switch {
 	case t.searching:
-		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "matches"}, {Action: "search.close"}}
+		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: lang.T(txt.KitHintMatches)}, {Action: "search.close"}}
 	case !t.live():
 		return []wm.Hint{{Action: "terminal.restart"}, {Action: "terminal.copy"}}
 	}
-	return []wm.Hint{{Action: "terminal.copy"}, {Action: "terminal.paste"}, {Action: "terminal.search"}, {Action: "terminal.scroll.up", Pair: "terminal.scroll.down", Label: "scroll"}, {Action: "terminal.lock"}}
+	return []wm.Hint{{Action: "terminal.copy"}, {Action: "terminal.paste"}, {Action: "terminal.search"}, {Action: "terminal.scroll.up", Pair: "terminal.scroll.down", Label: lang.T(txt.KitHintScroll)}, {Action: "terminal.lock"}}
 }

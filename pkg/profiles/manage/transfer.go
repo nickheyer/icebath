@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -411,7 +412,7 @@ func ImportProfile(archivePath, name string) (_ string, err error) {
 			return "", err
 		}
 	}
-	dropOtherAccess(context.Background(), filepath.Join(finalSource, "config.yaml"))
+	config.DropOtherAccess(context.Background(), filepath.Join(finalSource, "config.yaml"))
 	if st, err := os.Lstat(filepath.Join(finalSource, ".env")); err == nil && st.Mode().IsRegular() {
 		if err := os.Chmod(filepath.Join(finalSource, ".env"), 0o600); err != nil {
 			return "", err

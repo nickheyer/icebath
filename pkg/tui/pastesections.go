@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Submissions whose paste bodies wait for the row that shows them
@@ -79,11 +81,11 @@ func pasteRows(m msg, c renderCtx, st blockState) blockRows {
 		part := partPaste + strconv.Itoa(i)
 		open := st.open(part, st.pastes)
 		lines := strings.Count(paste.Text, "\n") + 1
-		hint := tr("chatBits.messageLine.pasteSectionShowHint", lines)
+		hint := tr(txt.ChatBitsMessageLinePasteSectionShowHint, lines)
 		if open {
-			hint = tr("chatBits.messageLine.pasteSectionHideHint", lines)
+			hint = tr(txt.ChatBitsMessageLinePasteSectionHideHint, lines)
 		}
-		head := chevron(open, c) + toneStyle(c.t.Color.Accent).Bold(true).Render(tr("chatBits.messageLine.pasteSection", i+1)) + toneStyle(c.t.Color.Muted).Render(" "+hint)
+		head := chevron(open, c) + toneStyle(c.t.Color.Accent).Bold(true).Render(tr(txt.ChatBitsMessageLinePasteSection, i+1)) + toneStyle(c.t.Color.Muted).Render(" "+hint)
 		out.head(part, open, pad+ansi.Truncate(head, room, "…"))
 		if !open {
 			continue

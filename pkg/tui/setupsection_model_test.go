@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -160,7 +161,7 @@ func TestHostedWaitDialogKeepsWaitingOrStopsTheFlow(t *testing.T) {
 	})
 	drain(a, a.openHostedModel(""))
 	d, isDialog := a.wm.Overlay().(*dialogCard)
-	if !isDialog || d.title != tr("setupFlow.flow.waitTitle") || !strings.Contains(strings.Join(d.body, "\n"), "CODX-5678") || len(d.choices) != 2 ||
+	if !isDialog || d.title != tr(txt.SetupFlowFlowWaitTitle) || !strings.Contains(strings.Join(d.body, "\n"), "CODX-5678") || len(d.choices) != 2 ||
 		d.body[len(d.body)-1] != "downloading 40%" {
 		t.Fatalf("wait dialog %T %+v", a.wm.Overlay(), d)
 	}

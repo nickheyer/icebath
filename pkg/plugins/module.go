@@ -49,7 +49,6 @@ type Services struct {
 	PortableServerAvailability        func(ctx context.Context, decl AgentPluginServerDeclaration) (PortableAvailability, error)
 	MaskedSecretPrompt                func(prompt string) (string, error)
 	ServerAvailabilityReason          func(ctx context.Context, declaration AgentPluginServerDeclaration, appTitle string) (reason string, offerable bool, err error)
-	DefinesMemoryProvider             func(pluginDir string) bool
 	PrepareMemoryProviderDependencies func(ctx context.Context, name string) error
 	RequiresAuthNotice                func(manifest map[string]any) string
 	DeclaresModelProviderKind         func(pluginDir string) bool

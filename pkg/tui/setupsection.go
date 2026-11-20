@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -234,7 +235,7 @@ func (a *app) runSection(spec sectionSpec) tea.Cmd {
 			*keys(t, f.kind == fieldSecret) = append(*keys(t, f.kind == fieldSecret), t.key)
 		}
 	}
-	a.store.ui.Status = tr("setupFlow.section.loading")
+	a.store.ui.Status = tr(txt.SetupFlowSectionLoading)
 	return ask(a.events.rpc, a.sys, tuigateway.SetupSectionLoad, params, func(res *tuigateway.SetupSectionLoadResult) tea.Cmd {
 		a.store.ui.Status = a.store.statusFromBusy()
 		if res == nil {
@@ -300,7 +301,7 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 			}
 			detail := c.detail
 			if c.value == nil && !listed && current != nil && sectionText(current) != "" {
-				detail = tr("setupFlow.section.keeps", sectionText(current))
+				detail = tr(txt.SetupFlowSectionKeeps, sectionText(current))
 			}
 			items[i] = wm.Item{ID: "setup:" + run.spec.key + ":" + f.id + ":" + strconv.Itoa(i), Title: mark + c.title, Detail: detail, Run: func() tea.Cmd { return answer(c.value) }}
 		}
@@ -314,9 +315,9 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 	placeholder := f.label
 	switch {
 	case f.kind == fieldSecret && run.secrets[f.targets[0].key]:
-		placeholder = tr("setupFlow.section.secretHeld", f.label)
+		placeholder = tr(txt.SetupFlowSectionSecretHeld, f.label)
 	case current != nil && sectionText(current) != "":
-		placeholder = tr("setupFlow.section.keep", f.label, sectionText(current))
+		placeholder = tr(txt.SetupFlowSectionKeep, f.label, sectionText(current))
 	}
 	submit := func(text string) tea.Cmd {
 		entered := trimJS(text)
@@ -329,9 +330,9 @@ func (a *app) askSectionField(run *sectionRun, index int) tea.Cmd {
 			number, fits := sectionNumber(parsed, f.whole)
 			if err != nil || !fits {
 				if f.whole {
-					a.sys(tr("setupFlow.section.notWhole", entered, f.label))
+					a.sys(tr(txt.SetupFlowSectionNotWhole, entered, f.label))
 				} else {
-					a.sys(tr("setupFlow.section.notNumber", entered, f.label))
+					a.sys(tr(txt.SetupFlowSectionNotNumber, entered, f.label))
 				}
 				return a.askSectionField(run, index)
 			}
@@ -391,10 +392,10 @@ func (a *app) saveSection(run *sectionRun) tea.Cmd {
 		}
 	}
 	if len(writes)+len(removals) == 0 && !run.spec.fullSave {
-		a.sys(tr("setupFlow.section.unchanged", run.spec.title))
+		a.sys(tr(txt.SetupFlowSectionUnchanged, run.spec.title))
 		return nil
 	}
-	a.store.ui.Status = tr("setupFlow.section.saving")
+	a.store.ui.Status = tr(txt.SetupFlowSectionSaving)
 	if split == 0 || split == len(writes) {
 		split = len(writes)
 	}
@@ -426,7 +427,7 @@ func (a *app) reportSectionSave(run *sectionRun, writes []tuigateway.SetupSectio
 	if res == nil {
 		return nil
 	}
-	lines := []string{tr("setupFlow.section.saved", run.spec.title)}
+	lines := []string{tr(txt.SetupFlowSectionSaved, run.spec.title)}
 	inEnv := map[string]bool{}
 	for _, key := range res.Env {
 		inEnv[key] = true
@@ -436,17 +437,17 @@ func (a *app) reportSectionSave(run *sectionRun, writes []tuigateway.SetupSectio
 		stored, inConfig := res.Config[key]
 		switch {
 		case secret[key] && (inEnv[key] || inConfig):
-			lines = append(lines, tr("setupFlow.section.secretSaved", key))
+			lines = append(lines, tr(txt.SetupFlowSectionSecretSaved, key))
 		case inEnv[key]:
-			lines = append(lines, tr("setupFlow.section.envValue", key, sent[key]))
+			lines = append(lines, tr(txt.SetupFlowSectionEnvValue, key, sent[key]))
 		case inConfig:
-			lines = append(lines, tr("setupFlow.section.value", key, sectionText(stored)))
+			lines = append(lines, tr(txt.SetupFlowSectionValue, key, sectionText(stored)))
 		default:
-			lines = append(lines, tr("setupFlow.section.missing", key))
+			lines = append(lines, tr(txt.SetupFlowSectionMissing, key))
 		}
 	}
 	for _, key := range res.Removed {
-		lines = append(lines, tr("setupFlow.section.removed", key))
+		lines = append(lines, tr(txt.SetupFlowSectionRemoved, key))
 	}
 	a.sys(strings.Join(lines, "\n"))
 	return nil
@@ -455,26 +456,26 @@ func (a *app) reportSectionSave(run *sectionRun, writes []tuigateway.SetupSectio
 // Iteration budget, tool progress mode and context compression of the agent
 func agentSection() sectionSpec {
 	progress := []sectionChoice{
-		{nil, tr("setupFlow.agent.progress.keep"), tr("setupFlow.agent.progress.keepDetail")},
-		{"off", "off", tr("setupFlow.agent.progress.off")},
-		{"new", "new", tr("setupFlow.agent.progress.new")},
-		{"all", "all", tr("setupFlow.agent.progress.all")},
-		{"verbose", "verbose", tr("setupFlow.agent.progress.verbose")},
-		{"log", "log", tr("setupFlow.agent.progress.log")},
+		{nil, tr(txt.SetupFlowAgentProgressKeep), tr(txt.SetupFlowAgentProgressKeepDetail)},
+		{"off", "off", tr(txt.SetupFlowAgentProgressOff)},
+		{"new", "new", tr(txt.SetupFlowAgentProgressNew)},
+		{"all", "all", tr(txt.SetupFlowAgentProgressAll)},
+		{"verbose", "verbose", tr(txt.SetupFlowAgentProgressVerbose)},
+		{"log", "log", tr(txt.SetupFlowAgentProgressLog)},
 	}
-	return sectionSpec{key: "agent", title: tr("setupFlow.agent.title"), detail: tr("setupFlow.agent.detail"), intro: tr("setupFlow.agent.intro"), fullSave: true,
+	return sectionSpec{key: "agent", title: tr(txt.SetupFlowAgentTitle), detail: tr(txt.SetupFlowAgentDetail), intro: tr(txt.SetupFlowAgentIntro), fullSave: true,
 		constants: []sectionConstant{{target: sectionTarget{key: "compression.enabled"}, value: true}},
 		fields: []sectionField{
-			{id: "max_turns", kind: fieldNumber, whole: true, label: tr("setupFlow.agent.maxTurns"),
+			{id: "max_turns", kind: fieldNumber, whole: true, label: tr(txt.SetupFlowAgentMaxTurns),
 				seed:     func(run *sectionRun) any { return run.held["agent.max_turns"] },
 				targets:  []sectionTarget{{key: "agent.max_turns"}},
 				clears:   []sectionTarget{{key: "max_turns"}, {env: true, key: "ICEBATH_MAX_ITERATIONS"}},
-				validate: numberBetween(1, math.Inf(1), tr("setupFlow.agent.maxTurnsRange"))},
-			{id: "tool_progress", kind: fieldChoice, label: tr("setupFlow.agent.progressLabel"),
+				validate: numberBetween(1, math.Inf(1), tr(txt.SetupFlowAgentMaxTurnsRange))},
+			{id: "tool_progress", kind: fieldChoice, label: tr(txt.SetupFlowAgentProgressLabel),
 				targets: []sectionTarget{{key: "display.tool_progress"}}, choices: progress, savePoint: true},
-			{id: "threshold", kind: fieldNumber, fallback: 0.5, label: tr("setupFlow.agent.threshold"),
+			{id: "threshold", kind: fieldNumber, fallback: 0.5, label: tr(txt.SetupFlowAgentThreshold),
 				targets:  []sectionTarget{{key: "compression.threshold"}},
-				validate: numberBetween(0.5, 0.95, tr("setupFlow.agent.thresholdRange"))},
+				validate: numberBetween(0.5, 0.95, tr(txt.SetupFlowAgentThresholdRange))},
 		}}
 }
 
@@ -568,7 +569,7 @@ type sectionCommandMsg struct {
 func (a *app) onSectionCommand(m sectionCommandMsg) tea.Cmd {
 	f := m.run.spec.fields[m.index]
 	if m.err != nil {
-		a.sys(tr("setupFlow.section.commandFailed", strings.Join(f.argv, " "), m.err.Error()))
+		a.sys(tr(txt.SetupFlowSectionCommandFailed, strings.Join(f.argv, " "), m.err.Error()))
 	}
 	m.run.answers[f.id] = m.err == nil
 	return a.askSectionField(m.run, m.index+1)

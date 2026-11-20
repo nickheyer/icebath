@@ -31,6 +31,22 @@ GitHub Copilot (`copilot`, `copilot-acp`) is built into icebath: `icebath auth a
 Multiple credentials per provider pool and rotate automatically (`icebath auth`).
 Fallback chain when the primary fails: `icebath fallback add|remove|list`.
 
+### A `providers:` entry keyed like a built-in
+
+An entry in config.yaml `providers:` whose key spells a built-in provider
+(`openrouter:`, `Anthropic:`, `deepseek:`, any case) and sets its own
+`base_url` (or `api` / `url`) is what that name means: `chat --provider deepseek`
+runs the turn on the entry's endpoint, `/model <model> --provider deepseek --global`
+saves it as `custom:deepseek`, and a config that still says
+`model.provider: deepseek` runs there too, as does an auxiliary task pinned to
+that name. The key the entry declares (`api_key`,
+`key_env` or `key_cmd`) is the one sent there; an entry without one is sent the
+built-in's key. A same-named block with no endpoint
+(`providers.deepseek: {request_timeout_seconds: 300}`) only tunes the built-in.
+`icebath doctor` warns when `model.provider` names a built-in that such an
+entry takes over and prints the `icebath config set model.provider custom:<key>`
+line that says so explicitly.
+
 ### User-defined model aliases
 
 Work with `/model <name>` in CLI and every gateway platform. Resolved by

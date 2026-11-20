@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Parts of a block that take a click, the three trail sections named as the details sections are and a paste section by its place after the prefix
@@ -286,7 +288,7 @@ func (a *app) clickPart(id uint64, part blockPart, row int, mod tea.KeyMod) tea.
 	case part.name == partPrompt:
 		if m, found := a.blockByID(id); found {
 			if prompt := val(infoOf(m.Info).SystemPrompt); prompt != "" {
-				return a.page(prompt, tr("chatBits.branding.systemPrompt"))
+				return a.page(prompt, tr(txt.ChatBitsBrandingSystemPrompt))
 			}
 		}
 	case isSectionName(part.name) && (mod.Contains(tea.ModShift) || mod.Contains(tea.ModCtrl)):

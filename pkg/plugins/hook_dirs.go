@@ -2,33 +2,31 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
-// Command line a hook directory names with a program that sits inside the directory resolved to its full path
-func ResolveDirectoryHookCommand(hookDir, command string) (string, error) {
+// Argument vector of the command line a hook directory names, a program that sits inside the directory resolved to its full path
+func ResolveDirectoryHookCommand(hookDir, command string) ([]string, error) {
 	argv, err := pyshlex.SplitCommandLine(pypath.Expanduser(command))
 	if err != nil || len(argv) == 0 {
-		return "", fmt.Errorf("command %s cannot be parsed", errchain.Show(command))
+		return nil, fmt.Errorf("command %s cannot be parsed", errchain.Show(command))
 	}
 	if !filepath.IsAbs(argv[0]) {
 		if local := filepath.Join(hookDir, filepath.FromSlash(argv[0])); isFile(local) {
 			argv[0] = local
 		}
 	}
-	return pyshlex.Join(argv), nil
+	return argv, nil
 }
 
 // Seconds the command of a hook directory may run, the shell hook default for an unset or unusable value and its cap above that
@@ -48,15 +46,8 @@ func DirectoryHookTimeout(raw any) int {
 	return min(seconds, ShellHookMaxTimeoutSeconds)
 }
 
-// Whether the command of a hook directory may run for an event of the profile: allowlisted, or approved and recorded now by an accept switch, never asking
-func DirectoryHookConsented(ctx context.Context, event, command string) (bool, error) {
-	cfg := loadConfigOrEmpty(home.Dir(ctx))
-	spec := NewShellHookSpec(event, command, "", ShellHookDefaultTimeoutSeconds, false)
-	return shellHookConsented(ctx, spec, resolveShellHookAccept(cfg, false), AllowlistedShellHookPairs(ctx), false)
-}
-
-// Runs the command of a hook directory for one gateway event with the event name and its context as JSON on standard input and answers the JSON object it printed, nil when it printed none
-func RunDirectoryHook(ctx context.Context, eventType, command string, timeout int, hookContext map[string]any) (any, error) {
+// Runs the command of a hook directory inside that directory for one gateway event with the event name and its context as JSON on standard input and answers the JSON object it printed, nil when it printed none
+func RunDirectoryHook(ctx context.Context, eventType, hookDir string, argv []string, timeout int, hookContext map[string]any) (any, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = ""
@@ -70,7 +61,7 @@ func RunDirectoryHook(ctx context.Context, eventType, command string, timeout in
 	if err != nil {
 		return nil, err
 	}
-	r, err := spawnShellHook(ctx, NewShellHookSpec(eventType, command, "", timeout, false), payload)
+	r, err := spawnShellHookArgv(ctx, argv, hookDir, timeout, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -80,18 +71,20 @@ func RunDirectoryHook(ctx context.Context, eventType, command string, timeout in
 	case r.TimedOut:
 		return nil, fmt.Errorf("hook command timed out after %ds", timeout)
 	case r.ReturnCode != nil && *r.ReturnCode != 0:
-		detail := strings.TrimSpace(r.Stderr)
-		if len(detail) > shellHookStderrLimit {
-			detail = detail[:shellHookStderrLimit]
-		}
-		return nil, fmt.Errorf("hook command exited with status %d: %s", *r.ReturnCode, detail)
+		return nil, fmt.Errorf("hook command exited with status %d: %s", *r.ReturnCode,
+			pystr.Slice(pystr.Strip(r.Stderr), 0, shellHookStderrLimit))
 	}
-	var result map[string]any
-	if json.Unmarshal([]byte(strings.TrimSpace(r.Stdout)), &result) != nil {
+	stdout := pystr.Strip(r.Stdout)
+	if stdout == "" {
 		return nil, nil
 	}
-	if result == nil {
+	v, err := pyjson.Loads(stdout)
+	if err != nil {
 		return nil, nil
 	}
-	return result, nil
+	obj, ok := v.(*pyjson.Object)
+	if !ok {
+		return nil, nil
+	}
+	return pyjson.Plain(obj), nil
 }

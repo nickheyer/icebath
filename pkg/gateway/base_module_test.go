@@ -368,10 +368,10 @@ func TestCacheMediaFromURLRefusals(t *testing.T) {
 	ctx := context.Background()
 	var valueErr *mediacache.ValueError
 	_, err := CacheImageFromURL(ctx, srv.URL+"/redirect", ".jpg", 2)
-	if !errors.As(err, &valueErr) || valueErr.Msg != "Blocked redirect to private/internal address: http://169.254.169.254/.../meta-data" {
+	if !errors.As(err, &valueErr) || valueErr.Msg != "Blocked redirect to private/internal address: http://169.254.169.254/..." {
 		t.Fatalf("a private redirect is refused, got %v", err)
 	}
-	if _, err := CacheImageFromURL(ctx, "http://169.254.169.254/x?token=1", ".jpg", 2); err == nil || err.Error() != "Blocked unsafe URL (SSRF protection): http://169.254.169.254/.../x" {
+	if _, err := CacheImageFromURL(ctx, "http://169.254.169.254/x?token=1", ".jpg", 2); err == nil || err.Error() != "Blocked unsafe URL (SSRF protection): http://169.254.169.254/..." {
 		t.Fatalf("an unsafe URL is refused before any request, got %v", err)
 	}
 	hits.Store(0)

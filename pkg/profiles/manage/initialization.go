@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -37,18 +36,6 @@ func discardUnpublishedVaultKey(ref map[string]any) {
 	}
 }
 
-// Strips the world permission bits a copied config file carries from its source, managed installs and containers keeping their modes
-func dropOtherAccess(ctx context.Context, path string) {
-	if home.ManagedSystem(ctx, home.Dir(ctx)) != "" || home.ContainerOrChmodSkipped() {
-		return
-	}
-	st, err := os.Stat(path)
-	if err != nil || st.Mode().Perm()&0o007 == 0 {
-		return
-	}
-	_ = os.Chmod(path, st.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)&^0o007)
-}
-
 // Seeds the files a fresh profile owns from day one on the staging tree before it is published
 func finishProfileLayout(ctx context.Context, profileDir string, noSkills, cloneAll bool, description, soul *string) error {
 	if soul != nil {
@@ -57,7 +44,7 @@ func finishProfileLayout(ctx context.Context, profileDir string, noSkills, clone
 		}
 	}
 	seedFileIfMissing(filepath.Join(profileDir, ".env"), profiles.PlaceholderEnv, 0o600)
-	dropOtherAccess(ctx, filepath.Join(profileDir, "config.yaml"))
+	config.DropOtherAccess(ctx, filepath.Join(profileDir, "config.yaml"))
 	seedFileIfMissing(filepath.Join(profileDir, "SOUL.md"), config.DefaultIdentity+"\n", 0)
 	if noSkills {
 		seedFileIfMissing(filepath.Join(profileDir, profiles.NoBundledSkillsMarker),

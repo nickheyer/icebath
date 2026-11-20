@@ -9,34 +9,38 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Session totals panel, model, token counts, calls, the context line and compressions
 func usageTotalsSections(r *tuigateway.Usage) []panelSection {
 	sections := []panelSection{{Rows: [][2]string{
-		{tr("slashCmd.session.usage.rowModel"), r.Model}, {tr("slashCmd.session.usage.rowInputTokens"), groupDigits(float64(r.Input))},
-		{tr("slashCmd.session.usage.rowOutputTokens"), groupDigits(float64(r.Output))}, {tr("slashCmd.session.usage.rowTotalTokens"), groupDigits(float64(r.Total))},
-		{tr("slashCmd.session.usage.rowApiCalls"), groupDigits(float64(r.Calls))},
+		{tr(txt.SlashCmdSessionUsageRowModel), r.Model}, {tr(txt.SlashCmdSessionUsageRowInputTokens), groupDigits(float64(r.Input))},
+		{tr(txt.SlashCmdSessionUsageRowOutputTokens), groupDigits(float64(r.Output))}, {tr(txt.SlashCmdSessionUsageRowTotalTokens), groupDigits(float64(r.Total))},
+		{tr(txt.SlashCmdSessionUsageRowApiCalls), groupDigits(float64(r.Calls))},
 	}}}
 	if val(r.ContextMax) > 0 {
 		mark := ""
 		if val(r.ContextEstimated) {
 			mark = "~"
 		}
-		text := tr("slashCmd.session.usage.context", mark+groupDigits(float64(val(r.ContextUsed))), groupDigits(float64(val(r.ContextMax))), mark+strconv.FormatInt(val(r.ContextPercent), 10))
+		text := tr(txt.SlashCmdSessionUsageContext, mark+groupDigits(float64(val(r.ContextUsed))), groupDigits(float64(val(r.ContextMax))), mark+strconv.FormatInt(val(r.ContextPercent), 10))
 		sections = append(sections, panelSection{Text: &text})
 	}
 	if n := val(r.Compressions); n > 0 {
-		text := tr("slashCmd.session.usage.compressions", strconv.FormatInt(n, 10))
+		text := tr(txt.SlashCmdSessionUsageCompressions, strconv.FormatInt(n, 10))
 		sections = append(sections, panelSection{Text: &text})
 	}
 	return sections
 }
 
-// Windows of a provider's rate limits by their wire names, each with the string key of its label
-var rateLimitWindows = [4][2]string{
-	{"requests_min", "slashCmd.session.usage.rateRequestsMin"}, {"requests_hour", "slashCmd.session.usage.rateRequestsHour"},
-	{"tokens_min", "slashCmd.session.usage.rateTokensMin"}, {"tokens_hour", "slashCmd.session.usage.rateTokensHour"},
+// Windows of a provider's rate limits by their wire names, each with the key of its label
+var rateLimitWindows = [4]struct {
+	wire  string
+	label txt.Key
+}{
+	{"requests_min", txt.SlashCmdSessionUsageRateRequestsMin}, {"requests_hour", txt.SlashCmdSessionUsageRateRequestsHour},
+	{"tokens_min", txt.SlashCmdSessionUsageRateTokensMin}, {"tokens_hour", txt.SlashCmdSessionUsageRateTokensHour},
 }
 
 // Share of a rate limit window that counts as nearly spent
@@ -89,7 +93,7 @@ func rateLimitSections(state map[string]any, now time.Time) []panelSection {
 	var rows [][2]string
 	var warnings []string
 	for _, window := range rateLimitWindows {
-		bucket, _ := state[window[0]].(map[string]any)
+		bucket, _ := state[window.wire].(map[string]any)
 		limit, remaining := number(bucket, "limit"), number(bucket, "remaining")
 		if limit <= 0 {
 			continue
@@ -97,26 +101,26 @@ func rateLimitSections(state map[string]any, now time.Time) []panelSection {
 		used := max(limit-remaining, 0)
 		percent := used / limit * 100
 		resets := compactSeconds(max(number(bucket, "reset_seconds")-sinceCapture(number(bucket, "captured_at")), 0))
-		label := tr(window[1])
-		rows = append(rows, [2]string{label, tr("slashCmd.session.usage.rateRow", strconv.FormatFloat(percent, 'f', 1, 64), compactCount(used), compactCount(limit), compactCount(remaining), resets)})
+		label := tr(window.label)
+		rows = append(rows, [2]string{label, tr(txt.SlashCmdSessionUsageRateRow, strconv.FormatFloat(percent, 'f', 1, 64), compactCount(used), compactCount(limit), compactCount(remaining), resets)})
 		if percent >= rateLimitWarnPercent {
-			warnings = append(warnings, tr("slashCmd.session.usage.rateWarning", label, strconv.FormatFloat(percent, 'f', 0, 64), resets))
+			warnings = append(warnings, tr(txt.SlashCmdSessionUsageRateWarning, label, strconv.FormatFloat(percent, 'f', 0, 64), resets))
 		}
 	}
 	if len(rows) == 0 {
 		return nil
 	}
-	freshness := tr("slashCmd.session.usage.rateJustNow")
+	freshness := tr(txt.SlashCmdSessionUsageRateJustNow)
 	if age := sinceCapture(captured); age >= 5 {
-		freshness = tr("slashCmd.session.usage.rateAgo", compactSeconds(age))
+		freshness = tr(txt.SlashCmdSessionUsageRateAgo, compactSeconds(age))
 	}
 	provider, _ := state["provider"].(string)
 	if provider == "" {
-		provider = tr("slashCmd.session.usage.rateProvider")
+		provider = tr(txt.SlashCmdSessionUsageRateProvider)
 	} else if first, size := utf8.DecodeRuneInString(provider); size > 0 {
 		provider = string(unicode.ToUpper(first)) + provider[size:]
 	}
-	title := tr("slashCmd.session.usage.rateLimitsTitle", provider, freshness)
+	title := tr(txt.SlashCmdSessionUsageRateLimitsTitle, provider, freshness)
 	sections := []panelSection{{Title: &title, Rows: rows}}
 	if len(warnings) > 0 {
 		sections = append(sections, panelSection{Items: warnings})
@@ -132,10 +136,10 @@ func (a *app) sessionUsage(r *slashRun) tea.Cmd {
 		}
 		a.store.ui.Usage = &tuigateway.Usage{Calls: res.Calls, Input: res.Input, Output: res.Output, Total: res.Total}
 		if res.Calls == 0 {
-			r.sys(tr("slashCmd.session.usage.noCalls"))
+			r.sys(tr(txt.SlashCmdSessionUsageNoCalls))
 			return nil
 		}
-		a.panel(tr("slashCmd.session.usage.usageTitle"), append(usageTotalsSections(res), rateLimitSections(res.RateLimit, a.store.now())...))
+		a.panel(tr(txt.SlashCmdSessionUsageUsageTitle), append(usageTotalsSections(res), rateLimitSections(res.RateLimit, a.store.now())...))
 		return nil
 	}))
 }

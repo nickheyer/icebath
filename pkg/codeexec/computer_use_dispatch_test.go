@@ -36,7 +36,7 @@ func cuDispatchEnv(t *testing.T, approvals string) (*tools.Env, *noopBackend) {
 	cuBackendMu.Lock()
 	cuInjectedBackend = b
 	cuBackendMu.Unlock()
-	env := cuPluginHome(t, t.TempDir(), nil, "", "")
+	env := cuPluginHome(t, t.TempDir(), nil, "")
 	env.Config = config.Tree{"approvals": map[string]any{"mode": approvals}}
 	return env, b
 }

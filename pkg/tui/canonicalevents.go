@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Error event with no execution stamp, a build or request failure rather than a turn settlement
@@ -74,7 +75,7 @@ func (s *tuiStore) openCanonicalClarify(ev gatewayEventMsg, sink promptSink) {
 		return
 	}
 	s.overlay.Clarify = &clarifyReq{Answers: map[string]string{}, Questions: []clarifyQuestion{{Choices: prompt.Choices, MultiSelect: val(prompt.MultiSelect), QID: shared.PromptID, Question: question}}, RequestID: shared.PromptID, Shared: shared}
-	sink.setStatus("waiting for input…")
+	sink.setStatus(tr(txt.SessionStatusWaitingForInput))
 	sink.ringPromptBell()
 }
 
@@ -91,9 +92,9 @@ func (s *tuiStore) openCanonicalApproval(ev gatewayEventMsg, sink promptSink) {
 	}
 	description := val(prompt.Description)
 	if prompt.Description == nil {
-		description = "dangerous command"
+		description = tr(txt.SessionRequestDangerousCommand)
 	}
 	s.overlay.Approval = &approvalReq{AllowPermanent: true, Choices: prompt.Choices, Command: val(prompt.Command), Description: description, OpenURL: val(prompt.OpenURL), RequestID: shared.PromptID, Shared: shared}
-	sink.setStatus("approval needed")
+	sink.setStatus(tr(txt.SessionStatusApprovalNeeded))
 	sink.ringPromptBell()
 }

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"math"
 	"net/url"
 	"os/exec"
@@ -10,7 +9,10 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Command that opens a URL with the OS default handler, nil on a platform without one
@@ -74,26 +76,26 @@ type billingDialog struct {
 
 // Dialog of an out of credits or payment required block
 func billingDialogCopy(block *tuigateway.BillingBlock) billingDialog {
-	label := tr("libText.billingDialog.yourProvider")
+	label := tr(txt.LibTextBillingDialogYourProvider)
 	if block.ProviderLabel != "" {
 		label = block.ProviderLabel
 	}
-	confirm := tr("libText.billingDialog.switchProvider")
+	confirm := tr(txt.LibTextBillingDialogSwitchProvider)
 	if val(block.BillingURL) != "" {
-		confirm = tr("libText.billingDialog.openBillingPage")
+		confirm = tr(txt.LibTextBillingDialogOpenBillingPage)
 	}
-	return billingDialog{CancelLabel: tr("libText.billingDialog.dismiss"), ConfirmLabel: confirm, Detail: tr("libText.billingDialog.providerDetail", label), Title: tr("libText.billingDialog.providerTitle", label)}
+	return billingDialog{CancelLabel: tr(txt.LibTextBillingDialogDismiss), ConfirmLabel: confirm, Detail: tr(txt.LibTextBillingDialogProviderDetail, label), Title: tr(txt.LibTextBillingDialogProviderTitle, label)}
 }
 
 // Title of the setup required panel
-func setupRequiredTitle() string { return tr("content.setup.title") }
+func setupRequiredTitle() string { return tr(txt.ContentSetupTitle) }
 
 // Sections of the setup required panel, the intro and the actions
 func buildSetupRequiredSections() []panelSection {
-	intro, actions := tr("content.setup.intro"), tr("content.setup.actions")
+	intro, actions := tr(txt.ContentSetupIntro), tr(txt.ContentSetupActions)
 	return []panelSection{
 		{Text: &intro},
-		{Rows: [][2]string{{"/setup", tr("content.setup.setupRow")}, {"/model", tr("content.setup.modelRow")}, {"Ctrl+C", tr("content.setup.exitRow")}}, Title: &actions},
+		{Rows: [][2]string{{"/setup", tr(txt.ContentSetupSetupRow)}, {"/model", tr(txt.ContentSetupModelRow)}, {"Ctrl+C", tr(txt.ContentSetupExitRow)}}, Title: &actions},
 	}
 }
 
@@ -203,15 +205,15 @@ func clarifyAnswerText(answer string, multiSelect bool) string {
 
 // Transcript block of an unanswered clarify, each question with its locked answer and why it ended
 func formatAbandonedClarify(questions []clarifyQuestion, answers map[string]string, reason string) string {
-	lines := []string{tr("libText.text.clarifyHead", len(questions))}
+	lines := []string{tr(txt.LibTextTextClarifyHead, len(questions))}
 	for _, q := range questions {
 		if answer := answers[q.QID]; answer != "" {
-			lines = append(lines, "  "+tr("libText.text.clarifyAnswered", q.Question, clarifyAnswerText(answer, q.MultiSelect)))
+			lines = append(lines, "  "+tr(txt.LibTextTextClarifyAnswered, q.Question, clarifyAnswerText(answer, q.MultiSelect)))
 		} else {
-			lines = append(lines, "  "+tr("libText.text.clarifyUnanswered", q.Question))
+			lines = append(lines, "  "+tr(txt.LibTextTextClarifyUnanswered, q.Question))
 		}
 	}
-	return strings.Join(append(lines, "  "+tr("libText.text.clarifyReason", reason)), "\n")
+	return strings.Join(append(lines, "  "+tr(txt.LibTextTextClarifyReason, reason)), "\n")
 }
 
 // Subagents with no parent in the same snapshot

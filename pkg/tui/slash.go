@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -45,13 +46,26 @@ type slashCommand struct {
 	name    string
 	aliases []string
 	help    string
-	usage   string
+	// Help line worded at the moment it is shown, for a line built from parts or kept under a catalog key of its own
+	helpFn func() string
+	usage  string
 	// Values the argument completes to
 	suggest func(prefix string) []string
 	// Values a later argument completes to after the finished words before it
 	suggestAfter func(done []string) []string
 	run          func(r *slashRun) tea.Cmd
 }
+
+// Help line of the command in the active language, the registered line when the packs hold none
+func (c slashCommand) helpText() string {
+	if c.helpFn != nil {
+		return c.helpFn()
+	}
+	return trOr("slashHelp."+c.name, c.help)
+}
+
+// Help line that reads a catalog key each time it is shown, so it follows a language switch
+func helpOf(key txt.Key) func() string { return func() string { return tr(key) } }
 
 // Whether a newer command or another session replaced this run
 func (r *slashRun) stale() bool {
@@ -70,7 +84,7 @@ func (r *slashRun) rpc(method string, params map[string]any, then func(map[strin
 		}
 		result, isObject := v.(map[string]any)
 		if !isObject {
-			r.a.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
+			r.a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, method))))
 			return nil
 		}
 		if then == nil {
@@ -86,7 +100,7 @@ func (r *slashRun) fail(err error) {
 		r.a.sys(r.a.slashRefusal(r.name, err))
 		return
 	}
-	r.a.sys("error: " + refusalDetail(err))
+	r.a.sys(errorLine(refusalDetail(err)))
 }
 
 // Tells a canonical gateway once that a typed command ran, a gateway refusing the verb never asked again
@@ -199,7 +213,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 				if len(names) > 6 {
 					shown += ", …"
 				}
-				a.sys("ambiguous command: " + shown)
+				a.sys(tr(txt.SlashCmdCoreAmbiguousCommand, shown))
 				return nil
 			}
 		}
@@ -214,7 +228,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			}
 			body := r.Output
 			if body == "" {
-				body = "/" + name + ": no output"
+				body = tr(txt.SlashCmdCoreNoOutputFor, name)
 			}
 			return a.showOutput(body, name)
 		}
@@ -223,7 +237,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 			return nil
 		}
 		if !shouldFallbackToDispatch(err) {
-			a.sys("error: " + describeSlashExecError(name, err))
+			a.sys(errorLine(describeSlashExecError(name, err)))
 			return nil
 		}
 		return call(a.gw, tuigateway.CommandDispatch, tuigateway.CommandDispatchParams{Arg: arg, Name: name, SessionID: run.sid}, func(d *tuigateway.CommandDispatchResult, err error) tea.Cmd {
@@ -243,7 +257,7 @@ func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd
 // Carries out what the gateway decided a command is, output, an alias, a skill or message to send, or a prefill
 func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, fromExec bool) tea.Cmd {
 	if d.Type == "" || d.Type == "alias" && d.Target == "" || d.Type == "skill" && d.Name == "" {
-		a.sys("error: " + misfitText(tr("session.common.invalidResponse", tuigateway.CommandDispatch.Name())))
+		a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, tuigateway.CommandDispatch.Name()))))
 		return nil
 	}
 	sendDispatch := func(display, message string) tea.Cmd {
@@ -262,7 +276,7 @@ func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, 
 		} else if out != "" {
 			a.sys(out)
 		} else {
-			a.sys("(no output)")
+			a.sys(tr(txt.SlashCmdCoreNoOutput))
 		}
 	case "alias":
 		argTail := ""
@@ -272,7 +286,7 @@ func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, 
 		return a.slash("/"+d.Target+argTail, run.submission, false)
 	case "skill":
 		if trimJS(d.Message) == "" {
-			a.sys("/" + run.name + ": skill payload missing message")
+			a.sys(tr(txt.SlashCmdCoreSkillNoMessage, run.name))
 			return nil
 		}
 		return sendDispatch(d.Display, d.Message)
@@ -281,7 +295,7 @@ func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, 
 			a.sys(d.Notice)
 		}
 		if trimJS(d.Message) == "" {
-			a.sys("/" + run.name + ": empty message")
+			a.sys(tr(txt.SlashCmdCoreEmptyMessage, run.name))
 			return nil
 		}
 		return sendDispatch(d.Display, d.Message)
@@ -304,7 +318,7 @@ func (a *app) slashPaletteCommands() []wm.Command {
 			continue
 		}
 		name := c.name
-		out = append(out, wm.Command{ID: "slash." + name, Title: "/" + name + "  " + c.help, When: func() bool { return !a.dialogs.waiting() },
+		out = append(out, wm.Command{ID: "slash." + name, Title: "/" + name + "  " + c.help, Text: func() string { return "/" + name + "  " + c.helpText() }, When: func() bool { return !a.dialogs.waiting() },
 			Run: func() tea.Cmd { return a.slash("/"+name, nil, false) }})
 	}
 	return out
@@ -313,18 +327,18 @@ func (a *app) slashPaletteCommands() []wm.Command {
 // Actions whose key help row is one catalog text, the chords of a group joined in one row
 var hotkeyGroups = []struct {
 	ids []string
-	key string
+	key txt.Key
 }{
-	{[]string{"interrupt"}, "hints.ctrlC"},
-	{[]string{"composer.paste"}, "hints.paste"},
-	{[]string{"complete.accept"}, "hints.applyCompletion"},
-	{[]string{"composer.up", "composer.down"}, "hints.arrows"},
-	{[]string{"composer.undo", "composer.redo"}, "hints.undoRedo"},
-	{[]string{"tui.suspend"}, "hints.suspend"},
-	{[]string{"composer.word.left", "composer.word.right"}, "hints.jumpWord"},
-	{[]string{"composer.line.start", "composer.line.end"}, "hints.lineStartEnd"},
-	{[]string{"composer.copy"}, "hints.copySelection"},
-	{[]string{"tui.paste.expand"}, "hints.pasteExpand"},
+	{[]string{"interrupt"}, txt.HintsCtrlC},
+	{[]string{"composer.paste"}, txt.HintsPaste},
+	{[]string{"complete.accept"}, txt.HintsApplyCompletion},
+	{[]string{"composer.up", "composer.down"}, txt.HintsArrows},
+	{[]string{"composer.undo", "composer.redo"}, txt.HintsUndoRedo},
+	{[]string{"tui.suspend"}, txt.HintsSuspend},
+	{[]string{"composer.word.left", "composer.word.right"}, txt.HintsJumpWord},
+	{[]string{"composer.line.start", "composer.line.end"}, txt.HintsLineStartEnd},
+	{[]string{"composer.copy"}, txt.HintsCopySelection},
+	{[]string{"tui.paste.expand"}, txt.HintsPasteExpand},
 }
 
 // Actions the key help opens with, the keys people reach for first and the ones the quick help card shows
@@ -364,7 +378,7 @@ func (a *app) hotkeyRows() [][2]string {
 	group := func(id string) int {
 		return slices.IndexFunc(hotkeyGroups, func(g struct {
 			ids []string
-			key string
+			key txt.Key
 		}) bool {
 			return slices.Contains(g.ids, id)
 		})
@@ -390,14 +404,14 @@ func (a *app) hotkeyRows() [][2]string {
 			return
 		}
 		if action, known := a.keys.Action(id); known && spelled(id) != "" && action.Doc != "" {
-			rows = append(rows, [2]string{spelled(id), action.Doc})
+			rows = append(rows, [2]string{spelled(id), action.DocText()})
 		}
 	}
 	for _, id := range hotkeyLead {
 		if id != "session.stop" {
 			add(id)
 		} else if chord := spelled(id); chord != "" {
-			rows = append(rows, [2]string{chord + " " + chord, tr("hints.discardDraft")}, [2]string{chord + " " + chord, tr("hints.rewindPicker")})
+			rows = append(rows, [2]string{chord + " " + chord, tr(txt.HintsDiscardDraft)}, [2]string{chord + " " + chord, tr(txt.HintsRewindPicker)})
 		}
 	}
 	commands := map[string]bool{"palette": true, "quit": true}
@@ -408,7 +422,7 @@ func (a *app) hotkeyRows() [][2]string {
 			add(action.ID)
 		}
 	}
-	return append(rows, [2]string{`\ + enter`, tr("hints.continuation")}, [2]string{"!<cmd>", tr("hints.shell")}, [2]string{"{!<cmd>}", tr("hints.interpolate")})
+	return append(rows, [2]string{`\ + enter`, tr(txt.HintsContinuation)}, [2]string{"!<cmd>", tr(txt.HintsShell)}, [2]string{"{!<cmd>}", tr(txt.HintsInterpolate)})
 }
 
 // Whether destructive commands skip their confirmation
@@ -460,7 +474,7 @@ func (a *app) coreCommands() []slashCommand {
 					sections = append(sections, panelSection{Rows: cat.Pairs, Title: &title})
 				}
 				if a.catalog.SkillCount > 0 {
-					text := tr("slashCmd.core.help.skillCommandsAvailable", a.catalog.SkillCount)
+					text := tr(txt.SlashCmdCoreHelpSkillCommandsAvailable, a.catalog.SkillCount)
 					sections = append(sections, panelSection{Text: &text})
 				}
 			}
@@ -470,12 +484,12 @@ func (a *app) coreCommands() []slashCommand {
 				if c.usage != "" {
 					label += " " + c.usage
 				}
-				local = append(local, [2]string{label, c.help})
+				local = append(local, [2]string{label, c.helpText()})
 			}
 			for _, w := range a.widgets.list() {
 				local = append(local, [2]string{"/" + w.ID, w.Help})
 			}
-			tui, hot := tr("slashCmd.core.help.tuiSection"), tr("help.hotkeys")
+			tui, hot := tr(txt.SlashCmdCoreHelpTuiSection), tr(txt.HelpHotkeys)
 			sections = append(sections, panelSection{Rows: local, Title: &tui}, panelSection{Rows: a.hotkeyRows(), Title: &hot})
 			header := a.store.ui.Theme.Brand.HelpHeader
 			if header == "" {
@@ -488,7 +502,7 @@ func (a *app) coreCommands() []slashCommand {
 			return a.die(0)
 		}},
 		{name: "update", help: "update icebath to the latest version, leaving the terminal UI", run: func(r *slashRun) tea.Cmd {
-			r.sys(tr("slashCmd.core.update.exiting"))
+			r.sys(tr(txt.SlashCmdCoreUpdateExiting))
 			return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return dieMsg{code: exitForUpdate} })
 		}},
 		{name: "mouse", aliases: []string{"scroll"}, help: "set mouse tracking", usage: "[on|off|toggle|wheel|buttons|all]",
@@ -504,50 +518,50 @@ func (a *app) coreCommands() []slashCommand {
 					}
 				}
 				if !known {
-					r.sys(tr("slashCmd.core.mouse.usage"))
+					r.sys(tr(txt.SlashCmdCoreMouseUsage))
 					return nil
 				}
 				a.store.ui.MouseTracking = next
-				r.sys(tr("slashCmd.core.mouse.tracking", next))
+				r.sys(tr(txt.SlashCmdCoreMouseTracking, next))
 				return r.saveDisplayPref("mouse", next)
 			}},
 		{name: "clear", aliases: []string{"new"}, help: "start a new session", usage: "[title]", run: func(r *slashRun) tea.Cmd {
 			isNew := strings.HasPrefix(r.cmd, "/new")
 			if isNew && a.store.ui.Busy {
-				return tea.Batch(r.ran(), a.life.newLiveSession(tr("slashCmd.core.clear.previousKeptRunning"), trimJS(r.arg), nil))
+				return tea.Batch(r.ran(), a.life.newLiveSession(tr(txt.SlashCmdCoreClearPreviousKeptRunning), trimJS(r.arg), nil))
 			}
-			if a.life.guardBusySessionSwitch(tr("slashCmd.core.clear.switchSessions")) {
+			if a.life.guardBusySessionSwitch(tr(txt.SlashCmdCoreClearSwitchSessions)) {
 				return nil
 			}
 			title, message := "", ""
 			if isNew {
-				title, message = trimJS(r.arg), tr("slashCmd.core.clear.newSessionStarted")
+				title, message = trimJS(r.arg), tr(txt.SlashCmdCoreClearNewSessionStarted)
 			}
 			commit := func() tea.Cmd {
-				a.store.ui.Status = tr("slashCmd.core.clear.forgingSession")
+				a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
 				return tea.Batch(r.ran(), a.life.newSession(message, title, nil))
 			}
-			yes, heading := tr("slashCmd.core.clear.confirmClear"), tr("slashCmd.core.clear.titleClear")
+			yes, heading := tr(txt.SlashCmdCoreClearConfirmClear), tr(txt.SlashCmdCoreClearTitleClear)
 			if isNew {
-				yes, heading = tr("slashCmd.core.clear.confirmNew"), tr("slashCmd.core.clear.titleNew")
+				yes, heading = tr(txt.SlashCmdCoreClearConfirmNew), tr(txt.SlashCmdCoreClearTitleNew)
 			}
-			return a.confirmDestructive(heading, tr("slashCmd.core.clear.detail"), yes, tr("slashCmd.core.clear.cancelLabel"), commit)
+			return a.confirmDestructive(heading, tr(txt.SlashCmdCoreClearDetail), yes, tr(txt.SlashCmdCoreClearCancelLabel), commit)
 		}},
 		{name: "redraw", help: "force a full UI repaint", run: func(r *slashRun) tea.Cmd {
 			a.card.view.invalidate()
-			r.sys(tr("slashCmd.core.redraw.done"))
+			r.sys(tr(txt.SlashCmdCoreRedrawDone))
 			return tea.ClearScreen
 		}},
 		{name: "status", help: "show live session info", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
-				r.sys(tr("slashCmd.core.status.noActiveSession"))
+				r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
 				return nil
 			}
 			show := func(out string) tea.Cmd {
 				if out == "" {
-					out = tr("slashCmd.core.status.empty")
+					out = tr(txt.SlashCmdCoreStatusEmpty)
 				}
-				return a.page(out, tr("slashCmd.core.status.pageTitle"))
+				return a.page(out, tr(txt.SlashCmdCoreStatusPageTitle))
 			}
 			if a.gw.canonical() {
 				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: "status", SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
@@ -567,11 +581,11 @@ func (a *app) coreCommands() []slashCommand {
 		{name: "density", help: "toggle compact display", usage: "[on|off|toggle]", run: func(r *slashRun) tea.Cmd {
 			next, ok := flagFromArg(r.arg, a.store.ui.Compact)
 			if !ok {
-				r.sys(tr("slashCmd.core.density.usage"))
+				r.sys(tr(txt.SlashCmdCoreDensityUsage))
 				return nil
 			}
 			a.store.ui.Compact = next
-			r.sys(tr("slashCmd.core.density.state", onOff(next)))
+			r.sys(tr(txt.SlashCmdCoreDensityState, onOff(next)))
 			return r.saveDisplayPref("density", onOff(next))
 		}},
 		{name: "timestamps", aliases: []string{"ts"}, help: "toggle [HH:MM] timestamps on transcript messages", usage: "[on|off|status]", run: func(r *slashRun) tea.Cmd {
@@ -664,7 +678,7 @@ type dieMsg struct{ code int }
 func (a *app) slashRefusal(name string, err error) string {
 	if a.catalog != nil {
 		if desc, chat := a.catalog.Chat[strings.ToLower(name)]; chat {
-			return tr("slash.chatCommand", name, desc)
+			return tr(txt.SlashChatCommand, name, desc)
 		}
 	}
 	known := a.knownCommandNames()
@@ -672,9 +686,9 @@ func (a *app) slashRefusal(name string, err error) string {
 		return describeSlashExecError(name, err)
 	}
 	if near := closestCommands(strings.ToLower(name), known); len(near) > 0 {
-		return tr("slash.unknownCommand", name, "/"+strings.Join(near, ", /"))
+		return tr(txt.SlashUnknownCommand, name, "/"+strings.Join(near, ", /"))
 	}
-	return tr("slash.unknownCommandNoMatch", name)
+	return tr(txt.SlashUnknownCommandNoMatch, name)
 }
 
 // Names of every command the app runs itself or the gateway catalog offers, aliases included, without the slash

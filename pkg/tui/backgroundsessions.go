@@ -1,6 +1,10 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
+)
 
 // Watch over the sessions this view left running: a session left mid turn keeps working out of sight, and the poll of the live sessions notices its
 // turn ending or a question waiting and says so in the transcript in view. Only sessions this view has shown count, since the shared gateway also
@@ -79,9 +83,9 @@ func (w *backgroundWatch) update(rows []listedSession, focused string) []string 
 		}
 		switch {
 		case phase == "waiting":
-			notices = append(notices, tr("session.lifecycle.backgroundWaiting", label))
+			notices = append(notices, tr(txt.SessionLifecycleBackgroundWaiting, label))
 		case phase == "idle" && before == "busy":
-			notices = append(notices, tr("session.lifecycle.backgroundFinished", label))
+			notices = append(notices, tr(txt.SessionLifecycleBackgroundFinished, label))
 		}
 	}
 	for id := range w.last {

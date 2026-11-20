@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 var resumeScrollDelays = []time.Duration{0, 80 * time.Millisecond, 240 * time.Millisecond}
@@ -89,9 +90,9 @@ func (l *sessionLifecycle) rpc(method string, params map[string]any, then func(m
 		result, isObject := v.(map[string]any)
 		switch {
 		case err != nil:
-			l.view.sys("error: " + rpcErrorMessage(err))
+			l.view.sys(errorLine(rpcErrorMessage(err)))
 		case !isObject:
-			l.view.sys("error: " + misfitText(tr("session.common.invalidResponse", method)))
+			l.view.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, method))))
 		}
 		if then == nil {
 			return nil
@@ -113,7 +114,7 @@ func usageFrom(info *tuigateway.SessionInfo) *tuigateway.Usage {
 // Warning that the gateway serves the session with secret redaction off, and how to turn it back on
 func reportRedactionOff(info *tuigateway.SessionInfo, sys func(string)) {
 	if redact := infoOf(info).RedactSecrets; redact != nil && !*redact {
-		sys("warning: " + tr("session.notices.redactionOff"))
+		sys(warningLine(tr(txt.SessionNoticesRedactionOff)))
 	}
 }
 
@@ -121,9 +122,9 @@ func reportRedactionOff(info *tuigateway.SessionInfo, sys func(string)) {
 func statusFromLiveSession(status string, running bool) string {
 	switch {
 	case status == "waiting":
-		return tr("session.status.waitingForInput")
+		return tr(txt.SessionStatusWaitingForInput)
 	case status == "starting":
-		return tr("session.status.startingAgent")
+		return tr(txt.SessionStatusStartingAgent)
 	case running || status == "working":
 		return "running…"
 	}
@@ -134,17 +135,17 @@ func statusFromLiveSession(status string, running bool) string {
 func reportInventoryNotices(info *tuigateway.SessionInfo, sys func(string)) {
 	held := infoOf(info)
 	if len(held.UnknownToolsets) > 0 {
-		sys("warning: " + tr("session.notices.unknownToolsets", strings.Join(held.UnknownToolsets, ", ")))
+		sys(warningLine(tr(txt.SessionNoticesUnknownToolsets, strings.Join(held.UnknownToolsets, ", "))))
 	}
 	for _, notice := range held.ToolAvailabilityWarnings {
 		if notice = trimJS(notice); notice != "" {
-			sys("warning: " + notice)
+			sys(warningLine(notice))
 		}
 	}
 	if untrusted := held.ProjectSkillsUntrusted; untrusted != nil && untrusted.Count > 0 {
-		sys("warning: " + tr("session.notices.projectSkillsUntrusted", untrusted.Count, untrusted.Root))
+		sys(warningLine(tr(txt.SessionNoticesProjectSkillsUntrusted, untrusted.Count, untrusted.Root)))
 	} else if loaded := val(held.ProjectSkillsLoaded); loaded > 0 {
-		sys(tr("session.notices.projectSkillsLoaded", loaded))
+		sys(tr(txt.SessionNoticesProjectSkillsLoaded, loaded))
 	}
 }
 
@@ -160,20 +161,20 @@ func updateNotice(info *tuigateway.SessionInfo) string {
 	}
 	switch {
 	case behind < 0:
-		return tr("session.notices.updateAvailable", command)
+		return tr(txt.SessionNoticesUpdateAvailable, command)
 	case behind == 1:
-		return tr("session.notices.updateBehindOne", behind, command)
+		return tr(txt.SessionNoticesUpdateBehindOne, behind, command)
 	}
-	return tr("session.notices.updateBehindOther", behind, command)
+	return tr(txt.SessionNoticesUpdateBehindOther, behind, command)
 }
 
 // Credential, config, redaction and inventory warnings of a new session, then its opening message
 func reportNewSessionNotices(info *tuigateway.SessionInfo, message string, sys func(string)) {
 	if warning := val(infoOf(info).CredentialWarning); warning != "" {
-		sys("warning: " + describeCredentialWarning(warning))
+		sys(warningLine(describeCredentialWarning(warning)))
 	}
 	if warning := val(infoOf(info).ConfigWarning); warning != "" {
-		sys("warning: " + warning)
+		sys(warningLine(warning))
 	}
 	reportRedactionOff(info, sys)
 	reportInventoryNotices(info, sys)
@@ -453,7 +454,7 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 		l.resetSession()
 		l.view.setSessionStartedAt(l.store.nowMillis())
 		writeActiveSessionFile(a.StoredSID)
-		status := tr("session.status.startingAgent")
+		status := tr(txt.SessionStatusStartingAgent)
 		if l.gw.canonical() || val(a.Info.Version) != "" {
 			status = "ready"
 		}
@@ -479,7 +480,7 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 		if l.gw.canonical() {
 			params, err := localCreationOptions(l.gw.creationEnv())
 			if err != nil {
-				l.view.sys("error: " + err.Error())
+				l.view.sys(errorLine(err.Error()))
 				return created(closed, nil)
 			}
 			params.RequestID = ptr(uuid.NewString())
@@ -527,7 +528,7 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 			}
 			if !serves {
 				l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
-				l.store.ui.Status = tr("session.status.setupRequired")
+				l.store.ui.Status = tr(txt.SessionStatusSetupRequired)
 				return settle("")
 			}
 			return proceed()
@@ -558,10 +559,10 @@ func (l *sessionLifecycle) nameNewSession(sid, requestedTitle string) tea.Cmd {
 		next := strings.TrimFunc(firstText(title, requestedTitle), isJSSpace)
 		suffix := ""
 		if pending {
-			suffix = tr("session.lifecycle.titleQueuedSuffix")
+			suffix = tr(txt.SessionLifecycleTitleQueuedSuffix)
 		}
 		l.store.ui.SessionTitle = next
-		l.view.sys(tr("session.lifecycle.sessionTitleSet", next) + suffix)
+		l.view.sys(tr(txt.SessionLifecycleSessionTitleSet, next) + suffix)
 		return nil
 	}
 	if !l.gw.canonical() {
@@ -575,7 +576,7 @@ func (l *sessionLifecycle) nameNewSession(sid, requestedTitle string) tea.Cmd {
 	return l.store.mutateCanonical(l.gw, sid, "rename", map[string]any{"title": requestedTitle}, func() bool { return false }, func(m *mutationOutcome, err error) tea.Cmd {
 		if err != nil {
 			if l.store.ui.Sid == sid {
-				l.view.sys("warning: " + tr("session.lifecycle.failedToSetTitle", err.Error()))
+				l.view.sys(warningLine(tr(txt.SessionLifecycleFailedToSetTitle, err.Error())))
 			}
 			return nil
 		}
@@ -594,7 +595,7 @@ func (l *sessionLifecycle) newSession(message, title string, then func(sid strin
 // Starts a fresh session beside the current live one, closing the switcher
 func (l *sessionLifecycle) newLiveSession(message, title string, then func(sid string) tea.Cmd) tea.Cmd {
 	if message == "" {
-		message = tr("session.lifecycle.newLiveSessionStarted")
+		message = tr(txt.SessionLifecycleNewLiveSessionStarted)
 	}
 	l.store.overlay.Sessions = false
 	return l.startNewSession(message, title, true, then)
@@ -674,7 +675,7 @@ func (l *sessionLifecycle) activateLiveSession(id string) tea.Cmd {
 	previousSid := l.store.ui.Sid
 	previousSubscription := l.subscriptions[previousSid]
 	l.store.overlay.Sessions = false
-	l.store.ui.Status = tr("session.status.switchingSession")
+	l.store.ui.Status = tr(txt.SessionStatusSwitchingSession)
 	l.store.clearConnectionOperation()
 	hold := l.gw.holdAttach(id)
 	done := func(cmd tea.Cmd) tea.Cmd {
@@ -685,7 +686,7 @@ func (l *sessionLifecycle) activateLiveSession(id string) tea.Cmd {
 		return l.attachByID(id, true, func(a *attachment, err error) tea.Cmd {
 			if err != nil {
 				if flight == l.attachmentFlight {
-					l.view.sys("error: " + err.Error())
+					l.view.sys(errorLine(err.Error()))
 					l.store.ui.Status = "ready"
 				}
 				return done(nil)
@@ -725,7 +726,7 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 		destination.Sid, destination.StoredSid = id, id
 	}
 	l.store.overlay.Sessions = false
-	l.store.ui.Status = tr("session.status.resuming")
+	l.store.ui.Status = tr(txt.SessionStatusResuming)
 	finish := func(cmds ...tea.Cmd) tea.Cmd {
 		cmds = append(cmds, l.finishAttachment(flight))
 		if then != nil {
@@ -739,7 +740,7 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 		}
 		if setup.ProviderConfigured != nil && !*setup.ProviderConfigured {
 			l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
-			l.store.ui.Status = tr("session.status.setupRequired")
+			l.store.ui.Status = tr(txt.SessionStatusSetupRequired)
 			return finish()
 		}
 		hold := l.gw.holdAttach(id)
@@ -748,7 +749,7 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 				defer l.gw.settleAttach(hold, nil)
 				if err != nil {
 					if flight == l.attachmentFlight {
-						l.view.sys("error: " + err.Error())
+						l.view.sys(errorLine(err.Error()))
 						l.store.ui.Status = "ready"
 					}
 					return finish()
@@ -758,7 +759,7 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 				}
 				if err := pendingJournal.migrate(destination, a.SessionID, a.StoredSID); err != nil {
 					if flight == l.attachmentFlight {
-						l.view.sys("error: " + err.Error())
+						l.view.sys(errorLine(err.Error()))
 						l.store.ui.Status = "ready"
 					}
 					return finish()
@@ -791,8 +792,8 @@ func (l *sessionLifecycle) guardBusySessionSwitch(what string) bool {
 		return false
 	}
 	if what == "" {
-		what = tr("session.lifecycle.switchSessions")
+		what = tr(txt.SessionLifecycleSwitchSessions)
 	}
-	l.view.sys(tr("session.lifecycle.interruptBeforeSwitch", what))
+	l.view.sys(tr(txt.SessionLifecycleInterruptBeforeSwitch, what))
 	return true
 }

@@ -21,6 +21,9 @@ import (
 // Catalog badges, official first
 var CatalogTiers = []string{"official", "verified", "community"}
 
+// Tiers whose entries may be marked default and installed in every home
+var DefaultCatalogTiers = map[string]bool{"official": true, "verified": true}
+
 // Browse shelves a catalog entry may name
 var CatalogCategories = []string{"memory", "platform", "web", "tools", "voice", "automation", "models", "general"}
 
@@ -81,8 +84,10 @@ type PluginCatalogEntry struct {
 	Platforms       []string
 	Title           string
 	Onboarding      bool
-	Capabilities    CatalogCapabilities
-	KnownIssues     []string
+	// Installed and enabled once in every home, official and verified entries only
+	Default      bool
+	Capabilities CatalogCapabilities
+	KnownIssues  []string
 }
 
 // Installer identifier, repo#subdir for monorepo entries
@@ -107,11 +112,12 @@ func (e *PluginCatalogEntry) ToDict() map[string]any {
 		"requires_icebath": e.RequiresIcebath, "subdir": e.Subdir, "docs_url": e.DocsURL, "version": e.Version,
 		"image": e.Image, "screenshots": stringsAny(e.Screenshots), "readme": e.Readme,
 		"platforms": stringsAny(e.Platforms), "title": e.Title, "onboarding": e.Onboarding,
+		"default":      e.Default,
 		"capabilities": capabilities,
 		"known_issues": stringsAny(e.KnownIssues),
 	}
 	config.SetMappingKeys(out, []string{"name", "repo", "sha", "description", "maintainer", "tier", "category", "requires_icebath",
-		"subdir", "docs_url", "version", "image", "screenshots", "readme", "platforms", "title", "onboarding", "capabilities", "known_issues"})
+		"subdir", "docs_url", "version", "image", "screenshots", "readme", "platforms", "title", "onboarding", "default", "capabilities", "known_issues"})
 	return out
 }
 
@@ -199,6 +205,11 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 		pkgLog().Warn("Plugin catalog: " + label + ": ignoring image " + errchain.Show(image) + " (must be https on a GitHub host)")
 		image = ""
 	}
+	isDefault := isPyBool(data["default"], true)
+	if isDefault && !DefaultCatalogTiers[tier] {
+		pkgLog().Warn("Plugin catalog: " + label + ": ignoring default: true (tier " + tier + "; only official/verified entries ship by default)")
+		isDefault = false
+	}
 	declared := catalogStrList(data["screenshots"])
 	screenshots := []string{}
 	for _, s := range declared {
@@ -223,6 +234,7 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 		Version: version, Image: image, Screenshots: screenshots, Readme: !isPyBool(data["readme"], false),
 		Platforms: catalogStrList(data["platforms"]),
 		Title:     pystr.Strip(catalogField(data, "title", "")), Onboarding: isPyBool(data["onboarding"], true),
+		Default:     isDefault,
 		KnownIssues: catalogStrList(data["known_issues"]),
 		Capabilities: CatalogCapabilities{
 			ProvidesTools: catalogStrList(caps["provides_tools"]), ProvidesHooks: catalogStrList(caps["provides_hooks"]),

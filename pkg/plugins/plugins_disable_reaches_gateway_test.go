@@ -38,7 +38,6 @@ func disableGatewayHome(t *testing.T, sharedRoot bool, answer, shared map[string
 	w.ctx = homeCtx(w.home)
 	txOAuthSurface(t)
 	next := *services.Load()
-	next.DefinesMemoryProvider = func(string) bool { return false }
 	next.RequiresAuthNotice = func(map[string]any) string { return "" }
 	next.DeclaresModelProviderKind = func(string) bool { return false }
 	next.PluginOAuthKey = func(string) string { return "" }

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -76,8 +77,8 @@ type mcpPanel struct {
 func (a *app) openMCPServers() tea.Cmd {
 	p := &mcpPanel{app: a, loading: true}
 	p.List = cards.NewList(a.cardEnv(), cards.ListSpec{
-		Title: tr("mcp.title"), Glyph: a.toolkit.Glyphs.MCP, Key: "tui:mcp", Context: mcpContext,
-		Columns: []render.Column{{Title: "server", Flex: 2, Max: 32}, {Title: "transport", Max: 10}, {Title: "status", Max: 12}, {Title: "tools", Max: 6}},
+		Title: tr(txt.McpTitle), Glyph: a.toolkit.Glyphs.MCP, Key: "tui:mcp", Context: mcpContext,
+		Columns: []render.Column{{Title: tr(txt.HubsColServer), Flex: 2, Max: 32}, {Title: tr(txt.HubsColTransport), Max: 10}, {Title: tr(txt.HubsColStatus), Max: 12}, {Title: tr(txt.HubsColTools), Max: 6}},
 		Rows:    p.rows,
 		Free:    map[string]bool{"tui.mcp.add": true},
 		Hints:   p.hints,
@@ -102,7 +103,7 @@ func (p *mcpPanel) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 // Trailer of the panel, the load in flight
 func (p *mcpPanel) Status() string {
 	if p.loading {
-		return tr("mcp.loading")
+		return tr(txt.McpLoading)
 	}
 	return ""
 }
@@ -115,7 +116,7 @@ func (p *mcpPanel) rows() [][]string {
 		if s.Tools > 0 {
 			tools = strconv.Itoa(s.Tools)
 		}
-		cells := []string{s.Name, s.Transport, tr("mcp.status." + s.Status), tools}
+		cells := []string{s.Name, s.Transport, trOr("mcp.status."+s.Status, s.Status), tools}
 		if !s.Enabled {
 			for c := range cells {
 				cells[c] = render.Dim(cells[c], p.app.toolkit)
@@ -129,9 +130,9 @@ func (p *mcpPanel) rows() [][]string {
 // Line of an empty panel, the load in flight or how to add the first server
 func (p *mcpPanel) empty() string {
 	if p.loading {
-		return tr("mcp.loading")
+		return tr(txt.McpLoading)
 	}
-	return tr("mcp.empty")
+	return tr(txt.McpEmpty)
 }
 
 // Legend of the selected server, authorize offered only for one that signs in through the browser
@@ -170,7 +171,7 @@ func (p *mcpPanel) load() tea.Cmd {
 
 // Toast of a failed request
 func (p *mcpPanel) fail(err error) tea.Cmd {
-	return wm.Notify(tr("mcp.errorLine", rpcErrorMessage(err)), wm.Error)
+	return wm.Notify(tr(txt.McpErrorLine, rpcErrorMessage(err)), wm.Error)
 }
 
 // Shows the panel again unless it is up or another card replaced the card it left
@@ -225,10 +226,10 @@ func (p *mcpPanel) add(_ *cards.List, _ int) tea.Cmd {
 			items = append(items, wm.Item{ID: "mcp:" + name, Title: name, Detail: row.Description, Run: func() tea.Cmd { return p.install(name, requires) }})
 		}
 		if len(items) == 0 {
-			return wm.Notify(tr("mcp.add.none"), wm.Info)
+			return wm.Notify(tr(txt.McpAddNone), wm.Info)
 		}
 		picker := wm.NewPalette(p.app.toolkit, items)
-		picker.Placeholder = tr("mcp.add.pick")
+		picker.Placeholder = tr(txt.McpAddPick)
 		return p.app.wm.ShowOverlay(picker)
 	})
 }
@@ -236,7 +237,7 @@ func (p *mcpPanel) add(_ *cards.List, _ int) tea.Cmd {
 // Adds the catalog server, then asks each value it requires
 func (p *mcpPanel) install(name string, requires []string) tea.Cmd {
 	return mcpCall(p, tuigateway.MCPServersAdd, tuigateway.MCPServersAddParams{Name: name, Preset: &name}, func(tuigateway.MCPServerResult) tea.Cmd {
-		return tea.Batch(wm.Notify(tr("mcp.notice.added", name), wm.Success), p.askValues(name, requires))
+		return tea.Batch(wm.Notify(tr(txt.McpNoticeAdded, name), wm.Success), p.askValues(name, requires))
 	})
 }
 
@@ -246,14 +247,14 @@ func (p *mcpPanel) askValues(name string, requires []string) tea.Cmd {
 		return p.back("", wm.Info, nil)
 	}
 	envVar := requires[0]
-	return p.app.wm.ShowOverlay(wm.NewPrompt(p.app.toolkit, tr("mcp.add.value", envVar, name), "", func(text string) tea.Cmd {
+	return p.app.wm.ShowOverlay(wm.NewPrompt(p.app.toolkit, tr(txt.McpAddValue, envVar, name), "", func(text string) tea.Cmd {
 		value := strings.TrimSpace(text)
 		if value == "" {
 			return p.askValues(name, requires[1:])
 		}
 		params := tuigateway.MCPServersSetAPIKeyParams{Name: name, Value: value, EnvVar: &envVar}
 		return mcpCall(p, tuigateway.MCPServersSetAPIKey, params, func(tuigateway.MCPServersSetAPIKeyResult) tea.Cmd {
-			return tea.Batch(wm.Notify(tr("mcp.notice.keySaved", envVar, name), wm.Success), p.askValues(name, requires[1:]))
+			return tea.Batch(wm.Notify(tr(txt.McpNoticeKeySaved, envVar, name), wm.Success), p.askValues(name, requires[1:]))
 		})
 	}))
 }
@@ -266,9 +267,9 @@ func (p *mcpPanel) toggle(_ *cards.List, i int) tea.Cmd {
 	}
 	return mcpCall(p, tuigateway.MCPServersEnable, tuigateway.MCPServersEnableParams{Name: s.Name, Enabled: !s.Enabled}, func(tuigateway.MCPServerResult) tea.Cmd {
 		if s.Enabled {
-			return p.back(tr("mcp.notice.disabled", s.Name), wm.Success, nil)
+			return p.back(tr(txt.McpNoticeDisabled, s.Name), wm.Success, nil)
 		}
-		return p.back(tr("mcp.notice.enabled", s.Name), wm.Success, nil)
+		return p.back(tr(txt.McpNoticeEnabled, s.Name), wm.Success, nil)
 	})
 }
 
@@ -280,9 +281,9 @@ func (p *mcpPanel) test(_ *cards.List, i int) tea.Cmd {
 	}
 	return mcpCall(p, tuigateway.MCPServersTest, tuigateway.MCPServerNameParams{Name: s.Name}, func(res tuigateway.MCPServersTestResult) tea.Cmd {
 		if !res.OK {
-			return wm.Notify(tr("mcp.notice.testFailed", s.Name, val(res.Error)), wm.Warn)
+			return wm.Notify(tr(txt.McpNoticeTestFailed, s.Name, val(res.Error)), wm.Warn)
 		}
-		return wm.Notify(tr("mcp.notice.testOk", s.Name, float64(len(res.Tools))), wm.Success)
+		return wm.Notify(tr(txt.McpNoticeTestOk, s.Name, float64(len(res.Tools))), wm.Success)
 	})
 }
 
@@ -292,9 +293,9 @@ func (p *mcpPanel) remove(l *cards.List, i int) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	l.Confirm(tr("mcp.remove.confirm", s.Name), func() tea.Cmd {
+	l.Confirm(tr(txt.McpRemoveConfirm, s.Name), func() tea.Cmd {
 		return mcpCall(p, tuigateway.MCPServersRemove, tuigateway.MCPServerNameParams{Name: s.Name}, func(tuigateway.MCPServersRemoveResult) tea.Cmd {
-			return p.back(tr("mcp.notice.removed", s.Name), wm.Success, nil)
+			return p.back(tr(txt.McpNoticeRemoved, s.Name), wm.Success, nil)
 		})
 	})
 	return nil
@@ -311,7 +312,7 @@ func (p *mcpPanel) authorize(_ *cards.List, i int) tea.Cmd {
 		card := &mcpAuthCard{panel: p, server: s.Name, flow: res.SessionID, link: link}
 		cmds := []tea.Cmd{p.app.wm.ShowOverlay(card)}
 		if link != "" && !openExternalURL(link) {
-			cmds = append(cmds, wm.Notify(tr("mcp.notice.browserDidNotOpen"), wm.Warn))
+			cmds = append(cmds, wm.Notify(tr(txt.McpNoticeBrowserDidNotOpen), wm.Warn))
 		}
 		return tea.Batch(cmds...)
 	})
@@ -336,7 +337,7 @@ var _ interface {
 	wm.Selectable
 } = (*mcpAuthCard)(nil)
 
-func (c *mcpAuthCard) Title() string      { return tr("mcp.title") }
+func (c *mcpAuthCard) Title() string      { return tr(txt.McpTitle) }
 func (c *mcpAuthCard) Key() string        { return "tui:mcp:auth" }
 func (c *mcpAuthCard) Glyph() string      { return c.panel.app.toolkit.Glyphs.MCP }
 func (c *mcpAuthCard) Selectable() bool   { return true }
@@ -355,13 +356,13 @@ func (c *mcpAuthCard) MinSize() (int, int) {
 // Heading, link or starting line and the waiting line of the card
 func (c *mcpAuthCard) lines() []string {
 	t := c.panel.app.toolkit
-	out := []string{render.Heading(tr("mcp.auth.title", c.server), t)}
+	out := []string{render.Heading(tr(txt.McpAuthTitle, c.server), t)}
 	if c.link != "" {
 		out = append(out, render.Warm(c.link, t))
 	} else {
-		out = append(out, render.Dim(tr("mcp.auth.starting"), t))
+		out = append(out, render.Dim(tr(txt.McpAuthStarting), t))
 	}
-	return append(out, render.Dim(tr("mcp.auth.waiting"), t))
+	return append(out, render.Dim(tr(txt.McpAuthWaiting), t))
 }
 
 func (c *mcpAuthCard) View(w, h int) string {
@@ -380,16 +381,16 @@ func (c *mcpAuthCard) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		switch msg.ID {
 		case "tui.mcp.auth.open":
 			if c.link != "" && !openExternalURL(c.link) {
-				return c, wm.Notify(tr("mcp.notice.browserDidNotOpen"), wm.Warn)
+				return c, wm.Notify(tr(txt.McpNoticeBrowserDidNotOpen), wm.Warn)
 			}
 		case "tui.mcp.auth.stop":
 			c.done = true
 			params := tuigateway.MCPOAuthFlowParams{Name: c.server, SessionID: c.flow}
 			return c, call(c.panel.app.gw, tuigateway.MCPServersOAuthCancel, params, func(_ *tuigateway.MCPOAuthCancelResult, err error) tea.Cmd {
 				if err != nil {
-					return c.panel.back(tr("mcp.errorLine", rpcErrorMessage(err)), wm.Error, c)
+					return c.panel.back(tr(txt.McpErrorLine, rpcErrorMessage(err)), wm.Error, c)
 				}
-				return c.panel.back(tr("mcp.notice.authStopped"), wm.Info, c)
+				return c.panel.back(tr(txt.McpNoticeAuthStopped), wm.Info, c)
 			})
 		}
 	}
@@ -416,7 +417,7 @@ func (c *mcpAuthCard) poll() tea.Cmd {
 		}
 		if err != nil {
 			c.done = true
-			return c.panel.back(tr("mcp.errorLine", rpcErrorMessage(err)), wm.Error, c)
+			return c.panel.back(tr(txt.McpErrorLine, rpcErrorMessage(err)), wm.Error, c)
 		}
 		if link := val(res.AuthURL); link != "" {
 			c.link = link
@@ -424,10 +425,10 @@ func (c *mcpAuthCard) poll() tea.Cmd {
 		switch res.Status {
 		case "approved":
 			c.done = true
-			return c.panel.back(tr("mcp.notice.authorized", c.server), wm.Success, c)
+			return c.panel.back(tr(txt.McpNoticeAuthorized, c.server), wm.Success, c)
 		case "error":
 			c.done = true
-			return c.panel.back(tr("mcp.notice.authFailed", c.server, val(res.ErrorMessage)), wm.Warn, c)
+			return c.panel.back(tr(txt.McpNoticeAuthFailed, c.server, val(res.ErrorMessage)), wm.Warn, c)
 		}
 		return c.schedule()
 	})
@@ -435,5 +436,5 @@ func (c *mcpAuthCard) poll() tea.Cmd {
 
 // Command that opens the MCP servers panel
 func (a *app) mcpCommands() []slashCommand {
-	return []slashCommand{{name: "mcp", help: tr("slashCmd.core.help.mcp"), run: func(*slashRun) tea.Cmd { return a.openMCPServers() }}}
+	return []slashCommand{{name: "mcp", help: tr(txt.SlashCmdCoreHelpMcp), helpFn: helpOf(txt.SlashCmdCoreHelpMcp), run: func(*slashRun) tea.Cmd { return a.openMCPServers() }}}
 }

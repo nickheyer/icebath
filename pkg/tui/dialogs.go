@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -382,9 +383,9 @@ func (d *dialogCard) commandRows(width, others int) []string {
 		rows = append(rows, " "+toneStyle(t.Color.Text).Render(line))
 	}
 	if pages > 1 {
-		key := "prompt.approval.pageEnd"
+		key := txt.PromptApprovalPageEnd
 		if end < len(lines) {
-			key = "prompt.approval.pageMore"
+			key = txt.PromptApprovalPageMore
 		}
 		rows = append(rows, " "+toneStyle(t.Color.Warn).Render(tr(key, start+1, end, len(lines))))
 	}
@@ -416,7 +417,7 @@ func (d *dialogCard) batchRows(width int) []string {
 			rows = append(rows, style.Render(head+line))
 		}
 		if answered {
-			text, tone := tr("prompt.clarify.skipped"), t.Color.Muted
+			text, tone := tr(txt.PromptClarifySkipped), t.Color.Muted
 			if answer != "" {
 				text, tone = clarifyAnswerText(answer, q.MultiSelect), t.Color.Ok
 			}
@@ -554,15 +555,15 @@ func (d *dialogCard) Cursor() *tea.Cursor { return d.cursor }
 func (d *dialogCard) Hints() []wm.Hint {
 	switch {
 	case d.kind == "approval" && d.focus >= 0:
-		return []wm.Hint{{Action: "palette.pick", Label: "deny and send"}, {Action: "tui.prompt.cancel", Label: "back"}}
+		return []wm.Hint{{Action: "palette.pick", Label: tr(txt.HintsLabelDenyAndSend)}, {Action: "tui.prompt.cancel", Label: tr(txt.HintsLabelBack)}}
 	case d.kind == "approval":
-		return []wm.Hint{{Action: "approval.allow"}, {Action: "approval.deny"}, {Action: "palette.pick", Label: "choose"}}
+		return []wm.Hint{{Action: "approval.allow"}, {Action: "approval.deny"}, {Action: "palette.pick", Label: tr(txt.HintsLabelChoose)}}
 	case d.batch != nil && len(d.batch.req.Questions) > 1:
-		return []wm.Hint{{Action: "palette.pick", Label: "answer"}, {Action: "tui.prompt.next", Pair: "tui.prompt.prev", Label: "question"}, {Action: "tui.prompt.cancel", Label: "cancel"}}
+		return []wm.Hint{{Action: "palette.pick", Label: tr(txt.HintsLabelAnswer)}, {Action: "tui.prompt.next", Pair: "tui.prompt.prev", Label: tr(txt.HintsLabelQuestion)}, {Action: "tui.prompt.cancel", Label: tr(txt.HintsLabelCancel)}}
 	case len(d.choices) == 0 && len(d.fields) == 0:
-		return []wm.Hint{{Action: "tui.prompt.cancel", Label: "close"}}
+		return []wm.Hint{{Action: "tui.prompt.cancel", Label: tr(txt.HintsLabelClose)}}
 	}
-	return []wm.Hint{{Action: "palette.pick", Label: "answer"}, {Action: "tui.prompt.cancel", Label: "cancel"}}
+	return []wm.Hint{{Action: "palette.pick", Label: tr(txt.HintsLabelAnswer)}, {Action: "tui.prompt.cancel", Label: tr(txt.HintsLabelCancel)}}
 }
 
 // Moves the highlight through the choices and then the fields
@@ -811,17 +812,17 @@ func (d *dialogCard) showQuestion(index int) {
 	index = (index%count + count) % count
 	q := req.Questions[index]
 	d.batch.active, d.batch.typing = index, false
-	d.title = tr("prompt.clarify.title")
+	d.title = tr(txt.PromptClarifyTitle)
 	if count > 1 {
-		d.title = tr("prompt.clarify.titleOf", index+1, count)
+		d.title = tr(txt.PromptClarifyTitleOf, index+1, count)
 	}
 	d.multi, d.marks, d.sel, d.focus, d.choices = q.MultiSelect, map[int]bool{}, 0, -1, nil
 	for _, c := range q.Choices {
 		d.choices = append(d.choices, dialogChoice{label: c, value: c})
 	}
-	label := tr("prompt.clarify.answerLabel") + " ›"
+	label := tr(txt.PromptClarifyAnswerLabel) + " ›"
 	if len(q.Choices) > 0 {
-		label = fmt.Sprintf("%d   %s ›", len(q.Choices)+1, tr("prompt.clarify.other"))
+		label = fmt.Sprintf("%d   %s ›", len(q.Choices)+1, tr(txt.PromptClarifyOther))
 	}
 	typed := ""
 	if answer := req.Answers[q.QID]; answer != "" {
@@ -866,17 +867,17 @@ func (d *dialogCard) clarifyHint() string {
 			open++
 		}
 	}
-	enter := tr("prompt.clarify.lockAnswer")
+	enter := tr(txt.PromptClarifyLockAnswer)
 	if open == 1 {
-		enter = tr("prompt.clarify.confirmAndContinue")
+		enter = tr(txt.PromptClarifyConfirmAndContinue)
 	}
 	switch {
 	case d.focus >= 0 && (len(d.choices) > 0 || d.batch.typing):
-		return tr("prompt.clarify.typingHint", enter)
+		return tr(txt.PromptClarifyTypingHint, enter)
 	case d.multi:
-		return tr("prompt.clarify.toggle") + " · " + tr("prompt.clarify.hint", enter)
+		return tr(txt.PromptClarifyToggle) + " · " + tr(txt.PromptClarifyHint, enter)
 	}
-	return tr("prompt.clarify.hint", enter)
+	return tr(txt.PromptClarifyHint, enter)
 }
 
 // Dialogs of the session prompts, the one showing and what the bar says while one waits
@@ -1019,10 +1020,10 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 	switch kind {
 	case "approval":
 		req := o.Approval
-		d.title, d.danger, d.command = tr("prompt.approval.title"), true, req.Command
+		d.title, d.danger, d.command = tr(txt.PromptApprovalTitle), true, req.Command
 		d.body = []string{req.Description}
 		if req.SmartDenied {
-			d.body = append(d.body, tr("prompt.approval.smartDenied"))
+			d.body = append(d.body, tr(txt.PromptApprovalSmartDenied))
 		}
 		choices := req.Choices
 		if len(choices) == 0 {
@@ -1035,7 +1036,7 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 			d.choices = append(d.choices, dialogChoice{label: approvalLabel(c), value: c})
 		}
 		if slices.ContainsFunc(d.choices, func(c dialogChoice) bool { return c.value == "deny" }) {
-			d.fields = []dialogField{{label: fmt.Sprintf("%d   %s ›", len(d.choices)+1, tr("prompt.approval.tell")), hint: tr("prompt.approval.tellHint"), multiline: true}}
+			d.fields = []dialogField{{label: fmt.Sprintf("%d   %s ›", len(d.choices)+1, tr(txt.PromptApprovalTell)), hint: tr(txt.PromptApprovalTellHint), multiline: true}}
 		}
 		d.onAnswer = func(choice *dialogChoice, _ []string, fields []string) tea.Cmd {
 			if choice == nil {
@@ -1046,37 +1047,37 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 		d.onCancel = func() tea.Cmd { return a.answerApproval(req, "deny") }
 	case "sudo":
 		req := o.Sudo
-		body := []string{tr("secure.sudo.body")}
+		body := []string{tr(txt.SecureSudoBody)}
 		if req.Command != "" {
-			body = []string{req.Command, tr("secure.sudo.body")}
+			body = []string{req.Command, tr(txt.SecureSudoBody)}
 		}
 		if req.ProfileKey != "" {
-			body = []string{tr("secure.sudo.installBody", req.ProfileKey)}
+			body = []string{tr(txt.SecureSudoInstallBody, req.ProfileKey)}
 		}
-		return masked("sudo", tr("secure.sudo.title"), body, tr("secure.passwordLabel"), false, tr("session.input.sudoCancelled"))
+		return masked("sudo", tr(txt.SecureSudoTitle), body, tr(txt.SecurePasswordLabel), false, tr(txt.SessionInputSudoCancelled))
 	case "secret":
 		req := o.Secret
-		return masked("secret", "secret "+tr("secure.secret.forEnvVar", req.EnvVar), []string{req.Prompt}, req.EnvVar, false, tr("session.input.secretCancelled"))
+		return masked("secret", "secret "+tr(txt.SecureSecretForEnvVar, req.EnvVar), []string{req.Prompt}, req.EnvVar, false, tr(txt.SessionInputSecretCancelled))
 	case "vaultUnlock":
 		req := o.VaultUnlock
 		name := req.DisplayName
 		if name == "" {
 			name = req.Backend
 		}
-		return masked("vaultUnlock", tr("secure.vault.unlockTitle", name), []string{tr("secure.vault.unlockBody", name)}, tr("secure.passwordLabel"), false,
-			tr("session.input.vaultStaysLocked", name))
+		return masked("vaultUnlock", tr(txt.SecureVaultUnlockTitle, name), []string{tr(txt.SecureVaultUnlockBody, name)}, tr(txt.SecurePasswordLabel), false,
+			tr(txt.SessionInputVaultStaysLocked, name))
 	case "vaultCode":
 		req := o.VaultCode
-		body := []string{tr("secure.vault.codeBody", req.Site)}
+		body := []string{tr(txt.SecureVaultCodeBody, req.Site)}
 		if req.Hint != "" {
-			body = []string{req.Hint, tr("secure.vault.codeBody", req.Site)}
+			body = []string{req.Hint, tr(txt.SecureVaultCodeBody, req.Site)}
 		}
-		return masked("vaultCode", tr("secure.vault.codeTitle", req.Site), body, tr("secure.vault.codeLabel"), true, tr("session.input.codeSkipped", req.Site))
+		return masked("vaultCode", tr(txt.SecureVaultCodeTitle, req.Site), body, tr(txt.SecureVaultCodeLabel), true, tr(txt.SessionInputCodeSkipped, req.Site))
 	case "vaultSaveLogin":
 		req := o.VaultSaveLogin
-		d.title = tr("secure.vault.saveTitle", req.Site)
-		d.body = []string{tr("secure.vault.saveBody", req.Origin)}
-		d.fields, d.focus = []dialogField{{label: tr("secure.vault.usernameLabel")}, {label: tr("secure.passwordLabel"), masked: true}}, 0
+		d.title = tr(txt.SecureVaultSaveTitle, req.Site)
+		d.body = []string{tr(txt.SecureVaultSaveBody, req.Origin)}
+		d.fields, d.focus = []dialogField{{label: tr(txt.SecureVaultUsernameLabel)}, {label: tr(txt.SecurePasswordLabel), masked: true}}, 0
 		requestID := id
 		d.onAnswer = func(_ *dialogChoice, _ []string, fields []string) tea.Cmd {
 			value := ""
@@ -1087,7 +1088,7 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 			return a.respondPrompt("vaultSaveLogin", requestID, value)
 		}
 		d.onCancel = func() tea.Cmd {
-			a.sys(tr("session.input.loginNotSaved", req.Site))
+			a.sys(tr(txt.SessionInputLoginNotSaved, req.Site))
 			return a.respondPrompt("vaultSaveLogin", requestID, "")
 		}
 	case "clarify":
@@ -1136,13 +1137,13 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 		}
 		yes, no := req.ConfirmLabel, req.CancelLabel
 		if yes == "" {
-			yes = tr("prompt.confirm.confirm")
+			yes = tr(txt.PromptConfirmConfirm)
 		}
 		if no == "" {
-			no = tr("prompt.confirm.cancel")
+			no = tr(txt.PromptConfirmCancel)
 		}
 		d.choices = []dialogChoice{{label: no, value: "no"}, {label: yes, value: "yes"}}
-		d.hint = func() string { return tr("prompt.confirm.hint") }
+		d.hint = func() string { return tr(txt.PromptConfirmHint) }
 		d.onAnswer = func(choice *dialogChoice, _ []string, _ []string) tea.Cmd {
 			o.Confirm = nil
 			if choice != nil && choice.value == "yes" && req.OnConfirm != nil {
@@ -1211,7 +1212,7 @@ func (a *app) respondConnection(answer tuigateway.ConnectionAnswer) tea.Cmd {
 	params := tuigateway.ConnectionRespondParams{Owner: a.connectionOwner(), OpID: op.OpID, Result: answer}
 	return ask(a.events.rpc, a.sys, tuigateway.ConnectionRespond, params, func(r *tuigateway.ConnectionRespondResult) tea.Cmd {
 		if r == nil {
-			return wm.Notify(tr("connection.notice.answerNotDelivered"), wm.Warn)
+			return wm.Notify(tr(txt.ConnectionNoticeAnswerNotDelivered), wm.Warn)
 		}
 		return nil
 	})
@@ -1225,7 +1226,7 @@ func (a *app) retryConnection(name string) tea.Cmd {
 	params := tuigateway.ConnectorsConnectParams{Owner: a.connectionOwner(), Connectors: []string{name}, Reconnect: true}
 	return ask(a.events.rpc, a.sys, tuigateway.ConnectorsConnect, params, func(r *tuigateway.ConnectionOperationSnapshot) tea.Cmd {
 		if r == nil {
-			return wm.Notify(tr("connection.notice.restartFailed"), wm.Warn)
+			return wm.Notify(tr(txt.ConnectionNoticeRestartFailed), wm.Warn)
 		}
 		for _, line := range a.store.applyConnectionSnapshot(*r) {
 			a.sys(line)
@@ -1248,13 +1249,13 @@ func (a *app) wakeConnection() tea.Cmd {
 func connectionVerb(action tuigateway.ConnectionTargetAction) string {
 	switch action {
 	case "authorize":
-		return tr("connection.verb.authorize")
+		return tr(txt.ConnectionVerbAuthorize)
 	case "enable":
-		return tr("connection.verb.enable")
+		return tr(txt.ConnectionVerbEnable)
 	case "install":
-		return tr("connection.verb.install")
+		return tr(txt.ConnectionVerbInstall)
 	}
-	return tr("connection.verb.connect")
+	return tr(txt.ConnectionVerbConnect)
 }
 
 // Connection card, every target with its state and the step the first waiting one needs, what was typed for that target kept from the card it replaces
@@ -1262,8 +1263,8 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 	op := a.store.connectionOp
 	target := a.activeConnectionTarget()
 	trimmed := func(s *string) string { return strings.TrimFunc(val(s), isJSSpace) }
-	hint := func(key string) func() string { return func() string { return tr(key) } }
-	d.title = tr("connection.title")
+	hint := func(key txt.Key) func() string { return func() string { return tr(key) } }
+	d.title = tr(txt.ConnectionTitle)
 	for _, row := range op.Targets {
 		mark := "○"
 		switch row.State {
@@ -1284,7 +1285,7 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 	}
 	if target == nil {
 		opID := op.OpID
-		d.body, d.hint = append(d.body, tr("connection.status.finishing")), hint("connection.hint.finishing")
+		d.body, d.hint = append(d.body, tr(txt.ConnectionStatusFinishing)), hint(txt.ConnectionHintFinishing)
 		d.onAnswer = func(*dialogChoice, []string, []string) tea.Cmd { return nil }
 		d.onCancel = func() tea.Cmd {
 			a.store.dismissConnectionOperation(opID)
@@ -1295,8 +1296,8 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 	d.subject = target.Name + ":" + string(target.State)
 	if target.State == "connected" {
 		proceed := func() tea.Cmd { return a.respondConnection(connectionAnswer(nil, "", nil)) }
-		d.body, d.hint = append(d.body, tr("connection.authorized.title"), trimmed(target.DiscoveryError)), hint("connection.authorized.hint")
-		d.choices = []dialogChoice{{label: tr("connection.authorized.continue"), value: "continue"}}
+		d.body, d.hint = append(d.body, tr(txt.ConnectionAuthorizedTitle), trimmed(target.DiscoveryError)), hint(txt.ConnectionAuthorizedHint)
+		d.choices = []dialogChoice{{label: tr(txt.ConnectionAuthorizedContinue), value: "continue"}}
 		d.onAnswer = func(*dialogChoice, []string, []string) tea.Cmd { return proceed() }
 		d.onCancel = proceed
 		return d
@@ -1307,27 +1308,27 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 		}
 	}
 	name, link := target.Name, trimmed(target.ConnectURL)
-	skip := dialogChoice{label: tr("connection.selector.skip"), value: "skip"}
+	skip := dialogChoice{label: tr(txt.ConnectionSelectorSkip), value: "skip"}
 	switch {
 	case target.State == "failed":
 		if trimmed(target.Detail) == "" {
-			d.body = append(d.body, tr("connection.failure.failed"))
+			d.body = append(d.body, tr(txt.ConnectionFailureFailed))
 		}
-		d.choices, d.hint = []dialogChoice{{label: tr("connection.selector.tryAgain"), value: "retry"}, skip}, hint("connection.hint.retry")
+		d.choices, d.hint = []dialogChoice{{label: tr(txt.ConnectionSelectorTryAgain), value: "retry"}, skip}, hint(txt.ConnectionHintRetry)
 	case link != "":
-		d.body = append(d.body, tr("connection.finishInBrowser", link))
-		d.choices = []dialogChoice{{label: tr("connection.selector.open"), value: "open"}, {label: tr("connection.selector.checkNow"), value: "wake"}, skip}
-		d.hint = hint("connection.hint.browser")
+		d.body = append(d.body, tr(txt.ConnectionFinishInBrowser, link))
+		d.choices = []dialogChoice{{label: tr(txt.ConnectionSelectorOpen), value: "open"}, {label: tr(txt.ConnectionSelectorCheckNow), value: "wake"}, skip}
+		d.hint = hint(txt.ConnectionHintBrowser)
 	case target.State == "initiated":
-		d.body = append(d.body, tr("connection.waiting", connectionTargetName(*target)))
-		d.choices, d.hint = []dialogChoice{{label: tr("connection.selector.checkNow"), value: "wake"}, skip}, hint("connection.hint.working")
+		d.body = append(d.body, tr(txt.ConnectionWaiting, connectionTargetName(*target)))
+		d.choices, d.hint = []dialogChoice{{label: tr(txt.ConnectionSelectorCheckNow), value: "wake"}, skip}, hint(txt.ConnectionHintWorking)
 	default:
 		for _, field := range target.RequiredEnv {
 			label := firstText(trimmed(field.Prompt), field.Name)
 			d.fields = append(d.fields, dialogField{label: label, masked: field.Secret, value: []rune(field.Default), cursor: len([]rune(field.Default))})
 		}
 		d.choices = []dialogChoice{{label: connectionVerb(target.Action) + " " + connectionTargetName(*target), value: "approved"}, skip}
-		d.hint = hint("connection.hint.form")
+		d.hint = hint(txt.ConnectionHintForm)
 	}
 	if prev != nil && prev.kind == "connection" && prev.subject == d.subject && len(prev.fields) == len(d.fields) {
 		for i := range d.fields {
@@ -1348,7 +1349,7 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 		switch value {
 		case "open":
 			if !openExternalURL(link) {
-				return wm.Notify(tr("connection.notice.browserDidNotOpen"), wm.Warn)
+				return wm.Notify(tr(txt.ConnectionNoticeBrowserDidNotOpen), wm.Warn)
 			}
 			return nil
 		case "wake":
@@ -1360,7 +1361,7 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 		}
 		for i, field := range required {
 			if field.Required && (i >= len(fields) || strings.TrimFunc(fields[i], isJSSpace) == "") {
-				return wm.Notify(tr("connection.field.required", firstText(trimmed(field.Prompt), field.Name)), wm.Warn)
+				return wm.Notify(tr(txt.ConnectionFieldRequired, firstText(trimmed(field.Prompt), field.Name)), wm.Warn)
 			}
 		}
 		return a.respondConnection(connectionAnswer(target, "approved", fields))
@@ -1372,8 +1373,14 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 // Label of an approval verdict
 func approvalLabel(choice string) string {
 	switch choice {
-	case "once", "session", "always", "deny":
-		return tr("prompt.approval." + choice)
+	case "once":
+		return tr(txt.PromptApprovalOnce)
+	case "session":
+		return tr(txt.PromptApprovalSession)
+	case "always":
+		return tr(txt.PromptApprovalAlways)
+	case "deny":
+		return tr(txt.PromptApprovalDeny)
 	}
 	return choice
 }
@@ -1395,12 +1402,12 @@ func (a *app) answerApprovalTell(req *approvalReq, text string) tea.Cmd {
 		shown := a.store.isCurrentDestination(destination)
 		if answered && status == "queued" {
 			if shown {
-				a.sys(tr("slashCmd.core.steer.queued", previewOf(text)))
+				a.sys(tr(txt.SlashCmdCoreSteerQueued, previewOf(text)))
 			}
 		} else {
 			a.enqueue(text, text, destination)
 			if shown {
-				a.sys(tr("slashCmd.core.steer.rejected"))
+				a.sys(tr(txt.SlashCmdCoreSteerRejected))
 			}
 		}
 		req.Tell = tellTold
@@ -1431,9 +1438,9 @@ func (a *app) answerApproval(req *approvalReq, choice string) tea.Cmd {
 		if a.store.overlay.Approval == req {
 			a.store.overlay.Approval = nil
 		}
-		a.store.turn.Outcome = tr("session.approval.approved", choice)
+		a.store.turn.Outcome = tr(txt.SessionApprovalApproved, choice)
 		if choice == "deny" {
-			a.store.turn.Outcome = tr("session.approval.denied")
+			a.store.turn.Outcome = tr(txt.SessionApprovalDenied)
 		}
 		a.store.ui.Status = "running…"
 	}
@@ -1442,7 +1449,7 @@ func (a *app) answerApproval(req *approvalReq, choice string) tea.Cmd {
 			return nil
 		}
 		a.sys(req.OpenURL)
-		return wm.Notify(tr("mcp.notice.browserDidNotOpen"), wm.Warn)
+		return wm.Notify(tr(txt.McpNoticeBrowserDidNotOpen), wm.Warn)
 	}
 	if req.Shared != nil {
 		req.Answering = true
@@ -1499,7 +1506,7 @@ func (a *app) cancelClarify(req *clarifyReq) tea.Cmd {
 		if answers == nil {
 			answers = map[string]string{}
 		}
-		a.appendMessage(msg{Role: "system", Text: formatAbandonedClarify(req.Questions, answers, tr("gatewayMsg.clarify.cancelled"))})
+		a.appendMessage(msg{Role: "system", Text: formatAbandonedClarify(req.Questions, answers, tr(txt.GatewayMsgClarifyCancelled))})
 		a.store.overlay.Clarify = nil
 	}
 	if req.Shared != nil {
@@ -1586,13 +1593,13 @@ func (p *pagerCard) MinSize() (int, int) { w, h := p.app.wm.Size(); return w * 8
 
 func (p *pagerCard) Status() string {
 	if len(p.lines) <= p.height {
-		return countNoun(len(p.lines), "line")
+		return trSome(txt.PagerLinesOne, txt.PagerLinesOther, len(p.lines))
 	}
-	return fmt.Sprintf("%d-%d of %d", p.offset+1, min(p.offset+p.height, len(p.lines)), len(p.lines))
+	return tr(txt.PagerRange, p.offset+1, min(p.offset+p.height, len(p.lines)), len(p.lines))
 }
 
 func (p *pagerCard) Hints() []wm.Hint {
-	return []wm.Hint{{Action: "transcript.down", Pair: "transcript.up"}, {Action: "transcript.page.down"}, {Action: "transcript.top"}, {Action: "transcript.bottom"}, {Action: "palette.close", Label: "close"}}
+	return []wm.Hint{{Action: "transcript.down", Pair: "transcript.up"}, {Action: "transcript.page.down"}, {Action: "transcript.top"}, {Action: "transcript.bottom"}, {Action: "palette.close", Label: tr(txt.HintsLabelClose)}}
 }
 
 func (p *pagerCard) View(w, h int) string {

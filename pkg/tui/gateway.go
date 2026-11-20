@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -587,7 +588,7 @@ func (c *gatewayClient) detachLocked(cause error) {
 
 // Rejects the old transport's requests and buffered frames before a new transport starts
 func (c *gatewayClient) resetStartupStateLocked() {
-	c.detachLocked(errors.New(tr("libText.gateway.restarting")))
+	c.detachLocked(errors.New(tr(txt.LibTextGatewayRestarting)))
 	c.ready = false
 	c.backlog, c.bufferedReqs, c.pendingExit = nil, nil, nil
 	c.clearReadyTimerLocked()
@@ -619,7 +620,7 @@ func (c *gatewayClient) handleTransportExitLocked(code int, reason string) {
 	}
 	c.lifecycleLocked(fmt.Sprintf("[lifecycle] transport exit code=%d reason=%s", code, reasonText))
 	if reason == "" {
-		reason = tr("libText.gateway.exitedWithCode", code)
+		reason = tr(txt.LibTextGatewayExitedWithCode, code)
 	}
 	c.detachLocked(errors.New(reason))
 	c.scheduleReconnectLocked()
@@ -776,7 +777,7 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 	c.startReadyTimerLocked("websocket", safe)
 	if !constructibleWSURL(target) {
 		c.pushLogLocked(fmt.Sprintf("[startup] failed to connect websocket gateway %s (constructor error)", safe))
-		c.handleTransportExitLocked(1, tr("libText.gateway.websocketStartupFailed"))
+		c.handleTransportExitLocked(1, tr(txt.LibTextGatewayWebsocketStartupFailed))
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -791,13 +792,13 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 			defer close(conn.settled)
 			if err != nil {
 				c.pushLogLocked("[startup] gateway websocket connect error")
-				conn.dialErr = errors.New(tr("libText.gateway.websocketConnectionFailed"))
+				conn.dialErr = errors.New(tr(txt.LibTextGatewayWebsocketConnectionFailed))
 				c.transportErrorLocked(conn)
 				c.onSocketCloseLocked(conn, closeAbnormal)
 				return
 			}
 			if c.conn != conn || ctx.Err() != nil {
-				conn.dialErr = errors.New(tr("libText.gateway.websocketConnectionFailed"))
+				conn.dialErr = errors.New(tr(txt.LibTextGatewayWebsocketConnectionFailed))
 				go sock.Close()
 				c.pushLogLocked(fmt.Sprintf("[lifecycle] stale websocket close ignored code=%d", closeAbnormal))
 				return
@@ -883,9 +884,9 @@ func (c *gatewayClient) onSocketCloseLocked(conn *gatewayConn, code int) {
 	}
 	c.pushLogLocked(fmt.Sprintf("[lifecycle] websocket close code=%d", code))
 	c.conn = nil
-	reason := tr("libText.gateway.websocketClosed")
+	reason := tr(txt.LibTextGatewayWebsocketClosed)
 	if code != 0 {
-		reason = tr("libText.gateway.websocketClosedWithCode", code)
+		reason = tr(txt.LibTextGatewayWebsocketClosedWithCode, code)
 	}
 	c.handleTransportExitLocked(code, reason)
 }
@@ -930,7 +931,7 @@ func (c *gatewayClient) advertiseCapabilitiesLocked(conn *gatewayConn) {
 		}
 		result, err := tuigateway.ClientCapabilities.Result(value)
 		if err != nil {
-			c.recordLog("[protocol] " + misfitText(tr("session.common.invalidResponse", tuigateway.ClientCapabilities.Name())) + " " + err.Error())
+			c.recordLog("[protocol] " + misfitText(tr(txt.SessionCommonInvalidResponse, tuigateway.ClientCapabilities.Name())) + " " + err.Error())
 			return
 		}
 		c.mu.Lock()
@@ -1204,7 +1205,7 @@ func (c *gatewayClient) request(ctx context.Context, method string, params map[s
 		var canonical bool
 		c.locked(func() {
 			if c.attachURL != attach {
-				c.detachLocked(errors.New(tr("libText.gateway.attachUrlChanged")))
+				c.detachLocked(errors.New(tr(txt.LibTextGatewayAttachUrlChanged)))
 				c.startLocked()
 			}
 			canonical = c.isCanonical
@@ -1323,7 +1324,7 @@ func (c *gatewayClient) kill(reason string) {
 		c.lifecycleLocked(fmt.Sprintf("[lifecycle] GatewayClient.kill reason=%s (detach only)", reason))
 		c.closeGatewaySocketLocked()
 		c.clearReadyTimerLocked()
-		c.detachLocked(errors.New(tr("libText.gateway.closed")))
+		c.detachLocked(errors.New(tr(txt.LibTextGatewayClosed)))
 	})
 }
 

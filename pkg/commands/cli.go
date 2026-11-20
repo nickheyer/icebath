@@ -518,34 +518,39 @@ func positionalHelp(specs []posSpec) string {
 	return strings.Join(rows, "\n")
 }
 
-// Validates positional count, choices, and integer typed positionals like argparse
+// Refuses words beyond the positionals a command declares, the argparse unrecognized arguments error
 func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
-		min, max := 0, 0
-		unbounded := false
 		for _, s := range specs {
-			if !s.Optional {
-				min++
-			}
 			if s.Variadic || s.Remain {
-				unbounded = true
+				return nil
 			}
-			max++
 		}
-		if len(args) < min {
-			var missing []string
-			for i := len(args); i < len(specs); i++ {
-				if !specs[i].Optional {
-					missing = append(missing, specs[i].display())
-				}
-			}
-			return &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: " + strings.Join(missing, ", ")}
+		if len(args) > len(specs) {
+			return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + strings.Join(args[len(specs):], " ")}
 		}
-		if !unbounded && len(args) > max {
-			return &ArgparseError{Cmd: cmd, Unrecognized: true, Msg: "unrecognized arguments: " + strings.Join(args[max:], " ")}
-		}
-		return positionalValueError(cmd, specs, args)
+		return nil
 	}
+}
+
+// Positions of the required positionals the given words leave unfilled
+func unfilledPositionals(specs []posSpec, args []string) []int {
+	required := 0
+	for _, s := range specs {
+		if !s.Optional {
+			required++
+		}
+	}
+	if len(args) >= required {
+		return nil
+	}
+	var unfilled []int
+	for i := len(args); i < len(specs); i++ {
+		if !specs[i].Optional {
+			unfilled = append(unfilled, i)
+		}
+	}
+	return unfilled
 }
 
 // Type or choice error of the first positional word its spec refuses, as argparse raises while consuming it

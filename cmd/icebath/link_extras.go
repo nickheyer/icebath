@@ -135,7 +135,7 @@ func batchGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 	return batchrun.Command(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
-// Binds icebath cron and every subcommand onto cron.CronCommand, the handler's int the exit code
+// Binds icebath cron and its job subcommands onto cron.CronCommand and cron classify onto the urgency scorer, the handler's int the exit code
 func bindCron(cli *commands.CLI) {
 	for _, path := range []string{"cron", "cron list", "cron create", "cron edit", "cron pause", "cron resume", "cron run", "cron cancel",
 		"cron remove", "cron status", "cron runs", "cron incidents", "cron notepad", "cron doctor", "cron tick"} {
@@ -146,6 +146,15 @@ func bindCron(cli *commands.CLI) {
 			return status(cron.CronCommand(ctx, home.Dir(ctx), a, cmd.OutOrStdout()))
 		})
 	}
+	cli.Bind("cron classify", func(cmd *cobra.Command, args []string) error {
+		f := cmd.Flags()
+		a := cron.ClassifyArgs{}
+		a.Criteria, _ = f.GetString("criteria")
+		a.Threshold, _ = f.GetInt("threshold")
+		a.InputFile, _ = f.GetString("input-file")
+		a.Format, _ = f.GetString("format")
+		return status(cron.ClassifyItemsCommand(cmdCtx(cmd), a, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil)
+	})
 }
 
 // Reads one cron command line into CronArgs the way argparse fills its namespace

@@ -216,9 +216,7 @@ func NotifyMemoryProvider(ctx context.Context, profileDir string, call func(ctx 
 	if p == nil {
 		return
 	}
-	if transient, ok := p.(interface{ dismiss() }); ok {
-		defer transient.dismiss()
-	}
+	defer DismissProvider(scoped, p)
 	if err := call(scoped, p); err != nil {
 		failed(err)
 	}

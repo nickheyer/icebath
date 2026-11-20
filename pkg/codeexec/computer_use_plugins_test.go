@@ -15,8 +15,8 @@ import (
 // Manifest lines of a program plugin that offers a computer use provider, its entry a program that does not exist
 const cuFakePluginManifest = "runtime: program\nentry: [cu-driver-that-is-not-installed]\nprovides: [computer_use_provider]\n"
 
-// Profile home holding the named user plugins and an optional computer_use.backend and isolation mode
-func cuPluginHome(t *testing.T, dir string, plugins []string, backend, isolation string) *tools.Env {
+// Profile home holding the named user plugins and an optional computer_use.backend
+func cuPluginHome(t *testing.T, dir string, plugins []string, backend string) *tools.Env {
 	t.Helper()
 	for _, p := range plugins {
 		pd := filepath.Join(dir, "plugins", p)
@@ -31,9 +31,6 @@ func cuPluginHome(t *testing.T, dir string, plugins []string, backend, isolation
 	if backend != "" {
 		cfg.WriteString("computer_use:\n  backend: " + backend + "\n")
 	}
-	if isolation != "" {
-		cfg.WriteString("plugins:\n  isolation: " + isolation + "\n")
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +41,7 @@ func cuPluginHome(t *testing.T, dir string, plugins []string, backend, isolation
 }
 
 func TestUnknownBackendErrorsNamingConfiguredAndAvailable(t *testing.T) {
-	env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), nil, "nope", "")
+	env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), nil, "nope")
 	_, err := getActiveProvider(env)
 	var le *lookupError
 	if !errors.As(err, &le) {
@@ -59,7 +56,7 @@ func TestUnknownBackendErrorsNamingConfiguredAndAvailable(t *testing.T) {
 
 func TestBuiltinCuaIsDefaultAndPluginNeverSelfActivates(t *testing.T) {
 	for _, backend := range []string{"", "cua", "  "} {
-		env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), []string{"cu-alpha"}, backend, "")
+		env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), []string{"cu-alpha"}, backend)
 		if got := configuredBackendName(env); got != "cua" {
 			t.Fatalf("backend %q resolved %q", backend, got)
 		}
@@ -76,7 +73,7 @@ func TestBuiltinCuaIsDefaultAndPluginNeverSelfActivates(t *testing.T) {
 
 func TestDiscoveryListsBundledThenUserWithoutLoading(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "home")
-	env := cuPluginHome(t, dir, []string{"cu-beta", "cu-alpha", "cua"}, "cu-beta", "")
+	env := cuPluginHome(t, dir, []string{"cu-beta", "cu-alpha", "cua"}, "cu-beta")
 	if err := os.MkdirAll(filepath.Join(dir, "plugins", "not-cu"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +101,8 @@ func TestDiscoveryListsBundledThenUserWithoutLoading(t *testing.T) {
 
 func TestEachProfileGetsItsOwnConfiguredBackend(t *testing.T) {
 	root := t.TempDir()
-	a := cuPluginHome(t, filepath.Join(root, "profiles", "a"), []string{"cu-alpha"}, "cu-alpha", "")
-	b := cuPluginHome(t, filepath.Join(root, "profiles", "b"), []string{"cu-beta"}, "cu-beta", "")
+	a := cuPluginHome(t, filepath.Join(root, "profiles", "a"), []string{"cu-alpha"}, "cu-alpha")
+	b := cuPluginHome(t, filepath.Join(root, "profiles", "b"), []string{"cu-beta"}, "cu-beta")
 	for _, c := range []struct {
 		env  *tools.Env
 		want string
@@ -121,7 +118,7 @@ func TestEachProfileGetsItsOwnConfiguredBackend(t *testing.T) {
 }
 
 func TestUserProviderWhoseProgramCannotStartIsReported(t *testing.T) {
-	env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), []string{"cu-alpha"}, "cu-alpha", "")
+	env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), []string{"cu-alpha"}, "cu-alpha")
 	_, err := getActiveProvider(env)
 	var le *lookupError
 	if !errors.As(err, &le) || !strings.Contains(le.Error(), "could not be loaded (see the log)") || !strings.Contains(le.Error(), "available: cua, cu-alpha") {

@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -970,6 +971,12 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 	owedStep("config_migration", func() error {
 		return maintConfigMigration(ctx, w, o.AssumeYes, o.GatewayMode, o.PreUpdateSnapshotID)
 	})
+	if err := bestEffort(ctx, "Default plugin install failed: %s", func() error {
+		_, err := defaults.InstallAndRecord(ctx, func(line string) { fmt.Fprintln(w, line) }, defaults.UpdateWait)
+		return err
+	}); err != nil {
+		return false, err
+	}
 	if err := refreshSwitchedOnRelayRuntime(ctx, w); err != nil {
 		return false, err
 	}

@@ -14,7 +14,7 @@ var blueprintCatalog = []AutomationBlueprint{
 		Key: "important-mail", Title: "Important-mail monitor", Category: "email",
 		Description:      "Check your inbox periodically and ping you ONLY about mail that actually needs attention.",
 		ScheduleTemplate: "*/{interval_min} * * * *",
-		PromptTemplate:   "Check the user's inbox for new messages since the last run. Surface ONLY mail matching: {criteria}. Score candidates with the urgency classifier and deliver only what clears the bar; if nothing does, respond with [SILENT]. Requires a connected mail source; if none is configured, explain how to connect one and stop.",
+		PromptTemplate:   "Check the user's inbox for new messages since the last run. Surface ONLY mail matching: {criteria}. Score candidates with the urgency classifier (pipe them as a JSON list into `icebath cron classify --threshold 7 --criteria \"<the rule above>\"`, which prints only the urgent ones) and deliver only what clears the bar; if nothing does, respond with [SILENT]. Requires a connected mail source; if none is configured, explain how to connect one and stop.",
 		Slots:            []BlueprintSlot{{Name: "interval_min", Type: "enum", Label: "How often?", Default: "30", Options: []any{"15", "30", "60"}, Help: "minutes between checks", Strict: true}, {Name: "criteria", Type: "text", Label: "Only notify me if the mail…", Default: "needs a reply today, is from my manager or family, or mentions a deadline", Strict: true}, blueprintDeliver},
 		DeliverDefault:   "origin", Skills: []string{"email-inbox-triage"}, Tags: []string{"email", "monitor"},
 	},

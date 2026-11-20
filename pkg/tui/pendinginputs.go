@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 var pendingRecordName = regexp.MustCompile(`^[0-9a-f-]{36}\.json$`)
@@ -292,7 +293,7 @@ func (p *pendingInputs) load(destination submissionDestination, durableResume bo
 			return nil, err
 		}
 		if record.SubmissionID == "" || record.SubmissionID+".json" != name || record.Text == nil || record.Display == nil {
-			return nil, errors.New(tr("canonical.queue.invalidRecord", name))
+			return nil, errors.New(tr(txt.CanonicalQueueInvalidRecord, name))
 		}
 		owner := destinationOf(record.OwnerDestination)
 		if record.OwnerDestination == nil {

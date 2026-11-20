@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Keymap context of the open stash panel, ahead of the session keys while it shows
@@ -103,7 +104,7 @@ func (a *app) pressStash() tea.Cmd {
 		if a.queueEdit != nil {
 			a.queueEdit = nil
 			if err := a.queue.setQueueEdit(nil); err != nil {
-				a.sys("error: " + err.Error())
+				a.sys(errorLine(err.Error()))
 			}
 		}
 		cleared := a.card.composer.SetValue("")
@@ -164,15 +165,15 @@ func stashAge(seconds float64) string {
 	secs := int(seconds)
 	switch {
 	case secs < 10:
-		return tr("promptStash.justNow")
+		return tr(txt.PromptStashJustNow)
 	case secs < 90:
-		return tr("promptStash.agoSeconds", secs)
+		return tr(txt.PromptStashAgoSeconds, secs)
 	}
 	mins := secs / 60
 	if mins < 60 {
-		return tr("promptStash.agoMinutes", mins)
+		return tr(txt.PromptStashAgoMinutes, mins)
 	}
-	return tr("promptStash.agoHours", mins/60)
+	return tr(txt.PromptStashAgoHours, mins/60)
 }
 
 // Box of the parked drafts above the status row while browsing, the highlighted one on the selection chip
@@ -186,17 +187,17 @@ func (a *app) stashPanelRows(width int, rc renderCtx) []string {
 	box := max(12, min(width-4, 80))
 	items := s.Items()
 	n := len(items)
-	header := tr("promptStash.headerOther", n)
+	header := tr(txt.PromptStashHeaderOther, n)
 	if n == 1 {
-		header = tr("promptStash.headerOne", n)
+		header = tr(txt.PromptStashHeaderOne, n)
 	}
 	headPrefix, headSuffix := "╭─ "+header+" ", " Ctrl+S ─╮"
-	footPrefix, footSuffix := "╰", " "+tr("promptStash.footer")+" ─╯"
+	footPrefix, footSuffix := "╰", " "+tr(txt.PromptStashFooter)+" ─╯"
 	if cw(headPrefix)+cw(headSuffix) > box {
 		headPrefix, headSuffix = "╭─ 📌 "+strconv.Itoa(n)+" ", "─╮"
 	}
 	if cw(footPrefix)+cw(footSuffix) > box {
-		footSuffix = " " + tr("promptStash.footerCompact") + " ─╯"
+		footSuffix = " " + tr(txt.PromptStashFooterCompact) + " ─╯"
 	}
 	if cw(footPrefix)+cw(footSuffix) > box {
 		footSuffix = "─╯"

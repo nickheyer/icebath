@@ -3,11 +3,12 @@ package memory
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -24,16 +25,46 @@ const (
 )
 
 var (
-	queryRewritePrefixRe       = regexp.MustCompile(`(?i)^(?:retrieval\s+query|memory\s+query|query|question)\s*:\s*`)
-	queryRewriteQuestionRe     = regexp.MustCompile(`(?i)^(?:what|which|who|where|when|why|how|is|are|was|were|do|does|did|has|have|had|can|could|would|should|may|might)\b`)
-	queryRewriteGroundingRe    = regexp.MustCompile(`(?i)\b(?:user|their|they|them|previous|prior|past|history|preference|preferences|context|known|remembered|earlier)\b`)
-	queryRewriteLeakRe         = regexp.MustCompile(`(?i)\b(?:ignore|obey|follow)\b|\binstructions?\b|\bsystem\s+prompt\b|\banswer\s+(?:directly|instead|the\s+user|this)\b`)
-	queryRewriteSentenceRe     = regexp.MustCompile(`[.!?]\s+\S`)
-	queryRewriteFenceOpenRe    = regexp.MustCompile("(?i)^```(?:text)?\\s*")
-	queryRewriteFenceCloseRe   = regexp.MustCompile("\\s*```$")
-	queryRewriteControlCharsRe = regexp.MustCompile(`[\x00-\x1f\x7f]+`)
-	queryRewriteSpaceRe        = regexp.MustCompile(`\s+`)
+	queryRewritePrefixRe       = queryRewritePattern(`^(?:retrieval\s+query|memory\s+query|query|question)\s*:\s*`, true)
+	queryRewriteQuestionRe     = queryRewritePattern(`^(?:what|which|who|where|when|why|how|is|are|was|were|do|does|did|has|have|had|can|could|would|should|may|might)\b`, true)
+	queryRewriteGroundingRe    = queryRewritePattern(`\b(?:user|their|they|them|previous|prior|past|history|preference|preferences|context|known|remembered|earlier)\b`, true)
+	queryRewriteLeakRe         = queryRewritePattern(`\b(?:ignore|obey|follow)\b|\binstructions?\b|\bsystem\s+prompt\b|\banswer\s+(?:directly|instead|the\s+user|this)\b`, true)
+	queryRewriteSentenceRe     = queryRewritePattern(`[.!?]\s+\S`, false)
+	queryRewriteFenceOpenRe    = queryRewritePattern("^```(?:text)?\\s*", true)
+	queryRewriteFenceCloseRe   = queryRewritePattern("\\s*```$", false)
+	queryRewriteControlCharsRe = queryRewritePattern(`[\x00-\x1f\x7f]+`, false)
+	queryRewriteSpaceRe        = queryRewritePattern(`\s+`, false)
 )
+
+// Pattern of the rewrite checks compiled with Python matching semantics, under re.IGNORECASE when ignoreCase is set
+func queryRewritePattern(pattern string, ignoreCase bool) *regexp2.Regexp {
+	if !ignoreCase {
+		return pyre.MustCompile(pattern)
+	}
+	re, err := pyre.CompileIgnoreCase(pattern)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
+
+// Whether the pattern matches anywhere in the text, a matcher failure raised to the caller's recover
+func queryRewriteSearch(re *regexp2.Regexp, text string) bool {
+	found, err := re.MatchString(text)
+	if err != nil {
+		panic(err)
+	}
+	return found
+}
+
+// Text with every match of the pattern replaced, a matcher failure raised to the caller's recover
+func queryRewriteSub(re *regexp2.Regexp, replacement, text string) string {
+	out, err := re.Replace(text, replacement, -1, -1)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
 
 const queryRewriteSystemPrompt = `You rewrite a user's latest message into one concise English question for memory retrieval.
 
@@ -93,16 +124,16 @@ func queryRewriteResponseText(response any) string {
 func normalizeQueryRewrite(text string) string {
 	candidate := pyStrip(text)
 	if strings.HasPrefix(candidate, "```") && strings.HasSuffix(candidate, "```") {
-		candidate = queryRewriteFenceOpenRe.ReplaceAllString(candidate, "")
-		candidate = queryRewriteFenceCloseRe.ReplaceAllString(candidate, "")
+		candidate = queryRewriteSub(queryRewriteFenceOpenRe, "", candidate)
+		candidate = queryRewriteSub(queryRewriteFenceCloseRe, "", candidate)
 	}
-	candidate = queryRewritePrefixRe.ReplaceAllString(pyStrip(candidate), "")
+	candidate = queryRewriteSub(queryRewritePrefixRe, "", pyStrip(candidate))
 	candidate = pyStrip(strings.Trim(pyStrip(candidate), "\"'`"))
-	candidate = queryRewriteControlCharsRe.ReplaceAllString(candidate, " ")
-	candidate = pyStrip(queryRewriteSpaceRe.ReplaceAllString(candidate, " "))
+	candidate = queryRewriteSub(queryRewriteControlCharsRe, " ", candidate)
+	candidate = pyStrip(queryRewriteSub(queryRewriteSpaceRe, " ", candidate))
 	if candidate == "" || utf8.RuneCountInString(candidate) > queryRewriteMaxQueryChars ||
-		!queryRewriteQuestionRe.MatchString(candidate) || !queryRewriteGroundingRe.MatchString(candidate) ||
-		queryRewriteLeakRe.MatchString(candidate) || queryRewriteSentenceRe.MatchString(strings.TrimRight(candidate, "?")) {
+		!queryRewriteSearch(queryRewriteQuestionRe, candidate) || !queryRewriteSearch(queryRewriteGroundingRe, candidate) ||
+		queryRewriteSearch(queryRewriteLeakRe, candidate) || queryRewriteSearch(queryRewriteSentenceRe, strings.TrimRight(candidate, "?")) {
 		return ""
 	}
 	if strings.HasSuffix(candidate, "?") {

@@ -6,6 +6,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
@@ -184,7 +185,7 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 	}
 	titles := make([]string, len(cols))
 	for i, c := range cols {
-		titles[i] = strings.ToUpper(c.Title)
+		titles[i] = lang.Upper(c.Title)
 	}
 	var sb strings.Builder
 	sb.WriteString(line(titles, head, head.Render(strings.Repeat(" ", tableGutter)), nil))

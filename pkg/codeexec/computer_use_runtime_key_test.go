@@ -16,7 +16,7 @@ import (
 func TestComputerUseBackendSetIsWhatTheSelectorReads(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "home")
 	t.Setenv("ICEBATH_HOME", h)
-	env := cuPluginHome(t, h, nil, "", "")
+	env := cuPluginHome(t, h, nil, "")
 	var out bytes.Buffer
 	prev := config.FacadeStdout
 	config.FacadeStdout = &out

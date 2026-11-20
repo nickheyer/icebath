@@ -20,6 +20,7 @@ var auxTasks = []auxTaskRow{
 	{"kanban_decomposer", "Kanban decomposer", "task decomposition"},
 	{"profile_describer", "Profile describer", "auto profile descriptions"},
 	{"curator", "Curator", "skill-usage review pass"},
+	{"monitor", "Monitor", "cron item urgency scoring"},
 }
 
 // Subagent delegation row the picker shows beside the aux tasks, routed under the top level delegation section

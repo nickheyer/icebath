@@ -368,7 +368,7 @@ type Host interface {
 	SessionSurface(ctx context.Context) (string, error)
 	// Scheduled run the call belongs to, nil outside one
 	CurrentCronExecution(ctx context.Context) (any, error)
-	// Rewrites the latest user message into one retrieval question for a memory provider, empty when the message itself is the better query
+	// Rewrites the latest user message into one retrieval question, served to a memory provider plugin only, empty when the message itself is the better query
 	RewriteMemoryQuery(ctx context.Context, userMessage string) (string, error)
 	// Reads an attribute or calls a method of one facade: state, llm, platform_actions, subagent_lifecycle or delegation_backends
 	Facade(ctx context.Context, facade, method string, args []any, kwargs map[string]any) (any, error)

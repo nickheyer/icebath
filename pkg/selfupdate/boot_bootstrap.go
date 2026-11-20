@@ -10,10 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -227,7 +230,8 @@ var recordLockAcquire = func(l *RecordLock) bool { return l.Acquire() }
 func RunBootBootstrap(ctx context.Context, projectRoot string) (map[string]any, error) {
 	identity := NeedsBootstrap(ctx, projectRoot)
 	if identity == "" {
-		return map[string]any{"home": "skipped"}, nil
+		retried, err := retryOwedBootSteps(ctx, projectRoot)
+		return map[string]any{"home": retried}, err
 	}
 	record := BootRecordPath(ctx, projectRoot)
 	lock := NewRecordLock(record)
@@ -244,6 +248,63 @@ func RunBootBootstrap(ctx context.Context, projectRoot string) (map[string]any, 
 		return nil, err
 	}
 	return map[string]any{"home": results}, nil
+}
+
+// Steps a bootstrap record says are still owed, default plugins a failed fetch left uninstalled
+func owedBootSteps(known map[string]any) []string {
+	results, _ := known["results"].(map[string]any)
+	var owed []string
+	for name, raw := range results {
+		if result, ok := raw.(map[string]any); ok && pyrepr.Truthy(result["owed"]) {
+			owed = append(owed, name)
+		}
+	}
+	sort.Strings(owed)
+	return owed
+}
+
+// Reruns the steps the record of this revision still owes on every start until they succeed, the other steps staying bounded to one attempt per revision; skipped when nothing is owed or the tree is broken
+func retryOwedBootSteps(ctx context.Context, projectRoot string) (any, error) {
+	identity := CurrentInstallIdentity(ctx, projectRoot)
+	record := BootRecordPath(ctx, projectRoot)
+	if identity == "" || len(owedBootSteps(ReadLastKnown(record))) == 0 {
+		return "skipped", nil
+	}
+	lock := NewRecordLock(record)
+	if !recordLockAcquire(lock) {
+		return "lost-race", nil
+	}
+	defer lock.Release()
+	known := ReadLastKnown(record)
+	names := owedBootSteps(known)
+	if recorded, _ := known["identity"].(string); len(names) == 0 || recorded != identity {
+		return "skipped", nil
+	}
+	var steps []PostUpdateStep
+	for _, step := range BootHomeSteps {
+		if slices.Contains(names, step.Name) {
+			steps = append(steps, step)
+		}
+	}
+	retried := RunSteps(ctx, steps)
+	merged := map[string]map[string]any{}
+	if results, ok := known["results"].(map[string]any); ok {
+		for name, raw := range results {
+			if result, ok := raw.(map[string]any); ok {
+				merged[name] = result
+			}
+		}
+	}
+	for name, result := range retried {
+		if !pyrepr.Truthy(result["ok"]) {
+			result["owed"] = true
+		}
+		merged[name] = result
+	}
+	if err := writeBootRecord(record, identity, merged); err != nil {
+		return nil, err
+	}
+	return retried, nil
 }
 
 // Boot bootstrap runner, the module attribute tests patch

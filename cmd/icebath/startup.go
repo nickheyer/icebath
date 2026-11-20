@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/startupfast"
@@ -44,6 +45,7 @@ func dispatchChildEntries(ctx context.Context) {
 	runChildEntries(ctx, childEntriesFirst)
 	home.DispatchScratchPruneEntry(ctx)
 	runChildEntries(ctx, childEntriesAfterPrunePlugins)
+	defaults.DispatchEntry(ctx)
 	runChildEntries(ctx, childEntriesAfterPruneExtras)
 	dmdelivery.DispatchEntry(ctx, exit)
 	gateway.DispatchStderrTimestampEntry()

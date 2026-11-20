@@ -1,6 +1,10 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
+)
 
 const (
 	gatewayRecoveryLimit    = 3
@@ -39,10 +43,10 @@ func planGatewayRecovery(liveSid, recoverSid string, attempts []float64, now flo
 func (c *turnController) reportGatewayStartTimeout(stderrTail string, setStatus func(string)) {
 	terminal := isTerminalBootstrapFailure(stderrTail)
 	if terminal {
-		setStatus(tr("userMessages.backend.gaveUpActivity"))
+		setStatus(tr(txt.UserMessagesBackendGaveUpActivity))
 	} else {
-		setStatus(tr("userMessages.backend.slowStartStatus"))
-		c.pushActivity(tr("userMessages.backend.slowStart"), "warn", "")
+		setStatus(tr(txt.UserMessagesBackendSlowStartStatus))
+		c.pushActivity(tr(txt.UserMessagesBackendSlowStart), "warn", "")
 	}
 	var lines []string
 	for line := range strings.SplitSeq(stderrTail, "\n") {

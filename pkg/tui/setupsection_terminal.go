@@ -5,10 +5,30 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
-// Built in terminal backends in menu order
-var terminalBuiltins = []string{"local", "docker", "modal", "ssh", "daytona", "vercel_sandbox"}
+// Built in terminal backends in menu order, each with the keys of its label and its detail
+var terminalBackends = []struct {
+	name          string
+	label, detail txt.Key
+}{
+	{"local", txt.SetupFlowTerminalBackendLocal, txt.SetupFlowTerminalBackendLocalDetail},
+	{"docker", txt.SetupFlowTerminalBackendDocker, txt.SetupFlowTerminalBackendDockerDetail},
+	{"modal", txt.SetupFlowTerminalBackendModal, txt.SetupFlowTerminalBackendModalDetail},
+	{"ssh", txt.SetupFlowTerminalBackendSsh, txt.SetupFlowTerminalBackendSshDetail},
+	{"daytona", txt.SetupFlowTerminalBackendDaytona, txt.SetupFlowTerminalBackendDaytonaDetail},
+	{"vercel_sandbox", txt.SetupFlowTerminalBackendVercelSandbox, txt.SetupFlowTerminalBackendVercelSandboxDetail},
+}
+
+// Names of the built in terminal backends in menu order
+var terminalBuiltins = func() []string {
+	names := make([]string, len(terminalBackends))
+	for i, backend := range terminalBackends {
+		names[i] = backend.name
+	}
+	return names
+}()
 
 // Registered backends the gateway listed beyond the built in ones
 func terminalPluginRows(run *sectionRun) []tuigateway.SetupTerminalBackend {
@@ -60,16 +80,16 @@ func terminalCurrent(run *sectionRun) string {
 func terminalBackendChoices(run *sectionRun) []sectionChoice {
 	choices := []sectionChoice{}
 	linked, _ := tuigateway.SetupValue[tuigateway.SetupLinkedBackends](run.values, "terminal.builtin_backends")
-	for _, name := range terminalBuiltins {
-		if name != "local" && !slices.Contains(linked, name) {
+	for _, backend := range terminalBackends {
+		if backend.name != "local" && !slices.Contains(linked, backend.name) {
 			continue
 		}
-		choices = append(choices, sectionChoice{name, tr("setupFlow.terminal.backend." + name), tr("setupFlow.terminal.backend." + name + "Detail")})
+		choices = append(choices, sectionChoice{backend.name, tr(backend.label), tr(backend.detail)})
 	}
 	for _, row := range terminalPluginRows(run) {
 		choices = append(choices, sectionChoice{row.Name, row.DisplayName, row.Description})
 	}
-	return append(choices, sectionChoice{nil, tr("setupFlow.terminal.keep", terminalCurrent(run)), tr("setupFlow.terminal.keepDetail")})
+	return append(choices, sectionChoice{nil, tr(txt.SetupFlowTerminalKeep, terminalCurrent(run)), tr(txt.SetupFlowTerminalKeepDetail)})
 }
 
 // Starting answer from the .env value of a key, else the fallback
@@ -118,10 +138,10 @@ func anyOf(conds ...sectionCond) sectionCond {
 }
 
 // Yes and no options of a question whose answer only steers the walk
-func yesNo(prefix string) []sectionChoice {
+func yesNo(yes, yesDetail, no, noDetail txt.Key) []sectionChoice {
 	return []sectionChoice{
-		{true, tr(prefix + ".yes"), tr(prefix + ".yesDetail")},
-		{false, tr(prefix + ".no"), tr(prefix + ".noDetail")},
+		{true, tr(yes), tr(yesDetail)},
+		{false, tr(no), tr(noDetail)},
 	}
 }
 
@@ -152,14 +172,14 @@ func terminalDockerFields() []sectionField {
 	return []sectionField{
 		{id: "docker", kind: fieldNotice, when: docker, labelFrom: func(run *sectionRun) string {
 			if found, _ := tuigateway.SetupValue[tuigateway.SetupDockerRuntime](run.values, "terminal.docker"); found.Path != "" {
-				return tr("setupFlow.terminal.dockerFound", found.Runtime, found.Path)
+				return tr(txt.SetupFlowTerminalDockerFound, found.Runtime, found.Path)
 			}
-			return tr("setupFlow.terminal.dockerMissing")
+			return tr(txt.SetupFlowTerminalDockerMissing)
 		}},
-		{id: "egress_intro", kind: fieldNotice, label: tr("setupFlow.terminal.egressIntro"), when: docker},
-		{id: "egress", kind: fieldChoice, label: tr("setupFlow.terminal.egressLabel"), when: docker, seed: seedOf(false), choices: yesNo("setupFlow.terminal.egress")},
-		{id: "egress_on", kind: fieldNotice, label: tr("setupFlow.terminal.egressOn"), when: answerIs("egress", true)},
-		{id: "egress_off", kind: fieldNotice, label: tr("setupFlow.terminal.egressOff"), when: answerIs("egress", false)},
+		{id: "egress_intro", kind: fieldNotice, label: tr(txt.SetupFlowTerminalEgressIntro), when: docker},
+		{id: "egress", kind: fieldChoice, label: tr(txt.SetupFlowTerminalEgressLabel), when: docker, seed: seedOf(false), choices: yesNo(txt.SetupFlowTerminalEgressYes, txt.SetupFlowTerminalEgressYesDetail, txt.SetupFlowTerminalEgressNo, txt.SetupFlowTerminalEgressNoDetail)},
+		{id: "egress_on", kind: fieldNotice, label: tr(txt.SetupFlowTerminalEgressOn), when: answerIs("egress", true)},
+		{id: "egress_off", kind: fieldNotice, label: tr(txt.SetupFlowTerminalEgressOff), when: answerIs("egress", false)},
 	}
 }
 
@@ -169,13 +189,13 @@ func terminalModalFields() []sectionField {
 	held := secretHeld("MODAL_TOKEN_ID")
 	asks := allOf(modal, anyOf(notCond(held), answerIs("modal_update", true)))
 	return []sectionField{
-		{id: "modal", kind: fieldNotice, label: tr("setupFlow.terminal.modal"), when: modal},
-		{id: "modal_direct", kind: fieldNotice, label: tr("setupFlow.terminal.modalDirect"), when: modal},
-		{id: "modal_held", kind: fieldNotice, label: tr("setupFlow.terminal.modalHeld"), when: allOf(modal, held)},
-		{id: "modal_update", kind: fieldChoice, label: tr("setupFlow.terminal.modalUpdateLabel"), when: allOf(modal, held), seed: seedOf(false),
-			choices: yesNo("setupFlow.terminal.update")},
-		{id: "modal_token_id", kind: fieldSecret, label: tr("setupFlow.terminal.modalTokenID"), targets: []sectionTarget{{env: true, key: "MODAL_TOKEN_ID"}}, when: asks},
-		{id: "modal_token_secret", kind: fieldSecret, label: tr("setupFlow.terminal.modalTokenSecret"), targets: []sectionTarget{{env: true, key: "MODAL_TOKEN_SECRET"}}, when: asks},
+		{id: "modal", kind: fieldNotice, label: tr(txt.SetupFlowTerminalModal), when: modal},
+		{id: "modal_direct", kind: fieldNotice, label: tr(txt.SetupFlowTerminalModalDirect), when: modal},
+		{id: "modal_held", kind: fieldNotice, label: tr(txt.SetupFlowTerminalModalHeld), when: allOf(modal, held)},
+		{id: "modal_update", kind: fieldChoice, label: tr(txt.SetupFlowTerminalModalUpdateLabel), when: allOf(modal, held), seed: seedOf(false),
+			choices: yesNo(txt.SetupFlowTerminalUpdateYes, txt.SetupFlowTerminalUpdateYesDetail, txt.SetupFlowTerminalUpdateNo, txt.SetupFlowTerminalUpdateNoDetail)},
+		{id: "modal_token_id", kind: fieldSecret, label: tr(txt.SetupFlowTerminalModalTokenID), targets: []sectionTarget{{env: true, key: "MODAL_TOKEN_ID"}}, when: asks},
+		{id: "modal_token_secret", kind: fieldSecret, label: tr(txt.SetupFlowTerminalModalTokenSecret), targets: []sectionTarget{{env: true, key: "MODAL_TOKEN_SECRET"}}, when: asks},
 	}
 }
 
@@ -190,18 +210,18 @@ func terminalSSHFields() []sectionField {
 		}
 	}
 	return []sectionField{
-		{id: "ssh", kind: fieldNotice, label: tr("setupFlow.terminal.ssh"), when: ssh},
-		{id: "ssh_host", kind: fieldText, label: tr("setupFlow.terminal.sshHost"), targets: env("TERMINAL_SSH_HOST"), when: ssh,
+		{id: "ssh", kind: fieldNotice, label: tr(txt.SetupFlowTerminalSsh), when: ssh},
+		{id: "ssh_host", kind: fieldText, label: tr(txt.SetupFlowTerminalSshHost), targets: env("TERMINAL_SSH_HOST"), when: ssh,
 			seed: envOr("TERMINAL_SSH_HOST", fixedText("")), settle: dropTexts()},
-		{id: "ssh_user", kind: fieldText, label: tr("setupFlow.terminal.sshUser"), targets: env("TERMINAL_SSH_USER"), when: ssh,
+		{id: "ssh_user", kind: fieldText, label: tr(txt.SetupFlowTerminalSshUser), targets: env("TERMINAL_SSH_USER"), when: ssh,
 			seed: envOr("TERMINAL_SSH_USER", defaults(func(d tuigateway.SetupSSHDefaults) string { return d.User })), settle: dropTexts()},
-		{id: "ssh_port", kind: fieldText, label: tr("setupFlow.terminal.sshPort"), targets: env("TERMINAL_SSH_PORT"), when: ssh,
+		{id: "ssh_port", kind: fieldText, label: tr(txt.SetupFlowTerminalSshPort), targets: env("TERMINAL_SSH_PORT"), when: ssh,
 			seed: envOr("TERMINAL_SSH_PORT", fixedText("22")), settle: dropTexts("22")},
-		{id: "ssh_key", kind: fieldText, label: tr("setupFlow.terminal.sshKey"), targets: env("TERMINAL_SSH_KEY"), when: ssh,
+		{id: "ssh_key", kind: fieldText, label: tr(txt.SetupFlowTerminalSshKey), targets: env("TERMINAL_SSH_KEY"), when: ssh,
 			seed: envOr("TERMINAL_SSH_KEY", defaults(func(d tuigateway.SetupSSHDefaults) string { return d.Key })), settle: dropTexts()},
-		{id: "ssh_test", kind: fieldChoice, label: tr("setupFlow.terminal.sshTestLabel"), seed: seedOf(true), choices: yesNo("setupFlow.terminal.sshTest"),
+		{id: "ssh_test", kind: fieldChoice, label: tr(txt.SetupFlowTerminalSshTestLabel), seed: seedOf(true), choices: yesNo(txt.SetupFlowTerminalSshTestYes, txt.SetupFlowTerminalSshTestYesDetail, txt.SetupFlowTerminalSshTestNo, txt.SetupFlowTerminalSshTestNoDetail),
 			when: allOf(ssh, func(run *sectionRun) bool { return sectionText(run.answers["ssh_host"]) != "" })},
-		{id: "ssh_probe", kind: fieldAction, action: "terminal.ssh.test", label: tr("setupFlow.terminal.sshTesting"), when: answerIs("ssh_test", true),
+		{id: "ssh_probe", kind: fieldAction, action: "terminal.ssh.test", label: tr(txt.SetupFlowTerminalSshTesting), when: answerIs("ssh_test", true),
 			params: func(run *sectionRun) map[string]string {
 				return map[string]string{"host": sectionText(run.answers["ssh_host"]), "user": sectionText(run.answers["ssh_user"]),
 					"port": sectionText(run.answers["ssh_port"]), "key": sectionText(run.answers["ssh_key"])}
@@ -214,14 +234,14 @@ func terminalDaytonaFields() []sectionField {
 	daytona := terminalRuns("daytona")
 	held := secretHeld("DAYTONA_API_KEY")
 	return []sectionField{
-		{id: "daytona", kind: fieldNotice, label: tr("setupFlow.terminal.daytona"), when: daytona},
-		{id: "daytona_held", kind: fieldNotice, label: tr("setupFlow.terminal.daytonaHeld"), when: allOf(daytona, held)},
-		{id: "daytona_update", kind: fieldChoice, label: tr("setupFlow.terminal.daytonaUpdateLabel"), when: allOf(daytona, held), seed: seedOf(false),
-			choices: yesNo("setupFlow.terminal.update")},
-		{id: "daytona_key", kind: fieldSecret, label: tr("setupFlow.terminal.daytonaKey"), targets: []sectionTarget{{env: true, key: "DAYTONA_API_KEY"}},
+		{id: "daytona", kind: fieldNotice, label: tr(txt.SetupFlowTerminalDaytona), when: daytona},
+		{id: "daytona_held", kind: fieldNotice, label: tr(txt.SetupFlowTerminalDaytonaHeld), when: allOf(daytona, held)},
+		{id: "daytona_update", kind: fieldChoice, label: tr(txt.SetupFlowTerminalDaytonaUpdateLabel), when: allOf(daytona, held), seed: seedOf(false),
+			choices: yesNo(txt.SetupFlowTerminalUpdateYes, txt.SetupFlowTerminalUpdateYesDetail, txt.SetupFlowTerminalUpdateNo, txt.SetupFlowTerminalUpdateNoDetail)},
+		{id: "daytona_key", kind: fieldSecret, label: tr(txt.SetupFlowTerminalDaytonaKey), targets: []sectionTarget{{env: true, key: "DAYTONA_API_KEY"}},
 			when: allOf(daytona, anyOf(notCond(held), answerIs("daytona_update", true)))},
-		{id: "daytona_updated", kind: fieldNotice, label: tr("setupFlow.terminal.daytonaUpdated"), when: allOf(answered("daytona_key"), held)},
-		{id: "daytona_configured", kind: fieldNotice, label: tr("setupFlow.terminal.daytonaConfigured"), when: allOf(answered("daytona_key"), notCond(held))},
+		{id: "daytona_updated", kind: fieldNotice, label: tr(txt.SetupFlowTerminalDaytonaUpdated), when: allOf(answered("daytona_key"), held)},
+		{id: "daytona_configured", kind: fieldNotice, label: tr(txt.SetupFlowTerminalDaytonaConfigured), when: allOf(answered("daytona_key"), notCond(held))},
 	}
 }
 
@@ -236,8 +256,8 @@ func terminalVercelFields(linkedValue string) []sectionField {
 		}
 	}
 	return []sectionField{
-		{id: "vercel", kind: fieldNotice, label: tr("setupFlow.terminal.vercel"), when: vercel},
-		{id: "vercel_image", kind: fieldText, label: tr("setupFlow.terminal.vercelImage"), when: vercel,
+		{id: "vercel", kind: fieldNotice, label: tr(txt.SetupFlowTerminalVercel), when: vercel},
+		{id: "vercel_image", kind: fieldText, label: tr(txt.SetupFlowTerminalVercelImage), when: vercel,
 			targets: []sectionTarget{{key: "terminal.vercel_image"}, {env: true, key: "TERMINAL_VERCEL_IMAGE"}},
 			seed: func(run *sectionRun) any {
 				if image := sectionText(run.held["terminal.vercel_image"]); run.held["terminal.vercel_image"] != nil && image != "" {
@@ -250,37 +270,37 @@ func terminalVercelFields(linkedValue string) []sectionField {
 			}},
 		{id: "vercel_runtime", kind: fieldNotice, when: allOf(vercel, func(run *sectionRun) bool { return sectionTruthy(run.held["terminal.vercel_runtime"]) }),
 			labelFrom: func(run *sectionRun) string {
-				return tr("setupFlow.terminal.vercelRuntime", sectionText(run.held["terminal.vercel_runtime"]))
+				return tr(txt.SetupFlowTerminalVercelRuntime, sectionText(run.held["terminal.vercel_runtime"]))
 			}},
-		{id: "vercel_persist", kind: fieldChoice, label: tr("setupFlow.terminal.vercelPersistLabel"), targets: []sectionTarget{{key: "terminal.container_persistent"}},
-			when: vercel, choices: yesNo("setupFlow.terminal.persist"), seed: func(run *sectionRun) any {
+		{id: "vercel_persist", kind: fieldChoice, label: tr(txt.SetupFlowTerminalVercelPersistLabel), targets: []sectionTarget{{key: "terminal.container_persistent"}},
+			when: vercel, choices: yesNo(txt.SetupFlowTerminalPersistYes, txt.SetupFlowTerminalPersistYesDetail, txt.SetupFlowTerminalPersistNo, txt.SetupFlowTerminalPersistNoDetail), seed: func(run *sectionRun) any {
 				return sectionTruthy(run.held["terminal.container_persistent"])
 			}},
-		{id: "vercel_cpu", kind: fieldNumber, label: tr("setupFlow.terminal.vercelCPU"), targets: []sectionTarget{{key: "terminal.container_cpu"}}, fallback: 1, when: vercel},
-		{id: "vercel_memory", kind: fieldNumber, whole: true, label: tr("setupFlow.terminal.vercelMemory"), targets: []sectionTarget{{key: "terminal.container_memory"}},
+		{id: "vercel_cpu", kind: fieldNumber, label: tr(txt.SetupFlowTerminalVercelCPU), targets: []sectionTarget{{key: "terminal.container_cpu"}}, fallback: 1, when: vercel},
+		{id: "vercel_memory", kind: fieldNumber, whole: true, label: tr(txt.SetupFlowTerminalVercelMemory), targets: []sectionTarget{{key: "terminal.container_memory"}},
 			fallback: 5120, when: vercel},
-		{id: "vercel_disk", kind: fieldNotice, label: tr("setupFlow.terminal.vercelDisk"), when: allOf(vercel, func(run *sectionRun) bool {
+		{id: "vercel_disk", kind: fieldNotice, label: tr(txt.SetupFlowTerminalVercelDisk), when: allOf(vercel, func(run *sectionRun) bool {
 			disk, found := sectionFloat(run.held["terminal.container_disk"])
 			if flag, isBool := run.held["terminal.container_disk"].(bool); isBool {
 				disk, found = map[bool]float64{false: 0, true: 1}[flag], true
 			}
 			return !found || disk != 0 && disk != 51200
 		})},
-		{id: "vercel_auth", kind: fieldNotice, label: tr("setupFlow.terminal.vercelAuth"), when: vercel},
-		{id: "vercel_linked", kind: fieldNotice, label: tr("setupFlow.terminal.vercelLinked"), when: allOf(vercel, func(run *sectionRun) bool {
+		{id: "vercel_auth", kind: fieldNotice, label: tr(txt.SetupFlowTerminalVercelAuth), when: vercel},
+		{id: "vercel_linked", kind: fieldNotice, label: tr(txt.SetupFlowTerminalVercelLinked), when: allOf(vercel, func(run *sectionRun) bool {
 			link, _ := tuigateway.SetupValue[tuigateway.SetupVercelLink](run.values, linkedValue)
 			return link != tuigateway.SetupVercelLink{}
 		})},
-		{id: "vercel_token", kind: fieldSecret, label: tr("setupFlow.terminal.vercelToken"), targets: env("VERCEL_TOKEN"), when: vercel,
+		{id: "vercel_token", kind: fieldSecret, label: tr(txt.SetupFlowTerminalVercelToken), targets: env("VERCEL_TOKEN"), when: vercel,
 			seed: func(run *sectionRun) any {
 				if run.secrets["VERCEL_TOKEN"] {
 					return sectionHeld{}
 				}
 				return nil
 			}},
-		{id: "vercel_project", kind: fieldText, label: tr("setupFlow.terminal.vercelProject"), targets: env("VERCEL_PROJECT_ID"), when: vercel,
+		{id: "vercel_project", kind: fieldText, label: tr(txt.SetupFlowTerminalVercelProject), targets: env("VERCEL_PROJECT_ID"), when: vercel,
 			seed: envOr("VERCEL_PROJECT_ID", linked(func(l tuigateway.SetupVercelLink) string { return l.ProjectID })), settle: dropTexts()},
-		{id: "vercel_team", kind: fieldText, label: tr("setupFlow.terminal.vercelTeam"), targets: env("VERCEL_TEAM_ID"), when: vercel,
+		{id: "vercel_team", kind: fieldText, label: tr(txt.SetupFlowTerminalVercelTeam), targets: env("VERCEL_TEAM_ID"), when: vercel,
 			seed: envOr("VERCEL_TEAM_ID", linked(func(l tuigateway.SetupVercelLink) string { return l.OrgID })), settle: dropTexts()},
 	}
 }
@@ -290,11 +310,11 @@ func terminalSection() sectionSpec {
 	cwd, _ := os.Getwd()
 	linkedValue := "terminal.vercel_linked:" + cwd
 	fields := []sectionField{
-		{id: "backend", kind: fieldChoice, label: tr("setupFlow.terminal.backendLabel"), seed: seedOf(nil), choicesFrom: terminalBackendChoices,
+		{id: "backend", kind: fieldChoice, label: tr(txt.SetupFlowTerminalBackendLabel), seed: seedOf(nil), choicesFrom: terminalBackendChoices,
 			targets: []sectionTarget{{key: "terminal.backend"}}},
 		{id: "kept", kind: fieldNotice, when: answerIs("backend", nil),
-			labelFrom: func(run *sectionRun) string { return tr("setupFlow.terminal.kept", terminalCurrent(run)) }},
-		{id: "local", kind: fieldNotice, label: tr("setupFlow.terminal.local"), when: terminalRuns("local")},
+			labelFrom: func(run *sectionRun) string { return tr(txt.SetupFlowTerminalKept, terminalCurrent(run)) }},
+		{id: "local", kind: fieldNotice, label: tr(txt.SetupFlowTerminalLocal), when: terminalRuns("local")},
 	}
 	fields = append(fields, terminalDockerFields()...)
 	fields = append(fields, terminalModalFields()...)
@@ -302,14 +322,14 @@ func terminalSection() sectionSpec {
 	fields = append(fields, terminalDaytonaFields()...)
 	fields = append(fields, terminalVercelFields(linkedValue)...)
 	fields = append(fields,
-		sectionField{id: "plugin", kind: fieldAction, action: "terminal.backend.plugin", label: tr("setupFlow.terminal.pluginSetup"),
+		sectionField{id: "plugin", kind: fieldAction, action: "terminal.backend.plugin", label: tr(txt.SetupFlowTerminalPluginSetup),
 			when: terminalPluginRuns, params: func(run *sectionRun) map[string]string {
 				return map[string]string{"backend": terminalPicked(run), "cwd": cwd}
 			}},
 		sectionField{id: "backend_env", kind: fieldDerived, targets: []sectionTarget{{env: true, key: "TERMINAL_ENV"}}, when: answered("backend"),
 			seed: func(run *sectionRun) any { return run.answers["backend"] }})
 	vercel := terminalRuns("vercel_sandbox")
-	return sectionSpec{key: "terminal", title: tr("setupFlow.terminal.title"), detail: tr("setupFlow.terminal.detail"), intro: tr("setupFlow.terminal.intro"),
+	return sectionSpec{key: "terminal", title: tr(txt.SetupFlowTerminalTitle), detail: tr(txt.SetupFlowTerminalDetail), intro: tr(txt.SetupFlowTerminalIntro),
 		fields: fields, fullSave: true,
 		values: []string{"terminal.plugin_backends", "terminal.builtin_backends", "terminal.docker", "terminal.ssh_defaults", linkedValue,
 			"terminal.vercel_default_image"},

@@ -9,6 +9,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -92,7 +93,7 @@ func detailLine(raw string) string {
 	if unitLen(text) > detailLimit {
 		text = sliceUnits(text, detailEllipsisUnits) + "\u2026"
 	}
-	return tr("userMessages.details", text)
+	return tr(txt.UserMessagesDetails, text)
 }
 
 // Lines joined after dropping empty ones
@@ -108,11 +109,11 @@ func joinPresent(lines ...string) string {
 
 // Notice of a backend that gave up, its exit code, last stderr line and the reconnect and logs advice
 func backendGaveUp(code *int, lastLine string) string {
-	title := tr("userMessages.backend.gaveUpTitle")
+	title := tr(txt.UserMessagesBackendGaveUpTitle)
 	if code != nil {
-		title = tr("userMessages.backend.gaveUpTitleWithCode", strconv.Itoa(*code))
+		title = tr(txt.UserMessagesBackendGaveUpTitleWithCode, strconv.Itoa(*code))
 	}
-	return joinPresent(title, detailLine(lastLine), tr("userMessages.backend.gaveUpReconnect"), tr("userMessages.backend.gaveUpLogs"))
+	return joinPresent(title, detailLine(lastLine), tr(txt.UserMessagesBackendGaveUpReconnect), tr(txt.UserMessagesBackendGaveUpLogs))
 }
 
 // Last stderr line that is not lifecycle noise, false when none is left
@@ -135,9 +136,9 @@ func backendReconnecting(attempt int, delayMs *float64) string {
 	}
 	secs := strconv.Itoa(max(1, int(jsRound(ms/1000))))
 	if attempt > 0 {
-		return tr("userMessages.backend.reconnectingAttempt", secs, strconv.Itoa(attempt))
+		return tr(txt.UserMessagesBackendReconnectingAttempt, secs, strconv.Itoa(attempt))
 	}
-	return tr("userMessages.backend.reconnecting", secs)
+	return tr(txt.UserMessagesBackendReconnecting, secs)
 }
 
 // Rounding half up as JavaScript Math.round does
@@ -158,9 +159,9 @@ func stderrLooksLikeProblem(line string) bool { return stderrProblemRe.MatchStri
 // Activity row of a failing stderr line, naming the exception when the line has one
 func stderrProblemActivity(line string) string {
 	if m := stderrExceptionRe.FindStringSubmatch(line); m != nil {
-		return tr("userMessages.backend.stderrProblemNamed", m[1])
+		return tr(txt.UserMessagesBackendStderrProblemNamed, m[1])
 	}
-	return tr("userMessages.backend.stderrProblem")
+	return tr(txt.UserMessagesBackendStderrProblem)
 }
 
 // Failure caused by a client and backend of different versions, not a method the backend says it lacks
@@ -191,29 +192,29 @@ func matched(ok bool) []string {
 var rpcErrorRows = []rpcErrorRow{
 	{func(s rpcShape, text string) []string {
 		return matched((!s.hasCode || s.code == rpcSessionNotFound) && sessionNotFoundRe.MatchString(text))
-	}, func([]string) string { return tr("userMessages.rpc.sessionNotFound") }},
+	}, func([]string) string { return tr(txt.UserMessagesRpcSessionNotFound) }},
 	{func(_ rpcShape, text string) []string { return matched(text == "session_read_only") },
-		func([]string) string { return tr("userMessages.rpc.sessionReadOnly") }},
+		func([]string) string { return tr(txt.UserMessagesRpcSessionReadOnly) }},
 	{func(_ rpcShape, text string) []string { return matched(text == "session_has_children") },
-		func([]string) string { return tr("userMessages.rpc.sessionHasChildren") }},
+		func([]string) string { return tr(txt.UserMessagesRpcSessionHasChildren) }},
 	{func(_ rpcShape, text string) []string { return matched(text == "fast_unavailable") },
-		func([]string) string { return tr("userMessages.rpc.fastUnavailable") }},
+		func([]string) string { return tr(txt.UserMessagesRpcFastUnavailable) }},
 	{func(_ rpcShape, text string) []string { return matched(notConnectedRe.MatchString(text)) },
-		func([]string) string { return tr("userMessages.rpc.notConnected") }},
+		func([]string) string { return tr(txt.UserMessagesRpcNotConnected) }},
 	{func(_ rpcShape, text string) []string { return unavailableMethodRe.FindStringSubmatch(text) },
-		func(m []string) string { return tr("userMessages.rpc.methodUnavailable", groupOr(m, 1)) }},
+		func(m []string) string { return tr(txt.UserMessagesRpcMethodUnavailable, groupOr(m, 1)) }},
 	{func(_ rpcShape, text string) []string {
 		return matched(strings.TrimFunc(text, isJSSpace) == "launch_credentials_unavailable")
-	}, func([]string) string { return tr("userMessages.rpc.launchCredentialsChanged") }},
+	}, func([]string) string { return tr(txt.UserMessagesRpcLaunchCredentialsChanged) }},
 	{func(_ rpcShape, text string) []string { return timedOutRe.FindStringSubmatch(text) },
-		func(m []string) string { return tr("userMessages.rpc.timedOut", groupOr(m, 1)) }},
+		func(m []string) string { return tr(txt.UserMessagesRpcTimedOut, groupOr(m, 1)) }},
 	{func(s rpcShape, text string) []string {
 		if !s.hasCode || s.code != rpcInvalidParams {
 			return nil
 		}
 		return invalidParamsRe.FindStringSubmatch(text)
 	}, func(m []string) string {
-		return tr("userMessages.rpc.invalidParams", groupOr(m, 1), groupOr(m, 2), groupOr(m, 3))
+		return tr(txt.UserMessagesRpcInvalidParams, groupOr(m, 1), groupOr(m, 2), groupOr(m, 3))
 	}},
 }
 
@@ -257,14 +258,14 @@ func describeRPCError(err error) string {
 	s := shapeOf(err)
 	text := s.message
 	if !s.hasMessage {
-		text = tr("rpc.requestFailed")
+		text = tr(txt.RpcRequestFailed)
 	}
 	if isVersionSkewError(err) {
 		logReplacedWireText(s, text)
 		if gatewayOtherBuild.Load() {
-			return tr("gatewayMsg.otherBuild.line")
+			return tr(txt.GatewayMsgOtherBuildLine)
 		}
-		return tr("userMessages.rpc.versionSkew")
+		return tr(txt.UserMessagesRpcVersionSkew)
 	}
 	return describeWireText(s, text)
 }
@@ -300,9 +301,9 @@ func describeShellExecError(err error) string {
 			backend = strings.TrimFunc(s, isJSSpace)
 		}
 		if backend != "" {
-			return tr("userMessages.rpc.shellBackendRefused", backend)
+			return tr(txt.UserMessagesRpcShellBackendRefused, backend)
 		}
-		return tr("userMessages.rpc.shellBackendRefusedUnnamed")
+		return tr(txt.UserMessagesRpcShellBackendRefusedUnnamed)
 	}
 	return describeRPCError(err)
 }
@@ -311,7 +312,7 @@ func describeShellExecError(err error) string {
 func describeSlashExecError(command string, err error) string {
 	s := shapeOf(err)
 	if isUnsupportedCommand(err) {
-		refusal := tr("canonical.controls.notThroughGateway", command)
+		refusal := tr(txt.CanonicalControlsNotThroughGateway, command)
 		if detail, isString := s.data["detail"].(string); isString && strings.TrimFunc(detail, isJSSpace) != "" {
 			return refusal + "\n" + strings.TrimFunc(detail, isJSSpace)
 		}
@@ -344,27 +345,25 @@ var turnCodeKey = map[string]string{
 
 // Title and hints of a turn failure by code, then by layer, then the fallback
 func turnCopyFor(code, layer string) (title, hint, hintNoRetry string) {
-	base := "userMessages.turn.fallback"
-	if key, known := turnCodeKey[code]; known && hasKey("userMessages.turn.code."+key+".title") {
-		base = "userMessages.turn.code." + key
-	} else if layer != "" && hasKey("userMessages.turn.layer."+layer+".title") {
-		base = "userMessages.turn.layer." + layer
+	base, titleKey, hintKey := "userMessages.turn.fallback", txt.UserMessagesTurnFallbackTitle, txt.UserMessagesTurnFallbackHint
+	// Takes the title and hint a name holds, false when the catalog lacks either
+	take := func(name string) bool {
+		t, titled := txt.Named(name + ".title")
+		h, hinted := txt.Named(name + ".hint")
+		if titled && hinted {
+			base, titleKey, hintKey = name, t, h
+		}
+		return titled && hinted
 	}
-	hint = tr(base + ".hint")
+	if key, known := turnCodeKey[code]; (!known || !take("userMessages.turn.code."+key)) && layer != "" {
+		take("userMessages.turn.layer." + layer)
+	}
+	hint = tr(hintKey)
 	hintNoRetry = hint
-	if hasKey(base + ".hintNoRetry") {
-		hintNoRetry = tr(base + ".hintNoRetry")
+	if key, known := txt.Named(base + ".hintNoRetry"); known {
+		hintNoRetry = tr(key)
 	}
-	return tr(base + ".title"), hint, hintNoRetry
-}
-
-// English catalog has the key
-func hasKey(key string) bool {
-	if _, ok := enCatalog.Strings[key]; ok {
-		return true
-	}
-	_, ok := enCatalog.Formats[key]
-	return ok
+	return tr(titleKey), hint, hintNoRetry
 }
 
 // Copy of a failed turn, its title with the provider, the error details and the next step
@@ -375,13 +374,13 @@ func describeTurnFailure(payload tuigateway.MessageCompletePayload) string {
 	}
 	title, hint, hintNoRetry := turnCopyFor(surface.Code, surface.Layer)
 	if provider := val(surface.Provider); provider != "" {
-		title = tr("userMessages.turn.withProvider", title, provider)
+		title = tr(txt.UserMessagesTurnWithProvider, title, provider)
 	}
 	nextStep := hint
 	if !surface.Retryable || payload.Recoverable != nil && !*payload.Recoverable {
 		nextStep = hintNoRetry
 	}
-	return joinPresent(tr("userMessages.turn.notAnswered", title), detailLine(bareErrorPrefixRe.ReplaceAllString(val(payload.Error), "")), nextStep)
+	return joinPresent(tr(txt.UserMessagesTurnNotAnswered, title), detailLine(bareErrorPrefixRe.ReplaceAllString(val(payload.Error), "")), nextStep)
 }
 
 // Message text that only repeats the error, so the turn failure copy replaces it
@@ -391,9 +390,9 @@ func isBareErrorText(text, errText string) bool {
 }
 
 // Catalog key of each prompt kind with a timeout notice
-var promptTimeoutKey = map[string]string{
-	"secret": "secret", "sudo": "sudo", "vault.code": "vaultCode", "vault.save_login": "vaultSaveLogin",
-	"vault.unlock_prompt": "vaultUnlockPrompt",
+var promptTimeoutKey = map[string]txt.Key{
+	"secret": txt.UserMessagesPromptTimeoutSecret, "sudo": txt.UserMessagesPromptTimeoutSudo, "vault.code": txt.UserMessagesPromptTimeoutVaultCode,
+	"vault.save_login": txt.UserMessagesPromptTimeoutVaultSaveLogin, "vault.unlock_prompt": txt.UserMessagesPromptTimeoutVaultUnlockPrompt,
 }
 
 // Notice of a password or vault prompt that closed on its timeout, false for any other reason
@@ -402,7 +401,7 @@ func promptTimeoutNotice(method, reason string) (string, bool) {
 	if reason != "timeout" || !known {
 		return "", false
 	}
-	return tr("userMessages.promptTimeout." + key), true
+	return tr(key), true
 }
 
 // Missing API key warning with the model switch fix, other warnings unchanged
@@ -413,7 +412,7 @@ func describeCredentialWarning(warning string) string {
 	}
 	provider := m[1]
 	if provider == "" {
-		provider = tr("userMessages.credential.currentProvider")
+		provider = tr(txt.UserMessagesCredentialCurrentProvider)
 	}
-	return tr("userMessages.credential.missingKey", provider)
+	return tr(txt.UserMessagesCredentialMissingKey, provider)
 }

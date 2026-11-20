@@ -597,7 +597,7 @@ var argparseTree = map[string]*apParser{
 	}},
 	"cron": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "cron_command", Nargs: "A...", Choices: []string{"list", "create", "add", "edit", "pause", "resume", "run", "cancel", "remove", "rm", "delete", "status", "runs", "history", "incidents", "notepad", "doctor", "tick"}, Sub: []apChoice{{Name: "list", Aliases: []string{}, Help: "List scheduled jobs", Listed: true}, {Name: "create", Aliases: []string{"add"}, Help: "Create a scheduled job", Listed: true}, {Name: "edit", Aliases: []string{}, Help: "Edit an existing scheduled job", Listed: true}, {Name: "pause", Aliases: []string{}, Help: "Pause a scheduled job", Listed: true}, {Name: "resume", Aliases: []string{}, Help: "Resume a paused job", Listed: true}, {Name: "run", Aliases: []string{}, Help: "Run a job on the next scheduler tick", Listed: true}, {Name: "cancel", Aliases: []string{}, Help: "Stop a job's live run (its schedule is untouched)", Listed: true}, {Name: "remove", Aliases: []string{"rm", "delete"}, Help: "Remove a scheduled job", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Check if cron scheduler is running", Listed: true}, {Name: "runs", Aliases: []string{"history"}, Help: "Show durable execution attempts", Listed: true}, {Name: "incidents", Aliases: []string{}, Help: "List or acknowledge durable cron failure incidents", Listed: true}, {Name: "notepad", Aliases: []string{}, Help: "Read/write a job's durable notepad (persistent KV across runs)", Listed: true}, {Name: "doctor", Aliases: []string{}, Help: "Check scheduled jobs for common health issues", Listed: true}, {Name: "tick", Aliases: []string{}, Help: "Run due jobs once and exit", Listed: true}}},
+		{Kind: 's', Dest: "cron_command", Nargs: "A...", Choices: []string{"list", "create", "add", "edit", "pause", "resume", "run", "cancel", "remove", "rm", "delete", "status", "runs", "history", "incidents", "notepad", "doctor", "tick", "classify"}, Sub: []apChoice{{Name: "list", Aliases: []string{}, Help: "List scheduled jobs", Listed: true}, {Name: "create", Aliases: []string{"add"}, Help: "Create a scheduled job", Listed: true}, {Name: "edit", Aliases: []string{}, Help: "Edit an existing scheduled job", Listed: true}, {Name: "pause", Aliases: []string{}, Help: "Pause a scheduled job", Listed: true}, {Name: "resume", Aliases: []string{}, Help: "Resume a paused job", Listed: true}, {Name: "run", Aliases: []string{}, Help: "Run a job on the next scheduler tick", Listed: true}, {Name: "cancel", Aliases: []string{}, Help: "Stop a job's live run (its schedule is untouched)", Listed: true}, {Name: "remove", Aliases: []string{"rm", "delete"}, Help: "Remove a scheduled job", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Check if cron scheduler is running", Listed: true}, {Name: "runs", Aliases: []string{"history"}, Help: "Show durable execution attempts", Listed: true}, {Name: "incidents", Aliases: []string{}, Help: "List or acknowledge durable cron failure incidents", Listed: true}, {Name: "notepad", Aliases: []string{}, Help: "Read/write a job's durable notepad (persistent KV across runs)", Listed: true}, {Name: "doctor", Aliases: []string{}, Help: "Check scheduled jobs for common health issues", Listed: true}, {Name: "tick", Aliases: []string{}, Help: "Run due jobs once and exit", Listed: true}, {Name: "classify", Aliases: []string{}, Help: "Score candidate items by urgency and print only the urgent ones", Listed: true}}},
 		{Kind: 'f', Opts: []string{"--accept-hooks"}, Dest: "accept_hooks", Nargs: "0"},
 	}},
 	"cron list": {Acts: []apAction{
@@ -712,6 +712,13 @@ var argparseTree = map[string]*apParser{
 	"cron tick": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--accept-hooks"}, Dest: "accept_hooks", Nargs: "0"},
+	}},
+	"cron classify": {Desc: true, Acts: []apAction{
+		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+		{Kind: 'f', Opts: []string{"--criteria"}, Dest: "criteria", Required: true},
+		{Kind: 'f', Opts: []string{"--threshold"}, Dest: "threshold"},
+		{Kind: 'f', Opts: []string{"--input-file"}, Dest: "input_file"},
+		{Kind: 'f', Opts: []string{"--format"}, Dest: "format", Choices: []string{"text", "json"}},
 	}},
 	"webhook": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},

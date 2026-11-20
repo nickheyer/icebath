@@ -36,12 +36,9 @@ func TestSelectedMemoryProviderDeclaresItsConfigKeys(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest, _ := json.Marshal(map[string]any{"name": "widgetmem", "config_keys": []string{"memory.widgetmem"}})
+	manifest, _ := json.Marshal(map[string]any{"name": "widgetmem", "kind": "exclusive", "runtime": "program", "entry": "widgetmem",
+		"config_keys": []string{"memory.widgetmem"}})
 	if err := os.WriteFile(filepath.Join(dir, "plugin.yaml"), manifest, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	initSource := "from agent.memory_provider import MemoryProvider\n\nclass WidgetMem(MemoryProvider):\n    pass\n"
-	if err := os.WriteFile(filepath.Join(dir, "__init__.py"), []byte(initSource), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	src := config.ConfigCommandSources{

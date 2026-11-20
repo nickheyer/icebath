@@ -7,7 +7,7 @@
 # Schema version of this file. The installers copy it to seed config.yaml, and
 # `icebath update` uses it to know which one-time migrations the file already
 # has. icebath manages it: do not copy it into another config.
-_config_version: 67
+_config_version: 69
 
 # =============================================================================
 # Database Configuration
@@ -67,6 +67,9 @@ attachments:
 # Plugin Installation
 # =============================================================================
 plugins:
+  # true = stream observers of plugins also receive reasoning text. Not set
+  # by default (off).
+  # stream_reasoning_deltas: true
   # Deadline for each Git clone, fetch or checkout during plugin install. Default: 300
   # seconds. Subdirectory installs download only that folder.
   # Raise this for large repositories or slow connections. Maximum: 3600.
@@ -221,6 +224,19 @@ model:
 #     # compatibility shim). The bundled router provider covers this; a named
 #     # custom provider is only needed for a non-default Router-compatible
 #     # endpoint.
+# An entry keyed like a built-in provider (openrouter:, Anthropic:, deepseek:,
+# in any case) that sets its own base_url IS what that name means: a turn or an
+# auxiliary task that names deepseek goes to your endpoint, and
+# `/model <model> --provider deepseek --global` saves it as custom:deepseek.
+# A key the entry declares (api_key, key_env or key_cmd) is the one sent
+# there. An entry without one is sent the built-in's key, so give a proxy its
+# own. A same-named block without an endpoint (request_timeout_seconds alone,
+# say) only tunes the built-in. `icebath doctor` warns when model.provider
+# names a built-in that such an entry takes over.
+# providers:
+#   deepseek:
+#     base_url: https://deepseek-proxy.example.com/v1
+#     key_env: DEEPSEEK_PROXY_KEY
 
 
 # Command-minted credentials (optional): key_cmd
@@ -486,6 +502,15 @@ model:
 # Disable this only when every review is performed manually.
 kanban:
   review_dispatch: true
+  # true = the child tasks a decomposition creates are promoted on their own;
+  # false leaves them for you to promote.
+  auto_promote_children: true
+  # Most workers one dispatcher pass may start. Not set by default: no cap.
+  # max_spawn: 4
+  # Overrides of the task diagnostics thresholds, as a mapping. Not set by
+  # default: a missing key keeps its built-in value.
+  # diagnostics:
+  #   failure_limit: 2
 
 # =============================================================================
 # Terminal Tool Configuration
@@ -502,9 +527,35 @@ kanban:
 #   - Gateway/messaging/cron: Uses terminal.cwd here; legacy .env cwd values are deprecated
 cron:
   catch_up_missed: true  # False skips past-grace recurring misses after planned downtime.
+  # Consecutive failed runs of a job before its failure notice adds a nudge
+  # to review the job. 0 turns the nudge off.
+  failure_nudge_threshold: 3
+  # A fire that never reached the model (provider unreachable) is run again
+  # after 5, 15 and 30 minutes. false turns the re-runs off.
+  retry_unreachable: true
+  # Seconds the cleanup after a run may take before the scheduler moves on.
+  cleanup_timeout_seconds: 10
+  # Seconds one delivery may take when no gateway is running and the job
+  # sends through its own platform connection.
+  standalone_send_timeout_seconds: 60
+  # Only with a scheduler provider plugin: minutes a missed fire is left to
+  # the provider before the local scheduler catches it up. 0 = never.
+  misfire_grace_minutes: 10
+  # Floor, in minutes, of the time a run may stay in flight before it counts
+  # as stale. Not set by default: a value here wins over
+  # ICEBATH_CRON_INFLIGHT_MAX_MINUTES, and without either the floor is 30.
+  # inflight_max_minutes: 30
 
 terminal:
   backend: "local"
+  # Credential files, as paths relative to ~/.icebath, that remote backends
+  # get a copy of next to the ones skills declare.
+  credential_files: []  # e.g. ["google_token.json"]
+  # The three below are not set by default: a value here is exported to the
+  # matching TERMINAL_* variable and so replaces one set in .env.
+  # sandbox_dir: ""                        # TERMINAL_SANDBOX_DIR
+  # docker_persist_across_processes: true  # TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES
+  # docker_orphan_reaper: true             # TERMINAL_DOCKER_ORPHAN_REAPER
   cwd: "."  # For local backend: "." = current directory. Ignored for remote backends unless a backend documents otherwise.
   timeout: 180
   # HOME policy for tool subprocesses:
@@ -692,6 +743,9 @@ terminal:
 # Browser Tool Configuration
 # =============================================================================
 browser:
+  # Cloud browser provider by name. Not set by default: a value pins the
+  # provider, absence means auto-detection from the credentials present.
+  # cloud_provider: "browser-use"
   # Inactivity timeout in seconds - browser sessions are automatically closed
   # after this period of no activity between agent loops (default: 120 = 2 minutes)
   inactivity_timeout: 120
@@ -767,6 +821,11 @@ compression:
   # enable it with a checkpoint-capable provider configured — see
   # website/docs/developer-guide/memory-provider-plugin.md
   # ("Pre-Compress Checkpoints").
+  # Agents that otherwise run without a memory provider (delegated subagents,
+  # the curator pass, the batch runner, a platform comment responder) arm the
+  # same gate, so while this is on they load the configured provider,
+  # initialized with agent_context "subagent": one provider initialize per
+  # spawn, and their transcripts reach the provider's pre-compress hook.
   checkpoint_required: false
 
   # Opt-in compression progress notices on chat platforms (default: false).
@@ -1027,6 +1086,14 @@ prompt_caching:
 #     model: ""
 #     timeout: 30
 #
+#   # Memory query rewrite: turns the latest user message into one retrieval
+#   # question for a memory provider plugin that asks for it; an empty answer
+#   # keeps the message itself as the query
+#   memory_query_rewrite:
+#     provider: "auto"       # empty model = your main chat model
+#     model: ""
+#     timeout: 8
+#
 #   # Automatic session title generation after the first exchange
 #   title_generation:
 #     enabled: true          # set false to disable auto-title generation
@@ -1084,6 +1151,14 @@ prompt_caching:
 #     enabled: true            # false = skip automatic forks (/refine still works)
 #     provider: "auto"         # or pin a cheaper model (see memory.md)
 #     model: ""
+#
+#   # Urgency scoring of `icebath cron classify`: one call scores a whole
+#   # batch of candidate items 0-10 and only the urgent ones are printed.
+#   # High volume and short replies, so a small cheap model is fine.
+#   monitor:
+#     provider: "auto"
+#     model: ""
+#     timeout: 60
 
 # =============================================================================
 # Persistent Memory
@@ -1272,6 +1347,10 @@ streaming:
 # also create new skills after completing complex tasks.
 #
 skills:
+  # Skills switched off everywhere, by name.
+  disabled: []
+  # Skills switched off on one platform only: platform name -> list of names.
+  platform_disabled: {}  # e.g. {telegram: [github-pr-workflow]}
   # Nudge the agent to create skills after complex tasks.
   # Every N tool-calling iterations, remind the model to consider saving a skill.
   # Set to 0 to disable.
@@ -1290,6 +1369,12 @@ skills:
 # Agent Behavior
 # =============================================================================
 agent:
+  # Seconds a model stream may deliver nothing before it is cut and retried.
+  # ICEBATH_STREAM_STALE_TIMEOUT overrides it; while it stays at 180, local
+  # endpoints use local_stream_stale_timeout instead.
+  stream_stale_timeout: 180
+  # prefill_messages_file is also read here, its older place; the top-level
+  # prefill_messages_file key wins.
   # Maximum tool-calling iterations per conversation (default: 500)
   # Higher = more room for complex tasks, but costs more tokens
   # Recommended: 20-30 for focused tasks, 50-100 for open exploration
@@ -1478,6 +1563,20 @@ agent:
 # Gateway Lifecycle
 # =============================================================================
 gateway:
+  # Base URL of another gateway this one hands its turns to (the
+  # GATEWAY_PROXY_URL variable wins over it). Empty = run turns here.
+  proxy_url: ""
+  # true = this profile runs its own gateway instead of being served by the
+  # host gateway. A temporary compatibility switch.
+  standalone: false
+  # true = sessions honour the managed worker policy sent with them. Leave
+  # false on a machine you run yourself.
+  managed_workers: false
+  # Watchdog interval in seconds for a gateway run as a systemd service.
+  # Not set by default (off).
+  # systemd_watchdog_seconds: 30
+  # max_concurrent_sessions and max_live_sessions are read here too when the
+  # top-level keys of the same names are absent.
   # Post-interrupt grace for running agents during an unexpected SIGTERM.
   # Adapter, bridge, and database teardown starts after this many seconds even
   # if an agent has not unwound. Keep it below the service-manager stop budget.
@@ -1611,10 +1710,31 @@ platform_toolsets:
 #       # `events: true` POST event deliveries to <public_url>/webhooks/<route>.
 #       public_url: "https://icebath.example.com"
 #
+# Telegram-specific settings (config.yaml top-level, not under platforms:).
+# None is set by default: each key present here is bridged to the variable
+# named beside it.
+#
+# telegram:
+#   require_mention: true            # TELEGRAM_REQUIRE_MENTION
+#   mention_patterns: ["^hey bot"]   # TELEGRAM_MENTION_PATTERNS (regex wake words)
+#   reply_to_mode: "first"           # TELEGRAM_REPLY_TO_MODE: off | first | all
+#   allow_from: ["123456789"]        # TELEGRAM_ALLOWED_USERS
+#   group_allow_from: ["123456789"]  # TELEGRAM_GROUP_ALLOWED_USERS
+#   group_allowed_chats: ["-100123"] # TELEGRAM_GROUP_ALLOWED_CHATS
+#   proxy_url: "socks5://127.0.0.1:1080"  # TELEGRAM_PROXY
+#
 # Discord-specific settings (config.yaml top-level, not under platforms:):
 #
 # discord:
 #   require_mention: true            # Require @mention in server channels (default: true)
+#   reply_to_mode: "first"           # off | first | all; bridged to DISCORD_REPLY_TO_MODE when present
+#   allow_mentions:                  # Which mentions a reply may ping; each key present here is
+#     everyone: false                # bridged to DISCORD_ALLOW_MENTION_<KEY>
+#     roles: false
+#     users: true
+#     replied_user: true
+#   voice_fx:
+#     lead_silence_ms: 0             # Silence in milliseconds ahead of speech in a voice channel
 #   bots_require_inline_mention: true  # Bot authors must type a literal @mention (default: true)
 #   auto_thread: true                # Auto-create thread on @mention (default: true)
 #   free_response_auto_thread: false # Free-response channels also auto-thread (default: reply inline)
@@ -1784,6 +1904,37 @@ platform_toolsets:
 #     optimize_streaming_latency: 0  # 0-2, trades quality for lower latency
 #     sample_rate: 24000    # 22050 / 24000 / 44100 / 48000
 #     bit_rate: 128000      # MP3 bitrate (codec=mp3 only)
+#   minimax:
+#     speed: 1.0
+#     vol: 1.0              # volume
+#     pitch: 0
+#     emotion: "neutral"
+#     sample_rate: 32000
+#     bitrate: 128000
+#     # region: "cn"        # not set by default: global or cn; unset = global, or cn when only the cn key is set
+#     # group_id: ""        # not set by default: sent with the request when present
+#   kittentts:
+#     speed: 1.0
+#     clean_text: true      # tidy the text before synthesis
+#   piper:
+#     use_cuda: false       # run the voice model on the GPU
+#     speaker_id: 0         # speaker of a multi-speaker voice
+#     volume: 1.0
+#     normalize_audio: true
+#     # Not set by default (a value replaces what the voice model or the home provides):
+#     # voices_dir: ""      # where voice models are kept
+#     # length_scale: 2.0   # 2.0 = twice as slow
+#     # noise_scale, noise_w_scale: numbers, as the voice model documents them
+#   # Not set by default; a value replaces the fallback named:
+#   # voice, model                  - voice and model handed to a plugin provider
+#   # output_format                 - audio format of a command provider
+#   # <provider>.base_url           - elevenlabs, gemini, minimax, mistral, openai, xai: custom API endpoint
+#   # openai.api_key                - key for this provider only, instead of the environment
+#   # openai.language               - language hint
+#   # <provider>.speed              - deepinfra, edge, openai: falls back to tts.speed
+#   # elevenlabs.streaming_model_id - model for streamed speech, falls back to elevenlabs.model_id
+#   # streaming.provider            - provider for streamed speech, falls back to tts.provider
+#   # xai.streaming_url             - custom streaming endpoint
 
 # =============================================================================
 # Voice Transcription (Speech-to-Text)
@@ -2196,6 +2347,8 @@ display:
   # subagents, activity). Change it at runtime with /details.
   #   hidden | collapsed | expanded     (collapsed when unset)
   # details_mode: collapsed
+  # (thinking_mode is the older name of this key and is read when
+  # details_mode is absent.)
 
   # Detail level of single sections, over details_mode. Any subset of
   # thinking, tools, subagents and activity; set one at runtime with
@@ -2211,6 +2364,19 @@ display:
   #   buttons: Adds drag
   #   all:     Adds hover (used when unset)
   # mouse_tracking: all
+  # (tui_mouse is the older name of this key and is read when mouse_tracking
+  # is absent.)
+
+  # The arena view of delegated work. Not set by default: every key is
+  # optional and falls back to the value shown.
+  # arena:
+  #   display: auto        # auto | glyphs | image
+  #   glyphs: shapes       # shapes | half | quadrant | sextant | octant | legacy | all
+  #   world: blackwall     # blackwall | den | nightcity | soulkiller | off
+  #   camera: overview     # overview | orbit | follow | cinematic
+  #   quality: high        # low | medium | high | ultra
+  #   fps: 30              # 5-120
+  #   labels: true
 
   # Show model reasoning/thinking before each response.
   # When enabled, a dim box shows the model's thought process above the response.
@@ -2322,6 +2488,18 @@ display:
 #   redact_pii: false
 
 # =============================================================================
+# Model catalog and computer use
+# =============================================================================
+# model_catalog:
+#   # Providers left out of the model picker, by id.
+#   excluded_providers: []           # e.g. [openrouter]
+#   # (ttl_hours is the older form of ttl_minutes and is read only while
+#   # ttl_minutes is at its default.)
+#
+# computer_use:
+#   backend: "cua"                   # the built-in driver; a computer-use plugin is named here
+#
+# =============================================================================
 # Shell-script hooks
 # =============================================================================
 # Register shell scripts as plugin-hook callbacks.  Each entry is executed as
@@ -2355,6 +2533,18 @@ display:
 #   subagent_stop:
 #     - command: "~/.icebath/agent-hooks/log-orchestration.sh"
 #
+# Outbound webhooks: POST the payload of the listed events to a URL. Not set
+# by default. `secret` (or `secret_env`, the name of a variable holding it)
+# signs each request with an X-Icebath-Signature-256 header.
+#
+# hooks:
+#   outbound:
+#     - url: "https://example.com/icebath-events"
+#       events: [post_tool_call, on_session_end]
+#       matcher: "terminal"          # optional regex
+#       timeout: 10                  # seconds, 1-60
+#       secret_env: "ICEBATH_WEBHOOK_SECRET"
+#
 # hooks_auto_accept: false
 #
 # Gateway hook directories
@@ -2370,19 +2560,24 @@ display:
 #   timeout: 30          # seconds, default 60, at most 300
 #
 # Events: gateway:startup, session:start, session:end, session:reset,
-# agent:start, agent:step, agent:end and command:<name> (command:* for every
-# command).  The command runs as a subprocess the way the shell hooks above
-# do (no shell, same environment, timeout and consent) and reads one JSON
-# object on stdin: {"hook_event_name": "<event>", "context": {...},
-# "cwd": "...", "profile": "..."}.  A JSON object printed on stdout is the
-# handler's answer; a command:<name> handler may answer
+# session:compress, agent:start, agent:step, agent:end, reaction:added,
+# reaction:removed and command:<name>.  An event name matches exactly, or
+# through a wildcard on its base (command:* for every command, agent:* for
+# every agent event).  The command runs as a subprocess the way the shell
+# hooks above do (no shell, same environment and timeout) with the hook
+# directory as its working directory, so `command: python3 notify.py`
+# finds a file of the directory, and reads one JSON object on stdin:
+# {"hook_event_name": "<event>", "context": {...}, "cwd": "<working
+# directory of the gateway>", "profile": "..."}.  A JSON object printed on
+# stdout is the handler's answer; a command:<name> handler may answer
 # {"decision": "deny", "message": "..."}, {"decision": "handled"} or
 # {"decision": "rewrite", "command_name": "...", "raw_args": "..."}.
 # A failing or timed out handler is logged and never blocks the gateway.
-# Each (event, command) pair needs the same consent as a shell hook; the
-# gateway never prompts, so approve with --accept-hooks,
-# ICEBATH_ACCEPT_HOOKS=1 or hooks_auto_accept: true.  A directory that holds
-# only a Python handler.py is named and skipped: Python source is not loaded.
+# Placing the directory is the opt-in: hook directories load at gateway
+# startup without a consent prompt, the allowlist of the shell hooks above
+# does not apply to them, and removing HOOK.yaml or the directory is the
+# opt-out.  A directory that holds only a Python handler.py is named and
+# skipped: Python source is not loaded.
 
 
 # =============================================================================
@@ -2448,6 +2643,12 @@ updates:
 # secrets:
 #   # Optional explicit ordering of enabled sources.
 #   # sources: [onepassword, bitwarden]
+#
+#   # Env var names whose own value is kept: no source replaces them.
+#   preserve_existing: []            # e.g. [TELEGRAM_BOT_TOKEN]
+#   # Under a named profile a secret FOO_<PROFILE> also fills FOO (credential
+#   # names such as *_API_KEY, *_TOKEN, *_SECRET only). false turns that off.
+#   profile_alias: true
 #
 #   # ---- Bitwarden Secrets Manager (bws CLI) --------------------------------
 #   bitwarden:

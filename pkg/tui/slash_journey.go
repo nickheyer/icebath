@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -213,7 +214,7 @@ func (c *journeyCard) Title() string  { return "journey" }
 func (c *journeyCard) Key() string    { return "tui:journey" }
 func (c *journeyCard) Init() tea.Cmd  { return nil }
 func (c *journeyCard) Raw() bool      { return true }
-func (c *journeyCard) Status() string { return tr("journey.subtitle") }
+func (c *journeyCard) Status() string { return tr(txt.JourneySubtitle) }
 
 func (c *journeyCard) MinSize() (int, int) {
 	w, h := c.a.wm.Size()
@@ -276,7 +277,7 @@ func (c *journeyCard) chart(chartCap int) ([]string, *tuigateway.LearningFrame) 
 func (c *journeyCard) header(chartCap int) []string {
 	t := c.a.store.ui.Theme
 	p := c.palette()
-	lines := []string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true) + c.ink(" "+tr("journey.subtitle"), t.Color.Muted, false)}
+	lines := []string{c.ink("✦ "+tr(txt.JourneyTitle), t.Color.Primary, true) + c.ink(" "+tr(txt.JourneySubtitle), t.Color.Muted, false)}
 	var b strings.Builder
 	for i, item := range c.data.Legend {
 		if i > 0 {
@@ -324,7 +325,7 @@ func (c *journeyCard) header(chartCap int) []string {
 }
 
 // Count with its singular or plural catalog form
-func journeyCount(one, other string, n int64) string {
+func journeyCount(one, other txt.Key, n int64) string {
 	if n == 1 {
 		return tr(one, fmt.Sprint(n))
 	}
@@ -345,8 +346,8 @@ func (c *journeyCard) treeLine(row journeyRow, active bool, w int) string {
 		if b.Color != "" {
 			hex = p.fadeHex(b.Color, 0.85)
 		}
-		meta := " · " + journeyCount("journey.slice.skillsOne", "journey.slice.skillsOther", b.Skills) + " · " +
-			journeyCount("journey.slice.memoriesOne", "journey.slice.memoriesOther", b.Memories)
+		meta := " · " + journeyCount(txt.JourneySliceSkillsOne, txt.JourneySliceSkillsOther, b.Skills) + " · " +
+			journeyCount(txt.JourneySliceMemoriesOne, txt.JourneySliceMemoriesOther, b.Memories)
 		if b.Category != "" {
 			meta += " · " + b.Category
 		}
@@ -400,7 +401,7 @@ func (c *journeyCard) status() string {
 			if label == "" {
 				label = n.Label
 			}
-			return c.ink(tr("journey.confirmDelete", label), t.Color.Error, false)
+			return c.ink(tr(txt.JourneyConfirmDelete, label), t.Color.Error, false)
 		}
 	}
 	if c.notice != "" {
@@ -413,15 +414,15 @@ func (c *journeyCard) View(w, h int) string {
 	c.viewW, c.viewH = w, h
 	t := c.a.store.ui.Theme
 	shell := func(line string) string {
-		return strings.Join([]string{c.ink("✦ "+tr("journey.title"), t.Color.Primary, true), line, c.ink(tr("journey.closeHint"), t.Color.Muted, false)}, "\n")
+		return strings.Join([]string{c.ink("✦ "+tr(txt.JourneyTitle), t.Color.Primary, true), line, c.ink(tr(txt.JourneyCloseHint), t.Color.Muted, false)}, "\n")
 	}
 	switch {
 	case c.err != "":
-		return shell(c.ink(tr("journey.error", c.err), t.Color.Error, false))
+		return shell(c.ink(tr(txt.JourneyError, c.err), t.Color.Error, false))
 	case !c.loaded:
-		return shell(c.ink(tr("journey.loading"), t.Color.Muted, false))
+		return shell(c.ink(tr(txt.JourneyLoading), t.Color.Muted, false))
 	case c.data.Count == 0:
-		return shell(c.ink(tr("journey.empty"), t.Color.Muted, false))
+		return shell(c.ink(tr(txt.JourneyEmpty), t.Color.Muted, false))
 	}
 	if c.item {
 		return c.itemView(w, h)
@@ -438,14 +439,14 @@ func (c *journeyCard) View(w, h int) string {
 		foot = append(foot, c.ink(ansi.Truncate(strings.Join(summary, " · "), w, "…"), t.Color.Muted, false))
 	}
 	node := c.activeNode()
-	hints := []string{tr("journey.hint.move")}
+	hints := []string{tr(txt.JourneyHintMove)}
 	if node != nil && node.Body != "" {
-		hints = append(hints, tr("journey.hint.open"))
+		hints = append(hints, tr(txt.JourneyHintOpen))
 	}
 	if node != nil {
-		hints = append(hints, tr("journey.hint.edit"), tr("journey.hint.delete"))
+		hints = append(hints, tr(txt.JourneyHintEdit), tr(txt.JourneyHintDelete))
 	}
-	hints = append(hints, tr("journey.hint.topBottom"), tr("journey.hint.close"))
+	hints = append(hints, tr(txt.JourneyHintTopBottom), tr(txt.JourneyHintClose))
 	foot = append(foot, c.ink(ansi.Truncate(strings.Join(hints, " · "), w, "…"), t.Color.Muted, false))
 	listH := max(3, h-len(head)-len(foot)-2)
 	start := max(0, min(max(0, len(c.rows)-listH), c.cursor-listH/2))
@@ -474,7 +475,7 @@ func (c *journeyCard) itemView(w, h int) string {
 	}
 	head := []string{c.ink(ansi.Truncate(n.Glyph+" "+label, w, "…"), c.styleInk(c.palette(), n.Style, 1), true),
 		c.ink(c.rows[c.cursor].bucket.Label+" · "+n.Meta, t.Color.Muted, false), ""}
-	body := []string{tr("journey.noDetail")}
+	body := []string{tr(txt.JourneyNoDetail)}
 	if n.Body != "" {
 		body = nil
 		for _, line := range strings.Split(strings.ReplaceAll(n.Body, "\r\n", "\n"), "\n") {
@@ -485,7 +486,7 @@ func (c *journeyCard) itemView(w, h int) string {
 	if status := c.status(); status != "" {
 		foot = append(foot, status)
 	}
-	foot = append(foot, c.ink(ansi.Truncate(tr("journey.hint.item"), w, "…"), t.Color.Muted, false))
+	foot = append(foot, c.ink(ansi.Truncate(tr(txt.JourneyHintItem), w, "…"), t.Color.Muted, false))
 	bodyH := max(1, h-len(head)-len(foot)-1)
 	c.scroll = max(0, min(c.scroll, len(body)-bodyH))
 	out := append([]string{}, head...)
@@ -658,7 +659,7 @@ func (c *journeyCard) editActive() tea.Cmd {
 	return call(c.a.gw, tuigateway.LearningDetail, tuigateway.LearningNodeParams{ID: id}, func(detail *tuigateway.LearningDetailResult, err error) tea.Cmd {
 		if err != nil || !detail.Ok || detail.Content == nil {
 			c.busy = false
-			c.notice = tr("journey.notice.cannotEdit")
+			c.notice = tr(txt.JourneyNoticeCannotEdit)
 			if err != nil {
 				c.notice = rpcErrorMessage(err)
 			} else if detail.Message != "" {
@@ -671,7 +672,7 @@ func (c *journeyCard) editActive() tea.Cmd {
 			return asyncDoneMsg{run: func() tea.Cmd {
 				if fileErr != nil || runErr != nil || strings.TrimSpace(edited) == strings.TrimSpace(content) {
 					c.busy = false
-					c.notice = tr("journey.notice.noChanges")
+					c.notice = tr(txt.JourneyNoticeNoChanges)
 					if fileErr != nil {
 						c.notice = fileErr.Error()
 					}

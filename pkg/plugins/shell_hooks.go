@@ -668,21 +668,27 @@ func windowsShellHookArgv(ctx context.Context, argv []string) ([]string, error) 
 
 // Runs the hook command with the payload on stdin, reaping its whole tree on timeout or interrupt
 func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) (*ShellHookResult, error) {
+	argv, err := pyshlex.SplitCommandLine(pypath.Expanduser(spec.Command))
+	if err != nil {
+		pkgLog().Debug("shell hook command unparsable: " + errchain.Text(err))
+		return &ShellHookResult{Error: fmt.Sprintf("command %s cannot be parsed: its quotes or escapes are unbalanced", errchain.Show(spec.Command))}, nil
+	}
+	if len(argv) == 0 {
+		return &ShellHookResult{Error: "empty command"}, nil
+	}
+	return spawnShellHookArgv(ctx, argv, "", spec.Timeout, stdinJSON)
+}
+
+// Runs an argument vector as a hook process in the working directory dir, the process directory when dir is empty, with the payload on stdin for at most the timeout in seconds, reaping its whole tree on timeout or interrupt
+func spawnShellHookArgv(ctx context.Context, argv []string, dir string, timeout int, stdinJSON string) (*ShellHookResult, error) {
 	r := &ShellHookResult{}
 	failed := func(msg string) (*ShellHookResult, error) {
 		r.Error = msg
 		return r, nil
 	}
-	argv, err := pyshlex.SplitCommandLine(pypath.Expanduser(spec.Command))
-	if err != nil {
-		pkgLog().Debug("shell hook command unparsable: " + errchain.Text(err))
-		return failed(fmt.Sprintf("command %s cannot be parsed: its quotes or escapes are unbalanced", errchain.Show(spec.Command)))
-	}
-	if len(argv) == 0 {
-		return failed("empty command")
-	}
 	t0 := time.Now()
 	if runtime.GOOS == "windows" {
+		var err error
 		if argv, err = windowsShellHookArgv(ctx, argv); err != nil {
 			return failed(err.Error())
 		}
@@ -695,11 +701,11 @@ func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) 
 	if err != nil {
 		return failed(err.Error())
 	}
-	run, err := startShellHookProcess(argv, childEnv, pystr.EncodeUTF8Replace(stdinJSON))
+	run, err := startShellHookProcess(argv, dir, childEnv, pystr.EncodeUTF8Replace(stdinJSON))
 	if err != nil {
 		return failed(shellHookPopenError(argv[0], err))
 	}
-	timer := time.NewTimer(time.Duration(spec.Timeout) * time.Second)
+	timer := time.NewTimer(time.Duration(timeout) * time.Second)
 	defer timer.Stop()
 	select {
 	case <-run.done:

@@ -202,10 +202,15 @@ func probeAvailability(ctx context.Context, env *tools.Env, r *ProviderRegistrat
 	if p == nil {
 		return false
 	}
-	if probe, ok := p.(interface{ dismiss() }); ok {
-		defer probe.dismiss()
-	}
+	defer DismissProvider(ctx, p)
 	return p.Available(ctx)
+}
+
+// Gives back a provider that was loaded only to look at it, the guest of a plugin provider stopping when nothing else uses it
+func DismissProvider(ctx context.Context, p Provider) {
+	if transient, ok := p.(interface{ dismiss(context.Context) }); ok {
+		transient.dismiss(ctx)
+	}
 }
 
 // Active provider name from memory.provider, empty when unset or unreadable

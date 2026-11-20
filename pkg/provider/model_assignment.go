@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +16,7 @@ import (
 
 // Built in auxiliary task slots in canonical order
 var auxTaskSlotsBuiltin = []string{"vision", "compression", "approval", "mcp", "title_generation", "review",
-	"voice_chat", "triage_specifier", "kanban_decomposer", "profile_describer", "curator"}
+	"voice_chat", "triage_specifier", "kanban_decomposer", "profile_describer", "curator", "monitor"}
 
 // Bare selectors whose submitted URL defines a route of its own
 var bareCustomSelectors = map[string]bool{"custom": true, "local": true}
@@ -159,7 +160,7 @@ func isExplicitCustomEndpoint(provider, baseURL string) bool {
 	return bareCustomSelectors[pystr.Lower(pystr.Strip(provider))] && pystr.Strip(baseURL) != ""
 }
 
-// Routes a main slot pick through the model switch seeded with the configured route, a rejection becoming a 400
+// Routes a main slot pick through the model switch seeded with the configured route, a refused pick returning ModelAssignmentRejected
 func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provider, model, baseURL, apiKey string, explicitEndpoint *bool) (ModelSwitchResult, error) {
 	modelCfg, _ := cfg["model"].(map[string]any)
 	isBareCustom := bareCustomSelectors[pystr.Lower(pystr.Strip(provider))]
@@ -200,7 +201,7 @@ func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provid
 		if detail == "" {
 			detail = "model switch rejected"
 		}
-		return ModelSwitchResult{}, httpException(400, detail)
+		return ModelSwitchResult{}, &ModelAssignmentRejected{Msg: detail}
 	}
 	if url := pystr.Strip(baseURL); isBareCustom && url != "" {
 		result.BaseURL = url
@@ -357,6 +358,10 @@ func prepareMainAssignment(ctx context.Context, cfg map[string]any, provider, mo
 	}
 	result, err := validatedMainModelSelection(ctx, cfg, provider, model, baseURL, apiKey, &explicit)
 	if err != nil {
+		var rejected *ModelAssignmentRejected
+		if errors.As(err, &rejected) {
+			return nil, httpException(400, rejected.Error())
+		}
 		return nil, err
 	}
 	return &PreparedMainAssignment{BaseURL: baseURL, Result: result}, nil

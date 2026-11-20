@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Queue entry of a text and the display it shows, the text when display is empty
@@ -265,7 +266,7 @@ func (q *composerQueue) queuedDisplay() ([]string, error) {
 	for _, item := range queue.items {
 		prefix := ""
 		if item.Failed {
-			prefix = tr("canonical.queue.unconfirmedPrefix")
+			prefix = tr(txt.CanonicalQueueUnconfirmedPrefix)
 		}
 		out = append(out, prefix+item.Display)
 	}
@@ -274,9 +275,9 @@ func (q *composerQueue) queuedDisplay() ([]string, error) {
 		case "queued":
 			out = append(out, row.User)
 		case "unknown":
-			out = append(out, tr("canonical.queue.lostRow", row.User))
+			out = append(out, tr(txt.CanonicalQueueLostRow, row.User))
 		default:
-			out = append(out, tr("canonical.queue.serverRow", row.Status, row.User))
+			out = append(out, tr(txt.CanonicalQueueServerRow, row.Status, row.User))
 		}
 	}
 	return out, nil
@@ -320,7 +321,7 @@ func (q *composerQueue) cancelServerRow(row *pendingRow, then func(err error) te
 	sid := q.store.ui.Sid
 	settled := func(_ *tuigateway.AdmissionReceipt, err error) tea.Cmd {
 		if err != nil && sid == q.store.ui.Sid {
-			q.store.ui.Status = tr("canonical.queue.discardFailed", err.Error())
+			q.store.ui.Status = tr(txt.CanonicalQueueDiscardFailed, err.Error())
 		}
 		return then(err)
 	}
@@ -455,7 +456,7 @@ func (q *composerQueue) claim(queue *pendingQueue, item *queueItem) (*queueItem,
 			return
 		}
 		if err := pendingJournal.remove(*item); err != nil {
-			q.store.ui.Status = tr("canonical.queue.journalCleanupFailed", err.Error())
+			q.store.ui.Status = tr(txt.CanonicalQueueJournalCleanupFailed, err.Error())
 		}
 		for _, pending := range q.queues {
 			removeAtInPlace(&pending.items, indexOfItem(pending.items, item))
@@ -528,7 +529,7 @@ func (q *composerQueue) dequeue(retry bool) (*queueItem, error) {
 	}
 	claimed, err := q.claim(queue, item)
 	if err != nil {
-		q.store.ui.Status = tr("canonical.queue.notSavedQueueKept", err.Error())
+		q.store.ui.Status = tr(txt.CanonicalQueueNotSavedQueueKept, err.Error())
 		return nil, nil
 	}
 	return claimed, nil
@@ -546,7 +547,7 @@ func (q *composerQueue) takeQ(i int, editedDisplay *string, then func(*queueItem
 	}
 	if server != nil {
 		if server.Status == "unknown" {
-			q.store.ui.Status = tr("canonical.queue.unknownExecution")
+			q.store.ui.Status = tr(txt.CanonicalQueueUnknownExecution)
 			return then(nil), nil
 		}
 		text := server.User
@@ -721,7 +722,7 @@ func spliceInterpolations(display, text string, typed []typedInterpolation, outp
 func (a *app) setQueueEdit(index *int) {
 	a.queueEdit = index
 	if err := a.queue.setQueueEdit(index); err != nil {
-		a.sys("error: " + err.Error())
+		a.sys(errorLine(err.Error()))
 	}
 }
 
@@ -735,7 +736,7 @@ func (a *app) sendQueueHead() tea.Cmd {
 	}
 	item, err := a.queue.dequeue(true)
 	if err != nil {
-		a.sys("error: " + err.Error())
+		a.sys(errorLine(err.Error()))
 		return nil
 	}
 	if item == nil {
@@ -766,7 +767,7 @@ func (a *app) cycleQueue(dir int) (tea.Cmd, bool) {
 	}
 	draft, err := a.queue.queueDraft(index)
 	if err != nil {
-		a.sys("error: " + err.Error())
+		a.sys(errorLine(err.Error()))
 		return nil, true
 	}
 	a.cancelPendingRewind(true)
@@ -783,7 +784,7 @@ func (a *app) deleteQueueEdit() tea.Cmd {
 	}
 	removed, err := a.queue.removeQ(*a.queueEdit)
 	if err != nil {
-		a.sys("error: " + err.Error())
+		a.sys(errorLine(err.Error()))
 	}
 	return tea.Batch(removed, a.clearIn())
 }

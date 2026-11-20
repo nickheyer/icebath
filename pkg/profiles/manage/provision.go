@@ -10,21 +10,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-// MCP server a create writes into the new profile, one of URL or Command, the bearer token nil when none was given
-type MCPServerCreate struct {
-	Name        string
-	URL         string
-	Command     string
-	Args        []string
-	Env         map[string]string
-	Auth        string
-	BearerToken *string
-}
 
 // Everything a surface can ask of a create, the zero value a fresh profile with its alias, the launch keys and model, and shared logins
 type ProfileCreateRequest struct {
@@ -48,11 +38,6 @@ type ProfileCreateRequest struct {
 	// Explicit model pin, applied only with its provider
 	Model    string
 	Provider string
-	// Home whose catalog vouches for the pin, the new profile when empty
-	ModelValidateIn string
-	MCPServers      []MCPServerCreate
-	// Installed skills to keep, every other one disabled when any is named
-	KeepSkills []string
 }
 
 // Reports whether the request names no source profile, so the new profile gets bundled skills instead of a copy
@@ -70,8 +55,6 @@ type ProvisionResult struct {
 	Mirrored       tuigateway.ProfileMirrored
 	ModelSet       bool
 	ModelError     string
-	MCPWritten     int
-	SkillsDisabled int
 	Warnings       []string
 }
 
@@ -180,6 +163,10 @@ func ProvisionProfile(ctx context.Context, req ProfileCreateRequest) (*Provision
 				}
 			}
 		}
+		step("default plugins", func() error {
+			_, err := defaults.SpawnInstall(ctx, path)
+			return err
+		})
 	}
 	if !req.NoAlias {
 		step("alias wrapper", func() error {
@@ -211,20 +198,6 @@ func ProvisionProfile(ctx context.Context, req ProfileCreateRequest) (*Provision
 		step("model inherit", func() error {
 			inherited, err := InheritLaunchModel(ctx, path)
 			result.Mirrored.ModelInherited = inherited
-			return err
-		})
-	}
-	if len(req.MCPServers) > 0 {
-		step("MCP servers", func() error {
-			written, err := WriteProfileMCPServers(ctx, path, req.MCPServers)
-			result.MCPWritten = written
-			return err
-		})
-	}
-	if len(req.KeepSkills) > 0 {
-		step("skill selection", func() error {
-			disabled, err := DisableUnselectedSkills(ctx, path, req.KeepSkills)
-			result.SkillsDisabled = disabled
 			return err
 		})
 	}

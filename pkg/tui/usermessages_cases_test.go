@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Gateway refusal with a code
@@ -273,7 +274,7 @@ func TestLocaleAwareResolution(t *testing.T) {
 		applyLocale("xx", map[string]string{"userMessages.backend.restarting": "RESTART-XX", "userMessages.promptTimeout.sudo": "SUDO-XX",
 			"userMessages.turn.code.auth.title": "AUTH-XX", "userMessages.turn.notAnswered": "{0} // XX"})
 		sudo, _ := promptTimeoutNotice("sudo", "timeout")
-		if tr("userMessages.backend.restarting") != "RESTART-XX" || sudo != "SUDO-XX" {
+		if tr(txt.UserMessagesBackendRestarting) != "RESTART-XX" || sudo != "SUDO-XX" {
 			t.Fatal("pack not observed")
 		}
 		if got := strings.Split(describeTurnFailure(tuigateway.MessageCompletePayload{ErrorSurface: &tuigateway.ErrorSurface{Code: "auth", Layer: "auth"}}), "\n")[0]; got != "AUTH-XX // XX" {

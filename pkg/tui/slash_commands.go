@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Markers of rows the compaction wrote, never the target of an undo
@@ -148,9 +149,9 @@ func retryText(content any) (string, bool) {
 // Undoes the last exchange on the canonical wire, sending the prompt again for a retry
 func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 	a := r.a
-	nothing, intent := tr("slashCmd.core.undo.nothing"), "undo"
+	nothing, intent := tr(txt.SlashCmdCoreUndoNothing), "undo"
 	if retry {
-		nothing, intent = tr("slashCmd.core.retry.nothing"), "retry"
+		nothing, intent = tr(txt.SlashCmdCoreRetryNothing), "retry"
 	}
 	build := func(snapshot *tuigateway.CanonicalSnapshot) (map[string]any, error) {
 		target := lastUserTurn(snapshot)
@@ -160,7 +161,7 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 		if retry {
 			text, sendable := retryText(target.Content)
 			if !sendable {
-				return nil, errors.New(tr("canonical.controls.retryUnsupported"))
+				return nil, errors.New(tr(txt.CanonicalControlsRetryUnsupported))
 			}
 			if text == "" {
 				return nil, nil
@@ -190,9 +191,9 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 		}
 		a.setHistoryItems(dropLastExchange)
 		if !retry {
-			key := "slashCmd.core.undo.undidOther"
+			key := txt.SlashCmdCoreUndoUndidOther
 			if removed == 1 {
-				key = "slashCmd.core.undo.undidOne"
+				key = txt.SlashCmdCoreUndoUndidOne
 			}
 			r.sys(tr(key, strconv.FormatInt(removed, 10)))
 			return r.showUndoRollbackHint(m.Result.TargetMessage)
@@ -220,9 +221,9 @@ func undoRollbackHintLine(hint *tuigateway.UndoRollbackHint) string {
 	files := hint.Files
 	named := strings.Join(files[:min(len(files), undoHintNamedFiles)], ", ")
 	if len(files) > undoHintNamedFiles {
-		named += " " + tr("slashCmd.core.undo.rollbackHintMore", strconv.Itoa(len(files)-undoHintNamedFiles))
+		named += " " + tr(txt.SlashCmdCoreUndoRollbackHintMore, strconv.Itoa(len(files)-undoHintNamedFiles))
 	}
-	return tr("slashCmd.core.undo.rollbackHint", named)
+	return tr(txt.SlashCmdCoreUndoRollbackHint, named)
 }
 
 // Asks the owner which files the undone turns changed and names them, silent when it knows none or refuses the question
@@ -342,7 +343,7 @@ func (a *app) transcriptCommands() []slashCommand {
 						if len(overrides) > 0 {
 							suffix = "  (" + strings.Join(overrides, " ") + ")"
 						}
-						r.sys(tr("slashCmd.core.details.current", mode, suffix))
+						r.sys(tr(txt.SlashCmdCoreDetailsCurrent, mode, suffix))
 						return nil
 					})
 				}
@@ -353,7 +354,7 @@ func (a *app) transcriptCommands() []slashCommand {
 					reset := second == "reset" || second == "clear" || second == "default"
 					mode := parseDetailsMode(second)
 					if !reset && mode == "" {
-						r.sys(tr("slashCmd.core.details.sectionUsage"))
+						r.sys(tr(txt.SlashCmdCoreDetailsSectionUsage))
 						return nil
 					}
 					sections := map[string]string{}
@@ -362,13 +363,13 @@ func (a *app) transcriptCommands() []slashCommand {
 							sections[k] = v
 						}
 					}
-					shown := tr("slashCmd.core.details.reset")
+					shown := tr(txt.SlashCmdCoreDetailsReset)
 					if !reset {
 						sections[first], shown = mode, mode
 					}
 					ui.Sections = sections
 					a.card.view.invalidate()
-					r.sys(tr("slashCmd.core.details.section", first, shown))
+					r.sys(tr(txt.SlashCmdCoreDetailsSection, first, shown))
 					return r.saveDisplayPref("details_mode."+first, mode)
 				}
 				next := parseDetailsMode(first)
@@ -376,7 +377,7 @@ func (a *app) transcriptCommands() []slashCommand {
 					next = nextDetailsMode(ui.DetailsMode)
 				}
 				if next == "" {
-					r.sys(tr("slashCmd.core.details.usage"))
+					r.sys(tr(txt.SlashCmdCoreDetailsUsage))
 					return nil
 				}
 				sections := map[string]string{}
@@ -385,7 +386,7 @@ func (a *app) transcriptCommands() []slashCommand {
 				}
 				ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections = next, true, sections
 				a.card.view.invalidate()
-				r.sys(tr("slashCmd.core.details.current", next, ""))
+				r.sys(tr(txt.SlashCmdCoreDetailsCurrent, next, ""))
 				return r.saveDisplayPref("details_mode", next)
 			}},
 		{name: "fortune", help: "local fortune", usage: "[random|daily]", run: func(r *slashRun) tea.Cmd {
@@ -395,7 +396,7 @@ func (a *app) transcriptCommands() []slashCommand {
 			case "daily", "stable", "today":
 				r.sys(dailyFortune(r.sid))
 			default:
-				r.sys(tr("slashCmd.core.fortune.usage"))
+				r.sys(tr(txt.SlashCmdCoreFortuneUsage))
 			}
 			return nil
 		}},
@@ -403,9 +404,9 @@ func (a *app) transcriptCommands() []slashCommand {
 			if r.arg == "" {
 				if selected := a.wm.Selected(); selected != "" {
 					return a.copyText(r, selected, func() string {
-						key := "slashCmd.core.copy.copiedCharsOther"
+						key := txt.SlashCmdCoreCopyCopiedCharsOther
 						if utf8.RuneCountInString(selected) == 1 {
-							key = "slashCmd.core.copy.copiedCharsOne"
+							key = txt.SlashCmdCoreCopyCopiedCharsOne
 						}
 						return tr(key, strconv.Itoa(utf8.RuneCountInString(selected)))
 					})
@@ -413,7 +414,7 @@ func (a *app) transcriptCommands() []slashCommand {
 			}
 			index, err := strconv.Atoi(trimJS(r.arg))
 			if r.arg != "" && err != nil {
-				r.sys(tr("slashCmd.core.copy.usage"))
+				r.sys(tr(txt.SlashCmdCoreCopyUsage))
 				return nil
 			}
 			var replies []msg
@@ -427,14 +428,14 @@ func (a *app) transcriptCommands() []slashCommand {
 				at = min(index, len(replies)) - 1
 			}
 			if at < 0 || at >= len(replies) {
-				r.sys(tr("slashCmd.core.copy.nothingToCopy"))
+				r.sys(tr(txt.SlashCmdCoreCopyNothingToCopy))
 				return nil
 			}
-			return a.copyText(r, replies[at].Text, func() string { return tr("slashCmd.core.copy.copied") })
+			return a.copyText(r, replies[at].Text, func() string { return tr(txt.SlashCmdCoreCopyCopied) })
 		}},
 		{name: "paste", help: "attach the clipboard image", run: func(r *slashRun) tea.Cmd {
 			if r.arg != "" {
-				r.sys(tr("slashCmd.core.paste.usage"))
+				r.sys(tr(txt.SlashCmdCorePasteUsage))
 				return nil
 			}
 			return a.pasteClipboardImage(false)
@@ -462,10 +463,10 @@ func (a *app) transcriptCommands() []slashCommand {
 			}
 			text := a.gw.logTail(min(80, max(1, n)))
 			if text == "" {
-				r.sys(tr("slashCmd.core.logs.none"))
+				r.sys(tr(txt.SlashCmdCoreLogsNone))
 				return nil
 			}
-			return a.page(text, tr("slashCmd.core.logs.pageTitle"))
+			return a.page(text, tr(txt.SlashCmdCoreLogsPageTitle))
 		}},
 		{name: "history", help: "view the current transcript, user and assistant messages", usage: "[chars]", run: func(r *slashRun) tea.Cmd {
 			preview, err := strconv.Atoi(trimJS(r.arg))
@@ -479,19 +480,19 @@ func (a *app) transcriptCommands() []slashCommand {
 					continue
 				}
 				index := strconv.Itoa(len(blocks) + 1)
-				tag := tr("slashCmd.core.history.agentTag", index)
+				tag := tr(txt.SlashCmdCoreHistoryAgentTag, index)
 				if m.Role == "user" {
-					tag = tr("slashCmd.core.history.youTag", index)
+					tag = tr(txt.SlashCmdCoreHistoryYouTag, index)
 				}
 				body := trimJS(m.Text)
 				switch {
 				case body != "":
 				case len(m.Tools) == 1:
-					body = tr("slashCmd.core.history.toolCallsOne", "1")
+					body = tr(txt.SlashCmdCoreHistoryToolCallsOne, "1")
 				case len(m.Tools) > 1:
-					body = tr("slashCmd.core.history.toolCallsOther", strconv.Itoa(len(m.Tools)))
+					body = tr(txt.SlashCmdCoreHistoryToolCallsOther, strconv.Itoa(len(m.Tools)))
 				default:
-					body = tr("slashCmd.core.history.empty")
+					body = tr(txt.SlashCmdCoreHistoryEmpty)
 				}
 				if utf8.RuneCountInString(body) > preview {
 					body = strings.TrimRight(string([]rune(body)[:preview]), " \n\t") + "…"
@@ -499,10 +500,10 @@ func (a *app) transcriptCommands() []slashCommand {
 				blocks = append(blocks, "["+tag+"]\n"+body)
 			}
 			if len(blocks) == 0 {
-				r.sys(tr("slashCmd.core.history.noConversation"))
+				r.sys(tr(txt.SlashCmdCoreHistoryNoConversation))
 				return r.ran()
 			}
-			return tea.Batch(r.ran(), a.page(strings.Join(blocks, "\n\n"), tr("slashCmd.core.history.pageTitle")))
+			return tea.Batch(r.ran(), a.page(strings.Join(blocks, "\n\n"), tr(txt.SlashCmdCoreHistoryPageTitle)))
 		}},
 		{name: "save", help: "save the current transcript to a file", usage: "[json|md] [file] [redact]", run: func(r *slashRun) tea.Cmd {
 			has := false
@@ -510,17 +511,17 @@ func (a *app) transcriptCommands() []slashCommand {
 				has = has || m.Role == "user" || m.Role == "assistant" || m.Role == "tool"
 			}
 			if !has {
-				r.sys(tr("slashCmd.core.save.noConversation"))
+				r.sys(tr(txt.SlashCmdCoreSaveNoConversation))
 				return nil
 			}
 			if r.sid == "" {
-				r.sys(tr("slashCmd.core.save.noActiveSession"))
+				r.sys(tr(txt.SlashCmdCoreSaveNoActiveSession))
 				return nil
 			}
 			format, filename, redact := parseSaveArgs(r.arg)
 			if !a.gw.canonical() {
 				if lower := strings.ToLower(format); redact || filename != "" || (lower != "json" && lower != "snapshot") {
-					r.sys(tr("slashCmd.core.save.legacyRefused"))
+					r.sys(tr(txt.SlashCmdCoreSaveLegacyRefused))
 					return nil
 				}
 				return ask(r.rpc, a.sys, tuigateway.SessionSave, tuigateway.SessionSaveParams{SessionID: r.sid}, func(res *tuigateway.SessionSaveResult) tea.Cmd {
@@ -528,9 +529,9 @@ func (a *app) transcriptCommands() []slashCommand {
 						return nil
 					}
 					if file := val(res.File); file != "" {
-						r.sys(tr("slashCmd.core.save.savedOnHost", file))
+						r.sys(tr(txt.SlashCmdCoreSaveSavedOnHost, file))
 					} else {
-						r.sys(tr("slashCmd.core.save.failed"))
+						r.sys(tr(txt.SlashCmdCoreSaveFailed))
 					}
 					return nil
 				})
@@ -548,10 +549,10 @@ func (a *app) transcriptCommands() []slashCommand {
 				}
 				path, err := writeSessionExport(res, filename, cwd)
 				if err != nil {
-					r.sys(tr("slashCmd.core.save.failed") + ": " + err.Error())
+					r.sys(tr(txt.SlashCmdCoreSaveFailed) + ": " + err.Error())
 					return nil
 				}
-				r.sys(tr("slashCmd.core.save.saved", path))
+				r.sys(tr(txt.SlashCmdCoreSaveSaved, path))
 				return nil
 			})
 		}},
@@ -560,23 +561,23 @@ func (a *app) transcriptCommands() []slashCommand {
 			current := a.store.ui.FocusView
 			if mode == "status" || mode == "show" || mode == "?" {
 				if current {
-					r.sys(tr("slashCmd.core.focus.statusOn"))
+					r.sys(tr(txt.SlashCmdCoreFocusStatusOn))
 				} else {
-					r.sys(tr("slashCmd.core.focus.statusOff"))
+					r.sys(tr(txt.SlashCmdCoreFocusStatusOff))
 				}
 				return nil
 			}
 			next, ok := flagFromArg(mode, current)
 			if !ok {
-				r.sys(tr("slashCmd.core.focus.usage"))
+				r.sys(tr(txt.SlashCmdCoreFocusUsage))
 				return nil
 			}
 			a.store.ui.FocusView = next
 			a.card.view.invalidate()
 			if next {
-				r.sys(tr("slashCmd.core.focus.enabled"))
+				r.sys(tr(txt.SlashCmdCoreFocusEnabled))
 			} else {
-				r.sys(tr("slashCmd.core.focus.disabled"))
+				r.sys(tr(txt.SlashCmdCoreFocusDisabled))
 			}
 			return r.saveDisplayPref("focus", onOff(next))
 		}},
@@ -595,11 +596,11 @@ func (a *app) transcriptCommands() []slashCommand {
 				next = mode
 			}
 			if next == "" {
-				r.sys(tr("slashCmd.core.statusbar.usage"))
+				r.sys(tr(txt.SlashCmdCoreStatusbarUsage))
 				return nil
 			}
 			a.store.ui.StatusBar = next
-			r.sys(tr("slashCmd.core.statusbar.state", next))
+			r.sys(tr(txt.SlashCmdCoreStatusbarState, next))
 			return r.saveDisplayPref("statusbar", next)
 		}},
 		{name: "battery", help: "battery indicator in the status bar", usage: "[on|off|status]", run: func(r *slashRun) tea.Cmd {
@@ -609,29 +610,29 @@ func (a *app) transcriptCommands() []slashCommand {
 				return call(a.gw, tuigateway.SystemBattery, tuigateway.ProfileParams{}, func(res *tuigateway.SystemBatteryResult, err error) tea.Cmd {
 					switch {
 					case err != nil:
-						r.sys(tr("slashCmd.core.battery.state", state))
+						r.sys(tr(txt.SlashCmdCoreBatteryState, state))
 					case res.Available && res.Percent != nil:
 						mark := "🔋"
 						if val(res.Plugged) {
 							mark = "⚡"
 						}
-						r.sys(tr("slashCmd.core.battery.statusLive", state, mark, strconv.FormatInt(*res.Percent, 10)))
+						r.sys(tr(txt.SlashCmdCoreBatteryStatusLive, state, mark, strconv.FormatInt(*res.Percent, 10)))
 					default:
-						r.sys(tr("slashCmd.core.battery.statusNoBattery", state))
+						r.sys(tr(txt.SlashCmdCoreBatteryStatusNoBattery, state))
 					}
 					return nil
 				})
 			}
 			next, ok := flagFromArg(r.arg, a.store.ui.Battery)
 			if !ok {
-				r.sys(tr("slashCmd.core.battery.usage"))
+				r.sys(tr(txt.SlashCmdCoreBatteryUsage))
 				return nil
 			}
 			a.store.ui.Battery = next
 			if !next {
 				a.store.ui.BatteryStatus = nil
 			}
-			r.sys(tr("slashCmd.core.battery.state", onOff(next)))
+			r.sys(tr(txt.SlashCmdCoreBatteryState, onOff(next)))
 			return r.saveDisplayPref("battery", onOff(next))
 		}},
 		{name: "queue", aliases: []string{"q"}, help: "queue a message, or list, edit, move and remove the queued ones", usage: "[<prompt>|list|add <prompt>|edit <n> [prompt]|rm <n>|move <from> <to>|clear]",
@@ -639,7 +640,7 @@ func (a *app) transcriptCommands() []slashCommand {
 				plan := planQueueSlash(r.cmd, r.cmd)
 				if plan.kind == "enqueue" {
 					a.enqueue(plan.text, plan.display, r.destination)
-					r.sys(tr("slashCmd.core.queue.queued", previewOf(plan.display)))
+					r.sys(tr(txt.SlashCmdCoreQueueQueued, previewOf(plan.display)))
 					return nil
 				}
 				return r.applyQueuePlan(plan)
@@ -647,21 +648,21 @@ func (a *app) transcriptCommands() []slashCommand {
 		{name: "steer", aliases: []string{"s"}, help: "inject a message after the next tool call, no interrupt", usage: "<text>", run: func(r *slashRun) tea.Cmd {
 			payload := trimJS(r.arg)
 			if payload == "" {
-				r.sys(tr("slashCmd.core.steer.usage"))
+				r.sys(tr(txt.SlashCmdCoreSteerUsage))
 				return nil
 			}
 			if !a.store.ui.Busy || r.sid == "" {
 				a.enqueue(payload, payload, r.destination)
-				r.sys(tr("slashCmd.core.steer.noActiveTurnQueued", previewOf(payload)))
+				r.sys(tr(txt.SlashCmdCoreSteerNoActiveTurnQueued, previewOf(payload)))
 				return nil
 			}
 			settle := func(status tuigateway.CorrectionStatus) tea.Cmd {
 				if status == "queued" {
-					r.sys(tr("slashCmd.core.steer.queued", previewOf(payload)))
+					r.sys(tr(txt.SlashCmdCoreSteerQueued, previewOf(payload)))
 					return nil
 				}
 				a.enqueue(payload, payload, r.destination)
-				r.sys(tr("slashCmd.core.steer.rejected"))
+				r.sys(tr(txt.SlashCmdCoreSteerRejected))
 				return nil
 			}
 			if !a.gw.canonical() {
@@ -674,7 +675,7 @@ func (a *app) transcriptCommands() []slashCommand {
 			}
 			generation := infoOf(a.store.ui.Info).ExecutionGeneration
 			if generation == nil {
-				r.sys("error: " + rpcErrorMessage(tuigateway.MissingParam(tuigateway.CanonicalSessionSteer.Name(), "execution_generation")))
+				r.sys(errorLine(rpcErrorMessage(tuigateway.MissingParam(tuigateway.CanonicalSessionSteer.Name(), "execution_generation"))))
 				return nil
 			}
 			return ask(r.rpc, r.sys, tuigateway.CanonicalSessionSteer, tuigateway.CanonicalCorrectionParams{SessionID: r.sid, ExecutionGeneration: *generation, Text: payload}, func(res *tuigateway.CorrectionAnswer) tea.Cmd {
@@ -696,7 +697,7 @@ func (a *app) transcriptCommands() []slashCommand {
 					return tea.Batch(r.ran(), a.openRewindPicker())
 				}
 				if len(args) != 1 || strings.Trim(args[0], "0123456789") != "" {
-					r.sys(tr("slashCmd.core.rewind.usage"))
+					r.sys(tr(txt.SlashCmdCoreRewindUsage))
 					return nil
 				}
 				number, err := strconv.Atoi(args[0])
@@ -707,7 +708,7 @@ func (a *app) transcriptCommands() []slashCommand {
 			}},
 		{name: "undo", help: "undo the last exchange", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
-				r.sys(tr("slashCmd.core.undo.nothing"))
+				r.sys(tr(txt.SlashCmdCoreUndoNothing))
 				return nil
 			}
 			if a.gw.canonical() {
@@ -718,13 +719,13 @@ func (a *app) transcriptCommands() []slashCommand {
 					return nil
 				}
 				if res.Removed <= 0 {
-					r.sys(tr("slashCmd.core.undo.nothing"))
+					r.sys(tr(txt.SlashCmdCoreUndoNothing))
 					return nil
 				}
 				a.setHistoryItems(dropLastExchange)
-				key := "slashCmd.core.undo.undidOther"
+				key := txt.SlashCmdCoreUndoUndidOther
 				if res.Removed == 1 {
-					key = "slashCmd.core.undo.undidOne"
+					key = txt.SlashCmdCoreUndoUndidOne
 				}
 				r.sys(tr(key, strconv.FormatInt(res.Removed, 10)))
 				if line := undoRollbackHintLine(res.UndoHint); line != "" {
@@ -739,7 +740,7 @@ func (a *app) transcriptCommands() []slashCommand {
 			}
 			last := a.lastUserMsg
 			if last == "" {
-				r.sys(tr("slashCmd.core.retry.nothing"))
+				r.sys(tr(txt.SlashCmdCoreRetryNothing))
 				return nil
 			}
 			if r.sid == "" {
@@ -750,7 +751,7 @@ func (a *app) transcriptCommands() []slashCommand {
 					return nil
 				}
 				if res.Removed <= 0 {
-					r.sys(tr("slashCmd.core.retry.nothing"))
+					r.sys(tr(txt.SlashCmdCoreRetryNothing))
 					return nil
 				}
 				a.setHistoryItems(dropLastExchange)
@@ -763,7 +764,7 @@ func (a *app) transcriptCommands() []slashCommand {
 // Copies text to the system clipboard, through the terminal when the session is remote or no clipboard tool answers
 func (a *app) copyText(r *slashRun, text string, done func() string) tea.Cmd {
 	if isRemoteShellSession(os.LookupEnv) {
-		r.sys(tr("slashCmd.core.copy.sentOsc52"))
+		r.sys(tr(txt.SlashCmdCoreCopySentOsc52))
 		return clip.Send(text)
 	}
 	return func() tea.Msg {
@@ -776,7 +777,7 @@ func (a *app) copyText(r *slashRun, text string, done func() string) tea.Cmd {
 				r.sys(done())
 				return nil
 			}
-			r.sys(tr("slashCmd.core.copy.sentOsc52"))
+			r.sys(tr(txt.SlashCmdCoreCopySentOsc52))
 			return clip.Send(text)
 		}}
 	}
@@ -795,9 +796,9 @@ func (a *app) opsCommands() []slashCommand {
 				if res == nil {
 					return nil
 				}
-				key := "slashCmd.ops.stop.stoppedOther"
+				key := txt.SlashCmdOpsStopStoppedOther
 				if res.Killed == 1 {
-					key = "slashCmd.ops.stop.stoppedOne"
+					key = txt.SlashCmdOpsStopStoppedOne
 				}
 				r.sys(tr(key, strconv.FormatInt(res.Killed, 10)))
 				return nil
@@ -818,15 +819,15 @@ func (a *app) opsCommands() []slashCommand {
 					r.sys(message)
 				case res.Status == "confirm_required":
 					if message == "" {
-						message = tr("slashCmd.ops.reloadMcp.confirmRequired")
+						message = tr(txt.SlashCmdOpsReloadMcpConfirmRequired)
 					}
 					r.sys(message)
 				case res.Status == "reloaded" && always:
-					r.sys(tr("slashCmd.ops.reloadMcp.reloadedAlways"))
+					r.sys(tr(txt.SlashCmdOpsReloadMcpReloadedAlways))
 				case res.Status == "reloaded" || a.gw.canonical():
-					r.sys(tr("slashCmd.ops.reloadMcp.reloaded"))
+					r.sys(tr(txt.SlashCmdOpsReloadMcpReloaded))
 				default:
-					r.sys(tr("slashCmd.ops.reloadMcp.complete"))
+					r.sys(tr(txt.SlashCmdOpsReloadMcpComplete))
 				}
 				return nil
 			})
@@ -840,9 +841,9 @@ func (a *app) opsCommands() []slashCommand {
 				if res == nil {
 					return nil
 				}
-				key := "slashCmd.ops.reloadEnv.reloadedOther"
+				key := txt.SlashCmdOpsReloadEnvReloadedOther
 				if res.Updated == 1 {
-					key = "slashCmd.ops.reloadEnv.reloadedOne"
+					key = txt.SlashCmdOpsReloadEnvReloadedOne
 				}
 				r.sys(tr(key, res.Updated))
 				return nil
@@ -857,7 +858,7 @@ func (a *app) opsCommands() []slashCommand {
 					action = strings.ToLower(words[0])
 				}
 				if action != "connect" && action != "disconnect" && action != "status" {
-					r.sys(tr("slashCmd.ops.browser.usage"))
+					r.sys(tr(txt.SlashCmdOpsBrowserUsage))
 					return nil
 				}
 				params := tuigateway.BrowserManageParams{Action: tuigateway.BrowserAction(action), SessionID: r.sid}
@@ -867,7 +868,7 @@ func (a *app) opsCommands() []slashCommand {
 						url = strings.Join(words[1:], " ")
 					}
 					params.URL = &url
-					r.sys(tr("slashCmd.ops.browser.checking", url))
+					r.sys(tr(txt.SlashCmdOpsBrowserChecking, url))
 				}
 				return ask(r.rpc, r.sys, tuigateway.BrowserManage, params, func(res *tuigateway.BrowserManageResult) tea.Cmd {
 					if res == nil {
@@ -880,26 +881,26 @@ func (a *app) opsCommands() []slashCommand {
 					}
 					url := res.URL
 					if url == "" {
-						url = tr("slashCmd.ops.browser.urlUnavailable")
+						url = tr(txt.SlashCmdOpsBrowserUrlUnavailable)
 					}
 					switch {
 					case action == "status" && res.Connected:
-						r.sys(tr("slashCmd.ops.browser.connected", url))
+						r.sys(tr(txt.SlashCmdOpsBrowserConnected, url))
 					case action == "status":
-						r.sys(tr("slashCmd.ops.browser.notConnected"))
+						r.sys(tr(txt.SlashCmdOpsBrowserNotConnected))
 					case action == "disconnect":
-						r.sys(tr("slashCmd.ops.browser.disconnected"))
+						r.sys(tr(txt.SlashCmdOpsBrowserDisconnected))
 					case res.Connected:
-						r.sys(tr("slashCmd.ops.browser.connectedLive"))
-						r.sys(tr("slashCmd.ops.browser.endpoint", url))
-						r.sys(tr("slashCmd.ops.browser.nextCallUsesEndpoint"))
+						r.sys(tr(txt.SlashCmdOpsBrowserConnectedLive))
+						r.sys(tr(txt.SlashCmdOpsBrowserEndpoint, url))
+						r.sys(tr(txt.SlashCmdOpsBrowserNextCallUsesEndpoint))
 					}
 					return nil
 				})
 			}},
 		{name: "rollback", help: "list, diff, or restore checkpoints", usage: "[list|diff <hash>|<hash> [file] [--all]]", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
-				r.sys(tr("slashCmd.ops.rollback.noSession"))
+				r.sys(tr(txt.SlashCmdOpsRollbackNoSession))
 				return nil
 			}
 			words := strings.Fields(r.arg)
@@ -914,11 +915,11 @@ func (a *app) opsCommands() []slashCommand {
 						return nil
 					}
 					if !res.Enabled {
-						r.sys(tr("slashCmd.ops.rollback.notEnabled"))
+						r.sys(tr(txt.SlashCmdOpsRollbackNotEnabled))
 						return nil
 					}
 					if len(res.Checkpoints) == 0 {
-						r.sys(tr("slashCmd.ops.rollback.noneFound"))
+						r.sys(tr(txt.SlashCmdOpsRollbackNoneFound))
 						return nil
 					}
 					rows := make([][2]string, 0, len(res.Checkpoints))
@@ -931,16 +932,16 @@ func (a *app) opsCommands() []slashCommand {
 						}
 						detail := strings.Join(meta, " · ")
 						if detail == "" {
-							detail = tr("slashCmd.ops.rollback.noMetadata")
+							detail = tr(txt.SlashCmdOpsRollbackNoMetadata)
 						}
 						rows = append(rows, [2]string{fmt.Sprintf("%d. %s", i+1, c.Hash[:min(len(c.Hash), 10)]), detail})
 					}
-					a.panel(tr("slashCmd.ops.rollback.listTitle"), []panelSection{{Rows: rows}})
+					a.panel(tr(txt.SlashCmdOpsRollbackListTitle), []panelSection{{Rows: rows}})
 					return nil
 				})
 			case "diff":
 				if len(words) < 2 {
-					r.sys(tr("slashCmd.ops.rollback.usageDiff"))
+					r.sys(tr(txt.SlashCmdOpsRollbackUsageDiff))
 					return nil
 				}
 				return ask(r.rpc, r.sys, tuigateway.RollbackDiff, tuigateway.RollbackDiffParams{Hash: words[1], SessionID: r.sid}, func(res *tuigateway.RollbackDiffResult) tea.Cmd {
@@ -953,7 +954,7 @@ func (a *app) opsCommands() []slashCommand {
 					}
 					stat := res.Stat
 					if body = trimJS(body); body == "" && stat == "" {
-						r.sys(tr("slashCmd.ops.rollback.noChanges"))
+						r.sys(tr(txt.SlashCmdOpsRollbackNoChanges))
 						return nil
 					}
 					text := body
@@ -962,7 +963,7 @@ func (a *app) opsCommands() []slashCommand {
 					} else if stat != "" {
 						text = stat
 					}
-					return a.page(text, tr("slashCmd.ops.rollback.diffTitle"))
+					return a.page(text, tr(txt.SlashCmdOpsRollbackDiffTitle))
 				})
 			}
 			var files []string
@@ -986,33 +987,33 @@ func (a *app) opsCommands() []slashCommand {
 				if !res.Success {
 					reason := res.Error
 					if reason == "" {
-						reason = tr("slashCmd.ops.rollback.unknownError")
+						reason = tr(txt.SlashCmdOpsRollbackUnknownError)
 					}
-					r.sys(tr("slashCmd.ops.rollback.failed", reason))
+					r.sys(tr(txt.SlashCmdOpsRollbackFailed, reason))
 					return nil
 				}
 				target := filePath
 				if target == "" {
-					target = tr("slashCmd.ops.rollback.workspaceTarget")
+					target = tr(txt.SlashCmdOpsRollbackWorkspaceTarget)
 				}
 				detail := res.Reason
 				if detail == "" {
 					detail = res.RestoredTo
 				}
 				if detail == "" {
-					detail = tr("slashCmd.ops.rollback.restoredDetail")
+					detail = tr(txt.SlashCmdOpsRollbackRestoredDetail)
 				}
-				r.sys(tr("slashCmd.ops.rollback.restored", target, detail))
+				r.sys(tr(txt.SlashCmdOpsRollbackRestored, target, detail))
 				for _, kept := range []struct {
-					key   string
+					key   txt.Key
 					paths []string
-				}{{"keptUserEdits", res.SkippedUserEdits}, {"keptOversize", res.SkippedOversize}, {"failedDeletes", res.FailedDeletes}} {
+				}{{txt.SlashCmdOpsRollbackKeptUserEdits, res.SkippedUserEdits}, {txt.SlashCmdOpsRollbackKeptOversize, res.SkippedOversize}, {txt.SlashCmdOpsRollbackFailedDeletes, res.FailedDeletes}} {
 					if len(kept.paths) > 0 {
 						summary := strings.Join(kept.paths[:min(len(kept.paths), 5)], ", ")
 						if len(kept.paths) > 5 {
-							summary += tr("slashCmd.ops.rollback.morePaths", len(kept.paths)-5)
+							summary += tr(txt.SlashCmdOpsRollbackMorePaths, len(kept.paths)-5)
 						}
-						r.sys(tr("slashCmd.ops.rollback."+kept.key, summary))
+						r.sys(tr(kept.key, summary))
 					}
 				}
 				if res.HistoryRemoved != nil && *res.HistoryRemoved > 0 {
@@ -1028,9 +1029,9 @@ func (a *app) opsCommands() []slashCommand {
 				}
 				out := res.Output
 				if out == "" {
-					out = tr("slashCmd.ops.reloadSkills.reloaded")
+					out = tr(txt.SlashCmdOpsReloadSkillsReloaded)
 				}
-				return tea.Batch(a.page(out, tr("slashCmd.ops.reloadSkills.pageTitle")), a.events.loadSlashCatalog(r.sid))
+				return tea.Batch(a.page(out, tr(txt.SlashCmdOpsReloadSkillsPageTitle)), a.events.loadSlashCatalog(r.sid))
 			})
 		}},
 		{name: "skills", help: "browse, inspect, install skills", usage: "[list|inspect|search|install|browse]",
@@ -1054,7 +1055,7 @@ func (a *app) opsCommands() []slashCommand {
 				case "list":
 					return manage(tuigateway.SkillsManageParams{Action: "list"}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
 						if len(res.Skills) == 0 {
-							r.sys(tr("userMessages.skills.noneInstalled"))
+							r.sys(tr(txt.UserMessagesSkillsNoneInstalled))
 							return nil
 						}
 						var sections []panelSection
@@ -1062,12 +1063,12 @@ func (a *app) opsCommands() []slashCommand {
 							title := category
 							sections = append(sections, panelSection{Items: res.Skills[category], Title: &title})
 						}
-						a.panel(tr("slashCmd.ops.skills.listTitle"), sections)
+						a.panel(tr(txt.SlashCmdOpsSkillsListTitle), sections)
 						return nil
 					})
 				case "inspect":
 					if query == "" {
-						r.sys(tr("slashCmd.ops.skills.usageInspect"))
+						r.sys(tr(txt.SlashCmdOpsSkillsUsageInspect))
 						return nil
 					}
 					return manage(tuigateway.SkillsManageParams{Action: "inspect", Query: query}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
@@ -1076,49 +1077,49 @@ func (a *app) opsCommands() []slashCommand {
 							info = *res.Info
 						}
 						if info.Name == "" {
-							r.sys(tr("slashCmd.ops.skills.unknownSkill", query))
+							r.sys(tr(txt.SlashCmdOpsSkillsUnknownSkill, query))
 							return nil
 						}
-						sections := []panelSection{{Rows: [][2]string{{tr("slashCmd.ops.skills.rowName"), info.Name}, {tr("slashCmd.ops.skills.rowCategory"), info.Category}, {tr("slashCmd.ops.skills.rowPath"), info.Path}}}}
+						sections := []panelSection{{Rows: [][2]string{{tr(txt.SlashCmdOpsSkillsRowName), info.Name}, {tr(txt.SlashCmdOpsSkillsRowCategory), info.Category}, {tr(txt.SlashCmdOpsSkillsRowPath), info.Path}}}}
 						if description := info.Description; description != "" {
 							sections = append(sections, panelSection{Text: &description})
 						}
-						a.panel(tr("slashCmd.ops.skills.inspectTitle"), sections)
+						a.panel(tr(txt.SlashCmdOpsSkillsInspectTitle), sections)
 						return nil
 					})
 				case "search":
 					if query == "" {
-						r.sys(tr("slashCmd.ops.skills.usageSearch"))
+						r.sys(tr(txt.SlashCmdOpsSkillsUsageSearch))
 						return nil
 					}
 					return manage(tuigateway.SkillsManageParams{Action: "search", Query: query}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
 						if len(res.Results) == 0 {
-							r.sys(tr("slashCmd.ops.skills.noResults", query))
+							r.sys(tr(txt.SlashCmdOpsSkillsNoResults, query))
 							return nil
 						}
 						rows := make([][2]string, 0, len(res.Results))
 						for _, hit := range res.Results {
 							rows = append(rows, [2]string{hit.Name, hit.Description})
 						}
-						a.panel(tr("slashCmd.ops.skills.searchTitle", query), []panelSection{{Rows: rows}})
+						a.panel(tr(txt.SlashCmdOpsSkillsSearchTitle, query), []panelSection{{Rows: rows}})
 						return nil
 					})
 				case "install":
 					if query == "" {
-						r.sys(tr("slashCmd.ops.skills.usageInstall"))
+						r.sys(tr(txt.SlashCmdOpsSkillsUsageInstall))
 						return nil
 					}
-					r.sys(tr("slashCmd.ops.skills.installing", query))
+					r.sys(tr(txt.SlashCmdOpsSkillsInstalling, query))
 					return manage(tuigateway.SkillsManageParams{Action: "install", Query: query}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
 						if !res.Installed {
-							r.sys(tr("slashCmd.ops.skills.installFailed"))
+							r.sys(tr(txt.SlashCmdOpsSkillsInstallFailed))
 							return nil
 						}
 						name := res.Name
 						if name == "" {
 							name = query
 						}
-						r.sys(tr("slashCmd.ops.skills.installed", name))
+						r.sys(tr(txt.SlashCmdOpsSkillsInstalled, name))
 						return a.events.loadSlashCatalog(r.sid)
 					})
 				case "browse":
@@ -1126,19 +1127,19 @@ func (a *app) opsCommands() []slashCommand {
 					if query != "" {
 						n, err := strconv.Atoi(query)
 						if err != nil || n < 1 {
-							r.sys(tr("slashCmd.ops.skills.usageBrowse"))
+							r.sys(tr(txt.SlashCmdOpsSkillsUsageBrowse))
 							return nil
 						}
 						pageNum = n
 					}
-					r.sys(tr("slashCmd.ops.skills.fetching"))
+					r.sys(tr(txt.SlashCmdOpsSkillsFetching))
 					return manage(tuigateway.SkillsManageParams{Action: "browse", Page: int64(pageNum)}, func(res *tuigateway.SkillsManageResult) tea.Cmd {
 						total := strconv.FormatInt(res.Total, 10)
 						if len(res.Items) == 0 {
 							if res.Total > 0 {
-								r.sys(tr("slashCmd.ops.skills.noneOnPageWithTotal", strconv.Itoa(pageNum), total))
+								r.sys(tr(txt.SlashCmdOpsSkillsNoneOnPageWithTotal, strconv.Itoa(pageNum), total))
 							} else {
-								r.sys(tr("slashCmd.ops.skills.noneOnPage", strconv.Itoa(pageNum)))
+								r.sys(tr(txt.SlashCmdOpsSkillsNoneOnPage, strconv.Itoa(pageNum)))
 							}
 							return nil
 						}
@@ -1152,28 +1153,28 @@ func (a *app) opsCommands() []slashCommand {
 						}
 						var footer []string
 						if res.Page > 0 && res.TotalPages > 0 {
-							footer = append(footer, tr("slashCmd.ops.skills.pageOf", strconv.FormatInt(res.Page, 10), strconv.FormatInt(res.TotalPages, 10)))
+							footer = append(footer, tr(txt.SlashCmdOpsSkillsPageOf, strconv.FormatInt(res.Page, 10), strconv.FormatInt(res.TotalPages, 10)))
 						}
 						if res.Total > 0 {
-							footer = append(footer, tr("slashCmd.ops.skills.skillsTotal", total))
+							footer = append(footer, tr(txt.SlashCmdOpsSkillsSkillsTotal, total))
 						}
 						if res.Page > 0 && res.Page < res.TotalPages {
-							footer = append(footer, tr("slashCmd.ops.skills.browseMore", strconv.FormatInt(res.Page+1, 10)))
+							footer = append(footer, tr(txt.SlashCmdOpsSkillsBrowseMore, strconv.FormatInt(res.Page+1, 10)))
 						}
 						sections := []panelSection{{Rows: rows}}
 						if len(footer) > 0 {
 							foot := strings.Join(footer, " · ")
 							sections = append(sections, panelSection{Text: &foot})
 						}
-						title := tr("slashCmd.ops.skills.browseTitle")
+						title := tr(txt.SlashCmdOpsSkillsBrowseTitle)
 						if pageNum > 1 {
-							title = tr("slashCmd.ops.skills.browseTitlePage", strconv.Itoa(pageNum))
+							title = tr(txt.SlashCmdOpsSkillsBrowseTitlePage, strconv.Itoa(pageNum))
 						}
 						a.panel(title, sections)
 						return nil
 					})
 				}
-				return r.viaGateway(tr("slashCmd.ops.gatewayExec.skillsTitle"), tr("slashCmd.ops.gatewayExec.skillsNoOutput"))
+				return r.viaGateway(tr(txt.SlashCmdOpsGatewayExecSkillsTitle), tr(txt.SlashCmdOpsGatewayExecSkillsNoOutput))
 			}},
 		{name: "plugins", help: "view and toggle plugins, or update every installed one", usage: "[update | enable|disable <name>]",
 			suggest: func(string) []string { return []string{"update", "enable", "disable"} }, run: func(r *slashRun) tea.Cmd {
@@ -1183,7 +1184,7 @@ func (a *app) opsCommands() []slashCommand {
 				case "update":
 					return r.updateAllPlugins()
 				}
-				return r.viaGateway(tr("slashCmd.ops.gatewayExec.pluginsTitle"), tr("slashCmd.ops.gatewayExec.pluginsNoOutput"))
+				return r.viaGateway(tr(txt.SlashCmdOpsGatewayExecPluginsTitle), tr(txt.SlashCmdOpsGatewayExecPluginsNoOutput))
 			}},
 	}
 }
@@ -1194,10 +1195,10 @@ const pluginsUpdateAllTimeout = 600 * time.Second
 // Lines of an update of every plugin, one row per plugin it handled, the skipped ones and what is left to review
 func pluginsUpdateAllLines(outcome tuigateway.PluginsManageResult) []string {
 	marks := map[tuigateway.PluginUpdateStatus]string{
-		"current": tr("slashCmd.ops.pluginsUpdate.current"), "failed": tr("slashCmd.ops.pluginsUpdate.failed"),
-		"needs_review": tr("slashCmd.ops.pluginsUpdate.needsReview"), "updated": tr("slashCmd.ops.pluginsUpdate.updated"),
+		"current": tr(txt.SlashCmdOpsPluginsUpdateCurrent), "failed": tr(txt.SlashCmdOpsPluginsUpdateFailed),
+		"needs_review": tr(txt.SlashCmdOpsPluginsUpdateNeedsReview), "updated": tr(txt.SlashCmdOpsPluginsUpdateUpdated),
 	}
-	lines := []string{tr("slashCmd.ops.pluginsUpdate.title")}
+	lines := []string{tr(txt.SlashCmdOpsPluginsUpdateTitle)}
 	review := false
 	for _, row := range outcome.Results {
 		mark := marks[row.Status]
@@ -1212,20 +1213,20 @@ func pluginsUpdateAllLines(outcome tuigateway.PluginsManageResult) []string {
 		review = review || row.Status == "needs_review"
 	}
 	for _, skip := range outcome.Skipped {
-		lines = append(lines, "  - "+tr("slashCmd.ops.pluginsUpdate.skipped", skip.Name, skip.Reason))
+		lines = append(lines, "  - "+tr(txt.SlashCmdOpsPluginsUpdateSkipped, skip.Name, skip.Reason))
 	}
 	if len(outcome.Results) == 0 {
-		lines = append(lines, "  "+tr("slashCmd.ops.pluginsUpdate.none"))
+		lines = append(lines, "  "+tr(txt.SlashCmdOpsPluginsUpdateNone))
 	}
 	if review {
-		lines = append(lines, "  "+tr("slashCmd.ops.pluginsUpdate.review"))
+		lines = append(lines, "  "+tr(txt.SlashCmdOpsPluginsUpdateReview))
 	}
 	return lines
 }
 
 // Checks every installed plugin and updates the ones that can move, through the typed verb so a long clone or scan is not cut off
 func (r *slashRun) updateAllPlugins() tea.Cmd {
-	r.sys(tr("slashCmd.ops.pluginsUpdate.running"))
+	r.sys(tr(txt.SlashCmdOpsPluginsUpdateRunning))
 	params := tuigateway.PluginsManageParams{Action: "update_all"}
 	return callWithin(r.a.gw, tuigateway.PluginsManage, params, pluginsUpdateAllTimeout, func(res *tuigateway.PluginsManageResult, err error) tea.Cmd {
 		if r.stale() {
@@ -1235,7 +1236,7 @@ func (r *slashRun) updateAllPlugins() tea.Cmd {
 			r.fail(err)
 			return nil
 		}
-		return r.a.page(strings.Join(pluginsUpdateAllLines(*res), "\n"), tr("slashCmd.ops.gatewayExec.pluginsTitle"))
+		return r.a.page(strings.Join(pluginsUpdateAllLines(*res), "\n"), tr(txt.SlashCmdOpsGatewayExecPluginsTitle))
 	})
 }
 

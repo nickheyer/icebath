@@ -9,7 +9,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -563,7 +565,7 @@ func (l *lister) Hints() []wm.Hint {
 	case l.edit != nil:
 		return []wm.Hint{{Action: "edit.apply"}, {Action: "edit.cancel"}}
 	case l.bar.Active():
-		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "move"}, {Action: "search.close"}}
+		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: lang.T(txt.KitHintMove)}, {Action: "search.close"}}
 	}
 	var out []wm.Hint
 	if l.hints != nil {
@@ -578,10 +580,10 @@ func (l *lister) Hints() []wm.Hint {
 		}
 	}
 	if len(l.data) > 0 {
-		out = append(out, wm.Hint{Action: "filter.toggle"}, wm.Hint{Action: "list.down", Pair: "list.up", Label: "move"})
+		out = append(out, wm.Hint{Action: "filter.toggle"}, wm.Hint{Action: "list.down", Pair: "list.up", Label: lang.T(txt.KitHintMove)})
 	}
 	if l.detailShown() && l.pane.overflows() {
-		out = append(out, wm.Hint{Action: "detail.scroll.down", Pair: "detail.scroll.up", Label: "scroll detail"})
+		out = append(out, wm.Hint{Action: "detail.scroll.down", Pair: "detail.scroll.up", Label: lang.T(txt.KitHintScrollDetail)})
 	}
 	return out
 }

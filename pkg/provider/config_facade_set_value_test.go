@@ -187,8 +187,8 @@ func TestSetValueGetPhantomKeyNotice(t *testing.T) {
 	if out := s.get("compression.compressor.enabled", true, false); json.Unmarshal([]byte(out), &got) != nil || got != true || !strings.Contains(s.errOut.String(), unknownKeyNotice) {
 		t.Fatalf("phantom %q %q", out, s.errOut)
 	}
-	s = newSetValueHome(t, "gateway:\n  proxy_url: http://127.0.0.1:1\n")
-	if out := s.get("gateway.proxy_url", false, false); out != "http://127.0.0.1:1" || !strings.Contains(s.errOut.String(), "may not read it") || strings.Contains(s.errOut.String(), "does not read it") {
+	s = newSetValueHome(t, "gateway:\n  mirror_endpoint: http://127.0.0.1:1\n")
+	if out := s.get("gateway.mirror_endpoint", false, false); out != "http://127.0.0.1:1" || !strings.Contains(s.errOut.String(), "may not read it") || strings.Contains(s.errOut.String(), "does not read it") {
 		t.Fatalf("unseeded live key %q %q", out, s.errOut)
 	}
 	for key, body := range map[string]string{
@@ -274,7 +274,7 @@ func TestSetValueSchemaValidation(t *testing.T) {
 		want       any
 		suggestion string
 	}{
-		{"gateway.proxy_url", "http://127.0.0.1:1", "http://127.0.0.1:1", ""},
+		{"gateway.mirror_endpoint", "http://127.0.0.1:1", "http://127.0.0.1:1", ""},
 		{"agent.max_turnz", "50", 50, "agent.max_turns"},
 		{"gateway.filter_silence_narration", "false", false, ""},
 	} {

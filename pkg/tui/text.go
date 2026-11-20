@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -177,7 +179,7 @@ func edgePreview(s string, head, tail int) string {
 // Chip a long paste collapses to, its edges around the line count
 func pasteTokenLabel(text string, lineCount int) string {
 	preview := edgePreview(text, 16, 28)
-	chip := tr("libText.text.pasteLinesChip", compactNumber(float64(lineCount)))
+	chip := tr(txt.LibTextTextPasteLinesChip, compactNumber(float64(lineCount)))
 	if preview == "" {
 		return "[[ " + chip + " ]]"
 	}
@@ -225,7 +227,7 @@ func cleanThinkingText(reasoning string) string {
 
 // Live text kept to its tail within the render budget, a label naming what was omitted
 func boundedLiveRenderText(text string, maxChars, maxLines int) string {
-	return boundedRenderText(text, tr("libText.text.showingLiveTail"), maxChars, maxLines)
+	return boundedRenderText(text, tr(txt.LibTextTextShowingLiveTail), maxChars, maxLines)
 }
 
 func boundedRenderText(text, labelPrefix string, maxChars, maxLines int) string {
@@ -277,9 +279,9 @@ func boundedRenderText(text, labelPrefix string, maxChars, maxLines int) string 
 		}
 	}
 	omittedChars := max(0, n-unitLen(tail))
-	label := tr("libText.text.omittedChars", labelPrefix, compactNumber(float64(omittedChars)))
+	label := tr(txt.LibTextTextOmittedChars, labelPrefix, compactNumber(float64(omittedChars)))
 	if omittedLines > 0 {
-		label = tr("libText.text.omittedLinesChars", labelPrefix, compactNumber(float64(omittedLines)), compactNumber(float64(omittedChars)))
+		label = tr(txt.LibTextTextOmittedLinesChars, labelPrefix, compactNumber(float64(omittedLines)), compactNumber(float64(omittedChars)))
 	}
 	return label + "\n" + tail
 }
@@ -377,7 +379,7 @@ func resultMark(v toolVerdict) string {
 // Words of a failed or refused row, the reason the gateway gave
 func verdictNote(v toolVerdict) string {
 	if v.Refused {
-		return tr("tool.refused", v.Reason)
+		return tr(txt.ToolRefused, v.Reason)
 	}
 	return v.Reason
 }
@@ -410,15 +412,15 @@ func verboseToolBlock(label, text string) string {
 
 // Finished trail row with the Args and Result blocks of an already phrased call
 func verboseToolTrailLine(call string, v toolVerdict, duration *float64, argsText, resultText string) string {
-	resultLabel := tr("libText.text.resultLabel")
+	resultLabel := tr(txt.LibTextTextResultLabel)
 	if v.Failed {
-		resultLabel = tr("libText.text.errorLabel")
+		resultLabel = tr(txt.LibTextTextErrorLabel)
 	}
 	if v.Refused && v.Reason != "" {
 		resultText = verdictNote(v)
 	}
 	var blocks []string
-	for _, block := range []string{verboseToolBlock(tr("libText.text.argsLabel"), argsText), verboseToolBlock(resultLabel, resultText)} {
+	for _, block := range []string{verboseToolBlock(tr(txt.LibTextTextArgsLabel), argsText), verboseToolBlock(resultLabel, resultText)} {
 		if block != "" {
 			blocks = append(blocks, block)
 		}
@@ -432,8 +434,8 @@ func verboseToolTrailLine(call string, v toolVerdict, duration *float64, argsTex
 
 // Whether a trail line is a passing status that a real row replaces, the drafting line of the language in effect or the analyzing line
 func isTransientTrailLine(line string) bool {
-	before, after, _ := strings.Cut(tr("tool.drafting", "\x00"), "\x00")
-	return line == analyzingToolOutput || (len(line) > len(before)+len(after) && strings.HasPrefix(line, before) && strings.HasSuffix(line, after))
+	before, after, _ := strings.Cut(tr(txt.ToolDrafting, "\x00"), "\x00")
+	return line == analyzingToolOutput() || (len(line) > len(before)+len(after) && strings.HasPrefix(line, before) && strings.HasSuffix(line, after))
 }
 
 // Whether a trail entry belongs to the tool group of the label

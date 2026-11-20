@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Shared control identity a prompt carries back on its answer
@@ -63,7 +64,7 @@ func canonicalRequest(method string, original map[string]any, contract *tuigatew
 			params["request_id"] = uuid.NewString()
 		}
 		if contract == nil || !slices.Contains(contract.Sources, "tui") {
-			return "", nil, errors.New(tr("canonical.launch.noTuiPolicy"))
+			return "", nil, errors.New(tr(txt.CanonicalLaunchNoTuiPolicy))
 		}
 		if !slices.Contains(contract.Parameters, "client_env") {
 			delete(params, "client_env")
@@ -75,7 +76,7 @@ func canonicalRequest(method string, original map[string]any, contract *tuigatew
 			}
 		}
 		if len(unsupported) > 0 {
-			return "", nil, errors.New(tr("canonical.launch.unsupportedOptions", strings.Join(unsupported, ", ")))
+			return "", nil, errors.New(tr(txt.CanonicalLaunchUnsupportedOptions, strings.Join(unsupported, ", ")))
 		}
 	}
 	return method, params, nil
@@ -123,7 +124,7 @@ func localCreationOptions(env func(string) string) (tuigateway.CanonicalCreatePa
 		case unlimitedTurns[strings.ToLower(raw)]:
 			turns = 0
 		default:
-			return options, errors.New(tr("canonical.launch.invalidMaxTurns", raw))
+			return options, errors.New(tr(txt.CanonicalLaunchInvalidMaxTurns, raw))
 		}
 		options.MaxTurns = &turns
 	}
@@ -161,7 +162,7 @@ func launchToolProgress(env func(string) string) (string, error) {
 		return "", nil
 	}
 	if !toolProgressModes[raw] {
-		return "", errors.New(tr("canonical.launch.invalidToolProgress", raw))
+		return "", errors.New(tr(txt.CanonicalLaunchInvalidToolProgress, raw))
 	}
 	return raw, nil
 }

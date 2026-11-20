@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Rendered blocks the cache holds before it starts over
@@ -226,7 +227,7 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx, st blockState) blockRow
 		out.lines = []string{strings.Repeat(" ", transcriptIndent) + usageGaugeRowView(c.t, m.Text)}
 	default:
 		tone := c.t.Color.Muted
-		if strings.HasPrefix(m.Text, "error:") || strings.HasPrefix(m.Text, "✗") {
+		if isErrorLine(m.Text) || strings.HasPrefix(m.Text, "✗") {
 			tone = c.t.Color.Error
 		}
 		if m.Role == "system" && m.Kind == "" && unitLen(m.Text) > systemFoldUnits {
@@ -252,9 +253,9 @@ func systemRows(text, tone string, c renderCtx, st blockState) blockRows {
 	plain := stripAnsi(text)
 	first, _, _ := strings.Cut(plain, "\n")
 	if first = jsSlice(trimJS(first), 0, systemFoldHead); first == "" {
-		first = tr("chatBits.messageLine.systemMessage")
+		first = tr(txt.ChatBitsMessageLineSystemMessage)
 	}
-	size := " — " + tr("chatBits.messageLine.chars", groupDigits(float64(unitLen(text))))
+	size := " — " + tr(txt.ChatBitsMessageLineChars, groupDigits(float64(unitLen(text))))
 	open := st.open(partSystem, false)
 	room := max(c.width-transcriptIndent-2-ansi.StringWidth(size), 8)
 	var out blockRows
@@ -288,9 +289,9 @@ func delegationLines(m msg, c renderCtx) []string {
 		}
 	}
 	if rest := len(body) - shown; rest > 0 {
-		more := tr("transcript.delegation.moreCommand", rest)
+		more := tr(txt.TranscriptDelegationMoreCommand, rest)
 		if c.expandKey != "" {
-			more = tr("transcript.delegation.more", rest, c.expandKey)
+			more = tr(txt.TranscriptDelegationMore, rest, c.expandKey)
 		}
 		lines = append(lines, pad+"  "+muted.Faint(true).Render(truncateEnd(more, room)))
 	}
@@ -303,7 +304,7 @@ func userLines(text string, c renderCtx, lead string) []string {
 	if unitLen(text) <= longMsg || !isPasteBackedText(text) {
 		return wrapUnder(text, c.width, lead, body)
 	}
-	mark := tr("chatBits.messageLine.longMessage")
+	mark := tr(txt.ChatBitsMessageLineLongMessage)
 	head, rest, _ := strings.Cut(userDisplay(text), mark)
 	lines := wrapUnder(head, c.width, lead, body)
 	last := len(lines) - 1
@@ -383,15 +384,20 @@ func introRows(raw *tuigateway.SessionInfo, c renderCtx) blockRows {
 	if welcome := trimJS(c.t.Brand.Welcome); welcome != "" {
 		lines = append(lines, wrapUnder(welcome, c.width, "", toneStyle(c.t.Color.Muted))...)
 	}
+	labels := []string{tr(txt.ChatBitsBrandingRowModel), tr(txt.ChatBitsBrandingRowProvider), tr(txt.ChatBitsBrandingRowCwd), tr(txt.ChatBitsBrandingRowSession), tr(txt.ChatBitsBrandingRowLoaded)}
+	labelWidth := 0
+	for _, label := range labels {
+		labelWidth = max(labelWidth, ansi.StringWidth(label)+1)
+	}
 	row := func(label, value string) {
 		if value != "" {
-			lines = append(lines, pad+toneStyle(c.t.Color.Label).Render(fmt.Sprintf("%-9s", label))+toneStyle(c.t.Color.Text).Render(truncateEnd(value, max(c.width-transcriptIndent-9, 8))))
+			lines = append(lines, pad+toneStyle(c.t.Color.Label).Render(label+strings.Repeat(" ", labelWidth-ansi.StringWidth(label)))+toneStyle(c.t.Color.Text).Render(truncateEnd(value, max(c.width-transcriptIndent-labelWidth, 8))))
 		}
 	}
-	row("model", infoText(info.Model))
-	row("provider", infoText(info.Provider))
-	row("cwd", shortCwd(infoText(info.Cwd), max(c.width-14, 16)))
-	row("session", infoText(info.StoredSessionID))
+	row(labels[0], infoText(info.Model))
+	row(labels[1], infoText(info.Provider))
+	row(labels[2], shortCwd(infoText(info.Cwd), max(c.width-transcriptIndent-labelWidth-3, 16)))
+	row(labels[3], infoText(info.StoredSessionID))
 	connected := 0
 	for _, server := range info.MCPServers {
 		if server.Connected {
@@ -400,21 +406,21 @@ func introRows(raw *tuigateway.SessionInfo, c renderCtx) blockRows {
 	}
 	counts := []string{}
 	for _, part := range []struct {
-		n     int
-		label string
-	}{{groupedCount(info.Tools), "tools"}, {groupedCount(info.Skills), "skills"}, {connected, "MCP servers"}} {
+		n   int
+		key txt.Key
+	}{{groupedCount(info.Tools), txt.ChatBitsBrandingToolsSummary}, {groupedCount(info.Skills), txt.ChatBitsBrandingSkillsSummary}, {connected, txt.ChatBitsBrandingMcpServersSummary}} {
 		if part.n > 0 {
-			counts = append(counts, strconv.Itoa(part.n)+" "+part.label)
+			counts = append(counts, tr(part.key, part.n))
 		}
 	}
 	if len(counts) == 0 && val(info.Lazy) {
-		counts = append(counts, tr("chatBits.branding.scanningSkills")+"…")
+		counts = append(counts, tr(txt.ChatBitsBrandingScanningSkills)+"…")
 	}
-	row("loaded", strings.Join(counts, " · "))
+	row(labels[4], strings.Join(counts, " · "))
 	var parts []blockPart
 	if size := unitLen(val(info.SystemPrompt)); size > 0 {
 		parts = append(parts, blockPart{name: partPrompt, from: len(lines), to: len(lines) + 1})
-		title := toneStyle(c.t.Color.Label).Render(tr("chatBits.branding.systemPrompt")) + toneStyle(c.t.Color.Muted).Render(" "+tr("chatBits.branding.charsSuffix", groupDigits(float64(size))))
+		title := toneStyle(c.t.Color.Label).Render(tr(txt.ChatBitsBrandingSystemPrompt)) + toneStyle(c.t.Color.Muted).Render(" "+tr(txt.ChatBitsBrandingCharsSuffix, groupDigits(float64(size))))
 		lines = append(lines, pad+chevron(false, c)+ansi.Truncate(title, max(c.width-transcriptIndent*2-2, 8), "…"))
 	}
 	if notice := updateNotice(info); notice != "" {
@@ -499,14 +505,14 @@ func toolRow(line string, c renderCtx) []string {
 func todoRows(todos []todoItem, c renderCtx, incomplete, folded bool) blockRows {
 	pad := strings.Repeat(" ", transcriptIndent)
 	open := countPendingTodos(todos)
-	head := toneStyle(c.t.Color.Label).Bold(true).Render("Tasks") + toneStyle(c.t.Color.Muted).Render(fmt.Sprintf("  %d open of %d", open, len(todos)))
+	head := toneStyle(c.t.Color.Label).Bold(true).Render(tr(txt.ChatBitsTodoTitle)) + toneStyle(c.t.Color.Muted).Render("  "+tr(txt.ChatBitsTodoOpenOf, open, len(todos)))
 	if folded && isTodoDone(todos) {
-		head = toneStyle(c.t.Color.Ok).Render(fmt.Sprintf("☑ %d tasks done", len(todos)))
+		head = toneStyle(c.t.Color.Ok).Render("☑ " + tr(txt.ChatBitsTodoAllDone, len(todos)))
 	}
 	if incomplete && open > 0 {
-		key := "chatBits.todo.incompleteOther"
+		key := txt.ChatBitsTodoIncompleteOther
 		if open == 1 {
-			key = "chatBits.todo.incompleteOne"
+			key = txt.ChatBitsTodoIncompleteOne
 		}
 		head += toneStyle(c.t.Color.Muted).Faint(true).Render(" " + tr(key, open))
 	}
@@ -537,9 +543,9 @@ func todoRows(todos []todoItem, c renderCtx, incomplete, folded bool) blockRows 
 
 // Header of a tool calls section, how many calls it holds and the tokens they took
 func toolsHead(count, tokens int, open bool, c renderCtx) string {
-	head := chevron(open, c) + toneStyle(c.t.Color.Tool).Render(tr("chatBits.thinking.toolCalls")) + toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(count)+")")
+	head := chevron(open, c) + toneStyle(c.t.Color.Tool).Render(tr(txt.ChatBitsThinkingToolCalls)) + toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(count)+")")
 	if tokens > 0 {
-		head += toneStyle(c.t.Color.Muted).Render(" · " + render.Tokens(tokens) + " tokens")
+		head += toneStyle(c.t.Color.Muted).Render(" · " + tr(txt.ChatBitsThinkingTokens, render.Tokens(tokens)))
 	}
 	return head
 }
@@ -557,14 +563,14 @@ func trailRows(m msg, c renderCtx, st blockState) blockRows {
 		if thinkingTokens = m.ThinkingTokens; thinkingTokens == 0 {
 			thinkingTokens = estimateTokensRough(thinking)
 		}
-		label := tr("chatBits.thinking.thinking")
+		label := tr(txt.ChatBitsThinkingThinking)
 		if m.IsMoaReference {
-			label = "reference"
+			label = tr(txt.ChatBitsThinkingReference)
 		}
 		open := st.open(partThinking, mode(partThinking) == "expanded" || m.IsLiveReasoning || m.IsMoaReference)
 		head := chevron(open, c) + toneStyle(c.t.Color.Thinking).Render(label)
 		if m.ThinkingTokens > 0 {
-			head += muted.Render(" · " + render.Tokens(m.ThinkingTokens) + " tokens")
+			head += muted.Render(" · " + tr(txt.ChatBitsThinkingTokens, render.Tokens(m.ThinkingTokens)))
 		}
 		if open {
 			out.head(partThinking, true, pad+head)
@@ -586,7 +592,7 @@ func trailRows(m msg, c renderCtx, st blockState) blockRows {
 		}
 	}
 	if thinkingTokens > 0 && m.ToolTokens > 0 && len(out.lines) > 0 {
-		out.lines = append(out.lines, pad+muted.Faint(true).Render("Σ "+tr("chatBits.thinking.approxTotal", render.Tokens(thinkingTokens+m.ToolTokens))))
+		out.lines = append(out.lines, pad+muted.Faint(true).Render("Σ "+tr(txt.ChatBitsThinkingApproxTotal, render.Tokens(thinkingTokens+m.ToolTokens))))
 	}
 	if len(m.Todos) > 0 {
 		out.add(todoRows(m.Todos, c, m.TodoIncomplete, !st.open(partTodos, !m.TodoCollapsedByDefault || mode(partTools) == "expanded")))
@@ -646,7 +652,7 @@ func (v *transcriptView) liveRows(s *tuiStore, stream string, c renderCtx, tick 
 	if mode(partTools) != "hidden" {
 		calls := len(turn.Tools) + len(turn.StreamPendingTools)
 		for _, line := range turn.TurnTrail {
-			if line != analyzingToolOutput {
+			if line != analyzingToolOutput() {
 				calls++
 			}
 		}
@@ -707,7 +713,7 @@ func (v *transcriptView) liveRows(s *tuiStore, stream string, c renderCtx, tick 
 				head = c.t.Color.Warn
 			}
 		}
-		out.head(partActivity, open, pad+chevron(open, c)+toneStyle(head).Render(tr("chatBits.thinking.activity"))+toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(len(turn.Activity))+")"))
+		out.head(partActivity, open, pad+chevron(open, c)+toneStyle(head).Render(tr(txt.ChatBitsThinkingActivity))+toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(len(turn.Activity))+")"))
 		for _, item := range turn.Activity {
 			if !open {
 				break
@@ -743,7 +749,7 @@ func (v *transcriptView) liveRows(s *tuiStore, stream string, c renderCtx, tick 
 					tone = c.t.Color.Muted
 				}
 			}
-			detail := fmt.Sprintf(" · %d tools", sub.ToolCount)
+			detail := " · " + tr(txt.ChatBitsSubagentTools, sub.ToolCount)
 			goal := truncateEnd(sub.Goal, max(c.width-transcriptIndent-ansi.StringWidth(detail)-4-sub.Depth*2, 8))
 			out.lines = append(out.lines, pad+strings.Repeat("  ", sub.Depth)+mark+" "+toneStyle(tone).Render(goal)+toneStyle(c.t.Color.Muted).Render(detail))
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Tool catalog of a session grouped by toolset with the total underneath
@@ -73,15 +74,15 @@ func (a *app) toolsCommands() []slashCommand {
 					return nil
 				}
 				if pinned := a.launchToolsets(); len(pinned) > 0 {
-					r.sys(tr("tools.launchToolsets", strings.Join(pinned, ", ")))
+					r.sys(tr(txt.ToolsLaunchToolsets, strings.Join(pinned, ", ")))
 					return nil
 				}
-				if a.life.guardBusySessionSwitch(tr("slashCmd.core.clear.switchSessions")) {
+				if a.life.guardBusySessionSwitch(tr(txt.SlashCmdCoreClearSwitchSessions)) {
 					return nil
 				}
-				progress, changedKey := "enabling", "tools.enabled"
+				progress, changedKey := "enabling", txt.ToolsEnabled
 				if subcommand == "disable" {
-					progress, changedKey = "disabling", "tools.disabled"
+					progress, changedKey = "disabling", txt.ToolsDisabled
 				}
 				started := text(progress, map[string]any{"names": strings.Join(names, ", ")})
 				r.sys(started)
@@ -90,15 +91,15 @@ func (a *app) toolsCommands() []slashCommand {
 						return nil
 					}
 					if len(res.LaunchToolsets) > 0 {
-						r.sys(tr("tools.launchToolsets", strings.Join(res.LaunchToolsets, ", ")))
+						r.sys(tr(txt.ToolsLaunchToolsets, strings.Join(res.LaunchToolsets, ", ")))
 						return nil
 					}
 					var lines []string
 					for _, name := range res.Unknown {
-						lines = append(lines, tr("tools.unknownToolset", name))
+						lines = append(lines, tr(txt.ToolsUnknownToolset, name))
 					}
 					for _, server := range res.MissingServers {
-						lines = append(lines, tr("tools.missingServer", server))
+						lines = append(lines, tr(txt.ToolsMissingServer, server))
 					}
 					if len(res.Changed) > 0 {
 						lines = append(lines, tr(changedKey, strings.Join(res.Changed, ", ")))
@@ -109,14 +110,14 @@ func (a *app) toolsCommands() []slashCommand {
 						}
 						return nil
 					}
-					a.store.ui.Status = tr("slashCmd.core.clear.forgingSession")
+					a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
 					return a.life.newSession(strings.Join(append(append([]string{started}, lines...), text("session_reset", nil)), "\n"), "", nil)
 				}
 				params := tuigateway.ToolsConfigureParams{Action: tuigateway.ToolsAction(subcommand), Names: names, SessionID: optionalText(r.sid)}
 				return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ToolsConfigure, params, reset))
 			}
 			if r.sid == "" {
-				r.sys(tr("slashCmd.core.status.noActiveSession"))
+				r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
 				return nil
 			}
 			return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ToolsShow, tuigateway.SessionScopedParams{SessionID: &r.sid}, func(res *tuigateway.ToolsShowResult) tea.Cmd {

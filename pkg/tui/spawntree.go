@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -34,9 +35,9 @@ const (
 var (
 	spawnSortOrder   = []string{"depthFirst", "toolsDesc", "durationDesc", "status"}
 	spawnFilterOrder = []string{"all", "running", "failed", "leaf"}
-	spawnSortKeys    = map[string]string{"depthFirst": "hubs.agents.sort.depthFirst", "toolsDesc": "hubs.agents.sort.toolsDesc", "durationDesc": "hubs.agents.sort.durationDesc", "status": "hubs.agents.sort.status"}
-	spawnFilterKeys  = map[string]string{"all": "hubs.agents.filter.all", "running": "hubs.agents.filter.running", "failed": "hubs.agents.filter.failed", "leaf": "hubs.agents.filter.leaf"}
-	spawnStatusKeys  = map[string]string{"completed": "hubs.agents.status.completed", "error": "hubs.agents.status.error", "failed": "hubs.agents.status.failed", "interrupted": "hubs.agents.status.interrupted", "queued": "hubs.agents.status.queued", "running": "hubs.agents.status.running", "stalled": "hubs.agents.status.stalled", "timeout": "hubs.agents.status.timeout", "unknown": "hubs.agents.status.unknown"}
+	spawnSortKeys    = map[string]txt.Key{"depthFirst": txt.HubsAgentsSortDepthFirst, "toolsDesc": txt.HubsAgentsSortToolsDesc, "durationDesc": txt.HubsAgentsSortDurationDesc, "status": txt.HubsAgentsSortStatus}
+	spawnFilterKeys  = map[string]txt.Key{"all": txt.HubsAgentsFilterAll, "running": txt.HubsAgentsFilterRunning, "failed": txt.HubsAgentsFilterFailed, "leaf": txt.HubsAgentsFilterLeaf}
+	spawnStatusKeys  = map[string]txt.Key{"completed": txt.HubsAgentsStatusCompleted, "error": txt.HubsAgentsStatusError, "failed": txt.HubsAgentsStatusFailed, "interrupted": txt.HubsAgentsStatusInterrupted, "queued": txt.HubsAgentsStatusQueued, "running": txt.HubsAgentsStatusRunning, "stalled": txt.HubsAgentsStatusStalled, "timeout": txt.HubsAgentsStatusTimeout, "unknown": txt.HubsAgentsStatusUnknown}
 	spawnStatusRank  = map[string]int{"error": 0, "failed": 0, "interrupted": 1, "timeout": 1, "running": 2, "queued": 3, "completed": 4}
 )
 
@@ -306,21 +307,21 @@ func displayElapsedSeconds(it subagentProgress, nowMs float64) (float64, bool) {
 func formatSpawnSummary(totals spawnAggregate) string {
 	pieces := []string{"d" + strconv.Itoa(max(0, totals.maxDepthFromHere))}
 	if totals.descendantCount == 1 {
-		pieces = append(pieces, tr("libText.subagentTree.agentsOne", totals.descendantCount))
+		pieces = append(pieces, tr(txt.LibTextSubagentTreeAgentsOne, totals.descendantCount))
 	} else {
-		pieces = append(pieces, tr("libText.subagentTree.agentsOther", totals.descendantCount))
+		pieces = append(pieces, tr(txt.LibTextSubagentTreeAgentsOther, totals.descendantCount))
 	}
 	switch {
 	case totals.totalTools == 1:
-		pieces = append(pieces, tr("libText.subagentTree.toolsOne", totals.totalTools))
+		pieces = append(pieces, tr(txt.LibTextSubagentTreeToolsOne, totals.totalTools))
 	case totals.totalTools > 0:
-		pieces = append(pieces, tr("libText.subagentTree.toolsOther", totals.totalTools))
+		pieces = append(pieces, tr(txt.LibTextSubagentTreeToolsOther, totals.totalTools))
 	}
 	if totals.totalDuration > 0 {
 		pieces = append(pieces, fmtSpawnDuration(totals.totalDuration))
 	}
 	if tokens := totals.inputTokens + totals.outputTokens; tokens > 0 {
-		pieces = append(pieces, tr("libText.subagentTree.tokens", fmtSpawnTokens(tokens)))
+		pieces = append(pieces, tr(txt.LibTextSubagentTreeTokens, fmtSpawnTokens(tokens)))
 	}
 	if totals.activeCount > 0 {
 		pieces = append(pieces, "⚡"+strconv.Itoa(totals.activeCount))
@@ -336,8 +337,8 @@ func spawnTreeHeadline(subagents []subagentProgress, c renderCtx) string {
 	if spark := spawnSparkline(spawnWidthByDepth(tree)); spark != "" {
 		suffix += "  " + spark
 	}
-	title := tr("chatBits.thinking.spawnTree") + " (" + strconv.Itoa(totals.descendantCount) + ")"
-	return spawnInk(title, c.t.Color.Label, false, "") + spawnInk("  "+suffix+"  "+tr("chatBits.thinking.agentsHint"), c.t.Color.Muted, false, "")
+	title := tr(txt.ChatBitsThinkingSpawnTree) + " (" + strconv.Itoa(totals.descendantCount) + ")"
+	return spawnInk(title, c.t.Color.Label, false, "") + spawnInk("  "+suffix+"  "+tr(txt.ChatBitsThinkingAgentsHint), c.t.Color.Muted, false, "")
 }
 
 // Fan out read-out of the status row, the spawn pause, the depth and the widest level against their caps with the agents running beyond that level, in the role that warns from two thirds of a cap and alarms at a cap or a pause
@@ -368,7 +369,7 @@ func spawnHUD(subagents []subagentProgress, d delegationState) (string, wm.Segme
 	}
 	var pieces []string
 	if d.Paused {
-		pieces = append(pieces, tr("status.paused"))
+		pieces = append(pieces, tr(txt.StatusPaused))
 	}
 	if totals.descendantCount > 0 {
 		label := "d" + strconv.Itoa(depth)
@@ -399,7 +400,7 @@ func delegateMonitorHint(name string, c renderCtx) string {
 	if name != "delegate_task" {
 		return ""
 	}
-	return toneStyle(c.t.Color.StatusFg).Faint(true).Render("  " + tr("chatBits.thinking.agentsToMonitor"))
+	return toneStyle(c.t.Color.StatusFg).Faint(true).Render("  " + tr(txt.ChatBitsThinkingAgentsToMonitor))
 }
 
 // Glyph and tone of an agent status, a neutral dot for a status this build does not know
@@ -549,7 +550,7 @@ func (c *spawnTreeCard) fetchDelegation() tea.Cmd {
 	return call(c.a.gw, tuigateway.DelegationStatus, tuigateway.ProfileParams{}, func(r *tuigateway.DelegationStatusResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
-			c.flash = tr("hubs.list.errorLine", rpcErrorMessage(err))
+			c.flash = tr(txt.HubsListErrorLine, rpcErrorMessage(err))
 		case c.a.store.delegation.UpdatedAt == before:
 			c.a.store.applyDelegationStatus(*r)
 		}
@@ -608,7 +609,7 @@ func (c *spawnTreeCard) sync() {
 	c.prevLive = live
 	if c.historyIndex == 0 && prev > 0 && live == 0 && len(history) > 0 {
 		c.historyIndex, c.cursor, c.scroll = 1, 0, 0
-		c.flash = tr("hubs.agents.flash.turnFinished")
+		c.flash = tr(txt.HubsAgentsFlashTurnFinished)
 	}
 	v := c.view()
 	if c.cursor >= len(v.rows) {
@@ -652,7 +653,7 @@ func (c *spawnTreeCard) pollTail(gen int) tea.Cmd {
 	}
 	id := v.selected.item.ID
 	if id != c.tailID {
-		c.tailID, c.tail = id, tr("hubs.agentControls.loadingTranscript")
+		c.tailID, c.tail = id, tr(txt.HubsAgentControlsLoadingTranscript)
 	}
 	c.tailPending = true
 	fetch := call(c.a.gw, tuigateway.SubagentTail, tuigateway.SubagentIDParams{SessionID: sid, SubagentID: id}, func(r *tuigateway.SubagentTailResult, err error) tea.Cmd {
@@ -662,15 +663,15 @@ func (c *spawnTreeCard) pollTail(gen int) tea.Cmd {
 		}
 		switch {
 		case err != nil:
-			c.tail = tr("hubs.agentControls.transcriptRefreshFailed")
+			c.tail = tr(txt.HubsAgentControlsTranscriptRefreshFailed)
 		case r.Available:
 			prefix := ""
 			if r.Truncated {
-				prefix = tr("hubs.agentControls.truncatedPrefix") + "\n"
+				prefix = tr(txt.HubsAgentControlsTruncatedPrefix) + "\n"
 			}
 			c.tail = prefix + r.Text
 		default:
-			c.tail = tr("hubs.agentControls.transcriptNone")
+			c.tail = tr(txt.HubsAgentControlsTranscriptNone)
 		}
 		return nil
 	})
@@ -685,7 +686,7 @@ func (c *spawnTreeCard) tailSession(v spawnView) string {
 	return c.a.store.ui.Sid
 }
 
-func (c *spawnTreeCard) Title() string       { return tr("hubs.agents.title.spawnTree") }
+func (c *spawnTreeCard) Title() string       { return tr(txt.HubsAgentsTitleSpawnTree) }
 func (c *spawnTreeCard) Key() string         { return "tui:agents" }
 func (c *spawnTreeCard) Glyph() string       { return c.a.uiTheme().Glyphs.Agent }
 func (c *spawnTreeCard) Init() tea.Cmd       { return nil }
@@ -874,16 +875,16 @@ func (c *spawnTreeCard) stepHistory(delta int) {
 	}
 	c.historyIndex, c.cursor, c.scroll = next, 0, 0
 	if next == 0 {
-		c.flash = tr("hubs.agents.flash.liveTurn")
+		c.flash = tr(txt.HubsAgentsFlashLiveTurn)
 		return
 	}
-	c.flash = tr("hubs.agents.flash.replay", next, n)
+	c.flash = tr(txt.HubsAgentsFlashReplay, next, n)
 }
 
 // Runs a control on the live turn, a finished tree refusing it with a notice
 func (c *spawnTreeCard) guardLive(v spawnView, action func() tea.Cmd) tea.Cmd {
 	if v.replay() {
-		c.flash = tr("hubs.agents.flash.replayLocked")
+		c.flash = tr(txt.HubsAgentsFlashReplayLocked)
 		return nil
 	}
 	return action()
@@ -900,11 +901,11 @@ func (c *spawnTreeCard) killOne(v spawnView, id string) tea.Cmd {
 		return c.interrupt(id, func(r *tuigateway.SubagentInterruptResult, err error) tea.Cmd {
 			switch {
 			case err != nil:
-				c.flash = tr("hubs.agents.flash.killFailed", id)
+				c.flash = tr(txt.HubsAgentsFlashKillFailed, id)
 			case r.Found:
-				c.flash = tr("hubs.agents.flash.killing", id)
+				c.flash = tr(txt.HubsAgentsFlashKilling, id)
 			default:
-				c.flash = tr("hubs.agents.flash.notFound", id)
+				c.flash = tr(txt.HubsAgentsFlashNotFound, id)
 			}
 			return nil
 		})
@@ -919,15 +920,15 @@ func (c *spawnTreeCard) killSubtree(v spawnView, node *spawnNode) tea.Cmd {
 		for i, id := range ids {
 			cmds[i] = c.interrupt(id, func(_ *tuigateway.SubagentInterruptResult, err error) tea.Cmd {
 				if err != nil {
-					c.flash = tr("hubs.agents.flash.killFailed", id)
+					c.flash = tr(txt.HubsAgentsFlashKillFailed, id)
 				}
 				return nil
 			})
 		}
 		if len(ids) == 1 {
-			c.flash = tr("hubs.agents.flash.killingSubtreeOne", len(ids))
+			c.flash = tr(txt.HubsAgentsFlashKillingSubtreeOne, len(ids))
 		} else {
-			c.flash = tr("hubs.agents.flash.killingSubtreeOther", len(ids))
+			c.flash = tr(txt.HubsAgentsFlashKillingSubtreeOther, len(ids))
 		}
 		return tea.Sequence(cmds...)
 	})
@@ -939,14 +940,14 @@ func (c *spawnTreeCard) togglePause(v spawnView) tea.Cmd {
 		params := tuigateway.DelegationPauseParams{Paused: ptr(!c.a.store.delegation.Paused)}
 		return call(c.a.gw, tuigateway.DelegationPause, params, func(r *tuigateway.DelegationPauseResult, err error) tea.Cmd {
 			if err != nil {
-				c.flash = tr("hubs.agents.flash.pauseFailed")
+				c.flash = tr(txt.HubsAgentsFlashPauseFailed)
 				return nil
 			}
 			c.a.store.applyDelegationPause(r.Paused)
 			if r.Paused {
-				c.flash = tr("hubs.agents.flash.spawningPaused")
+				c.flash = tr(txt.HubsAgentsFlashSpawningPaused)
 			} else {
-				c.flash = tr("hubs.agents.flash.spawningResumed")
+				c.flash = tr(txt.HubsAgentsFlashSpawningResumed)
 			}
 			return nil
 		})
@@ -1023,12 +1024,12 @@ func (c *spawnTreeCard) sendSteer() tea.Cmd {
 		c.steerPending = false
 		switch {
 		case err != nil:
-			c.steerNote = tr("hubs.agentControls.notQueuedError", rpcErrorMessage(err))
+			c.steerNote = tr(txt.HubsAgentControlsNotQueuedError, rpcErrorMessage(err))
 		case r.Status == "queued":
-			c.steerNote = tr("hubs.agentControls.queued")
+			c.steerNote = tr(txt.HubsAgentControlsQueued)
 			c.steer, c.steerAt = nil, 0
 		default:
-			c.steerNote = tr("hubs.agentControls.notQueued")
+			c.steerNote = tr(txt.HubsAgentControlsNotQueued)
 		}
 		return nil
 	})
@@ -1073,7 +1074,7 @@ func (c *spawnTreeCard) View(w, h int) string {
 	case c.mode == "steer" && v.selected != nil && c.a.store.ui.Sid != "":
 		body = c.steerLines(v.selected.item.ID, w, len(head))
 	case len(v.rows) == 0:
-		for _, line := range strings.Split(ansi.Wrap(tr("hubs.agents.empty"), max(w, 8), ""), "\n") {
+		for _, line := range strings.Split(ansi.Wrap(tr(txt.HubsAgentsEmpty), max(w, 8), ""), "\n") {
 			body = append(body, spawnInk(line, t.Color.Muted, false, ""))
 		}
 		body = append(append(body, c.failedLines(w)...), c.processLines(w)...)
@@ -1095,17 +1096,17 @@ func (c *spawnTreeCard) View(w, h int) string {
 func (c *spawnTreeCard) headerLine(v spawnView, w int) string {
 	t := c.a.store.ui.Theme
 	d := c.a.store.delegation
-	title, tone := tr("hubs.agents.title.spawnTree"), t.Color.Primary
+	title, tone := tr(txt.HubsAgentsTitleSpawnTree), t.Color.Primary
 	if d.Paused {
-		title += tr("hubs.agents.title.pausedSuffix")
+		title += tr(txt.HubsAgentsTitlePausedSuffix)
 	}
 	if v.replay() {
 		tone = t.Color.Border
-		title = tr("hubs.agents.title.lastTurn")
+		title = tr(txt.HubsAgentsTitleLastTurn)
 		if c.historyIndex > 0 {
-			title = tr("hubs.agents.title.replay", c.historyIndex, len(v.history))
+			title = tr(txt.HubsAgentsTitleReplay, c.historyIndex, len(v.history))
 		}
-		title += tr("hubs.agents.title.finishedAt", time.UnixMilli(int64(v.snapshot.FinishedAt)).In(clockLocation()).Format("15:04:05"))
+		title += tr(txt.HubsAgentsTitleFinishedAt, time.UnixMilli(int64(v.snapshot.FinishedAt)).In(clockLocation()).Format("15:04:05"))
 	}
 	meta := []string{formatSpawnSummary(v.totals)}
 	if spark := spawnSparkline(spawnWidthByDepth(v.tree)); spark != "" {
@@ -1116,7 +1117,7 @@ func (c *spawnTreeCard) headerLine(v spawnView, w int) string {
 		if d.MaxConcurrentChildren != nil {
 			children = spawnNumber(*d.MaxConcurrentChildren)
 		}
-		meta = append(meta, tr("hubs.agents.caps", *d.MaxSpawnDepth, children))
+		meta = append(meta, tr(txt.HubsAgentsCaps, *d.MaxSpawnDepth, children))
 	}
 	if mix := spawnModelMix(v.agents); mix != "" {
 		meta = append(meta, "· "+mix)
@@ -1130,7 +1131,7 @@ func spawnModelMix(agents []subagentProgress) string {
 	counts := map[string]int{}
 	var order []string
 	for _, it := range agents {
-		key := tr("hubs.agents.inheritModel")
+		key := tr(txt.HubsAgentsInheritModel)
 		if it.Model != "" {
 			parts := strings.Split(it.Model, "/")
 			key = parts[len(parts)-1]
@@ -1151,33 +1152,33 @@ func spawnModelMix(agents []subagentProgress) string {
 // Footer of the keys of the mode, the notice of the last action between them
 func (c *spawnTreeCard) footerLines(v spawnView, w int) []string {
 	t := c.a.store.ui.Theme
-	controls := tr("hubs.agents.hint.controlsLocked")
+	controls := tr(txt.HubsAgentsHintControlsLocked)
 	if !v.replay() {
-		verb := tr("hubs.agents.hint.pause")
+		verb := tr(txt.HubsAgentsHintPause)
 		if c.a.store.delegation.Paused {
-			verb = tr("hubs.agents.hint.resume")
+			verb = tr(txt.HubsAgentsHintResume)
 		}
-		controls = tr("hubs.agents.hint.controls", verb)
+		controls = tr(txt.HubsAgentsHintControls, verb)
 	}
-	footer := tr("hubs.agents.hint.footerLive")
+	footer := tr(txt.HubsAgentsHintFooterLive)
 	if v.replay() {
-		footer = tr("hubs.agents.hint.footerReplay")
+		footer = tr(txt.HubsAgentsHintFooterReplay)
 	}
 	lines := []string{"", spawnInk(truncateEnd(footer, w), t.Color.Accent, false, "")}
 	if c.flash != "" {
 		lines = append(lines, spawnInk(truncateEnd(c.flash, w), t.Color.Accent, false, ""))
 	}
-	hint := tr("hubs.agents.hint.detail", controls)
+	hint := tr(txt.HubsAgentsHintDetail, controls)
 	if c.mode == "list" {
-		nav := tr("hubs.agents.hint.listNavLive")
+		nav := tr(txt.HubsAgentsHintListNavLive)
 		if v.replay() {
-			nav = tr("hubs.agents.hint.listNavReplay")
+			nav = tr(txt.HubsAgentsHintListNavReplay)
 		}
 		history := ""
 		if len(v.history) > 0 {
-			history = tr("hubs.agents.hint.history", c.historyIndex, len(v.history))
+			history = tr(txt.HubsAgentsHintHistory, c.historyIndex, len(v.history))
 		}
-		hint = tr("hubs.agents.hint.list", nav, controls, tr(spawnSortKeys[spawnSortOrder[c.sortMode]]), tr(spawnFilterKeys[spawnFilterOrder[c.filterMode]]), history)
+		hint = tr(txt.HubsAgentsHintList, nav, controls, tr(spawnSortKeys[spawnSortOrder[c.sortMode]]), tr(spawnFilterKeys[spawnFilterOrder[c.filterMode]]), history)
 	}
 	return append(lines, spawnInk(truncateEnd(hint, w), t.Color.Muted, false, ""))
 }
@@ -1245,7 +1246,7 @@ func (c *spawnTreeCard) ganttLines(flat []*spawnNode, cols, maxRows int) []strin
 	if len(spans) > maxRows {
 		window = "  (" + strconv.Itoa(startIdx+1) + "-" + strconv.Itoa(min(len(spans), startIdx+maxRows)) + "/" + strconv.Itoa(len(spans)) + ")"
 	}
-	lines := []string{spawnInk(truncateEnd(tr("hubs.agents.timeline")+" · "+fmtElapsedLabel(math.Max(0, seconds))+window, cols), t.Color.Muted, false, "")}
+	lines := []string{spawnInk(truncateEnd(tr(txt.HubsAgentsTimeline)+" · "+fmtElapsedLabel(math.Max(0, seconds))+window, cols), t.Color.Muted, false, "")}
 	for _, s := range spans[startIdx:min(len(spans), startIdx+maxRows)] {
 		active := s.idx == c.cursor
 		_, statusTone := agentStatusGlyph(s.node.item.Status, t)
@@ -1307,7 +1308,7 @@ func (c *spawnTreeCard) rowMeta(it subagentProgress) string {
 		parts = append(parts, fmtElapsedLabel(sec))
 	}
 	if tokens := orZero(it.InputTokens) + orZero(it.OutputTokens); tokens > 0 {
-		parts = append(parts, tr("libText.subagentTree.tokens", fmtSpawnTokens(tokens)))
+		parts = append(parts, tr(txt.LibTextSubagentTreeTokens, fmtSpawnTokens(tokens)))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -1328,7 +1329,7 @@ func (c *spawnTreeCard) rowLine(n *spawnNode, index int, active bool, peak float
 	}
 	goal := it.Goal
 	if goal == "" {
-		goal = tr("hubs.agents.subagentFallback")
+		goal = tr(txt.HubsAgentsSubagentFallback)
 	}
 	goal = compactPreview(goal, max(8, w-28-it.Depth*2-metaW))
 	counts := ""
@@ -1379,13 +1380,13 @@ func (c *spawnTreeCard) failedLines(w int) []string {
 		return nil
 	}
 	t := c.a.store.ui.Theme
-	lines := []string{"", spawnInk(truncateEnd(tr("hubs.agents.failedDelegations", len(failed)), w), t.Color.Error, true, "")}
+	lines := []string{"", spawnInk(truncateEnd(tr(txt.HubsAgentsFailedDelegations, len(failed)), w), t.Color.Error, true, "")}
 	for _, d := range failed {
 		status := failedDelegationStatus(d)
 		glyph, tone := agentStatusGlyph(status, t)
 		goal := d.Goal
 		if goal == "" {
-			goal = tr("hubs.agents.subagentFallback")
+			goal = tr(txt.HubsAgentsSubagentFallback)
 		}
 		meta := agentStatusLabel(status)
 		if d.CompletedAt != nil {
@@ -1410,7 +1411,7 @@ func (c *spawnTreeCard) processLines(w int) []string {
 	if block.total == 0 {
 		return nil
 	}
-	lines := []string{"", spawnInk(truncateEnd(tr("hubs.agents.processes")+" · "+processSummary(block), w), t.Color.Accent, true, "")}
+	lines := []string{"", spawnInk(truncateEnd(tr(txt.HubsAgentsProcesses)+" · "+processSummary(block), w), t.Color.Accent, true, "")}
 	for _, r := range block.rows {
 		lines = append(lines, processRowLine(r, w, t))
 	}
@@ -1444,10 +1445,10 @@ func buildProcessBlock(rows []processRow, maxRows int) processBlock {
 func processSummary(block processBlock) string {
 	var parts []string
 	if block.running > 0 {
-		parts = append(parts, tr("hubs.agentsPanel.running", block.running))
+		parts = append(parts, tr(txt.HubsAgentsPanelRunning, block.running))
 	}
 	if done := block.total - block.running; done > 0 {
-		parts = append(parts, tr("hubs.agentsPanel.done", done))
+		parts = append(parts, tr(txt.HubsAgentsPanelDone, done))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -1499,9 +1500,9 @@ func buildAgentDockRows(agents []subagentProgress, nowMs float64, maxRows int) (
 			continue
 		}
 		running++
-		row := agentDockRow{goal: s.Goal, status: s.Status, detail: tr("libText.agentRows.starting")}
+		row := agentDockRow{goal: s.Goal, status: s.Status, detail: tr(txt.LibTextAgentRowsStarting)}
 		if row.goal == "" {
-			row.goal = tr("libText.agentRows.agent")
+			row.goal = tr(txt.LibTextAgentRowsAgent)
 		}
 		switch {
 		case len(s.Notes) > 0 && s.Notes[len(s.Notes)-1] != "":
@@ -1552,15 +1553,15 @@ func (a *app) dockRows(width int, rc renderCtx) []string {
 	if a.agentDockCollapsed {
 		var counts []string
 		if running > 0 {
-			counts = append(counts, tr("hubs.agentsPanel.liveAgents", running))
+			counts = append(counts, tr(txt.HubsAgentsPanelLiveAgents, running))
 		}
 		switch {
 		case procs.running > 0:
-			counts = append(counts, tr("hubs.agentsPanel.procs", procs.running))
+			counts = append(counts, tr(txt.HubsAgentsPanelProcs, procs.running))
 		case procs.total > 0:
-			counts = append(counts, tr("hubs.agentsPanel.procsDone", procs.total))
+			counts = append(counts, tr(txt.HubsAgentsPanelProcsDone, procs.total))
 		}
-		summary, hints := "▸ "+strings.Join(counts, " · "), tr("hubs.agentsPanel.collapsedHint")
+		summary, hints := "▸ "+strings.Join(counts, " · "), tr(txt.HubsAgentsPanelCollapsedHint)
 		first := ""
 		if len(rows) > 0 {
 			first = rows[0].detail
@@ -1577,9 +1578,9 @@ func (a *app) dockRows(width int, rc renderCtx) []string {
 	if running > 0 {
 		more := ""
 		if hidden > 0 {
-			more = tr("hubs.agentsPanel.moreHidden", hidden)
+			more = tr(txt.HubsAgentsPanelMoreHidden, hidden)
 		}
-		out = append(out, ink("▾ "+tr("hubs.agentsPanel.liveAgents", running)+more+tr("hubs.agentsPanel.expandedHint")))
+		out = append(out, ink("▾ "+tr(txt.HubsAgentsPanelLiveAgents, running)+more+tr(txt.HubsAgentsPanelExpandedHint)))
 	}
 	for _, row := range rows {
 		glyph, tone := agentStatusGlyph(row.status, t)
@@ -1591,12 +1592,12 @@ func (a *app) dockRows(width int, rc renderCtx) []string {
 		out = append(out, "  "+ansi.Truncate(line, cols, "…"), "  "+spawnInk(ansi.Truncate("  ↳ "+compactPreview(row.detail, cols-4), cols, "…"), t.Color.Muted, false, ""))
 	}
 	if procs.total > 0 {
-		head := "▾ " + tr("hubs.agentsPanel.processes") + " · " + processSummary(procs)
+		head := "▾ " + tr(txt.HubsAgentsPanelProcesses) + " · " + processSummary(procs)
 		if procs.hidden > 0 {
-			head += tr("hubs.agentsPanel.moreHidden", procs.hidden)
+			head += tr(txt.HubsAgentsPanelMoreHidden, procs.hidden)
 		}
 		if running == 0 {
-			head += tr("hubs.agentsPanel.expandedHint")
+			head += tr(txt.HubsAgentsPanelExpandedHint)
 		}
 		out = append(out, ink(head))
 		for _, r := range procs.rows {
@@ -1630,9 +1631,9 @@ func (c *spawnTreeCard) paneLines(v spawnView, w, bodyH, top int) []string {
 	case v.selected != nil && c.mode == "tail" && c.tailSession(v) != "":
 		text := c.tail
 		if c.tailID != v.selected.item.ID {
-			text = tr("hubs.agentControls.loadingTranscript")
+			text = tr(txt.HubsAgentControlsLoadingTranscript)
 		}
-		lines = append(lines, spawnInk(tr("hubs.agentControls.transcriptTitle"), t.Color.Accent, true, ""))
+		lines = append(lines, spawnInk(tr(txt.HubsAgentControlsTranscriptTitle), t.Color.Accent, true, ""))
 		for _, para := range strings.Split(text, "\n") {
 			for _, line := range strings.Split(ansi.Wrap(para, contentW, ""), "\n") {
 				lines = append(lines, spawnInk(line, t.Color.Text, false, ""))
@@ -1683,31 +1684,31 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 	field := func(name, value string) {
 		lines = append(lines, ansi.Truncate(spawnInk(name+" · ", t.Color.Label, false, "")+spawnInk(value, t.Color.Text, false, ""), w, "…"))
 	}
-	field(tr("hubs.agents.detail.depth"), strconv.Itoa(it.Depth)+" · "+agentStatusLabel(it.Status))
+	field(tr(txt.HubsAgentsDetailDepth), strconv.Itoa(it.Depth)+" · "+agentStatusLabel(it.Status))
 	if it.Model != "" {
-		field(tr("hubs.agents.detail.model"), it.Model)
+		field(tr(txt.HubsAgentsDetailModel), it.Model)
 	}
 	if len(it.Toolsets) > 0 {
-		field(tr("hubs.agents.detail.toolsets"), strings.Join(it.Toolsets, ", "))
+		field(tr(txt.HubsAgentsDetailToolsets), strings.Join(it.Toolsets, ", "))
 	}
-	field(tr("hubs.agents.detail.tools"), tr("hubs.agents.detail.toolsValue", it.ToolCount, agg.totalTools))
-	subtree := tr("hubs.agents.detail.subtreeValueOther", agg.descendantCount, agg.maxDepthFromHere, agg.activeCount)
+	field(tr(txt.HubsAgentsDetailTools), tr(txt.HubsAgentsDetailToolsValue, it.ToolCount, agg.totalTools))
+	subtree := tr(txt.HubsAgentsDetailSubtreeValueOther, agg.descendantCount, agg.maxDepthFromHere, agg.activeCount)
 	if agg.descendantCount == 1 {
-		subtree = tr("hubs.agents.detail.subtreeValueOne", agg.descendantCount, agg.maxDepthFromHere, agg.activeCount)
+		subtree = tr(txt.HubsAgentsDetailSubtreeValueOne, agg.descendantCount, agg.maxDepthFromHere, agg.activeCount)
 	}
-	field(tr("hubs.agents.detail.subtree"), subtree)
+	field(tr(txt.HubsAgentsDetailSubtree), subtree)
 	if d := orZero(it.DurationSeconds); d != 0 {
 		elapsed := ""
 		if d > 0 {
 			elapsed = fmtSpawnDuration(d)
 		}
-		field(tr("hubs.agents.detail.elapsed"), elapsed)
+		field(tr(txt.HubsAgentsDetailElapsed), elapsed)
 	}
 	if it.Iteration != nil {
-		field(tr("hubs.agents.detail.iteration"), spawnNumber(*it.Iteration))
+		field(tr(txt.HubsAgentsDetailIteration), spawnNumber(*it.Iteration))
 	}
 	if orZero(it.APICalls) != 0 {
-		field(tr("hubs.agents.detail.apiCalls"), spawnNumber(*it.APICalls))
+		field(tr(txt.HubsAgentsDetailApiCalls), spawnNumber(*it.APICalls))
 	}
 	section := func(id, title string, count int, counted bool) bool {
 		open := c.sectionOpen(id)
@@ -1725,17 +1726,17 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 	}
 	input, output := orZero(it.InputTokens), orZero(it.OutputTokens)
 	local := input + output
-	if local > 0 && section("budget", tr("hubs.agents.section.budget"), 0, false) {
-		value := tr("hubs.agents.detail.tokensValue", fmtSpawnTokens(input), fmtSpawnTokens(output))
+	if local > 0 && section("budget", tr(txt.HubsAgentsSectionBudget), 0, false) {
+		value := tr(txt.HubsAgentsDetailTokensValue, fmtSpawnTokens(input), fmtSpawnTokens(output))
 		if orZero(it.ReasoningTokens) != 0 {
-			value += tr("hubs.agents.detail.reasoningSuffix", fmtSpawnTokens(*it.ReasoningTokens))
+			value += tr(txt.HubsAgentsDetailReasoningSuffix, fmtSpawnTokens(*it.ReasoningTokens))
 		}
-		field(tr("hubs.agents.detail.tokens"), value)
+		field(tr(txt.HubsAgentsDetailTokens), value)
 		if below := agg.inputTokens + agg.outputTokens - local; below > 0 {
-			field(tr("hubs.agents.detail.subtreeTokens"), "+"+fmtSpawnTokens(below))
+			field(tr(txt.HubsAgentsDetailSubtreeTokens), "+"+fmtSpawnTokens(below))
 		}
 	}
-	if files := len(it.FilesRead) + len(it.FilesWritten); files > 0 && section("files", tr("hubs.agents.section.files"), files, true) {
+	if files := len(it.FilesRead) + len(it.FilesWritten); files > 0 && section("files", tr(txt.HubsAgentsSectionFiles), files, true) {
 		for _, p := range it.FilesWritten[:min(8, len(it.FilesWritten))] {
 			lines = append(lines, ansi.Truncate(spawnInk("+"+p, t.Color.StatusGood, false, ""), w, "…"))
 		}
@@ -1743,7 +1744,7 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 			lines = append(lines, ansi.Truncate(spawnInk("·", t.Color.Muted, false, "")+spawnInk(" "+p, t.Color.Text, false, ""), w, "…"))
 		}
 		if over := max(0, len(it.FilesRead)-8) + max(0, len(it.FilesWritten)-8); over > 0 {
-			lines = append(lines, spawnInk(tr("hubs.agents.detail.filesMore", over), t.Color.Muted, false, ""))
+			lines = append(lines, spawnInk(tr(txt.HubsAgentsDetailFilesMore, over), t.Color.Muted, false, ""))
 		}
 	}
 	tools := it.Tools
@@ -1754,12 +1755,12 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 			}
 		}
 	}
-	if len(tools) > 0 && section("toolCalls", tr("hubs.agents.section.toolCalls"), len(tools), true) {
+	if len(tools) > 0 && section("toolCalls", tr(txt.HubsAgentsSectionToolCalls), len(tools), true) {
 		for _, line := range tools {
 			lines = append(lines, spawnWrapLead("·", t.Color.Muted, false, " "+line, t.Color.Text, false, w)...)
 		}
 	}
-	if len(it.OutputTail) > 0 && section("output", tr("hubs.agents.section.output"), len(it.OutputTail), true) {
+	if len(it.OutputTail) > 0 && section("output", tr(txt.HubsAgentsSectionOutput), len(it.OutputTail), true) {
 		for _, e := range it.OutputTail {
 			leadTone, bodyTone := t.Color.Accent, t.Color.Text
 			if e.IsError {
@@ -1768,12 +1769,12 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 			lines = append(lines, spawnWrapLead(e.Tool, leadTone, true, " "+e.Preview, bodyTone, false, w)...)
 		}
 	}
-	if len(it.Notes) > 0 && section("progress", tr("hubs.agents.section.progress"), len(it.Notes), true) {
+	if len(it.Notes) > 0 && section("progress", tr(txt.HubsAgentsSectionProgress), len(it.Notes), true) {
 		for _, note := range it.Notes[max(0, len(it.Notes)-6):] {
 			lines = append(lines, spawnWrapLead("·", t.Color.Label, false, " "+note, t.Color.Text, false, w)...)
 		}
 	}
-	if it.Summary != "" && section("summary", tr("hubs.agents.section.summary"), 0, false) {
+	if it.Summary != "" && section("summary", tr(txt.HubsAgentsSectionSummary), 0, false) {
 		for _, para := range strings.Split(it.Summary, "\n") {
 			for _, line := range strings.Split(ansi.Wrap(para, max(w, 8), ""), "\n") {
 				lines = append(lines, spawnInk(line, t.Color.Text, false, ""))
@@ -1786,8 +1787,8 @@ func (c *spawnTreeCard) detailLines(n *spawnNode, w int) ([]string, map[int]stri
 // Guidance form of the selected agent, the caret placed in its field
 func (c *spawnTreeCard) steerLines(id string, w, top int) []string {
 	t := c.a.store.ui.Theme
-	lines := []string{spawnInk(truncateEnd(tr("hubs.agentControls.steerTitle", id), w), t.Color.Accent, true, "")}
-	for _, line := range strings.Split(ansi.Wrap(tr("hubs.agentControls.steerIntro"), max(w, 8), ""), "\n") {
+	lines := []string{spawnInk(truncateEnd(tr(txt.HubsAgentControlsSteerTitle, id), w), t.Color.Accent, true, "")}
+	for _, line := range strings.Split(ansi.Wrap(tr(txt.HubsAgentControlsSteerIntro), max(w, 8), ""), "\n") {
 		lines = append(lines, spawnInk(line, t.Color.Muted, false, ""))
 	}
 	lines = append(lines, "")
@@ -1806,10 +1807,10 @@ func (c *spawnTreeCard) steerLines(id string, w, top int) []string {
 	lines = append(lines, spawnInk("❯ ", t.Color.Accent, false, "")+spawnInk(shown, t.Color.Text, false, ""))
 	note := c.steerNote
 	if c.steerPending {
-		note = tr("hubs.agentControls.queueing")
+		note = tr(txt.HubsAgentControlsQueueing)
 	}
 	lines = append(lines, spawnInk(truncateEnd(note, w), t.Color.Muted, false, ""))
-	return append(lines, spawnInk(truncateEnd(tr("hubs.agentControls.steerHint"), w), t.Color.Muted, false, ""))
+	return append(lines, spawnInk(truncateEnd(tr(txt.HubsAgentControlsSteerHint), w), t.Color.Muted, false, ""))
 }
 
 // Line of one metric of the diff, both values and the signed change between them
@@ -1835,9 +1836,9 @@ func (c *spawnTreeCard) diffView(w, h int) string {
 	pair := c.diff
 	before, after := spawnTreeTotals(buildSpawnTree(pair.baseline.Subagents)), spawnTreeTotals(buildSpawnTree(pair.candidate.Subagents))
 	paneW := max(1, (w-4)/2)
-	left := c.diffPane(tr("hubs.agents.diff.baseline"), pair.baseline, before, paneW)
-	right := c.diffPane(tr("hubs.agents.diff.candidate"), pair.candidate, after, paneW)
-	lines := []string{spawnInk(tr("hubs.agents.diff.title"), t.Color.Border, true, ""), spawnInk(tr("hubs.agents.diff.subtitle"), t.Color.Muted, false, ""), ""}
+	left := c.diffPane(tr(txt.HubsAgentsDiffBaseline), pair.baseline, before, paneW)
+	right := c.diffPane(tr(txt.HubsAgentsDiffCandidate), pair.candidate, after, paneW)
+	lines := []string{spawnInk(tr(txt.HubsAgentsDiffTitle), t.Color.Border, true, ""), spawnInk(tr(txt.HubsAgentsDiffSubtitle), t.Color.Muted, false, ""), ""}
 	for i := 0; i < max(len(left), len(right)); i++ {
 		l, r := "", ""
 		if i < len(left) {
@@ -1850,13 +1851,13 @@ func (c *spawnTreeCard) diffView(w, h int) string {
 	}
 	round := func(n float64) string { return spawnNumber(jsRound(n)) }
 	tokens := func(x spawnAggregate) float64 { return x.inputTokens + x.outputTokens }
-	lines = append(lines, "", "", spawnInk(tr("hubs.agents.diff.delta"), t.Color.Accent, true, ""))
+	lines = append(lines, "", "", spawnInk(tr(txt.HubsAgentsDiffDelta), t.Color.Accent, true, ""))
 	for _, metric := range []string{
-		spawnDiffMetric(tr("hubs.agents.diff.agents"), float64(before.descendantCount), float64(after.descendantCount), round),
-		spawnDiffMetric(tr("hubs.agents.diff.tools"), float64(before.totalTools), float64(after.totalTools), round),
-		spawnDiffMetric(tr("hubs.agents.diff.depth"), float64(before.maxDepthFromHere), float64(after.maxDepthFromHere), round),
-		spawnDiffMetric(tr("hubs.agents.diff.duration"), before.totalDuration, after.totalDuration, func(n float64) string { return jsToFixed(n, 1) + "s" }),
-		spawnDiffMetric(tr("hubs.agents.diff.tokens"), tokens(before), tokens(after), fmtSpawnTokens),
+		spawnDiffMetric(tr(txt.HubsAgentsDiffAgents), float64(before.descendantCount), float64(after.descendantCount), round),
+		spawnDiffMetric(tr(txt.HubsAgentsDiffTools), float64(before.totalTools), float64(after.totalTools), round),
+		spawnDiffMetric(tr(txt.HubsAgentsDiffDepth), float64(before.maxDepthFromHere), float64(after.maxDepthFromHere), round),
+		spawnDiffMetric(tr(txt.HubsAgentsDiffDuration), before.totalDuration, after.totalDuration, func(n float64) string { return jsToFixed(n, 1) + "s" }),
+		spawnDiffMetric(tr(txt.HubsAgentsDiffTokens), tokens(before), tokens(after), fmtSpawnTokens),
 	} {
 		lines = append(lines, spawnInk(metric, t.Color.Text, false, ""))
 	}
@@ -1881,7 +1882,7 @@ func (c *spawnTreeCard) diffPane(label string, snap spawnSnapshot, totals spawnA
 		glyph, tone := agentStatusGlyph(s.Status, t)
 		goal := s.Goal
 		if goal == "" {
-			goal = tr("hubs.agents.subagentFallback")
+			goal = tr(txt.HubsAgentsSubagentFallback)
 		}
 		lines = append(lines, spawnInk(glyph, tone, false, "")+spawnInk(" "+truncateEnd(goal, max(1, w-2)), t.Color.Muted, false, ""))
 	}
@@ -1898,14 +1899,14 @@ func (a *app) openSavedSpawnTrees(entries []tuigateway.SpawnTreeEntry) tea.Cmd {
 			row.when = time.UnixMilli(int64(finished * 1000)).In(clockLocation()).Format("2006-01-02 15:04:05")
 		}
 		if row.label == "" {
-			row.label = tr("slashCmd.ops.replay.subagentsLabel", row.count)
+			row.label = tr(txt.SlashCmdOpsReplaySubagentsLabel, row.count)
 		}
 		rows = append(rows, row)
 	}
 	list := cards.NewList(a.cardEnv(), cards.ListSpec{
-		Title: tr("slashCmd.ops.replay.archivedTitle"), Glyph: a.toolkit.Glyphs.Agent, Key: "tui:spawntrees", Context: spawnTreesContext, Primary: "tui.spawntrees.load",
-		Columns: []render.Column{{Title: tr("slashCmd.ops.replay.columnFinished")}, {Title: tr("slashCmd.ops.replay.columnAgents"), Right: true},
-			{Title: tr("slashCmd.ops.replay.columnLabel"), Flex: 3}, {Title: tr("slashCmd.ops.replay.columnPath"), Flex: 2}},
+		Title: tr(txt.SlashCmdOpsReplayArchivedTitle), Glyph: a.toolkit.Glyphs.Agent, Key: "tui:spawntrees", Context: spawnTreesContext, Primary: "tui.spawntrees.load",
+		Columns: []render.Column{{Title: tr(txt.SlashCmdOpsReplayColumnFinished)}, {Title: tr(txt.SlashCmdOpsReplayColumnAgents), Right: true},
+			{Title: tr(txt.SlashCmdOpsReplayColumnLabel), Flex: 3}, {Title: tr(txt.SlashCmdOpsReplayColumnPath), Flex: 2}},
 		Rows: func() [][]string {
 			out := make([][]string, len(rows))
 			for i, r := range rows {
@@ -1913,7 +1914,7 @@ func (a *app) openSavedSpawnTrees(entries []tuigateway.SpawnTreeEntry) tea.Cmd {
 			}
 			return out
 		},
-		Empty: func() string { return tr("slashCmd.ops.replay.noneOnDisk") },
+		Empty: func() string { return tr(txt.SlashCmdOpsReplayNoneOnDisk) },
 		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 			"tui.spawntrees.load": func(l *cards.List, i int) tea.Cmd {
 				return tea.Batch(wm.RequestDismissOf(l), a.loadSpawnTree(rows[i].path, a.events.rpc, a.sys))
@@ -1930,7 +1931,7 @@ func (a *app) loadSpawnTree(path string, via rpcVia, sys func(string)) tea.Cmd {
 			return nil
 		}
 		if len(r.Subagents) == 0 {
-			a.sys(tr("slashCmd.ops.replay.snapshotEmpty"))
+			a.sys(tr(txt.SlashCmdOpsReplaySnapshotEmpty))
 			return nil
 		}
 		a.store.pushDiskSnapshot(*r, path)

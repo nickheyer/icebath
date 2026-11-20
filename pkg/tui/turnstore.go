@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const spawnHistoryLimit = 10
@@ -128,7 +129,7 @@ func newUIState() uiState {
 	return uiState{
 		BgTasks: map[string]bool{}, BusyInputMode: defaultBusyMode, DestructiveSlashConfirm: true, DetailsMode: "collapsed", IndicatorStyle: defaultIndicator,
 		InlineDiffs: true, InlineImages: true, MouseTracking: bootMouseTracking(), PasteCollapseLines: defaultPasteLines, PasteCollapseChars: defaultPasteChars, Sections: map[string]string{},
-		Status: tr("status.summoning"), StatusBar: "top", Streaming: true, Theme: startupTheme(), Usage: zeroUsage(), TurnSummary: true, SpinnerTokenFlow: true,
+		Status: tr(txt.StatusSummoning), StatusBar: "top", Streaming: true, Theme: startupTheme(), Usage: zeroUsage(), TurnSummary: true, SpinnerTokenFlow: true,
 	}
 }
 
@@ -280,7 +281,7 @@ func summarizeSpawnLabel(subagents []subagentProgress) string {
 		if rooted {
 			goal := sa.Goal
 			if goal == "" {
-				goal = "subagent"
+				goal = tr(txt.HubsAgentsSubagentFallback)
 			}
 			top = append(top, goal)
 		}
@@ -288,10 +289,7 @@ func summarizeSpawnLabel(subagents []subagentProgress) string {
 	if label := strings.Join(top, " · "); label != "" {
 		return label
 	}
-	if len(subagents) == 1 {
-		return "1 agent"
-	}
-	return strconv.Itoa(len(subagents)) + " agents"
+	return trCount(txt.StatusAgentsOne, txt.StatusAgentsOther, len(subagents))
 }
 
 var knownSubagentStatuses = []string{"completed", "error", "failed", "interrupted", "queued", "running", "timeout"}
@@ -324,7 +322,7 @@ func (s *tuiStore) pushDiskSnapshot(r tuigateway.SpawnTreeLoadResult, path strin
 	}
 	label := val(r.Label)
 	if label == "" {
-		label = strconv.Itoa(len(normalised)) + " subagents"
+		label = tr(txt.StatusSubagentsCount, len(normalised))
 	}
 	snap := spawnSnapshot{FinishedAt: finished * 1000, FromDisk: true, ID: "disk-" + path, Label: label, Path: path,
 		SessionID: val(r.SessionID), StartedAt: started * 1000, Subagents: normalised}
@@ -345,7 +343,7 @@ func normaliseSubagent(o tuigateway.SpawnTreeSubagent) subagentProgress {
 		}
 	}
 	if sa.Goal == "" {
-		sa.Goal = "subagent"
+		sa.Goal = tr(txt.HubsAgentsSubagentFallback)
 	}
 	if sa.ID == "" {
 		sa.ID = "sa-" + randomBase36(6)

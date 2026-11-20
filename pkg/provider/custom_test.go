@@ -309,8 +309,11 @@ func TestConfigPathsAndCodexModelProviderID(t *testing.T) {
 	if !r.HasNamedCustomProvider("Gateway") || r.HasNamedCustomProvider("nobody") {
 		t.Fatal("has named custom provider")
 	}
-	if p := r.NamedCustomProviderConfigPath("deepseek", map[string]any{"providers": map[string]any{"deepseek": map[string]any{"api": "https://x/v1"}}}); p != nil {
-		t.Fatal("a canonical builtin name is shadowed by the builtin")
+	if p := r.NamedCustomProviderConfigPath("DeepSeek", map[string]any{"providers": map[string]any{"deepseek": map[string]any{"api": "https://x/v1"}}}); p == nil || p.Section != "providers" || p.Key != "deepseek" {
+		t.Fatalf("a builtin name means its same keyed entry that declares an endpoint: %+v", p)
+	}
+	if p := r.NamedCustomProviderConfigPath("deepseek", map[string]any{"providers": map[string]any{"deepseek": map[string]any{"request_timeout_seconds": 30}, "other": map[string]any{"name": "deepseek", "api": "https://x/v1"}}}); p != nil {
+		t.Fatalf("a tuning only block keeps the builtin and a display name never claims it: %+v", p)
 	}
 }
 

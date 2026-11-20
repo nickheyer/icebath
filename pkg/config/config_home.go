@@ -188,3 +188,15 @@ func SecureFile(ctx context.Context, h, path string) {
 		_ = os.Chmod(path, 0o600)
 	}
 }
+
+// Strips the world permission bits of a config file a writer just placed, group bits and setgid staying for shared group homes, managed installs and containers keeping their modes
+func DropOtherAccess(ctx context.Context, path string) {
+	if IsManaged(ctx, "") || home.ContainerOrChmodSkipped() {
+		return
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.Mode().Perm()&0o007 == 0 {
+		return
+	}
+	_ = os.Chmod(path, st.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)&^0o007)
+}

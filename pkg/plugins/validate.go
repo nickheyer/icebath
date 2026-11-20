@@ -32,11 +32,10 @@ type ValidationCheck struct {
 	Detail string
 }
 
-// Result of validating one plugin directory, isolation informational only
+// Result of validating one plugin directory
 type ValidationReport struct {
-	Checks    []ValidationCheck
-	Warnings  []string
-	Isolation *IsolationReport
+	Checks   []ValidationCheck
+	Warnings []string
 }
 
 // Reports whether every check passed
@@ -81,11 +80,6 @@ func (r *ValidationReport) ToDict() *pyjson.Object {
 		warnings[i] = w
 	}
 	out.Set("warnings", warnings)
-	if r.Isolation != nil {
-		out.Set("isolation", r.Isolation.ToDict())
-	} else {
-		out.Set("isolation", nil)
-	}
 	return out
 }
 
@@ -571,11 +565,6 @@ func validatePluginDir(ctx context.Context, path string, probe *capabilityProbe)
 		return nil, err
 	}
 	checkLanguagePacks(report, manifest, path)
-	isolation, err := auditPluginDir(path, manifest)
-	if err != nil {
-		return nil, err
-	}
-	report.Isolation = isolation
 	return report, nil
 }
 
@@ -729,11 +718,6 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 		}
 	}
 	checkSecurityScan(report, pluginDir)
-	isolation, err := auditPluginDir(pluginDir, pkg.Manifest)
-	if err != nil {
-		return nil, err
-	}
-	report.Isolation = isolation
 	return report, nil
 }
 

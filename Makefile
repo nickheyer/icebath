@@ -2,7 +2,7 @@
 
 GOTAGS ?= goolm
 # Memory ceiling of the Go toolchain for every compile
-GOMEMLIMIT ?= 6GiB
+GOMEMLIMIT ?= 12GiB
 # Work directories of the Go toolchain, on disk, one per running make command
 GOSCRATCH ?= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/icebath/gotmp
 

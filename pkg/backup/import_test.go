@@ -579,14 +579,15 @@ func TestImportAtomicWritesRestorePreservesExistingFileMode(t *testing.T) {
 	os.Mkdir(h, 0o755)
 	target := filepath.Join(h, "config.yaml")
 	writeText(t, target, "model: original\n")
-	os.Chmod(target, 0o644)
+	// No world bits, the import strips those from a restored config.yaml
+	os.Chmod(target, 0o640)
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
 	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
 	runImport(t, zipPath, true)
 	st, _ := os.Stat(target)
-	if readText(t, target) != "model: restored\n" || st.Mode().Perm() != 0o644 {
+	if readText(t, target) != "model: restored\n" || st.Mode().Perm() != 0o640 {
 		t.Fatalf("mode %o", st.Mode().Perm())
 	}
 }
@@ -650,7 +651,8 @@ func TestImportAtomicWritesModeIsAppliedBeforeTheReplace(t *testing.T) {
 	os.Mkdir(h, 0o755)
 	target := filepath.Join(h, "config.yaml")
 	writeText(t, target, "model: original\n")
-	os.Chmod(target, 0o644)
+	// No world bits, the import strips those from a restored config.yaml
+	os.Chmod(target, 0o640)
 	st, _ := os.Stat(target)
 	expected := uint32(st.Mode().Perm())
 	useHomes(t, h, tmp)

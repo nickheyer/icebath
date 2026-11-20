@@ -66,6 +66,18 @@ func coreOverridePythonFiles(pluginDir string) ([]string, error) {
 	return rels, nil
 }
 
+// Text of a file decoded as utf-8 with replacement, the BOM dropped when sig is set
+func readTextReplace(path string, sig bool) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if sig {
+		raw = stripBOM(raw)
+	}
+	return pystr.DecodeUTF8Replace(raw), nil
+}
+
 // Parsed plugin modules, unparseable ones dropped while read failures and parser limits propagate
 func parsePluginSources(pluginDir string, keep func(rel string) bool) ([]parsedSource, error) {
 	rels, err := coreOverridePythonFiles(pluginDir)

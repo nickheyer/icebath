@@ -46,7 +46,7 @@ type loadedHookDir struct {
 }
 
 // Hook of a directory whose HOOK.yaml names the command that handles its events, nil with the reason printed for a directory that holds no usable hook
-func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
+func loadHookDir(hookDir string) (*loadedHookDir, error) {
 	manifestPath := filepath.Join(hookDir, "HOOK.yaml")
 	if !pathExists(manifestPath) {
 		return nil, nil
@@ -89,21 +89,10 @@ func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
 		}
 		return nil, nil
 	}
-	command, err := plugins.ResolveDirectoryHookCommand(hookDir, declared)
+	argv, err := plugins.ResolveDirectoryHookCommand(hookDir, declared)
 	if err != nil {
 		skipHook(hookName, err.Error())
 		return nil, nil
-	}
-	for _, event := range events {
-		consented, err := plugins.DirectoryHookConsented(ctx, event, command)
-		if err != nil {
-			return nil, err
-		}
-		if !consented {
-			skipHook(hookName, fmt.Sprintf("its command is not approved for %s in %s; use --accept-hooks, ICEBATH_ACCEPT_HOOKS=1 or hooks_auto_accept: true",
-				event, plugins.ShellHookAllowlistPath(ctx)))
-			return nil, nil
-		}
 	}
 	timeout := plugins.DirectoryHookTimeout(manifest["timeout"])
 	var description any = ""
@@ -111,7 +100,7 @@ func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
 		description = v
 	}
 	handle := func(ctx context.Context, eventType string, hookContext map[string]any) (any, error) {
-		return plugins.RunDirectoryHook(ctx, eventType, command, timeout, hookContext)
+		return plugins.RunDirectoryHook(ctx, eventType, hookDir, argv, timeout, hookContext)
 	}
 	return &loadedHookDir{name: hookName, events: events, handle: handle, description: description}, nil
 }
@@ -158,12 +147,8 @@ func (h *HookRegistry) LoadedHooks() []map[string]any {
 	return append([]map[string]any{}, h.loadedHooks...)
 }
 
-// Registers the always on built in hooks, of which none ship
-func (h *HookRegistry) registerBuiltinHooks() {}
-
-// Registers the built in hooks then loads every valid hook dir under the hooks dir of the active profile
+// Loads every valid hook dir under the hooks dir of the active profile
 func (h *HookRegistry) discoverAndLoad(ctx context.Context) error {
-	h.registerBuiltinHooks()
 	hooksDir := resolveHooksDir(ctx)
 	if !pathExists(hooksDir) {
 		return nil
@@ -183,7 +168,7 @@ func (h *HookRegistry) discoverAndLoad(ctx context.Context) error {
 					err = fmt.Errorf("%v", rec)
 				}
 			}()
-			return loadHookDir(ctx, hookDir)
+			return loadHookDir(hookDir)
 		}()
 		if err != nil {
 			fmt.Fprintf(os.Stdout, "[hooks] Error loading hook %s: %s\n", entry.Name(), pyrepr.ExceptionMessage(err))
