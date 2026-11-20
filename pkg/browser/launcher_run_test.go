@@ -980,6 +980,15 @@ func TestAPausedSharedBrowserIsRefusedThenAttachedOnceItAnswersAgain(t *testing.
 			ProcEnv: environ(), Timeout: durp(3 * time.Second), SandboxBypass: true})
 	}
 	syscall.Kill(pid, syscall.SIGSTOP)
+	var paused syscall.WaitStatus
+	for {
+		if _, werr := syscall.Wait4(pid, &paused, syscall.WUNTRACED, nil); werr != syscall.EINTR {
+			if werr != nil || !paused.Stopped() {
+				t.Fatalf("the browser did not pause: %v, status %#x", werr, uint32(paused))
+			}
+			break
+		}
+	}
 	attached, err := attach()
 	syscall.Kill(pid, syscall.SIGCONT)
 	if attached != nil || !strings.Contains(err, strconv.Itoa(pid)) {

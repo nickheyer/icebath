@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -621,6 +622,35 @@ func lrStartTimeValue(pid int) any {
 	return nil
 }
 
+// Longest a started child is given to show its own image
+const lrImageWait = 5 * time.Second
+
+// Executable of a child this process just started, read once the child runs its own image.
+// Until its exec lands a started child mirrors this process, executable and command line alike, and a loaded machine stretches that past the return of the start
+func lrSpawnedExe(child localRuntimeProc) (string, error) {
+	exe, err := child.Exe()
+	if err != nil {
+		return "", err
+	}
+	self, err := openPSProcess(os.Getpid())
+	if err != nil {
+		return exe, nil
+	}
+	if own, err := self.Exe(); err != nil || exe != own {
+		return exe, nil
+	}
+	mirrored, err := self.Cmdline()
+	if err != nil {
+		return exe, nil
+	}
+	for deadline := time.Now().Add(lrImageWait); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		if argv, err := child.Cmdline(); err != nil || !slices.Equal(argv, mirrored) {
+			break
+		}
+	}
+	return child.Exe()
+}
+
 // Records the router incarnation and its owner so other processes can route to and recover it
 func (s *LlamaServerSupervisor) writeState() error {
 	proc := s.currentProc()
@@ -632,7 +662,7 @@ func (s *LlamaServerSupervisor) writeState() error {
 	if err != nil {
 		return err
 	}
-	exe, err := ps.Exe()
+	exe, err := lrSpawnedExe(ps)
 	if err != nil {
 		return err
 	}

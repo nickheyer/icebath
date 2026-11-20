@@ -42,7 +42,7 @@ func auxManagedServer(t *testing.T) (context.Context, func(port int, key string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	exe, err := proc.Exe()
+	exe, err := lrSpawnedExe(proc)
 	if err != nil {
 		t.Fatal(err)
 	}

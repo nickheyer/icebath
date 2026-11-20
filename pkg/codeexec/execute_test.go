@@ -45,7 +45,7 @@ func TestInterpreterKillInExecuteCodeNamesTheOwnedProcessRoute(t *testing.T) {
 	prev := isSupervisedGatewayProcess
 	isSupervisedGatewayProcess = func() bool { return true }
 	t.Cleanup(func() { isSupervisedGatewayProcess = prev })
-	result := decodeResult(t, executeCode(t.Context(), env, `import subprocess; subprocess.run(["pkill", "-9", "python3"])`, "", nil, false))
+	result := decodeResult(t, executeCode(t.Context(), env, `import subprocess; subprocess.run(["pkill", "-0", "python3"])`, "", nil, false))
 	if !strings.Contains(errorOf(result), "proc_") || !strings.Contains(errorOf(result), "explicit PID") {
 		t.Fatalf("kill result %v", result)
 	}

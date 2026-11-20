@@ -61,17 +61,19 @@ func TestStagePacesByPaint(t *testing.T) {
 	snap := probeSnapshot()
 	live := probeLive()
 	st.post(func(s *stage) { s.sync(&snap, live) })
+	sized := time.Now()
 	st.post(func(s *stage) { s.resize(80, 24, vxl.ModeShapes, 0.5) })
 	fs := k.await(1, 2*time.Second)
-	if len(fs) != 1 {
-		t.Fatalf("%d frames after a resize", len(fs))
+	if len(fs) == 0 {
+		t.Fatal("no frame after a resize")
 	}
 	f := fs[0]
 	if f.cols != 80 || f.rows != 24 || len(f.cells) != 80*24 || f.packet != nil || f.gen != 1 {
 		t.Fatalf("first frame %dx%d with %d cells gen %d", f.cols, f.rows, len(f.cells), f.gen)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if n := len(k.frames()); n != 1 {
+	// The worker draws over an unpainted frame once the paint grace ran out, so a second frame counts against it only when read within the grace of the resize, which a stalled machine misses
+	if n := len(k.frames()); n != 1 && time.Since(sized) < paintGrace {
 		t.Fatalf("%d frames drawn while the first was never painted", n)
 	}
 	st.painted(f.gen)

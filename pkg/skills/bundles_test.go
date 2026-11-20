@@ -345,9 +345,10 @@ func TestBundleOverwriteNeverExposesAPartialFile(t *testing.T) {
 	var seen []any
 	stop := make(chan struct{})
 	done := make(chan struct{})
+	reading := make(chan struct{})
 	go func() {
 		defer close(done)
-		for {
+		for first := true; ; {
 			select {
 			case <-stop:
 				return
@@ -363,8 +364,20 @@ func TestBundleOverwriteNeverExposesAPartialFile(t *testing.T) {
 			mu.Lock()
 			seen = append(seen, m["skills"])
 			mu.Unlock()
+			if first {
+				first = false
+				close(reading)
+			}
 		}
 	}()
+	// The overwrites start once the reader has read the bundle, so a loaded machine cannot finish them before the reader ran at all
+	select {
+	case <-reading:
+	case <-time.After(30 * time.Second):
+		close(stop)
+		<-done
+		t.Fatal("the reader never read the saved bundle")
+	}
 	for i := 0; i < 20; i++ {
 		skills := []string{"new-skill"}
 		if i%2 == 1 {

@@ -536,17 +536,33 @@ func TestIcebathSubprocessEnvSessionKeyHandling(t *testing.T) {
 
 // Background child drain tests
 
-func pkillPattern(pattern string) {
-	exec.Command("pkill", "-9", "-f", pattern).Run()
+// Kills the one background process whose pid a test command wrote into pidFile, waiting up to wait for a launched one to write it.
+// The kill goes through the shell that recorded the pid and names that pid alone, a pattern kill would also take every matching process of the other test binaries and of the developer
+func killRecorded(bash, pidFile string, wait time.Duration) {
+	for deadline := time.Now().Add(wait); ; time.Sleep(20 * time.Millisecond) {
+		if data, _ := os.ReadFile(pidFile); strings.TrimSpace(string(data)) != "" {
+			exec.Command(bash, "-c", `kill -9 "$(cat "$0")"`, pidFile).Run()
+			return
+		}
+		if !time.Now().Before(deadline) {
+			return
+		}
+	}
 }
 
 func TestPlainBackgroundReturnsPromptly(t *testing.T) {
-	requireBash(t)
-	l := NewLocalEnvironment(context.Background(), newTestToolEnv(t), t.TempDir(), 15, nil, true)
+	bash := requireBash(t)
+	dir := t.TempDir()
+	l := NewLocalEnvironment(context.Background(), newTestToolEnv(t), dir, 15, nil, true)
 	defer l.Cleanup(false)
-	defer pkillPattern("sleep 60")
+	plain, detached := filepath.Join(dir, "plain.pid"), filepath.Join(dir, "detached.pid")
+	var detachedWait time.Duration
+	defer func() {
+		killRecorded(bash, plain, 0)
+		killRecorded(bash, detached, detachedWait)
+	}()
 	start := time.Now()
-	res, err := l.Execute(context.Background(), "sleep 60 & echo icebath_8340_plain_bg", ExecOptions{Timeout: 15})
+	res, err := l.Execute(context.Background(), "sleep 60 & echo $! > "+shQuote(plain)+"; echo icebath_8340_plain_bg", ExecOptions{Timeout: 15})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,8 +572,11 @@ func TestPlainBackgroundReturnsPromptly(t *testing.T) {
 	if res.ReturnCode != 0 || !strings.Contains(res.Output, "icebath_8340_plain_bg") {
 		t.Fatalf("%+v", res)
 	}
+	if _, err := exec.LookPath("setsid"); err == nil {
+		detachedWait = 5 * time.Second
+	}
 	start = time.Now()
-	res, _ = l.Execute(context.Background(), "setsid sleep 60 > /dev/null 2>&1 < /dev/null & disown; echo started", ExecOptions{Timeout: 15})
+	res, _ = l.Execute(context.Background(), `setsid bash -c 'echo $$ > "$0"; exec sleep 60' `+shQuote(detached)+" > /dev/null 2>&1 < /dev/null & disown; echo started", ExecOptions{Timeout: 15})
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Fatalf("setsid path hung for %s", elapsed)
 	}

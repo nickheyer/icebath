@@ -1,6 +1,7 @@
 package pythread
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -38,12 +39,17 @@ func TestLocalDropsSlotsOfFinishedGoroutines(t *testing.T) {
 	var l Local
 	var wg sync.WaitGroup
 	for i := 0; i < localPruneFloor+10; i++ {
+		var id uint64
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			id = GoroutineID()
 			l.Set(i)
 		}()
 		wg.Wait()
+		for liveGoroutineIDs()[id] {
+			runtime.Gosched()
+		}
 	}
 	l.Set("main")
 	l.mu.Lock()

@@ -441,10 +441,10 @@ func TestCustodyATimedOutChildNeverWaitsOnAGrandchildHoldingItsPipes(t *testing.
 		return popenChild(argv, opts)
 	}
 	start := time.Now()
-	_, err := Run(context.Background(), []string{"sh", "-c", "sleep 20 & sleep 20"}, false, ChildOptions{Capture: true, Timeout: 500 * time.Millisecond})
+	ran, err := Run(context.Background(), []string{"sh", "-c", "sleep 20 & sleep 20"}, false, ChildOptions{Capture: true, Timeout: 500 * time.Millisecond})
 	var timeout *updaterecord.GitTimeout
 	if !errors.As(err, &timeout) {
-		t.Fatalf("want a timeout, got %v", err)
+		t.Fatalf("want a timeout, got %v from a child that ended as %+v", err, ran)
 	}
 	if time.Since(start) >= 15*time.Second {
 		t.Fatal("Run waited on a grandchild after the timeout")
@@ -662,10 +662,10 @@ func TestCustodyATimedOutFetchTakesItsHelpersWithIt(t *testing.T) {
 	t.Cleanup(func() { custodyHeld, custodyDeathSignal = saveHeld, saveDeath })
 	custodyHeld = func() bool { return true }
 	custodyDeathSignal = func() *syscall.SysProcAttr { return nil }
-	_, err := RunGit(context.Background(), []string{"git"}, []string{"fetch", "--upload-pack=" + helper, "origin"}, ChildOptions{Dir: repo, Capture: true, Timeout: 2 * time.Second})
+	fetched, err := RunGit(context.Background(), []string{"git"}, []string{"fetch", "--upload-pack=" + helper, "origin"}, ChildOptions{Dir: repo, Capture: true, Timeout: 2 * time.Second})
 	var timeout *updaterecord.GitTimeout
 	if !errors.As(err, &timeout) {
-		t.Fatalf("want a timeout, got %v", err)
+		t.Fatalf("want a timeout, got %v from a fetch that ended as %+v", err, fetched)
 	}
 	if !cuGoneWithin(cuWaitPID(t, helperPID), 5*time.Second) {
 		t.Fatal("the fetch's helper outlived the timed-out fetch")
