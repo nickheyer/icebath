@@ -8,11 +8,31 @@
   <img src="./assets/ICE_BATH_BANNER_TEXT_WHITE.png" alt="icebath" width="520" />
 </picture>
 
+<br />
+
+<a href="https://icebath.app"><img src="https://img.shields.io/badge/site-icebath.app-0b0f14?style=for-the-badge&labelColor=0b0f14&color=1c2733" alt="icebath.app" /></a>
+<img src="https://img.shields.io/badge/go-1.27-0b0f14?style=for-the-badge&logo=go&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="go 1.27" />
+<img src="https://img.shields.io/badge/linux-amd64-0b0f14?style=for-the-badge&logo=linux&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="linux amd64" />
+
+<br />
+<br />
+
 <samp>A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.</samp>
+
+<br />
+<br />
+
+<kbd>&nbsp;<a href="#-install">INSTALL</a>&nbsp;</kbd>&nbsp;&nbsp;<kbd>&nbsp;<a href="#-usage">USAGE</a>&nbsp;</kbd>
 
 </div>
 
-## Install
+<br />
+
+<p align="center">
+<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>
+</p>
+
+## ▍ Install
 
 ```sh
 curl -fsSL icebath.app | sh
@@ -31,7 +51,7 @@ git clone https://github.com/nickheyer/icebath && icebath/setup-icebath.sh
 # apt, dnf and apk https://icebath.app
 ```
 
-## Usage
+## ▍ Usage
 
 ```sh
 icebath                         # open the TUI, set up a model there on first run
