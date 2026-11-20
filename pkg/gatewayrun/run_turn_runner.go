@@ -77,7 +77,7 @@ type TurnRunner struct {
 	segmentsMu    sync.Mutex
 	segmentsGen   int64
 	segments      *tuihost.TurnSegments
-	// Result fields a classic CLI turn adds to the receipt, popped once run_sync settles
+	// Result fields a one shot chat turn adds to the receipt, popped once run_sync settles
 	cliResultFields map[string]any
 	// Start times and before state snapshots of local viewer tool calls by call id
 	localToolMu        sync.Mutex

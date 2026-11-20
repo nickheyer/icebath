@@ -73,7 +73,7 @@ func ResetInteractiveContext(env *Env) {
 	}
 }
 
-// Reports an interactive CLI or ACP session, bound flag first and process environment second
+// Reports a one shot chat or ACP session, bound flag first and process environment second
 func isInteractiveCLI(env *Env) bool {
 	return sessionFlag(env, "interactive", "ICEBATH_INTERACTIVE")
 }
@@ -105,7 +105,7 @@ func fireApprovalHook(ctx context.Context, env *Env, hookName string, payload ma
 	}
 }
 
-// Surface a gateway rendered approval reports, cli for a classic CLI session's turn else gateway
+// Surface a gateway rendered approval reports, cli for a one shot chat session's turn else gateway
 func gatewayApprovalSurface(env *Env) string {
 	if sessionValue(env, "surface", "ICEBATH_SESSION_SURFACE") == "cli" {
 		return "cli"
@@ -113,7 +113,7 @@ func gatewayApprovalSurface(env *Env) string {
 	return "gateway"
 }
 
-// Reports a classic CLI, TUI or ACP session's turn from the launch policy the gateway froze
+// Reports a one shot chat, TUI or ACP session's turn from the launch policy the gateway froze
 func isLocalInteractiveSession(env *Env) bool {
 	return localInteractiveSources[sessionValue(env, "source", "ICEBATH_SESSION_SOURCE")]
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Sources of the classic CLI family, its finite one shot runs included
+// Sources of the CLI family, its finite one shot runs included
 var cliFamilySources = []string{"cli", provider.OneshotSource}
 
 // Refusal reason of an error, empty for one that is no runtime store refusal

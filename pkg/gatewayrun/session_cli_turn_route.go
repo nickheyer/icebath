@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Run result keys a classic CLI viewer reads that the gateway projection does not carry
+// Run result keys a one shot chat viewer reads that the gateway projection does not carry
 var cliResultPassthrough = []string{"pre_transform_response", "billing_block", "last_reasoning", "response_previewed",
 	"response_transformed", "turn_exit_reason"}
 
@@ -132,7 +132,7 @@ func oneTurnRoute(ctx context.Context, t *TurnRunner, policy *gateway.LocalSessi
 	return oneTurnRuntime(ctx, override, model, runtimeKwargs, cfg)
 }
 
-// Receipt only fields of a classic CLI turn, pending steer removed from the raw result
+// Receipt only fields of a one shot chat turn, pending steer removed from the raw result
 func takeCLIResultFields(ctx context.Context, result map[string]any, auxBefore *pyjson.Object, db *state.SessionDB, sessionID string) map[string]any {
 	if result == nil {
 		return map[string]any{}
@@ -170,7 +170,7 @@ func takeCLIResultFields(ctx context.Context, result map[string]any, auxBefore *
 	return fields
 }
 
-// Runs the turn's conversation, keeping a classic CLI turn's receipt only fields on the turn
+// Runs the turn's conversation, keeping a one shot chat turn's receipt only fields on the turn
 func runClassicCLITurn(ctx context.Context, t *TurnRunner, run func() (map[string]any, error)) (map[string]any, error) {
 	classic, err := classicCLITurn(ctx, t)
 	if err != nil {

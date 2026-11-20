@@ -39,7 +39,7 @@ type SkinConfig struct {
 	CustomCSS   string
 }
 
-// Filter every GetColor result passes through, the classic CLI light mode remap
+// Filter every GetColor result passes through, the one shot chat light mode remap
 var skinColorFilter atomic.Pointer[func(string) string]
 
 // InstallSkinColorFilter routes every GetColor result through fn, nil removing the filter

@@ -165,7 +165,7 @@ func (t *TurnRunner) askClarifyQuestion(ctx context.Context, question string, ch
 // Wire keys of one clarify question in the batch request
 var clarifyBatchQuestionKeys = []string{"qid", "question", "choices", "multi_select"}
 
-// The whole clarify batch as one request to a classic CLI viewer's batch panel
+// The whole clarify batch as one request to a one shot chat viewer's batch panel
 func askClarifyBatch(ctx context.Context, t *TurnRunner, questions []any) map[string]any {
 	owner := t.approvalOwner
 	live, ok := owner.authority.Live(owner.sessionID)

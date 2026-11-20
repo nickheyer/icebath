@@ -140,7 +140,7 @@ func effortFields(reasoning any, tier string, model, providerName, baseURL, apiM
 	return pyjson.ObjectOf("reasoning_effort", effort, "reasoning_effort_wire", wire, "service_tier", tier, "fast", fast)
 }
 
-// Session info of a live session, its source, model, route, effort and classic CLI fields
+// Session info of a live session, its source, model, route, effort and one shot chat fields
 func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*pyjson.Object, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {

@@ -19,7 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Classic CLI banner reads of the session inventory, assigned from pkg/app in cmd/icebath/wiring.go
+// Banner reads of the session inventory, assigned from pkg/app in cmd/icebath/wiring.go
 var InventoryBanner struct {
 	ReleaseDate         string
 	AvailableSkills     func(ctx context.Context) *pyjson.Object
@@ -207,7 +207,7 @@ func unknownToolsets(ctx context.Context, enabled []string, cfg map[string]any) 
 	return out
 }
 
-// Skill names by category as the classic CLI offers them, kanban skills relevant for this scan only
+// Skill names by category as the chat client offers them, kanban skills relevant for this scan only
 func cliSkills(ctx context.Context) *pyjson.Object {
 	grouped := pyjson.NewObject()
 	for _, skill := range skills.NewScope(home.Dir(ctx), nil).FindAllSkillsKanbanScoped() {

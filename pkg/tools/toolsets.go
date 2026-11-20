@@ -165,7 +165,7 @@ var Toolsets = map[string]Toolset{
 		Tools: append([]string{}, CodingTools...), Posture: true},
 	"icebath-acp":            ts("Editor integration (VS Code, Zed, JetBrains) - coding-focused tools without messaging, audio, or clarify UI", withoutName(CodingTools, "clarify")),
 	"icebath-api-server":     ts("OpenAI-compatible API server - full agent tools accessible via HTTP (no interactive UI tools like clarify or send_message)", coreWithout(false, "text_to_speech", "clarify", "computer_use")),
-	"icebath-cli":            bundle("Full interactive CLI toolset - all default tools plus cronjob management"),
+	"icebath-cli":            bundle("Full terminal toolset - all default tools plus cronjob management"),
 	"icebath-cron":           bundle("Default cron toolset - same core tools as icebath-cli; gated by `icebath tools`"),
 	"icebath-telegram":       bundle("Telegram bot toolset - full access for personal use (terminal has safety checks)"),
 	"icebath-discord":        bundle("Discord bot toolset - full access (terminal has safety checks via dangerous command approval)", "discord", "discord_admin"),

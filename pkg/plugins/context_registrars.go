@@ -508,17 +508,6 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 	if role != "user" {
 		msg = "[" + role + "] " + content
 	}
-	m.mu.RLock()
-	cli := m.cliRef
-	m.mu.RUnlock()
-	if cli != nil && origin == nil {
-		if cli.AgentRunning() {
-			cli.QueueInterrupt(msg)
-		} else {
-			cli.QueuePending(msg)
-		}
-		return true
-	}
 	if sessionKey != "" && origin != nil {
 		pkgLog().Warn("inject_message: pass session_key or origin, not both")
 		return false
@@ -584,12 +573,12 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 
 // Recorded working directory of the calling session, never the gateway process cwd
 func (c *Context) SessionCwd(ctx context.Context) (string, error) {
-	return contextCwd(ctx, c.manager)
+	return SessionCwd(ctx)
 }
 
 // Client surface or messaging platform of the calling session
 func (c *Context) SessionSurface(ctx context.Context) (string, error) {
-	return contextSurface(ctx, c.manager)
+	return SessionSurface(ctx), nil
 }
 
 // Posts text into the session bound to this call and returns an editable handle that never raises
@@ -718,16 +707,6 @@ func (c *Context) DispatchTool(ctx context.Context, toolName string, args map[st
 	forwarded := map[string]any{}
 	for k, v := range kwargs {
 		forwarded[k] = v
-	}
-	if _, ok := forwarded["parent_agent"]; !ok {
-		c.manager.mu.RLock()
-		cli := c.manager.cliRef
-		c.manager.mu.RUnlock()
-		if cli != nil {
-			if agent := cli.Agent(); agent != nil {
-				forwarded["parent_agent"] = agent
-			}
-		}
 	}
 	return fn(ctx, c.manager.home, toolName, args, forwarded)
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Classic CLI launch flags of the gateway agent kept on the in process agent
+// One shot chat launch flags of the gateway agent kept on the in process agent
 type cliFlagsState struct {
 	oneTurn                    bool
 	oneTurnAlias               string

@@ -329,7 +329,7 @@ func localTodoState(toolName string, result any) *pyjson.Object {
 	return tuihost.NormalizeTodoState(value)
 }
 
-// Whether a local viewer turn runs on a classic CLI surface session whose viewer reads the raw result
+// Whether a local viewer turn runs on a cli surface session whose viewer reads the raw result
 func classicCLITurn(ctx context.Context, t *TurnRunner) (bool, error) {
 	if !localViewerTurn(t) {
 		return false, nil

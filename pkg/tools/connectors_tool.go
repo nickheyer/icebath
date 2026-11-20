@@ -42,7 +42,7 @@ var ManageConnectionsSchema = Dict(
 	"description", "Connect the user to MCP servers: a server from the bundled catalog or one already in the user's "+
 		"mcp_servers config, each with its own credentials and OAuth. 'install' adds a catalog entry, "+
 		"'enable' re-enables a disabled configured server, 'authorize' runs its OAuth. Pass SEVERAL names in one call. "+
-		"In the terminal UI and the interactive CLI the call shows the user an approval card and blocks until "+
+		"In the terminal UI the call shows the user an approval card and blocks until "+
 		"every server is connected, skipped, or the deadline passes. Where no card exists (a one-shot run, a "+
 		"scheduled job, a messaging platform) each target runs at once and the result says what happened, with a "+
 		"link for the USER to open in a browser when one is needed (never open it yourself). Never hand-edit "+

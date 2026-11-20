@@ -75,7 +75,7 @@ func automationRows(ctx context.Context, a *SessionAuthority, target string) ([3
 	return rows, nil
 }
 
-// Session automation verb, the classic CLI's goal, loop and heartbeat manager calls run on the owner
+// Session automation verb, the reference CLI's goal, loop and heartbeat manager calls run on the owner
 func automation(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
 	kind, call, args, kwargs, err := parseViewerAutomation(params)
 	if err != nil {

@@ -60,7 +60,6 @@ type Manager struct {
 	injectorMu                    sync.Mutex
 	gatewayInjector               *ownedInjector
 	tuiInjector                   *ownedInjector
-	cliRef                        CLIHost
 	contextEngine                 any
 	cliCommands                   map[string]*CLICommand
 	pluginCommands                map[string]*PluginCommand

@@ -240,7 +240,7 @@ func (c *kanbanCLI) handlers() map[string]func() (int, error) {
 	}
 }
 
-// Author name for an interactive CLI call, the current profile else user
+// Author name for a kanban command run from the shell, the current profile else user
 func (c *kanbanCLI) profileAuthor() string {
 	if name := profiles.CurrentProfileName(c.ctx); name != "" {
 		return name

@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-// Suffixes the classic CLI treats as image attachments
+// Suffixes treated as image attachments
 var ImageExtensions = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
 	".bmp": true, ".tiff": true, ".tif": true, ".svg": true, ".ico": true,

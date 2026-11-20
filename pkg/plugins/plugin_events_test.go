@@ -3,7 +3,6 @@ package plugins
 import (
 	"context"
 	"errors"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -69,25 +68,17 @@ func TestNamesThatCannotFormANamespacedEventAreRefusedBeforeEmit(t *testing.T) {
 	}
 }
 
-// Port of plugin_session.context_surface and context_cwd for the classic CLI and a gateway session
-func TestContextSurfaceAndCwdFollowTheCLIReference(t *testing.T) {
-	m := NewManager(t.TempDir())
+// Port of plugin_session.context_surface and context_cwd for a gateway session
+func TestContextSurfaceAndCwdFollowTheSessionPolicy(t *testing.T) {
+	c := newContext(&Manifest{Name: "test-plugin", Source: "user"}, NewManager(t.TempDir()))
 	installActivationServices(t, &Services{
 		ActiveSessionPolicy: func(context.Context) (string, string, bool) { return "telegram", "/work", true },
 	})
 	ctx := context.Background()
-	if s, _ := contextSurface(ctx, m); s != "telegram" {
+	if s, _ := c.SessionSurface(ctx); s != "telegram" {
 		t.Fatalf("surface = %q", s)
 	}
-	if c, _ := contextCwd(ctx, m); c != "/work" {
-		t.Fatalf("cwd = %q", c)
-	}
-	m.cliRef = struct{ CLIHost }{}
-	wd, _ := os.Getwd()
-	if s, _ := contextSurface(ctx, m); s != "cli" {
-		t.Fatalf("cli surface = %q", s)
-	}
-	if c, err := contextCwd(ctx, m); c != wd || err != nil {
-		t.Fatalf("cli cwd = %q, %v", c, err)
+	if cwd, _ := c.SessionCwd(ctx); cwd != "/work" {
+		t.Fatalf("cwd = %q", cwd)
 	}
 }

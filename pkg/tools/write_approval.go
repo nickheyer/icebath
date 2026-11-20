@@ -311,7 +311,7 @@ func stagedDecision(env *Env, subsystem string) GateDecision {
 	command := "/" + subsystem + " pending"
 	where := "review with " + command
 	if !slashReviewSurface(env) {
-		where = fmt.Sprintf("pending records live in %s (review from an interactive CLI session with %s)", PendingWriteDir(env, subsystem), command)
+		where = fmt.Sprintf("pending records live in %s (review from a terminal UI session with %s)", PendingWriteDir(env, subsystem), command)
 	}
 	return GateDecision{Stage: true, Message: fmt.Sprintf("Staged for approval (%s.write_approval is on). Not yet saved — %s.", subsystem, where)}
 }

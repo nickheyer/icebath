@@ -12,16 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-type pmiCLI struct {
-	running            bool
-	pending, interrupt []string
-}
-
-func (c *pmiCLI) AgentRunning() bool        { return c.running }
-func (c *pmiCLI) QueueInterrupt(msg string) { c.interrupt = append(c.interrupt, msg) }
-func (c *pmiCLI) QueuePending(msg string)   { c.pending = append(c.pending, msg) }
-func (c *pmiCLI) Agent() any                { return nil }
-
 type pmiInjector struct {
 	mu     sync.Mutex
 	calls  []map[string]any
@@ -75,24 +65,6 @@ func pmiInstallBoundKey(t *testing.T) {
 type pmiKey struct{}
 
 var pmiOrigin = map[string]any{"platform": "discord", "chat_id": "42", "chat_type": "thread", "thread_id": "42", "user_id": "u1"}
-
-func TestCliIdleInjectionKeepsExistingQueueBehaviour(t *testing.T) {
-	c, m := pmiContext(t, nil)
-	cli := &pmiCLI{}
-	m.SetCLIRef(cli)
-	if !c.InjectMessage(context.Background(), "new input", "user", "", nil) || !reflect.DeepEqual(cli.pending, []string{"new input"}) || len(cli.interrupt) != 0 {
-		t.Fatalf("idle cli = %v %v", cli.pending, cli.interrupt)
-	}
-}
-
-func TestCliRunningInjectionKeepsExistingInterruptBehaviour(t *testing.T) {
-	c, m := pmiContext(t, nil)
-	cli := &pmiCLI{running: true}
-	m.SetCLIRef(cli)
-	if !c.InjectMessage(context.Background(), "status", "system", "", nil) || !reflect.DeepEqual(cli.interrupt, []string{"[system] status"}) || len(cli.pending) != 0 {
-		t.Fatalf("running cli = %v %v", cli.pending, cli.interrupt)
-	}
-}
 
 // No key and no origin hands the gateway the session bound on the caller context, empty when none is
 func TestKeyLessGatewayInjectionLetsTheGatewayPickTheChat(t *testing.T) {
@@ -273,16 +245,6 @@ func TestOriginInjectionRejectsAmbiguousOrMalformedTargets(t *testing.T) {
 	m.SetGatewayMessageInjector(new(int), inj.inject)
 	if c.InjectMessage(context.Background(), "x", "user", "agent:main:discord:thread:42", pmiOrigin) || c.InjectMessage(context.Background(), "x", "user", "", "discord:42") || len(inj.calls) != 0 {
 		t.Fatalf("ambiguous or malformed target accepted = %v", inj.calls)
-	}
-}
-
-// An origin names a messaging chat so a CLI hosted plugin gets false and no REPL entry
-func TestOriginInjectionNeverLandsInTheAttachedCli(t *testing.T) {
-	c, m := pmiContext(t, nil)
-	cli := &pmiCLI{}
-	m.SetCLIRef(cli)
-	if c.InjectMessage(context.Background(), "x", "user", "", pmiOrigin) || len(cli.pending)+len(cli.interrupt) != 0 {
-		t.Fatalf("origin landed in the cli = %v %v", cli.pending, cli.interrupt)
 	}
 }
 

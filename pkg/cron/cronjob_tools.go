@@ -1323,7 +1323,7 @@ func cronjobSchemaOverrides(env *tools.Env) *pyjson.Object {
 	return pyjson.ObjectOf("parameters", params)
 }
 
-// Available in interactive CLI, gateway sessions, exec ask, and cron runs
+// Available in one shot chat runs, gateway sessions, exec ask, and cron runs
 func checkCronjobRequirements(env *tools.Env) bool {
 	return truthyText(os.Getenv("ICEBATH_INTERACTIVE")) || truthyText(os.Getenv("ICEBATH_GATEWAY_SESSION")) ||
 		truthyText(os.Getenv("ICEBATH_EXEC_ASK")) || truthyText(tools.SessionEnvValue(env, "ICEBATH_CRON_SESSION"))

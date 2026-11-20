@@ -157,7 +157,7 @@ func sessionOnlyParams(params *pyjson.Object, ref SessionRef) error {
 	return nil
 }
 
-// Tool catalog of the session as the classic CLI listed it, grouped by toolset with each first sentence
+// Tool catalog of the session as the reference CLI listed it, grouped by toolset with each first sentence
 func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
 	if err := sessionOnlyParams(params, ref); err != nil {
 		return nil, err

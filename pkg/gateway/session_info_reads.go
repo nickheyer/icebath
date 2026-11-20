@@ -7,7 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/linktier"
 )
 
-// Line builders of the classic CLI a local session's owner reads run, assigned in cmd/icebath/wiring.go
+// Line builders of pkg/app a local session's owner reads run, assigned in cmd/icebath/wiring.go
 var SessionReadLines struct {
 	Toolsets  func(ctx context.Context, enabled []string) []string
 	Platforms func(ctx context.Context) []string

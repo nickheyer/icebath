@@ -27,7 +27,7 @@ func handoffHandlers(c *AuthorityConnection) map[string]controlHandler {
 	}
 }
 
-// Refusal carrying on one line the handoff text the classic CLI printed for the same outcome
+// Refusal carrying on one line the handoff text the reference CLI printed for the same outcome
 func handoffRefusal(ctx context.Context, reason, key string, kwargs map[string]any, more ...string) error {
 	lines := []string{i18n.T(ctx, "cli.commands.handoff."+key, "", kwargs)}
 	for _, k := range more {
@@ -37,7 +37,7 @@ func handoffRefusal(ctx context.Context, reason, key string, kwargs map[string]a
 	return state.NewRuntimeStoreError(reason, nil, &detail)
 }
 
-// Home channel of a platform the gateway delivers to, refused with the classic CLI text when it cannot
+// Home channel of a platform the gateway delivers to, refused with the reference CLI text when it cannot
 func handoffDestination(ctx context.Context, platformName string) (*HomeChannel, error) {
 	kwargs := map[string]any{"platform": platformName}
 	platform, err := ParsePlatform(ctx, platformName)

@@ -8,7 +8,7 @@ import (
 // Interactive UI transport labels a one shot child inherits but does not belong to
 var UITransportSources = map[string]bool{"tui": true}
 
-// Source label of finite non interactive CLI runs
+// Source label of finite one shot runs
 const OneshotSource = "oneshot"
 
 // Session row source from the bound session context, a one shot run getting oneshot, else the platform or cli

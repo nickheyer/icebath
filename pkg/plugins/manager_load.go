@@ -15,14 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Interactive CLI the manager injects plugin messages into and dispatches tools for
-type CLIHost interface {
-	AgentRunning() bool
-	QueueInterrupt(msg string)
-	QueuePending(msg string)
-	Agent() any
-}
-
 // Entry and deferred loader occupying one platform registry slot
 type PlatformSlot struct {
 	Entry  any
@@ -708,13 +700,6 @@ func (m *Manager) AuxiliaryTasks() map[string]map[string]any {
 		out[k] = copied
 	}
 	return out
-}
-
-// Attaches the interactive CLI after discovery
-func (m *Manager) SetCLIRef(cli CLIHost) {
-	m.mu.Lock()
-	m.cliRef = cli
-	m.mu.Unlock()
 }
 
 // Clears every context owned registry after an unload of all plugins, caller holding the lock

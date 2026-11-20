@@ -49,11 +49,4 @@ func TestPluginContextReadsTheCallingSessionsCwdAndSurface(t *testing.T) {
 	if cwd, err := c.SessionCwd(bare); err != nil || cwd != terminal || SessionSurface(bare) != "" {
 		t.Fatalf("terminal tail = %q %v", cwd, err)
 	}
-	c.manager.cliRef = struct{ CLIHost }{}
-	launch, _ := os.Getwd()
-	cwd, err = c.SessionCwd(ctx)
-	surface, serr = c.SessionSurface(ctx)
-	if err != nil || serr != nil || cwd != launch || surface != "cli" {
-		t.Fatalf("classic cli = %q %q %v %v", cwd, surface, err, serr)
-	}
 }

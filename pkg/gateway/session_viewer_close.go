@@ -25,7 +25,7 @@ const viewerClosePrefix = state.ViewerClosePrefix
 // Seconds of idleness the legacy startup sweep allowed a session before reaping it
 const startupIdleS = 6 * 3600.0
 
-// Viewer reasons main's TUI and classic CLI followed with a session reset
+// Viewer reasons the TUI and the one shot chat client follow with a session reset
 var viewerResetReasons = map[string]bool{"new_session": true, "tui_close": true}
 
 // Close reasons nobody asked for, the session stays resumable

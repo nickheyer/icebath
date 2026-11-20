@@ -703,13 +703,6 @@ func TestPluginCommandResultResolutionRunningLoopTimeoutDoesNotHangForever(t *te
 	}
 }
 
-type casesCLI struct{ agent any }
-
-func (c casesCLI) AgentRunning() bool    { return false }
-func (c casesCLI) QueueInterrupt(string) {}
-func (c casesCLI) QueuePending(string)   {}
-func (c casesCLI) Agent() any            { return c.agent }
-
 // Installs a dispatch service recording the keyword arguments of every plugin tool dispatch
 func casesDispatchService(t *testing.T, dispatch func(ctx context.Context, scope, name string, args, kwargs map[string]any) (string, error)) {
 	t.Helper()
@@ -721,8 +714,7 @@ func casesDispatchService(t *testing.T, dispatch func(ctx context.Context, scope
 func TestPluginDispatchToolDispatchToolRespectsExplicitParentAgent(t *testing.T) {
 	m := NewManager(t.TempDir())
 	pctx := newContext(&Manifest{Name: "test-plugin", Source: "user"}, m)
-	cliAgent, explicitAgent := &struct{ name string }{"cli_agent"}, &struct{ name string }{"explicit_agent"}
-	m.cliRef = casesCLI{agent: cliAgent}
+	explicitAgent := &struct{ name string }{"explicit_agent"}
 	var seen map[string]any
 	casesDispatchService(t, func(_ context.Context, _, _ string, _, kwargs map[string]any) (string, error) {
 		seen = kwargs
@@ -758,12 +750,9 @@ func TestPluginContextProfileNameNamedProfile(t *testing.T) {
 	}
 }
 
-func TestDispatchToolWithoutCliRefDispatchToolInvokesHandlerWithoutCliRef(t *testing.T) {
+func TestDispatchToolInvokesTheHandler(t *testing.T) {
 	h := t.TempDir()
 	m := NewManager(h)
-	if m.cliRef != nil {
-		t.Fatal("a fresh manager holds a CLI reference")
-	}
 	pctx := newContext(&Manifest{Name: "test-plugin", Source: "user"}, m)
 	var calls []map[string]any
 	var forwarded []map[string]any

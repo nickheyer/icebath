@@ -56,13 +56,6 @@ func (r *recordingInjector) inject(_ context.Context, kwargs map[string]any) boo
 	return true
 }
 
-// CLI host whose pending input and interrupt queues are recorded
-type recordingCLI struct{ pending, interrupts []string }
-
-func (c *recordingCLI) AgentRunning() bool        { return false }
-func (c *recordingCLI) QueueInterrupt(msg string) { c.interrupts = append(c.interrupts, msg) }
-func (c *recordingCLI) QueuePending(msg string)   { c.pending = append(c.pending, msg) }
-func (c *recordingCLI) Agent() any                { return nil }
 func queuedText(session *tuihost.Session) any {
 	q, _ := session.Get("queued_prompt").(map[string]any)
 	return q["text"]
@@ -125,23 +118,5 @@ func TestMissingSessionIsNotReroutedToAnotherTUISession(t *testing.T) {
 	}
 	if other.Get("queued_prompt") != nil {
 		t.Fatalf("other queued %v", other.Get("queued_prompt"))
-	}
-}
-
-// test_plugin_inject_host.py L161 test_cli_injection_still_bypasses_the_tui_host
-func TestCLIInjectionStillBypassesTheTUIHost(t *testing.T) {
-	pctx, manager, _ := injectHostCase(t)
-	cli := &recordingCLI{}
-	manager.SetCLIRef(cli)
-	origin := injectHostSession(t, "ui-origin", "ses_origin", map[string]any{"running": true})
-	injectWithHost(t, manager)
-	if !pctx.InjectMessage(context.Background(), "typed", "user", "ses_origin", nil) {
-		t.Fatal("inject_message returned false")
-	}
-	if !reflect.DeepEqual(cli.pending, []string{"typed"}) {
-		t.Fatalf("pending %v", cli.pending)
-	}
-	if origin.Get("queued_prompt") != nil {
-		t.Fatalf("origin queued %v", origin.Get("queued_prompt"))
 	}
 }

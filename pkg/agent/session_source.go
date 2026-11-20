@@ -4,7 +4,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// CLIFamilySources are the sources resume treats as CLI history, the interactive cli and finite oneshot runs
+// CLIFamilySources are the sources resume treats as CLI history, the cli source and finite one shot runs
 var CLIFamilySources = map[string]bool{"cli": true, provider.OneshotSource: true}
 
 // DaybreakSources are the owner's local surfaces, the only sources that carry OpenAI Daybreak

@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -39,26 +38,4 @@ func SessionCwd(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(cwd), nil
-}
-
-// Session surface for a plugin context, cli for the classic CLI process itself
-func contextSurface(ctx context.Context, m *Manager) (string, error) {
-	m.mu.RLock()
-	cli := m.cliRef
-	m.mu.RUnlock()
-	if cli != nil {
-		return "cli", nil
-	}
-	return SessionSurface(ctx), nil
-}
-
-// Session cwd for a plugin context, the launch directory for the classic CLI process
-func contextCwd(ctx context.Context, m *Manager) (string, error) {
-	m.mu.RLock()
-	cli := m.cliRef
-	m.mu.RUnlock()
-	if cli != nil {
-		return os.Getwd()
-	}
-	return SessionCwd(ctx)
 }
