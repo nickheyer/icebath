@@ -1,0 +1,18 @@
+[package]
+name = "anydoc-wasm"
+version = "0.2.4"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anydoc = "=0.2.4"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

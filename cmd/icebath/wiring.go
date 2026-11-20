@@ -1,0 +1,509 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/app"
+	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pluginservices"
+	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/selfupdate"
+	"github.com/nickheyer/icebath/pkg/skills"
+	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tui"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
+)
+
+var (
+	_ gateway.SteerReceiver    = (*agent.AIAgent)(nil)
+	_ gateway.RedirectReceiver = (*agent.AIAgent)(nil)
+)
+
+// Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
+func installProcessWiring() {
+	tools.DropUnlinkedToolsets()
+	commands.ApplySlashTierTexts()
+	installSlashRegistryWiring()
+	installAgentImportWiring()
+	registerCommandArgv()
+	commands.BannerVersionLabel = app.FormatBannerVersionLabel
+	gatewayrun.ResolveEphemeralSystemPromptFromConfig = commands.ResolveEphemeralSystemPrompt
+	gatewayrun.ParseServiceTierConfig = app.ParseServiceTierConfig
+	gatewayrun.ResolveCommand = func(name string) (string, bool) {
+		if d := commands.Resolve(name); d != nil {
+			return d.Name, true
+		}
+		return "", false
+	}
+	gatewayrun.SlashConfirmPending = func(sessionKey string) bool {
+		_, ok := commands.Confirms.Pending(sessionKey)
+		return ok
+	}
+	gatewayrun.SlashConfirmClear = commands.Confirms.Clear
+	gatewayrun.SlashConfirmGetPending = func(sessionKey string) (string, bool) {
+		p, ok := commands.Confirms.Pending(sessionKey)
+		return p.ConfirmID, ok
+	}
+	gatewayrun.SlashConfirmResolve = func(ctx context.Context, sessionKey, confirmID, choice string) string {
+		reply, _ := commands.Confirms.Resolve(ctx, sessionKey, confirmID, choice, commands.ConfirmTimeout)
+		return reply
+	}
+	gateway.SlashConfirmResolve = gatewayrun.SlashConfirmResolve
+	gatewayrun.SlashConfirmClearIfStale = func(sessionKey string) bool {
+		return commands.Confirms.ClearIfStale(sessionKey, commands.ConfirmTimeout)
+	}
+	gatewayrun.RunGatewayExecQuickCommand = commands.RunGatewayExecQuickCommand
+	gatewayrun.SlashConfirmRegister = func(sessionKey, confirmID, command string, handler func(ctx context.Context, choice string) (string, error)) {
+		commands.Confirms.Register(sessionKey, confirmID, command, handler)
+	}
+	gatewayrun.SaveConfigValue = app.SaveConfigValue
+	gatewayrun.SanitizeTelegramName = commands.SanitizeTelegramName
+	gatewayrun.RunCuratorSlash = app.RunCuratorSlash
+	gatewayrun.RandomTip = app.RandomTip
+	gatewayrun.ActivePersonalityName = commands.ActivePersonalityName
+	gatewayrun.AvailablePersonalities = func(cfg map[string]any) map[string]any { return commands.AvailablePersonalities(config.Tree(cfg)) }
+	gatewayrun.DescribePersonality = commands.DescribePersonality
+	gatewayrun.PersistPersonality = commands.PersistPersonality
+	gatewayrun.ResolvePersonality = func(value any, cfg map[string]any) (string, string, error) {
+		return commands.ResolvePersonality(value, config.Tree(cfg))
+	}
+	gatewayrun.GatewayDebugLocalReport = selfupdate.GatewayDebugLocalReport
+	gatewayrun.GatewayDebugUploadReply = selfupdate.GatewayDebugUploadReply
+	gatewayrun.SweepExpiredPastes = selfupdate.SweepExpiredPastes
+	gatewayrun.ConfigureWindowsStdio = app.ConfigureWindowsStdio
+	gatewayrun.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, requestedMode string) (string, error) {
+		result, err := commands.RunApprovalModeCommand(ctx, h, env, requestedMode)
+		return result.Message, err
+	}
+	gatewayrun.BuildInitPromptForCwd = app.BuildInitPromptForCwd
+	gatewayrun.ResolveCommandBusy = func(name string) (string, string, string, bool) {
+		if d := commands.Resolve(name); d != nil {
+			return d.Name, string(d.BusyPolicy), d.BusyHandler, true
+		}
+		return "", "", "", false
+	}
+	gatewayrun.IsGatewayKnownCommand = func(name string) bool {
+		return commands.IsGatewayKnownCommand(context.Background(), commands.Default, name)
+	}
+	gatewayrun.GatewayKnownCommand = func(name string) bool { return commands.GatewayKnownCommands()[name] }
+	gatewayrun.ExecuteSlashCommand = func(ctx context.Context, name, surface, args string, options map[string]any) (gatewayrun.SlashCommandReply, error) {
+		reply, err := commands.ExecuteCommand(ctx, name, commands.CommandContext{Surface: surface, Args: args, Options: options})
+		return gatewayrun.SlashCommandReply{Text: reply.Text, Data: reply.Data, Format: reply.Format}, err
+	}
+	gatewaycli.InstallMigrateS6Hooks()
+	gateway.S6Running, gateway.S6Scandir = gatewaycli.S6Running, func() string { return gatewaycli.S6DynamicScandir }
+	gateway.S6IsRunning = func(name string) (bool, error) {
+		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).IsRunning(name)
+	}
+	gateway.S6Start = func(name string) error {
+		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).Start(name)
+	}
+	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
+	gatewaycli.SealedSteward = selfupdate.SealedSteward
+	tui.ClipboardImage, tui.ClipboardImageBlocker = app.SaveClipboardImage, app.ClipboardImageBlocker
+	tui.PluginWidgets = pluginWidgets
+	tui.ScanPluginWidgets = scanPluginWidgets
+	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
+	gatewayrun.ServeSessionSocket = serveSessionSocket
+	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
+	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
+	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
+	tuiserver.PersistPersonality = commands.PersistPersonality
+	tuiserver.CommandsByCategory = func() []tuiserver.HelpCategory {
+		var out []tuiserver.HelpCategory
+		for _, g := range commands.CommandsByCategory(commands.Default) {
+			category := tuiserver.HelpCategory{Category: g.Category}
+			for _, row := range g.Rows {
+				category.Rows = append(category.Rows, [2]string{row.Command, row.Description})
+			}
+			out = append(out, category)
+		}
+		return out
+	}
+	tuiserver.ActivePersonalityName = commands.ActivePersonalityName
+	tuiserver.QuickSnapshots = func(h string, t func(string, map[string]any) string) tuiserver.SnapshotLines {
+		return gatewaycli.SnapshotCommand{Home: h, T: t}
+	}
+	tuiserver.AvailablePersonalities = func(cfg map[string]any) map[string]any {
+		return commands.AvailablePersonalities(config.Tree(cfg))
+	}
+	tuiserver.Banner.ReleaseDate = app.ReleaseDate
+	tuiserver.Banner.AvailableSkills = app.AvailableSkills
+	tuiserver.Banner.UpdateResult = app.UpdateResult
+	gateway.InventoryBanner.ReleaseDate = app.ReleaseDate
+	gateway.InventoryBanner.AvailableSkills = app.AvailableSkills
+	gateway.InventoryBanner.UpdateResult = app.UpdateResult
+	gateway.InventoryBanner.PrefetchUpdateCheck = app.PrefetchUpdateCheck
+	gateway.InventoryBanner.ToolsetAvailability = app.ToolsetAvailability
+	gateway.ConsumeTypedStopPhrase = tuiserver.ConsumeTypedStopPhrase
+	gateway.HasAnyProviderConfigured = hasAnyProviderConfigured
+	tuiserver.Prefill.ResolveFile = app.ResolvePrefillMessagesFile
+	tuiserver.Prefill.Load = app.LoadPrefillMessages
+	tuiserver.Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
+	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
+	tuiserver.CatalogRegistry, tuiserver.RegistryPluginCommands = catalogRegistry, registryPluginCommands
+	tuiserver.SaveConfigValue = app.SaveConfigValue
+	tuiserver.HostedSetupFlows = app.HostedSetupFlows
+	gateway.CommandCatalog, gateway.SlashCompletions = tuiserver.CommandCatalog, tuiserver.SlashCompletions
+	gateway.ResolveRegistryCommand = resolveRegistryCommand
+	gateway.ResolveBoundCommand, gateway.RunBoundCommand = commands.BoundGatewayCommand, commands.RunBoundGatewayCommand
+	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
+	gateway.TUIReadRender.Status, gateway.TUIReadRender.Context = app.TUIStatusRead, app.TUIContextRead
+	gateway.ViewerAutomationInvoke = agent.InvokeViewerAutomation
+	gateway.NormalizeRunBudgetSeconds = agent.NormalizeRunBudgetSeconds
+	gateway.RosterProfileInfo = func(ctx context.Context, name, path string, isDefault bool) (gateway.RosterProfile, error) {
+		info, err := manage.ProfileInfoOf(ctx, name, path, isDefault)
+		return gateway.RosterProfile{IsDefault: info.IsDefault, Model: info.Model, Provider: info.Provider,
+			Description: info.Description, DisplayName: info.DisplayName, SkillCount: info.SkillCount}, err
+	}
+	tuiserver.ResolveCommand = func(name string) (tuiserver.ResolvedCommand, bool) {
+		d := commands.Resolve(name)
+		if d == nil {
+			return tuiserver.ResolvedCommand{}, false
+		}
+		return tuiserver.ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe}, true
+	}
+	tuiserver.SlashCompleter = func(ctx context.Context, skillCommands, skillBundles skills.SkillCommands) func(string) []tuiserver.SlashCompletion {
+		completer := commands.TUISlashCompleter(ctx, skillCommands, skillBundles)
+		return func(text string) []tuiserver.SlashCompletion {
+			found := completer.Complete(text)
+			out := make([]tuiserver.SlashCompletion, len(found))
+			for i, c := range found {
+				out[i] = tuiserver.SlashCompletion{Text: c.Text, Display: c.Display, Meta: c.Meta}
+			}
+			return out
+		}
+	}
+	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
+	agent.SessionSteerAuthority = tuiserver.SessionSteerAuthority
+	mcp.TUIProfileRuntimeScope = tuiserver.ProfileRuntimeScope
+	pm.LooksLikeGatewayCommandLine = gateway.LooksLikeGatewayCommandLine
+	tools.ApprovalHookInvoker = approvalHookInvoker
+	tools.LoadCLIConfig = app.CLIConfig
+	commands.LoadCLIConfig = app.LoadCLIConfig
+	tools.TerminalOutputTransformHook = terminalOutputTransform
+	tuiserver.SaveClipboardImage, tuiserver.HasClipboardImage = app.SaveClipboardImage, app.HasClipboardImage
+	tuiserver.ClipboardImageBlocker = app.ClipboardImageBlocker
+	state.MessagingPlatformLabels = gateway.MessagingPlatformLabels
+	state.MessagingPlatformSource = gateway.IsMessagingPlatformSource
+	state.SameOwner = gateway.SameOwner
+	state.OwnersAgree = gateway.OwnersAgree
+	state.ParseAuthenticatedSubject = gateway.ParseAuthenticatedSubject
+	state.AdmissionMediaReferences = gateway.AdmissionMediaReferences
+	state.HostedDocumentReferences = gateway.HostedDocumentReferences
+	state.ReleaseUnheldMedia = gateway.ReleaseUnheldMediaRetainingHistory
+	state.SpilloverSQLFilter = tools.SpilloverSQLFilter
+	state.SpilloverNamesInText = tools.SpilloverNamesInText
+	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
+	tools.IsWorkerProcess = agent.IsWorkerProcess
+	state.SessionKeyNamespace = gateway.SessionKeyNamespace
+	state.ExclusiveMaintenance = gateway.ExclusiveMaintenance
+	state.IsOwnershipConflict = func(err error) bool {
+		var conflict *gateway.OwnershipConflict
+		return errors.As(err, &conflict)
+	}
+	state.LiveRuntimeOwner = gateway.LiveRuntimeOwner
+	state.CanonicalHome = gateway.CanonicalHome
+	state.ProfileLabelForHome = gateway.ProfileLabelForHome
+	state.ReadGatewayLockRecord = gateway.ReadGatewayLockRecord
+	state.SetLifecycleHookInvoker(func(ctx context.Context, name string, kwargs map[string]any) ([]any, error) {
+		return agent.LifecycleInvokeHook(ctx, name, kwargs), nil
+	})
+	gateway.ResolvePrefillMessagesFile = app.ResolvePrefillMessagesFile
+	gateway.AncillaryAgent.SubagentRecords = agent.SubagentRecords
+	gateway.AncillaryAgent.SteerSubagent = agent.SteerOwnedSubagent
+	gateway.AncillaryAgent.TranscriptPath = agent.SubagentTranscriptPath
+	gateway.AncillaryAgent.ControlSnapshot = agent.ControlSnapshotOrRefusal
+	gateway.AncillaryAgent.SetSpawnPaused = agent.SetSpawnPaused
+	gateway.PathCompletionItems = tuiserver.PathCompletionItems
+	gateway.ContextAgent.UsageStats = agent.SessionUsageStats
+	gateway.ContextAgent.Breakdown = agent.SessionContextBreakdown
+	gateway.ContextAgent.StoredBreakdown = agent.SessionStoredContextBreakdown
+	gateway.ContextAgent.Marks = agent.SessionContextMarks
+	gateway.ImageAttachments.MaxBytes = tuiserver.AttachBytesMaxBytes
+	gateway.ImageAttachments.DecodeBase64 = tuiserver.DecodeAttachBase64
+	gateway.ImageAttachments.SniffImageExt = tuiserver.SniffImageExt
+	gateway.ImageAttachments.StageImageBytes = tuiserver.StageImageBytes
+	tuiserver.BindHostedRoomServer()
+	gateway.ResolvePersonality = commands.ResolvePersonality
+	gateway.PersistPersonality = commands.PersistPersonality
+	gateway.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, mode string) (bool, string, error) {
+		result, err := commands.RunApprovalModeCommand(ctx, h, env, mode)
+		return result.OK, result.Mode, err
+	}
+	gateway.ErrorSurfaceFromResult = agent.BuildErrorSurfaceFromResult
+	gateway.SessionCompress = agent.SessionCompressAgent{}
+	gateway.ExpandContextReferences = agent.ExpandGatewayContextReferences
+	gateway.LoadPrefillMessages = app.LoadPrefillMessages
+	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
+		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
+	}
+	tools.AsyncDelegationOwnerProbes.PidExists = gateway.PidExists
+	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
+	tools.ProfileSecrets = provider.ProfileSecretSource()
+	tools.CredentialPools = provider.XAICredentialPoolSource()
+	tools.PoolKeys = provider.PoolKeySource()
+	tools.RuntimeProviderCredentials = provider.ToolRuntimeCredentials
+	tools.VisionCapabilities = provider.VisionCapabilities{}
+	agent.InstallDelegationRegistryHooks()
+	tools.CachedContextLength = func(ctx context.Context, modelID, baseURL string) (int, bool) {
+		return provider.GetCachedContextLength(ctx, modelID, baseURL, false)
+	}
+	tools.ModelContextLength = provider.ToolModelContextLength
+	provider.InstallPluginManagerHooks(pluginManagerHooks())
+	plugins.InstallServices(pluginServices())
+	app.SetPrintVersionInfo(printVersionInfo)
+	app.ConsoleCommandTree = newCLI
+	for _, wire := range tierWiring {
+		wire()
+	}
+}
+
+// Raw config of the bound home as a tree, empty on a read failure
+func rawConfigTree(ctx context.Context) config.Tree {
+	raw, err := config.ReadRawConfig(ctx, home.Dir(ctx))
+	if err != nil || raw == nil {
+		return config.Tree{}
+	}
+	return config.Tree(raw)
+}
+
+// The higher package collaborators pkg/plugins reaches through its Services
+func pluginServices() *plugins.Services {
+	s := &plugins.Services{
+		InvokeLifecycleHook:        agent.LifecycleInvokeHook,
+		FailoverReason:             failoverReason,
+		MemoryProviderDir:          memory.ProviderDirForHome,
+		HostObject:                 hostedObjectName,
+		BindProfileSecretScope:     provider.BindProfileSecretScope,
+		GetSecret:                  provider.GetSecret,
+		PluginLLM:                  agent.PluginLLMClient(),
+		SubagentLifecycle:          agent.SubagentDelegationService(),
+		DelegationBackends:         func(c *plugins.Context) any { return agent.DelegationBackendsFor(c) },
+		CallMCPTool:                mcp.CallToolForPlugin,
+		RedeemSideQuestion:         agent.RedeemSideQuestion,
+		BoundSessionKey:            func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
+		ResolveBuiltinCommand:      func(name string) bool { return commands.Resolve(name) != nil },
+		DispatchTool:               tools.DispatchForPlugin,
+		Platforms:                  gateway.PlatformRegistryService(),
+		ProviderRegistries:         pluginservices.ProviderRegistries(),
+		BuiltinAuxTaskKeys:         provider.BuiltinAuxTaskKeys,
+		RegisterRedactionPatterns:  tools.RegisterRedactionPatterns,
+		SecretSources:              provider.PluginSecretSources(),
+		PlatformDeclarations:       agent.PlatformDeclarationsService(),
+		OAuthSurface:               provider.OAuthSurface,
+		OAuthAdmissionProblems:     provider.OAuthAdmissionProblems,
+		OAuthAdmissionWarnings:     provider.OAuthAdmissionWarnings,
+		PortableServerAvailability: mcp.PortableServerAvailability,
+		MaskedSecretPrompt:         provider.MaskedSecretPrompt,
+		ServerAvailabilityReason:   mcp.ServerAvailabilityReason,
+		PrepareMemoryProviderDependencies: func(ctx context.Context, name string) error {
+			return memory.PrepareMemoryProviderDependenciesForPlugin(ctx, processToolsEnv(ctx), name)
+		},
+		RequiresAuthNotice:        provider.RequiresAuthNotice,
+		DeclaresModelProviderKind: provider.DeclaresModelProviderKind,
+		PluginOAuthKey:            provider.PluginOAuthKey,
+		ForgetPluginGrants:        provider.ForgetPluginGrants,
+		ReloadGatewayPlugins: func(ctx context.Context, target, profileHome string) (map[string]any, error) {
+			return gateway.ReloadGatewayPluginsAnswer(target, profileHome, 30*time.Second), nil
+		},
+		GatewayRunningPid:           gateway.GetRunningPid,
+		InstalledGatewayServiceKind: gateway.InstalledGatewayServiceKind,
+		RefreshPluginSessions:       gateway.RefreshPluginSessions,
+		MCP:                         mcp.PluginConnector(),
+		BroadcastGlobalEvent:        gateway.BroadcastGlobalEvent,
+		ActiveMemoryProvider: func(ctx context.Context, h string) string {
+			return memory.ActiveMemoryProvider(ctx, homeToolsEnv(ctx, h))
+		},
+		PruneInactiveMemoryProviderSkills: func(ctx context.Context, h, active string) {
+			memory.PruneInactiveMemoryProviderSkills(ctx, homeToolsEnv(ctx, h), active)
+		},
+		LoadMemoryProvider: func(ctx context.Context, h, name string) { memory.LoadMemoryProvider(ctx, homeToolsEnv(ctx, h), name) },
+		ParseServerLiveness: func(raw any) (plugins.ServerLiveness, error) {
+			l, err := mcp.ParseLiveness(raw)
+			return plugins.ServerLiveness(l), err
+		},
+		ParseCostPolicy: func(costs, spendLimit, costUnit any, where string) error {
+			_, err := mcp.ParseCostPolicy(costs, spendLimit, costUnit, where)
+			return err
+		},
+		DiscoverMemoryProviders: func(ctx context.Context) [][2]string {
+			var out [][2]string
+			for _, p := range memory.DiscoverMemoryProviders(ctx, processToolsEnv(ctx)) {
+				out = append(out, [2]string{p.Name, p.Description})
+			}
+			return out
+		},
+		CredentialedProviderRequest: func(ctx context.Context, pluginDir, name, method, url string, json any, headers map[string]string, timeout time.Duration) (*plugins.ProviderRequestAnswer, error) {
+			resp, err := provider.CredentialedProviderRequest(name, method, url, provider.ProviderRequestOptions{JSON: json, Headers: headers, Timeout: timeout, PluginDir: pluginDir})
+			if err != nil {
+				return nil, err
+			}
+			return &plugins.ProviderRequestAnswer{Status: resp.Status, Headers: resp.Headers, Body: resp.Body}, nil
+		},
+	}
+	for _, extend := range tierServices {
+		extend(s)
+	}
+	gateway.InstallPluginServices(s)
+	return s
+}
+
+// The tool environment of one home with its config, for plugin facing memory calls
+func homeToolsEnv(ctx context.Context, h string) *tools.Env {
+	cfg, _ := config.LoadReadonly(ctx, h, nil)
+	cwd, _ := os.Getwd()
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
+}
+
+// Name under which the host registers a hosted object of a kind, false when the object is not one
+func hostedObjectName(kind string, obj any) (string, bool) {
+	switch kind {
+	case "memory_provider":
+		return memory.HostedProviderName(obj)
+	case "context_engine":
+		return agent.HostedContextObjectName(kind, obj)
+	}
+	return "", false
+}
+
+// Exit hooks the Python modules registered with atexit, run once from exit
+var atExitDone bool
+
+func runAtExit() {
+	if atExitDone {
+		return
+	}
+	atExitDone = true
+	tools.BeginInterpreterShutdown()
+	run := func(fn func()) {
+		defer func() { recover() }()
+		fn()
+	}
+	run(state.RunTokenExitHooks)
+	run(func() { tools.ShutdownTerminalEnvironments(processToolsEnv(context.Background())) })
+	run(tools.SweepBackendScratchAtExit)
+	run(func() { tools.CleanupSafeSkillsCopy() })
+	for _, fn := range tierAtExit {
+		run(fn)
+	}
+	run(tuiserver.AtExit)
+	run(tools.RelayAtExit)
+	run(func() { mcp.ShutdownMCPServers(context.Background(), nil, nil, 15*time.Second) })
+	run(func() { provider.ShutdownCachedClients(context.Background()) })
+	run(func() { provider.ShutdownLocalRuntime() })
+	run(func() { plugins.FlushOutboundWebhooks(5 * time.Second) })
+	for _, fn := range tierFlushAtExit {
+		run(fn)
+	}
+	run(gatewayrun.BootstrapAtExit)
+	run(gateway.HostRendezvousAtExit)
+	run(pm.ReleaseAllLeases)
+	run(logging.Shutdown)
+	for _, s := range []*os.File{os.Stdout, os.Stderr} {
+		s.Sync()
+	}
+}
+
+// Lifecycle invoke_hook dispatch of an approval hook, a raise of the dispatch layer returned as the error
+func approvalHookInvoker(ctx context.Context, hookName string, payload map[string]any) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	agent.LifecycleInvokeHook(ctx, hookName, payload)
+	return nil
+}
+
+// Results of the transform_terminal_output lifecycle hook, none when its dispatch raises so the output stays
+func terminalOutputTransform(ctx context.Context, payload map[string]any) (results []any) {
+	defer func() {
+		if r := recover(); r != nil {
+			results = nil
+		}
+	}()
+	return agent.LifecycleInvokeHook(ctx, "transform_terminal_output", payload)
+}
+
+// Gateway status start time of a pid as the int the async delegation owner check compares
+func gatewayProcessStartTime(pid int) (int64, bool) {
+	switch v := gateway.GetProcessStartTime(pid).(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	}
+	return 0, false
+}
+
+// FailoverReason enum construction over a plugin supplied value, false for a value outside the enum
+func failoverReason(value any) (any, bool) {
+	r, ok := provider.ParseFailoverReason(value)
+	if !ok {
+		return nil, false
+	}
+	return r, true
+}
+
+// Hands the platform adapters the command registry, plugin commands, skill catalog and profile adapter maps
+func installSlashRegistryWiring() {
+	gateway.GatewayRegistryCommands = func(ctx context.Context) ([]gateway.SlashCommandEntry, error) {
+		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
+		if err != nil {
+			return nil, err
+		}
+		gates := commands.ResolveConfigGates(cfg)
+		var out []gateway.SlashCommandEntry
+		for n := range commands.Builtin {
+			if d := &commands.Builtin[n]; commands.SlashLinked(d.Name) && commands.GatewayAvailable(d, gates) {
+				out = append(out, gateway.SlashCommandEntry{Name: d.Name, Description: d.Description, ArgsHint: d.ArgsHint})
+			}
+		}
+		return out, nil
+	}
+	gateway.PluginSlashCommandEntries = func(ctx context.Context) ([]gateway.SlashCommandEntry, error) {
+		var out []gateway.SlashCommandEntry
+		for _, e := range commands.IterPluginCommandEntries(ctx, commands.Default) {
+			out = append(out, gateway.SlashCommandEntry{Name: e.Name, Description: e.Description, ArgsHint: e.ArgsHint})
+		}
+		return out, nil
+	}
+	gateway.DiscordSkillCommandsByCategory = func(ctx context.Context, reserved map[string]bool) ([][]gateway.SkillCommandEntry, []gateway.SkillCommandEntry, int, error) {
+		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		categories, uncategorized, collisions := commands.DiscordSkillCommandsByCategory(commands.HomeSkillSource(home.Dir(ctx), cfg), reserved)
+		rows := func(in []commands.DiscordSkillEntry) []gateway.SkillCommandEntry {
+			out := make([]gateway.SkillCommandEntry, len(in))
+			for n, e := range in {
+				out[n] = gateway.SkillCommandEntry{Name: e.Name, Description: e.Description, CmdKey: e.CmdKey}
+			}
+			return out
+		}
+		grouped := make([][]gateway.SkillCommandEntry, len(categories))
+		for n, c := range categories {
+			grouped[n] = rows(c.Entries)
+		}
+		return grouped, rows(uncategorized), len(collisions), nil
+	}
+	gateway.ProfileAdaptersAndConfig = gatewayrun.ProfileAdaptersAndConfig
+}

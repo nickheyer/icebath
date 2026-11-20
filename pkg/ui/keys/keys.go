@@ -9,12 +9,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 )
 
 // Something a key may fire, handled by the manager, the app or the focused card depending on its context
@@ -32,6 +34,12 @@ type Action struct {
 	Quiet bool
 }
 
+// LabelText is the legend word of the action in the language of the application, the registered word when the application has none
+func (a Action) LabelText() string { return lang.OfID("keys.", a.ID, ".label", a.Label) }
+
+// DocText is the one line description of the action in the language of the application, the registered line when the application has none
+func (a Action) DocText() string { return lang.OfID("keys.", a.ID, ".doc", a.Doc) }
+
 // Keybinds in force, with the registry they are drawn from and the file they are kept in
 type Map struct {
 	actions []Action
@@ -43,6 +51,8 @@ type Map struct {
 	// Text of the file as last read or written, so a rewrite of the same text by another program never reads as an edit
 	last     []byte
 	contexts []string
+	// Terminal reports ctrl and shift on a letter apart from ctrl alone, as the kitty keyboard protocol does
+	shiftApart bool
 }
 
 // Sent to every card once a bind changed, so inputs rebuild the bindings they hold
@@ -55,31 +65,6 @@ func Default() *Map {
 		m.Register(a)
 	}
 	return m
-}
-
-// Adds an action every later map starts with, refusing a taken id, an unknown context or a chord that does not parse
-func Add(a Action) error {
-	if a.ID == "" {
-		return errors.New("keys: an action needs an id")
-	}
-	if a.Context == "" {
-		a.Context = Global
-	}
-	if ContextDocs[a.Context] == "" {
-		return fmt.Errorf("keys: action %s names unknown context %q", a.ID, a.Context)
-	}
-	for _, have := range registry {
-		if have.ID == a.ID {
-			return fmt.Errorf("keys: action %s is already registered", a.ID)
-		}
-	}
-	for _, d := range a.Default {
-		if _, err := Parse(d); err != nil {
-			return fmt.Errorf("keys: default of %s: %w", a.ID, err)
-		}
-	}
-	registry = append(registry, a)
-	return nil
 }
 
 // Adds a keymap context the file and the editor know, refusing a taken name
@@ -147,16 +132,40 @@ func (m *Map) First(id string) string {
 	return ""
 }
 
-// First chord of the action formatted for a legend, empty when it is unbound
-func (m *Map) Display(id string) string { return Format(m.First(id)) }
+// First chord of the action the terminal can send, formatted for a legend, empty when there is none
+func (m *Map) Display(id string) string {
+	if c := m.Sendable(id); len(c) > 0 {
+		return Format(c[0])
+	}
+	return ""
+}
 
-// Every chord of the action formatted, space separated
+// Every chord of the action the terminal can send, formatted and space separated
 func (m *Map) DisplayAll(id string) string {
-	out := make([]string, 0, len(m.binds[id]))
-	for _, c := range m.binds[id] {
+	out := []string{}
+	for _, c := range m.Sendable(id) {
 		out = append(out, Format(c))
 	}
 	return strings.Join(out, " ")
+}
+
+// Records whether the terminal reports ctrl and shift on a letter apart from ctrl alone
+func (m *Map) SetShiftApart(on bool) { m.shiftApart = on }
+
+// Chords of the action the terminal can send, ctrl and shift on a letter needing a terminal reporting them apart and the command key a Mac whose terminal reports it
+func (m *Map) Sendable(id string) []string {
+	var out []string
+	for _, c := range m.binds[id] {
+		p, err := parse(c)
+		if err == nil && !m.shiftApart && p.name == "" && unicode.IsLetter(p.r) && p.mods&(tea.ModCtrl|tea.ModShift) == tea.ModCtrl|tea.ModShift {
+			continue
+		}
+		if err == nil && p.mods&tea.ModSuper != 0 && !(m.shiftApart && runtime.GOOS == "darwin") {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // Id of another action in the same context holding the chord, empty when it is free
@@ -536,7 +545,7 @@ func Press(chord string) tea.KeyPressMsg {
 	return k
 }
 
-// Chord as legends and the file spell it, a shifted letter as its capital and other keys by name
+// Chord as legends and the file spell it, a shifted letter as its capital, other keys by name and the command key as cmd on a Mac
 func Format(chord string) string {
 	if chord == "" {
 		return ""
@@ -547,6 +556,9 @@ func Format(chord string) string {
 	}
 	if p.name == "" && unicode.IsLetter(p.r) && p.mods == tea.ModShift {
 		return string(unicode.ToUpper(p.r))
+	}
+	if runtime.GOOS == "darwin" {
+		return strings.Replace(canon(p.mods, p.name, p.r), "super+", "cmd+", 1)
 	}
 	return canon(p.mods, p.name, p.r)
 }
@@ -567,28 +579,6 @@ func Pair(a, b string) string {
 
 // Name of the keybind file inside the configuration directory
 const FileName = "keybinds.json"
-
-// Map read from the file at path, written there with the defaults when none exists or with every action when it lacks some
-func Open(path string) (*Map, error) {
-	m := Default()
-	m.path = path
-	if path == "" {
-		return m, nil
-	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return m, m.Save()
-	}
-	err := m.Reload()
-	if outdated(err) && !bytes.Equal(m.last, m.Text()) {
-		if serr := m.Save(); serr != nil {
-			return m, fmt.Errorf("%s: %w", m.path, errors.Join(err, serr))
-		}
-		if err != nil {
-			err = fmt.Errorf("%w, the file was written again without them", err)
-		}
-	}
-	return m, err
-}
 
 // Reads the file again over the default keys without writing it, keeping the keys in force when it does not parse
 func (m *Map) Reload() error {
@@ -615,23 +605,6 @@ func (m *Map) Reload() error {
 type unknownError string
 
 func (e unknownError) Error() string { return string(e) }
-
-// Reports whether the file only lacks new actions or names gone ones, so writing it again from the registry loses no bind
-func outdated(err error) bool {
-	if err == nil {
-		return true
-	}
-	joined, ok := err.(interface{ Unwrap() []error })
-	if !ok {
-		return false
-	}
-	for _, e := range joined.Unwrap() {
-		if _, ok := e.(unknownError); !ok {
-			return false
-		}
-	}
-	return true
-}
 
 // Reports whether the text of the file changed since it was last read or written, a rewrite of the same text passing silently
 func (m *Map) Stale() bool {

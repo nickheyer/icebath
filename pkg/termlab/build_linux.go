@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -101,7 +102,7 @@ func Icebath() (string, error) {
 		}
 		built.dir = dir
 		out := filepath.Join(dir, "icebath")
-		cmd, err := Limited(BuildLimit, "go", "build", "-o", out, "../../cmd/icebath")
+		cmd, err := Limited(BuildLimit, "go", "build", "-tags", "goolm", "-o", out, "../../cmd/icebath")
 		if err != nil {
 			built.err = err
 			return
@@ -126,14 +127,41 @@ func RemoveBuild() error {
 	return os.RemoveAll(built.dir)
 }
 
-// Writes a configuration directory holding config.json with the settings given, for ICEBATH_CONFIG_DIR
+// Writes an icebath home with a loopback provider and the settings given
 func WriteConfig(dir string, settings map[string]string) error {
-	raw, err := json.MarshalIndent(map[string]any{"settings": settings}, "", "  ")
+	arena := map[string]any{}
+	cfg := map[string]any{
+		"model":     map[string]any{"provider": "custom", "default": "termlab-model", "base_url": "http://127.0.0.1:9/v1", "api_key": "termlab-loopback"},
+		"display":   map[string]any{"arena": arena},
+		"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": false}},
+		"updates":   map[string]any{"check": false},
+	}
+	for key, value := range settings {
+		if name, ok := strings.CutPrefix(key, "arena."); ok {
+			arena[name] = value
+			continue
+		}
+		node := cfg
+		parts := strings.Split(key, ".")
+		for _, part := range parts[:len(parts)-1] {
+			next, ok := node[part].(map[string]any)
+			if !ok {
+				next = map[string]any{}
+				node[part] = next
+			}
+			node = next
+		}
+		node[parts[len(parts)-1]] = value
+	}
+	raw, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "config.json"), raw, 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENAI_API_KEY=termlab-loopback\n"), 0o600); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "config.yaml"), raw, 0o600)
 }

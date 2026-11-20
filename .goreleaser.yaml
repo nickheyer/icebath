@@ -1,14 +1,30 @@
 version: 2
 project_name: icebath
 
+before:
+  hooks:
+    - go mod download
+
 builds:
   - id: icebath
     main: ./cmd/icebath
     binary: icebath
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
+    # Compiles in the pure Go olm that Matrix end to end encryption needs
+    tags: [goolm]
     ldflags: ["-s -w -X main.version={{ .Tag }}"]
     goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  # Container init, supervisor and s6 verbs shipped only inside the image
+  - id: icebath-init
+    main: ./cmd/icebath-init
+    binary: icebath-init
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w"]
+    goos: [linux]
     goarch: [amd64, arm64]
     mod_timestamp: "{{ .CommitTimestamp }}"
 
@@ -20,7 +36,7 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, README.md]
+    files: [LICENSE, THIRD_PARTY_NOTICES, README.md, cli-config.yaml.example, .env.example]
   - id: binary
     ids: [icebath]
     formats: [binary]
@@ -39,8 +55,6 @@ release:
   github:
     owner: nickheyer
     name: icebath
-  extra_files:
-    - glob: dist/winget/manifests/**/*.yaml
 
 nfpms:
   - id: packages
@@ -54,23 +68,51 @@ nfpms:
     license: MIT
     section: utils
     formats: [deb, rpm, apk]
-    bindir: /usr/bin
+    dependencies: [ca-certificates]
+    bindir: /usr/lib/icebath
     contents:
+      - src: /usr/lib/icebath/icebath
+        dst: /usr/bin/icebath
+        type: symlink
+      - src: packaging/install_method/dpkg
+        dst: /usr/lib/icebath/.install_method
+        packager: deb
+      - src: packaging/install_method/rpm
+        dst: /usr/lib/icebath/.install_method
+        packager: rpm
+      - src: packaging/install_method/apk
+        dst: /usr/lib/icebath/.install_method
+        packager: apk
+      - src: cli-config.yaml.example
+        dst: /usr/lib/icebath/cli-config.yaml.example
+      - src: .env.example
+        dst: /usr/lib/icebath/.env.example
       - src: LICENSE
         dst: /usr/share/licenses/icebath/LICENSE
+      - src: THIRD_PARTY_NOTICES
+        dst: /usr/share/licenses/icebath/THIRD_PARTY_NOTICES
+    scripts:
+      postinstall: packaging/scripts/postinstall.sh
     rpm:
       signature:
         key_file: "{{ .Env.REPO_GPG_KEY_FILE }}"
     apk:
+      scripts:
+        postupgrade: packaging/scripts/postinstall.sh
       signature:
         key_file: "{{ .Env.APK_RSA_KEY_FILE }}"
         key_name: icebath
 
 dockers_v2:
-  - ids: [icebath]
+  - ids: [icebath, icebath-init]
     images: [ghcr.io/nickheyer/icebath]
     tags: ["{{ .Version }}", latest]
     platforms: [linux/amd64, linux/arm64]
+    extra_files: [LICENSE, THIRD_PARTY_NOTICES, README.md, cli-config.yaml.example, .env.example, docker/SOUL.md, docker/profile-icebath-path.sh]
+    build_args:
+      BINARY_SOURCE: release
+      VERSION: "{{ .Version }}"
+      REVISION: "{{ .FullCommit }}"
     labels:
       org.opencontainers.image.source: https://github.com/nickheyer/icebath
       org.opencontainers.image.description: Tiling agentic harness and netrunner toolkit
@@ -104,9 +146,10 @@ homebrew_casks:
       email: nick@heyer.app
     hooks:
       post:
-        install_steps: |
+        install: |
+          File.write("#{staged_path}/.install_method", "homebrew\n")
           on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/icebath"]
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/icebath"]
           end
     repository:
       owner: nickheyer
@@ -119,6 +162,8 @@ homebrew_casks:
 scoops:
   - name: icebath
     ids: [archive]
+    post_install:
+      - "Set-Content -Path \"$dir\\.install_method\" -Value 'scoop' -Encoding ascii"
     homepage: https://icebath.app
     description: Tiling agentic harness and netrunner toolkit
     license: MIT
@@ -133,28 +178,6 @@ scoops:
         url: git@github.com:nickheyer/scoop-bucket.git
         private_key: "{{ .Env.SCOOP_BUCKET_KEY }}"
 
-winget:
-  - name: icebath
-    ids: [archive]
-    package_identifier: nickheyer.icebath
-    package_name: icebath
-    publisher: Nicholas W. Heyer
-    publisher_url: https://github.com/nickheyer
-    publisher_support_url: https://github.com/nickheyer/icebath/issues
-    author: Nicholas W. Heyer
-    homepage: https://icebath.app
-    short_description: Tiling agentic harness and netrunner toolkit
-    description: A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
-    license: MIT
-    license_url: https://github.com/nickheyer/icebath/blob/main/LICENSE
-    copyright: Copyright (c) 2026 Nicholas W. Heyer
-    release_notes_url: https://github.com/nickheyer/icebath/releases/tag/{{ .Tag }}
-    tags: [cli, tui, agent, ai, llm]
-    skip_upload: true
-    repository:
-      owner: nickheyer
-      name: winget-pkgs
-
 aurs:
   - name: icebath-bin
     ids: [archive]
@@ -164,14 +187,21 @@ aurs:
     maintainers: ["Nicholas W. Heyer <nick at heyer dot app>"]
     provides: [icebath]
     conflicts: [icebath]
+    install: packaging/aur/icebath.install
     private_key: "{{ .Env.AUR_KEY }}"
     git_url: ssh://aur@aur.archlinux.org/icebath-bin.git
     commit_author:
       name: nickheyer
       email: nick@heyer.app
     package: |-
-      install -Dm755 ./icebath "${pkgdir}/usr/bin/icebath"
+      install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
+      printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"
+      install -Dm644 ./cli-config.yaml.example "${pkgdir}/usr/lib/icebath/cli-config.yaml.example"
+      install -Dm644 ./.env.example "${pkgdir}/usr/lib/icebath/.env.example"
+      install -dm755 "${pkgdir}/usr/bin"
+      ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
+      install -Dm644 ./THIRD_PARTY_NOTICES "${pkgdir}/usr/share/licenses/icebath/THIRD_PARTY_NOTICES"
 
 aur_sources:
   - name: icebath
@@ -182,6 +212,8 @@ aur_sources:
     provides: [icebath]
     conflicts: [icebath-bin]
     depends: [glibc]
+    makedepends: [go]
+    install: packaging/aur/icebath.install
     private_key: "{{ .Env.AUR_KEY }}"
     git_url: ssh://aur@aur.archlinux.org/icebath.git
     commit_author:
@@ -195,10 +227,16 @@ aur_sources:
       export CGO_CXXFLAGS="${CXXFLAGS}"
       export CGO_LDFLAGS="${LDFLAGS}"
       export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
-      go build -o icebath -ldflags="-linkmode=external -X main.version=v${pkgver}" ./cmd/icebath
+      go build -tags goolm -o icebath -ldflags="-linkmode=external -X main.version=v${pkgver}" ./cmd/icebath
     package: |-
-      install -Dm755 ./icebath "${pkgdir}/usr/bin/icebath"
+      install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
+      printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"
+      install -Dm644 ./cli-config.yaml.example "${pkgdir}/usr/lib/icebath/cli-config.yaml.example"
+      install -Dm644 ./.env.example "${pkgdir}/usr/lib/icebath/.env.example"
+      install -dm755 "${pkgdir}/usr/bin"
+      ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
+      install -Dm644 ./THIRD_PARTY_NOTICES "${pkgdir}/usr/share/licenses/icebath/THIRD_PARTY_NOTICES"
 
 nix:
   - name: icebath
@@ -207,6 +245,12 @@ nix:
     description: Tiling agentic harness and netrunner toolkit
     license: mit
     main_program: icebath
+    extra_install: |-
+      printf 'nix\n' > $out/bin/.install_method
+      install -Dm644 ./cli-config.yaml.example $out/bin/cli-config.yaml.example
+      install -Dm644 ./.env.example $out/bin/.env.example
+      install -Dm644 ./LICENSE $out/share/licenses/icebath/LICENSE
+      install -Dm644 ./THIRD_PARTY_NOTICES $out/share/licenses/icebath/THIRD_PARTY_NOTICES
     path: pkgs/icebath/default.nix
     commit_author:
       name: nickheyer

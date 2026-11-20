@@ -1,0 +1,9 @@
+.git
+.gitignore
+**/.venv
+dist/
+references/
+dev/
+site/
+.env
+**/.DS_Store

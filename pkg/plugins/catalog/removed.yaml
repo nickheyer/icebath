@@ -1,0 +1,18 @@
+# Blocklist for plugins pulled from the catalog for security or policy
+# reasons. The installer refuses to install anything whose name or repo URL
+# matches an entry here (unless the caller explicitly bypasses the check).
+# Each entry: {name, repo, reason, date}. Removals land via reviewed PRs,
+# same as additions.
+#
+# Name only. Do not set repo: the replacement entry is the same repository,
+# and a repo match would refuse that install too.
+removed:
+- name: or-picker
+  reason: "Folded into openrouter-picker, which is no longer in the catalog."
+  date: "2026-09-28"
+- name: github-copilot
+  reason: "Built into icebath: the copilot and copilot-acp providers ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove github-copilot`; your Copilot logins and settings keep working."
+  date: "2026-11-15"
+- name: singularity
+  reason: "Built into icebath: the singularity terminal backend ships with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove singularity`; terminal.backend singularity and terminal.singularity_image keep working."
+  date: "2026-11-15"

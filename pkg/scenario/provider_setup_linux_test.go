@@ -1,0 +1,158 @@
+package scenario
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/fakellm"
+)
+
+// Reports whether the terminal showed the text, wherever the 120 column screen wrapped it
+func shownOnTerminal(tm *Term, text string) bool {
+	squeeze := func(v string) string { return strings.Join(strings.Fields(v), "") }
+	return strings.Contains(squeeze(tm.Text()), squeeze(text))
+}
+
+// migrate xai previews, rewrites with a backup and then finds nothing, bare migrate lists the importers
+func TestScenarioMigrateXaiAndBareMigrate(t *testing.T) {
+	s := Start(t, Setup{Extra: "delegation:\n  model: grok-3\nauxiliary:\n  vision:\n    model: grok-4-fast-non-reasoning\n"})
+	before := s.Read("config.yaml")
+	dry := s.Run("migrate", "xai").Exit(0)
+	dry.Has("xAI Model Retirement Migration", "Found 2 retired xAI model reference(s):",
+		"auxiliary.vision.model: 'grok-4-fast-non-reasoning' → use 'grok-4.3'", `(set reasoning_effort: "none")`,
+		"delegation.model: 'grok-3' → use 'grok-4.3'", "Migration guide: https://", "Dry-run mode — no changes written.",
+		"Re-run with `icebath migrate xai --apply` to rewrite "+s.Path("config.yaml")+" in-place (backup created automatically).")
+	if s.Read("config.yaml") != before {
+		s.Failf("the dry run rewrote config.yaml")
+	}
+
+	applied := s.Run("migrate", "xai", "--apply").Exit(0)
+	applied.Has("Found 2 retired xAI model reference(s):", "Backup: ", "Updated 2 slot(s) in "+s.Path("config.yaml"),
+		"Run `icebath doctor` to confirm no retired xAI models remain.").Lacks("Dry-run mode")
+	backup := strings.TrimSpace(applied.Match(`Backup: (\S+)`)[1])
+	if !strings.HasPrefix(backup, s.Home) || !s.Exists(strings.TrimPrefix(backup, s.Home+"/")) {
+		s.Failf("the backup %q is not a file of the product home", backup)
+	}
+	if s.Read(strings.TrimPrefix(backup, s.Home+"/")) != before {
+		s.Failf("the backup does not hold the config from before the rewrite")
+	}
+	s.HasJSON(s.YAML("config.yaml"), `{"delegation": {"model": "grok-4.3"}, "auxiliary": {"vision": {"model": "grok-4.3"}}, "model": {"default": "fake-model"}}`)
+
+	s.Run("migrate", "xai").Exit(0).Has("No retired xAI models in config — nothing to migrate.").Lacks("Found ")
+	s.Run("migrate", "xai", "--apply", "--no-backup").Exit(0).Has("No retired xAI models in config — nothing to migrate.").Lacks("Backup: ")
+
+	bare := s.Run("migrate").Exit(0)
+	bare.Has("No other agent setup found on this computer. Import one with: icebath migrate openclaw").Lacks("Found: ")
+	s.Run("migrate", "no-such-agent").Exit(2).Has("no-such-agent", "icebath migrate")
+}
+
+// Extra headers of the custom provider entry serving the route reach the model, another route's stay home
+func TestScenarioCustomProviderExtraHeadersReachTheModel(t *testing.T) {
+	s := Start(t, Setup{
+		Model: []any{fakellm.Text{Text: "Headers received."}},
+		Extra: "custom_providers:\n  - name: elsewhere\n    base_url: http://127.0.0.1:9/v1\n    extra_headers:\n      X-Scenario-Elsewhere: nope\n" +
+			"  - name: scripted\n    base_url: ${MODEL_URL}\n    extra_headers:\n      X-Scenario-Team: blue\n      X-Scenario-Seat: 42\n",
+	})
+	s.Run("chat", "-q", "Say hello", "-Q").Exit(0).Has("Headers received.")
+	var turn *fakellm.Request
+	for _, request := range s.Model.Requests() {
+		if request.Kind == "main" {
+			turn = request
+		}
+	}
+	if turn == nil {
+		s.Failf("the model received no turn")
+		return
+	}
+	if turn.Headers["x-scenario-team"] != "blue" || turn.Headers["x-scenario-seat"] != "42" {
+		s.Failf("the turn carried headers %v, want x-scenario-team blue and x-scenario-seat 42", turn.Headers)
+	}
+	if _, sent := turn.Headers["x-scenario-elsewhere"]; sent {
+		s.Failf("the header of another route was sent: %v", turn.Headers)
+	}
+}
+
+// model.options over the gateway socket lists the configured provider row with the current model
+func TestScenarioModelOptionsOverTheGatewaySocket(t *testing.T) {
+	s := Start(t, Setup{})
+	s.Spawn("gateway", "run")
+	s.WaitFile("gateway.sock")
+	var owner map[string]any
+	s.Eventually("the gateway owner reporting ready", 60*time.Second, func() bool {
+		owner = controlVerb(s, "identify", nil)
+		return owner["state"] == "ready"
+	})
+	origin, _ := owner["api_origin"].(string)
+	grant := controlVerb(s, "session-ticket", map[string]any{"profile_id": s.Home, "instance_id": owner["instance_id"], "purpose": "interactive"})
+	ticket, _ := grant["ticket"].(string)
+	w := s.Dial("ws"+strings.TrimPrefix(origin, "http")+"/api/ws", "Sec-WebSocket-Protocol", "icebath-gateway-v1, icebath-gateway-ticket."+ticket)
+	s.HasJSON(w.Next(), `{"jsonrpc": "2.0", "method": "event", "params": {"type": "gateway.ready"}}`)
+	options := w.Call("model.options", map[string]any{})
+	s.HasJSON(options, `{"result": {"model": "fake-model", "provider": "custom"}}`)
+	rows, _ := Dig(options, "result", "providers").([]any)
+	var current map[string]any
+	for _, row := range rows {
+		if entry, ok := row.(map[string]any); ok && entry["is_current"] == true {
+			current = entry
+		}
+	}
+	if current == nil {
+		s.Failf("model.options marks no provider row current: %v", options)
+		return
+	}
+	if current["is_user_defined"] != true {
+		s.Failf("the current row is not the user defined endpoint: %v", current)
+	}
+	if _, has := current["usage"]; has {
+		s.Failf("a user defined endpoint row carries subscription usage: %v", current)
+	}
+	if _, has := current["limit"]; has {
+		s.Failf("a user defined endpoint row carries a pool limit: %v", current)
+	}
+}
+
+// icebath model picks a model of the saved endpoint and, a pick having been saved, offers the effort step
+func TestScenarioModelCommandOnATerminal(t *testing.T) {
+	s := Start(t, Setup{ModelOptions: fakellm.Options{RecordGet: true}, Extra: "custom_providers:\n  - name: scripted\n    base_url: ${MODEL_URL}\n"})
+	tm := s.Terminal("model")
+	tm.Await(`● Select provider`)
+	tm.Await(`❯ scripted\s+currently active\s+127\.0\.0\.1:\d+/v1`)
+	tm.Send("\x1b")
+	tm.Await(`No change\.`)
+	if code := tm.Wait(); code != 0 {
+		s.Failf("model after Escape exited %d\n%s", code, clip(tm.Text()))
+	}
+	if strings.Contains(tm.Text(), "reasoning effort") || strings.Contains(s.Read("config.yaml"), "reasoning_effort") {
+		s.Failf("a cancelled pick offered or saved a reasoning effort\n%s", clip(tm.Text()))
+	}
+
+	tm = s.Terminal("model")
+	tm.Await(`● Select provider`)
+	tm.Send("\r")
+	tm.Await(`● Select model from scripted`)
+	tm.Await(`❯ fake-model`)
+	tm.Send("\r")
+	tm.Await(`● Select reasoning effort`)
+	tm.Await(`❯ medium`)
+	tm.Send("\r")
+	tm.Await(`Reasoning effort set to: medium`)
+	if code := tm.Wait(); code != 0 {
+		s.Failf("model after a pick exited %d\n%s", code, clip(tm.Text()))
+	}
+	for _, line := range []string{"Current model: fake-model", "Active provider: scripted", "Provider: scripted", "URL: ${MODEL_URL}",
+		"Found 1 model(s):", "Model set to: fake-model"} {
+		if !shownOnTerminal(tm, s.Expand(line)) {
+			s.Failf("the terminal did not show %q\n%s", line, clip(tm.Text()))
+		}
+	}
+	s.HasJSON(s.YAML("config.yaml"), `{"model": {"default": "fake-model"}, "agent": {"reasoning_effort": "medium"},
+		"custom_providers": [{"name": "scripted", "base_url": "${MODEL_URL}", "model": "fake-model"}]}`)
+	listed := false
+	for _, request := range s.Model.Requests() {
+		listed = listed || (request.Kind == "get" && strings.HasSuffix(request.Path, "/models"))
+	}
+	if !listed {
+		s.Failf("the endpoint was never asked for its models")
+	}
+}

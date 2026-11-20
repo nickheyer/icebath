@@ -1,0 +1,123 @@
+package cron
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+)
+
+// The owner may have accepted this fire, so it is never booked as failed or refired
+type CronExecutionUnknown struct{ Msg string }
+
+func (e *CronExecutionUnknown) Error() string { return e.Msg }
+
+// Python class name of the unverified admission error
+func (e *CronExecutionUnknown) PyTypeName() string { return "CronExecutionUnknown" }
+
+// Admission journal of one fire keyed by the sha256 of the JSON pair of job and request ids
+func (s *Store) journalPath(jobID, requestID string) string {
+	key, err := pyjson.Dumps([]any{jobID, requestID})
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256([]byte(key))
+	return filepath.Join(s.home, "cron", "admissions", hex.EncodeToString(sum[:])+".json")
+}
+
+// The exact pause a recovery uncertainty caused, true when the pause returned nothing
+func pauseIdentity(paused *Job) any {
+	if paused == nil {
+		return true
+	}
+	o := pyjson.NewObject()
+	o.Set("paused_at", strOrNull(paused.PausedAt))
+	o.Set("reason", strOrNull(paused.PausedReason))
+	return o
+}
+
+// Completion ids whose admission journal still exists, the only ones journal recovery can replay
+func replayableCompletions(s *Store, jobID string, completions []string) []string {
+	out := []string{}
+	for _, id := range completions {
+		if _, err := os.Stat(s.journalPath(jobID, id)); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// Writes a journal record as two space indented JSON in a private atomic file whose rename is synced
+func (s *Store) writeAdmissionJournal(ctx context.Context, path string, record any) error {
+	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, pyjson.Indent(2))
+}
+
+// Pauses the job for an unverified admission and records that exact pause on the fire journal
+func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason string) error {
+	paused, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &reason)
+	if err != nil {
+		return err
+	}
+	journal := s.journalPath(jobID, executionID)
+	if paused == nil {
+		return nil
+	}
+	raw, err := os.ReadFile(journal)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	text, err := pystr.DecodeUTF8Sig(raw)
+	if err != nil {
+		return err
+	}
+	decoded, err := pyjson.Loads(text)
+	if err != nil {
+		return err
+	}
+	record, ok := decoded.(*pyjson.Object)
+	if !ok {
+		return &pyTypeError{msg: "the execution record is " + errchain.Kind(decoded) + ", expected a mapping"}
+	}
+	record.Set("pause_recorded", pauseIdentity(paused))
+	return s.writeAdmissionJournal(ctx, journal, record)
+}
+
+// Python TypeError raised by an operation on the wrong value type
+type pyTypeError struct{ msg string }
+
+func (e *pyTypeError) Error() string      { return e.msg }
+func (e *pyTypeError) PyTypeName() string { return "TypeError" }
+
+// Resumes the job only while it is still held by exactly the recorded pause
+func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {
+	identity, ok := pause.(*pyjson.Object)
+	if !ok {
+		return nil
+	}
+	job, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
+	if err != nil || job == nil || job.State != "paused" {
+		return err
+	}
+	at, _ := identity.Get("paused_at")
+	reason, _ := identity.Get("reason")
+	if !pyrepr.Equal(strOrNull(job.PausedAt), at) || !pyrepr.Equal(strOrNull(job.PausedReason), reason) {
+		return nil
+	}
+	var oneShotPast *ValueError
+	if _, err := s.resumeJob(home.WithOverride(ctx, s.home), jobID); err != nil && !errors.As(err, &oneShotPast) {
+		return err
+	}
+	return nil
+}

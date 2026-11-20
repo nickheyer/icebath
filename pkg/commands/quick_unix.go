@@ -1,0 +1,111 @@
+//go:build !windows
+
+package commands
+
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"strings"
+	"syscall"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/tools"
+)
+
+// Shell argv for the gateway command in a new session, start_new_session making the shell its group leader
+func gatewayProgram(command string, _ bool) (quickProgram, error) {
+	return posixShellProgram([]any{command}, &syscall.SysProcAttr{Setsid: true})
+}
+
+// Builds sh -c with the items, each checked for its type then an embedded NUL as fork_exec converts them
+func posixShellProgram(items []any, attr *syscall.SysProcAttr) (quickProgram, error) {
+	sh := pysubprocess.UnixShell()
+	argv := []string{sh, "-c"}
+	for _, item := range items {
+		var arg string
+		switch v := item.(type) {
+		case string:
+			arg = v
+		case []byte:
+			arg = string(v)
+		default:
+			return quickProgram{}, notPathLike(item)
+		}
+		if strings.IndexByte(arg, 0) >= 0 {
+			return quickProgram{}, pyError("embedded null byte")
+		}
+		argv = append(argv, arg)
+	}
+	return quickProgram{path: sh, argv: argv, attr: attr}, nil
+}
+
+// ValueError fork_exec raises for a NUL in the environment or the cwd
+func finishProgram(prog quickProgram, cwd string, env []string) (quickProgram, error) {
+	for _, kv := range env {
+		if strings.IndexByte(kv, 0) >= 0 {
+			return prog, pyError("embedded null byte")
+		}
+	}
+	if strings.IndexByte(cwd, 0) >= 0 {
+		return prog, pyError("embedded null byte")
+	}
+	return prog, nil
+}
+
+// Environment entries in the insertion order of the build_subprocess_env dict, as execve receives them
+func quickEnvList(env *tools.ChildEnv) []string { return env.Environ() }
+
+// Inherited stdin, none when descriptor zero is closed so the child starts without one as Popen leaves it
+func quickStdin() (*os.File, func()) {
+	if _, err := unix.FcntlInt(0, unix.F_GETFD, 0); err != nil {
+		return nil, func() {}
+	}
+	return os.Stdin, func() {}
+}
+
+// Python str of a spawn failure, the cwd named when the child chdir is what failed
+func spawnErrorText(err error, cwd string) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) && pe.Op == "fork/exec" && cwd != "" {
+		if cerr := chdirError(cwd); cerr != nil {
+			if text, ok := pypath.ErrnoText(cerr); ok {
+				return text + ": " + pyrepr.StrRepr(cwd)
+			}
+		}
+	}
+	return pypath.OSErrorText(err)
+}
+
+// Errno chdir would fail with, resolution then directory type then search permission for the effective ids
+func chdirError(dir string) error {
+	var st unix.Stat_t
+	if err := unix.Stat(dir, &st); err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return unix.ENOTDIR
+	}
+	return unix.Faccessat(unix.AT_FDCWD, dir, unix.X_OK, unix.AT_EACCESS)
+}
+
+// Popen.kill, SIGKILL to a shell not yet reaped with ProcessLookupError suppressed and PermissionError returned
+func killShell(q *quickProc) error {
+	if closed(q.exited) {
+		return nil
+	}
+	err := q.proc.Signal(syscall.SIGKILL)
+	if err == nil || errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+		return nil
+	}
+	return err
+}
+
+// killpg of the group the shell led, ProcessLookupError and PermissionError suppressed
+func killQuickGroup(pid int) {
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
+}

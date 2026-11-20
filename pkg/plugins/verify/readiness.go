@@ -1,0 +1,168 @@
+package verify
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+)
+
+// Connection whose every read and write gets the five second socket timeout urlopen sets
+type timeoutConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *timeoutConn) Read(p []byte) (int, error) {
+	_ = c.Conn.SetReadDeadline(time.Now().Add(c.timeout))
+	return c.Conn.Read(p)
+}
+
+func (c *timeoutConn) Write(p []byte) (int, error) {
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	return c.Conn.Write(p)
+}
+
+// urlopen client, environment proxies, a socket timeout per operation and the urllib redirect limits
+func urlopenClient(timeout time.Duration) *http.Client {
+	dialer := &net.Dialer{Timeout: timeout}
+	transport := &http.Transport{
+		Proxy:             pyurl.UrlopenProxy,
+		DisableKeepAlives: true,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := netpref.DialContext(dialer.DialContext)(ctx, network, addr)
+			if err != nil {
+				return nil, &dialError{err}
+			}
+			return &timeoutConn{Conn: conn, timeout: timeout}, nil
+		},
+	}
+	return &http.Client{Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		target := req.URL.String()
+		visits, distinct := 0, map[string]bool{}
+		for _, prior := range via[1:] {
+			distinct[prior.URL.String()] = true
+			if prior.URL.String() == target {
+				visits++
+			}
+		}
+		if visits >= 4 || len(distinct) >= 10 {
+			return http.ErrUseLastResponse
+		}
+		return nil
+	}}
+}
+
+// Failure to connect, the URLError urlopen wraps around the socket error
+type dialError struct{ err error }
+
+func (e *dialError) Error() string { return e.err.Error() }
+func (e *dialError) Unwrap() error { return e.err }
+
+// RequestError is the InvalidURL or UnicodeEncodeError http.client raises before sending a readiness request
+type RequestError struct {
+	Class string
+	Msg   string
+}
+
+func (e *RequestError) Error() string { return e.Msg }
+
+// http.client refusals of a readiness URL, a nonnumeric port or a path with control or non ASCII characters
+func validateReadinessURL(rawURL string) error {
+	rest := strings.TrimPrefix(rawURL, "http://")
+	hostport, path := rest, "/"
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		hostport, path = rest[:i], rest[i:]
+	}
+	if i := strings.LastIndexByte(hostport, ':'); i >= 0 {
+		if port := hostport[i+1:]; port != "" && strings.Trim(port, "0123456789") != "" {
+			return &RequestError{Class: "InvalidURL", Msg: "readiness URL port " + port + " is not a number"}
+		}
+	}
+	if i := strings.IndexByte(path, '#'); i >= 0 {
+		path = path[:i]
+	}
+	for _, c := range path {
+		if c <= 0x20 || c == 0x7f {
+			return &RequestError{Class: "InvalidURL", Msg: "readiness URL path " + path + " holds a space or control character"}
+		}
+	}
+	pos := len("GET ")
+	for _, c := range path {
+		if c > 0x7f {
+			return &RequestError{Class: "UnicodeEncodeError", Msg: fmt.Sprintf("readiness URL path holds the non-ASCII character %c at position %d, which a request line cannot carry", c, pos-len("GET "))}
+		}
+		pos++
+	}
+	return nil
+}
+
+// Polls url until it answers any HTTP status or timeout passes, keeping the last connection error text
+func pollReadiness(rawURL string, timeout float64, interval time.Duration) (bool, *int, *string, error) {
+	if err := validateReadinessURL(rawURL); err != nil {
+		return false, nil, nil, err
+	}
+	client := urlopenClient(5 * time.Second)
+	deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
+	var lastError *string
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		if err != nil {
+			return false, nil, nil, err
+		}
+		req.Header.Set("User-Agent", "icebath-verify")
+		req.Header.Set("Accept-Encoding", "identity")
+		resp, err := client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			status := resp.StatusCode
+			return true, &status, nil, nil
+		}
+		text, ok := urlopenErrorText(err)
+		if !ok {
+			return false, nil, nil, err
+		}
+		lastError = &text
+		time.Sleep(interval)
+	}
+	return false, nil, lastError, nil
+}
+
+// Plain reason of a readiness probe transport failure, false for a failure the poll lets propagate
+func urlopenErrorText(err error) (string, bool) {
+	var de *dialError
+	if errors.As(err, &de) {
+		if isTimeout(de.err) {
+			return "timed out", true
+		}
+		var errno syscall.Errno
+		if errors.As(de.err, &errno) {
+			return errno.Error(), true
+		}
+		return de.err.Error(), true
+	}
+	switch {
+	case isTimeout(err):
+		return "timed out", true
+	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
+		return "Remote end closed connection without response", true
+	case errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED):
+		return errchain.OSText(err), true
+	}
+	return "", false
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.Is(err, os.ErrDeadlineExceeded) || errors.As(err, &ne) && ne.Timeout()
+}

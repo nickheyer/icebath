@@ -1,0 +1,415 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/mattn/go-isatty"
+	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/spf13/cobra"
+)
+
+// The parsed top level and chat namespace of, read from the cobra tree
+type chatArgs struct {
+	Command, SubCommand                 string
+	Query, QueryFile, Image, Model      string
+	Provider, Toolsets, Reasoning       string
+	Resume, Continue, In, Source        string
+	Oneshot, UsageFile, APIKey, BaseURL string
+	OutputFormat                        string
+	Skills                              []string
+	MaxTurns                            *int
+	RunBudget                           float64
+	Version, Verbose                    bool
+	Quiet, Worktree, Checkpoints        bool
+	PassSessionID, IgnoreUserConfig     bool
+	IgnoreRules, SafeMode, Yolo         bool
+	AcceptHooks, TUINative, TUIDev      bool
+	NoRestoreCWD, CreateIfMissing       bool
+	ListTools, ListToolsets             bool
+	noninteractiveConfigValidated       bool
+}
+
+// Reads the flags of the root and the dispatched command into one namespace
+func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs {
+	a := &chatArgs{}
+	path := commandPath(cli, cmd)
+	if path != "" {
+		a.Command = firstWord(path)
+		a.SubCommand = secondWord(path)
+	}
+	read := func(f interface {
+		GetString(string) (string, error)
+		GetBool(string) (bool, error)
+	}, flags *cobra.Command) {
+		str := func(name string, dst *string) {
+			if flags.Flags().Lookup(name) != nil {
+				if v, err := flags.Flags().GetString(name); err == nil && v != "" {
+					*dst = v
+				}
+			}
+		}
+		boolean := func(name string, dst *bool) {
+			if flags.Flags().Lookup(name) != nil {
+				if v, err := flags.Flags().GetBool(name); err == nil && v {
+					*dst = true
+				}
+			}
+		}
+		str("query", &a.Query)
+		str("query-file", &a.QueryFile)
+		str("image", &a.Image)
+		str("model", &a.Model)
+		str("provider", &a.Provider)
+		str("toolsets", &a.Toolsets)
+		str("reasoning", &a.Reasoning)
+		str("resume", &a.Resume)
+		str("continue", &a.Continue)
+		str("in", &a.In)
+		str("source", &a.Source)
+		str("usage-file", &a.UsageFile)
+		str("api-key", &a.APIKey)
+		str("base-url", &a.BaseURL)
+		str("format", &a.OutputFormat)
+		str("oneshot", &a.Oneshot)
+		if flags.Flags().Lookup("skills") != nil {
+			if v, err := flags.Flags().GetStringArray("skills"); err == nil && len(v) > 0 {
+				a.Skills = v
+			}
+		}
+		if flags.Flags().Lookup("max-turns") != nil && flags.Flags().Changed("max-turns") {
+			if v, err := flags.Flags().GetInt("max-turns"); err == nil {
+				a.MaxTurns = &v
+			}
+		}
+		if flags.Flags().Lookup("run-budget") != nil {
+			if v, err := flags.Flags().GetFloat64("run-budget"); err == nil && v != 0 {
+				a.RunBudget = v
+			}
+		}
+		boolean("version", &a.Version)
+		boolean("verbose", &a.Verbose)
+		boolean("quiet", &a.Quiet)
+		boolean("worktree", &a.Worktree)
+		boolean("checkpoints", &a.Checkpoints)
+		boolean("pass-session-id", &a.PassSessionID)
+		boolean("ignore-user-config", &a.IgnoreUserConfig)
+		boolean("ignore-rules", &a.IgnoreRules)
+		boolean("safe-mode", &a.SafeMode)
+		boolean("yolo", &a.Yolo)
+		boolean("accept-hooks", &a.AcceptHooks)
+		boolean("native", &a.TUINative)
+		boolean("dev", &a.TUIDev)
+		boolean("no-restore-cwd", &a.NoRestoreCWD)
+		boolean("create-if-missing", &a.CreateIfMissing)
+		boolean("list-tools", &a.ListTools)
+		boolean("list-toolsets", &a.ListToolsets)
+	}
+	read(cli.Root.Flags(), cli.Root)
+	if cmd != cli.Root {
+		read(cmd.Flags(), cmd)
+	}
+	if a.OutputFormat == "" {
+		a.OutputFormat = "text"
+	}
+	return a
+}
+
+// Command words of the dispatched cobra command below the root
+func commandPath(cli *commands.CLI, cmd *cobra.Command) string {
+	if cmd == nil || cmd == cli.Root {
+		return ""
+	}
+	path := cmd.CommandPath()
+	root := cli.Root.Name()
+	if len(path) > len(root) && path[:len(root)] == root {
+		path = path[len(root):]
+	}
+	if len(path) > 0 && path[0] == ' ' {
+		path = path[1:]
+	}
+	return path
+}
+
+func firstWord(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' {
+			return s[:i]
+		}
+	}
+	return s
+}
+
+func secondWord(s string) string {
+	first := firstWord(s)
+	if len(s) <= len(first)+1 {
+		return ""
+	}
+	return firstWord(s[len(first)+1:])
+}
+
+// Commands that can run an agent turn, bare chat, acp and rl, plus cron run or tick and gateway run
+var agentCommands = map[string]bool{"": true, "chat": true, "acp": true, "rl": true}
+
+var agentSubcommands = map[string]map[string]bool{
+	"cron":    {"run": true, "tick": true},
+	"gateway": {"run": true},
+}
+
+func agentSubcommandSelected(a *chatArgs) bool {
+	subs, ok := agentSubcommands[a.Command]
+	return ok && subs[a.SubCommand]
+}
+
+// Query, query file, one shot or image, the inputs that make a chat launch headless
+func chatCarriesQuery(a *chatArgs) bool {
+	return a.Query != "" || a.QueryFile != "" || a.Oneshot != "" || a.Image != ""
+}
+
+// Chat on a terminal at both ends with no query, image or stream format opens the TUI
+func isTUIChatLaunch(a *chatArgs) bool {
+	if a.Command != "" && a.Command != "chat" {
+		return false
+	}
+	if chatCarriesQuery(a) || a.OutputFormat == "stream-json" {
+		return false
+	}
+	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
+}
+
+func shouldBackgroundMCPStartup(a *chatArgs) bool {
+	return !isTUIChatLaunch(a) && (a.Command == "" || a.Command == "chat" || a.Command == "rl")
+}
+
+// Every bare chat turn executes in the gateway, which owns MCP discovery itself
+func chatRunsAtGateway(a *chatArgs) bool {
+	return a.Command == "" || a.Command == "chat"
+}
+
+func applySafeMode(a *chatArgs) {
+	if !a.SafeMode {
+		return
+	}
+	os.Setenv("ICEBATH_SAFE_MODE", "1")
+	os.Setenv("ICEBATH_IGNORE_USER_CONFIG", "1")
+	os.Setenv("ICEBATH_IGNORE_RULES", "1")
+}
+
+func applyUserConfigBypass(a *chatArgs) {
+	if a.IgnoreUserConfig {
+		os.Setenv("ICEBATH_IGNORE_USER_CONFIG", "1")
+	}
+}
+
+// Fails closed before a non interactive invocation initializes providers on a broken config
+func guardNoninteractiveUserConfig(a *chatArgs) {
+	if a.noninteractiveConfigValidated {
+		return
+	}
+	if a.Oneshot == "" && a.Query == "" {
+		return
+	}
+	ctx := context.Background()
+	if err := config.RequireParseableUserConfig(ctx, home.Dir(ctx), a.IgnoreUserConfig || a.SafeMode); err != nil {
+		var invalid *config.InvalidUserConfigError
+		if errors.As(err, &invalid) {
+			fmt.Fprintln(os.Stderr, "Error: "+err.Error())
+			exit(2)
+		}
+	}
+	a.noninteractiveConfigValidated = true
+}
+
+// Discovers plugins, MCP servers and hooks for commands that can run an agent turn
+func prepareAgentStartup(a *chatArgs) {
+	if a.Yolo {
+		os.Setenv("ICEBATH_YOLO_MODE", "1")
+	}
+	if (a.Command == "" || a.Command == "chat") && bypassChatLaunch(a) {
+		return
+	}
+	applySafeMode(a)
+	applyUserConfigBypass(a)
+	guardNoninteractiveUserConfig(a)
+	if !(agentCommands[a.Command] || agentSubcommandSelected(a)) {
+		return
+	}
+	ctx := context.Background()
+	if !(isTUIChatLaunch(a) || chatRunsAtGateway(a)) {
+		plugins.StartBackgroundPluginDiscovery(ctx)
+	}
+	var toolsets any
+	if a.Toolsets != "" {
+		toolsets = a.Toolsets
+	}
+	mcp.SetServerFilter(toolsets)
+	if chatRunsAtGateway(a) {
+		if a.AcceptHooks {
+			os.Setenv("ICEBATH_ACCEPT_HOOKS", "1")
+		}
+		return
+	}
+	if shouldBackgroundMCPStartup(a) {
+		mcp.StartBackgroundDiscovery(ctx, processToolsEnv(ctx), pkgLog(), "cli-mcp-discovery")
+	}
+	cfg, err := config.Load(home.Dir(ctx), nil)
+	if err != nil {
+		pkgLog().Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
+		return
+	}
+	interactive := a.Command == "" || a.Command == "chat" || a.Command == "rl"
+	if _, err := plugins.RegisterShellHooksFromConfig(ctx, map[string]any(cfg), a.AcceptHooks, interactive); err != nil {
+		pkgLog().Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
+		return
+	}
+	if a.AcceptHooks && a.Command == "gateway" {
+		plugins.AcceptShellHooksForProcess()
+	}
+	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg)); err != nil {
+		pkgLog().Debug(fmt.Sprintf("outbound-webhook registration failed at CLI startup: %v", err))
+	}
+}
+
+// The process wide tool environment of the bound home
+func processToolsEnv(ctx context.Context) *tools.Env {
+	h := home.Dir(ctx)
+	cfg, _ := config.LoadReadonly(ctx, h, nil)
+	cwd, _ := os.Getwd()
+	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
+}
+
+// Top level --oneshot, the transport launcher that never returns
+func runOneshotFromArgs(a *chatArgs) int {
+	return launchGatewayChat(a)
+}
+
+// Top level --resume or --continue with no subcommand is a chat shortcut
+func promoteTopLevelResume(a *chatArgs) {
+	if (a.Resume != "" || a.Continue != "") && a.Command == "" {
+		a.Command = "chat"
+	}
+}
+
+// The light chat parser, root flags and chat only, parsed without the subcommand tree
+func lightChatArgs(argv []string) (*chatArgs, bool) {
+	cli := commands.NewCLI()
+	argv = cli.ParseReadyArgs(argv)
+	cmd, rest, err := cli.Root.Find(argv)
+	if err != nil || cmd == nil {
+		return nil, false
+	}
+	if cmd != cli.Root && cmd.Name() != "chat" {
+		return nil, false
+	}
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	if err := cmd.ParseFlags(rest); err != nil || len(cli.UnknownOptions(argv, cmd)) > 0 {
+		return nil, false
+	}
+	if cmd == cli.Root {
+		for _, positional := range cmd.Flags().Args() {
+			if positional != "" {
+				return nil, false
+			}
+		}
+	}
+	a := parsedArgs(cli, cmd, cmd.Flags().Args())
+	if cmd.Name() == "chat" {
+		a.Command = "chat"
+	}
+	return a, true
+}
+
+// Fast path for unambiguous interactive chat launches on every host
+func tryFastChatLaunch(argv []string) (bool, int) {
+	if os.Getenv("ICEBATH_DISABLE_FAST_CHAT_LAUNCH") == "1" || containsArg(argv, "-h") || containsArg(argv, "--help") {
+		return false, 0
+	}
+	if containerExecInfo() != nil || wantsTUIEarly(argv) {
+		return false, 0
+	}
+	if first, ok := firstPositional(argv); ok && first != "chat" {
+		return false, 0
+	}
+	a, ok := lightChatArgs(argv)
+	if !ok || a.Version || (a.Command != "" && a.Command != "chat") {
+		return false, 0
+	}
+	if a.Yolo {
+		os.Setenv("ICEBATH_YOLO_MODE", "1")
+	}
+	if code := adoptStdinQuery(a); code != 0 {
+		return true, code
+	}
+	prepareAgentStartup(a)
+	if a.Oneshot != "" {
+		return true, runOneshotFromArgs(a)
+	}
+	promoteTopLevelResume(a)
+	return true, cmdChat(a)
+}
+
+// Obvious Termux non TUI chat, oneshot and version paths on the light parser
+func tryTermuxFastCLILaunch(argv []string) (bool, int) {
+	if !isTermuxStartupEnvironment() || os.Getenv("ICEBATH_TERMUX_DISABLE_FAST_CLI") == "1" {
+		return false, 0
+	}
+	if containsArg(argv, "-h") || containsArg(argv, "--help") || wantsTUIEarly(argv) {
+		return false, 0
+	}
+	if isGlobalFastVersionArgv(argv) {
+		printVersionInfo(true)
+		return true, 0
+	}
+	first, hasFirst := firstPositional(argv)
+	hasOneshot := false
+	for _, arg := range argv {
+		if arg == "-z" || arg == "--oneshot" || len(arg) > 10 && arg[:10] == "--oneshot=" {
+			hasOneshot = true
+		}
+	}
+	if !hasOneshot && hasFirst && first != "chat" {
+		return false, 0
+	}
+	a, ok := lightChatArgs(argv)
+	if !ok {
+		return false, 0
+	}
+	if a.Version {
+		printVersionInfo(true)
+		return true, 0
+	}
+	if code := adoptStdinQuery(a); code != 0 {
+		return true, code
+	}
+	if a.Oneshot != "" {
+		prepareAgentStartup(a)
+		return true, runOneshotFromArgs(a)
+	}
+	promoteTopLevelResume(a)
+	if a.Command == "" || a.Command == "chat" {
+		if chatCarriesQuery(a) {
+			prepareAgentStartup(a)
+		}
+		return true, cmdChat(a)
+	}
+	return false, 0
+}
+
+// Termux TUI launch on the light parser before the subcommand tree is built
+func tryTermuxFastTUILaunch(argv []string) (bool, int) {
+	if !isTermuxStartupEnvironment() {
+		return false, 0
+	}
+	a, ok := earlyTUIArgs(argv)
+	if !ok {
+		return false, 0
+	}
+	return true, cmdChat(a)
+}

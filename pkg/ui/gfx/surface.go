@@ -344,9 +344,9 @@ func (s *Surface) emitKittyLocked(p *Packet, x, y int, now time.Time) string {
 		b.WriteString(ansi.CursorPosition(x+1, y+1))
 	}
 	if sl.placed {
-		b.WriteString(s.t.wrap(deleteImage(id)))
+		b.WriteString(s.t.Wrap(deleteImage(id)))
 	}
-	b.WriteString(s.t.wrap("\x1b_G" + s.keys(id, p, name != "", len(rest) > 0) + ";" + string(payload) + "\x1b\\"))
+	b.WriteString(s.t.Wrap("\x1b_G" + s.keys(id, p, name != "", len(rest) > 0) + ";" + string(payload) + "\x1b\\"))
 	b.Write(rest)
 	if s.proto == KittyPlaced {
 		b.WriteString("\x1b8")
@@ -591,7 +591,7 @@ func (s *Surface) Release() string {
 	var out string
 	switch {
 	case isKitty(s.proto):
-		out = s.t.wrap(deleteImage(s.ids[0])) + s.t.wrap(deleteImage(s.ids[1]))
+		out = s.t.Wrap(deleteImage(s.ids[0])) + s.t.Wrap(deleteImage(s.ids[1]))
 	case s.box.set:
 		var b strings.Builder
 		b.WriteString("\x1b7\x1b[0m")

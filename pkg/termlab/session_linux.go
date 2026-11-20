@@ -531,6 +531,9 @@ func (s *Session) Latency(timeout time.Duration) (time.Duration, error) {
 // Screenshot of the whole lab display
 func (s *Session) Shot() (*image.RGBA, error) { return s.lab.Shot() }
 
+// Screenshot of a pixel region of the lab display
+func (s *Session) ShotOf(region image.Rectangle) (*image.RGBA, error) { return s.lab.ShotOf(region) }
+
 // Columns and rows of the grid the emulator gave the program
 func (s *Session) Size() (cols, rows int) { return s.cols, s.rows }
 

@@ -1,0 +1,6 @@
+import-agent --help
+claw --help
+claw migrate --help
+mcp-serve --help
+status --help
+import-agent openclaw --dry-run

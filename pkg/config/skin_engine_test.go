@@ -1,0 +1,155 @@
+package config
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Fresh home with a skins dir and the process skin state reset around the test
+func skinHome(t *testing.T) (context.Context, string) {
+	t.Helper()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	dir := filepath.Join(h, "skins")
+	os.MkdirAll(dir, 0o755)
+	reset := func() {
+		skinStateMu.Lock()
+		activeSkin, activeSkinName, activeSkinsByHome = nil, "default", map[string]skinEntry{}
+		skinStateMu.Unlock()
+	}
+	reset()
+	t.Cleanup(reset)
+	return context.Background(), dir
+}
+
+func TestSetActiveSkin(t *testing.T) {
+	ctx, _ := skinHome(t)
+	if skin := SetActiveSkin(ctx, "taro"); skin.Name != "taro" {
+		t.Fatal(skin.Name)
+	}
+	if GetActiveSkinName(ctx) != "taro" || GetActiveSkin(ctx).Name != "taro" {
+		t.Fatal(GetActiveSkinName(ctx))
+	}
+}
+
+func TestLoadUserSkinFromYAML(t *testing.T) {
+	ctx, dir := skinHome(t)
+	os.WriteFile(filepath.Join(dir, "custom.yaml"), []byte("branding:\n  agent_name: Custom Agent\ncolors:\n  banner_title: '#FF0000'\ndescription: A custom test skin\nname: custom\ntool_prefix: \"\\u25B8\"\n"), 0o644)
+	skin := LoadSkin(ctx, "custom")
+	if skin.Name != "custom" || skin.GetColor("banner_title", "") != "#FF0000" || skin.GetBranding("agent_name", "") != "Custom Agent" {
+		t.Fatal(skin)
+	}
+	if skin.ToolPrefix != "▸" || skin.GetColor("banner_border", "") != "#3b5169" {
+		t.Fatal(skin.ToolPrefix, skin.GetColor("banner_border", ""))
+	}
+}
+
+func TestLoadUserSkinInvalidSectionTypesFallBackToDefaults(t *testing.T) {
+	ctx, dir := skinHome(t)
+	os.WriteFile(filepath.Join(dir, "broken.yaml"), []byte("branding:\n- also\n- invalid\ncolors:\n- not\n- a\n- mapping\nname: broken\nspinner: invalid\ntool_emojis:\n- invalid\ntool_prefix: '!'\n"), 0o644)
+	skin := LoadSkin(ctx, "broken")
+	if skin.Name != "broken" || skin.GetColor("banner_title", "") != "#e3122b" || skin.GetBranding("agent_name", "") != "Icebath Agent" {
+		t.Fatal(skin.Name, skin.GetColor("banner_title", ""), skin.GetBranding("agent_name", ""))
+	}
+	if _, ok := skin.Spinner["waiting_faces"]; ok || len(skin.ToolEmojis) != 0 || skin.ToolPrefix != "!" {
+		t.Fatal(skin.Spinner, skin.ToolEmojis, skin.ToolPrefix)
+	}
+}
+
+func TestListSkinsIncludesUserSkins(t *testing.T) {
+	ctx, dir := skinHome(t)
+	os.WriteFile(filepath.Join(dir, "pirate.yaml"), []byte("description: Arr matey\nname: pirate\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "shadow.yaml"), []byte("description: shadows taro\nname: taro\n"), 0o644)
+	skins := ListSkins(ctx)
+	if skins[0].Name != DefaultSkinName || skins[0].Source != "builtin" {
+		t.Fatal(skins[0])
+	}
+	found, shadowed := false, 0
+	for _, s := range skins {
+		if s.Name == "pirate" {
+			found = s.Source == "user" && s.Description == "Arr matey"
+		}
+		if s.Name == "taro" {
+			shadowed++
+		}
+	}
+	if !found || shadowed != 1 {
+		t.Fatal(skins)
+	}
+}
+
+func TestUserSkinCustomCSS(t *testing.T) {
+	ctx, dir := skinHome(t)
+	write := func(css string) *SkinConfig {
+		body := "colors:\n  background: '#101010'\nname: styled\n"
+		if css != "" {
+			body += "customCSS: " + css + "\n"
+		}
+		os.WriteFile(filepath.Join(dir, "styled.yaml"), []byte(body), 0o644)
+		return LoadSkin(ctx, "styled")
+	}
+	if got := write("'.chat-input { font-size: 16px; }'").CustomCSS; got != ".chat-input { font-size: 16px; }" {
+		t.Fatal(got)
+	}
+	if got := write(`"\n  .status-bar { background: black; }  \n"`).CustomCSS; got != ".status-bar { background: black; }" {
+		t.Fatal(got)
+	}
+	if got := write("").CustomCSS; got != "" {
+		t.Fatal(got)
+	}
+	if got := write(strings.Repeat("x", 40000)).CustomCSS; len(got) != 32768 {
+		t.Fatal(len(got))
+	}
+	if LoadSkin(ctx, "default").CustomCSS != "" || LoadSkin(ctx, "contrast").CustomCSS != "" {
+		t.Fatal("built in skins carry no css")
+	}
+}
+
+func TestUnknownSkinFallsBackToDefault(t *testing.T) {
+	ctx, dir := skinHome(t)
+	if skin := LoadSkin(ctx, "no-such-skin"); skin.Name != DefaultSkinName || skin.Source != "builtin" {
+		t.Fatal(skin.Name, skin.Source)
+	}
+	if skin := LoadSkin(ctx, "default"); skin.Name != DefaultSkinName {
+		t.Fatal(skin.Name)
+	}
+	os.WriteFile(filepath.Join(dir, "winged.yaml"), []byte("name: winged\nspinner:\n  wings:\n    - [\"⟪\", \"⟫\"]\n    - [\"only one\"]\n"), 0o644)
+	skin := LoadSkin(ctx, "winged")
+	if wings := skin.GetSpinnerWings(); len(wings) != 1 || wings[0] != [2]string{"⟪", "⟫"} || skin.Source != "user" {
+		t.Fatal(wings, skin.Source)
+	}
+}
+
+func TestBrandingHelpersAndConfigInit(t *testing.T) {
+	ctx, _ := skinHome(t)
+	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": "  contrast  "}})
+	if GetActiveSkinName(ctx) != "contrast" || GetActiveSkin(ctx).Branding["help_header"] != "❆ Available Commands" {
+		t.Fatal(GetActiveSkinName(ctx), GetActiveSkin(ctx).Branding["help_header"])
+	}
+	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": 3}})
+	if GetActiveSkinName(ctx) != "default" || GetActiveGoodbye(ctx, "") != "Goodbye! 󰆧" {
+		t.Fatal(GetActiveSkinName(ctx), GetActiveGoodbye(ctx, ""))
+	}
+}
+
+func TestInstallSkinColorFilterWrapsEveryColorRead(t *testing.T) {
+	InstallSkinColorFilter(strings.ToLower)
+	t.Cleanup(func() { InstallSkinColorFilter(nil) })
+	skin := &SkinConfig{Colors: map[string]any{"banner_title": "#FF0000"}}
+	if skin.GetColor("banner_title", "") != "#ff0000" || skin.GetColor("missing", "#ABCDEF") != "#abcdef" {
+		t.Fatal(skin.GetColor("banner_title", ""), skin.GetColor("missing", "#ABCDEF"))
+	}
+	InstallSkinColorFilter(nil)
+	if skin.GetColor("banner_title", "") != "#FF0000" {
+		t.Fatal("a removed filter must leave colors untouched")
+	}
+}
+
+// Names of the built in skins in definition order
+func BuiltinSkinNames() []string {
+	_, order := builtinSkinTable()
+	return append([]string{}, order...)
+}

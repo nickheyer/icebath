@@ -1,0 +1,7 @@
+name: browser-browser-use
+version: 1.0.0
+description: "Browser Use (https://browser-use.com) cloud browser backend. Uses BROWSER_USE_API_KEY."
+author: Icebath
+kind: backend
+provides_browser_providers:
+  - browser-use

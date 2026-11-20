@@ -1,0 +1,438 @@
+package gateway
+
+import (
+	"context"
+	"fmt"
+	"maps"
+	"os"
+	"slices"
+	"sort"
+	"strings"
+	"sync"
+
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
+)
+
+// Core platform rows of the env names whose presence drives its env enable, in table order
+var EnvEnableCredentials = []struct {
+	Platform Platform
+	Names    []string
+}{{PlatformRelay, []string{"GATEWAY_RELAY_URL"}}}
+
+// Platforms already warned that an explicit disable beats env credentials
+var explicitDisableWarned = struct {
+	sync.Mutex
+	set map[Platform]bool
+}{set: map[Platform]bool{}}
+
+// Credential names a disable warning cites, the core row else the entry's or the bundled declaration
+func enableCredentialNames(ctx context.Context, platform Platform) []string {
+	for _, row := range EnvEnableCredentials {
+		if row.Platform == platform {
+			return row.Names
+		}
+	}
+	var names []string
+	if entry := Registry.Get(ctx, string(platform)); entry != nil {
+		names = entry.EnvEnableCredentials
+	}
+	if len(names) == 0 {
+		_, names, _ = bundledEnvRows(string(platform))
+	}
+	return names
+}
+
+// One time warning that platforms.x.enabled false wins over env credentials
+func warnExplicitDisableBeatsEnv(ctx context.Context, platform Platform) {
+	explicitDisableWarned.Lock()
+	if explicitDisableWarned.set[platform] {
+		explicitDisableWarned.Unlock()
+		return
+	}
+	explicitDisableWarned.set[platform] = true
+	explicitDisableWarned.Unlock()
+	names := enableCredentialNames(ctx, platform)
+	present := []string{}
+	for _, n := range names {
+		if pystr.Strip(os.Getenv(n)) != "" {
+			present = append(present, n)
+		}
+	}
+	if len(present) == 0 {
+		present = names
+	}
+	creds := strings.Join(present, ", ")
+	if creds == "" {
+		creds = "its credentials"
+	}
+	p := string(platform)
+	pkgLog().Warn(fmt.Sprintf("Platform '%s' is explicitly disabled by platforms.%s.enabled: false in "+
+		"config.yaml, so the credentials found in the environment (%s) will NOT "+
+		"start its adapter. Environment credentials no longer override an "+
+		"explicit disable. Remove the key or set platforms.%s.enabled: true to "+
+		"turn it back on.", p, p, creds, p))
+}
+
+// True while a multiplexer loads a non default profile's config
+func loadingSecondaryUnderMultiplexer(ctx context.Context) bool {
+	override := home.Override(ctx)
+	return override != "" && provider.IsMultiplexActive(ctx) && home.ProfileNameFor(override) != "default"
+}
+
+// Enables a platform on env credentials unless config.yaml explicitly disabled it
+func enableFromEnv(ctx context.Context, cfg *GatewayConfig, platform Platform, popMarker, warn bool) *PlatformConfig {
+	pc := platformSetDefault(cfg, platform)
+	explicit, ok := pc.Extra["_enabled_explicit"]
+	if !ok {
+		explicit = false
+	}
+	if popMarker {
+		delete(pc.Extra, "_enabled_explicit")
+	}
+	if pc.Enabled {
+		return pc
+	}
+	if !pyrepr.Truthy(explicit) && !(SharedListenerMirrorPlatforms[string(platform)] && loadingSecondaryUnderMultiplexer(ctx)) {
+		pc.Enabled = true
+	} else if warn {
+		warnExplicitDisableBeatsEnv(ctx, platform)
+	}
+	return pc
+}
+
+// API server enable on a usable key with its listener extras
+func applyAPIServerEnv(ctx context.Context, cfg *GatewayConfig) {
+	key := getenvStr(ctx, "API_SERVER_KEY", "")
+	if !hasUsableAPIServerKey(key) {
+		return
+	}
+	extra := enableFromEnv(ctx, cfg, PlatformAPIServer, true, false).Extra
+	extra["key"] = key
+	CSVExtras(extra, []CSVSpec{{"cors_origins", getenvStr(ctx, "API_SERVER_CORS_ORIGINS", "")}})
+	EnvExtras(ctx, extra, []EnvSpec{{Key: "port", Env: "API_SERVER_PORT", Int: true}, {Key: "host", Env: "API_SERVER_HOST"},
+		{Key: "model_name", Env: "API_SERVER_MODEL_NAME"}}, false)
+}
+
+// Webhook enable on WEBHOOK_ENABLED, its port and secret also reaching a configured webhook
+func applyWebhookEnv(ctx context.Context, cfg *GatewayConfig) {
+	enabled, _ := pystr.BoolToken(getenvStr(ctx, "WEBHOOK_ENABLED", ""))
+	existing, configured := cfg.Platforms[PlatformWebhook]
+	if !enabled && !configured {
+		return
+	}
+	webhook := existing
+	if enabled {
+		webhook = enableFromEnv(ctx, cfg, PlatformWebhook, true, false)
+	}
+	EnvExtras(ctx, webhook.Extra, []EnvSpec{{Key: "port", Env: "WEBHOOK_PORT", Int: true}, {Key: "secret", Env: "WEBHOOK_SECRET"}}, false)
+}
+
+// Microsoft Graph webhook config from env, the explicit marker read and kept for the relay pass
+func applyMSGraphWebhookEnv(ctx context.Context, cfg *GatewayConfig) {
+	enabled, _ := pystr.BoolToken(getenvStr(ctx, "MSGRAPH_WEBHOOK_ENABLED", ""))
+	clientState := getenvStr(ctx, "MSGRAPH_WEBHOOK_CLIENT_STATE", "")
+	resources := getenvStr(ctx, "MSGRAPH_WEBHOOK_ACCEPTED_RESOURCES", "")
+	allowedCIDRs := getenvStr(ctx, "MSGRAPH_WEBHOOK_ALLOWED_SOURCE_CIDRS", "")
+	_, configured := cfg.Platforms[PlatformMSGraphWebhook]
+	if !enabled && !configured && getenvStr(ctx, "MSGRAPH_WEBHOOK_PORT", "") == "" && clientState == "" && resources == "" && allowedCIDRs == "" {
+		return
+	}
+	msgraph := platformSetDefault(cfg, PlatformMSGraphWebhook)
+	if enabled {
+		enableFromEnv(ctx, cfg, PlatformMSGraphWebhook, false, false)
+	}
+	EnvExtras(ctx, msgraph.Extra, []EnvSpec{{Key: "port", Env: "MSGRAPH_WEBHOOK_PORT", Int: true}}, false)
+	if clientState != "" {
+		msgraph.Extra["client_state"] = clientState
+	}
+	CSVExtras(msgraph.Extra, []CSVSpec{{"accepted_resources", resources}, {"allowed_source_cidrs", allowedCIDRs}})
+}
+
+// Env enablement probe result of an entry as a non empty mapping, nil otherwise or when it panics
+func pluginProbeSeed(ctx context.Context, entry *PlatformEntry) (seed map[string]any) {
+	if entry.EnvEnablementFn == nil {
+		return nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLog().Debug(fmt.Sprintf("env_enablement_fn for %s raised: %v", entry.Name, r))
+			seed = nil
+		}
+	}()
+	if seed = entry.EnvEnablementFn(ctx); len(seed) == 0 {
+		return nil
+	}
+	return seed
+}
+
+// Connected check of an entry on a transient enabled view seeded with the env extras
+func pluginIsConfigured(ctx context.Context, entry *PlatformEntry, existingExtra, seed map[string]any) (configured bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLog().Debug(fmt.Sprintf("is_connected for %s raised: %v — skipping enablement", entry.Name, r))
+			configured = false
+		}
+	}()
+	for k, v := range seed {
+		if _, ok := existingExtra[k]; !ok && k != "home_channel" {
+			existingExtra[k] = v
+		}
+	}
+	view := NewPlatformConfig()
+	view.Enabled, view.Extra = true, existingExtra
+	ok, err := entry.IsConnected(ctx, view)
+	if err != nil {
+		pkgLog().Debug(fmt.Sprintf("is_connected for %s raised: %s — skipping enablement", entry.Name, err))
+		return false
+	}
+	if !ok {
+		pkgLog().Debug(fmt.Sprintf("Plugin platform '%s' available but not configured (is_connected returned False) — skipping enable", entry.Name))
+	}
+	return ok
+}
+
+// Passive dependency probe, false when the check is missing or panics
+func entryDepsOK(ctx context.Context, entry *PlatformEntry) (ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLog().Debug(fmt.Sprintf("check_fn for %s raised: %v", entry.Name, r))
+			ok = false
+		}
+	}()
+	if entry.CheckFn == nil {
+		pkgLog().Debug(fmt.Sprintf("check_fn for %s failed: the check is not set", entry.Name))
+		return false
+	}
+	return entry.RunCheck(ctx)
+}
+
+// Enables a configured plugin platform whose deps are present or installable later
+func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *PlatformEntry) {
+	platform, err := ParsePlatform(ctx, entry.Name)
+	if err != nil {
+		pkgLog().Debug(fmt.Sprintf("unknown platform name %s: %s", pyrepr.Repr(entry.Name), err))
+		return
+	}
+	existing, has := cfg.Platforms[platform]
+	alreadyEnabled := has && existing.Enabled
+	existingExtra := map[string]any{}
+	if has {
+		maps.Copy(existingExtra, existing.Extra)
+	}
+	if has && !alreadyEnabled && pyrepr.Truthy(existingExtra["_enabled_explicit"]) {
+		return
+	}
+	seed := pluginProbeSeed(ctx, entry)
+	if !alreadyEnabled && entry.IsConnected != nil && !pluginIsConfigured(ctx, entry, existingExtra, seed) {
+		return
+	}
+	if !entryDepsOK(ctx, entry) && entry.EnsureDepsFn == nil {
+		return
+	}
+	pc := platformSetDefault(cfg, platform)
+	pc.Enabled = true
+	if len(seed) == 0 {
+		return
+	}
+	commit := maps.Clone(seed)
+	homeRaw := commit["home_channel"]
+	delete(commit, "home_channel")
+	maps.Copy(pc.Extra, commit)
+	if h, ok := homeRaw.(map[string]any); ok && pyrepr.Truthy(h["chat_id"]) {
+		name := "Home"
+		if pyrepr.Truthy(h["name"]) {
+			name = pyrepr.Str(h["name"])
+		}
+		hc := &HomeChannel{Platform: platform, ChatID: pyrepr.Str(h["chat_id"]), Name: name}
+		if pyrepr.Truthy(h["thread_id"]) {
+			t := pyrepr.Str(h["thread_id"])
+			hc.ThreadID = &t
+		}
+		hc.PostInit()
+		pc.HomeChannel = hc
+	}
+}
+
+// Platform names of a config in its insertion order
+func configPlatformNames(cfg *GatewayConfig) []string {
+	names := make([]string, 0, len(cfg.Platforms))
+	for _, p := range cfg.PlatformKeys() {
+		names = append(names, string(p))
+	}
+	return names
+}
+
+// Plugin entries with activation evidence after idempotent discovery, empty when discovery panics
+func configuredPluginEntriesFor(ctx context.Context, cfg *GatewayConfig) (out []*PlatformEntry) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLog().Debug(fmt.Sprintf("Plugin platform discovery for env overrides failed: %v", r))
+			out = []*PlatformEntry{}
+		}
+	}()
+	plugins.DiscoverPlugins(ctx, false)
+	return ConfiguredPluginEntries(ctx, Registry, map[string]any{}, configPlatformNames(cfg), "")
+}
+
+// Env rows of one platform the env pass runs, a registry entry or a bundled declaration without one
+type envRowsEntry struct {
+	name      string
+	overrides []EnvStep
+}
+
+// Bundled platforms with activation evidence but no registry entry, read from their declarations
+func bundledEnvFallbacks(ctx context.Context, cfg *GatewayConfig, entries []*PlatformEntry) []envRowsEntry {
+	have := map[string]bool{}
+	for _, e := range entries {
+		have[e.Name] = true
+	}
+	names := map[string]bool{}
+	bundled, _ := bundledPlatformScanCached()
+	maps.Copy(names, bundled)
+	for n := range bundledEnvSiblings {
+		names[n] = true
+	}
+	for n := range have {
+		delete(names, n)
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	wanted := ActivationPredicate(ctx, map[string]any{}, configPlatformNames(cfg), "", nil)
+	out := []envRowsEntry{}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		if !wanted(name) {
+			continue
+		}
+		if overrides, _, ok := bundledEnvRows(name); ok && len(overrides) > 0 {
+			out = append(out, envRowsEntry{name, overrides})
+		}
+	}
+	return out
+}
+
+// Rank of an entry, static members first in enum order so the env rows run deterministically
+func platformRank(ctx context.Context, name string) int {
+	members := PlatformMemberMap()
+	p, err := ParsePlatform(ctx, name)
+	if err != nil {
+		return len(members)
+	}
+	if i := slices.Index(members, p); i >= 0 {
+		return i
+	}
+	return len(members)
+}
+
+// Runs one env step, an error or panic logged and swallowed so a broken row never breaks the load
+func runEnvStep(ctx context.Context, cfg *GatewayConfig, name string, step EnvStep) {
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLog().Debug(fmt.Sprintf("env override for %s raised: %v", name, r))
+		}
+	}()
+	if err := step.Apply(ctx, cfg); err != nil {
+		pkgLog().Debug(fmt.Sprintf("env override for %s raised: %s", name, err))
+	}
+}
+
+// Runs each platform's declared env steps in platform rank order
+func applyPluginEnvOverrides(ctx context.Context, cfg *GatewayConfig, entries []envRowsEntry) {
+	ranked := slices.Clone(entries)
+	ranks := make(map[string]int, len(ranked))
+	for _, e := range ranked {
+		ranks[e.name] = platformRank(ctx, e.name)
+	}
+	sort.SliceStable(ranked, func(i, j int) bool { return ranks[ranked[i].name] < ranks[ranked[j].name] })
+	for _, e := range ranked {
+		for _, step := range e.overrides {
+			runEnvStep(ctx, cfg, e.name, step)
+		}
+	}
+}
+
+// Registry driven enable of plugin platforms their env rows did not already enable
+func enablePluginPlatformsFromEnv(ctx context.Context, cfg *GatewayConfig, entries []*PlatformEntry) {
+	for _, entry := range entries {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					pkgLog().Debug(fmt.Sprintf("Plugin platform enable pass failed for %s: %v", entry.Name, r))
+				}
+			}()
+			enablePluginPlatform(ctx, cfg, entry)
+		}()
+	}
+}
+
+// Relay enable from env or YAML, the env stamp disabling every directly connected messaging platform
+func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
+	relayURLEnv := pystr.Strip(getenvStr(ctx, "GATEWAY_RELAY_URL", ""))
+	relayURLYAML := ""
+	if existing, ok := cfg.Platforms[PlatformRelay]; ok {
+		v := existing.Extra["relay_url"]
+		if !pyrepr.Truthy(v) {
+			v = ""
+		}
+		relayURLYAML = pystr.Strip(pyrepr.Str(v))
+	}
+	relayURL := relayURLEnv
+	if relayURL == "" {
+		relayURL = relayURLYAML
+	}
+	if relayURL != "" {
+		relay := enableFromEnv(ctx, cfg, PlatformRelay, false, true)
+		relay.Extra["relay_url"] = strings.TrimRight(relayURL, "/")
+		if !relay.Enabled {
+			return
+		}
+	}
+	if allow, _ := pystr.BoolToken(getenvStr(ctx, "GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS", "")); relayURLEnv == "" || allow {
+		return
+	}
+	skip := map[Platform]bool{PlatformRelay: true, PlatformLocal: true, PlatformAPIServer: true, PlatformWebhook: true}
+	for _, platform := range cfg.PlatformKeys() {
+		pc := cfg.Platforms[platform]
+		if skip[platform] || !pc.Enabled {
+			continue
+		}
+		if pyrepr.Truthy(pc.Extra["_enabled_explicit"]) {
+			pkgLog().Warn(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; "+
+				"disabling directly-connected platform '%s' even though "+
+				"it is explicitly enabled in this profile's configuration. "+
+				"All messaging goes through the connector on this "+
+				"deployment. Set GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS=true "+
+				"to keep direct platforms alongside the relay.", platform))
+		} else {
+			pkgLog().Info(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; disabling directly-connected platform '%s'.", platform))
+		}
+		pc.Enabled = false
+	}
+}
+
+// Drops the explicit enable markers once every env pass has read them
+func scrubExplicitMarkers(cfg *GatewayConfig) {
+	for _, p := range cfg.PlatformKeys() {
+		delete(cfg.Platforms[p].Extra, "_enabled_explicit")
+	}
+}
+
+// Env wins over config.yaml and gateway.json
+func applyEnvOverrides(ctx context.Context, cfg *GatewayConfig) {
+	entries := configuredPluginEntriesFor(ctx, cfg)
+	rows := make([]envRowsEntry, 0, len(entries))
+	for _, e := range entries {
+		rows = append(rows, envRowsEntry{e.Name, e.EnvOverrides})
+	}
+	applyPluginEnvOverrides(ctx, cfg, append(rows, bundledEnvFallbacks(ctx, cfg, entries)...))
+	applyAPIServerEnv(ctx, cfg)
+	applyWebhookEnv(ctx, cfg)
+	applyMSGraphWebhookEnv(ctx, cfg)
+	enablePluginPlatformsFromEnv(ctx, cfg, entries)
+	applyRelayEnv(ctx, cfg)
+	scrubExplicitMarkers(cfg)
+}

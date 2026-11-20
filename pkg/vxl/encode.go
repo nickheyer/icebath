@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-//go:generate python3 -I ../../scripts/glyphs.py
+//go:generate go run ./internal/glyphgen
 
 // Glyph library a cell may pick its glyph from
 type CellMode int

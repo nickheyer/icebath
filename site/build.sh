@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the icebath.app bundle with signed apt, rpm and apk indexes for the release packages in a directory
+# Builds the icebath.app bundle with the shipped catalogs and signed apt, rpm and apk indexes for the release packages in a directory
 set -euo pipefail
 
 usage='usage: build.sh <packages dir> <out dir>'
@@ -14,6 +14,14 @@ rm -rf "$out"
 mkdir -p "$out"
 out=$(realpath "$out")
 cp -r "$site/public/." "$out/"
+repo=$(cd "$site/.." && pwd)
+mkdir -p "$out/api"
+cp "$repo/pkg/provider/model-catalog.json" "$out/api/model-catalog.json"
+cp "$repo/pkg/provider/local_runtime_catalog.json" "$out/api/local-runtime-catalog.json"
+zstd -dcq "$repo/pkg/skills/skills-index.json.zst" | gzip -9n > "$out/api/skills-index.json.gz"
+(cd "$repo" && go run ./cmd/packtree catalog -dir pkg/plugins/catalog -out "$out/api/plugin-catalog.json")
+cp "$site/../scripts/install.sh" "$out/install.sh"
+cp "$site/../scripts/install.ps1" "$out/install.ps1"
 mkdir -p "$out/apt/pool" "$out/apk/x86_64" "$out/apk/aarch64"
 cp "$pkgs"/*.deb "$out/apt/pool/"
 cp "$pkgs"/*.rpm "$out/rpm/"

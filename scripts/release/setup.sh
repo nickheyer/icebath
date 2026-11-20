@@ -46,6 +46,10 @@ for name in "${SECRETS[@]}"; do
   fi
 done
 
+[ -z "${WINGET_TOKEN:-}" ] \
+  || [ "$(GH_TOKEN=$WINGET_TOKEN gh api repos/nickheyer/winget-pkgs -q '.fork and .parent.full_name == "microsoft/winget-pkgs" and .permissions.push' 2>/dev/null)" = true ] \
+  || todo+=("give WINGET_TOKEN push access to nickheyer/winget-pkgs (a classic token with public_repo)")
+
 gh api repos/nickheyer/nixpkg/contents/default.nix -q .content | base64 -d | grep -qF 'pkgs/icebath' \
   || todo+=("push the icebath package in ~/code/nixpkg so nickheyer/nixpkg default.nix calls ./pkgs/icebath")
 

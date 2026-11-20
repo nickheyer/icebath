@@ -455,8 +455,10 @@ func (m *Model) stepBar(dt float64) bool {
 }
 
 // Foreground of a dial style
-func (m *Model) styleColor(s SegmentStyle) color.Color {
-	t := m.theme
+func (m *Model) styleColor(s SegmentStyle) color.Color { return segmentColor(m.theme, s) }
+
+// Foreground a theme paints a color role in
+func segmentColor(t theme.Theme, s SegmentStyle) color.Color {
 	switch s {
 	case Dim:
 		return t.TextDim
@@ -688,10 +690,10 @@ func spansWidth(ss []span) int {
 	return w
 }
 
-// Text at the right of the open field, the match count of a picker or the keys a prompt answers
+// Text at the right of the open field, the match count of a picker or the keys a prompt or a question answers
 func (m *Model) inputTail(p *Palette, bg color.Color) []span {
 	t := m.theme
-	if len(p.items) > 0 {
+	if len(p.items) > 0 && !p.Asking() {
 		return []span{{p.Tally(), uv.Style{Fg: t.TextDim, Bg: bg}}}
 	}
 	var out []span

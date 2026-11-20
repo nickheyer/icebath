@@ -1,0 +1,122 @@
+package provider
+
+import (
+	"context"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+)
+
+// RuntimeCredentialSource reads an oauth provider's stored login the way the runtime credential resolvers do
+type RuntimeCredentialSource interface {
+	RuntimeCredential(provider string) (Credential, error)
+}
+
+var _ RuntimeCredentialSource = (*homeCredentials)(nil)
+
+// PoolPresenceSource reports whether a provider's credential pool holds any row at all
+type PoolPresenceSource interface {
+	HasPoolCredentials(provider string) bool
+}
+
+// Pool rows, auth store logins, the active login and the free tier one home's resolution reads
+type homeCredentials struct {
+	*PoolCredentials
+	env PoolEnv
+}
+
+// Credential source for home h reading the pool, the auth store and the anon state as resolve_runtime_provider does
+func homeCredentialSource(h string) CredentialSource {
+	return newHomeCredentials(homePoolEnv(h))
+}
+
+// Credential source for home h whose secret reads follow the profile scope the context carries
+func homeCredentialSourceIn(ctx context.Context, h string) CredentialSource {
+	env := homePoolEnv(h)
+	env.Ctx = ctx
+	return newHomeCredentials(env)
+}
+
+// Pool environment bound to the store, profile env file and config of home h
+func homePoolEnv(h string) PoolEnv {
+	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Config: ConfigLoader(h)}
+}
+
+// HomePoolEnv is the pool environment of home h for callers outside the package
+func HomePoolEnv(h string) PoolEnv { return homePoolEnv(h) }
+
+// Composite credential source over a pool environment, the store and secrets filled from the process home when unset
+func newHomeCredentials(env PoolEnv) *homeCredentials {
+	if env.Store == nil {
+		h := home.Process()
+		env.Store = NewStore(h)
+		if env.Secrets == nil {
+			env.Secrets = config.NewSecrets(h)
+		}
+		if env.Config == nil {
+			env.Config = ConfigLoader(h)
+		}
+	}
+	if env.Secrets == nil {
+		env.Secrets = config.NewSecrets(env.Store.Home())
+	}
+	return &homeCredentials{PoolCredentials: NewPoolCredentials(env), env: env}
+}
+
+// True when load_pool for the provider holds rows, false when the pool cannot load
+func (c *homeCredentials) HasPoolCredentials(provider string) bool {
+	pool := c.Pool(provider)
+	return pool != nil && pool.HasCredentials()
+}
+
+// Auth store login of an oauth provider through its runtime credential resolver, errors carried verbatim
+func (c *homeCredentials) RuntimeCredential(provider string) (Credential, error) {
+	var creds map[string]any
+	var err error
+	switch provider {
+	case "openai-codex":
+		creds, err = resolveCodexRuntimeCredentials(c.env, CodexResolveOptions{})
+	case "xai-oauth":
+		creds, err = resolveXAIOAuthRuntimeCredentials(c.env, false, true, 0)
+	case "qwen-oauth":
+		creds, err = resolveQwenRuntimeCredentials(c.env, true)
+	case "minimax-oauth":
+		creds, err = resolveMinimaxOAuthRuntimeCredentials(c.env)
+	default:
+		cred, ok := c.env.Store.Credential(provider)
+		if !ok {
+			return Credential{}, oauthMissingLoginError(provider)
+		}
+		return cred, nil
+	}
+	if err != nil {
+		return Credential{}, err
+	}
+	return Credential{APIKey: anyString(creds["api_key"]), BaseURL: anyString(creds["base_url"]), Source: anyString(creds["source"])}, nil
+}
+
+// auth.json active provider when it is a registry provider reporting logged in
+func (c *homeCredentials) ActiveLoggedInProvider() string {
+	data, err := c.env.Store.Load()
+	if err != nil {
+		pkgLog().Debug("Could not pre-read active auth provider", "error", err)
+		return ""
+	}
+	maybe, _ := data["active_provider"].(string)
+	if maybe == "" {
+		return ""
+	}
+	if _, ok := registryProfileCtx(c.env.ctx(), maybe); !ok {
+		return ""
+	}
+	if truthy(GetAuthStatus(c.env, maybe)["logged_in"]) {
+		return maybe
+	}
+	return ""
+}
+
+// Logged in and configured flags get_auth_status reports for the provider in the bound home
+func providerAuthStatus(ctx context.Context, provider string) (loggedIn, configured bool) {
+	status := GetAuthStatus(modelsPoolEnv(ctx), provider)
+	return truthy(status["logged_in"]), truthy(status["configured"])
+}

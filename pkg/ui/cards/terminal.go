@@ -14,13 +14,17 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/harness"
-	"github.com/nickheyer/icebath/pkg/shell"
 	"github.com/nickheyer/icebath/pkg/term"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
+
+// Rows the mouse wheel scrolls by
+const wheelRows = 3
 
 // Pause after output arrives before the window draws it, so bursts coalesce into one frame
 const termFrame = 8 * time.Millisecond
@@ -70,6 +74,8 @@ type Terminal struct {
 	frame *uv.Buffer
 	// Theme the emulator answers color queries with
 	themed string
+	// Command line the window runs in place of an interactive shell, empty for the shell
+	line string
 }
 
 // Output arrived on the session of a terminal
@@ -103,9 +109,17 @@ func NewTerminal(env *Env, id int, dir string) *Terminal {
 	return &Terminal{env: env, id: id, dir: dir}
 }
 
+// Builds terminal number id running one command line through the shell in dir, the window closing when it ends
+func NewTerminalCommand(env *Env, id int, dir, line string) *Terminal {
+	return &Terminal{env: env, id: id, dir: dir, line: strings.TrimSpace(line)}
+}
+
 func (t *Terminal) Title() string {
 	if t.title != "" {
 		return render.Truncate(t.title, 40, t.env.Theme)
+	}
+	if t.line != "" {
+		return render.Truncate(t.line, 40, t.env.Theme)
 	}
 	return "TERMINAL " + strconv.Itoa(t.id)
 }
@@ -174,8 +188,8 @@ func (t *Terminal) startDir() string {
 	if t.dir != "" {
 		return t.dir
 	}
-	if t.env.Shell != nil {
-		return t.env.Shell.Dir()
+	if t.env.WorkDir != nil {
+		return t.env.WorkDir()
 	}
 	return t.env.Root
 }
@@ -184,13 +198,30 @@ func (t *Terminal) startDir() string {
 func (t *Terminal) command() term.Command {
 	cmd := term.DefaultShell()
 	if line := t.setting("terminal_shell"); line != "" {
-		if words, err := shell.Words(line); err == nil && len(words) > 0 {
+		if words, err := ShellWords(line); err == nil && len(words) > 0 {
 			cmd = term.Command{Path: words[0], Args: words[1:]}
 		}
+	}
+	if t.line != "" {
+		cmd = lineCommand(cmd, t.line)
 	}
 	cmd.Dir = t.startDir()
 	cmd.Env = append(term.Environ(os.Environ(), t.env.Version), "ICEBATH=1")
 	return cmd
+}
+
+// The shell running one command line and ending with it, in the flag form each shell family takes
+func lineCommand(shell term.Command, line string) term.Command {
+	base := strings.ToLower(filepath.Base(shell.Path))
+	switch {
+	case strings.HasPrefix(base, "cmd"):
+		shell.Args = []string{"/C", line}
+	case strings.HasPrefix(base, "pwsh"), strings.HasPrefix(base, "powershell"):
+		shell.Args = []string{"-NoLogo", "-Command", line}
+	default:
+		shell.Args = []string{"-c", line}
+	}
+	return shell
 }
 
 // Value of a setting as the app holds it
@@ -206,7 +237,7 @@ func (t *Terminal) scrollback() int {
 	if n, err := strconv.Atoi(t.setting("terminal_scrollback")); err == nil && n >= 0 {
 		return n
 	}
-	return harness.DefaultScrollback
+	return DefaultScrollback
 }
 
 // Starts the shell off the event loop at the size the window has
@@ -288,6 +319,9 @@ func (t *Terminal) Run(line string) tea.Cmd {
 func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
 	case termStartMsg:
+		if msg.t != t {
+			return t, nil
+		}
 		return t, t.started(msg)
 	case termWakeMsg:
 		if msg.s != t.sess {
@@ -295,13 +329,20 @@ func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		return t, tea.Batch(t.drain(), t.wait(msg.s))
 	case termExitMsg:
-		if msg.s != t.sess {
+		if msg.s != t.sess || t.exit != nil {
 			return t, nil
 		}
 		exit := msg.exit
 		t.exit = &exit
 		t.sel, t.drag = nil, false
-		return t, t.drain()
+		if t.closed {
+			return t, nil
+		}
+		level := wm.Info
+		if exit.Err != nil || exit.Signal != "" || exit.Code != 0 {
+			level = wm.Warn
+		}
+		return t, tea.Batch(t.drain(), wm.Notify(t.Title()+": "+t.endedText(), level), wm.RequestClose(t))
 	case wm.FocusMsg:
 		t.focused = msg.Focused
 		if t.live() {
@@ -409,7 +450,7 @@ func (t *Terminal) drain() tea.Cmd {
 			t.title = ev.Text
 		case term.EventClipboard:
 			if strings.ContainsAny(ev.Body, "cs") || ev.Body == "" {
-				cmds = append(cmds, tea.SetClipboard(ev.Text))
+				cmds = append(cmds, clip.Copy(ev.Text))
 			}
 			if strings.Contains(ev.Body, "p") {
 				cmds = append(cmds, tea.SetPrimaryClipboard(ev.Text))
@@ -584,7 +625,7 @@ func (t *Terminal) copy() tea.Cmd {
 		return wm.Notify("nothing to copy", wm.Info)
 	}
 	n := strings.Count(text, "\n") + 1
-	return tea.Batch(tea.SetClipboard(text), wm.Notify("copied "+render.Count(n, "line"), wm.Success))
+	return tea.Batch(clip.Copy(text), wm.Notify("copied "+render.Count(n, "line"), wm.Success))
 }
 
 // Position of a content cell in absolute rows
@@ -887,11 +928,6 @@ func (t *Terminal) Paint(buf *uv.Buffer) {
 	copyBuffer(t.frame, buf)
 }
 
-// Cell buffer measured by grapheme width, as the window manager draws it
-type cells struct{ *uv.Buffer }
-
-func (cells) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
-
 // Copies every cell of src into dst, both the same size
 func copyBuffer(dst, src *uv.Buffer) {
 	for y := range src.Lines {
@@ -906,6 +942,17 @@ func (t *Terminal) startText() string {
 		return lipgloss.NewStyle().Foreground(th.Alarm).Render(th.Glyphs.Fail+" "+t.err.Error()) + lipgloss.NewStyle().Foreground(th.TextDim).Render(", enter starts it again")
 	}
 	return render.Dim("starting "+filepath.Base(t.command().Path), th)
+}
+
+// Plain words of how the program ended, for the notice the window leaves as it closes
+func (t *Terminal) endedText() string {
+	switch {
+	case t.exit.Err != nil:
+		return t.exit.Err.Error()
+	case t.exit.Signal != "":
+		return t.exit.Signal
+	}
+	return "exit " + strconv.Itoa(t.exit.Code)
 }
 
 // Banner naming how the shell ended and how to start it again
@@ -1051,9 +1098,9 @@ func (t *Terminal) Status() string {
 func (t *Terminal) Hints() []wm.Hint {
 	switch {
 	case t.searching:
-		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: "matches"}, {Action: "search.close"}}
+		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: lang.T(txt.KitHintMatches)}, {Action: "search.close"}}
 	case !t.live():
 		return []wm.Hint{{Action: "terminal.restart"}, {Action: "terminal.copy"}}
 	}
-	return []wm.Hint{{Action: "terminal.copy"}, {Action: "terminal.paste"}, {Action: "terminal.search"}, {Action: "terminal.scroll.up", Pair: "terminal.scroll.down", Label: "scroll"}, {Action: "terminal.lock"}}
+	return []wm.Hint{{Action: "terminal.copy"}, {Action: "terminal.paste"}, {Action: "terminal.search"}, {Action: "terminal.scroll.up", Pair: "terminal.scroll.down", Label: lang.T(txt.KitHintScroll)}, {Action: "terminal.lock"}}
 }

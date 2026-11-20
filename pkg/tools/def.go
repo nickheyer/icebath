@@ -1,0 +1,275 @@
+// Package tools registers model callable tools and runs them inside a session environment
+package tools
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/state"
+)
+
+// Handler runs one tool call and returns the JSON string result shown to the model
+type Handler func(ctx context.Context, call *Call) string
+
+// Def is one registered tool with its schema, handler, and availability check
+type Def struct {
+	Name    string
+	Toolset string
+	// OpenAI function schema with name, description, and parameters in definition order
+	Schema      *pyjson.Object
+	Handler     Handler
+	Check       func(env *Env) bool
+	RequiresEnv []string
+	Description string
+	Emoji       string
+	// Zero means the global tool output limit applies
+	MaxResultChars int
+	// Merged over Schema at every definition read so limits in descriptions stay current
+	DynamicSchema func(env *Env) *pyjson.Object
+	Timeout       time.Duration
+	Override      bool
+	Plugin        string
+	// Builds Schema on the first registry read when Schema is nil, deferring config reads past init
+	SchemaBuilder func() *pyjson.Object
+	schemaOnce    *sync.Once
+}
+
+// Call is one tool invocation with its arguments and session environment
+type Call struct {
+	Name         string
+	Args         map[string]any
+	RawArgs      string // arguments JSON text as the model emitted it, the key order approval displays follow
+	ToolCallID   string
+	TaskID       string
+	SessionID    string
+	TurnID       string
+	APIRequestID string
+	UserTask     string
+	Env          *Env
+}
+
+// AuxOptions tunes one auxiliary model completion
+type AuxOptions struct {
+	Task        string
+	Model       string
+	MaxTokens   int
+	Temperature *float64
+	JSONSchema  map[string]any
+	Timeout     time.Duration
+	// Routes the call through the async call_llm path the reference vision tools use
+	Async bool
+}
+
+// Aux performs auxiliary model completions for vision, summaries, and compression
+type Aux interface {
+	Complete(ctx context.Context, messages []*state.Message, opts AuxOptions) (string, error)
+}
+
+// ProcessAux is the auxiliary client an Env without its own resolves every call through, set by pkg/provider
+var ProcessAux Aux
+
+// Auxiliary client of the env, its own when set else the process client that resolves the task from config per call
+func (e *Env) AuxClient() Aux {
+	if e != nil && e.Aux != nil {
+		return e.Aux
+	}
+	return ProcessAux
+}
+
+// Question is one prompt the user answers inside a form
+type Question struct {
+	Header      string
+	Text        string
+	Choices     []string
+	MultiSelect bool
+}
+
+// Answer is one user response in question order
+type Answer struct {
+	Status   string
+	Text     string
+	Selected []string
+}
+
+// FormResult reports the form outcome and the answers in question order
+type FormResult struct {
+	Outcome string
+	Notice  string
+	Answers []Answer
+}
+
+// Asker is the human in the loop for approvals and clarifying questions
+type Asker interface {
+	Ask(ctx context.Context, questions []Question) (FormResult, error)
+}
+
+// Event is one progress notice a running tool emits to the host surface
+type Event struct {
+	Kind   string
+	Tool   string
+	TaskID string
+	Text   string
+	Data   map[string]any
+}
+
+// Env is the per-session service surface every tool handler reads
+type Env struct {
+	Home     string
+	Config   config.Tree
+	Secrets  *config.Secrets
+	State    *state.DB
+	Cwd      string
+	Platform string
+	Enabled  []string
+	Disabled []string
+	Aux      Aux
+	Ask      Asker
+	Notify   func(Event)
+	Log      *slog.Logger
+	// Shared per-session values keyed by tool name
+	Values *sync.Map
+	// Profile terminal policy bound for this turn, nil resolves from Home
+	TerminalScope *TerminalScope
+	// Tool correlation ids of the call this copy was bound for
+	observability *observabilityIDs
+	// Explicit kanban selection of the schema build this copy was bound for
+	kanbanSelection *bool
+	// Synthesized from a nil env so availability checks keep bypassing the verdict cache
+	unscopedChecks bool
+	// Profile home a routed scope bound this env to
+	profileHome string
+	// Set on the copy availability checks read while the context runs a delegate_task child
+	delegatedChild bool
+	// Session variables of a context forked from its parent, nil reading the shared values
+	sessionVars *sessionVarStore
+	// Live main runtime the owning agent bound for its turn, nil for an env no agent owns
+	runtimeMain *atomic.Pointer[map[string]any]
+}
+
+// Emit sends a progress event when the host registered a listener
+func (e *Env) Emit(ev Event) {
+	if e != nil && e.Notify != nil {
+		e.Notify(ev)
+	}
+}
+
+// JSON encodes a tool result as json.dumps does with ensure_ascii off and its default separators
+func JSON(v any) string {
+	b, err := pyjson.EncodeWTF8Python(v)
+	if err != nil {
+		return ErrorResult(err)
+	}
+	return string(b)
+}
+
+// JSONASCII encodes a tool result as json.dumps does with every default, non ASCII text escaped
+func JSONASCII(v any) string {
+	b, err := pyjson.EncodeWTF8PythonASCII(v)
+	if err != nil {
+		return ErrorResult(err)
+	}
+	return string(b)
+}
+
+// Dict builds a Python dict from alternating keys and values, kept in the order given
+func Dict(kv ...any) *pyjson.Object { return pyjson.ObjectOf(kv...) }
+
+// ErrorResult formats an error as the JSON object the model reads
+func ErrorResult(err error) string {
+	b, _ := pyjson.EncodeWTF8Python(Dict("error", err.Error()))
+	return string(b)
+}
+
+// Registry holds every tool definition by name
+type Registry struct {
+	mu      sync.RWMutex
+	tools   map[string]*Def
+	builtin map[string]builtinEntry
+}
+
+// Default is the process wide registry every tool file registers into at init
+var Default = NewRegistry()
+
+// NewRegistry returns an empty registry
+func NewRegistry() *Registry {
+	return &Registry{tools: map[string]*Def{}}
+}
+
+// Register adds a builtin tool to the default registry
+func Register(d Def) {
+	Default.registerBuiltin(d)
+}
+
+// Register adds a process global tool, panicking on a malformed schema and logging a refused shadow
+func (r *Registry) Register(d Def) {
+	if err := r.RegisterScoped("", d); err != nil && !errors.Is(err, ErrRegistrationRejected) {
+		panic("tools: " + err.Error())
+	}
+}
+
+// Get returns the tool with this name or nil
+func (r *Registry) Get(name string) *Def {
+	r.mu.RLock()
+	d := r.globalLocked(name)
+	r.mu.RUnlock()
+	return d.resolveSchema()
+}
+
+// Runs a deferred schema builder once and fills the description, panicking on a malformed schema like Register
+func (d *Def) resolveSchema() *Def {
+	if d == nil || d.schemaOnce == nil {
+		return d
+	}
+	d.schemaOnce.Do(func() {
+		schema := d.SchemaBuilder()
+		if err := validateRegistrationSchema(Def{Name: d.Name, Schema: schema}); err != nil {
+			panic("tools: " + err.Error())
+		}
+		d.Schema = schema
+		if s, ok := schema.Vals["description"].(string); ok && d.Description == "" {
+			d.Description = s
+		}
+	})
+	return d
+}
+
+// Plain map view of the schema for readers that never write it
+func (d *Def) SchemaMap() map[string]any {
+	if d == nil || d.Schema == nil {
+		return nil
+	}
+	m, _ := pyjson.Plain(d.Schema).(map[string]any)
+	return m
+}
+
+// Names lists registered tool names sorted
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.tools))
+	for n, d := range r.tools {
+		if r.hiddenLocked(n, d) {
+			continue
+		}
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Remove drops a tool and reports whether it existed
+func (r *Registry) Remove(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.tools[name]
+	delete(r.tools, name)
+	r.noteSlotDelete("", name)
+	return ok
+}

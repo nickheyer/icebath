@@ -118,6 +118,16 @@ type Animator interface {
 	Animate(dt float64) bool
 }
 
+// Card that needs the frame clock running even while the screen rests, such as one refreshing on an interval
+type Waker interface {
+	Awake() bool
+}
+
+func wakes(c Card) bool {
+	w, ok := c.(Waker)
+	return ok && w.Awake()
+}
+
 // Card told the screen cell its content starts at before it paints, for images placed by screen position
 type Positioned interface {
 	Origin(x, y int)
@@ -165,6 +175,11 @@ func glyphOf(c Card, t theme.Theme) string {
 	return t.Glyphs.Card
 }
 
+// Overlay with a step of its own behind the close key: Back takes the key for that step and reports true, false letting the overlay close
+type Backer interface {
+	Back() bool
+}
+
 func closable(c Card) bool {
 	cl, ok := c.(Closable)
 	return !ok || cl.Closable()
@@ -189,6 +204,8 @@ type Hint struct {
 	Pair string
 	// Word shown instead of the action label when set
 	Label string
+	// Every chord of the action the terminal can send, slash separated, instead of the first
+	All bool
 }
 
 // Card that names the actions it answers while focused

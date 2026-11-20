@@ -1,10 +1,12 @@
 package wm
 
 import (
-	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Part of a frame under the pointer
@@ -102,6 +104,11 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
+// Overlay that leaves the wheel turned outside its frame to the card under the pointer, so what it asks about can be read behind it
+type WheelPasser interface {
+	PassesWheel() bool
+}
+
 // Routes mouse input to the overlay only, a click outside it and the field it types into dismissing it
 func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
 	if m.docked() != nil && msg.Mouse().Y < barHeight && m.barAt(msg.Mouse().X).kind == barField {
@@ -111,6 +118,14 @@ func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
 	if !f.contains(sx, sy) {
 		if _, click := msg.(tea.MouseClickMsg); click {
 			return m.Dismiss()
+		}
+		wheel, turned := msg.(tea.MouseWheelMsg)
+		if p, passes := m.overlay.card.(WheelPasser); turned && passes && p.PassesWheel() && msg.Mouse().Y >= barHeight {
+			if ws := m.Active(); ws != nil {
+				if e := ws.at(sx, sy); e != nil {
+					return m.forward(e, wheel)
+				}
+			}
 		}
 		return nil
 	}
@@ -270,6 +285,9 @@ func (m *Model) press(msg tea.MouseClickMsg, sx, sy int) tea.Cmd {
 			m.held = e
 		} else {
 			m.beginSelection(e, sx, sy)
+			if m.sel != nil {
+				m.sel.mod = mo.Mod
+			}
 		}
 	}
 	return tea.Batch(append(cmds, m.focusEntry(e))...)
@@ -415,11 +433,16 @@ func (m *Model) release(msg tea.MouseReleaseMsg, sx, sy int) tea.Cmd {
 		m.held = nil
 		return tea.Batch(m.forward(h, msg), m.wake())
 	}
-	if m.sel != nil {
+	if s := m.sel; s != nil {
+		still := !s.moved
 		cmd := m.endSelection()
 		if ws := m.Active(); ws != nil {
 			if e := ws.at(sx, sy); e != nil && regionOf(e.frame(), sx, sy) == rContent {
-				return tea.Batch(cmd, m.forward(e, msg))
+				cmds := []tea.Cmd{cmd, m.forward(e, msg)}
+				if c := m.contentRect(e.frame()); still && e == s.e && sx-c.X == s.x0 && sy-c.Y == s.y0 {
+					cmds = append(cmds, m.send(e, TapMsg{X: s.x0, Y: s.y0, Mod: s.mod | msg.Mod, Link: e.linkAt(s.x0, s.y0)}))
+				}
+				return tea.Batch(cmds...)
 			}
 		}
 		return cmd
@@ -557,11 +580,19 @@ func (m *Model) fireAt(e *entry, id string) tea.Cmd {
 	return m.send(e, ActionMsg{ID: id})
 }
 
-// Sweep of text inside one card's content, in content coordinates
+// Sweep of text inside one card's content, in content coordinates, with the modifier keys held at its press
 type selection struct {
 	e              *entry
 	x0, y0, x1, y1 int
 	moved          bool
+	mod            tea.KeyMod
+}
+
+// Sent to a card whose text can be swept when a left press and its release fall on one cell of its content with no sweep between, in content coordinates with the modifier keys held and the hyperlink painted on the cell
+type TapMsg struct {
+	X, Y int
+	Mod  tea.KeyMod
+	Link string
 }
 
 // Normalized corners with the start before the end in reading order
@@ -661,11 +692,11 @@ func (m *Model) endSelection() tea.Cmd {
 		return nil
 	}
 	n := strings.Count(text, "\n") + 1
-	label := "copied 1 line"
+	label := lang.T(txt.KitWmCopiedLine)
 	if n > 1 {
-		label = "copied " + strconv.Itoa(n) + " lines"
+		label = lang.T(txt.KitWmCopiedLines, n)
 	}
-	return tea.Batch(tea.SetClipboard(text), m.Toast(label, Success, 0))
+	return tea.Batch(clip.Copy(text), m.Toast(label, Success, 0))
 }
 
 // Text currently swept, empty when nothing is selected

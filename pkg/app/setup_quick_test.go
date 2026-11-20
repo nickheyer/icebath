@@ -1,0 +1,72 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/provider"
+)
+
+// A wizard run for calling the setup_quick flows directly, the setup console and checklist answers installed
+func newQuickRun(t *testing.T, stdin string, checklist map[string][]int) (*wizardRun, *[][]any) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		key := strings.SplitN(kv, "=", 2)[0]
+		if strings.HasSuffix(key, "_API_KEY") || strings.HasSuffix(key, "_TOKEN") || strings.HasSuffix(key, "_SECRET") ||
+			strings.HasPrefix(key, "TELEGRAM") || strings.HasPrefix(key, "DISCORD") || strings.HasPrefix(key, "SLACK") {
+			t.Setenv(key, "")
+			os.Unsetenv(key)
+		}
+	}
+	w := newWizardRun(t, stdin, true)
+	t.Cleanup(provider.WithSetupConsole(console()))
+	checks := &[][]any{}
+	t.Cleanup(provider.SwapSetupChecklist(func(title string, items []string, pre map[int]bool) (map[int]bool, error) {
+		row := []any{title}
+		labels := make([]any, len(items))
+		for i, item := range items {
+			labels[i] = item
+		}
+		*checks = append(*checks, append(row, labels))
+		picked := map[int]bool{}
+		for _, idx := range checklist[title] {
+			picked[idx] = true
+		}
+		return picked, nil
+	}))
+	swapSeam(t, &setupSetBundledSkillsOptOut, func(_ context.Context, optOut bool) map[string]any {
+		fmt.Fprintf(provider.SetupOutput(), "[opt-out %s]\n", pyBoolText(optOut))
+		return map[string]any{"ok": true}
+	})
+	swapSeam(t, &setupSyncSkills, func(context.Context, bool) (map[string]any, error) {
+		return map[string]any{"copied": []string{"a", "b", "c"}, "updated": []string{}, "skipped": 0}, nil
+	})
+	return w, checks
+}
+
+func TestBlankSlateForkFinishNowSkipsWalkthrough(t *testing.T) {
+	w, _ := newQuickRun(t, "", nil)
+	swapSeam(t, &setupModelProviderFn, func(context.Context, config.Tree) error { return nil })
+	swapSeam(t, &setupTerminalBackendFn, func(context.Context, config.Tree) error { return nil })
+	swapSeam(t, &setupPrintSetupSummaryFn, func(context.Context, config.Tree, string) error { return nil })
+	walked := false
+	swapSeam(t, &setupWalkthroughFn, func(context.Context, config.Tree, string) error { walked = true; return nil })
+	var optedOut []bool
+	swapSeam(t, &setupSetBundledSkillsOptOut, func(_ context.Context, enabled bool) map[string]any {
+		optedOut = append(optedOut, enabled)
+		return map[string]any{"ok": true}
+	})
+	cfg := config.Tree{}
+	if err := runBlankSlateSetup(w.ctx, cfg, w.tmp); err != nil {
+		t.Fatal(err)
+	}
+	cli, _ := config.CfgGet(cfg, "platform_toolsets", "cli")
+	if normalizedConfigJSON(t, cli) != `["file","skills","terminal","vision"]` || walked || !slices.Equal(optedOut, []bool{true}) {
+		t.Fatalf("cli %v walked %v opted out %v", cli, walked, optedOut)
+	}
+}

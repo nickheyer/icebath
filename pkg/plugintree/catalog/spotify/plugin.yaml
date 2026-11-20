@@ -1,0 +1,30 @@
+name: spotify
+label: Spotify
+kind: standalone
+version: 2.1.0
+author: Icebath
+homepage: https://github.com/nickheyer/icebath/tree/main/pkg/plugintree/catalog/spotify
+description: >
+  Spotify for Icebath Agent: seven tools (playback, devices, queue, search,
+  playlists, albums, library) over the Spotify Web API, plus
+  `icebath spotify login|status|logout` (loopback PKCE with your own Spotify
+  developer app). Playback control needs Spotify Premium and an active
+  Spotify Connect device. Formerly built into Icebath core.
+provides_tools:
+  - spotify_playback
+  - spotify_devices
+  - spotify_queue
+  - spotify_search
+  - spotify_playlists
+  - spotify_albums
+  - spotify_library
+provides_hooks: []
+optional_env:
+  - name: ICEBATH_SPOTIFY_CLIENT_ID
+    description: "Client ID of your Spotify developer app (`icebath spotify login` asks for it and saves it)"
+    prompt: "Spotify Client ID"
+    password: false
+  - name: ICEBATH_SPOTIFY_REDIRECT_URI
+    description: "Redirect URI allow-listed in your Spotify app (default: http://127.0.0.1:43827/spotify/callback; set an https:// URI if your dashboard refuses the http form)"
+    prompt: "Spotify redirect URI"
+    password: false

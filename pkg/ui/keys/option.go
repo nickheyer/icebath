@@ -36,12 +36,6 @@ var option = func() map[rune][]string {
 
 var optionOn bool
 
-// Turns the reading of Option typed characters as alt chords on or off
-func SetOption(on bool) { optionOn = on }
-
-// Reports whether Option typed characters are read as alt chords
-func Option() bool { return optionOn }
-
 // Alt chords
 func optionChords(msg tea.KeyPressMsg) []string {
 	if !optionOn || msg.Mod&^(tea.ModShift|tea.ModCapsLock|tea.ModNumLock|tea.ModScrollLock) != 0 {

@@ -3,9 +3,9 @@ package cards
 import (
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
@@ -13,10 +13,12 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/protocol"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -32,35 +34,28 @@ const minInputRows = 2
 // Rows the completion popup shows at most
 const popupRows = 8
 
-// Slash command the composer completes and hands to the app
-type Command struct {
-	Name string
-	Desc string
-	// Takes an argument, shown after the name
-	Arg string
-	// Values the argument may take, offered as the argument is typed
-	Suggest func(prefix string) []string
-	// Keymap action that does the same, its key shown beside the command
-	Action string
-}
-
 // One file attached to the next message
 type attachment struct {
-	Path string
-	Part protocol.Part
-	Size int
+	Path  string
+	Media string
+	Data  []byte
 }
 
-// Candidates offered for the token under the cursor
+// Candidates the app offers for one prompt text, the highlighted one and the offset they replace from
 type completion struct {
-	items []string
-	descs []string
-	acts  []string
-	idx   int
-	start int
-	end   int
-	slash bool
-	arg   bool
+	value   string
+	items   []string
+	descs   []string
+	texts   []string
+	idx     int
+	replace int
+}
+
+// Candidate an app completion source offers, its text put in from the replace offset
+type Offer struct {
+	Text    string
+	Display string
+	Meta    string
 }
 
 // Clickable send button on the first input row, in composer coordinates
@@ -68,7 +63,16 @@ type sendButton struct {
 	x, y, w int
 }
 
-// Multi line prompt with history, slash commands listed as typed, path completion, attachments and a draft kept per session
+// Most edits the undo trail keeps
+const undoLimit = 200
+
+// Prompt an undo or redo returns to, its text and the cursor as a rune offset
+type composerSnap struct {
+	value  string
+	cursor int
+}
+
+// Multi line prompt with history, the app's completion candidates, attachments and a draft kept per session
 type Composer struct {
 	ta          textarea.Model
 	focused     bool
@@ -81,7 +85,6 @@ type Composer struct {
 	dir         string
 	draftPath   string
 	historyPath string
-	commands    []Command
 	last        string
 	baseDir     func() string
 	theme       theme.Theme
@@ -89,11 +92,23 @@ type Composer struct {
 	busy        bool
 	button      sendButton
 	cut         int
-	ask         *asking
-	width       int
-	SessionID   string
+	// Rows the input took in the last view, below the completion popup
+	shown      int
+	width      int
+	undo, redo []composerSnap
+	SessionID  string
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
+	// Hands every sent line to the app as typed, commands and shell lines included
+	Literal bool
+	// Text an empty prompt shows in place of the command and palette legend
+	Hint string
+	// Called with each line the history takes, for an app keeping its own history file
+	OnRemember func(text string)
+	// Puts the highlighted offer in from its replace offset when the popup is accepted
+	Apply func(text string, replace int) tea.Cmd
+	// Called before the prompt is read for sending, for an app that rewrites its draft first
+	Sending func()
 }
 
 // File the draft of a session is kept in under dir
@@ -224,14 +239,153 @@ func editorStyles(t theme.Theme) textarea.Styles {
 	return st
 }
 
-// Replaces the slash commands offered as they are typed
-func (c *Composer) SetCommands(cmds []Command) { c.commands = cmds }
-
 // Tells the send button whether a run is going, so it offers to steer it
 func (c *Composer) SetBusy(on bool) { c.busy = on }
 
 // Text typed so far
 func (c *Composer) Value() string { return c.ta.Value() }
+
+// Replaces the text with the cursor at its end, the completion popup closed until the app offers again and a recalled history line left behind
+func (c *Composer) SetValue(text string) tea.Cmd {
+	c.forget()
+	c.ta.SetValue(text)
+	c.ta.MoveToEnd()
+	c.comp = nil
+	c.cursor = len(c.history)
+	return c.persist()
+}
+
+// Replaces the text with the cursor at a rune offset of it, otherwise as SetValue does
+func (c *Composer) SetValueAt(text string, offset int) tea.Cmd {
+	c.forget()
+	c.restore(composerSnap{value: text, cursor: offset})
+	c.comp = nil
+	c.cursor = len(c.history)
+	return c.persist()
+}
+
+// Inserts text at the cursor as if typed
+func (c *Composer) Insert(text string) tea.Cmd {
+	before := c.snap()
+	c.ta.InsertString(text)
+	c.tracked(before)
+	return c.persist()
+}
+
+// Inserts text at the end of the prompt, the cursor following it
+func (c *Composer) Append(text string) tea.Cmd {
+	c.ta.MoveToEnd()
+	return c.Insert(text)
+}
+
+// Span of prompt text a person selected
+type Selection struct {
+	Text       string
+	start, end textarea.Position
+}
+
+// Selected span of the prompt, false when nothing is selected
+func (c *Composer) Selection() (Selection, bool) {
+	start, end, ok := c.ta.Selection()
+	if !ok {
+		return Selection{}, false
+	}
+	return Selection{Text: c.ta.SelectedText(), start: start, end: end}, true
+}
+
+// Removes the span when it is still the one selected, as a cut does once the clipboard holds its text
+func (c *Composer) Cut(span Selection) tea.Cmd {
+	now, ok := c.Selection()
+	if !ok || now != span {
+		return nil
+	}
+	before := c.snap()
+	c.ta.DeleteSelection()
+	c.tracked(before)
+	return c.persist()
+}
+
+// Reports whether a cell of the composer shows the text of the input, where a press places the cursor and a drag selects
+func (c *Composer) Holds(x, y int) bool {
+	right := c.width
+	if c.button.w > 0 {
+		right = c.button.x - 1
+	}
+	return x >= 0 && x < right && y >= c.button.y && y < c.button.y+c.shown
+}
+
+// Cell of the text area at which the grapheme drawn on a cell of the composer starts. The text area places a cell rune by rune, which lands
+// inside an emoji joined from several or between a letter and its marks, so the row is walked grapheme by grapheme here
+func (c *Composer) cell(x, y int) (int, int) {
+	y += c.cut - c.button.y
+	gutter := ansi.StringWidth(c.ta.Prompt)
+	first, last := c.ta.PositionAt(gutter, y), c.ta.PositionAt(gutter+c.width, y)
+	lines := strings.Split(c.ta.Value(), "\n")
+	if first.Row != last.Row || first.Row >= len(lines) {
+		return x, y
+	}
+	line := []rune(lines[first.Row])
+	if first.Col > last.Col || last.Col > len(line) {
+		return x, y
+	}
+	row, col, cells := line[first.Col:last.Col], 0, 0
+	for _, stop := range graphemeStops(row)[1:] {
+		wide := ansi.StringWidth(string(row[col:stop]))
+		if cells+wide > x-gutter {
+			break
+		}
+		col, cells = stop, cells+wide
+	}
+	at := gutter
+	for _, r := range row[:col] {
+		at += ansi.StringWidth(string(r))
+	}
+	return at, y
+}
+
+// Starts a selection at a cell of the composer, the cursor going to the grapheme drawn there
+func (c *Composer) Press(x, y int) {
+	x, y = c.cell(x, y)
+	c.ta.BeginSelection(x, y)
+}
+
+// Extends the selection a press started to a cell of the composer
+func (c *Composer) Drag(x, y int) {
+	x, y = c.cell(x, y)
+	c.ta.ExtendSelection(x, y)
+}
+
+// Ends the selection a press started, a press and release on one place leaving the cursor there with nothing selected
+func (c *Composer) Release() { c.ta.EndSelection() }
+
+// Selects the whole prompt
+func (c *Composer) SelectAll() { c.ta.SelectAll() }
+
+// Place of the cursor in the prompt, counted in runes from its start
+func (c *Composer) Offset() int { return c.snap().cursor }
+
+// Reports whether an up key leaves the prompt, it being empty or the cursor on its first line with nothing selected
+func (c *Composer) AtTop() bool {
+	return c.ta.Value() == "" || (!c.ta.HasSelection() && c.ta.Line() == 0)
+}
+
+// Reports whether a down key leaves the prompt, it being empty, a history line being recalled or the cursor on its last line with nothing selected
+func (c *Composer) AtBottom() bool {
+	return c.ta.Value() == "" || c.cursor < len(c.history) || (!c.ta.HasSelection() && c.ta.Line() == c.ta.LineCount()-1)
+}
+
+// Replaces the remembered lines, oldest first, for an app that keeps the history file itself
+func (c *Composer) Seed(lines []string) {
+	if len(lines) > historyLimit {
+		lines = lines[len(lines)-historyLimit:]
+	}
+	c.history = append([]string(nil), lines...)
+	c.cursor = len(c.history)
+	c.historyPath = ""
+}
+
+// Position in the remembered lines while recalling, false at the unsent draft
+func (c *Composer) Recalling() (int, bool) { return c.cursor, c.cursor < len(c.history) }
 
 // Lines the composer remembers, oldest first
 func (c *Composer) History() []string { return append([]string(nil), c.history...) }
@@ -245,25 +399,50 @@ func (c *Composer) Attachments() []string {
 	return out
 }
 
+// Popup of the candidates offered for exactly the text typed now, a list of an older text closed
+func (c *Composer) live() *completion {
+	if c.comp != nil && c.comp.value != c.ta.Value() {
+		c.comp = nil
+	}
+	return c.comp
+}
+
 // Candidates shown in the popup, nil when it is closed
 func (c *Composer) Completions() []string {
-	if c.comp == nil {
+	if c.live() == nil {
 		return nil
 	}
 	return append([]string(nil), c.comp.items...)
 }
 
-// Reports whether the completion popup is open
-func (c *Composer) Completing() bool { return c.comp != nil }
+// Reports whether the completion popup is open for the text typed now
+func (c *Composer) Completing() bool { return c.live() != nil }
 
-// Rows the composer wants, two at least, growing with the wrapped text, the question waiting and the completion popup
+// Shows the candidates the app found for a prompt text, the first one highlighted, none or a text no longer typed closing the popup
+func (c *Composer) Offer(value string, offers []Offer, replace int) {
+	if len(offers) == 0 || value != c.ta.Value() || value == c.quiet {
+		c.comp = nil
+		return
+	}
+	c.quiet = ""
+	comp := &completion{value: value, replace: replace}
+	for _, o := range offers {
+		label := o.Display
+		if label == "" {
+			label = o.Text
+		}
+		comp.items = append(comp.items, label)
+		comp.descs = append(comp.descs, o.Meta)
+		comp.texts = append(comp.texts, o.Text)
+	}
+	c.comp = comp
+}
+
+// Rows the composer wants, two at least, growing with the wrapped text and the completion popup
 func (c *Composer) Height() int {
 	rows := max(c.ta.Height(), minInputRows)
-	if c.comp != nil {
+	if c.live() != nil {
 		rows += min(len(c.comp.items), popupRows)
-	}
-	if c.ask != nil {
-		rows += len(c.ask.layout(c.width, c.theme))
 	}
 	return rows
 }
@@ -288,35 +467,27 @@ func (c *Composer) SetFocus(on bool) tea.Cmd {
 func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.PasteMsg:
+		before := c.snap()
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
-		c.autoComplete()
+		c.tracked(before)
 		return tea.Batch(cmd, c.persist())
 	case tea.KeyPressMsg:
 		if msg.Text == "" {
 			return nil
 		}
-		if cmd, ok := c.questionDigit(msg.Text); ok {
-			return cmd
-		}
-		c.comp = nil
+		before := c.snap()
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
-		c.autoComplete()
-		if c.ask != nil && strings.TrimSpace(c.ta.Value()) != "" {
-			c.ask.idx = c.ask.other()
-		}
+		c.tracked(before)
 		return tea.Batch(cmd, c.persist())
 	}
 	return nil
 }
 
-// Carries out a keymap action of the prompt, the question waiting in it or its completion popup
+// Carries out a keymap action of the prompt or its completion popup
 func (c *Composer) Action(id string) tea.Cmd {
-	if cmd, ok := c.questionAction(id); ok {
-		return cmd
-	}
-	if c.comp != nil {
+	if c.live() != nil {
 		switch id {
 		case "complete.next":
 			c.comp.idx = (c.comp.idx + 1) % len(c.comp.items)
@@ -325,7 +496,10 @@ func (c *Composer) Action(id string) tea.Cmd {
 			c.comp.idx = (c.comp.idx - 1 + len(c.comp.items)) % len(c.comp.items)
 			return nil
 		case "complete.accept":
-			return c.pick()
+			if c.Apply == nil {
+				return nil
+			}
+			return c.Apply(c.comp.texts[c.comp.idx], c.comp.replace)
 		case "complete.close":
 			c.quiet = c.ta.Value()
 			c.comp = nil
@@ -335,26 +509,37 @@ func (c *Composer) Action(id string) tea.Cmd {
 	switch id {
 	case "composer.send":
 		if c.escaped() {
+			before := c.snap()
 			c.breakLine()
+			c.tracked(before)
 			return c.persist()
 		}
 		return c.submit()
-	case "composer.complete":
-		c.complete()
-		return nil
+	case "composer.undo", "composer.redo":
+		if id == "composer.undo" {
+			c.swap(&c.undo, &c.redo)
+		} else {
+			c.swap(&c.redo, &c.undo)
+		}
+		return c.persist()
 	case "composer.up":
-		if c.ta.Line() == 0 {
+		if c.AtTop() {
 			c.recall(-1)
 			return nil
 		}
 	case "composer.down":
-		if c.ta.Line() == c.ta.LineCount()-1 {
+		if c.AtBottom() {
 			c.recall(1)
 			return nil
 		}
 	case "composer.attachments.clear":
 		c.attachments = nil
-		return wm.Notify("attachments cleared", wm.Info)
+		return wm.Notify(lang.T(txt.ComposerAttachmentsCleared), wm.Info)
+	case "composer.copy":
+		if c.ta.HasSelection() {
+			return clip.Copy(c.ta.SelectedText())
+		}
+		return nil
 	}
 	if !strings.HasPrefix(id, "composer.") {
 		return nil
@@ -363,11 +548,152 @@ func (c *Composer) Action(id string) tea.Cmd {
 	if press.Code == 0 {
 		return nil
 	}
-	c.comp = nil
-	var cmd tea.Cmd
-	c.ta, cmd = c.ta.Update(press)
-	c.autoComplete()
-	return tea.Batch(cmd, c.persist())
+	before := c.snap()
+	var cmds []tea.Cmd
+	for range c.graphemeSteps(id) {
+		var cmd tea.Cmd
+		c.ta, cmd = c.ta.Update(press)
+		cmds = append(cmds, cmd)
+	}
+	c.settle(id)
+	c.tracked(before)
+	return tea.Batch(append(cmds, c.persist())...)
+}
+
+// Rune offsets at which the grapheme clusters of a line start, the length of the line last
+func graphemeStops(line []rune) []int {
+	stops := []int{0}
+	for rest := string(line); rest != ""; {
+		cluster, _ := ansi.FirstGraphemeCluster(rest, ansi.GraphemeWidth)
+		if cluster == "" {
+			break
+		}
+		stops = append(stops, stops[len(stops)-1]+utf8.RuneCountInString(cluster))
+		rest = rest[len(cluster):]
+	}
+	return stops
+}
+
+// Line the cursor is on as runes and the cursor column in it
+func (c *Composer) cursorLine() ([]rune, int) {
+	lines := strings.Split(c.ta.Value(), "\n")
+	line := []rune(lines[min(c.ta.Line(), len(lines)-1)])
+	return line, min(c.ta.Column(), len(line))
+}
+
+// Rune steps of the input a key takes so that it crosses the whole grapheme beside the cursor, a letter with its combining marks or an emoji joined
+// from several, one step for every key that moves or deletes by something else
+func (c *Composer) graphemeSteps(id string) int {
+	line, col := c.cursorLine()
+	stops := graphemeStops(line)
+	switch id {
+	case "composer.delete.back", "composer.delete.forward":
+		if c.ta.HasSelection() {
+			return 1
+		}
+	}
+	switch id {
+	case "composer.left", "composer.select.left", "composer.delete.back":
+		for i := len(stops) - 1; i >= 0 && col > 0; i-- {
+			if stops[i] < col {
+				return col - stops[i]
+			}
+		}
+	case "composer.right", "composer.select.right", "composer.delete.forward":
+		for _, stop := range stops {
+			if stop > col {
+				return stop - col
+			}
+		}
+	}
+	return 1
+}
+
+// Brings a cursor a line move left inside a grapheme back to the start of that grapheme, a selection being extended following it
+func (c *Composer) settle(id string) {
+	switch id {
+	case "composer.up", "composer.down", "composer.select.up", "composer.select.down":
+	default:
+		return
+	}
+	line, col := c.cursorLine()
+	start := 0
+	for _, stop := range graphemeStops(line) {
+		if stop <= col {
+			start = stop
+		}
+	}
+	switch {
+	case start == col:
+	case strings.HasPrefix(id, "composer.select."):
+		back := keys.Press(c.keys.First("composer.select.left"))
+		for ; back.Code != 0 && col > start; col-- {
+			c.ta, _ = c.ta.Update(back)
+		}
+	default:
+		c.ta.SetCursorColumn(start)
+	}
+}
+
+// Prompt text and cursor offset now
+func (c *Composer) snap() composerSnap {
+	lines := strings.Split(c.ta.Value(), "\n")
+	row := min(c.ta.Line(), len(lines)-1)
+	off := 0
+	for _, line := range lines[:row] {
+		off += utf8.RuneCountInString(line) + 1
+	}
+	return composerSnap{value: c.ta.Value(), cursor: off + min(c.ta.Column(), utf8.RuneCountInString(lines[row]))}
+}
+
+// Puts the prompt back to a snapshot with the cursor at its offset
+func (c *Composer) restore(s composerSnap) {
+	c.ta.SetValue(s.value)
+	lines := strings.Split(s.value, "\n")
+	row, col := 0, s.cursor
+	for row < len(lines)-1 && col > utf8.RuneCountInString(lines[row]) {
+		col -= utf8.RuneCountInString(lines[row]) + 1
+		row++
+	}
+	c.ta.MoveToBegin()
+	for c.ta.Line() < row {
+		line, at := c.ta.Line(), c.ta.Column()
+		c.ta.CursorDown()
+		if c.ta.Line() == line && c.ta.Column() == at {
+			break
+		}
+	}
+	c.ta.SetCursorColumn(col)
+}
+
+// Records the prompt before a changing edit on the undo trail and drops the redo trail, an edited history line becoming the draft
+func (c *Composer) tracked(before composerSnap) {
+	if c.ta.Value() == before.value {
+		return
+	}
+	if c.cursor < len(c.history) && c.ta.Value() != c.history[c.cursor] {
+		c.cursor = len(c.history)
+	}
+	c.undo = append(c.undo, before)
+	if len(c.undo) > undoLimit {
+		c.undo = c.undo[len(c.undo)-undoLimit:]
+	}
+	c.redo = nil
+}
+
+// Drops both trails when the prompt is replaced from outside the typing
+func (c *Composer) forget() { c.undo, c.redo = nil, nil }
+
+// Steps back or forward one edit, the prompt left behind recorded on the other trail
+func (c *Composer) swap(from, to *[]composerSnap) {
+	n := len(*from)
+	if n == 0 {
+		return
+	}
+	entry := (*from)[n-1]
+	*from = (*from)[:n-1]
+	*to = append(*to, c.snap())
+	c.restore(entry)
 }
 
 // Turns the backslash before the cursor into a line break, leaving the cursor at the start of the new line
@@ -422,6 +748,9 @@ func (c *Composer) remember(text string) {
 		return
 	}
 	c.history = append(c.history, text)
+	if c.OnRemember != nil {
+		c.OnRemember(text)
+	}
 	if len(c.history) > historyLimit {
 		c.history = c.history[len(c.history)-historyLimit:]
 	}
@@ -429,6 +758,13 @@ func (c *Composer) remember(text string) {
 	if c.historyPath != "" {
 		os.MkdirAll(filepath.Dir(c.historyPath), 0o755)
 		os.WriteFile(c.historyPath, []byte(strings.Join(c.history, "\n\x1e\n")+"\n"), 0o600)
+	}
+}
+
+// Adds a draft the person discarded to the history, so recalling brings it back
+func (c *Composer) Remember(text string) {
+	if text = strings.TrimSpace(text); text != "" {
+		c.remember(text)
 	}
 }
 
@@ -445,6 +781,7 @@ func (c *Composer) recall(d int) {
 		return
 	}
 	c.cursor = next
+	c.forget()
 	if next == len(c.history) {
 		c.ta.SetValue(c.draft)
 	} else {
@@ -455,15 +792,28 @@ func (c *Composer) recall(d int) {
 
 // Parses the text into a message or a command and resets the input
 func (c *Composer) submit() tea.Cmd {
+	if c.Sending != nil {
+		c.Sending()
+	}
 	text := strings.TrimSpace(c.ta.Value())
 	if text == "" && len(c.attachments) == 0 {
 		return nil
 	}
 	c.remember(text)
+	c.forget()
 	c.ta.Reset()
 	c.comp = nil
 	c.quiet = ""
 	cmd := c.persist()
+	if c.Literal {
+		files := make([]Attachment, 0, len(c.attachments))
+		for _, a := range c.attachments {
+			files = append(files, Attachment{Path: a.Path, MediaType: a.Media, Data: a.Data})
+		}
+		c.attachments = nil
+		id := c.SessionID
+		return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Text: text, Attachments: files} })
+	}
 	if line, ok := strings.CutPrefix(text, "!"); ok && strings.TrimSpace(line) != "" {
 		id := c.SessionID
 		return tea.Batch(cmd, func() tea.Msg { return RunMsg{Session: id, Line: strings.TrimSpace(line)} })
@@ -478,16 +828,13 @@ func (c *Composer) submit() tea.Cmd {
 		id := c.SessionID
 		return tea.Batch(cmd, func() tea.Msg { return CommandMsg{Session: id, Name: name, Args: args} })
 	}
-	parts := make([]protocol.Part, 0, len(c.attachments)+1)
+	files := make([]Attachment, 0, len(c.attachments))
 	for _, a := range c.attachments {
-		parts = append(parts, a.Part)
-	}
-	if text != "" {
-		parts = append(parts, protocol.Text{Text: text})
+		files = append(files, Attachment{Path: a.Path, MediaType: a.Media, Data: a.Data})
 	}
 	c.attachments = nil
 	id := c.SessionID
-	return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Parts: parts, Text: text} })
+	return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Text: text, Attachments: files} })
 }
 
 var imageTypes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
@@ -514,14 +861,14 @@ func (c *Composer) attach(path string) tea.Cmd {
 	if err != nil {
 		return wm.Notify(err.Error(), wm.Error)
 	}
-	c.attachments = append(c.attachments, attachment{Path: path, Part: protocol.Image{MediaType: media, Data: data}, Size: len(data)})
+	c.attachments = append(c.attachments, attachment{Path: path, Media: media, Data: data})
 	return wm.Notify("attached "+filepath.Base(path)+" ("+render.Bytes(int64(len(data)))+")", wm.Success)
 }
 
 // Attaches the image at the path, as the attach command does
 func (c *Composer) Attach(path string) tea.Cmd { return c.attach(path) }
 
-// Directory relative paths complete against
+// Directory relative attachment paths resolve against
 func (c *Composer) base() string {
 	if c.baseDir != nil {
 		if dir := c.baseDir(); dir != "" {
@@ -530,209 +877,6 @@ func (c *Composer) base() string {
 	}
 	wd, _ := os.Getwd()
 	return wd
-}
-
-// First line of the text and the cursor column inside it, -1 when the cursor is on a later line
-func (c *Composer) firstLine() (string, int) {
-	line, _, _ := strings.Cut(c.ta.Value(), "\n")
-	if c.ta.Line() != 0 {
-		return line, -1
-	}
-	return line, min(c.ta.Column(), len([]rune(line)))
-}
-
-// Command named by the first word of a slash line
-func (c *Composer) command(name string) *Command {
-	for i := range c.commands {
-		if c.commands[i].Name == strings.ToLower(name) {
-			return &c.commands[i]
-		}
-	}
-	return nil
-}
-
-// Opens the popup over the commands or argument values a slash line matches, closing it anywhere else
-func (c *Composer) autoComplete() {
-	line, col := c.firstLine()
-	text := c.ta.Value()
-	if col < 0 || !strings.HasPrefix(line, "/") || text == c.quiet {
-		if c.comp != nil && (c.comp.slash || c.comp.arg) {
-			c.comp = nil
-		}
-		return
-	}
-	c.quiet = ""
-	runes := []rune(line)
-	typed := string(runes[1:col])
-	name, rest, hasSpace := strings.Cut(typed, " ")
-	if !hasSpace {
-		var items, descs, acts []string
-		for _, cmd := range c.commands {
-			if strings.HasPrefix(cmd.Name, strings.ToLower(name)) {
-				items = append(items, "/"+cmd.Name)
-				descs = append(descs, cmd.Desc)
-				acts = append(acts, cmd.Action)
-			}
-		}
-		c.setPopup(items, descs, 0, col, true, false)
-		if c.comp != nil {
-			c.comp.acts = acts
-		}
-		return
-	}
-	cmd := c.command(name)
-	if cmd == nil || cmd.Suggest == nil {
-		c.comp = nil
-		return
-	}
-	start := 1 + len([]rune(name)) + 1
-	var items []string
-	for _, v := range cmd.Suggest(rest) {
-		if strings.HasPrefix(strings.ToLower(v), strings.ToLower(rest)) {
-			items = append(items, v)
-		}
-	}
-	c.setPopup(items, nil, start, col, false, true)
-}
-
-func (c *Composer) setPopup(items, descs []string, start, end int, slash, arg bool) {
-	if len(items) == 0 {
-		c.comp = nil
-		return
-	}
-	idx := 0
-	if c.comp != nil && c.comp.idx < len(items) && (c.comp.slash == slash && c.comp.arg == arg) {
-		idx = c.comp.idx
-	}
-	c.comp = &completion{items: items, descs: descs, idx: idx, start: start, end: end, slash: slash, arg: arg}
-}
-
-// Takes the popup choice, sending a finished command at once and otherwise leaving the cursor after it
-func (c *Composer) pick() tea.Cmd {
-	comp := c.comp
-	c.accept()
-	cmd := c.persist()
-	if comp == nil {
-		return cmd
-	}
-	if comp.arg {
-		return tea.Batch(cmd, c.submit())
-	}
-	if comp.slash {
-		line, _ := c.firstLine()
-		name := strings.TrimPrefix(strings.TrimSpace(line), "/")
-		if known := c.command(name); known != nil && known.Arg == "" {
-			return tea.Batch(cmd, c.submit())
-		}
-		c.autoComplete()
-	}
-	return cmd
-}
-
-// Token the cursor sits in or just after, on the current line, with its offsets inside the line
-func (c *Composer) token() (line string, start, end int) {
-	lines := strings.Split(c.ta.Value(), "\n")
-	row := min(c.ta.Line(), len(lines)-1)
-	line = lines[row]
-	col := min(c.ta.Column(), len([]rune(line)))
-	runes := []rune(line)
-	start = col
-	for start > 0 && runes[start-1] != ' ' {
-		start--
-	}
-	end = col
-	return line, start, end
-}
-
-// Offers paths for the token under the cursor, taking the only candidate at once
-func (c *Composer) complete() {
-	line, start, end := c.token()
-	runes := []rune(line)
-	prefix := string(runes[start:end])
-	if c.ta.Line() == 0 && strings.HasPrefix(line, "/") {
-		c.autoComplete()
-		if c.comp != nil && len(c.comp.items) == 1 {
-			c.accept()
-			c.autoComplete()
-		}
-		return
-	}
-	items := c.paths(prefix)
-	if len(items) == 0 {
-		c.comp = nil
-		return
-	}
-	c.comp = &completion{items: items, start: start, end: end}
-	if len(items) == 1 {
-		c.accept()
-	}
-}
-
-// Paths starting with the prefix, directories trailing a slash, sorted
-func (c *Composer) paths(prefix string) []string {
-	pattern := prefix
-	if strings.HasPrefix(pattern, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			pattern = filepath.Join(home, pattern[2:])
-		}
-	}
-	if !filepath.IsAbs(pattern) {
-		pattern = filepath.Join(c.base(), pattern)
-		if strings.HasSuffix(prefix, "/") || prefix == "" {
-			pattern += string(filepath.Separator)
-		}
-	}
-	matches, err := filepath.Glob(pattern + "*")
-	if err != nil {
-		return nil
-	}
-	base := c.base()
-	var items []string
-	for _, m := range matches {
-		item := m
-		if !filepath.IsAbs(prefix) && !strings.HasPrefix(prefix, "~") {
-			if rel, err := filepath.Rel(base, m); err == nil {
-				item = rel
-			}
-		}
-		if st, err := os.Stat(m); err == nil && st.IsDir() {
-			item += "/"
-		}
-		items = append(items, item)
-	}
-	sort.Strings(items)
-	if len(items) > 50 {
-		items = items[:50]
-	}
-	return items
-}
-
-// Replaces the token with the chosen candidate
-func (c *Composer) accept() {
-	if c.comp == nil {
-		return
-	}
-	item := c.comp.items[c.comp.idx]
-	lines := strings.Split(c.ta.Value(), "\n")
-	row := 0
-	if !c.comp.slash && !c.comp.arg {
-		row = min(c.ta.Line(), len(lines)-1)
-	}
-	runes := []rune(lines[row])
-	end := min(c.comp.end, len(runes))
-	tail := string(runes[end:])
-	replaced := string(runes[:min(c.comp.start, len(runes))]) + item
-	if c.comp.slash || (!strings.HasSuffix(item, "/") && tail == "") {
-		replaced += " "
-	}
-	lines[row] = replaced + tail
-	c.ta.SetValue(strings.Join(lines, "\n"))
-	c.ta.MoveToEnd()
-	more := !c.comp.slash && !c.comp.arg && strings.HasSuffix(item, "/")
-	c.comp = nil
-	if more {
-		c.complete()
-	}
 }
 
 // Send or steer button in capitals, dim while the input is empty and lit once there is something to send
@@ -763,6 +907,10 @@ func (c *Composer) placeholder(w int) string {
 	if c.focused {
 		prompt = t.Accent
 	}
+	if c.Hint != "" {
+		line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(c.Hint)
+		return render.Fit(line, w, t)
+	}
 	hint := lipgloss.NewStyle().Foreground(t.TextDim).Render(`type `) + "/" + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for commands`)
 	if chord := c.keys.Display("palette"); chord != "" {
 		hint += lipgloss.NewStyle().Foreground(t.TextDim).Render(` or `) + chord + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for palette`)
@@ -786,12 +934,11 @@ func (c *Composer) Fit(w int) int {
 }
 
 func (c *Composer) View(w, h int) string {
-	pop := c.popup(w)
-	popup := append(c.askRows(w, max(h-minInputRows-len(pop), 1)), pop...)
+	popup := c.popup(w)
 	rows := max(h-len(popup), 1)
 	button := c.buttonLabel()
 	iw := c.Fit(w)
-	c.button.y = len(popup)
+	c.button.y, c.shown = len(popup), h-len(popup)
 	input := strings.Split(c.ta.View(), "\n")
 	c.cut = 0
 	if len(input) > rows {
@@ -809,9 +956,6 @@ func (c *Composer) View(w, h int) string {
 	}
 	if c.ta.Value() == "" && len(input) > 0 {
 		input[0] = c.placeholder(iw)
-		if c.ask != nil {
-			input[0] = c.questionPlaceholder(iw)
-		}
 	}
 	for i := range input {
 		input[i] = render.Fit(input[i], iw, c.theme)
@@ -830,9 +974,6 @@ func (c *Composer) View(w, h int) string {
 
 // Sends when the click lands on the send button, reporting whether it did
 func (c *Composer) Click(x, y int) (tea.Cmd, bool) {
-	if cmd, ok := c.questionClick(y); ok {
-		return cmd, true
-	}
 	b := c.button
 	if b.w == 0 || y != b.y || x < b.x || x >= b.x+b.w {
 		return nil, false
@@ -842,7 +983,7 @@ func (c *Composer) Click(x, y int) (tea.Cmd, bool) {
 
 // Completion rows shown above the input
 func (c *Composer) popup(w int) []string {
-	if c.comp == nil {
+	if c.live() == nil {
 		return nil
 	}
 	t := c.theme
@@ -858,23 +999,12 @@ func (c *Composer) popup(w int) []string {
 		if i < len(c.comp.descs) && c.comp.descs[i] != "" {
 			label = render.Fit(item, 14, t) + " " + render.Dim(c.comp.descs[i], t)
 		}
-		bound := ""
-		if i < len(c.comp.acts) && c.comp.acts[i] != "" {
-			bound = keys.Format(c.keys.First(c.comp.acts[i]))
-		}
 		st := lipgloss.NewStyle().Foreground(t.Text)
-		key := lipgloss.NewStyle().Foreground(t.Accent)
 		if i == c.comp.idx {
 			st = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
-			key = st
 			label = ansi.Strip(label)
 		}
-		kw := ansi.StringWidth(bound)
-		if bound == "" || kw+16 > w {
-			rows = append(rows, st.Render(render.Fit(" "+label, w, t)))
-			continue
-		}
-		rows = append(rows, st.Render(render.Fit(" "+label, w-kw-1, t))+key.Render(bound)+st.Render(" "))
+		rows = append(rows, st.Render(render.Fit(" "+label, w, t)))
 	}
 	return rows
 }
@@ -889,11 +1019,8 @@ func (c *Composer) Cursor() *tea.Cursor {
 		return nil
 	}
 	cur.Y -= c.cut
-	if c.comp != nil {
+	if c.live() != nil {
 		cur.Y += min(len(c.comp.items), popupRows)
-	}
-	if c.ask != nil {
-		cur.Y += len(c.ask.shown)
 	}
 	return cur
 }
@@ -904,7 +1031,7 @@ func (c *Composer) Status() string {
 	if n := len(c.attachments); n > 0 {
 		size := 0
 		for _, a := range c.attachments {
-			size += a.Size
+			size += len(a.Data)
 		}
 		parts = append(parts, itoa(n)+" attached "+render.Bytes(int64(size)))
 	}

@@ -3,6 +3,7 @@ package wm
 import (
 	"image/color"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -14,7 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 const (
@@ -179,14 +182,14 @@ func (m *Model) paintWorkspace(ws *Workspace, dx int, shown bool) {
 // Dim invitation in the middle of a stage holding no cards, naming the key of every bound hint action
 func (m *Model) paintEmpty(dx int, veil float64) {
 	t := m.theme
-	parts := []string{"nothing open"}
+	parts := []string{lang.T(txt.KitWmNothingOpen)}
 	for _, id := range m.empty {
 		a, ok := m.keys.Action(id)
-		k := keys.Format(m.keys.First(id))
+		k := m.keys.Display(id)
 		if !ok || k == "" {
 			continue
 		}
-		parts = append(parts, k+" "+a.Label)
+		parts = append(parts, k+" "+a.LabelText())
 	}
 	text := strings.Join(parts, " "+t.Glyphs.Sep+" ")
 	st := m.stage()
@@ -357,6 +360,97 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 	}
 	return e.tinted.Buffer
 }
+
+// Address under a content cell of the card, the hyperlink painted there or else a web or file address written out in the text around it
+func (e *entry) linkAt(x, y int) string {
+	if e.raw.Buffer == nil {
+		return ""
+	}
+	if c := e.raw.CellAt(x, y); c != nil && c.Width == 0 && x > 0 {
+		x--
+	}
+	c := e.raw.CellAt(x, y)
+	if c == nil {
+		return ""
+	}
+	if c.Link.URL != "" {
+		return c.Link.URL
+	}
+	return e.writtenLinkAt(x, y)
+}
+
+// Characters that end an address written out in text
+const linkBoundary = "<>\"'` "
+
+// Character of a cell when it can be part of an address written out in text, false for a wide, blank or delimiting one
+func (e *entry) linkChar(x, y int) (byte, bool) {
+	c := e.raw.CellAt(x, y)
+	if c == nil || c.Width != 1 || len(c.Content) != 1 {
+		return 0, false
+	}
+	ch := c.Content[0]
+	return ch, ch >= 0x21 && ch <= 0x7e && !strings.ContainsRune(linkBoundary, rune(ch))
+}
+
+// Web or file address the text of a row spells out around a cell, without the punctuation of the sentence it ends
+func (e *entry) writtenLinkAt(x, y int) string {
+	if _, ok := e.linkChar(x, y); !ok {
+		return ""
+	}
+	lo, hi := x, x
+	for lo > 0 {
+		if _, ok := e.linkChar(lo-1, y); !ok {
+			break
+		}
+		lo--
+	}
+	for hi < e.raw.Width()-1 {
+		if _, ok := e.linkChar(hi+1, y); !ok {
+			break
+		}
+		hi++
+	}
+	run := make([]byte, 0, hi-lo+1)
+	for i := lo; i <= hi; i++ {
+		ch, _ := e.linkChar(i, y)
+		run = append(run, ch)
+	}
+	token, at := string(run), x-lo
+	start, end := -1, len(token)
+	for _, m := range linkScheme.FindAllStringIndex(token, -1) {
+		if m[0] > at {
+			end = m[0]
+			break
+		}
+		start = m[0]
+	}
+	if start < 0 {
+		return ""
+	}
+	url := token[start:end]
+	for url != "" {
+		last := url[len(url)-1]
+		if strings.IndexByte(".,;:!?", last) >= 0 {
+			url = url[:len(url)-1]
+			continue
+		}
+		opener, closes := linkOpeners[last]
+		if !closes || strings.Count(url, string(last)) <= strings.Count(url, string(opener)) {
+			break
+		}
+		url = url[:len(url)-1]
+	}
+	if at >= start+len(url) {
+		return ""
+	}
+	return url
+}
+
+// Start of a web or file address
+var linkScheme = regexp.MustCompile(`(?:https?|file)://`)
+
+// Bracket that opens what each closing bracket ends, a closing one with none before it not part of an address
+var linkOpeners = map[byte]byte{')': '(', ']': '[', '}': '{'}
 
 // Reports whether a card keeps its last drawing clipped to its frame while its size moves or the screen just resized
 func (m *Model) holding(e *entry) bool {
@@ -862,13 +956,26 @@ func (m *Model) paintHints(face screen, e *entry, sx, w, h int) {
 	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(2, h-1, used+1, 1))
 }
 
-// Key and label a hint paints, the key empty when its action is unbound
+// Key and label a hint paints, the key empty when the terminal can send none of its chords
 func (m *Model) hintText(h Hint) (string, string) {
-	key := m.keys.First(h.Action)
-	if h.Pair != "" {
-		key = keys.Pair(m.keys.First(h.Action), m.keys.First(h.Pair))
-	} else {
-		key = keys.Format(key)
+	first := func(id string) string {
+		if c := m.keys.Sendable(id); len(c) > 0 {
+			return c[0]
+		}
+		return ""
+	}
+	var key string
+	switch {
+	case h.Pair != "":
+		key = keys.Pair(first(h.Action), first(h.Pair))
+	case h.All:
+		shown := []string{}
+		for _, c := range m.keys.Sendable(h.Action) {
+			shown = append(shown, keys.Format(c))
+		}
+		key = strings.Join(shown, "/")
+	default:
+		key = m.keys.Display(h.Action)
 	}
 	if key == "" {
 		return "", ""
@@ -876,7 +983,7 @@ func (m *Model) hintText(h Hint) (string, string) {
 	label := h.Label
 	if label == "" {
 		if a, ok := m.keys.Action(h.Action); ok {
-			label = a.Label
+			label = a.LabelText()
 		}
 	}
 	return key, label

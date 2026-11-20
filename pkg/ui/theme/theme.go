@@ -2,8 +2,6 @@
 package theme
 
 import (
-	"errors"
-	"fmt"
 	"image/color"
 	"sort"
 	"strings"
@@ -66,28 +64,6 @@ func Blackwall() Theme {
 	}
 }
 
-func Taro() Theme {
-	return Theme{
-		Name:        "taro",
-		Bg:          Hex(0x070a12),
-		Surface:     Hex(0x0c1120),
-		Text:        Hex(0xd6def7),
-		TextDim:     Hex(0x667199),
-		Steel:       Hex(0x2a3654),
-		SteelBright: Hex(0x4b5d8c),
-		Ghost:       Hex(0x1c2544),
-		Accent:      Hex(0xffc857),
-		Ice:         Hex(0x5ff1ff),
-		Pulse:       Hex(0xff4fd8),
-		Alive:       Hex(0x7cff9e),
-		Alarm:       Hex(0xff5f6d),
-		Ring:        []color.Color{Hex(0x5ff1ff), Hex(0x8a7dff), Hex(0xff4fd8), Hex(0x5ff1ff)},
-		Border:      IcebathBorder(),
-		Glyphs:      IcebathGlyphs(),
-		Terminal:    palette(0x2a3654, 0xff5f6d, 0x7cff9e, 0xffc857, 0x8a7dff, 0xff4fd8, 0x5ff1ff, 0xd6def7, 0x4b5d8c, 0xff8a94, 0xa6ffbd, 0xffd98a, 0xa9a0ff, 0xff85e4, 0x9ff6ff, 0xffffff),
-	}
-}
-
 // Paper palette for bright rooms with the same red accent
 func Light() Theme {
 	return Theme{
@@ -108,6 +84,29 @@ func Light() Theme {
 		Border:      IcebathBorder(),
 		Glyphs:      IcebathGlyphs(),
 		Terminal:    palette(0x141c26, 0xc8102e, 0x2e8b63, 0x9a6b00, 0x2f6f9f, 0x7a3fa0, 0x1d7f8f, 0x5c6b7d, 0x8a95a3, 0xd12f3f, 0x3aa077, 0xb8860b, 0x3f86bf, 0x9150c0, 0x2697ab, 0x2b3542),
+	}
+}
+
+// Deep indigo palette with amber, cyan and magenta
+func Taro() Theme {
+	return Theme{
+		Name:        "taro",
+		Bg:          Hex(0x070a12),
+		Surface:     Hex(0x0c1120),
+		Text:        Hex(0xd6def7),
+		TextDim:     Hex(0x667199),
+		Steel:       Hex(0x2a3654),
+		SteelBright: Hex(0x4b5d8c),
+		Ghost:       Hex(0x1c2544),
+		Accent:      Hex(0xffc857),
+		Ice:         Hex(0x5ff1ff),
+		Pulse:       Hex(0xff4fd8),
+		Alive:       Hex(0x7cff9e),
+		Alarm:       Hex(0xff5f6d),
+		Ring:        []color.Color{Hex(0x5ff1ff), Hex(0x8a7dff), Hex(0xff4fd8), Hex(0x5ff1ff)},
+		Border:      IcebathBorder(),
+		Glyphs:      IcebathGlyphs(),
+		Terminal:    palette(0x2a3654, 0xff5f6d, 0x7cff9e, 0xffc857, 0x8a7dff, 0xff4fd8, 0x5ff1ff, 0xd6def7, 0x4b5d8c, 0xff8a94, 0xa6ffbd, 0xffd98a, 0xa9a0ff, 0xff85e4, 0x9ff6ff, 0xffffff),
 	}
 }
 
@@ -157,22 +156,56 @@ func Plain() Theme {
 	}
 }
 
-var themes = map[string]func() Theme{"blackwall": Blackwall, "taro": Taro, "light": Light, "contrast": Contrast, "plain": Plain}
+// Neon green on black, the matrix terminal
+func Cyberpunk() Theme {
+	return Theme{
+		Name:        "cyberpunk",
+		Bg:          Hex(0x000a00),
+		Surface:     Hex(0x001200),
+		Text:        Hex(0x00e038),
+		TextDim:     Hex(0x1a8a30),
+		Steel:       Hex(0x003000),
+		SteelBright: Hex(0x004800),
+		Ghost:       Hex(0x001a00),
+		Accent:      Hex(0x00ff41),
+		Ice:         Hex(0x00cc34),
+		Pulse:       Hex(0xffb000),
+		Alive:       Hex(0x00ff41),
+		Alarm:       Hex(0xff003c),
+		Ring:        []color.Color{Hex(0x00ff41)},
+		Border:      IcebathBorder(),
+		Glyphs:      IcebathGlyphs(),
+	}
+}
 
-// Makes a theme available to Named under its name, refusing a taken or empty name
-func Register(fn func() Theme) error {
-	if fn == nil {
-		return errors.New("theme: a constructor is required")
+// The Dracula palette, purple and pink on slate
+func Dracula() Theme {
+	return Theme{
+		Name:        "dracula",
+		Bg:          Hex(0x282a36),
+		Surface:     Hex(0x21222c),
+		Text:        Hex(0xf8f8f2),
+		TextDim:     Hex(0x6272a4),
+		Steel:       Hex(0x44475a),
+		SteelBright: Hex(0x6272a4),
+		Ghost:       Hex(0x343746),
+		Accent:      Hex(0xbd93f9),
+		Ice:         Hex(0x8be9fd),
+		Pulse:       Hex(0xff79c6),
+		Alive:       Hex(0x50fa7b),
+		Alarm:       Hex(0xff5555),
+		Ring:        []color.Color{Hex(0xbd93f9), Hex(0xff79c6), Hex(0x8be9fd), Hex(0xbd93f9)},
+		Border:      IcebathBorder(),
+		Glyphs:      IcebathGlyphs(),
+		Terminal:    palette(0x21222c, 0xff5555, 0x50fa7b, 0xf1fa8c, 0xbd93f9, 0xff79c6, 0x8be9fd, 0xf8f8f2, 0x6272a4, 0xff6e6e, 0x69ff94, 0xffffa5, 0xd6acff, 0xff92df, 0xa4ffff, 0xffffff),
 	}
-	name := strings.ToLower(strings.TrimSpace(fn().Name))
-	if name == "" {
-		return errors.New("theme: a name is required")
-	}
-	if _, dup := themes[name]; dup {
-		return fmt.Errorf("theme: %s is already registered", name)
-	}
-	themes[name] = fn
-	return nil
+}
+
+// DefaultName is the theme a session starts in, Light standing in for it on a light terminal
+const DefaultName = "blackwall"
+
+var themes = map[string]func() Theme{
+	"blackwall": Blackwall, "taro": Taro, "light": Light, "contrast": Contrast, "plain": Plain, "cyberpunk": Cyberpunk, "dracula": Dracula,
 }
 
 // Theme by name, false for an unknown name
@@ -248,6 +281,8 @@ func lerp8(a, b uint32, t float64) uint8 {
 
 // Every mark the interface draws, swapped as one set so the whole surface keeps one look
 type Glyphs struct {
+	// Mark of the product beside its name
+	Brand     string
 	Session   string
 	Trace     string
 	Agent     string
@@ -351,7 +386,7 @@ type Glyphs struct {
 // Frost, signal and hazard marks in single cells, the icebath set
 func IcebathGlyphs() Glyphs {
 	return Glyphs{
-		Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "!", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "$", Terminal: "❯", Card: "▰",
+		Brand: "󰆧", Session: "❆", Trace: "⟁", Agent: "⟁", Approval: "!", Metrics: "⌬", Findings: "⌖", Jobs: "⎔", Mission: "⟐", Sessions: "⧈", Settings: "◩", Config: "⎈", Palette: "$", Terminal: "❯", Card: "▰",
 		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥", Ext: "⧉", Flow: "⟳",
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Shell: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "!", Ask: "?", Child: "⟁", Attach: "⎘", Cursor: "▍", Marked: "▮",
@@ -368,7 +403,7 @@ func IcebathGlyphs() Glyphs {
 // The same marks in printable ASCII for terminals without box drawing or symbol fonts
 func ASCIIGlyphs() Glyphs {
 	return Glyphs{
-		Session: "~", Trace: "&", Agent: "&", Approval: "!", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: "$", Terminal: ">", Card: "*",
+		Brand: "#", Session: "~", Trace: "&", Agent: "&", Approval: "!", Metrics: "%", Findings: "!", Jobs: "@", Mission: "o", Sessions: "=", Settings: "%", Config: "*", Palette: "$", Terminal: ">", Card: "*",
 		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k", Ext: "x", Flow: "@",
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Shell: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "!", Ask: "?", Child: "&", Attach: "+", Cursor: ">", Marked: "#",

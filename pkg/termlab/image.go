@@ -1,13 +1,12 @@
 package termlab
 
 import (
-	"bufio"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"os"
 )
 
@@ -103,27 +102,61 @@ func rgba(img image.Image, x, y int) color.RGBA {
 	return c
 }
 
-// Decodes a binary portable pixmap with eight bit channels
-func decodePPM(r io.Reader) (*image.RGBA, error) {
-	br := bufio.NewReaderSize(r, 1<<20)
-	var magic string
-	var w, h, maxval int
-	if _, err := fmt.Fscan(br, &magic, &w, &h, &maxval); err != nil {
-		return nil, fmt.Errorf("ppm header: %w", err)
+// Fixed part of an XWD file header, twenty five big endian words
+const xwdHeaderSize = 100
+
+// Decodes a region of a 32 bit ZPixmap XWD image, the whole image when empty, as Xvfb keeps its framebuffer
+func decodeXWD(b []byte, region image.Rectangle) (*image.RGBA, error) {
+	if len(b) < xwdHeaderSize {
+		return nil, fmt.Errorf("xwd header: %d bytes", len(b))
 	}
-	if magic != "P6" || maxval != 255 || w <= 0 || h <= 0 {
-		return nil, fmt.Errorf("ppm header %s %dx%d max %d is not an eight bit P6", magic, w, h, maxval)
+	word := func(i int) uint32 { return binary.BigEndian.Uint32(b[4*i:]) }
+	headerSize, version, format, depth := int(word(0)), word(1), word(2), word(3)
+	w, h, byteOrder, bpp, stride := int(word(4)), int(word(5)), word(7), word(11), int(word(12))
+	rmask, gmask, bmask, ncolors := word(14), word(15), word(16), int(word(19))
+	if version != 7 || format != 2 || bpp != 32 || depth < 24 || w <= 0 || h <= 0 || stride < 4*w {
+		return nil, fmt.Errorf("xwd version %d format %d depth %d at %d bits is not a 32 bit ZPixmap", version, format, depth, bpp)
 	}
-	if _, err := br.ReadByte(); err != nil {
+	shift := func(mask uint32) (uint32, error) {
+		for s := uint32(0); s < 32; s += 8 {
+			if mask == 0xff<<s {
+				return s, nil
+			}
+		}
+		return 0, fmt.Errorf("xwd channel mask %#x is not one byte", mask)
+	}
+	rs, err := shift(rmask)
+	if err != nil {
 		return nil, err
 	}
-	raw := make([]byte, w*h*3)
-	if _, err := io.ReadFull(br, raw); err != nil {
-		return nil, fmt.Errorf("ppm pixels: %w", err)
+	gs, err := shift(gmask)
+	if err != nil {
+		return nil, err
 	}
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for i, j := 0, 0; i < len(raw); i, j = i+3, j+4 {
-		img.Pix[j], img.Pix[j+1], img.Pix[j+2], img.Pix[j+3] = raw[i], raw[i+1], raw[i+2], 255
+	bs, err := shift(bmask)
+	if err != nil {
+		return nil, err
+	}
+	offset := headerSize + 12*ncolors
+	if headerSize < xwdHeaderSize || offset+stride*h > len(b) {
+		return nil, fmt.Errorf("xwd pixels: %d bytes hold no %dx%d image at offset %d", len(b), w, h, offset)
+	}
+	order := binary.ByteOrder(binary.LittleEndian)
+	if byteOrder != 0 {
+		order = binary.BigEndian
+	}
+	bounds := image.Rect(0, 0, w, h)
+	if !region.Empty() {
+		bounds = region.Intersect(bounds)
+	}
+	img := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		row := b[offset+y*stride:]
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			px := order.Uint32(row[4*x:])
+			j := img.PixOffset(x, y)
+			img.Pix[j], img.Pix[j+1], img.Pix[j+2], img.Pix[j+3] = uint8(px>>rs), uint8(px>>gs), uint8(px>>bs), 255
+		}
 	}
 	return img, nil
 }

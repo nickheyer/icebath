@@ -1,0 +1,384 @@
+//go:build !icebath_core && !icebath_noextras
+
+package pm
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"sync"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+)
+
+// Exception classes a worker failure keeps on the caller side, every other class arriving as RuntimeError
+var workerErrorClasses = map[string]bool{
+	"ValueError": true, "TypeError": true, "KeyError": true, "OSError": true,
+	"FileExistsError": true, "FileNotFoundError": true, "PermissionError": true,
+}
+
+// ErrorClass exports errorClass
+func ErrorClass(err error) string { return errorClass(err) }
+
+// Wire form of a failure, install failures carrying their package, cause and remedy
+func errorPayload(err error) map[string]any {
+	payload := map[string]any{"type": errorClass(err), "message": err.Error()}
+	var install *InstallError
+	if errors.As(err, &install) {
+		payload["package"] = install.Package
+		payload["cause"] = install.Cause
+		payload["remedy"] = install.Remedy
+	}
+	return payload
+}
+
+// Caller side failure a worker error names, its class kept where callers distinguish it
+func workerError(payload map[string]any) error {
+	field := func(key string) (any, error) {
+		v, ok := payload[key]
+		if !ok {
+			return nil, &PyError{Class: "KeyError", Message: "the worker error has no " + key}
+		}
+		return v, nil
+	}
+	if _, ok := payload["package"]; ok {
+		values := make([]any, 4)
+		for i, key := range []string{"type", "package", "cause", "remedy"} {
+			v, err := field(key)
+			if err != nil {
+				return err
+			}
+			values[i] = v
+		}
+		failure := &InstallError{Package: wireText(values[1]), Cause: wireText(values[2]), Remedy: wireText(values[3])}
+		if !pyrepr.Truthy(values[3]) {
+			failure = NewInstallError(failure.Package, failure.Cause, "")
+		}
+		if jsonEquals(values[0], "ResolutionConflict") {
+			return &ResolutionConflict{failure}
+		}
+		return failure
+	}
+	kindValue, err := field("type")
+	if err != nil {
+		return err
+	}
+	if jsonEquals(kindValue, "DownloadPaused") {
+		message, err := field("message")
+		if err != nil {
+			return err
+		}
+		return downloadError(DownloadWasPaused, "%s", wireText(message))
+	}
+	switch kindValue.(type) {
+	case map[string]any, []any:
+		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker error type must be text, got %s", errchain.Kind(kindValue))}
+	}
+	raw, err := field("message")
+	if err != nil {
+		return err
+	}
+	kind, _ := kindValue.(string)
+	if !workerErrorClasses[kind] {
+		return &PyError{Class: "RuntimeError", Message: wireText(raw)}
+	}
+	return &PyError{Class: kind, Message: wireText(raw)}
+}
+
+// Text of a wire value as a person reads it, text kept as sent
+func wireText(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return errchain.Show(v)
+}
+
+// Unbounded control message queue between the reader and the worker, nil marking the client gone
+type controlQueue struct {
+	mu    sync.Mutex
+	ready *sync.Cond
+	items []any
+}
+
+// Empty control queue
+func newControlQueue() *controlQueue {
+	q := &controlQueue{}
+	q.ready = sync.NewCond(&q.mu)
+	return q
+}
+
+// Appends one message, error or the disconnect marker
+func (q *controlQueue) put(item any) {
+	q.mu.Lock()
+	q.items = append(q.items, item)
+	q.mu.Unlock()
+	q.ready.Signal()
+}
+
+// Next message, a disconnect or the reader's failure
+func (q *controlQueue) receive() (map[string]any, error) {
+	q.mu.Lock()
+	for len(q.items) == 0 {
+		q.ready.Wait()
+	}
+	item := q.items[0]
+	q.items = q.items[1:]
+	q.mu.Unlock()
+	switch m := item.(type) {
+	case nil:
+		return nil, &PyError{Class: "RuntimeError", Message: "PM client disconnected"}
+	case error:
+		return nil, m
+	}
+	return item.(map[string]any), nil
+}
+
+// Reads control lines, a cancel flag pausing the operation and every other message queued in order
+func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEvent) {
+	defer func() {
+		controls.Close()
+		pause.Set()
+		messages.put(nil)
+	}()
+	reader := bufio.NewReader(controls)
+	var requestID any
+	haveID := false
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				messages.put(err)
+			}
+			return
+		}
+		value, err := loadJSON(bytes.TrimSuffix(line, []byte("\n")))
+		if err != nil {
+			messages.put(&PyError{Class: "ValueError", Message: err.Error()})
+			return
+		}
+		message, ok := value.(map[string]any)
+		if !ok {
+			return
+		}
+		id, ok := message["id"]
+		if !ok {
+			messages.put(&PyError{Class: "KeyError", Message: "the request has no id"})
+			return
+		}
+		if !haveID {
+			requestID, haveID = id, true
+		}
+		if !jsonEquals(id, requestID) {
+			messages.put(&PyError{Class: "ValueError", Message: "unexpected PM control request id"})
+			return
+		}
+		if pyrepr.Truthy(message["cancel"]) {
+			pause.Set()
+		}
+		if !jsonEquals(message["type"], "cancel") {
+			messages.put(message)
+		}
+	}
+}
+
+// Required key of a decoded request, the KeyError Python raises when it is missing
+func requestField(m map[string]any, key string) (any, error) {
+	v, ok := m[key]
+	if !ok {
+		return nil, &PyError{Class: "KeyError", Message: "the request has no " + key}
+	}
+	return v, nil
+}
+
+// Package definitions a request carries
+func requestDefinitions(value any) ([]PackageDefinition, error) {
+	if value == nil {
+		return nil, nil
+	}
+	list, ok := value.([]any)
+	if !ok {
+		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the request packages must be a list, got %s", errchain.Kind(value))}
+	}
+	out := make([]PackageDefinition, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, &PyError{Class: "TypeError", Message: "package definition is not an object"}
+		}
+		out = append(out, PackageDefinition{Name: pyrepr.Str(m["name"]), Module: pyrepr.Str(m["module"]), Qualname: pyrepr.Str(m["qualname"])})
+	}
+	return out, nil
+}
+
+// JSON form of download coverage, destinations in report order with their covered runs
+func rangesPayload(ranges []RangeSet) *OrderedObject {
+	out := NewOrderedObject()
+	for _, set := range ranges {
+		rows := make([]any, len(set.Ranges))
+		for i, r := range set.Ranges {
+			rows[i] = []any{jsonInt64(r.Start), jsonInt64(r.End)}
+		}
+		out.Set(set.Key, rows)
+	}
+	return out
+}
+
+// JSON number of an int64
+func jsonInt64(n int64) json.Number { return json.Number(strconv.FormatInt(n, 10)) }
+
+// Serves one JSON line PM request read from controls, writing callbacks and the result to wire
+func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) error {
+	messages := newControlQueue()
+	pause := NewPauseEvent()
+	go readControls(controls, messages, pause)
+	request, err := messages.receive()
+	if err != nil {
+		return err
+	}
+	rawContext, err := requestField(request, "context")
+	if err != nil {
+		return err
+	}
+	pathsContext, ok := rawContext.(map[string]any)
+	if !ok {
+		return &PyError{Class: "TypeError", Message: "request context is not an object"}
+	}
+	repo, err := requestField(pathsContext, "repo")
+	if err != nil {
+		return err
+	}
+	lockfile, err := requestField(pathsContext, "lockfile")
+	if err != nil {
+		return err
+	}
+	previousRepo, previousLock := repoRoot, lockfilePath
+	repoRoot = func() string { return pyrepr.Str(repo) }
+	lockfilePath = func() string { return pyrepr.Str(lockfile) }
+	defer func() { repoRoot, lockfilePath = previousRepo, previousLock }()
+
+	var wireMu sync.Mutex
+	send := func(data map[string]any) error {
+		message := NewOrderedObject()
+		message.Set("id", request["id"])
+		for _, key := range sortedKeys(data) {
+			message.Set(key, data[key])
+		}
+		line, err := dumpsJSON(message, false)
+		if err != nil {
+			return err
+		}
+		wireMu.Lock()
+		defer wireMu.Unlock()
+		_, err = wire.Write(append(line, '\n'))
+		return err
+	}
+	call := 0
+	var callbackMu sync.Mutex
+	callback := func(name string, args ...any) (any, error) {
+		callbackMu.Lock()
+		defer callbackMu.Unlock()
+		call++
+		if err := send(map[string]any{"type": "callback", "callback": name, "call": jsonInt(call), "args": args}); err != nil {
+			return nil, err
+		}
+		reply, err := messages.receive()
+		if err != nil {
+			return nil, err
+		}
+		if !jsonEquals(reply["id"], request["id"]) || !jsonEquals(reply["call"], jsonInt(call)) {
+			return nil, &PyError{Class: "RuntimeError", Message: "unexpected PM callback response"}
+		}
+		if message, failed := reply["error"]; failed {
+			return nil, &PyError{Class: "RuntimeError", Message: wireText(message)}
+		}
+		return reply["result"], nil
+	}
+
+	var updateID *string
+	if id, ok := request["update_id"].(string); ok {
+		updateID = &id
+	}
+	workerCtx := withRuntime(context.WithValue(ctx, receiptScopeKey{}, &receiptScope{}))
+	restore := WorkerContext(workerCtx, updateID)
+	result, failure := func() (any, error) {
+		definitions, err := requestDefinitions(request["packages"])
+		if err != nil {
+			return nil, err
+		}
+		if err := LoadPackageDefinitions(definitions); err != nil {
+			return nil, err
+		}
+		rawOperation, err := requestField(request, "operation")
+		if err != nil {
+			return nil, err
+		}
+		operation := pyrepr.Str(rawOperation)
+		spec, err := lookupOperation(operation)
+		if err != nil {
+			return nil, err
+		}
+		rawArguments, err := requestField(request, "arguments")
+		if err != nil {
+			return nil, err
+		}
+		arguments, ok := rawArguments.(map[string]any)
+		if !ok {
+			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s request arguments must be a mapping, got %s", operation, errchain.Kind(rawArguments))}
+		}
+		hooks := workerHooks{}
+		if operation == "ensure" {
+			hooks.pause = pause
+		}
+		names, _ := request["callbacks"].([]any)
+		for _, rawName := range names {
+			switch pyrepr.Str(rawName) {
+			case "progress":
+				hooks.progress = func(stage string, done, total int64, label string) error {
+					_, err := callback("progress", stage, jsonInt64(done), jsonInt64(total), label)
+					return err
+				}
+			case "download_progress":
+				hooks.downloadProgress = func(done, total int64, ranges []RangeSet) error {
+					_, err := callback("download_progress", jsonInt64(done), jsonInt64(total), rangesPayload(ranges))
+					return err
+				}
+			}
+		}
+		return spec.run(workerCtx, arguments, hooks)
+	}()
+	response := map[string]any{"type": "result"}
+	if failure != nil {
+		response["error"] = errorPayload(failure)
+	} else {
+		response["result"] = result
+	}
+	if completed := LastCompletedObject(workerCtx); completed != nil {
+		response["receipt"] = completed
+	} else {
+		response["receipt"] = nil
+	}
+	restore()
+	return send(response)
+}
+
+// Runs this process as the isolated PM worker over its standard streams and returns its exit status
+func WorkerMain() int {
+	controls, wire, err := workerStdio()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer wire.Close()
+	if err := ServeWorker(context.Background(), controls, wire); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", errorClass(err), err)
+		return 1
+	}
+	return 0
+}

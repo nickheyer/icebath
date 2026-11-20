@@ -18,13 +18,14 @@ import (
 // Directory where the X server of every display keeps its socket
 const x11Dir = "/tmp/.X11-unix"
 
-// Private X display served by Xvfb
+// Private X display served by Xvfb, its framebuffer kept in a file the lab reads screenshots from
 type Lab struct {
 	Display int
 	W, H    int
 	xvfb    *exec.Cmd
 	done    chan struct{}
 	log     bytes.Buffer
+	fbdir   string
 }
 
 // Error naming every given tool absent from PATH, nil when all of them are there
@@ -43,7 +44,7 @@ func Missing(tools ...string) error {
 
 // Starts Xvfb with a w by h screen on the first display number holding no socket or lock file
 func Start(w, h int) (*Lab, error) {
-	if err := Missing("Xvfb", "import"); err != nil {
+	if err := Missing("Xvfb"); err != nil {
 		return nil, err
 	}
 	var last error
@@ -72,12 +73,16 @@ func taken(n int) bool {
 
 // Starts Xvfb on one display and waits for its socket, failing when the server exits first
 func startOn(n, w, h int) (*Lab, error) {
-	l := &Lab{Display: n, W: w, H: h, done: make(chan struct{})}
-	cmd := exec.Command("Xvfb", ":"+strconv.Itoa(n), "-screen", "0", fmt.Sprintf("%dx%dx24", w, h), "-nolisten", "tcp", "-noreset")
+	fbdir, err := os.MkdirTemp("", "termlab-fb-")
+	if err != nil {
+		return nil, err
+	}
+	l := &Lab{Display: n, W: w, H: h, done: make(chan struct{}), fbdir: fbdir}
+	cmd := exec.Command("Xvfb", ":"+strconv.Itoa(n), "-screen", "0", fmt.Sprintf("%dx%dx24", w, h), "-nolisten", "tcp", "-noreset", "-fbdir", fbdir)
 	cmd.Stdout, cmd.Stderr = &l.log, &l.log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, errors.Join(err, os.RemoveAll(fbdir))
 	}
 	l.xvfb = cmd
 	go func() {
@@ -89,7 +94,7 @@ func startOn(n, w, h int) (*Lab, error) {
 	for time.Now().Before(deadline) {
 		select {
 		case <-l.done:
-			return nil, fmt.Errorf("Xvfb :%d exited: %s", n, bytes.TrimSpace(l.log.Bytes()))
+			return nil, errors.Join(fmt.Errorf("Xvfb :%d exited: %s", n, bytes.TrimSpace(l.log.Bytes())), os.RemoveAll(fbdir))
 		default:
 		}
 		if _, err := os.Stat(sock); err == nil {
@@ -106,26 +111,27 @@ func startOn(n, w, h int) (*Lab, error) {
 // Display name for the DISPLAY variable
 func (l *Lab) Name() string { return ":" + strconv.Itoa(l.Display) }
 
-// Captures the whole screen of the display
-func (l *Lab) Shot() (*image.RGBA, error) {
-	var out, errb bytes.Buffer
-	cmd := exec.Command("import", "-display", l.Name(), "-window", "root", "-depth", "8", "ppm:-")
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("import: %w: %s", err, bytes.TrimSpace(errb.Bytes()))
+// Captures the whole screen of the display by reading the framebuffer file Xvfb maps, no X request or process involved
+func (l *Lab) Shot() (*image.RGBA, error) { return l.ShotOf(image.Rectangle{}) }
+
+// Captures the pixels of the region from the framebuffer file, the whole screen for an empty region
+func (l *Lab) ShotOf(region image.Rectangle) (*image.RGBA, error) {
+	b, err := os.ReadFile(filepath.Join(l.fbdir, "Xvfb_screen0"))
+	if err != nil {
+		return nil, err
 	}
-	return decodePPM(&out)
+	return decodeXWD(b, region)
 }
 
-// Stops the X server, asking first so it removes its socket and lock, then killing it
+// Stops the X server, asking first so it removes its socket and lock, then killing it, and deletes its framebuffer
 func (l *Lab) Close() error {
 	if l.xvfb == nil || l.xvfb.Process == nil {
-		return nil
+		return os.RemoveAll(l.fbdir)
 	}
 	l.xvfb.Process.Signal(syscall.SIGTERM)
 	select {
 	case <-l.done:
-		return nil
+		return os.RemoveAll(l.fbdir)
 	case <-time.After(3 * time.Second):
 	}
 	proc.KillTree(l.xvfb.Process.Pid)
@@ -136,5 +142,5 @@ func (l *Lab) Close() error {
 	}
 	os.Remove(filepath.Join(x11Dir, "X"+strconv.Itoa(l.Display)))
 	os.Remove("/tmp/.X" + strconv.Itoa(l.Display) + "-lock")
-	return nil
+	return os.RemoveAll(l.fbdir)
 }

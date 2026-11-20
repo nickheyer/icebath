@@ -1,0 +1,202 @@
+package config
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/home"
+)
+
+// Home skeleton that cannot be used, distinct from an invalid YAML document
+type HomeInitializationError struct {
+	Message string
+	Err     error
+}
+
+func (e *HomeInitializationError) Error() string { return e.Message }
+
+func (e *HomeInitializationError) Unwrap() error { return e.Err }
+
+// Subdirectories every home carries
+var HomeSubdirs = []string{"cron", "sessions", "logs", "logs/curator", "memories", "pairing", "hooks", "image_cache", "audio_cache", "skills"}
+
+var (
+	homeEnsuredMu sync.Mutex
+	homeEnsured   = map[string]bool{}
+)
+
+// Symlinked components of a path from the filesystem root down to the path itself
+func directoryLinks(path string) []string {
+	path = filepath.Clean(path)
+	var chain []string
+	for p := path; ; p = filepath.Dir(p) {
+		chain = append([]string{p}, chain...)
+		if filepath.Dir(p) == p {
+			break
+		}
+	}
+	var links []string
+	for _, p := range chain {
+		if st, err := os.Lstat(p); err == nil && st.Mode()&os.ModeSymlink != 0 {
+			links = append(links, p)
+		}
+	}
+	return links
+}
+
+// Links at or below the home, the ones that hand its permissions to the operator
+func operatorOwnedLinks(links []string, h string) []string {
+	h = filepath.Clean(h)
+	var out []string
+	for _, link := range links {
+		if link == h || strings.HasPrefix(link, h+string(filepath.Separator)) {
+			out = append(out, link)
+		}
+	}
+	return out
+}
+
+// Reason of an errno failure followed by its path
+func pyOSErrorText(err error) string {
+	var pe *fs.PathError
+	var errno syscall.Errno
+	if errors.As(err, &pe) && errors.As(pe.Err, &errno) {
+		return errno.Error() + ": " + pe.Path
+	}
+	return err.Error()
+}
+
+// Ensures a home directory exists and is private without materialising a missing link target
+func ensureDirectory(ctx context.Context, path string, create, secure bool, h string) error {
+	links := directoryLinks(path)
+	details := make([]string, 0, len(links))
+	fail := func(err error) error {
+		msg := fmt.Sprintf("Cannot initialize Icebath directory %s: %s. ", path, pyOSErrorText(err))
+		if len(details) > 0 {
+			msg += "Directory links: " + strings.Join(details, "; ") + ". "
+		}
+		msg += "Check the directory/link target, mount availability and access permissions; " +
+			"restore the mount or repair the link before retrying. " +
+			"Icebath has not replaced the link or created its missing target."
+		return &HomeInitializationError{Message: msg, Err: err}
+	}
+	for _, link := range links {
+		target, err := os.Readlink(link)
+		if err != nil {
+			return fail(err)
+		}
+		details = append(details, link+" -> "+target)
+	}
+	for _, link := range links {
+		if st, err := os.Stat(link); err != nil || !st.IsDir() {
+			return fail(&fs.PathError{Op: "stat", Path: "Directory link is unavailable: " + link, Err: syscall.ENOENT})
+		}
+	}
+	if create {
+		if err := os.MkdirAll(path, 0o777); err != nil {
+			return fail(err)
+		}
+	} else if st, err := os.Stat(path); err != nil || !st.IsDir() {
+		return fail(&fs.PathError{Op: "stat", Path: "Required directory does not exist: " + path, Err: syscall.ENOENT})
+	}
+	if secure && len(operatorOwnedLinks(links, h)) == 0 {
+		SecureDir(ctx, h, path)
+	}
+	return nil
+}
+
+// Creates the home skeleton, private unless managed, and seeds the default soul
+func InitializeHome(ctx context.Context, h string, subdirs []string, ensured map[string]bool) error {
+	managed := IsManaged(ctx, h)
+	restore := setManagedUmask(managed)
+	err := func() error {
+		defer restore()
+		if err := ensureDirectory(ctx, h, !managed, !managed, h); err != nil {
+			return err
+		}
+		required := subdirs
+		if managed {
+			required = []string{"cron", "sessions", "logs", "memories"}
+		}
+		for _, sub := range required {
+			if err := ensureDirectory(ctx, filepath.Join(h, filepath.FromSlash(sub)), !managed, !managed, h); err != nil {
+				return err
+			}
+		}
+		if managed {
+			if err := ensureDirectory(ctx, filepath.Join(h, "logs", "curator"), true, false, h); err != nil {
+				return err
+			}
+		}
+		if err := ensureDefaultSoulMD(ctx, h); err != nil {
+			return &HomeInitializationError{Message: fmt.Sprintf("Cannot initialize Icebath home %s: %s. "+
+				"Check storage availability and access permissions.", h, pyOSErrorText(err)), Err: err}
+		}
+		return nil
+	}()
+	if err != nil {
+		return err
+	}
+	ensured[h] = true
+	if resolved, rerr := filepath.EvalSymlinks(h); rerr == nil {
+		ensured[resolved] = true
+	}
+	return nil
+}
+
+// Ensures the home skeleton once per home path, refusing a deleted named profile
+func EnsureIcebathHome(ctx context.Context, h string) error {
+	if err := home.AssertProfileLive(h); err != nil {
+		return err
+	}
+	homeEnsuredMu.Lock()
+	defer homeEnsuredMu.Unlock()
+	if homeEnsured[h] {
+		if st, err := os.Stat(h); err == nil && st.IsDir() {
+			return nil
+		}
+	}
+	return InitializeHome(ctx, h, HomeSubdirs, homeEnsured)
+}
+
+// Config issue for a load failure, storage problems kept apart from a broken config file
+func ConfigLoadIssue(err error) ConfigIssue {
+	var hie *HomeInitializationError
+	if errors.As(err, &hie) || IsOSError(err) {
+		return ConfigIssue{Severity: "error", Message: "Icebath storage is unavailable: " + err.Error(),
+			Hint: "Check the reported path, link target, mount and permissions; keep config.yaml unchanged."}
+	}
+	return ConfigIssue{Severity: "error", Message: "Could not load config.yaml", Hint: "Start 'icebath' and type '/setup' to write a valid config"}
+}
+
+// Owner only directory unless managed, container defaults or ICEBATH_HOME_MODE say otherwise
+func SecureDir(ctx context.Context, h, path string) { home.ApplySecureDirPolicy(ctx, path, h) }
+
+// Owner only config file unless managed or in a container
+func SecureFile(ctx context.Context, h, path string) {
+	if IsManaged(ctx, h) || home.ContainerOrChmodSkipped() {
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		_ = os.Chmod(path, 0o600)
+	}
+}
+
+// Strips the world permission bits of a config file a writer just placed, group bits and setgid staying for shared group homes, managed installs and containers keeping their modes
+func DropOtherAccess(ctx context.Context, path string) {
+	if IsManaged(ctx, "") || home.ContainerOrChmodSkipped() {
+		return
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.Mode().Perm()&0o007 == 0 {
+		return
+	}
+	_ = os.Chmod(path, st.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)&^0o007)
+}
