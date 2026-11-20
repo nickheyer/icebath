@@ -751,29 +751,6 @@ func TestCreateEnvironmentDispatchesPluginBackendByName(t *testing.T) {
 	}
 }
 
-// test_terminal_plugin_host_isolation.py
-type hostedBackend struct {
-	localBackend
-	created *bool
-}
-
-func (hostedBackend) Name() string           { return "hostbox" }
-func (hostedBackend) RunsInPluginHost() bool { return true }
-func (b hostedBackend) CreateEnvironment(context.Context, *Env, CreateOptions) (Environment, error) {
-	*b.created = true
-	return newFakeTermEnv("/", nil), nil
-}
-
-func TestAHostedTerminalBackendRefusesWithTheIsolationSetting(t *testing.T) {
-	env := newTerminalTestEnv(t, "")
-	created := false
-	registerTestBackend(t, hostedBackend{created: &created})
-	_, err := createEnvironment(context.Background(), env, "hostbox", "", "/", 10, nil, nil, nil, "default", "", false)
-	if err == nil || !strings.Contains(err.Error(), "plugins.isolation: in_process") || created {
-		t.Fatalf("%v %v", err, created)
-	}
-}
-
 // test_terminal_self_repo_guard.py wiring
 func TestSelfRepoGuardWiring(t *testing.T) {
 	if !SelfRepoGuardActive() {

@@ -19,13 +19,11 @@ var (
 	importMessageTextFields = []string{"tool_call_id", "tool_name", "effect_disposition", "finish_reason",
 		"reasoning", "reasoning_content", "platform_message_id", "message_id"}
 	importMessageJSONFields = []string{"reasoning_details", "codex_reasoning_items", "codex_message_items", "absorbed_message_uids", "tool_call_uids"}
-	importPassthroughCols   = []string{"user_id", "model", "model_config", "end_reason", "cwd", "git_branch", "git_repo_root", "billing_provider",
-		"billing_base_url", "billing_mode", "cost_status", "cost_source", "pricing_version", "title"}
-	importIntCols   = []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "api_call_count"}
-	importFloatCols = []string{"ended_at", "estimated_cost_usd", "actual_cost_usd"}
-	importFlagCols  = []string{"archived", "auto_archived", "pinned", "hidden"}
-	sqliteIntMin    = new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), 63))
-	sqliteIntMax    = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 63), big.NewInt(1))
+	importIntCols           = []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "api_call_count"}
+	importFloatCols         = []string{"ended_at", "estimated_cost_usd", "actual_cost_usd"}
+	importFlagCols          = []string{"archived", "auto_archived", "pinned", "hidden"}
+	sqliteIntMin            = new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), 63))
+	sqliteIntMax            = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 63), big.NewInt(1))
 )
 
 const importSessionInsertSQL = `INSERT INTO sessions (

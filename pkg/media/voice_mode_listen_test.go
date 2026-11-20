@@ -71,62 +71,6 @@ func countLevel(audio []int16, v int16) int {
 	return n
 }
 
-func TestListenForSpeechSustainedSpeechTriggers(t *testing.T) {
-	withLevelStream(t, levels(0, 14, 5000, 50))
-	if heard, _ := ListenForSpeech(stopAfter(200), DefaultListenOptions()); !heard {
-		t.Fatal("sustained speech did not trip")
-	}
-}
-
-func TestListenForSpeechReturnsFalseWhenAudioUnavailable(t *testing.T) {
-	withAudioImportFailure(t, &pysounddevice.LibraryError{Msg: "no audio"})
-	if heard, path := ListenForSpeech(func() bool { return false }, DefaultListenOptions()); heard || path != "" {
-		t.Fatal("must report false without audio")
-	}
-}
-
-func TestListenForSpeechQuietThenLoudPlaybackDoesNotTrip(t *testing.T) {
-	withLevelStream(t, levels(100, 14, 200, 30, 500, 30, 1000, 30))
-	if heard, _ := ListenForSpeech(stopAfter(200), DefaultListenOptions()); heard {
-		t.Fatal("rising playback bleed tripped")
-	}
-}
-
-func TestListenForSpeechSilenceCalibrationDoesNotFalseTripOnTts(t *testing.T) {
-	calib := 800 / 30
-	withLevelStream(t, levels(0, calib, 800, 100))
-	o := DefaultListenOptions()
-	o.SustainedMS, o.CalibrationMS = 1000, 800
-	if heard, _ := ListenForSpeech(stopAfter(200), o); heard {
-		t.Fatal("TTS level after silent calibration tripped")
-	}
-}
-
-func TestListenForSpeechCaptureCapturedUtteranceIncludesSpeechOnset(t *testing.T) {
-	withLevelStream(t, levels(0, 14, 5000, 30, 0, 500))
-	audio := withCapturedWAV(t, "/tmp/barge.wav")
-	var triggered []bool
-	o := DefaultListenOptions()
-	o.Capture = true
-	o.OnTrigger = func() { triggered = append(triggered, true) }
-	_, path := ListenForSpeech(func() bool { return false }, o)
-	if path != "/tmp/barge.wav" || !slices.Equal(triggered, []bool{true}) || countLevel(*audio, 5000) != 30*480 {
-		t.Fatalf("path %q triggered %v loud samples %d", path, triggered, countLevel(*audio, 5000))
-	}
-}
-
-func TestListenForSpeechCaptureNoTripReturnsNone(t *testing.T) {
-	withLevelStream(t, levels(0, 500))
-	audio := withCapturedWAV(t, "/tmp/barge.wav")
-	var triggered []bool
-	o := DefaultListenOptions()
-	o.Capture = true
-	o.OnTrigger = func() { triggered = append(triggered, true) }
-	if _, path := ListenForSpeech(stopAfter(200), o); path != "" || *audio != nil || len(triggered) != 0 {
-		t.Fatalf("path %q triggered %v", path, triggered)
-	}
-}
-
 // Runs full_duplex_listen over scripted levels with playback reported between two read counts
 func runDuplex(t *testing.T, lv []int16, playingFrom, playingUntil int) (string, *[]int16, *levelStream, []string) {
 	stream := withLevelStream(t, lv)

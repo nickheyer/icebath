@@ -121,17 +121,6 @@ func TestModernRejectionClassifier(t *testing.T) {
 	}
 }
 
-// Sampler and elicitor answering every request with fixed results
-type cannedHandlers struct{}
-
-func (cannedHandlers) Capabilities() map[string]any { return map[string]any{"tools": map[string]any{}} }
-func (cannedHandlers) CreateMessage(ctx context.Context, p *CreateMessageParams) (any, *RPCError) {
-	return map[string]any{"role": "assistant", "model": "m", "content": map[string]any{"type": "text", "text": "sampled"}}, nil
-}
-func (cannedHandlers) Elicit(ctx context.Context, p *ElicitParams) (*ElicitResult, *RPCError) {
-	return &ElicitResult{Action: "decline"}, nil
-}
-
 func TestServerLogCallback(t *testing.T) {
 	logs := captureLogs(t)
 	s := &Session{opts: SessionOptions{Name: "log_srv"}}

@@ -226,10 +226,6 @@ func moaHeartbeatAgent(t *testing.T) (*fakeChatAgent, any) {
 	return agent, response
 }
 
-type panickingNoticeAgent struct{ *fakeChatAgent }
-
-func (panickingNoticeAgent) EmitWaitNotice(string) { panic("format failure") }
-
 type fakeStreamHandle struct{ closed atomic.Int32 }
 
 func (h *fakeStreamHandle) Close() error { h.closed.Add(1); return nil }
@@ -277,15 +273,6 @@ func TestRequestClientRegistryRoutesByKindAndOwner(t *testing.T) {
 }
 
 func (a *fakeChatAgent) SessionID() string { return a.model + "-session" }
-
-func slicesContainsAny(list []any, want string) bool {
-	for _, v := range list {
-		if v == want {
-			return true
-		}
-	}
-	return false
-}
 
 func TestResolveNonstreamWatchdogsExportsTheResolvedFuses(t *testing.T) {
 	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")

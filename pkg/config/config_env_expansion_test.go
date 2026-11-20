@@ -128,7 +128,7 @@ func TestSaveConfigPreservesUnresolvedEnvRefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg["display"].(map[string]any)["compact"] = true
+	cfg["display"].(map[string]any)["bell_on_complete"] = true
 	if err := SaveConfig(ctx, h, map[string]any(cfg), SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}

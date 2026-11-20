@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -41,9 +42,9 @@ var maxTimeoutSeconds = int64(math.MaxInt64 / int64(time.Second))
 
 // Transports Camofox calls ride, environment proxies honoured on one and never used on the other
 var (
-	proxiedTransport = http.DefaultTransport.(*http.Transport).Clone()
+	proxiedTransport = netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	directTransport  = func() *http.Transport {
-		t := http.DefaultTransport.(*http.Transport).Clone()
+		t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 		t.Proxy = nil
 		return t
 	}()

@@ -319,10 +319,10 @@ func startAgentBuild(ctx context.Context, sid string, session *tuihost.Session) 
 	}
 	session.Set("agent_build_started", true)
 	session.Pop("lazy")
-	lock.Unlock()
-	key := strOr(session.Get("session_key"))
 	build := &agentBuildThread{done: make(chan struct{})}
 	session.Set("_agent_build_thread", build)
+	lock.Unlock()
+	key := strOr(session.Get("session_key"))
 	go func() {
 		defer threadExceptHook("agent-build-" + sid)
 		defer close(build.done)

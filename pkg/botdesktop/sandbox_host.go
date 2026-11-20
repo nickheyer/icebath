@@ -1,6 +1,7 @@
 package botdesktop
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -277,6 +278,45 @@ func SandboxChromiumExecutable(e tools.Environment) (string, error) {
 	f.chromium = &exe
 	f.mu.Unlock()
 	return exe, nil
+}
+
+// Program run inside the sandbox that grabs its screen, shrinks it into a box and writes one JPEG to stdout
+const grabScript = `
+import io, sys
+from PIL import ImageGrab
+img = ImageGrab.grab(xdisplay=sys.argv[1])
+img.thumbnail((int(sys.argv[2]), int(sys.argv[3])))
+buf = io.BytesIO()
+img.convert("RGB").save(buf, "JPEG", quality=int(sys.argv[4]), optimize=True)
+sys.stdout.buffer.write(buf.getvalue())
+`
+
+// One JPEG of the sandbox screen grabbed inside the sandbox, where the X socket and its cookie live, nil when the grab fails
+func GrabJPEG(e tools.Environment, published map[string]string, maxW, maxH, quality int) ([]byte, error) {
+	display := published["DISPLAY"]
+	if display == "" {
+		return nil, nil
+	}
+	childEnv := map[string]string{}
+	for _, k := range []string{"DISPLAY", "XAUTHORITY"} {
+		if v, ok := published[k]; ok {
+			childEnv[k] = v
+		}
+	}
+	user, err := userFor(e)
+	if err != nil {
+		return nil, err
+	}
+	proc, err := runIn(e, []string{"python3", "-c", grabScript, display, fmt.Sprint(maxW), fmt.Sprint(maxH), fmt.Sprint(quality)}, childEnv, user, 20)
+	if err != nil {
+		slog.Debug(fmt.Sprintf("sandbox screen grab failed: %s", err))
+		return nil, nil
+	}
+	if proc.ReturnCode != 0 || !bytes.HasPrefix(proc.Stdout, []byte{0xff, 0xd8}) {
+		slog.Debug(fmt.Sprintf("sandbox screen grab failed: %s", tailText(proc.Stderr, 300)))
+		return nil, nil
+	}
+	return proc.Stdout, nil
 }
 
 // Desktop binaries the sandbox lacks

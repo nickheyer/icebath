@@ -2,10 +2,7 @@ package pet
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -21,8 +18,6 @@ type Run struct {
 	W    io.Writer
 	Env  *tools.Env
 }
-
-func (r *Run) printf(format string, a ...any) { fmt.Fprintf(r.W, format+"\n", a...) }
 
 // display.pet config dict, empty when absent or not a dict
 func (r *Run) PetConfig() (map[string]any, error) {
@@ -124,150 +119,4 @@ func (r *Run) SetPetScale(value any) (float64, string, error) {
 		return 0, "", err
 	}
 	return scale, "", nil
-}
-
-// Flips display.pet.enabled, adopting the first installed pet when none resolves
-func (r *Run) ToggleDisplay() (bool, *string, *string, error) {
-	cfg, err := r.PetConfig()
-	if err != nil {
-		return false, nil, nil, err
-	}
-	p, err := ResolveActivePet(r.Home, CfgText(cfg, "slug"))
-	if err != nil {
-		return false, nil, nil, err
-	}
-	if Enabled(cfg) {
-		if _, err := r.UpdatePetConfig(nil, "enabled", false); err != nil {
-			return false, nil, nil, err
-		}
-		if p != nil {
-			return false, &p.DisplayName, nil, nil
-		}
-		return false, nil, nil, nil
-	}
-	if p == nil {
-		installed, err := InstalledPets(r.Home)
-		if err != nil {
-			return false, nil, nil, err
-		}
-		if len(installed) == 0 {
-			msg := "no pets installed — /pet list to browse, or /pet <slug> to adopt"
-			return false, nil, &msg, nil
-		}
-		p = installed[0]
-		if err := r.SetActive(p.Slug); err != nil {
-			return false, nil, nil, err
-		}
-	} else if _, err := r.UpdatePetConfig(nil, "enabled", true); err != nil {
-		return false, nil, nil, err
-	}
-	return true, &p.DisplayName, nil, nil
-}
-
-// Prints a slice of the public petdex gallery as the CLI and TUI text fallback
-func (r *Run) PrintGallery(limit int) error {
-	entries, err := FetchManifest(r.Ctx, r.Env, false)
-	if err != nil {
-		var me *ManifestError
-		if errors.As(err, &me) {
-			r.printf("◈ Couldn't reach the petdex gallery: %s", me.Msg)
-			return nil
-		}
-		return err
-	}
-	installedPets, err := InstalledPets(r.Home)
-	if err != nil {
-		return err
-	}
-	installed := map[string]bool{}
-	for _, p := range installedPets {
-		installed[p.Slug] = true
-	}
-	shown := entries
-	if limit > 0 && len(entries) > limit {
-		shown = entries[:limit]
-	}
-	r.printf("❆ petdex gallery — first %d of %d:", len(shown), len(entries))
-	for _, e := range shown {
-		mark := "○"
-		if installed[e.Slug] {
-			mark = "●"
-		}
-		r.printf("  %s %-24s %s", mark, e.Slug, e.DisplayName)
-	}
-	r.printf("  /pet <slug> to adopt · /pet to toggle")
-	return nil
-}
-
-// Pointed to string or None for formatting
-func derefOrNone(s *string) any {
-	if s == nil {
-		return nil
-	}
-	return *s
-}
-
-// Runs slash pet toggle, list, scale, off or adoption by slug, every outcome said as translated text
-func (r *Run) Slash(arg string, t func(string, map[string]any) string, say func(string)) error {
-	low := pystr.Lower(arg)
-	switch {
-	case arg == "" || low == "toggle":
-		enabled, name, errMsg, err := r.ToggleDisplay()
-		if err != nil {
-			return err
-		}
-		switch {
-		case errMsg != nil && *errMsg != "":
-			say(t("pet.error", map[string]any{"error": *errMsg}))
-		case enabled:
-			say(t("pet.is_out", map[string]any{"name": derefOrNone(name)}))
-		case name != nil && *name != "":
-			say(t("pet.put_away_named", map[string]any{"name": *name}))
-		default:
-			say(t("pet.put_away", nil))
-		}
-	case low == "list" || low == "gallery" || low == "browse" || low == "all":
-		return r.PrintGallery(20)
-	case low == "scale" || strings.HasPrefix(low, "scale "):
-		value := pystr.Strip(pystr.Slice(arg, len("scale"), pystr.Len(arg)))
-		if value == "" {
-			say(t("pet.usage_scale", nil))
-			return nil
-		}
-		scale, errMsg, err := r.SetPetScale(value)
-		if err != nil {
-			return err
-		}
-		if errMsg != "" {
-			say(t("pet.error", map[string]any{"error": errMsg}))
-			return nil
-		}
-		shown, err := pyrepr.Format(scale, "g")
-		if err != nil {
-			return err
-		}
-		say(t("pet.scale_set", map[string]any{"scale": shown}))
-	case low == "off":
-		if _, err := r.UpdatePetConfig(nil, "enabled", false); err != nil {
-			return err
-		}
-		say(t("pet.put_away", nil))
-	default:
-		say(t("pet.fetching", map[string]any{"name": arg}))
-		installed, err := InstallPet(r.Ctx, r.Env, r.Home, arg, false)
-		if err != nil {
-			var se *StoreError
-			var me *ManifestError
-			if errors.As(err, &se) || errors.As(err, &me) {
-				say(t("pet.adopt_failed", map[string]any{"name": arg, "error": pyrepr.ExceptionMessage(err)}))
-				return nil
-			}
-			return err
-		}
-		if err := r.SetActive(arg); err != nil {
-			return err
-		}
-		say(t("pet.is_out", map[string]any{"name": installed.DisplayName}))
-	}
-	return nil
 }

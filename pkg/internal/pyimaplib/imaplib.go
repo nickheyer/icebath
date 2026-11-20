@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -148,7 +149,7 @@ func Open(ctx context.Context, host string, port int, timeout time.Duration, tls
 		dialHost = "localhost"
 	}
 	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(dialHost, strconv.Itoa(port)))
+	conn, err := netpref.DialContext(dialer.DialContext)(ctx, "tcp", net.JoinHostPort(dialHost, strconv.Itoa(port)))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -32,16 +32,6 @@ func TestToolKindMapUnknownToolReturnsOtherKind(t *testing.T) {
 	}
 }
 
-func TestMakeToolCallIdIdsAreUnique(t *testing.T) {
-	ids := map[string]bool{}
-	for range 100 {
-		ids[MakeToolCallID()] = true
-	}
-	if len(ids) != 100 {
-		t.Fatal(len(ids))
-	}
-}
-
 func TestBuildToolTitleTerminalTitleTruncatesLongCommand(t *testing.T) {
 	title := BuildToolTitle("terminal", obj("command", strings.Repeat("x", 200)))
 	if runeLen(title) >= 120 || !strings.Contains(title, "...") {

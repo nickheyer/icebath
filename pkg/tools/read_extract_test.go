@@ -298,8 +298,6 @@ func emptyODT(t *testing.T) []byte {
 	return zipOf(t, map[string]string{"mimetype": "application/vnd.oasis.opendocument.text", "content.xml": `<office:document-content ` + odfNS + `><office:body><office:text/></office:body></office:document-content>`})
 }
 
-const ()
-
 func TestReadExtractPDFNeedsOCR(t *testing.T) {
 	t.Setenv("FIRECRAWL_API_KEY", "")
 	t.Setenv("PATH", t.TempDir())

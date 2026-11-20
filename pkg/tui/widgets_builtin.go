@@ -207,37 +207,22 @@ func (w *weatherState) fail(reason string) {
 	w.loading, w.failure = false, reason
 }
 
-// Demo grid, its size, the cell under the cursor, the marked cells and the live series of the streams mode
-type gridState struct {
-	cols, rows int
-	x, y       int
-	marked     map[[2]int]bool
-	streams    bool
-	series     map[[2]int][]float64
-}
-
-// Size of a demo grid from 4x3, 4 3 or one number of columns
-func parseGrid(arg string) (cols, rows int, ok bool) {
-	cols, rows = 3, 2
-	fields := strings.FieldsFunc(strings.ToLower(arg), func(r rune) bool { return r == 'x' || r == ' ' || r == '×' })
-	if len(fields) > 2 {
-		return 0, 0, false
-	}
-	for i, f := range fields {
-		n, err := strconv.Atoi(f)
-		if err != nil || n < 1 || n > 12 {
-			return 0, 0, false
-		}
-		if i == 0 {
-			cols = n
-		} else {
-			rows = n
-		}
-	}
-	return cols, rows, true
-}
-
 var dialogZones = []string{"center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"}
+
+// Sample dialog of the dialog demo, the zone it sits in and what it says, handed over whole by a widget that opens it
+type sampleDialog struct {
+	zone  string
+	title string
+	body  string
+	hint  string
+}
+
+// Rows of a sample dialog, its title, its body and its hint with a blank row between them
+func (d sampleDialog) rows() []string {
+	rows := []string{d.title, ""}
+	rows = append(rows, strings.Split(d.body, "\n")...)
+	return append(rows, "", d.hint)
+}
 
 func init() {
 	for _, w := range []Widget{
@@ -305,104 +290,7 @@ func init() {
 				}
 				return WidgetView{Lines: lines}, nil
 			}},
-		{ID: "grid-test", Help: "open an interactive widget grid demo", Usage: "usage: /grid-test [cols]x[rows]  ·  /grid-test [cols] [rows]  ·  /grid-test streams", Mode: "modal", Every: 300 * time.Millisecond,
-			Open: func(_ context.Context, arg string) (any, bool, error) {
-				g := &gridState{marked: map[[2]int]bool{}, series: map[[2]int][]float64{}}
-				if strings.EqualFold(strings.TrimSpace(arg), "streams") {
-					g.cols, g.rows, g.streams = 3, 2, true
-					return g, true, nil
-				}
-				cols, rows, ok := parseGrid(arg)
-				g.cols, g.rows = cols, rows
-				return g, ok, nil
-			},
-			Tick: func(_ context.Context, state any) (any, error) {
-				g := state.(*gridState)
-				if !g.streams {
-					return g, nil
-				}
-				for y := range g.rows {
-					for x := range g.cols {
-						cell := [2]int{x, y}
-						series := g.series[cell]
-						last := 0.5
-						if len(series) > 0 {
-							last = series[len(series)-1]
-						}
-						series = append(series, min(max(last+(rand.Float64()-0.5)*0.2, 0), 1))
-						if len(series) > 40 {
-							series = series[1:]
-						}
-						g.series[cell] = series
-					}
-				}
-				return g, nil
-			},
-			Input: func(_ context.Context, state any, in WidgetInput) (any, bool, error) {
-				g := state.(*gridState)
-				switch {
-				case closesWidget(in):
-					return g, false, nil
-				case in.Key == "left" || in.Text == "h":
-					g.x = max(g.x-1, 0)
-				case in.Key == "right" || in.Text == "l":
-					g.x = min(g.x+1, g.cols-1)
-				case in.Key == "up" || in.Text == "k":
-					g.y = max(g.y-1, 0)
-				case in.Key == "down" || in.Text == "j":
-					g.y = min(g.y+1, g.rows-1)
-				case in.Key == "enter" || in.Key == "space" || in.Text == " ":
-					g.marked[[2]int{g.x, g.y}] = !g.marked[[2]int{g.x, g.y}]
-				case in.Text == "+":
-					g.cols = min(g.cols+1, 12)
-				case in.Text == "-":
-					g.cols = max(g.cols-1, 1)
-				case in.Text == "]":
-					g.rows = min(g.rows+1, 12)
-				case in.Text == "[":
-					g.rows = max(g.rows-1, 1)
-				case in.Text == "s":
-					g.streams = !g.streams
-				}
-				g.x, g.y = min(g.x, g.cols-1), min(g.y, g.rows-1)
-				return g, true, nil
-			},
-			Render: func(_ context.Context, frame WidgetFrame) (WidgetView, error) {
-				g := frame.State.(*gridState)
-				cellW := max((frame.Cols-1)/g.cols-1, 4)
-				cellH := max((frame.Rows-2)/g.rows-1, 1)
-				var lines []WidgetLine
-				rule := "+" + strings.Repeat(strings.Repeat("-", cellW)+"+", g.cols)
-				for y := range g.rows {
-					lines = append(lines, widgetText("border", rule))
-					for row := range cellH {
-						line := WidgetLine{Spans: []WidgetSpan{{Text: "|", Role: "border"}}}
-						for x := range g.cols {
-							cell := [2]int{x, y}
-							text := ""
-							if row == cellH/2 {
-								text = fmt.Sprintf("%d,%d", x+1, y+1)
-								if g.streams {
-									series := g.series[cell]
-									text = sparkline(series[max(len(series)-cellW+2, 0):])
-								}
-								if g.marked[cell] {
-									text = "● " + text
-								}
-							}
-							pad := max(cellW-len([]rune(text)), 0)
-							span := WidgetSpan{Text: strings.Repeat(" ", pad/2) + text + strings.Repeat(" ", pad-pad/2), Role: "text"}
-							if x == g.x && y == g.y {
-								span.Inverse, span.Role = true, "accent"
-							}
-							line.Spans = append(line.Spans, span, WidgetSpan{Text: "|", Role: "border"})
-						}
-						lines = append(lines, line)
-					}
-				}
-				lines = append(lines, widgetText("border", rule))
-				return WidgetView{Lines: append(lines, widgetText("muted", "arrows move · space marks · + - columns · [ ] rows · s streams · q closes"))}, nil
-			}},
+		gridTestWidget(),
 		{ID: "dialog-test", Help: "open a sample dialog over a faked backdrop", Usage: "usage: /dialog-test [zone]   zones: " + strings.Join(dialogZones, ", "), Mode: "modal",
 			Open: func(_ context.Context, arg string) (any, bool, error) {
 				zone := strings.ToLower(strings.TrimSpace(arg))
@@ -411,7 +299,7 @@ func init() {
 				}
 				for _, known := range dialogZones {
 					if known == zone {
-						return zone, true, nil
+						return sampleDialog{zone: zone, title: "Sample dialog · " + zone, body: "Windows of the terminal UI open in this zone.", hint: "enter or esc closes"}, true, nil
 					}
 				}
 				return nil, false, nil
@@ -420,8 +308,8 @@ func init() {
 				return state, !closesWidget(in) && in.Key != "enter", nil
 			},
 			Render: func(_ context.Context, frame WidgetFrame) (WidgetView, error) {
-				zone := frame.State.(string)
-				body := []string{"Sample dialog · " + zone, "", "Windows of the terminal UI open in this zone.", "", "enter or esc closes"}
+				dialog := frame.State.(sampleDialog)
+				zone, body := dialog.zone, dialog.rows()
 				width := 0
 				for _, row := range body {
 					width = max(width, len([]rune(row)))

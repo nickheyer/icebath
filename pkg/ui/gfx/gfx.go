@@ -449,7 +449,7 @@ func (t *Terminal) unregister(s *Surface) {
 }
 
 // Sequence wrapped for tmux to pass to the terminal under it, unchanged outside tmux
-func (t *Terminal) wrap(seq string) string {
+func (t *Terminal) Wrap(seq string) string {
 	if !t.tmux {
 		return seq
 	}

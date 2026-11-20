@@ -19,6 +19,7 @@ import (
 	"golang.org/x/text/transform"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -217,7 +218,7 @@ func NewNtfyAdapter(ctx context.Context, config *gateway.PlatformConfig) (*NtfyA
 
 // HTTP client like a default httpx client, proxy env honoured and redirects returned unfollowed
 func newHTTPClient() *http.Client {
-	return &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), CheckRedirect: pyhttpx.RedirectPolicy(false)}
+	return &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: pyhttpx.RedirectPolicy(false)}
 }
 
 // Starts the streaming subscription task and marks the adapter connected, false without a topic

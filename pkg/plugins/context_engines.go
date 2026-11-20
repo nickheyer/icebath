@@ -3,19 +3,16 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const (
-	contextEngineUserNamespace = "_icebath_user_context_engine"
-	contextEngineBase          = "agent.context_engine:ContextEngine"
-	contextEngineCapture       = "register_context_engine"
+	contextEngineBase    = "agent.context_engine:ContextEngine"
+	contextEngineCapture = "register_context_engine"
 )
 
 // ContextEngineInfo is one discovered context engine with its description and availability
@@ -33,59 +30,48 @@ func contextEnginePluginsDir() string {
 	return ""
 }
 
-// Whether the first 8192 characters of __init__.py mention the context engine contract
-func isContextEngineDir(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "__init__.py"))
-	if err != nil {
-		return false
-	}
-	source := strings.ToValidUTF8(strings.TrimPrefix(string(raw), "\ufeff"), "�")
-	if utf8.RuneCountInString(source) > 8192 {
-		source = string([]rune(source)[:8192])
-	}
-	return strings.Contains(source, "register_context_engine") || strings.Contains(source, "ContextEngine")
-}
+// Whether a user plugin directory holds a wasm or program plugin that offers a context engine
+func isContextEngineDir(path string) bool { return GuestProvides(path, CategoryContextEngine) }
 
 // Bundled then user engine dirs by name, a bundled name winning a collision
-func iterEngineDirs(ctx context.Context) ([][2]string, error) {
-	var bundled []string
-	if dir := contextEnginePluginsDir(); dir != "" {
-		var err error
-		if bundled, err = IterPluginDirs(dir); err != nil {
-			return nil, err
-		}
-	}
+func iterEngineDirs(ctx context.Context) [][2]string {
 	var dirs [][2]string
 	seen := map[string]bool{}
-	for _, child := range bundled {
-		dirs = append(dirs, [2]string{filepath.Base(child), child})
-		seen[filepath.Base(child)] = true
+	if dir := contextEnginePluginsDir(); dir != "" {
+		for _, child := range GuestPluginDirs(dir) {
+			dirs = append(dirs, [2]string{filepath.Base(child), child})
+			seen[filepath.Base(child)] = true
+		}
 	}
 	if userDir, ok := UserPluginsDir(ctx); ok {
-		user, err := IterPluginDirs(userDir)
-		if err != nil {
-			return nil, err
-		}
-		for _, child := range user {
+		for _, child := range GuestPluginDirs(userDir) {
 			if !seen[filepath.Base(child)] && isContextEngineDir(child) {
 				dirs = append(dirs, [2]string{filepath.Base(child), child})
 			}
 		}
 	}
-	return dirs, nil
+	return dirs
 }
 
 // Every bundled and user context engine with its plugin.yaml description and availability
 func DiscoverContextEngines(ctx context.Context) ([]ContextEngineInfo, error) {
-	dirs, err := iterEngineDirs(ctx)
-	if err != nil {
-		return nil, err
-	}
+	dirs := iterEngineDirs(ctx)
 	out := make([]ContextEngineInfo, 0, len(dirs))
 	for _, d := range dirs {
 		child := d[1]
-		out = append(out, ContextEngineInfo{Name: d[0], Description: ReadPluginDescription(child),
-			Available: ProbeAvailability(func() (any, error) { return loadEngineFromDir(ctx, child) })})
+		var engine *HostedObject
+		available := ProbeAvailability(func() (any, error) {
+			obj, err := loadEngineFromDir(ctx, child)
+			if obj == nil {
+				return nil, err
+			}
+			engine = obj
+			return obj, err
+		})
+		out = append(out, ContextEngineInfo{Name: d[0], Description: ReadPluginDescription(child), Available: available})
+		if engine != nil {
+			engine.Dismiss()
+		}
 	}
 	return out, nil
 }
@@ -93,7 +79,7 @@ func DiscoverContextEngines(ctx context.Context) ([]ContextEngineInfo, error) {
 // Engine dir of a name, bundled first then a user plugin dir that holds a context engine
 func FindEngineDir(ctx context.Context, name string) (string, bool) {
 	if dir := contextEnginePluginsDir(); dir != "" {
-		if bundled := pypath.Join(dir, name); isDir(bundled) {
+		if bundled := pypath.Join(dir, name); guestManifestOfDir(bundled) != nil {
 			return bundled, true
 		}
 	}
@@ -122,28 +108,17 @@ func LoadContextEngine(ctx context.Context, name string) *HostedObject {
 	return instance
 }
 
-// Context engine instance of a dir, a bundled engine through the in process loader and its collector
+// Context engine a plugin directory registers, its slash commands forwarded to the plugin command registry
 func loadEngineFromDir(ctx context.Context, engineDir string) (*HostedObject, error) {
-	name := filepath.Base(engineDir)
 	m := GetPluginManager(ctx)
 	host, err := m.hostForDir(engineDir)
 	if err != nil {
 		return nil, err
 	}
-	if filepath.Dir(engineDir) != contextEnginePluginsDir() {
-		return host.LoadInstance(ctx, engineDir, contextEngineUserNamespace+"."+name, contextEngineBase, contextEngineCapture, nil, nil)
-	}
-	return host.loadInstance(ctx, engineDir, "plugins.context_engine."+name, contextEngineBase, contextEngineCapture,
-		newEngineCollectorContext(m, name), nil, map[string]any{
-			"in_process": true, "parents": []any{"plugins", "plugins.context_engine"}, "plugins_root": GetBundledPluginsDir(),
-			"collector_class": "_EngineCollector", "ctx_methods": anyList(engineCollectorMethods),
-		})
+	return host.LoadInstance(ctx, engineDir, contextEngineBase, contextEngineCapture, newEngineCollectorContext(m, filepath.Base(engineDir)), nil)
 }
 
-// Registrations the engine collector answers, every other attribute an AttributeError
-var engineCollectorMethods = []string{"register_command", "register_tool", "register_hook", "register_cli_command", "register_memory_provider"}
-
-// Collector of a bundled context engine forwarding its slash commands to the plugin command registry
+// Collector of a context engine forwarding its slash commands to the plugin command registry
 type engineCollector struct {
 	name string
 }
@@ -175,6 +150,19 @@ func (e *engineCollector) serve(ctx context.Context, h *PluginHost, c *Context, 
 		return nil, nil
 	}
 	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("context engine registration has no %s", method)}
+}
+
+// Removes every slash command the engine registered
+func (e *engineCollector) dropCommands(m *Manager) {
+	owner := "context-engine:" + e.name
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for name, cmd := range m.pluginCommands {
+		if cmd.Plugin == owner {
+			delete(m.pluginCommands, name)
+			delete(m.pluginCommandSeq, name)
+		}
+	}
 }
 
 // Registers an engine slash command unless its name is empty, built in or taken by a plugin

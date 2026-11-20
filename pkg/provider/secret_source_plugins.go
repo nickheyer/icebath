@@ -174,10 +174,13 @@ func (h hostedSecretSource) Fetch(cfg map[string]any, homePath string, _ *Source
 	return result
 }
 
-// Setup UI schema the child declares, key to description and default
+// Setup UI schema the plugin declares, key to description and default, empty when it declares none
 func (h hostedSecretSource) ConfigSchema() map[string]map[string]any {
-	got, err := h.call(nil, "config_schema")
 	out := map[string]map[string]any{}
+	if !h.obj.HasMethod("config_schema") {
+		return out
+	}
+	got, err := h.call(nil, "config_schema")
 	if err != nil {
 		return out
 	}
@@ -187,17 +190,29 @@ func (h hostedSecretSource) ConfigSchema() map[string]map[string]any {
 	return out
 }
 
+// The plugin's own activation, the enabled key of its section when it declares none
 func (h hostedSecretSource) IsEnabled(cfg map[string]any) (bool, error) {
+	if !h.obj.HasMethod("is_enabled") {
+		return SecretSourceEnabled(cfg), nil
+	}
 	got, err := h.call(nil, "is_enabled", cfg)
 	return err == nil && truthyAny(got), err
 }
 
+// The plugin's own overwrite verdict, the section key over the declared default when it declares none
 func (h hostedSecretSource) OverrideExisting(cfg map[string]any) (bool, error) {
+	if !h.obj.HasMethod("override_existing") {
+		return SecretSourceOverrideExisting(h.Spec(), cfg), nil
+	}
 	got, err := h.call(nil, "override_existing", cfg)
 	return err == nil && truthyAny(got), err
 }
 
+// Names the plugin protects from every source, its bootstrap credential variable when it declares none
 func (h hostedSecretSource) ProtectedEnvVars(cfg map[string]any) (map[string]bool, error) {
+	if !h.obj.HasMethod("protected_env_vars") {
+		return SecretSourceProtectedEnvVars(h.Spec(), cfg), nil
+	}
 	got, err := h.call(nil, "protected_env_vars", cfg)
 	if err != nil {
 		return nil, err
@@ -209,7 +224,11 @@ func (h hostedSecretSource) ProtectedEnvVars(cfg map[string]any) (map[string]boo
 	return out, nil
 }
 
+// Fetch budget the plugin answers, the timeout_seconds key of its section when it declares none
 func (h hostedSecretSource) FetchTimeoutSeconds(cfg map[string]any) (float64, error) {
+	if !h.obj.HasMethod("fetch_timeout_seconds") {
+		return SecretSourceFetchTimeout(cfg).Seconds(), nil
+	}
 	got, err := h.call(nil, "fetch_timeout_seconds", cfg)
 	if err != nil {
 		return 0, err
@@ -217,7 +236,11 @@ func (h hostedSecretSource) FetchTimeoutSeconds(cfg map[string]any) (float64, er
 	return CoerceFloat(got, DefaultSecretFetchTimeout.Seconds()), nil
 }
 
+// Fix it hint the plugin answers, the hint of its declared templates when it declares none
 func (h hostedSecretSource) Remediation(kind SecretErrorKind, cfg map[string]any) (string, error) {
+	if !h.obj.HasMethod("remediation") {
+		return SecretSourceRemediation(h.Spec(), kind, cfg), nil
+	}
 	var wireKind any
 	if kind != "" {
 		wireKind = string(kind)

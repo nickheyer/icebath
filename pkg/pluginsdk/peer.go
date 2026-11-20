@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -28,11 +29,36 @@ type peer struct {
 	objects map[int64]*Object
 	hosts   map[string]*host
 	cancels map[string]context.CancelFunc
+	// Host callables and objects the plugin no longer holds, released on the host with the next request
+	dropped []int64
 }
 
 func newPeer(l link) *peer {
 	return &peer{link: l, funcs: map[int64]Func{}, objects: map[int64]*Object{}, hosts: map[string]*host{},
 		cancels: map[string]context.CancelFunc{}}
+}
+
+// Queues the id of a host callable or object for release once the plugin holds no handle of it
+func (p *peer) drop(id int64) {
+	p.mu.Lock()
+	p.dropped = append(p.dropped, id)
+	p.mu.Unlock()
+}
+
+// Tells the host which of its callables and objects the plugin dropped, keeping the ids for the next request when it fails
+func (p *peer) releaseDropped(ctx context.Context) {
+	p.mu.Lock()
+	ids := p.dropped
+	p.dropped = nil
+	p.mu.Unlock()
+	if len(ids) == 0 {
+		return
+	}
+	if _, err := p.request(ctx, "release_parent", map[string]any{"ids": ids}); err != nil {
+		p.mu.Lock()
+		p.dropped = append(ids, p.dropped...)
+		p.mu.Unlock()
+	}
 }
 
 type servingKey struct{}
@@ -53,6 +79,12 @@ func (p *peer) call(ctx context.Context, method string, params map[string]any) (
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	p.releaseDropped(ctx)
+	return p.request(ctx, method, params)
+}
+
+// One request frame to the host and its decoded reply
+func (p *peer) request(ctx context.Context, method string, params map[string]any) (any, error) {
 	p.mu.Lock()
 	p.ids++
 	id := p.ids
@@ -149,52 +181,75 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 	case "load":
 		return p.load(ctx, params)
 	case "invoke":
-		fn := p.function(params["ref"])
-		if fn == nil {
-			return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("callback %v was released", params["ref"])}
-		}
-		value, err := fn(ctx, p.decodeList(params["args"]), p.decodeMap(params["kwargs"]))
+		return p.invoke(ctx, params)
+	case "obj_invoke":
+		obj, err := p.requireObject(params["ref"])
 		if err != nil {
 			return nil, err
 		}
-		if _, judged := params["judge"]; judged {
-			_, isRecord := value.(Record)
-			return map[string]any{"value": value, "is_instance": isRecord}, nil
+		name := text(params["method"])
+		fn := obj.Methods[name]
+		if fn == nil || strings.HasPrefix(name, "_") {
+			return nil, &Error{Type: "AttributeError", Message: name}
 		}
-		return value, nil
-	case "obj_invoke":
-		obj := p.object(params["ref"])
-		if obj == nil {
-			return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", params["ref"])}
-		}
-		fn := obj.Methods[text(params["method"])]
-		if fn == nil {
-			return nil, &Error{Type: "AttributeError", Message: text(params["method"])}
-		}
-		return fn(ctx, p.decodeList(params["args"]), p.decodeMap(params["kwargs"]))
+		return fn(context.WithValue(ctx, selfKey{}, obj), p.decodeList(params["args"]), p.decodeMap(params["kwargs"]))
 	case "obj_getattr":
-		obj := p.object(params["ref"])
-		if obj == nil {
-			return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", params["ref"])}
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
 		}
 		name := text(params["name"])
-		p.mu.Lock()
-		value, ok := obj.Attrs[name]
-		p.mu.Unlock()
+		value, ok := obj.Attr(name)
 		if !ok || strings.HasPrefix(name, "_") {
 			return map[string]any{"__missing__": name}, nil
 		}
 		return value, nil
+	case "obj_next":
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
+		}
+		if obj.Next == nil {
+			return nil, &Error{Type: "TypeError", Message: fmt.Sprintf("%s object is not iterable", obj.Type)}
+		}
+		item, ok, err := obj.Next(context.WithValue(ctx, selfKey{}, obj))
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return map[string]any{"done": true}, nil
+		}
+		return map[string]any{"done": false, "item": item}, nil
 	case "obj_setattr":
 		return p.objSetattr(params)
 	case "load_instance":
 		return p.loadInstance(ctx, params)
 	case "profile_call":
 		return p.profileCall(ctx, params)
+	case "profile_client":
+		params["attr"] = "create_client"
+		return p.profileCall(ctx, params)
+	case "obj_defined_outside":
+		return p.definedOutside(params)
+	case "platform_bind":
+		return p.platformBind(params)
+	case "platform_call":
+		return p.platformCall(ctx, params)
+	case "login_backend":
+		return p.loginBackend(ctx, params)
+	case "build_cli":
+		return p.buildCLI(ctx, params)
+	case "run_cli":
+		return p.runCLI(ctx, params)
 	case "release":
 		p.mu.Lock()
 		for _, ref := range listOrEmpty(asList(params["refs"])) {
 			if id, ok := integer(ref); ok {
+				if obj := p.objects[id]; obj != nil {
+					for _, owned := range obj.owned {
+						delete(p.funcs, owned)
+					}
+				}
 				delete(p.funcs, id)
 				delete(p.objects, id)
 			}
@@ -216,6 +271,52 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 		return nil, nil
 	}
 	return nil, &Error{Type: "ValueError", Message: fmt.Sprintf("unknown plugin operation %q", method)}
+}
+
+// Object a request names by its reference, a lookup failure once the host released it
+func (p *peer) requireObject(ref any) (*Object, error) {
+	obj := p.object(ref)
+	if obj == nil {
+		return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", ref)}
+	}
+	return obj, nil
+}
+
+// Runs one plugin callback, filling the arguments the host derives from another one and answering those it asks back after the call
+func (p *peer) invoke(ctx context.Context, params map[string]any) (any, error) {
+	fn := p.function(params["ref"])
+	if fn == nil {
+		return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("callback %v was released", params["ref"])}
+	}
+	args := p.decodeList(params["args"])
+	for i, raw := range asList(params["derive"]) {
+		rule, _ := raw.(map[string]any)
+		from, ok := integer(rule["from"])
+		if rule == nil || !ok || i >= len(args) || from < 0 || from >= int64(len(args)) {
+			continue
+		}
+		source, _ := args[from].(map[string]any)
+		items, _ := source[text(rule["attr"])].(map[string]any)
+		args[i] = items[fmt.Sprint(p.decode(rule["key"]))]
+	}
+	value, err := fn(ctx, args, p.decodeMap(params["kwargs"]))
+	if err != nil {
+		return nil, err
+	}
+	if dump := asList(params["dump"]); len(dump) > 0 {
+		dumped := make([]any, len(dump))
+		for i, how := range dump {
+			if text(how) != "" && i < len(args) {
+				dumped[i] = args[i]
+			}
+		}
+		return map[string]any{"value": value, "dumped": dumped}, nil
+	}
+	if judge, judged := params["judge"].(string); judged {
+		record, isRecord := value.(Record)
+		return map[string]any{"value": value, "is_instance": isRecord && record.Type == judge[strings.LastIndex(judge, ":")+1:]}, nil
+	}
+	return value, nil
 }
 
 // Runs the plugin register function on a host bound to the plugin the request names
@@ -289,6 +390,16 @@ func (p *peer) funcRef(name string, fn Func) map[string]any {
 	return map[string]any{"__callable__": id, "name": name, "qualname": name, "module": "plugin", "async": false, "sig": openSignature}
 }
 
+// Wire reference of a callback that lives as long as the object owning it, released with the object
+func (p *peer) ownedRef(owner *Object, name string, fn Func) map[string]any {
+	ref := p.funcRef(name, fn)
+	id, _ := ref["__callable__"].(int64)
+	p.mu.Lock()
+	owner.owned = append(owner.owned, id)
+	p.mu.Unlock()
+	return ref
+}
+
 // Wire reference of an object, registering it for the host to call and read
 func (p *peer) objectRef(o *Object) map[string]any {
 	p.mu.Lock()
@@ -301,10 +412,16 @@ func (p *peer) objectRef(o *Object) map[string]any {
 		methods[name] = map[string]any{"async": false, "sig": openSignature}
 	}
 	live := []any{}
+	attrsMu.Lock()
 	for name := range o.Attrs {
 		live = append(live, name)
 	}
-	return map[string]any{"__object__": id, "type": o.Type, "methods": methods, "live": live}
+	attrsMu.Unlock()
+	ref := map[string]any{"__object__": id, "type": o.Type, "methods": methods, "live": live}
+	if o.identity != nil {
+		ref["identity"] = o.identity
+	}
+	return ref
 }
 
 // Wire form of a value the plugin sends
@@ -325,10 +442,39 @@ func (p *peer) encode(v any) any {
 		return p.objectRef(x)
 	case Record:
 		return map[string]any{"__record__": x.Type, "fields": p.encode(mapOrEmpty(x.Fields))}
+	case Ordered:
+		out := orderedObject{keys: make([]string, len(x)), values: make([]any, len(x))}
+		for i, pair := range x {
+			out.keys[i], out.values[i] = pair.Key, p.encode(pair.Value)
+		}
+		return out
+	case orderedObject:
+		return x
 	case *Handle:
+		if x == nil {
+			return nil
+		}
 		return map[string]any{"__handle__": x.id, "kind": x.Kind, "key": x.Key}
 	case *HostFunc:
+		if x == nil {
+			return nil
+		}
 		return map[string]any{"__parent_callable__": x.id}
+	case *HostObject:
+		if x == nil {
+			return nil
+		}
+		return map[string]any{"__parent_object__": x.id, "type": x.Type}
+	case *Event:
+		if x == nil {
+			return nil
+		}
+		return map[string]any{"__parent_event__": x.id}
+	case *Message:
+		if x == nil {
+			return nil
+		}
+		return p.encode(x.obj)
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, item := range x {
@@ -370,6 +516,36 @@ func (p *peer) encode(v any) any {
 	return plain
 }
 
+// Encoded mapping written as a JSON object with its keys in order
+type orderedObject struct {
+	keys   []string
+	values []any
+}
+
+// Writes the keys in their order, each value in its JSON form
+func (o orderedObject) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, key := range o.keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		name, err := json.Marshal(key)
+		if err != nil {
+			return nil, err
+		}
+		value, err := json.Marshal(o.values[i])
+		if err != nil {
+			return nil, err
+		}
+		b.Write(name)
+		b.WriteByte(':')
+		b.Write(value)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
 // Go form of a value the host sent, numbers as int64 or float64
 func (p *peer) decode(v any) any {
 	switch x := v.(type) {
@@ -396,7 +572,34 @@ func (p *peer) decode(v any) any {
 			return &Handle{peer: p, id: id, Kind: text(x["kind"]), Key: text(x["key"])}
 		}
 		if id, ok := integer(x["__parent_callable__"]); ok {
-			return &HostFunc{peer: p, id: id}
+			f := &HostFunc{peer: p, id: id}
+			runtime.AddCleanup(f, p.drop, id)
+			return f
+		}
+		if id, ok := integer(x["__parent_object__"]); ok {
+			o := &HostObject{peer: p, id: id, Type: text(x["type"])}
+			runtime.AddCleanup(o, p.drop, id)
+			return o
+		}
+		if id, ok := integer(x["__parent_event__"]); ok {
+			return &Event{peer: p, id: id}
+		}
+		if id, ok := integer(x["__child_object__"]); ok {
+			if stale, _ := x["stale"].(bool); !stale {
+				if obj := p.object(id); obj != nil {
+					return obj
+				}
+			}
+			return nil
+		}
+		if pairs, ok := x["__dict_items__"].([]any); ok && len(x) == 1 {
+			out := make(map[string]any, len(pairs))
+			for _, raw := range pairs {
+				if pair := asList(raw); len(pair) == 2 {
+					out[text(pair[0])] = p.decode(pair[1])
+				}
+			}
+			return out
 		}
 		if name, ok := x["__record__"].(string); ok {
 			fields, _ := p.decode(x["fields"]).(map[string]any)

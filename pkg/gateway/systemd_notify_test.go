@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 )
 
@@ -39,7 +40,7 @@ func TestNotifySupportsSystemdAbstractSocket(t *testing.T) {
 }
 
 func TestNotifyUsesNonblockingDatagramSend(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notify.sock")
+	path := filepath.Join(hermetic.ShortDir(t), "notify.sock")
 	notifyReceiver(t, path)
 	t.Setenv("NOTIFY_SOCKET", path)
 	if !SystemdNotify("READY=1") {
@@ -60,7 +61,7 @@ func TestNotifyUsesNonblockingDatagramSend(t *testing.T) {
 }
 
 func TestWatchdogSendsReadyHeartbeatAndStopping(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notify.sock")
+	path := filepath.Join(hermetic.ShortDir(t), "notify.sock")
 	receiver := notifyReceiver(t, path)
 	t.Setenv("NOTIFY_SOCKET", path)
 	t.Setenv("WATCHDOG_USEC", "20000")

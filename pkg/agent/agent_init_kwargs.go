@@ -296,6 +296,8 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 		o.LoadSoulIdentity = pyrepr.Truthy(value)
 	case "skip_memory":
 		o.SkipMemory = pyrepr.Truthy(value)
+	case "memory_agent_context":
+		o.MemoryAgentContext = agentKwargText(value)
 	case "skip_background_review":
 		o.SkipBackgroundReview = pyrepr.Truthy(value)
 	case "session_db":

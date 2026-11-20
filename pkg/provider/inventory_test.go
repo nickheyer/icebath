@@ -424,11 +424,6 @@ func TestPickerMetadataUsesOneConfigReadForRealModelsDevLookups(t *testing.T) {
 	}
 }
 
-type invFakePool struct{ state *LimitState }
-
-func (p invFakePool) Entries() []PooledCredential            { return nil }
-func (p invFakePool) LimitState(models []string) *LimitState { return p.state }
-
 var invAuxConfig = `model:
   provider: openrouter
   default: anthropic/claude-opus-4.6

@@ -12,8 +12,6 @@ import (
 )
 
 const (
-	quotaHoldStateKey        = "quota_hold_until"
-	quotaHoldScheduleExprKey = "quota_hold_cron_expr"
 	// QuotaHoldSlackSeconds pads the provider window so the parked fire lands after it reopens
 	QuotaHoldSlackSeconds = 60
 )

@@ -72,7 +72,7 @@ func (p *peer) loadInstance(ctx context.Context, params map[string]any) (any, er
 	return p.objectRef(h.capture.captured), nil
 }
 
-// Python truthiness of a decoded wire value
+// Truthiness of a wire value, raw or decoded, as the host judges it
 func truthy(v any) bool {
 	switch x := v.(type) {
 	case nil:
@@ -84,6 +84,12 @@ func truthy(v any) bool {
 	case json.Number:
 		f, err := x.Float64()
 		return err != nil || f != 0
+	case int:
+		return x != 0
+	case int64:
+		return x != 0
+	case float64:
+		return x != 0
 	case []any:
 		return len(x) > 0
 	case map[string]any:
@@ -166,12 +172,7 @@ func (p *peer) objSetattr(params map[string]any) (any, error) {
 	if obj == nil || strings.HasPrefix(name, "_") {
 		return nil, &Error{Type: "AttributeError", Message: name}
 	}
-	p.mu.Lock()
-	if obj.Attrs == nil {
-		obj.Attrs = map[string]any{}
-	}
-	obj.Attrs[name] = p.decode(params["value"])
-	p.mu.Unlock()
+	obj.SetAttr(name, p.decode(params["value"]))
 	return nil, nil
 }
 

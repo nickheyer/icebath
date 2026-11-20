@@ -30,9 +30,6 @@ var (
 // Discovery entry point the background goroutine runs, swapped by tests
 var discoverMCPTools = ConnectAll
 
-// Background start a deferred discovery fires, replaced only where a test patches it
-var startBackgroundDiscovery = StartBackgroundDiscovery
-
 // discoveryRun is one background discovery goroutine whose done channel closes when it returns
 type discoveryRun struct {
 	done chan struct{}

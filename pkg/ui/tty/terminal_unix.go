@@ -3,6 +3,7 @@
 package tty
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -78,10 +79,19 @@ func stopGroup() error {
 	return restore()
 }
 
-// Window size, job control stops and continues, terminate and hangup, handled until the returned stop is called
+// Failure of the size request of a terminal that hung up, nil for one still there
+func hungUp(out *os.File) error {
+	_, _, err := term.GetSize(out.Fd())
+	if errors.Is(err, unix.EIO) || errors.Is(err, unix.ENXIO) {
+		return err
+	}
+	return nil
+}
+
+// Window size, job control stops and continues, interrupt, terminate and hangup, handled until the returned stop is called
 func (p *Program) signals() func() {
 	ch := make(chan os.Signal, 4)
-	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTSTP, syscall.SIGCONT, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	quit := make(chan struct{})
 	sizes := make(chan [2]int, 1)
 	var wg sync.WaitGroup
@@ -119,7 +129,7 @@ func (p *Program) signals() func() {
 					p.stopSignal()
 				case syscall.SIGCONT:
 					p.contSignal()
-				case syscall.SIGTERM, syscall.SIGHUP:
+				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP:
 					p.terminate(s.(syscall.Signal))
 				}
 			}

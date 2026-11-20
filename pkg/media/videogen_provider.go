@@ -410,31 +410,13 @@ func GetVideoGenProvider(ctx context.Context, name, scope string) VideoGenProvid
 	return videoGenRegistry.GetProvider(ctx, name, scope)
 }
 
-// Plugin facing registry that register_video_gen_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_video_gen_provider writes into, a plugin host object stored as the provider adapted from it
 func VideoGenScopedRegistry() plugins.ScopedRegistry {
-	return hostedVideoScopedRegistry{videoGenRegistry.Scoped()}
-}
-
-// Scoped registry view that wraps plugin host objects as VideoGenProvider values before delegating
-type hostedVideoScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedVideoScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedVideoGenProvider(p))
-}
-func (s hostedVideoScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedVideoGenProvider(p))
-}
-func (s hostedVideoScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedVideoGenProvider(p))
-}
-func (s hostedVideoScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedVideoScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedVideoGenProvider(p), scope)
-}
-func (s hostedVideoScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedVideoGenProvider(current), adaptHostedVideoGenProvider(replacement), scope)
+	return plugins.HostedScopedRegistry{Inner: videoGenRegistry.Scoped(), Adapt: adaptHostedVideoGenProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedVideoGenProvider)
+			return h.obj, ok
+		}}
 }
 
 // Configured provider failing closed when unregistered, else the single available registered provider

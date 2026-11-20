@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -138,12 +137,6 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 	}
 	hctx := home.WithOverride(ctx, tmp)
 	manager := NewManager(tmp)
-	host, err := manager.pluginHost()
-	if err != nil {
-		return err
-	}
-	host.envOverride = map[string]string{home.EnvHome: tmp, "ICEBATH_BUNDLED_PLUGINS": bundled,
-		EnvEnableProjectPlugins: "0", HostDenyNetworkEnv: "1"}
 	scope := manager.home
 	entriesBefore := map[string]*tools.Def{}
 	for _, name := range tools.Default.AllToolNames(hctx, scope) {
@@ -171,7 +164,9 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 				tools.Default.RestorePluginOverridePolicy(policyModule, current, policyBefore, scope)
 			}
 		}
-		host.Shutdown()
+		for _, host := range manager.GuestHosts() {
+			host.Shutdown()
+		}
 	}()
 	manifests := scanDirectory(pluginsRoot, "user", nil, "", 0)
 	if len(manifests) == 0 {
@@ -181,6 +176,14 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 		return &doctorLoadError{fmt.Sprintf("Expected one plugin manifest, discovered %d under %s", len(manifests), stagingRoot)}
 	}
 	mf := manifests[0]
+	if manifestRuntime(mf) != "" {
+		host, err := manager.guestHost(mf)
+		if err != nil {
+			return &doctorLoadError{err.Error()}
+		}
+		host.envOverride = map[string]string{home.EnvHome: tmp, "ICEBATH_BUNDLED_PLUGINS": bundled,
+			EnvEnableProjectPlugins: "0", HostDenyNetworkEnv: "1"}
+	}
 	if mf.Kind == "model-provider" {
 		registered, err := doctorLoadModelProvider(hctx, staged)
 		if err != nil {
@@ -416,11 +419,6 @@ func ResolvePluginPath(ctx context.Context, target string) (string, error) {
 	}
 	return "", &PluginPathNotFoundError{fmt.Sprintf("Plugin %s was not found as a path or installed plugin id", errchain.Show(raw))}
 }
-
-var (
-	pyDepDistSplit = regexp.MustCompile(`[<>=!~\[;\s]`)
-	pyDepUpperPin  = regexp.MustCompile(`<|==|~=`)
-)
 
 // Manifest v2 checks of versions, plugin dependencies, Python dependencies and the config schema
 func checkManifestV2(r *PluginDoctorReport, mf *Manifest) {

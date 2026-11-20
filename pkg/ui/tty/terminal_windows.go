@@ -78,17 +78,20 @@ func adoptInput(in *os.File) (func() error, error) {
 // Refuses every stop request, Windows having no job control to take the program
 func (p *Program) suspend(string) bool { return false }
 
-// Console close, logoff and shutdown, which Go reports as a terminate, handled until the returned stop is called
+// Whether the console hung up, never so on Windows, where a console that closes sends the program a terminate
+func hungUp(*os.File) error { return nil }
+
+// Console close, logoff and shutdown, which Go reports as a terminate, and the console interrupts, handled until the returned stop is called
 func (p *Program) signals() func() {
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGTERM)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 	quit, done := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(done)
 		select {
 		case <-quit:
-		case <-ch:
-			p.terminate(syscall.SIGTERM)
+		case s := <-ch:
+			p.terminate(s.(syscall.Signal))
 		}
 	}()
 	return func() {

@@ -26,6 +26,32 @@ type Item struct {
 	Detail string
 	Keys   string
 	Run    func() tea.Cmd
+	// Leaves the palette open when picked, for a row that changes what the palette shows
+	Stay bool
+}
+
+// Line under the rows of a palette, such as where a pick is saved or a warning about the lit row
+type Note struct {
+	Text  string
+	Style SegmentStyle
+}
+
+// Yes or no question a palette asks in its field and what a yes runs
+type inquiry struct {
+	text string
+	yes  func() tea.Cmd
+}
+
+// Words for the rows a scrolled picker or table hides above and below, replaced by an app that speaks its own language
+var HiddenText = func(above, below int) string {
+	var parts []string
+	if above > 0 {
+		parts = append(parts, "↑ "+strconv.Itoa(above)+" more")
+	}
+	if below > 0 {
+		parts = append(parts, "↓ "+strconv.Itoa(below)+" more")
+	}
+	return strings.Join(parts, " · ")
 }
 
 type scored struct {
@@ -56,6 +82,23 @@ type Palette struct {
 	OnClose func() tea.Cmd
 	// Keeps the items it accepts for the typed text in their own order, the fuzzy match when nil
 	Filter func(query string, it Item) bool
+	// Keeps a prompt open after enter, its owner closing it or putting rows in its place
+	Hold bool
+	// Shows the text typed into a prompt as dots
+	Masked bool
+	// Keymap context of the actions the palette answers besides its own, empty for none
+	Context string
+	// Actions of Context by id
+	Actions map[string]func() tea.Cmd
+	// Hints of the actions of Context, shown ahead of the palette's own
+	Extra []Hint
+	// Lines under the rows, read on every view
+	Notes func() []Note
+	// Step behind the close key, reporting whether it took the key
+	OnBack func() bool
+	// Ignores typing, picks and actions while its owner waits for an answer
+	Busy bool
+	ask  *inquiry
 }
 
 // Builds a palette over the items
@@ -92,14 +135,92 @@ func (p *Palette) highlightRow() int {
 	return int(math.Round(p.hl.Pos))
 }
 
-func (p *Palette) Title() string      { return "" }
-func (p *Palette) Glyph() string      { return p.theme.Glyphs.Palette }
-func (p *Palette) Key() string        { return "palette" }
-func (p *Palette) Init() tea.Cmd      { return nil }
-func (p *Palette) Contexts() []string { return []string{keys.Palette} }
+func (p *Palette) Title() string { return "" }
+func (p *Palette) Glyph() string { return p.theme.Glyphs.Palette }
+func (p *Palette) Key() string   { return "palette" }
+func (p *Palette) Init() tea.Cmd { return nil }
+
+// Keymap contexts in force, the yes and no keys while a question is asked and the palette's own context ahead of the picker keys
+func (p *Palette) Contexts() []string {
+	switch {
+	case p.ask != nil:
+		return []string{keys.Confirm, keys.Palette}
+	case p.Context != "":
+		return []string{p.Context, keys.Palette}
+	}
+	return []string{keys.Palette}
+}
 
 // Text typed so far
 func (p *Palette) Query() string { return p.query }
+
+// Replaces the typed text and filters the rows by it
+func (p *Palette) SetQuery(text string) {
+	p.query, p.cursor = text, len([]rune(text))
+	p.filter()
+}
+
+// Replaces the rows in place and filters them by the typed text, the selection back on the first, a palette without rows taking a line of text
+func (p *Palette) SetItems(items []Item) {
+	p.items = items
+	p.sel, p.top = 0, 0
+	p.filter()
+}
+
+// Moves the selection to the row with the id, reporting whether the typed text leaves it listed
+func (p *Palette) Select(id string) bool {
+	for i, m := range p.matches {
+		if m.item.ID == id {
+			p.sel = i
+			p.reveal()
+			return true
+		}
+	}
+	return false
+}
+
+// Row under the selection, false when the typed text matches none
+func (p *Palette) Lit() (Item, bool) {
+	if p.sel < 0 || p.sel >= len(p.matches) {
+		return Item{}, false
+	}
+	return p.matches[p.sel].item, true
+}
+
+// Asks a yes or no question in the field, the rows making way for the notes until it is answered
+func (p *Palette) Ask(text string, yes func() tea.Cmd) { p.ask = &inquiry{text: text, yes: yes} }
+
+// Reports whether a question waits for its answer
+func (p *Palette) Asking() bool { return p.ask != nil }
+
+// Close key while a question is asked or a step lies behind the palette: the question withdrawn, else the step taken
+func (p *Palette) Back() bool {
+	if p.ask != nil {
+		p.ask = nil
+		return true
+	}
+	return p.OnBack != nil && p.OnBack()
+}
+
+// Lines under the rows as the owner reads them now
+func (p *Palette) notes() []Note {
+	if p.Notes == nil {
+		return nil
+	}
+	return p.Notes()
+}
+
+// Count of the rows scrolled out of the sheet above and below, empty while every match shows
+func (p *Palette) Status() string {
+	if len(p.items) == 0 || p.ask != nil {
+		return ""
+	}
+	above, below := p.top, max(len(p.matches)-p.top-p.limit(), 0)
+	if above == 0 && below == 0 {
+		return ""
+	}
+	return HiddenText(above, below)
+}
 
 // Items matching the query, best first
 func (p *Palette) Matches() []Item {
@@ -110,12 +231,13 @@ func (p *Palette) Matches() []Item {
 	return out
 }
 
-// Rows the sheet under the field wants, none for a prompt that lives in the field alone
+// Rows the sheet under the field wants, the matches and the notes under them, none for a prompt that lives in the field alone
 func (p *Palette) Rows() int {
-	if len(p.items) == 0 {
-		return 0
+	notes := len(p.notes())
+	if len(p.items) == 0 || p.ask != nil {
+		return notes
 	}
-	return max(len(p.matches), 1)
+	return max(len(p.matches), 1) + notes
 }
 
 // Matches out of the items
@@ -123,17 +245,24 @@ func (p *Palette) Tally() string {
 	return strconv.Itoa(len(p.matches)) + "/" + strconv.Itoa(len(p.items))
 }
 
-// Query in w columns scrolled to keep the caret in view, the placeholder while empty, with the caret column
+// Query in w columns scrolled to keep the caret in view, the placeholder while empty and the question while one is asked, with the caret column
 func (p *Palette) Input(w int, bg color.Color) (string, int) {
 	t := p.theme
 	base := lipgloss.NewStyle().Background(bg)
 	if w <= 0 {
 		return "", 0
 	}
+	if p.ask != nil {
+		text := ansi.Truncate(p.ask.text, w, t.Glyphs.Ellipsis)
+		return base.Foreground(t.Accent).Bold(true).Render(text), min(ansi.StringWidth(text)+1, w)
+	}
 	if p.query == "" {
 		return base.Foreground(t.TextDim).Render(ansi.Truncate(p.Placeholder, w, t.Glyphs.Ellipsis)), 0
 	}
 	runes := []rune(p.query)
+	if p.Masked {
+		runes = []rune(strings.Repeat(t.Glyphs.Mask, len(runes)))
+	}
 	from := 0
 	for from < p.cursor && ansi.StringWidth(string(runes[from:p.cursor])) >= w {
 		from++
@@ -212,23 +341,31 @@ func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 	case ActionMsg:
 		return p, p.action(msg.ID)
 	case tea.KeyPressMsg:
-		if msg.Text != "" {
+		if msg.Text != "" && !p.held() {
 			p.insert(msg.Text)
 		}
 		return p, nil
 	case tea.PasteMsg:
-		p.insert(msg.Content)
+		if !p.held() {
+			p.insert(msg.Content)
+		}
 		return p, nil
 	case tea.MouseClickMsg:
+		if p.held() {
+			return p, nil
+		}
 		if msg.Button == tea.MouseLeft && p.onRow(msg.Y) {
 			p.sel = p.top + msg.Y
 			return p, p.pick()
 		}
 	case tea.MouseMotionMsg:
-		if msg.Button == tea.MouseNone && msg.X >= 0 && msg.X < p.w && p.onRow(msg.Y) {
+		if !p.held() && msg.Button == tea.MouseNone && msg.X >= 0 && msg.X < p.w && p.onRow(msg.Y) {
 			p.sel = p.top + msg.Y
 		}
 	case tea.MouseWheelMsg:
+		if p.held() {
+			return p, nil
+		}
 		switch msg.Button {
 		case tea.MouseWheelDown:
 			p.scroll(1, msg.Y)
@@ -239,8 +376,27 @@ func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 	return p, nil
 }
 
-// Carries out a keymap action on the query or the selection
+// Reports whether typing and picks are set aside, by a question waiting for its answer or an owner waiting for a reply
+func (p *Palette) held() bool { return p.Busy || p.ask != nil }
+
+// Carries out a keymap action on the question, the query or the selection, then those of the palette's own context
 func (p *Palette) action(id string) tea.Cmd {
+	if q := p.ask; q != nil {
+		switch id {
+		case "confirm.yes", "palette.pick":
+			p.ask = nil
+			return q.yes()
+		case "confirm.no":
+			p.ask = nil
+		}
+		return nil
+	}
+	if p.Busy {
+		return nil
+	}
+	if run := p.Actions[id]; run != nil {
+		return run()
+	}
 	switch id {
 	case "palette.pick":
 		return p.pick()
@@ -349,37 +505,50 @@ func (p *Palette) pick() tea.Cmd {
 			return RequestDismissOf(p)
 		}
 		text := p.query
+		if p.Hold {
+			return p.OnText(text)
+		}
 		return tea.Batch(RequestDismissOf(p), p.OnText(text))
 	}
 	if p.sel >= len(p.matches) {
 		return nil
 	}
-	run := p.matches[p.sel].item.Run
-	if run == nil {
+	it := p.matches[p.sel].item
+	if it.Run == nil {
 		return RequestDismissOf(p)
 	}
-	return tea.Batch(RequestDismissOf(p), run())
+	if it.Stay {
+		return it.Run()
+	}
+	return tea.Batch(RequestDismissOf(p), it.Run())
 }
 
 func (p *Palette) limit() int { return max(p.rows, 1) }
 
-// Match rows of the sheet, the input itself painted in the field
+// Match rows of the sheet with the notes under them, the input itself painted in the field
 func (p *Palette) View(w, h int) string {
 	p.w = w
-	p.rows = h
+	notes := p.notes()
+	p.rows = h - len(notes)
 	p.reveal()
 	t := p.theme
-	if len(p.items) == 0 {
-		return ""
-	}
-	if len(p.matches) == 0 {
-		return lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render("  no match")
-	}
 	var lines []string
-	lit := p.top + p.highlightRow()
-	for i := p.top; i < len(p.matches) && i < p.top+p.limit(); i++ {
-		m := p.matches[i]
-		lines = append(lines, p.row(m, i == lit, w))
+	switch {
+	case len(p.items) == 0 || p.ask != nil:
+		// A sheet too short to keep its padding hands the rows of the padding over, the notes stay in its middle
+		lines = make([]string, max(h-len(notes), 0)/2)
+	case len(p.matches) == 0:
+		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render("  no match"))
+	default:
+		lit := p.top + p.highlightRow()
+		for i := p.top; i < len(p.matches) && i < p.top+p.limit(); i++ {
+			m := p.matches[i]
+			lines = append(lines, p.row(m, i == lit, w))
+		}
+	}
+	for _, n := range notes {
+		text := ansi.Truncate("  "+n.Text, max(w, 1), t.Glyphs.Ellipsis)
+		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(segmentColor(t, n.Style)).Render(text))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -433,12 +602,23 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 	return ansi.Truncate(line, w, "")
 }
 
-// Actions the palette answers
+// Actions the palette answers, the yes and no of a question, else those of its own context ahead of the picker keys
 func (p *Palette) Hints() []Hint {
-	if len(p.items) == 0 {
-		return []Hint{{Action: "palette.pick", Label: "confirm"}, {Action: "palette.close", Label: "cancel"}}
+	if p.ask != nil {
+		return []Hint{{Action: "confirm.yes"}, {Action: "confirm.no"}}
 	}
-	return []Hint{{Action: "palette.down", Pair: "palette.up", Label: "move"}, {Action: "palette.pick"}, {Action: "palette.close"}}
+	closing := Hint{Action: "palette.close"}
+	if p.OnBack != nil {
+		closing.Label = "back"
+	}
+	out := append([]Hint(nil), p.Extra...)
+	if len(p.items) == 0 {
+		if closing.Label == "" {
+			closing.Label = "cancel"
+		}
+		return append(out, Hint{Action: "palette.pick", Label: "confirm"}, closing)
+	}
+	return append(out, Hint{Action: "palette.down", Pair: "palette.up", Label: "move"}, Hint{Action: "palette.pick"}, closing)
 }
 
 // Action the palette lists and the keymap fires, the manager's own or one the app registers
@@ -568,6 +748,12 @@ func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			continue
 		}
 		if target == m.overlay && id == "palette.close" {
+			if b, steps := target.card.(Backer); steps && b.Back() {
+				return nil, true
+			}
+			return m.Dismiss(), true
+		}
+		if target == m.overlay && id == "panel.close" {
 			return m.Dismiss(), true
 		}
 		if c, ok := m.command(id); ok {

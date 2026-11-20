@@ -351,10 +351,8 @@ func init() {
 			func(ctx context.Context, _ *PluginHost, c *Context, a, extra map[string]any) (any, error) {
 				return c.DispatchTool(ctx, argStr(a["tool_name"]), argMap(a["args"]), extra)
 			}),
-		"register_context_engine": providerRegistrar("register_context_engine", "engine", (*Context).RegisterContextEngine),
-		"register_context_reference": hostMethod("register_context_reference", []pyParam{req("provider")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-			return nil, c.RegisterContextReference(a["provider"])
-		}),
+		"register_context_engine":    providerRegistrar("register_context_engine", "engine", (*Context).RegisterContextEngine),
+		"register_context_reference": providerRegistrar("register_context_reference", "provider", (*Context).RegisterContextReference),
 		"register_memory_provider": hostMethod("register_memory_provider", []pyParam{req("provider")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return nil, c.RegisterMemoryProvider(a["provider"])
 		}),

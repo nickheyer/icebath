@@ -1158,7 +1158,6 @@ func (r *childRun) waitLivenessAware(settled <-chan struct{}, childTimeout *floa
 type childOutcome struct {
 	result map[string]any
 	err    error
-	stack  string
 }
 
 // Runs the child's conversation on a worker goroutine, the result or a failure entry with its deferred close flag

@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -59,7 +61,7 @@ func (e *DiscordOSError) Error() string { return e.Text }
 
 // Sends one Discord request with a total timeout, a seam tests replace
 var discordHTTPDo = func(req *http.Request, timeout time.Duration) (*http.Response, error) {
-	return (&http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}).Do(req)
+	return (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}).Do(req)
 }
 
 // Header value http.client refuses, a bare newline or carriage return not starting a folded continuation

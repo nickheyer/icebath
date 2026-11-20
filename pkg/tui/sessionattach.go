@@ -19,6 +19,8 @@ type attachment struct {
 	Inflight       *tuigateway.InflightTurn
 	Connection     *tuigateway.ConnectionRequestPayload
 	Snapshot       *tuigateway.CanonicalSnapshot
+	// Server requests the session still waits on, delivered again once the view shows it
+	OpenRequests []tuigateway.OpenRequestEntry
 }
 
 // Attachment of a session authority snapshot, stored rows given their display text when no display projection came
@@ -39,7 +41,7 @@ func snapshotAttachment(s *tuigateway.CanonicalSnapshot) attachment {
 		}
 	}
 	return attachment{SessionID: s.SessionID, StoredSID: stored, SubscriptionID: s.SubscriptionID, Info: &info, Running: s.Running,
-		Messages: messages, Connection: s.PendingConnection, Snapshot: s}
+		Messages: messages, Connection: s.PendingConnection, Snapshot: s, OpenRequests: s.OpenRequests}
 }
 
 // Attachment of a resume or activation on the method table route under its stored id
@@ -48,7 +50,8 @@ func resumedAttachment(r *tuigateway.SessionResumeResult, stored string) attachm
 	info.StoredSessionID = &stored
 	status := val(r.Status)
 	return attachment{SessionID: r.SessionID, StoredSID: stored, Info: &info, Running: val(r.Running) || status == "working" || status == "waiting",
-		Status: status, StartedAt: val(r.StartedAt), Messages: r.Messages, Inflight: r.Inflight, Connection: r.PendingConnection}
+		Status: status, StartedAt: val(r.StartedAt), Messages: r.Messages, Inflight: r.Inflight, Connection: r.PendingConnection,
+		OpenRequests: r.OpenRequests}
 }
 
 // Display text of stored message content, a string as it is, text parts joined and media parts named

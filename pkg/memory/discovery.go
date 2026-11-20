@@ -12,21 +12,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pyimport"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Entry point group pip installed memory providers declare
-const MemoryProviderEntryPointsGroup = "icebath_agent.memory_providers"
-
-// Modules a successful warm up import also loads in the plugin host
-var nativeWarmImports = []string{"numpy"}
 
 // Directory of the profile plugin tree, empty when it is not a directory
 func userPluginsDir(ctx context.Context, env *tools.Env) string {
@@ -85,10 +77,9 @@ func isMemoryProviderDir(log *slog.Logger, path string) bool {
 	return strings.Contains(source, "register_memory_provider") || strings.Contains(source, "MemoryProvider") || definesMemoryProvider(path)
 }
 
-// Whether the directory is a wasm or program plugin of the exclusive kind, the form an icebath memory provider plugin takes
+// Whether the directory is a wasm or program plugin offering a memory provider, the form an icebath memory provider plugin takes
 func isGuestMemoryProviderDir(path string) bool {
-	mf := plugins.GuestManifestOfDir(path)
-	return mf != nil && mf.Kind == "exclusive"
+	return plugins.GuestProvides(path, plugins.CategoryMemoryProvider)
 }
 
 // Parses the top level modules for a register_memory_provider call or a MemoryProvider subclass, aliases included
@@ -162,39 +153,13 @@ func externalSourceDirs(ctx context.Context, env *tools.Env) []providerSourceDir
 	return out
 }
 
-// Import path entry points are enumerated over, the one the plugin host process imports from
-func entryPointImportPath() []string { return filepath.SplitList(os.Getenv("PYTHONPATH")) }
-
-// Installed memory provider entry points, read from distribution metadata without importing anything
-func iterEntryPoints() []pyimport.EntryPoint {
-	return pyimport.EntryPoints(entryPointImportPath(), MemoryProviderEntryPointsGroup)
-}
-
-// Package directory of an entry point module resolved without importing it, empty for a bare module
-func entryPointPackageDir(ep *pyimport.EntryPoint) string {
-	if ep == nil {
-		return ""
-	}
-	module, _, _ := strings.Cut(ep.Value, ":")
-	origin := pyimport.FindOrigin(entryPointImportPath(), strings.TrimSpace(module))
-	if origin == "" || filepath.Base(origin) != "__init__.py" {
-		return ""
-	}
-	return filepath.Dir(origin)
-}
-
-// Provider directory of a name, bundled, user, project, then an entry point package, empty when none
+// Provider directory of a name, bundled, user, then project, empty when none
 func FindProviderDir(ctx context.Context, env *tools.Env, name string) string {
 	r := FindProvider(ctx, env, name)
-	if r == nil || !hasProviderDir(r) {
+	if r == nil {
 		return ""
 	}
 	return r.Dir
-}
-
-// Module name a provider package loads under, the synthetic user namespace keyed by the resolved directory
-func providerDirModuleName(dir, name string) string {
-	return providerModuleName(&ProviderRegistration{Name: name, Source: SourceUser, Dir: dir})
 }
 
 // Raw plugin.yaml text of a provider directory and the manifest name the disabled list may use
@@ -218,28 +183,7 @@ func dirRegistration(name, dir, source, home string) *ProviderRegistration {
 		}}
 }
 
-// Registration of an installed entry point, its package directory loading like a user directory
-func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
-	dir := entryPointPackageDir(&ep)
-	name := ep.Name
-	r := &ProviderRegistration{Name: name, Source: SourceEntryPoint, Dir: dir}
-	if dir != "" {
-		r.Manifest, r.Spellings = providerManifest(dir)
-	}
-	r.New = func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error) {
-		if dir != "" {
-			return loadProviderFromDir(ctx, dir, opts)
-		}
-		if refusal := plugins.InProcessImportRefusal(ctx, fmt.Sprintf("pip-installed memory provider %s", errchain.Show(name)), SourceEntryPoint, nil); refusal != "" {
-			envLog(env).Warn(refusal)
-			return nil, nil
-		}
-		return loadProviderFromEntryPoint(ctx, name, opts)
-	}
-	return r
-}
-
-// Providers the directory and entry point scan finds that no explicit registration already stands for
+// Providers the directory scan finds that no explicit registration already stands for
 func scannedRegistrations(ctx context.Context, env *tools.Env, explicit []*ProviderRegistration) []*ProviderRegistration {
 	log := envLog(env)
 	h := registryHome(ctx, env)
@@ -277,56 +221,14 @@ func scannedRegistrations(ctx context.Context, env *tools.Env, explicit []*Provi
 			out = append(out, dirRegistration(name, path, src.source, home))
 		}
 	}
-	for _, ep := range iterEntryPoints() {
-		if taken[SourceEntryPoint+"\x00"+ep.Name] {
-			continue
-		}
-		taken[SourceEntryPoint+"\x00"+ep.Name] = true
-		out = append(out, entryPointRegistration(ep))
-	}
 	return out
 }
 
-// Loads a directory provider in the plugin host, the register(ctx) capture first and a top level subclass after
+// Loads the memory provider a wasm or program plugin directory registers, its hooks and skills collected by the loader
 func loadProviderFromDir(ctx context.Context, dir string, opts LoadOptions) (Provider, error) {
-	name := filepath.Base(dir)
-	obj, err := plugins.CollectMemoryProviderInHost(ctx, name, dir, providerDirModuleName(dir, name), opts.RegisterSkills, opts.TrackSkill)
+	obj, err := plugins.CollectMemoryProviderInHost(ctx, filepath.Base(dir), dir, opts.RegisterSkills, opts.TrackSkill)
 	if err != nil || obj == nil {
 		return nil, err
 	}
 	return newHostedProvider(ctx, obj)
-}
-
-// Loads a bare module entry point in the plugin host as an instance, subclass, register module, factory or namespace
-func loadProviderFromEntryPoint(ctx context.Context, name string, opts LoadOptions) (Provider, error) {
-	obj, err := plugins.CollectMemoryProviderEntryPoint(ctx, name, opts.RegisterSkills, opts.TrackSkill)
-	if err != nil || obj == nil {
-		return nil, err
-	}
-	return newHostedProvider(ctx, obj)
-}
-
-// Imports the configured or named provider ahead of construction, false when unknown, failing or left to the host
-func ImportMemoryProviderModule(ctx context.Context, env *tools.Env, name string) bool {
-	if name == "" {
-		name = ActiveMemoryProvider(ctx, env)
-	}
-	if name == "" {
-		return false
-	}
-	r := FindProvider(ctx, env, name)
-	if plugins.IsolationMode(ctx, nil) == plugins.IsolationHost && (r == nil || r.Source != SourceBundled) {
-		return false
-	}
-	if r == nil {
-		return false
-	}
-	if r.Source == SourceBundled {
-		return true
-	}
-	dir, module := r.Dir, ""
-	if hasProviderDir(r) {
-		module = providerDirModuleName(dir, name)
-	}
-	return plugins.WarmMemoryProviderImport(ctx, name, dir, module, nativeWarmImports)
 }

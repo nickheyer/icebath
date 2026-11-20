@@ -191,23 +191,14 @@ func guardedLoad(ctx context.Context, fn func(context.Context) (bool, error)) (o
 	return fn(ctx)
 }
 
-// Human readable load failure naming a recovered panic or a hosted sys.exit the way SystemExit is named
+// Human readable load failure naming a recovered panic the way SystemExit is named
 func loadErrorText(err error) string {
 	var p *PluginPanicError
 	if errors.As(err, &p) {
 		return fmt.Sprintf("SystemExit(%s) raised during import/register()", config.PyRepr(p.Value))
 	}
-	var exit *PluginSystemExit
-	if errors.As(err, &exit) {
-		return "SystemExit(" + exit.CodeRepr + ") raised during import/register()"
-	}
 	return err.Error()
 }
-
-// SystemExit a hosted import or register raised under in-process isolation, its code as the Python repr
-type PluginSystemExit struct{ CodeRepr string }
-
-func (e *PluginSystemExit) Error() string { return "SystemExit(" + e.CodeRepr + ")" }
 
 // Why this icebath is not one the plugin accepts, empty when it fits
 func icebathFitError(mf *Manifest) string {
@@ -429,9 +420,6 @@ func isPythonPluginSource(mf *Manifest) bool {
 func errPythonSource() error {
 	return &PluginHostUnsupported{Msg: "Python plugin source is not loaded; " + PluginFormsText}
 }
-
-// Refusal every loader of Python plugin source answers, no interpreter being hosted
-func (m *Manager) pluginHost() (*PluginHost, error) { return nil, errPythonSource() }
 
 // Whether a provides_locales plugin ships no Python and is complete from its locale files
 func isManifestOnlyLanguagePack(mf *Manifest) bool {
@@ -667,15 +655,18 @@ func platformNameFromManifest(mf *Manifest) string {
 	return mf.Name
 }
 
-// Registers a lazy platform loader with a visible placeholder, eager loading when the registry refuses it
+// Registers a lazy platform loader with a visible placeholder, eager loading when the registry refuses it or when the tools a wasm or program plugin declares only exist once its register function ran
 func (m *Manager) registerDeferredPlatform(ctx context.Context, mf *Manifest) error {
+	if manifestRuntime(mf) != "" && len(mf.ProvidesTools) > 0 {
+		return m.loadPlugin(ctx, mf)
+	}
 	key := mf.ID()
 	loaded := &LoadedPlugin{Manifest: mf, Enabled: true, Deferred: true}
 	m.storeLoaded(key, loaded)
 	if !m.leaseDeferredPlatform(mf, key) {
 		return m.loadPlugin(ctx, mf)
 	}
-	m.registerDeferredPlatformTools(ctx, mf, loaded)
+	m.registerDeferredPlatformTools(mf, loaded)
 	return nil
 }
 
@@ -766,19 +757,18 @@ type ToolsRegistrar interface {
 	RegisterTools(ctx *Context) error
 }
 
-// Pre-registers the client tools a deferred platform declares in provides_tools
-func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifest, loaded *LoadedPlugin) {
+// Pre-registers the client tools a compiled-in deferred platform declares in provides_tools
+func (m *Manager) registerDeferredPlatformTools(mf *Manifest, loaded *LoadedPlugin) {
 	if len(mf.ProvidesTools) == 0 {
 		return
 	}
 	key := mf.ID()
 	declared := errchain.Show(anyList(mf.ProvidesTools))
 	plugin, compiled := bundledPlugin(key)
-	if mf.Path != "" || !compiled {
-		if mf.Path == "" || !isFile(filepath.Join(mf.Path, "tools.py")) {
-			pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but has no tools.py; those tools will not be available in CLI/TUI sessions.", key, declared))
-			return
-		}
+	registrar, registers := plugin.(ToolsRegistrar)
+	if mf.Path != "" || !compiled || !registers {
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but registers them only with its platform; those tools will not be available in CLI/TUI sessions.", key, declared))
+		return
 	}
 	m.mu.RLock()
 	before := map[string]bool{}
@@ -809,28 +799,8 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 		m.mu.Unlock()
 		pctx := newContext(mf, m)
 		pctx.module = moduleName
-		if mf.Path != "" || !compiled {
-			host, err := m.pluginHost()
-			if err != nil {
-				return err
-			}
-			file, err := host.LoadTools(ctx, mf, pctx, moduleName)
-			if err != nil {
-				return err
-			}
-			loaded.ModuleFile = file
-			m.mu.Lock()
-			m.predeclaredModules[key] = loadedModule{name: moduleName, file: file}
-			m.mu.Unlock()
-		} else {
-			registrar, ok := plugin.(ToolsRegistrar)
-			if !ok {
-				pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.", key, declared))
-				return nil
-			}
-			if err := registrar.RegisterTools(pctx); err != nil {
-				return err
-			}
+		if err := registrar.RegisterTools(pctx); err != nil {
+			return err
 		}
 		registered := credit()
 		pkgLog().Debug(fmt.Sprintf("Deferred platform '%s': pre-registered %d client tool(s) %s", key, len(registered), errchain.Show(anyList(registered))))

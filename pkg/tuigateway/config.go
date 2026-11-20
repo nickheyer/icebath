@@ -169,6 +169,7 @@ type ClientDisplay struct {
 	FocusView        bool                   `json:"focus_view"`
 	Indicator        IndicatorStyle         `json:"tui_status_indicator"`
 	InlineDiffs      bool                   `json:"inline_diffs"`
+	InlineImages     bool                   `json:"inline_images"`
 	MouseTracking    MouseTracking          `json:"mouse_tracking"`
 	ShowReasoning    bool                   `json:"show_reasoning"`
 	StatusBarPlace   StatusBarPlace         `json:"tui_statusbar"`
@@ -178,6 +179,8 @@ type ClientDisplay struct {
 	Language         string                 `json:"language"`
 	AgentsNudge      bool                   `json:"tui_agents_nudge"`
 	AutoResumeRecent bool                   `json:"tui_auto_resume_recent"`
+	TurnSummary      bool                   `json:"turn_summary"`
+	SpinnerTokenFlow bool                   `json:"spinner_token_flow"`
 	Pet              ClientPet              `json:"pet"`
 	// The arena card's own settings, checked by the card that reads them
 	Arena any `json:"arena,omitzero"`
@@ -379,6 +382,7 @@ func ClientConfigOf(cfg map[string]any) ClientConfig {
 			FocusView:        flagOf(display["focus_view"], false),
 			Indicator:        choiceOf(display["tui_status_indicator"], IndicatorStyle("unicode")),
 			InlineDiffs:      flagOf(display["inline_diffs"], true),
+			InlineImages:     display["inline_images"] != false && wordOf(display["inline_images"]) != "off",
 			MouseTracking:    MouseTrackingOf(display),
 			ShowReasoning:    flagOf(display["show_reasoning"], true),
 			StatusBarPlace:   place,
@@ -388,6 +392,8 @@ func ClientConfigOf(cfg map[string]any) ClientConfig {
 			Language:         strings.TrimSpace(language),
 			AgentsNudge:      flagOf(display["tui_agents_nudge"], true),
 			AutoResumeRecent: flagOf(display["tui_auto_resume_recent"], false),
+			TurnSummary:      flagOf(display["turn_summary"], true),
+			SpinnerTokenFlow: flagOf(display["spinner_token_flow"], true),
 			Pet:              ClientPet{RenderMode: choiceOf(pet["render_mode"], PetRenderMode("auto"))},
 			Arena:            display["arena"],
 		},

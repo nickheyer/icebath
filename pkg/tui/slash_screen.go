@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"strconv"
 	"strings"
 
@@ -10,11 +12,14 @@ import (
 )
 
 // Actions the screen command takes as its argument
-var screenActions = []string{"status", "start", "stop", "install", "switch", "keep"}
+var screenActions = []string{"status", "start", "stop", "take", "release", "shot", "install", "switch", "keep"}
 
-// Bot screen of the profile, its status, start and stop, the package install and the sandbox image switch
+// Rows a picture of the bot screen may take in the transcript, the room a desktop needs to be read
+const screenShotRows = 30
+
+// Bot screen of the profile, its status, start and stop, a picture of it, the takeover, the package install and the sandbox image switch
 func (a *app) screenCommands() []slashCommand {
-	return []slashCommand{{name: "screen", help: tr("slashCmd.core.help.screen"), usage: "[status|start|stop [force]|install|switch|keep]",
+	return []slashCommand{{name: "screen", help: tr("slashCmd.core.help.screen"), usage: "[status|start|stop [force]|take [reason]|release [force]|shot|install|switch|keep]",
 		suggest: func(string) []string { return screenActions }, run: a.runScreen}}
 }
 
@@ -48,6 +53,40 @@ func (a *app) runScreen(r *slashRun) tea.Cmd {
 			}
 			return show(&res.DisplayStatus)
 		})
+	case "take":
+		reason := ""
+		if words := strings.Fields(r.arg); len(words) > 1 {
+			reason = strings.Join(words[1:], " ")
+		}
+		params := tuigateway.DisplayLeaseAcquireParams{ViewerID: a.screenViewerID(), Reason: reason}
+		return ask(r.rpc, r.sys, tuigateway.DisplayLeaseAcquire, params, func(res *tuigateway.DisplayLeaseResult) tea.Cmd {
+			if res != nil {
+				r.sys(tr("screen.taken"))
+			}
+			return nil
+		})
+	case "release":
+		params := tuigateway.DisplayLeaseReleaseParams{ViewerID: a.screenViewerID(), Force: len(fields) > 1 && fields[1] == "force"}
+		return ask(r.rpc, r.sys, tuigateway.DisplayLeaseRelease, params, func(res *tuigateway.DisplayLeaseResult) tea.Cmd {
+			if res != nil {
+				r.sys(tr("screen.released"))
+			}
+			return nil
+		})
+	case "shot":
+		return ask(r.rpc, r.sys, tuigateway.DisplayThumbnail, tuigateway.ProfileParams{}, func(res *tuigateway.DisplayThumbnailResult) tea.Cmd {
+			switch {
+			case res == nil:
+			case res.Suppressed != "":
+				r.sys(tr("screen.shotWithheld"))
+			case val(res.Path) == "":
+				r.sys(tr("screen.shotNotRunning"))
+			default:
+				r.sys(tr("screen.shotSaved", *res.Path))
+				a.appendMessage(msg{Kind: "image", Role: "system", Images: []string{*res.Path}, ImageRows: screenShotRows})
+			}
+			return nil
+		})
 	case "install":
 		return ask(r.rpc, r.sys, tuigateway.DisplayInstall, tuigateway.ProfileParams{}, func(res *tuigateway.DisplayInstallResult) tea.Cmd {
 			switch {
@@ -71,6 +110,18 @@ func (a *app) runScreen(r *slashRun) tea.Cmd {
 	}
 	r.sys(tr("screen.usage"))
 	return nil
+}
+
+// Id this UI takes the bot screen under, random and kept for the life of the process so that only this UI hands back what it took
+func (a *app) screenViewerID() string {
+	if a.screenViewer == "" {
+		raw := make([]byte, 16)
+		if _, err := rand.Read(raw); err != nil {
+			panic(err)
+		}
+		a.screenViewer = base64.RawURLEncoding.EncodeToString(raw)
+	}
+	return a.screenViewer
 }
 
 // Rows of a screen status, the runtime, the lease, a blocker and a pending sandbox image switch

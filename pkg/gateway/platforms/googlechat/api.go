@@ -2,6 +2,7 @@ package googlechat
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto"
 	"crypto/rsa"
@@ -24,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -72,6 +75,32 @@ func redactSensitive(text string) string {
 		text = r.re.ReplaceAllString(text, r.repl)
 	}
 	return text
+}
+
+// Google APIs the adapter calls, each of which NO_PROXY must keep off the proxy before a failed call's text is shown
+var apiProxyTargets = []string{"https://chat.googleapis.com", "https://oauth2.googleapis.com", "https://pubsub.googleapis.com", "https://www.googleapis.com"}
+
+// Kind of a failed call and the proxy's host when the proxy URL the clients read from the environment holds a secret the raw error text could repeat,
+// empty otherwise: targets are the URLs the call fetched, the APIs when none is given
+func proxyError(err error, targets ...string) string {
+	if len(targets) == 0 {
+		targets = apiProxyTargets
+	}
+	return gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(targets...))
+}
+
+// Text of a failed call for a log line or a send result, the redacted form when it could repeat a proxy secret and the error text without resource
+// paths and service account emails otherwise
+func excText(err error, targets ...string) string {
+	return cmp.Or(proxyError(err, targets...), redactSensitive(err.Error()))
+}
+
+// Log attributes carrying the error of a failed call, none when its text could repeat a proxy secret
+func errAttr(err error) []any {
+	if proxyError(err) != "" {
+		return nil
+	}
+	return []any{"error", err}
 }
 
 // Non success answer of a Google REST call
@@ -135,7 +164,7 @@ type restClient struct {
 
 // Client for a credential with proxy env honoured
 func newRESTClient(creds *provider.GoogleCredentials) *restClient {
-	return &restClient{creds: creds, http: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}}
+	return &restClient{creds: creds, http: &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())}}
 }
 
 // One authenticated request, the JSON answer decoded into out when given
@@ -214,7 +243,7 @@ func callWithRetry[T any](ctx context.Context, opName string, fn func() (T, erro
 			return out, err
 		}
 		wait := min(delay+delay*retryJitter*rand.Float64(), retryMaxDelay+retryJitter)
-		pkgLog().Warn(fmt.Sprintf("[GoogleChat] %s attempt %d/%d failed (%s); retrying in %.2fs", opName, attempt, retryMaxAttempts, redactSensitive(err.Error()), wait))
+		pkgLog().Warn(fmt.Sprintf("[GoogleChat] %s attempt %d/%d failed (%s); retrying in %.2fs", opName, attempt, retryMaxAttempts, excText(err), wait))
 		select {
 		case <-ctx.Done():
 			return out, ctx.Err()

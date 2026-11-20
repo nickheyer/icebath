@@ -46,20 +46,6 @@ func init() {
 	tools.MCPOperationRunner = RunMCPOperation
 }
 
-// Profile home of the tool env, the calling context's home when the env names none
-func connHome(ctx context.Context, env *tools.Env) string {
-	if env != nil && env.Home != "" {
-		return env.Home
-	}
-	return home.Dir(ctx)
-}
-
-// Pool environment of the tool env's profile home, the calling context's home when the env names none
-func connPoolEnv(ctx context.Context, env *tools.Env) provider.PoolEnv {
-	h := connHome(ctx, env)
-	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Config: provider.ConfigLoader(h), Ctx: ctx}
-}
-
 // Sorted catalog entry names
 func connCatalogNamesList() ([]string, error) {
 	entries, err := ListCatalog()

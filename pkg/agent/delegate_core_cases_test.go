@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -231,8 +230,4 @@ func TestToolNamePreservationGlobalToolNamesRestoredAfterDelegation(t *testing.T
 	if got := tools.LastResolvedToolNames(); !reflect.DeepEqual(got, original) {
 		t.Fatalf("resolved tool names %v", got)
 	}
-}
-
-func writeFileInHome(h, name, body string) error {
-	return os.WriteFile(filepath.Join(h, name), []byte(body), 0o600)
 }

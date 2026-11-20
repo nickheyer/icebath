@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -25,7 +26,7 @@ var (
 		if err != nil {
 			return 0, err
 		}
-		client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), CheckRedirect: pyhttpx.RedirectPolicy(false)}
+		client := &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: pyhttpx.RedirectPolicy(false)}
 		defer client.CloseIdleConnections()
 		resp, err := pyhttpx.Do(client, req, 10*time.Second)
 		if err != nil {

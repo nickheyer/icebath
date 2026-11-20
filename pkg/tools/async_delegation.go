@@ -2128,10 +2128,9 @@ func ensureStaleMonitor() {
 }
 
 type asyncStall struct {
-	id      string
-	quiet   float64
-	inTool  bool
-	limitAt float64
+	id     string
+	quiet  float64
+	inTool bool
 }
 
 // One monitor pass over the records under the records lock, newly stalling ids, ids past grace and whether any remain

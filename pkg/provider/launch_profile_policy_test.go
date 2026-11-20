@@ -4,12 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 func resetLaunchPolicy(t *testing.T) {
@@ -23,8 +20,6 @@ func resetLaunchPolicy(t *testing.T) {
 		launchEnvSnapshot.env = nil
 		launchEnvSnapshot.Unlock()
 		SetMultiplexActive(false)
-		launchProfilesToServe = profiles.ProfilesToServe
-		enableProfileLogRouting = logging.EnableProfileLogRouting
 	})
 }
 
@@ -90,23 +85,4 @@ func TestLaunchProfileScopeIsUnchangedBeforeMultiplexing(t *testing.T) {
 	if resolver == nil || resolver()["LPP_BODY"] != "launch" {
 		t.Fatal("launch body resolves from the launch scope")
 	}
-}
-
-// Fake HOME whose root home holds one named profile b, returning the b profile directory
-func twoProfileHost(t *testing.T) string {
-	t.Helper()
-	resetLaunchPolicy(t)
-	tmp := t.TempDir()
-	root := filepath.Join(tmp, "fakehome", ".icebath")
-	b := filepath.Join(root, "profiles", "b")
-	if err := os.MkdirAll(b, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("HOME", filepath.Join(tmp, "fakehome"))
-	t.Setenv(home.EnvHome, root)
-	os.Unsetenv("GATEWAY_MULTIPLEX_PROFILES")
-	if !strings.HasPrefix(profiles.ProfilesRoot(), tmp) {
-		t.Fatalf("profiles root %q escapes the fake home", profiles.ProfilesRoot())
-	}
-	return b
 }

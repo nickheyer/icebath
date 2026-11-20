@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -75,43 +74,6 @@ func TestAskChoiceThroughTheClarifyPanel(t *testing.T) {
 	if _, ok := refused("q", []string{"a"}); ok {
 		t.Fatal("a non string answer is None")
 	}
-}
-
-const pickPlugin = `
-import json
-def register(ctx):
-    choices = %s
-    ctx.register_command('delegation', lambda arg: 'MODE=%%s' %% ctx.ask_choice('Delegation mode', choices))
-    ctx.register_command('gwdelegation', lambda arg: 'MODE=' + str(ctx.ask_choice('Delegation mode', choices)), description='Pick the delegation mode')
-    def legacy(raw_args):
-        return json.dumps([raw_args])
-    def named(raw_args, *, session_id, platform):
-        return json.dumps([raw_args, session_id, platform])
-    def catch_all(args, **kwargs):
-        return json.dumps([args, kwargs])
-    def positional_only(raw_args, session_id=None, /):
-        return json.dumps([raw_args, session_id])
-    def first_named_source(source, **kwargs):
-        return json.dumps([source, sorted(kwargs)])
-    def first_positional_only(source, /, **kwargs):
-        return json.dumps([source, kwargs["source"]])
-    def switch(raw_args, session_key=""):
-        return raw_args.strip() + "|" + session_key
-    for fn in (legacy, named, catch_all, positional_only, first_named_source, first_positional_only, switch):
-        ctx.register_command(fn.__name__.replace("_", "-"), fn)
-`
-
-func jsonEqual(t *testing.T, got any, want string) bool {
-	t.Helper()
-	s, ok := got.(string)
-	if !ok {
-		return false
-	}
-	var a, b any
-	if json.Unmarshal([]byte(s), &a) != nil || json.Unmarshal([]byte(want), &b) != nil {
-		return false
-	}
-	return reflect.DeepEqual(a, b)
 }
 
 // Public entry of plugin_choices ask_choice for surfaces and tests outside a plugin context

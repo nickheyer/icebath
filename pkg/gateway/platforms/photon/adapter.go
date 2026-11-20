@@ -27,6 +27,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -804,7 +805,7 @@ func NewPhotonAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Pho
 		extra = map[string]any{}
 	}
 	a := &PhotonAdapter{sidecarBind: defaultSidecarBind, dedup: gateway.NewMessageDeduplicator(dedupMaxSize, dedupWindowSeconds),
-		httpClient: &http.Client{Transport: &http.Transport{Proxy: nil}}, sentMessageIDs: newBoundedMap[time.Time](sentIDsMax),
+		httpClient: &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: nil}}, sentMessageIDs: newBoundedMap[time.Time](sentIDsMax),
 		lastInbound: newBoundedMap[string](lastInboundChatsMax), recentRichlinks: newBoundedMap[time.Time](lastInboundChatsMax),
 		typingLastSent: map[string]time.Time{}, pendingFFFC: map[string]context.CancelFunc{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.Platform("photon"), a)

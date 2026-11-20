@@ -1189,7 +1189,7 @@ func Main(ctx context.Context, command func(context.Context) (int, error)) (code
 			code, err = mainFailure(ctx, uncaught.err)
 		}
 	}()
-	code, err = command(ctx)
+	code, err = command(withRuntime(ctx))
 	if err != nil {
 		return mainFailure(ctx, err)
 	}

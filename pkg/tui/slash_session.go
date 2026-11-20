@@ -81,12 +81,7 @@ func (a *app) sessionCommands() []slashCommand {
 					r.sys(tr("slashCmd.core.status.noActiveSession"))
 					return nil
 				}
-				return a.store.switchCanonicalModel(a.gw, r.sid, arg, r.sys, nil, "", func(err error) tea.Cmd {
-					if err != nil && !r.stale() {
-						r.fail(err)
-					}
-					return nil
-				})
+				return r.canonicalModel(arg, "")
 			}
 			value := arg
 			if strings.Contains(arg, tuiSessionModelFlag) {

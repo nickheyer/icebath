@@ -62,7 +62,7 @@ func TestComputerUseStatusOfAServedProfileRunsTheDriverWithItsScope(t *testing.T
 		t.Fatal(err)
 	}
 	t.Setenv(cuaDriverCmdEnv, driver)
-	status, err := ComputerUseStatus(ctx, env)
+	status, err := computerUseStatus(ctx, env, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

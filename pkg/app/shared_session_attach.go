@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -74,7 +75,7 @@ func attachHandshakeClient() *http.Client {
 	transport := &http.Transport{
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, network, addr)
+			conn, err := netpref.DialContext(dialer.DialContext)(ctx, network, addr)
 			if err != nil {
 				return nil, err
 			}

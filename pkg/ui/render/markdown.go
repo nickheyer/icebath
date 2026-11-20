@@ -106,7 +106,81 @@ func (m *Markdown) Render(src string, width int, t theme.Theme) string {
 	if err != nil {
 		return src
 	}
-	return compact(strings.TrimRight(out, "\n"))
+	return splitLinks(compact(strings.TrimRight(out, "\n")))
+}
+
+// Sequence that ends a hyperlink
+const linkEnd = "\x1b]8;;\x1b\\"
+
+// Ends a hyperlink at the end of every line it runs over and opens it again before the first word of the next, so each line carries its links whole when lines are shown apart
+func splitLinks(out string) string {
+	if !strings.Contains(out, "\x1b]8;") {
+		return out
+	}
+	lines := strings.Split(out, "\n")
+	open := ""
+	for i, l := range lines {
+		var b strings.Builder
+		carried, live := open, false
+		for at := 0; at < len(l); {
+			n := sequenceLen(l[at:])
+			switch seq := l[at : at+max(n, 1)]; {
+			case n > 0 && strings.HasPrefix(seq, "\x1b]8;"):
+				if open = seq; linkTarget(seq) == "" {
+					open = ""
+				}
+				if open != "" || live {
+					b.WriteString(seq)
+				}
+				carried, live = "", open != ""
+			case n == 0 && seq != " " && carried != "":
+				b.WriteString(carried + seq)
+				carried, live = "", true
+			default:
+				b.WriteString(seq)
+			}
+			at += max(n, 1)
+		}
+		if live {
+			b.WriteString(linkEnd)
+		}
+		lines[i] = b.String()
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Bytes of the escape sequence a string starts with, zero when it starts with anything else
+func sequenceLen(s string) int {
+	if len(s) < 2 || s[0] != '\x1b' {
+		return 0
+	}
+	switch s[1] {
+	case '[':
+		for i := 2; i < len(s); i++ {
+			if s[i] >= 0x40 && s[i] <= 0x7e {
+				return i + 1
+			}
+		}
+		return len(s)
+	case ']':
+		for i := 2; i < len(s); i++ {
+			if s[i] == '\a' {
+				return i + 1
+			}
+			if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '\\' {
+				return i + 2
+			}
+		}
+		return len(s)
+	}
+	return 2
+}
+
+// Address a hyperlink sequence opens, empty for the one that ends a link
+func linkTarget(seq string) string {
+	body := strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(seq, "\x1b]8;"), "\a"), "\x1b\\")
+	_, target, _ := strings.Cut(body, ";")
+	return target
 }
 
 // Drops the padding glamour puts after every line, keeping spaces that carry a background color

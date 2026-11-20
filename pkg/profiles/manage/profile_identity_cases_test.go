@@ -3,7 +3,6 @@ package manage
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -248,14 +247,4 @@ func TestRenameProfileRenameMigratesSessionIdentityWithoutLiveGateway(t *testing
 	if slices.Contains(routing, "agent:oldname:feishu:dm:chatA") || !slices.Contains(routing, "agent:newname:feishu:dm:chatA") {
 		t.Fatalf("routing %v", routing)
 	}
-}
-
-// JSON object of a utf-8-sig file
-func readJSONObject(t *testing.T, path string) map[string]any {
-	t.Helper()
-	var out map[string]any
-	if err := json.Unmarshal(bytes.TrimPrefix([]byte(readText(t, path)), []byte("\xef\xbb\xbf")), &out); err != nil {
-		t.Fatal(err)
-	}
-	return out
 }

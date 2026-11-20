@@ -37,17 +37,6 @@ func (s *ToolsSetup) PluginImageGenProvidersForTest() []*pyjson.Object {
 	return s.pluginImageGenProviders()
 }
 
-// Model catalog ids and default of a toolset backend for the external picker tests
-func (s *ToolsSetup) ToolsetModelCatalogForTest(tsKey, pluginName string, cfg config.Tree) ([]string, string) {
-	c, def := s.toolsetModelCatalog(tsKey, pluginName, cfg)
-	return c.ids, def
-}
-
-// Catalog plugin of a picker row for the external picker tests
-func ResolveToolsetModelPluginForTest(tsKey string, row *pyjson.Object) string {
-	return resolveToolsetModelPlugin(tsKey, row)
-}
-
 // Rows of a tool category for the external picker tests
 func CategoryProvidersForTest(category string) []*pyjson.Object {
 	return catProviders(categoryOf(category))

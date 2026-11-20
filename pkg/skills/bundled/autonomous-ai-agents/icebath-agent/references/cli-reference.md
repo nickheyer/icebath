@@ -95,6 +95,24 @@ icebath webhook subscribe NAME|list|remove NAME|test NAME
 ```
 Webhook payloads/routes: `references/webhooks.md`.
 
+### Batch Runs
+
+```
+icebath batch --dataset_file FILE --batch_size N --run_name NAME [flags]
+  --distribution NAME       Toolset distribution sampled per prompt (default: default)
+  --list_distributions      Print every distribution and exit
+  --model MODEL             Model (default: anthropic/claude-sonnet-4.6)
+  --base_url URL  --api_key KEY   Endpoint and key (default: OpenRouter URL, configured provider's credentials)
+  --max_turns N             Tool-calling iterations per prompt (default: 10)
+  --num_workers N           Parallel workers (default: 4)
+  --resume                  Continue an interrupted run (skips prompts already in the batch files)
+  --max_samples N           Only the first N dataset entries
+  --reasoning_effort LEVEL | --reasoning_disabled
+  --ephemeral_system_prompt TEXT   --prefill_messages_file PATH   --verbose
+```
+Runs the agent over a JSONL dataset (`{"prompt": "..."}` per line) for trajectory generation and evaluation. Output: `data/<run_name>/` with `trajectories.jsonl`, `batch_N.jsonl`, `checkpoint.json`, `statistics.json`. Flags also take dashes (`--dataset-file`). Full build only.
+Details (dataset, distributions, output format, resume): `references/batch-processing.md`.
+
 ### Profiles
 
 ```

@@ -26,6 +26,20 @@ func toolsCatalogText(ctx context.Context, res tuigateway.ToolsShowResult) strin
 	return strings.Join(append(lines, "  "+i18n.T(ctx, "cli.tools.total", "", map[string]any{"count": strconv.FormatInt(res.Total, 10)})), "\n")
 }
 
+// Toolsets the launch fixed for every session this terminal UI creates on the shared gateway, none when it follows the profile
+func (a *app) launchToolsets() []string {
+	if !a.gw.canonical() {
+		return nil
+	}
+	var names []string
+	for _, name := range strings.Split(a.gw.creationEnv()("ICEBATH_TUI_TOOLSETS"), ",") {
+		if name = trimJS(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Slash command that lists the session tools and enables or disables toolsets and MCP tools
 func (a *app) toolsCommands() []slashCommand {
 	text := func(key string, kwargs map[string]any) string {
@@ -58,6 +72,10 @@ func (a *app) toolsCommands() []slashCommand {
 					r.sys(strings.Join([]string{text("usage", kwargs), "  " + text("example_toolset", kwargs), "  " + text("example_mcp", kwargs)}, "\n"))
 					return nil
 				}
+				if pinned := a.launchToolsets(); len(pinned) > 0 {
+					r.sys(tr("tools.launchToolsets", strings.Join(pinned, ", ")))
+					return nil
+				}
 				if a.life.guardBusySessionSwitch(tr("slashCmd.core.clear.switchSessions")) {
 					return nil
 				}
@@ -71,7 +89,11 @@ func (a *app) toolsCommands() []slashCommand {
 					if res == nil {
 						return nil
 					}
-					lines := []string{started}
+					if len(res.LaunchToolsets) > 0 {
+						r.sys(tr("tools.launchToolsets", strings.Join(res.LaunchToolsets, ", ")))
+						return nil
+					}
+					var lines []string
 					for _, name := range res.Unknown {
 						lines = append(lines, tr("tools.unknownToolset", name))
 					}
@@ -81,8 +103,14 @@ func (a *app) toolsCommands() []slashCommand {
 					if len(res.Changed) > 0 {
 						lines = append(lines, tr(changedKey, strings.Join(res.Changed, ", ")))
 					}
+					if !res.Reset {
+						if len(lines) > 0 {
+							r.sys(strings.Join(lines, "\n"))
+						}
+						return nil
+					}
 					a.store.ui.Status = tr("slashCmd.core.clear.forgingSession")
-					return a.life.newSession(strings.Join(append(lines, text("session_reset", nil)), "\n"), "", nil)
+					return a.life.newSession(strings.Join(append(append([]string{started}, lines...), text("session_reset", nil)), "\n"), "", nil)
 				}
 				params := tuigateway.ToolsConfigureParams{Action: tuigateway.ToolsAction(subcommand), Names: names, SessionID: optionalText(r.sid)}
 				return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ToolsConfigure, params, reset))

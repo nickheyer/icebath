@@ -17,6 +17,9 @@ const baseModule = "gateway.platforms.base"
 // Builder of an inbound event the child turns back into a MessageEvent
 const eventBuilder = "gateway.platforms.event:MessageEvent"
 
+// Layout an event time crosses to the child in, the zone offset kept since a WebAssembly child has no local zone
+const eventTimeLayout = "2006-01-02T15:04:05.999999Z07:00"
+
 // Python methods the wrapper forwards when the plugin's class defines them outside the upstream base
 var forwarded = []string{"connect", "disconnect", "send", "get_chat_info", "edit_message", "delete_message", "create_handoff_thread",
 	"send_typing", "stop_typing", "send_image", "send_animation", "send_image_file", "send_voice", "send_video", "send_document",
@@ -463,7 +466,7 @@ func (a *Adapter) CancelBackgroundTasks(ctx context.Context) {
 	a.BasePlatformAdapter.CancelBackgroundTasks(ctx)
 }
 
-// Python field dict of an event as the child rebuilds it, timestamp in ISO form
+// Python field dict of an event as the child rebuilds it, timestamp in ISO form with its zone offset
 func eventToDict(e *gateway.MessageEvent) map[string]any {
 	strs := func(items []string) []any {
 		out := make([]any, len(items))
@@ -502,7 +505,7 @@ func eventToDict(e *gateway.MessageEvent) map[string]any {
 		"reply_to_author_id": optionalPtr(e.ReplyToAuthorID), "reply_to_author_name": optionalPtr(e.ReplyToAuthorName),
 		"reply_to_is_own_message": e.ReplyToIsOwnMessage, "prompt_response": promptResponse, "auto_skill": e.AutoSkill,
 		"channel_prompt": optionalPtr(e.ChannelPrompt), "channel_context": optionalPtr(e.ChannelContext), "internal": e.Internal,
-		"metadata": metadata, "timestamp": e.Timestamp.Format("2006-01-02T15:04:05.999999"), "allow_gateway_control": e.AllowGatewayControl,
+		"metadata": metadata, "timestamp": e.Timestamp.Format(eventTimeLayout), "allow_gateway_control": e.AllowGatewayControl,
 		"reply_expected": replyExpected, "inherit_channel_pin": e.InheritChannelPin, "edit_revision": optionalPtr(e.EditRevision),
 		"media_filenames": strs(e.MediaFilenames)}
 }

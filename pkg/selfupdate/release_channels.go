@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -493,7 +495,7 @@ func NewChannelReader(baseURL string, repository *string, opener ChannelOpener) 
 	if r.opener == nil {
 		client := &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: &http.Transport{Proxy: pyurl.UrlopenProxy},
+			Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return channelErr("Channel archive redirects are not permitted")
 			},

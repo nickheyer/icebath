@@ -175,6 +175,11 @@ func glyphOf(c Card, t theme.Theme) string {
 	return t.Glyphs.Card
 }
 
+// Overlay with a step of its own behind the close key: Back takes the key for that step and reports true, false letting the overlay close
+type Backer interface {
+	Back() bool
+}
+
 func closable(c Card) bool {
 	cl, ok := c.(Closable)
 	return !ok || cl.Closable()

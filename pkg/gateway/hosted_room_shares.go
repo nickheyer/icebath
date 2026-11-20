@@ -30,8 +30,6 @@ const (
 	roomSharePageLimit = 100
 	// Back to back exchanges one sync round may run while a peer has more to move
 	roomShareMaxRounds = 64
-	// Thread every message of a shared room is sent on
-	roomShareThread = "main"
 )
 
 // Creates the share table of the room home
@@ -297,7 +295,7 @@ func (c *CanonicalHostedRoomService) syncPeer(p *roomSharePump, target string) {
 			text := err.Error()
 			var he *peerHTTPError
 			if errors.As(err, &he) {
-				text = fmt.Sprintf("HTTP %d %s", he.code, pyrepr.Str(peerHTTPErrorDetail(he)))
+				text = fmt.Sprintf("HTTP %d %s", he.code, peerHTTPErrorDetail(he))
 			}
 			if markErr := shareTransaction(c.ctx, c.DBPath, true, func(conn state.SQLiteConn) error {
 				_, err := conn.ExecContext(c.ctx, "UPDATE hosted_room_shares SET last_error=? WHERE peer=?", text, target)

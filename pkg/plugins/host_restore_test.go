@@ -65,7 +65,7 @@ func TestDeclaredReturnAndHostObjectBase(t *testing.T) {
 	}
 }
 
-func TestIsolationModeAndRefusal(t *testing.T) {
+func TestIsolationMode(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv(HostProcessEnv, "")
 	cfg := func(v any) map[string]any { return map[string]any{"plugins": map[string]any{"isolation": v}} }
@@ -77,12 +77,6 @@ func TestIsolationModeAndRefusal(t *testing.T) {
 	logs := captureLogs(t)
 	if got := IsolationMode(ctx, cfg("sandbox")); got != IsolationInProcess || !strings.Contains(logs.String(), "plugins.isolation=sandbox is not one of host, in_process; loading plugins in-process") {
 		t.Fatalf("unknown mode = %q, log %q", got, logs.String())
-	}
-	if r := InProcessImportRefusal(ctx, "memory provider 'x'", "user", cfg("host")); !strings.HasPrefix(r, "memory provider 'x' runs only in-process, and plugins.isolation is 'host'") {
-		t.Fatalf("refusal = %q", r)
-	}
-	if InProcessImportRefusal(ctx, "x", "bundled", cfg("host")) != "" || InProcessImportRefusal(ctx, "x", "user", cfg("in_process")) != "" {
-		t.Fatal("bundled code and in_process mode must import")
 	}
 	t.Setenv(HostProcessEnv, "1")
 	if IsolationMode(ctx, cfg("host")) != IsolationInProcess {

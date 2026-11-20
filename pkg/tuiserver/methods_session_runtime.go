@@ -10,12 +10,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -119,6 +122,8 @@ func sessionUndo(ctx context.Context, rid any, params map[string]any, session *t
 		return busy
 	}
 	removed := 0
+	var kept []map[string]any
+	var undone map[string]any
 	unlock := lockHistory(session)
 	if truthy(session.Get("running")) {
 		unlock()
@@ -134,7 +139,7 @@ func sessionUndo(ctx context.Context, rid any, params map[string]any, session *t
 	if userTurns > 0 {
 		var rewindErr error
 		if failure := catchPanic(func() {
-			_, _, removed, rewindErr = rewindActiveSessionHistory(ctx, session, userTurns-1, false)
+			kept, undone, removed, rewindErr = rewindActiveSessionHistory(ctx, session, userTurns-1, false)
 		}); failure != nil {
 			rewindErr = fmt.Errorf("%s", pyrepr.Str(failure))
 		}
@@ -144,7 +149,30 @@ func sessionUndo(ctx context.Context, rid any, params map[string]any, session *t
 		}
 	}
 	unlock()
-	return ok(rid, map[string]any{"removed": removed})
+	result := map[string]any{"removed": removed}
+	if removed > 0 && strOr(params["intent"]) != "retry" {
+		if hint := undoRollbackHint(ctx, session, undone, kept); hint != nil {
+			result["undo_hint"] = tuigateway.Plain(*hint)
+		}
+	}
+	return ok(rid, result)
+}
+
+// Files the turns an undo removed changed, read from the session agent's checkpoints, nil when checkpoints are off, refused for the session's backend or untouched by the span
+func undoRollbackHint(ctx context.Context, session *tuihost.Session, undone map[string]any, kept []map[string]any) (hint *tuigateway.UndoRollbackHint) {
+	if sessionAgent(session) == nil {
+		return nil
+	}
+	suppress(func() {
+		hint = withCheckpoints(ctx, session, func(mgr *tools.CheckpointManager, cwd string) *tuigateway.UndoRollbackHint {
+			if mgr == nil || !mgr.Enabled || containerCheckpointRefusal(ctx, session, mgr, cwd) != "" {
+				return nil
+			}
+			since, known := gateway.UndoSpanStart(undone["timestamp"], kept)
+			return gateway.UndoHint(mgr, cwd, since, known)
+		})
+	})
+	return hint
 }
 
 // In process session.compress pinning the compressing status, then the before and after summary with messages

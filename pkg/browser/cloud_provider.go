@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
@@ -95,7 +97,7 @@ func (p *CloudBrowserProvider) baseConfig(env *tools.Env) (*cloudConfig, error) 
 
 // Transport every cloud call shares, the platform trust store and the environment proxy as requests_verify gives it
 var cloudTransport = sync.OnceValue(func() *http.Transport {
-	return &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig(), ForceAttemptHTTP2: true}
+	return &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig(), ForceAttemptHTTP2: true}
 })
 
 // Sends one requests call with an optional json body serialised as requests does

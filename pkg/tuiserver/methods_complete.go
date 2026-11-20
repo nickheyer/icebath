@@ -131,7 +131,7 @@ func profileMentionItems(ctx context.Context, prefix string) ([]map[string]any, 
 
 // Autocomplete of the plugin reference provider owning the prefix, owned false when no provider claims it
 func pluginReferenceItems(ctx context.Context, pfx, qval string) ([]map[string]any, bool, error) {
-	prov, owned := agent.GetContextReferenceProviders()[pfx]
+	prov, owned := agent.ContextReferenceProviders(ctx)[pfx]
 	if !owned || prov == nil {
 		return nil, false, nil
 	}
@@ -222,7 +222,7 @@ func atRootItems(ctx context.Context) ([]map[string]any, error) {
 		return nil, err
 	}
 	items = append(items, profileItems...)
-	providers := agent.GetContextReferenceProviders()
+	providers := agent.ContextReferenceProviders(ctx)
 	keys := make([]string, 0, len(providers))
 	for pfx := range providers {
 		keys = append(keys, pfx)

@@ -47,9 +47,6 @@ type Awaitable interface {
 	Await(ctx context.Context) (any, error)
 }
 
-// Awaitable backed by a plain function
-type AwaitFunc func(ctx context.Context) (any, error)
-
 // Error raised when an awaited plugin command result outlives its bound
 type PluginCommandTimeoutError struct{ Seconds float64 }
 

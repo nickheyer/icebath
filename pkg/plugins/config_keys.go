@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -69,6 +70,23 @@ func selectedMemoryProviderManifest(h string, cfg map[string]any) *Manifest {
 		}
 	}
 	return nil
+}
+
+// Whether a provider directory sits directly in the bundled memory plugins directory
+func bundledMemoryProviderDir(pluginDir string) bool {
+	dir, err := pypath.Realpath(pluginDir, pypath.Lax)
+	if err != nil {
+		dir = pluginDir
+	}
+	override := bundledOverrideDir()
+	if override == "" {
+		return false
+	}
+	root := filepath.Join(override, "memory")
+	if resolved, err := pypath.Realpath(root, pypath.Lax); err == nil {
+		root = resolved
+	}
+	return filepath.Dir(dir) == root
 }
 
 // True when a non bundled provider directory is parked in plugins.disabled under any spelling the plugin commands write

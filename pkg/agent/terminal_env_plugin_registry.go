@@ -3,15 +3,17 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const hostedTerminalEnvBase = "agent.terminal_env_provider:TerminalEnvironmentProvider"
 
-// Python plugin terminal environment provider object proxied from the plugin host
+// Plugin terminal environment provider object proxied from the guest of its plugin
 type hostedTerminalEnvProvider struct{ obj *plugins.HostedObject }
 
 // Plugin host object that subclasses TerminalEnvironmentProvider as a backend, any other value unchanged
@@ -196,37 +198,33 @@ func (h hostedTerminalEnvProvider) DoctorChecks() []tools.DoctorCheck {
 	return out
 }
 
-// The host cannot hand a plugin environment to this process, so creation is refused
-func (h hostedTerminalEnvProvider) CreateEnvironment(context.Context, *tools.Env, tools.CreateOptions) (tools.Environment, error) {
-	return nil, tools.HostedBackendRefusal(h.Name())
+// Creates the environment in the plugin and wraps the object it answers, the options crossing under the names the provider contract gives them
+func (h hostedTerminalEnvProvider) CreateEnvironment(ctx context.Context, _ *tools.Env, opts tools.CreateOptions) (tools.Environment, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	name := h.Name()
+	containerConfig := opts.ContainerConfig
+	if containerConfig == nil {
+		containerConfig = map[string]any{}
+	}
+	v, err := h.obj.Call(ctx, "create_environment", nil, map[string]any{"cwd": opts.Cwd, "timeout": int64(opts.Timeout), "task_id": opts.TaskID,
+		"image": opts.Image, "container_config": containerConfig, "host_cwd": opts.HostCwd, "probe_only": opts.ProbeOnly})
+	if err != nil {
+		return nil, err
+	}
+	obj, ok := v.(*plugins.HostedObject)
+	if !ok || obj == nil {
+		return nil, fmt.Errorf("terminal backend %s create_environment returned %s where an environment was expected", name, errchain.Kind(v))
+	}
+	return newHostedTerminalEnv(ctx, obj, name, opts)
 }
 
-// Environments of this provider live in the plugin host outside this process
-func (h hostedTerminalEnvProvider) RunsInPluginHost() bool { return true }
-
-// Scoped registry view that wraps plugin host objects as BackendProvider values before delegating
-type hostedTerminalEnvScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedTerminalEnvScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedTerminalEnvProvider(p))
-}
-func (s hostedTerminalEnvScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedTerminalEnvProvider(p))
-}
-func (s hostedTerminalEnvScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedTerminalEnvProvider(p))
-}
-func (s hostedTerminalEnvScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedTerminalEnvScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedTerminalEnvProvider(p), scope)
-}
-func (s hostedTerminalEnvScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedTerminalEnvProvider(current), adaptHostedTerminalEnvProvider(replacement), scope)
-}
-
-// Plugin facing registry that register_terminal_environment_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_terminal_environment_provider writes into, a plugin host object stored as the provider adapted from it
 func TerminalEnvScopedRegistry() plugins.ScopedRegistry {
-	return hostedTerminalEnvScopedRegistry{tools.TerminalEnvRegistryScoped()}
+	return plugins.HostedScopedRegistry{Inner: tools.TerminalEnvRegistryScoped(), Adapt: adaptHostedTerminalEnvProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedTerminalEnvProvider)
+			return h.obj, ok
+		}}
 }

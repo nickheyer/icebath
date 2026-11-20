@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -26,8 +27,6 @@ var detailModes = map[string]bool{"hidden": true, "collapsed": true, "expanded":
 var statusbarModes = []string{"off", "top", "bottom"}
 
 var boolWords = map[string]bool{"on": true, "true": true, "yes": true, "off": false, "false": false, "no": false}
-
-var voiceChatModes = map[string]bool{"chained": true, "gpt-live": true}
 
 // Show and hide words of the reasoning command that toggle display rather than effort
 var ReasoningDisplayToggles = map[string]bool{"show": true, "on": true, "hide": false, "off": false}
@@ -219,6 +218,29 @@ func setDisplay(cfg map[string]any, key string, value any) (map[string]any, erro
 		return map[string]any{"value": pystr.Strip(text)}, nil
 	}
 	return nil, runtimeRefusal("invalid_params")
+}
+
+// Display language of the owning profile, a language one of its layers supplies, stored as its canonical id; the answer warns when
+// ICEBATH_LANGUAGE keeps another language in effect
+func setDisplayLanguage(ctx context.Context, c *AuthorityConnection, value any) (map[string]any, error) {
+	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
+	i18n.ResetLanguageCache()
+	id := i18n.ResolveLanguageID(sctx, settingWord(value), home.Dir(sctx))
+	if id == "" {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	result, err := writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) {
+		displaySection(cfg)["language"] = id
+		return map[string]any{"value": id}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	i18n.ResetLanguageCache()
+	if effective := i18n.GetLanguage(sctx); effective != id {
+		result["warning"] = "ICEBATH_LANGUAGE is set to " + effective + " and overrides display.language for this profile"
+	}
+	return result, nil
 }
 
 // Focus on stashes the configured tool progress mode and pins it off, off restores it
@@ -453,37 +475,27 @@ func setPersonality(ctx context.Context, c *AuthorityConnection, value any) (map
 	return map[string]any{"key": "personality", "value": reported, "history_reset": false}, nil
 }
 
-// One section leaf of the profile config, a voice chat mode or a boolean word
+// One boolean section leaf of the profile config, set from an on or off word
 func setProfileLeaf(cfg map[string]any, key string, value any) (map[string]any, error) {
 	section, leaf, _ := strings.Cut(key, ".")
-	var next any
-	if key == "voice.voice_chat_mode" {
-		word := settingWord(value)
-		if !voiceChatModes[word] {
-			return nil, runtimeRefusal("invalid_params")
-		}
-		next = word
-	} else {
-		word := settingWord(value)
-		on, known := boolWords[word]
-		switch word {
-		case "1":
-			on, known = true, true
-		case "0":
-			on, known = false, true
-		}
-		if !known {
-			return nil, runtimeRefusal("invalid_params")
-		}
-		next = on
+	word := settingWord(value)
+	on, known := boolWords[word]
+	switch word {
+	case "1":
+		on, known = true, true
+	case "0":
+		on, known = false, true
+	}
+	if !known {
+		return nil, runtimeRefusal("invalid_params")
 	}
 	block, ok := cfg[section].(map[string]any)
 	if !ok {
 		block = map[string]any{}
 		cfg[section] = block
 	}
-	block[leaf] = next
-	return map[string]any{"value": next}, nil
+	block[leaf] = on
+	return map[string]any{"value": on}, nil
 }
 
 // The approvals command's own write of approvals.mode for this profile
@@ -635,16 +647,14 @@ func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setPersonality(ctx, c, value) })
 	case key == "approvals.mode" || key == "approval_mode":
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setApprovalMode(ctx, c, value) })
-	case key == "voice.voice_chat_mode":
-		return keyed(forwardOffThread(ctx, func() (map[string]any, error) {
-			return writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) { return setProfileLeaf(cfg, key, value) })
-		}))
 	case key == "daybreak":
 		return keyed(forwardOffThread(ctx, func() (map[string]any, error) {
 			return writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) {
 				return setProfileLeaf(cfg, "agent.daybreak", value)
 			})
 		}))
+	case key == "language":
+		return keyed(forwardOffThread(ctx, func() (map[string]any, error) { return setDisplayLanguage(ctx, c, value) }))
 	}
 	result, err := forwardOffThread(ctx, func() (map[string]any, error) {
 		return writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) { return setDisplay(cfg, key, value) })

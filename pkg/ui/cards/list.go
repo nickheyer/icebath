@@ -12,6 +12,8 @@ type ListSpec struct {
 	Title, Glyph, Key string
 	// Keymap context of its own actions
 	Context string
+	// Keymap contexts in force on every row besides Context, the input row included
+	Shared []string
 	// Action a click on the selected row runs
 	Primary string
 	Columns []render.Column
@@ -26,6 +28,30 @@ type ListSpec struct {
 	OnFocus func(l *List) tea.Cmd
 	// Keeps the cursor on the newest row while it sits there
 	Follow bool
+	// Trailer on the frame, ahead of the count of rows a scrolled table hides
+	Status func() string
+	// Line above the table while it returns text, such as a part of the rows that failed to load
+	Banner func() string
+	// Takes text typed or pasted while the table holds the keys, an unbound printable key or a paste
+	Typed func(l *List, text string, pasted bool) tea.Cmd
+	// Runs on a digit picking one of the first ten rows in view, which show their digit
+	Quick func(l *List, i int) tea.Cmd
+	// Row typed into in place while the cursor sits on it, nil for a table without one
+	Input *ListInput
+}
+
+// Row of a list that takes typing in place of the table keys while the cursor sits on it
+type ListInput struct {
+	// Reports whether row i is the one typed into
+	Row func(i int) bool
+	// Column the text shows in
+	Col int
+	// Keymap contexts in force on the row ahead of the cell keys, their actions run from the Actions of the spec
+	Contexts []string
+	// Handed the trimmed text on the apply key
+	Done func(l *List, text string) tea.Cmd
+	// Runs on the cancel key, which clears the text when nil
+	Cancel func(l *List) tea.Cmd
 }
 
 // Table card with a filter bar, detail pane and keymap actions an extension drives through its spec
@@ -57,6 +83,22 @@ func NewList(env *Env, spec ListSpec) *List {
 	if spec.Hints != nil {
 		l.hints = func(_ *lister, i int) []wm.Hint { return spec.Hints(l, i) }
 	}
+	l.status, l.banner, l.shared = spec.Status, spec.Banner, spec.Shared
+	if spec.Typed != nil {
+		l.typed = func(_ *lister, text string, pasted bool) tea.Cmd { return spec.Typed(l, text, pasted) }
+	}
+	if spec.Quick != nil {
+		l.quick = func(_ *lister, i int) tea.Cmd { return spec.Quick(l, i) }
+	}
+	if in := spec.Input; in != nil {
+		l.input = &rowInput{row: in.Row, col: in.Col, ctxs: in.Contexts}
+		if in.Done != nil {
+			l.input.done = func(_ *lister, text string) tea.Cmd { return in.Done(l, text) }
+		}
+		if in.Cancel != nil {
+			l.input.cancel = func(*lister) tea.Cmd { return in.Cancel(l) }
+		}
+	}
 	return l
 }
 
@@ -71,6 +113,30 @@ func (l *List) Refresh() { l.refresh() }
 
 // Row under the cursor as an index into the rows, -1 when there is none
 func (l *List) Index() int { return l.index() }
+
+// Moves the cursor to row i of the rows, reporting whether the filter shows it
+func (l *List) Select(i int) bool { return l.selectRow(i) }
+
+// Moves the cursor by d rows within the rows the filter shows
+func (l *List) Move(d int) { l.sel = min(max(l.sel+d, 0), max(len(l.shown)-1, 0)) }
+
+// Reports whether the detail pane of the selected row is open
+func (l *List) DetailShown() bool { return l.detailShown() }
+
+// Text typed into the input row so far
+func (l *List) Typed() string {
+	if l.input == nil {
+		return ""
+	}
+	return l.input.text
+}
+
+// Replaces the text of the input row
+func (l *List) SetTyped(text string) {
+	if l.input != nil {
+		l.input.text = text
+	}
+}
 
 // Opens the detail pane of the selected row when closed and closes it when open
 func (l *List) ToggleDetail() tea.Cmd { return toggleDetail(l.lister, l.index()) }

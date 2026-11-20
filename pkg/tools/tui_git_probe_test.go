@@ -113,7 +113,7 @@ func TestGitProbeBranchFallsBackToShortHead(t *testing.T) {
 	}
 }
 
-func TestGitProbeResolveFoldsLinkedWorktrees(t *testing.T) {
+func TestGitProbeRootsFoldLinkedWorktrees(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Fatal("git is required")
 	}
@@ -127,47 +127,20 @@ func TestGitProbeResolveFoldsLinkedWorktrees(t *testing.T) {
 	cleanGit(t, "-C", main, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "init")
 	wt := filepath.Join(tmp, "wt")
 	cleanGit(t, "-C", main, "worktree", "add", "-q", "-b", "feature", wt)
-	got := GitProbeResolve(wt)
-	if got["repo_root"] != filepath.ToSlash(main) || got["worktree_root"] != filepath.ToSlash(wt) {
-		t.Fatalf("worktree %v", got)
+	if common, own := GitProbeCommonRepoRoot(wt), GitProbeRepoRoot(wt); common != filepath.ToSlash(main) || filepath.ToSlash(own) != filepath.ToSlash(wt) {
+		t.Fatalf("worktree common %q own %q", common, own)
 	}
-	if got := GitProbeResolve(main); got["repo_root"] != got["worktree_root"] || got["repo_root"] != filepath.ToSlash(main) {
-		t.Fatalf("main %v", got)
+	if common, own := GitProbeCommonRepoRoot(main), GitProbeRepoRoot(main); common != filepath.ToSlash(own) || common != filepath.ToSlash(main) {
+		t.Fatalf("main common %q own %q", common, own)
 	}
 	if b := GitProbeBranch(wt); b != "feature" {
 		t.Fatalf("branch %q", b)
 	}
-	if GitProbeResolve(tmp) != nil || GitProbeCommonRepoRoot(tmp) != "" || GitProbeRepoRoot(filepath.Join(tmp, "gone")) != "" {
+	if GitProbeRepoRoot(tmp) != "" || GitProbeCommonRepoRoot(tmp) != "" || GitProbeRepoRoot(filepath.Join(tmp, "gone")) != "" {
 		t.Fatal("non repo resolved")
 	}
 	if GitProbeRunGit("") != "" || GitProbeRepoRoot("") != "" {
 		t.Fatal("empty cwd probed")
-	}
-}
-
-func TestGitProbeWarmRootsResolvesEveryDistinctCwd(t *testing.T) {
-	var mu sync.Mutex
-	var probed []string
-	swapTUIGit(t, func(c string, args ...string) string {
-		if args[0] == "rev-parse" && args[1] == "--show-toplevel" {
-			mu.Lock()
-			probed = append(probed, c)
-			mu.Unlock()
-		}
-		return ""
-	}, time.Hour)
-	if err := GitProbeWarmRoots([]string{" /b ", "/a", "", "/b", "  "}, 8); err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(probed)
-	if !slices.Equal(probed, []string{"/a", "/b"}) {
-		t.Fatalf("probed %v", probed)
-	}
-	if err := GitProbeWarmRoots([]string{"/c", "/d"}, 0); err == nil || err.Error() != "max_workers must be greater than 0" {
-		t.Fatalf("err %v", err)
-	}
-	if err := GitProbeWarmRoots([]string{"/e"}, 0); err != nil {
-		t.Fatalf("single %v", err)
 	}
 }
 

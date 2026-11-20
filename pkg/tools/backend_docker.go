@@ -1224,28 +1224,27 @@ func reclaimSandboxFiles(ctx context.Context, env *Env, docker, cid string, moun
 // dockerEnv runs commands inside a hardened docker container
 type dockerEnv struct {
 	baseEnv
-	dockerExe           string
-	image               string
-	imagePinned         bool
-	s6Init              bool
-	snapCompat          bool
-	persistAcross       bool
-	taskID              string
-	forwardEnv          []string
-	userEnv             map[string]string
-	initUnsetNames      map[string]bool
-	containerID         string
-	initEnvValues       map[string]string
-	initEnvArgs         []string
-	runEnvValues        map[string]string
-	workspaceDir        string
-	homeDir             string
-	sandboxMounts       [][2]string
-	labels              map[string]string
-	allRunArgs          []string
-	cleanupDone         chan struct{}
-	persistentFS        bool
-	profileScopedForNet bool
+	dockerExe      string
+	image          string
+	imagePinned    bool
+	s6Init         bool
+	snapCompat     bool
+	persistAcross  bool
+	taskID         string
+	forwardEnv     []string
+	userEnv        map[string]string
+	initUnsetNames map[string]bool
+	containerID    string
+	initEnvValues  map[string]string
+	initEnvArgs    []string
+	runEnvValues   map[string]string
+	workspaceDir   string
+	homeDir        string
+	sandboxMounts  [][2]string
+	labels         map[string]string
+	allRunArgs     []string
+	cleanupDone    chan struct{}
+	persistentFS   bool
 }
 
 func (d *dockerEnv) EnvType() string { return "docker" }

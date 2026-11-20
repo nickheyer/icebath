@@ -208,11 +208,6 @@ func OptionalSkillsDir(ctx context.Context, def string) string {
 	return PackagedDir(ctx, "ICEBATH_OPTIONAL_SKILLS", def, "optional-skills")
 }
 
-// Bundled skills directory honoring package manager wrappers
-func BundledSkillsDir(ctx context.Context, def string) string {
-	return PackagedDir(ctx, "ICEBATH_BUNDLED_SKILLS", def, "skills")
-}
-
 // Historical managed Node directories of a home, bin first on POSIX and the node dir first on Windows
 func NodeDirs(ctx context.Context, h string) []string {
 	if h == "" {

@@ -74,7 +74,7 @@ func TestConfiguredChainContextScreening(t *testing.T) {
 		if n, ok := auxTaskMinimumContextLength("compression"); !ok || n != MinimumContextLength {
 			t.Fatalf("compression minimum %d %v", n, ok)
 		}
-		for _, task := range []string{"vision", "title_generation", "web_extract", "skills_hub", "mcp", "session_search", ""} {
+		for _, task := range []string{"vision", "title_generation", "web_extract", "mcp", "session_search", ""} {
 			if _, ok := auxTaskMinimumContextLength(task); ok {
 				t.Fatalf("%q must carry no minimum", task)
 			}

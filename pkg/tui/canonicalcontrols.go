@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
@@ -26,8 +27,13 @@ func (m asyncDoneMsg) resume() tea.Cmd {
 
 // Gateway request whose answer continues on the update loop
 func gatewayCall(gw turnGateway, method string, params map[string]any, then func(any, error) tea.Cmd) tea.Cmd {
+	return gatewayCallWithin(gw, method, params, 0, then)
+}
+
+// Gateway request given its own wait, the client's default for zero, whose answer continues on the update loop
+func gatewayCallWithin(gw turnGateway, method string, params map[string]any, timeout time.Duration, then func(any, error) tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
-		result, err := gw.request(context.Background(), method, params, 0)
+		result, err := gw.request(context.Background(), method, params, timeout)
 		return asyncDoneMsg{run: func() tea.Cmd { return then(result, err) }}
 	}
 }
@@ -45,7 +51,7 @@ func splitArgs(arg string) []string {
 	return jsWhitespaceSplit.Split(trimmed, -1)
 }
 
-// Model mutation payload of a model argument with its provider and reasoning flags
+// Model mutation payload of a model argument with its provider, reasoning and scope flags
 func modelPayload(arg string) (map[string]any, error) {
 	parts := splitArgs(arg)
 	model := parts[0]
@@ -59,6 +65,9 @@ func modelPayload(arg string) (map[string]any, error) {
 		parts = parts[1:]
 		switch {
 		case flag == "--session" || flag == tuiSessionModelFlag:
+			continue
+		case flag == "--global":
+			payload["persist"] = true
 			continue
 		case flag == "--provider" && len(parts) > 0 && parts[0] != "" && !strings.HasPrefix(parts[0], "--"):
 			payload["provider"] = parts[0]
@@ -224,7 +233,7 @@ func (s *tuiStore) applyModelResult(result *tuigateway.SessionMutateResult, sys 
 	return nil
 }
 
-// Switches the session's model on the owner, asking first for a guarded target, then runs onApplied
+// Switches the session's model on the owner, asking first for a guarded target, then runs onApplied when one is given
 func (s *tuiStore) switchCanonicalModel(gw turnGateway, sid, arg string, sys func(string), onApplied func() tea.Cmd, confirm string, then func(error) tea.Cmd) tea.Cmd {
 	baseline := s.ui.Info
 	stale := func() bool { return s.ui.Sid != sid }
@@ -260,9 +269,46 @@ func (s *tuiStore) switchCanonicalModel(gw turnGateway, sid, arg string, sys fun
 			return then(err)
 		}
 		var cmd tea.Cmd
-		if val(result.Status) != "deferred" {
+		if onApplied != nil && val(result.Status) != "deferred" {
 			cmd = onApplied()
 		}
 		return tea.Batch(cmd, then(nil))
+	})
+}
+
+// Switches the session's model for the slash command, asking once for a guarded target and reporting a confirmed pick the owner refused again
+func (r *slashRun) canonicalModel(arg, confirm string) tea.Cmd {
+	a := r.a
+	baseline := a.store.ui.Info
+	return a.store.mutateCanonicalSession(a.gw, r.sid, "model", arg, r.stale, confirm, func(m *mutationOutcome, err error) tea.Cmd {
+		if r.stale() {
+			return nil
+		}
+		if err != nil {
+			r.fail(err)
+			return nil
+		}
+		if m == nil || a.store.isSupersededControl("model", m.Result, m.ExpectedGeneration, baseline) {
+			return nil
+		}
+		result := m.Result
+		if token := result.Confirm; val(result.Status) == "confirmation_required" && token != nil {
+			detail := val(result.ConfirmMessage)
+			if confirm != "" {
+				r.fail(errors.New(trimJS(detail + "\n\n" + tr("slashCmd.session.model.confirmStale"))))
+				return nil
+			}
+			target := val(result.TargetModel)
+			if result.TargetModel == nil {
+				target = splitArgs(arg)[0]
+			}
+			a.store.openModelConfirmation(detail, target, func() tea.Cmd { return r.canonicalModel(arg, *token) })
+			return nil
+		}
+		if err := a.store.applyModelResult(result, r.sys); err != nil {
+			r.fail(err)
+			return nil
+		}
+		return a.persistPickedEffort(r.sid, arg)
 	})
 }

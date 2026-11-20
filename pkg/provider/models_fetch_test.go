@@ -147,19 +147,6 @@ func TestOpenRouterCatalogDiskCache(t *testing.T) {
 	}
 }
 
-var (
-	modelsPaid = map[string]any{"prompt": "0.000003", "completion": "0.000015"}
-	modelsFree = map[string]any{"prompt": "0", "completion": "0"}
-)
-
-func modelsPortalPayload(key string, ids ...string) map[string]any {
-	entries := make([]any, 0, len(ids))
-	for _, id := range ids {
-		entries = append(entries, map[string]any{"modelName": id, "displayName": id})
-	}
-	return map[string]any{key: entries}
-}
-
 func TestAIGatewayFreeDetector(t *testing.T) {
 	cases := []struct {
 		pricing any

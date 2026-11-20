@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // UserAgent is a browser shaped agent every asset CDN accepts, with identity encoding requested
@@ -153,6 +155,7 @@ func httpsRedirectPolicy(req *http.Request, via []*http.Request) error {
 // HTTP client every PM fetch shares, one HTTP/1.1 connection per range and https held across redirects
 var downloadClient = &http.Client{
 	Transport: &http.Transport{
+		DialContext:         netpref.DialContext((&net.Dialer{}).DialContext),
 		Proxy:               http.ProxyFromEnvironment,
 		DisableCompression:  true,
 		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{},

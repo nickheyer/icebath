@@ -2,50 +2,9 @@ package gatewayrun
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
-
-// Hook dir with HOOK.yaml and handler.py like the create hook helper
-func createHook(t *testing.T, hooksDir, hookName, events, handlerCode string) string {
-	t.Helper()
-	dir := filepath.Join(hooksDir, hookName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := "name: " + hookName + "\ndescription: Test hook\nevents: " + events + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "HOOK.yaml"), []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "handler.py"), []byte(handlerCode), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
-// Lines the hook handler appended to its results file
-func hookResults(t *testing.T, path string) string {
-	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
-}
-
-// Python string literal of s
-func pyQuote(s string) string {
-	out := []byte{'\''}
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' || s[i] == '\'' {
-			out = append(out, '\\')
-		}
-		out = append(out, s[i])
-	}
-	return string(append(out, '\''))
-}
 
 func TestCollectsSyncReturnValues(t *testing.T) {
 	reg := NewHookRegistry()

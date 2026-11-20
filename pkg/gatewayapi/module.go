@@ -41,8 +41,6 @@ const (
 	apiServerLatencySampleLimit = 512
 	// Messages a responses history keeps when auto truncation applies
 	responsesAutoTruncationHistoryLimit = 100
-	// Largest inlined media file in bytes
-	mediaDataURLMaxBytes = 5 * 1024 * 1024
 	// English failure label a gateway auth error sniffer keys on
 	ProviderAuthFailedLabel = "Provider authentication failed"
 	// English failure label a gateway rate limit sniffer keys on
@@ -604,8 +602,7 @@ func jsonResponse(data any, status int, headers map[string]string) *gateway.WebR
 
 // Reservation of an admitted request not yet in agent bookkeeping, released once
 type pendingReservation struct {
-	active   bool
-	detached bool
+	active bool
 }
 
 type reservationKey struct{}
@@ -657,19 +654,6 @@ func (a *APIServerAdapter) requireAuth(handler gateway.WebHandler) gateway.WebHa
 			return authErr, nil
 		}
 		return handler(ctx, request)
-	}
-}
-
-// Pending work reservation for background work started outside an admitted request, released by done unless detached
-func (a *APIServerAdapter) reservePendingAPIWork() (*pendingReservation, func()) {
-	reservation := &pendingReservation{active: true}
-	a.mu.Lock()
-	a.pendingAgentRequests++
-	a.mu.Unlock()
-	return reservation, func() {
-		if !reservation.detached {
-			a.releasePendingAPIWork(reservation)
-		}
 	}
 }
 

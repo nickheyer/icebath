@@ -30,6 +30,29 @@ func fmtCwdBranch(cwd, branch string, maxUnits int) string {
 	return shortCwd(cwd, max(8, maxUnits-unitLen(tag))) + tag
 }
 
+// Project name trimmed and cut at the end with an ellipsis past max units
+func shortProject(name string, maxUnits int) string {
+	name = strings.TrimFunc(name, isJSSpace)
+	if unitLen(name) <= maxUnits {
+		return name
+	}
+	return jsSlice(name, 0, max(1, maxUnits-1)) + "…"
+}
+
+// Folder label led by the project name, the name alone when the folder would get under eight units and the plain folder label outside a project
+func fmtProjectCwdBranch(cwd, branch, project string, maxUnits int) string {
+	name := shortProject(project, 18)
+	if name == "" {
+		return fmtCwdBranch(cwd, branch, maxUnits)
+	}
+	const separator = " · "
+	remaining := maxUnits - unitLen(name) - unitLen(separator)
+	if remaining < 8 {
+		return shortProject(name, maxUnits)
+	}
+	return name + separator + fmtCwdBranch(cwd, branch, remaining)
+}
+
 // Terminal title of a status marker and the session name, model and folder that are set
 func composeTabTitle(marker, sessionName, model, cwd string, maxName int) string {
 	name := strings.TrimFunc(sessionName, isJSSpace)

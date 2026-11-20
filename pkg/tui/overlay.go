@@ -12,7 +12,17 @@ type approvalReq struct {
 	OpenURL        string
 	RequestID      string
 	SmartDenied    bool
+	// Where a denial that tells the agent what to do instead stands: steering while the words are on their way, told once only the denial is left
+	Tell string
+	// Verdict on its way to the owner of a shared prompt, no second one sent meanwhile
+	Answering bool
 }
+
+// Stages of a denial that tells the agent what to do instead
+const (
+	tellSteering = "steering"
+	tellTold     = "told"
+)
 
 // Yes or no question with its labels and the action a yes runs
 type confirmReq struct {
@@ -38,6 +48,8 @@ type clarifyReq struct {
 	RequestID string
 	Questions []clarifyQuestion
 	Answers   map[string]string
+	// Cancel on its way to the owner of a shared prompt, no answer sent meanwhile
+	Cancelling bool
 }
 
 // Masked sudo password prompt, for a terminal command or for the screen package install of a profile
@@ -91,6 +103,12 @@ type overlayState struct {
 	VaultCode      *vaultCodeReq
 	VaultSaveLogin *vaultSaveLoginReq
 	VaultUnlock    *vaultUnlockReq
+}
+
+// Closes the connection card for good while its operation still settles, the outcome lines printed when it does
+func (s *tuiStore) dismissConnectionOperation(opID string) {
+	s.dismissedOperations = rememberOperation(s.dismissedOperations, opID)
+	s.clearConnectionOperation()
 }
 
 // Drops the flow prompts of a finished turn and keeps the panels the user opened

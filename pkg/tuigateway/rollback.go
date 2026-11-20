@@ -1,9 +1,16 @@
 package tuigateway
 
-// Session whose working directory checkpoints are listed
+// Session whose working directory checkpoints are listed, with the start of an undone span and the rewound row when the files that span changed are wanted
 type RollbackListParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
+	SessionID     string   `json:"session_id"`
+	Profile       *string  `json:"profile,omitzero"`
+	UndoSince     *float64 `json:"undo_since,omitzero"`
+	UndoMessageID *int64   `json:"undo_message_id,omitzero"`
+}
+
+// Files the turns an undo removed changed since the first checkpoint of that span, the line naming them worded by the client
+type UndoRollbackHint struct {
+	Files []string `json:"files"`
 }
 
 // One checkpoint with the reason it was taken as its message
@@ -13,10 +20,11 @@ type RollbackCheckpoint struct {
 	Message   string `json:"message"`
 }
 
-// Checkpoints newest first, enabled false when checkpointing is off
+// Checkpoints newest first, enabled false when checkpointing is off, and the changed files of an undone span that was asked about
 type RollbackListResult struct {
 	Enabled     bool                 `json:"enabled"`
 	Checkpoints []RollbackCheckpoint `json:"checkpoints"`
+	UndoHint    *UndoRollbackHint    `json:"undo_hint,omitzero"`
 }
 
 // Checkpoint by hash or one based number, one file or the whole tree, all also taking files the user edited

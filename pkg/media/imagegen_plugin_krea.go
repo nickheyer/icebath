@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -57,18 +56,6 @@ var kreaModels = imageModelCatalog{order: []string{"krea-3", "krea-2-medium", "k
 		"strengths": "Fastest Krea 2 — medium quality at lower latency / cost.",
 		"price":     "$0.015 (text) / $0.0175 (style refs)", "path": "/generate/image/krea/krea-2/medium-turbo", "upscale": false},
 }}
-
-// Ids of every Krea model the plugin serves
-var kreaModelIDs = func() map[string]bool {
-	ids := map[string]bool{}
-	for _, id := range kreaModels.order {
-		ids[id] = true
-	}
-	return ids
-}()
-
-// KreaModelIDs is a copy of the Krea catalog ids, the plugin's KREA_MODEL_IDS
-func KreaModelIDs() map[string]bool { return maps.Clone(kreaModelIDs) }
 
 var (
 	kreaAspectMap        = map[string]string{"landscape": "16:9", "square": "1:1", "portrait": "9:16"}

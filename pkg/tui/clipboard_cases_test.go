@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 )
 
 // One recorded clipboard command call
@@ -31,7 +33,7 @@ func fakeRun(calls *[]clipCall, outs ...any) clipboardRun {
 }
 
 // Write starter answering each call from a list of exit results
-func fakeStart(calls *[]clipCall, oks ...bool) clipboardStart {
+func fakeStart(calls *[]clipCall, oks ...bool) clip.Start {
 	return func(_ context.Context, cmd string, args []string, stdin *string) bool {
 		i := len(*calls)
 		*calls = append(*calls, clipCall{cmd: cmd, args: args, stdin: stdin})
@@ -127,61 +129,61 @@ func TestWriteClipboardText(t *testing.T) {
 	}
 	t.Run("does nothing off macOS when no tools are available", func(t *testing.T) {
 		var calls []clipCall
-		if writeClipboardTextWith(ctx, "hello", "linux", fakeStart(&calls, false), envMap(nil)) {
+		if clip.WriteTextWith(ctx, "hello", "linux", fakeStart(&calls, false), envMap(nil)) {
 			t.Fatal("want false")
 		}
 	})
 	t.Run("writes text to pbcopy on macOS", func(t *testing.T) {
 		var calls []clipCall
-		if !writeClipboardTextWith(ctx, "hello world", "darwin", fakeStart(&calls, true), envMap(nil)) || calls[0].cmd != "pbcopy" || len(calls[0].args) != 0 || stdinOf(calls[0]) != "hello world" {
+		if !clip.WriteTextWith(ctx, "hello world", "darwin", fakeStart(&calls, true), envMap(nil)) || calls[0].cmd != "pbcopy" || len(calls[0].args) != 0 || stdinOf(calls[0]) != "hello world" {
 			t.Fatalf("%+v", calls)
 		}
 	})
 	t.Run("returns false when pbcopy fails", func(t *testing.T) {
 		var calls []clipCall
-		if writeClipboardTextWith(ctx, "hello world", "darwin", fakeStart(&calls, false), envMap(nil)) {
+		if clip.WriteTextWith(ctx, "hello world", "darwin", fakeStart(&calls, false), envMap(nil)) {
 			t.Fatal("want false")
 		}
 	})
 	wayland := envMap(map[string]string{"WAYLAND_DISPLAY": "wayland-1"})
 	t.Run("uses wl-copy on Wayland Linux", func(t *testing.T) {
 		var calls []clipCall
-		if !writeClipboardTextWith(ctx, "wayland text", "linux", fakeStart(&calls, true), wayland) || calls[0].cmd != "wl-copy" || strings.Join(calls[0].args, " ") != "--type text/plain" || stdinOf(calls[0]) != "wayland text" {
+		if !clip.WriteTextWith(ctx, "wayland text", "linux", fakeStart(&calls, true), wayland) || calls[0].cmd != "wl-copy" || strings.Join(calls[0].args, " ") != "--type text/plain" || stdinOf(calls[0]) != "wayland text" {
 			t.Fatalf("%+v", calls)
 		}
 	})
 	t.Run("falls back to xclip when wl-copy fails on Wayland", func(t *testing.T) {
 		var calls []clipCall
-		if !writeClipboardTextWith(ctx, "x11 text", "linux", fakeStart(&calls, false, true), wayland) || calls[0].cmd != "wl-copy" || calls[1].cmd != "xclip" || strings.Join(calls[1].args, " ") != "-selection clipboard -in" {
+		if !clip.WriteTextWith(ctx, "x11 text", "linux", fakeStart(&calls, false, true), wayland) || calls[0].cmd != "wl-copy" || calls[1].cmd != "xclip" || strings.Join(calls[1].args, " ") != "-selection clipboard -in" {
 			t.Fatalf("%+v", calls)
 		}
 	})
 	t.Run("falls back to xsel when both wl-copy and xclip fail", func(t *testing.T) {
 		var calls []clipCall
-		if !writeClipboardTextWith(ctx, "xsel text", "linux", fakeStart(&calls, false, false, true), wayland) || len(calls) != 3 || calls[2].cmd != "xsel" || strings.Join(calls[2].args, " ") != "--clipboard --input" {
+		if !clip.WriteTextWith(ctx, "xsel text", "linux", fakeStart(&calls, false, false, true), wayland) || len(calls) != 3 || calls[2].cmd != "xsel" || strings.Join(calls[2].args, " ") != "--clipboard --input" {
 			t.Fatalf("%+v", calls)
 		}
 	})
 	psScript := func(text string) string {
-		return powershellWriteScript(base64.StdEncoding.EncodeToString([]byte(text)))
+		return clip.PowershellWriteScript(base64.StdEncoding.EncodeToString([]byte(text)))
 	}
 	t.Run("uses PowerShell on WSL2 when WSL_DISTRO_NAME is set", func(t *testing.T) {
 		var calls []clipCall
-		ok := writeClipboardTextWith(ctx, "wsl text", "linux", fakeStart(&calls, true), envMap(map[string]string{"WSL_DISTRO_NAME": "Ubuntu"}))
+		ok := clip.WriteTextWith(ctx, "wsl text", "linux", fakeStart(&calls, true), envMap(map[string]string{"WSL_DISTRO_NAME": "Ubuntu"}))
 		if !ok || calls[0].cmd != "powershell.exe" || strings.Join(calls[0].args, "|") != "-NoProfile|-NonInteractive|-Command|"+psScript("wsl text") || calls[0].stdin != nil {
 			t.Fatalf("%+v", calls)
 		}
 	})
 	t.Run("prefers the Windows clipboard path over wl-copy inside WSLg", func(t *testing.T) {
 		var calls []clipCall
-		ok := writeClipboardTextWith(ctx, "wslg text", "linux", fakeStart(&calls, true), envMap(map[string]string{"WSL_DISTRO_NAME": "Ubuntu", "WAYLAND_DISPLAY": "wayland-0"}))
+		ok := clip.WriteTextWith(ctx, "wslg text", "linux", fakeStart(&calls, true), envMap(map[string]string{"WSL_DISTRO_NAME": "Ubuntu", "WAYLAND_DISPLAY": "wayland-0"}))
 		if !ok || len(calls) != 1 || calls[0].cmd != "powershell.exe" {
 			t.Fatalf("%+v", calls)
 		}
 	})
 	t.Run("uses PowerShell on Windows", func(t *testing.T) {
 		var calls []clipCall
-		ok := writeClipboardTextWith(ctx, "win text", "windows", fakeStart(&calls, true), envMap(nil))
+		ok := clip.WriteTextWith(ctx, "win text", "windows", fakeStart(&calls, true), envMap(nil))
 		if !ok || calls[0].cmd != "powershell" || strings.Join(calls[0].args, "|") != "-NoProfile|-NonInteractive|-Command|"+psScript("win text") {
 			t.Fatalf("%+v", calls)
 		}
@@ -189,7 +191,7 @@ func TestWriteClipboardText(t *testing.T) {
 	t.Run("preserves CJK text via base64 encoding in PowerShell on WSL", func(t *testing.T) {
 		var calls []clipCall
 		text := "\u4f60\u597d\u4e16\u754c"
-		writeClipboardTextWith(ctx, text, "linux", fakeStart(&calls, true), envMap(map[string]string{"WSL_DISTRO_NAME": "Ubuntu"}))
+		clip.WriteTextWith(ctx, text, "linux", fakeStart(&calls, true), envMap(map[string]string{"WSL_DISTRO_NAME": "Ubuntu"}))
 		script := calls[0].args[len(calls[0].args)-1]
 		if !strings.Contains(script, base64.StdEncoding.EncodeToString([]byte(text))) {
 			t.Fatalf("script %q", script)

@@ -166,13 +166,6 @@ auxiliary.review.api_mode
 auxiliary.review.base_url
 auxiliary.review.model
 auxiliary.review.provider
-auxiliary.skills_hub.api_key
-auxiliary.skills_hub.base_url
-auxiliary.skills_hub.extra_body
-auxiliary.skills_hub.model
-auxiliary.skills_hub.provider
-auxiliary.skills_hub.reasoning_effort
-auxiliary.skills_hub.timeout
 auxiliary.stream_only_base_urls
 auxiliary.title_generation.api_key
 auxiliary.title_generation.base_url
@@ -215,9 +208,6 @@ auxiliary.voice_chat.model
 auxiliary.voice_chat.provider
 auxiliary.voice_chat.reasoning_effort
 auxiliary.voice_chat.timeout
-bedrock.discovery.enabled
-bedrock.discovery.provider_filter
-bedrock.discovery.refresh_interval
 bedrock.guardrail.guardrail_identifier
 bedrock.guardrail.guardrail_version
 bedrock.guardrail.stream_processing_mode
@@ -228,7 +218,6 @@ bot_desktop.geometry
 bot_desktop.idle_stop_minutes
 bot_desktop.min_free_memory_mb
 bot_desktop.placement
-bot_mode.envelope_ttl_seconds
 bot_mode.turn_wait_seconds
 browser.allow_private_urls
 browser.auto_local_for_private_urls
@@ -361,7 +350,6 @@ delegation.reasoning_effort
 delegation.request_overrides
 delegation.subagent_auto_approve
 delegation.surface_child_process_notifications
-discord.allow_any_attachment
 discord.allowed_channels
 discord.approval_mentions
 discord.auto_thread
@@ -405,9 +393,6 @@ display.bell_on_prompt
 display.busy_input_mode
 display.busy_steer_ack_enabled
 display.cli_layout
-display.compact
-display.copy_shortcut
-display.credits_notices
 display.ephemeral_system_ttl
 display.file_mutation_verifier
 display.final_response_markdown
@@ -415,10 +400,10 @@ display.focus_saved_tool_progress
 display.focus_view
 display.friendly_tool_labels
 display.inline_diffs
+display.inline_images
 display.interim_assistant_messages
 display.language
 display.memory_notifications
-display.persist_prompts
 display.personality
 display.pet.enabled
 display.pet.render_mode
@@ -431,16 +416,10 @@ display.platforms.telegram.streaming
 display.platforms.wecom.streaming
 display.reasoning_full
 display.reasoning_style
-display.resume_display
-display.resume_exchanges
-display.resume_max_assistant_chars
-display.resume_max_assistant_lines
-display.resume_max_user_chars
-display.resume_skip_tool_only
 display.runtime_footer.enabled
 display.runtime_footer.fields
+display.sections
 display.show_commentary
-display.show_cost
 display.show_reasoning
 display.skin
 display.spinner_token_flow
@@ -455,12 +434,13 @@ display.tool_progress_command
 display.tool_progress_grouping
 display.tui_agents_nudge
 display.tui_auto_resume_recent
+display.tui_compact
 display.tui_native
 display.tui_status_indicator
+display.tui_statusbar
+display.tui_theme
 display.turn_completion_explainer
 display.turn_summary
-display.user_message_preview.first_lines
-display.user_message_preview.last_lines
 doctor.live_probe_timeout
 fallback.min_switch_reset_seconds
 fallback_providers
@@ -558,7 +538,6 @@ mattermost.free_response_channels
 mattermost.require_mention
 max_concurrent_sessions
 max_live_sessions
-mcp.auto_reload_on_config_change
 mcp.discovery_concurrency
 mcp_discovery_timeout
 mcp_single_query_discovery_timeout
@@ -606,7 +585,6 @@ openrouter.response_cache
 openrouter.response_cache_ttl
 paste_collapse_char_threshold
 paste_collapse_threshold
-paste_collapse_threshold_fallback
 personalities
 platform_hints
 plugins.auto_apply
@@ -794,7 +772,6 @@ tool_loop_guardrails.warnings_enabled
 tool_output.max_bytes
 tool_output.max_line_length
 tool_output.max_lines
-tools.connectors.enabled
 tools.tool_search.defer
 tools.tool_search.enabled
 tools.tool_search.listing
@@ -862,10 +839,6 @@ voice.barge_in_grace_seconds
 voice.barge_in_threshold_multiplier
 voice.beep_enabled
 voice.beep_volume
-voice.client_direct
-voice.gpt_live.instructions
-voice.gpt_live.model
-voice.gpt_live.voice
 voice.max_recording_seconds
 voice.record_key
 voice.silence_duration
@@ -873,7 +846,6 @@ voice.silence_threshold
 voice.stop_phrases
 voice.submit_mode
 voice.thinking_sound
-voice.voice_chat_mode
 wake_word.confirmation_frames
 wake_word.enabled
 wake_word.input_device
@@ -965,8 +937,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 67 || Version != 67 {
-		t.Errorf("schema version %v, want 67", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 68 || Version != 68 {
+		t.Errorf("schema version %v, want 68", Defaults()["_config_version"])
 	}
 }
 

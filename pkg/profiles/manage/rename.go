@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -130,6 +131,9 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 		}
 	}
 	recordProfileRename(ctx, newDir, oldCanon)
+	memory.NotifyMemoryProvider(ctx, newDir, func(ctx context.Context, p memory.Provider) error {
+		return p.OnProfileRenamed(ctx, oldCanon, newCanon, newDir)
+	})
 	if _, err := profiles.RemoveWrapperScript(oldCanon); err != nil {
 		return "", err
 	}

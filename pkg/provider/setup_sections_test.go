@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -44,28 +43,6 @@ func scriptedSetupConsole(t *testing.T, answers ...string) (context.Context, *by
 	var out bytes.Buffer
 	t.Cleanup(WithSetupConsole(&cliui.Console{In: strings.NewReader(in.String()), Out: &out}))
 	return home.WithOverride(context.Background(), h), &out
-}
-
-// JSON form of a config for comparison with a recorded Python dict
-func normalizedJSON(t *testing.T, v any) string {
-	t.Helper()
-	var decoded any
-	switch raw := v.(type) {
-	case json.RawMessage:
-		if err := json.Unmarshal(raw, &decoded); err != nil {
-			t.Fatal(err)
-		}
-	default:
-		data, err := json.Marshal(raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(data, &decoded); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, _ := json.Marshal(decoded)
-	return string(data)
 }
 
 // Swaps the provider picker the model section runs

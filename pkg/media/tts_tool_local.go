@@ -67,10 +67,9 @@ func (c *ttsModelCache) Clear() {
 }
 
 var (
-	piperVoiceCache       = newTTSModelCache()
-	kittenTTSModelCache   = newTTSModelCache()
-	localTTSModelCaches   = map[string]*ttsModelCache{"piper": piperVoiceCache, "kittentts": kittenTTSModelCache}
-	errTTSCacheLoadFailed = errors.New("model load failed")
+	piperVoiceCache     = newTTSModelCache()
+	kittenTTSModelCache = newTTSModelCache()
+	localTTSModelCaches = map[string]*ttsModelCache{"piper": piperVoiceCache, "kittentts": kittenTTSModelCache}
 )
 
 // Cached value or a fresh load, a hit refreshing recency and the oldest entries evicted past the bound

@@ -45,9 +45,6 @@ type ContinuousOptions struct {
 const continuousNoSpeechLimit = 3
 
 var (
-	pttRecorderMu sync.Mutex
-	pttRecorder   VoiceRecorder
-
 	continuousMu            sync.Mutex
 	continuousActive        bool
 	continuousStopping      bool

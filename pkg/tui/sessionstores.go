@@ -1,15 +1,22 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"math/rand/v2"
 	"reflect"
 	"slices"
 	"strings"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 const (
 	petFlashDefault = 1600 * time.Millisecond
+	// Time the affection heart stays lit after a reaction
+	goodVibesFlash  = 650 * time.Millisecond
 	operationMemory = 64
 )
 
@@ -48,6 +55,41 @@ func (s *tuiStore) flashPet(state string, d time.Duration) {
 
 // Bumps the affection heart tick of the status bar
 func (s *tuiStore) flashGoodVibes() { s.goodVibesTick++ }
+
+// Lights the affection heart in a tone drawn anew for each reaction and repaints when it goes out
+func (a *app) followGoodVibes() tea.Cmd {
+	if a.store.goodVibesTick == a.heartSeen {
+		return nil
+	}
+	a.heartSeen, a.heartUntil, a.heartTone = a.store.goodVibesTick, a.store.now().Add(goodVibesFlash), rand.IntN(3)
+	return tea.Tick(goodVibesFlash, func(time.Time) tea.Msg { return asyncDoneMsg{} })
+}
+
+// Affection heart of the status row in its tone, empty once the flash is over
+func (a *app) goodVibesHeart(t theme) string {
+	if !a.store.now().Before(a.heartUntil) {
+		return ""
+	}
+	return toneStyle([]string{t.Color.Error, t.Color.Warn, t.Color.Accent}[a.heartTone%3]).Render("♥")
+}
+
+// Voice state of the status bar with its color role, the capture marks while recording or transcribing, else the mode with the mark of spoken replies
+func (a *app) voiceLabel() (string, wm.SegmentStyle) {
+	switch {
+	case a.voiceRecording:
+		return tr("session.main.voiceRec"), wm.Bad
+	case a.voiceProcessing:
+		return tr("session.main.voiceStt"), wm.Hot
+	}
+	label := tr("session.main.voiceOff")
+	if a.voiceEnabled {
+		label = tr("session.main.voiceOn")
+	}
+	if a.voiceTTS {
+		label += tr("session.main.voiceTtsSuffix")
+	}
+	return label, wm.Dim
+}
 
 // Inputs whose transcript bubble this client painted at submit time
 func (s *tuiStore) markBubbleShown(inputID string) {
@@ -160,9 +202,9 @@ func connectionTargetName(target tuigateway.ConnectionOperationTarget) string {
 	return firstText(strings.TrimFunc(val(target.Display), isJSSpace), target.Name)
 }
 
-// Shows the card of a connection request unless its operation already settled
+// Shows the card of a connection request unless its operation already settled or the user closed its card
 func (s *tuiStore) applyConnectionRequest(p tuigateway.ConnectionRequestPayload) {
-	if slices.Contains(s.settledOperations, p.OpID) {
+	if slices.Contains(s.settledOperations, p.OpID) || slices.Contains(s.dismissedOperations, p.OpID) {
 		return
 	}
 	current := s.connectionOp
@@ -178,10 +220,12 @@ func (s *tuiStore) applyConnectionSnapshot(p tuigateway.ConnectionOperationSnaps
 	shown := current != nil && current.OpID == p.OpID
 	if p.Settled {
 		s.settledOperations = rememberOperation(s.settledOperations, p.OpID)
-		if !shown {
+		if !shown && !slices.Contains(s.dismissedOperations, p.OpID) {
 			return nil
 		}
-		s.clearConnectionOperation()
+		if shown {
+			s.clearConnectionOperation()
+		}
 		lines := make([]string, 0, len(p.Targets))
 		for _, target := range p.Targets {
 			lines = append(lines, settledLine(target))

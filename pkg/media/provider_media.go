@@ -19,8 +19,6 @@ import (
 
 const generatedSubdir = "generated"
 
-const mediaCacheMaxAgeHours = 24
-
 var redirectStatusCodes = map[int]bool{301: true, 302: true, 303: true, 307: true, 308: true}
 
 const maxSaveURLRedirects = 5

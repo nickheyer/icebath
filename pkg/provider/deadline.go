@@ -34,9 +34,6 @@ var DumpBlockedLoop = dumpBlockedLoopDiagnostics
 // Hands an expiry callback to the waiting dispatch goroutine, run at once in production where the waiter selects on it
 var PostToDispatch = func(fn func()) { fn() }
 
-// Slice of a bounded wait so an interrupt is observed promptly
-const boundedWaitSlice = 200 * time.Millisecond
-
 // Clock hooks the deadline helpers use, swapped by tests
 var (
 	deadlineNow   = time.Now

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -244,7 +246,7 @@ func debugURLOpen(ctx context.Context, method, target string, body []byte, heade
 		req.Header.Set(k, v)
 	}
 	proxy := httpproxy.FromEnvironment().ProxyFunc()
-	client := &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }}}
+	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }}}
 	resp, err := client.Do(req)
 	if err != nil {
 		var ue *url.Error

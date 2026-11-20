@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 )
 
 // Markers of rows the compaction wrote, never the target of an undo
@@ -146,9 +148,9 @@ func retryText(content any) (string, bool) {
 // Undoes the last exchange on the canonical wire, sending the prompt again for a retry
 func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 	a := r.a
-	nothing := tr("slashCmd.core.undo.nothing")
+	nothing, intent := tr("slashCmd.core.undo.nothing"), "undo"
 	if retry {
-		nothing = tr("slashCmd.core.retry.nothing")
+		nothing, intent = tr("slashCmd.core.retry.nothing"), "retry"
 	}
 	build := func(snapshot *tuigateway.CanonicalSnapshot) (map[string]any, error) {
 		target := lastUserTurn(snapshot)
@@ -171,6 +173,10 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 			return nil
 		}
 		if err != nil {
+			if busy := rewindBusyText(err, intent); busy != "" {
+				r.sys(busy)
+				return nil
+			}
 			r.fail(err)
 			return nil
 		}
@@ -189,7 +195,7 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 				key = "slashCmd.core.undo.undidOne"
 			}
 			r.sys(tr(key, strconv.FormatInt(removed, 10)))
-			return nil
+			return r.showUndoRollbackHint(m.Result.TargetMessage)
 		}
 		var content any
 		if m.Result.TargetMessage != nil {
@@ -201,6 +207,68 @@ func (r *slashRun) canonicalRewind(retry bool) tea.Cmd {
 		r.sys(nothing)
 		return nil
 	})
+}
+
+// Most files the line after an undo names before it counts the rest
+const undoHintNamedFiles = 8
+
+// Line naming the files the undone turns changed and pointing at the rollback command, empty for no files
+func undoRollbackHintLine(hint *tuigateway.UndoRollbackHint) string {
+	if hint == nil || len(hint.Files) == 0 {
+		return ""
+	}
+	files := hint.Files
+	named := strings.Join(files[:min(len(files), undoHintNamedFiles)], ", ")
+	if len(files) > undoHintNamedFiles {
+		named += " " + tr("slashCmd.core.undo.rollbackHintMore", strconv.Itoa(len(files)-undoHintNamedFiles))
+	}
+	return tr("slashCmd.core.undo.rollbackHint", named)
+}
+
+// Asks the owner which files the undone turns changed and names them, silent when it knows none or refuses the question
+func (r *slashRun) showUndoRollbackHint(target *tuigateway.TranscriptMessage) tea.Cmd {
+	if target == nil || target.Timestamp == nil {
+		return nil
+	}
+	params := tuigateway.RollbackListParams{SessionID: r.sid, UndoSince: target.Timestamp, UndoMessageID: target.RowID}
+	switch id := target.Extra["id"].(type) {
+	case float64:
+		if id == math.Trunc(id) {
+			params.UndoMessageID = ptr(int64(id))
+		}
+	case int64:
+		params.UndoMessageID = &id
+	case int:
+		params.UndoMessageID = ptr(int64(id))
+	}
+	return call(r.a.gw, tuigateway.RollbackList, params, func(res *tuigateway.RollbackListResult, err error) tea.Cmd {
+		if err != nil || r.stale() {
+			return nil
+		}
+		if line := undoRollbackHintLine(res.UndoHint); line != "" {
+			r.sys(line)
+		}
+		return nil
+	})
+}
+
+// Format, file name and redaction flag of the save command's argument, only a trailing word being the flag
+func parseSaveArgs(arg string) (format, filename string, redact bool) {
+	parts := strings.Fields(arg)
+	if n := len(parts); n > 0 {
+		word := strings.TrimLeft(parts[n-1], "-")
+		if strings.EqualFold(word, "redact") && len(parts[n-1])-len(word) <= 2 {
+			redact, parts = true, parts[:n-1]
+		}
+	}
+	format = "json"
+	if len(parts) > 0 {
+		format = parts[0]
+	}
+	if len(parts) > 1 {
+		filename = parts[1]
+	}
+	return format, filename, redact
 }
 
 // File a session export is written to, a named file under the session folder or the saved sessions of the home
@@ -241,77 +309,85 @@ func (r *slashRun) viaGateway(title, empty string) tea.Cmd {
 
 // Transcript, clipboard, queue and session history commands
 func (a *app) transcriptCommands() []slashCommand {
-	modes := func(string) []string { return []string{"hidden", "collapsed", "expanded", "cycle"} }
+	modes := []string{"hidden", "collapsed", "expanded"}
 	return []slashCommand{
-		{name: "details", aliases: []string{"detail"}, help: "control agent detail visibility, global or per section", usage: "[hidden|collapsed|expanded|cycle]", suggest: modes, run: func(r *slashRun) tea.Cmd {
-			ui := &a.store.ui
-			if r.arg == "" {
-				return call(a.gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "details_mode"}, func(res *tuigateway.ConfigGetResult, err error) tea.Cmd {
-					if r.stale() {
+		{name: "details", aliases: []string{"detail"}, help: "control agent detail visibility, global or per section",
+			usage:   "[" + strings.Join(modes, "|") + "|cycle] | <section> [" + strings.Join(modes, "|") + "|reset]",
+			suggest: func(string) []string { return slices.Concat(modes, []string{"cycle"}, sectionNames) },
+			suggestAfter: func(done []string) []string {
+				if len(done) != 1 || !isSectionName(strings.ToLower(done[0])) {
+					return nil
+				}
+				return append(slices.Clone(modes), "reset")
+			}, run: func(r *slashRun) tea.Cmd {
+				ui := &a.store.ui
+				if r.arg == "" {
+					return call(a.gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "details_mode"}, func(res *tuigateway.ConfigGetResult, err error) tea.Cmd {
+						if r.stale() {
+							return nil
+						}
+						mode := ui.DetailsMode
+						if parsed := parseDetailsMode(configWord(res)); err == nil && parsed != "" {
+							mode = parsed
+							ui.DetailsMode, ui.DetailsModeCommandOverride = mode, false
+							a.card.view.invalidate()
+						}
+						var overrides []string
+						for _, s := range sectionNames {
+							if ui.Sections[s] != "" {
+								overrides = append(overrides, s+"="+ui.Sections[s])
+							}
+						}
+						suffix := ""
+						if len(overrides) > 0 {
+							suffix = "  (" + strings.Join(overrides, " ") + ")"
+						}
+						r.sys(tr("slashCmd.core.details.current", mode, suffix))
+						return nil
+					})
+				}
+				words := strings.Fields(strings.ToLower(r.arg))
+				first := words[0]
+				if len(words) > 1 && isSectionName(first) {
+					second := words[1]
+					reset := second == "reset" || second == "clear" || second == "default"
+					mode := parseDetailsMode(second)
+					if !reset && mode == "" {
+						r.sys(tr("slashCmd.core.details.sectionUsage"))
 						return nil
 					}
-					mode := ui.DetailsMode
-					if parsed := parseDetailsMode(configWord(res)); err == nil && parsed != "" {
-						mode = parsed
-						ui.DetailsMode, ui.DetailsModeCommandOverride = mode, false
-						a.card.view.invalidate()
-					}
-					var overrides []string
-					for _, s := range sectionNames {
-						if ui.Sections[s] != "" {
-							overrides = append(overrides, s+"="+ui.Sections[s])
+					sections := map[string]string{}
+					for k, v := range ui.Sections {
+						if k != first {
+							sections[k] = v
 						}
 					}
-					suffix := ""
-					if len(overrides) > 0 {
-						suffix = "  (" + strings.Join(overrides, " ") + ")"
+					shown := tr("slashCmd.core.details.reset")
+					if !reset {
+						sections[first], shown = mode, mode
 					}
-					r.sys(tr("slashCmd.core.details.current", mode, suffix))
-					return nil
-				})
-			}
-			words := strings.Fields(strings.ToLower(r.arg))
-			first := words[0]
-			if len(words) > 1 && isSectionName(first) {
-				second := words[1]
-				reset := second == "reset" || second == "clear" || second == "default"
-				mode := parseDetailsMode(second)
-				if !reset && mode == "" {
-					r.sys(tr("slashCmd.core.details.sectionUsage"))
+					ui.Sections = sections
+					a.card.view.invalidate()
+					r.sys(tr("slashCmd.core.details.section", first, shown))
+					return r.saveDisplayPref("details_mode."+first, mode)
+				}
+				next := parseDetailsMode(first)
+				if first == "cycle" || first == "toggle" {
+					next = nextDetailsMode(ui.DetailsMode)
+				}
+				if next == "" {
+					r.sys(tr("slashCmd.core.details.usage"))
 					return nil
 				}
 				sections := map[string]string{}
-				for k, v := range ui.Sections {
-					if k != first {
-						sections[k] = v
-					}
+				for _, s := range sectionNames {
+					sections[s] = next
 				}
-				shown := tr("slashCmd.core.details.reset")
-				if !reset {
-					sections[first], shown = mode, mode
-				}
-				ui.Sections = sections
+				ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections = next, true, sections
 				a.card.view.invalidate()
-				r.sys(tr("slashCmd.core.details.section", first, shown))
-				return r.saveDisplayPref("details_mode."+first, mode)
-			}
-			next := parseDetailsMode(first)
-			if first == "cycle" || first == "toggle" {
-				next = nextDetailsMode(ui.DetailsMode)
-			}
-			if next == "" {
-				r.sys(tr("slashCmd.core.details.usage"))
-				return nil
-			}
-			sections := map[string]string{}
-			for _, s := range sectionNames {
-				sections[s] = next
-			}
-			ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections = next, true, sections
-			a.card.view.invalidate()
-			r.sys(tr("slashCmd.core.details.current", next, ""))
-			return r.saveDisplayPref("details_mode", next)
-		}},
+				r.sys(tr("slashCmd.core.details.current", next, ""))
+				return r.saveDisplayPref("details_mode", next)
+			}},
 		{name: "fortune", help: "local fortune", usage: "[random|daily]", run: func(r *slashRun) tea.Cmd {
 			switch strings.ToLower(trimJS(r.arg)) {
 			case "", "random":
@@ -377,6 +453,8 @@ func (a *app) transcriptCommands() []slashCommand {
 			}
 			return tea.Sequence(set, a.openEditor())
 		}},
+		{name: "terminal-setup", help: "configure IDE terminal keybindings for multiline, undo, redo and copy", usage: "[auto|vscode|cursor|windsurf]",
+			suggest: func(string) []string { return []string{"auto", "vscode", "cursor", "windsurf"} }, run: func(r *slashRun) tea.Cmd { return r.terminalSetup() }},
 		{name: "logs", help: "view gateway logs", usage: "[lines]", run: func(r *slashRun) tea.Cmd {
 			n, err := strconv.Atoi(trimJS(r.arg))
 			if err != nil || n == 0 {
@@ -439,30 +517,23 @@ func (a *app) transcriptCommands() []slashCommand {
 				r.sys(tr("slashCmd.core.save.noActiveSession"))
 				return nil
 			}
+			format, filename, redact := parseSaveArgs(r.arg)
 			if !a.gw.canonical() {
+				if lower := strings.ToLower(format); redact || filename != "" || (lower != "json" && lower != "snapshot") {
+					r.sys(tr("slashCmd.core.save.legacyRefused"))
+					return nil
+				}
 				return ask(r.rpc, a.sys, tuigateway.SessionSave, tuigateway.SessionSaveParams{SessionID: r.sid}, func(res *tuigateway.SessionSaveResult) tea.Cmd {
 					if res == nil {
 						return nil
 					}
 					if file := val(res.File); file != "" {
-						r.sys(tr("slashCmd.core.save.saved", file))
+						r.sys(tr("slashCmd.core.save.savedOnHost", file))
 					} else {
 						r.sys(tr("slashCmd.core.save.failed"))
 					}
 					return nil
 				})
-			}
-			parts := strings.Fields(r.arg)
-			redact := false
-			if n := len(parts); n > 0 && strings.EqualFold(strings.TrimLeft(parts[n-1], "-"), "redact") {
-				redact, parts = true, parts[:n-1]
-			}
-			format, filename := "json", ""
-			if len(parts) > 0 {
-				format = parts[0]
-			}
-			if len(parts) > 1 {
-				filename = parts[1]
 			}
 			cwd := a.store.sessionCwd()
 			if attachURLEnv() != "" {
@@ -563,46 +634,16 @@ func (a *app) transcriptCommands() []slashCommand {
 			r.sys(tr("slashCmd.core.battery.state", onOff(next)))
 			return r.saveDisplayPref("battery", onOff(next))
 		}},
-		{name: "queue", aliases: []string{"q"}, help: "inspect or enqueue a message", usage: "[text|edit <n>|drop <n>]", run: func(r *slashRun) tea.Cmd {
-			shown, err := a.queue.queuedDisplay()
-			if err != nil {
-				r.sys("error: " + err.Error())
-				return nil
-			}
-			words := strings.Fields(r.arg)
-			if len(words) == 2 && (words[0] == "edit" || words[0] == "drop") {
-				n, err := strconv.Atoi(words[1])
-				if err != nil || n < 1 || n > len(shown) {
-					r.sys(fmt.Sprintf("usage: /queue %s <1-%d>", words[0], len(shown)))
+		{name: "queue", aliases: []string{"q"}, help: "queue a message, or list, edit, move and remove the queued ones", usage: "[<prompt>|list|add <prompt>|edit <n> [prompt]|rm <n>|move <from> <to>|clear]",
+			suggest: func(string) []string { return []string{"list", "add", "edit", "rm", "move", "clear"} }, run: func(r *slashRun) tea.Cmd {
+				plan := planQueueSlash(r.cmd, r.cmd)
+				if plan.kind == "enqueue" {
+					a.enqueue(plan.text, plan.display, r.destination)
+					r.sys(tr("slashCmd.core.queue.queued", previewOf(plan.display)))
 					return nil
 				}
-				if words[0] == "drop" {
-					cmd, err := a.queue.removeQ(n - 1)
-					if err != nil {
-						r.sys("error: " + err.Error())
-					}
-					return cmd
-				}
-				draft, err := a.queue.queueDraft(n - 1)
-				if err != nil {
-					r.sys("error: " + err.Error())
-					return nil
-				}
-				index := n - 1
-				if err := a.queue.setQueueEdit(&index); err != nil {
-					r.sys("error: " + err.Error())
-					return nil
-				}
-				a.queueEdit = &index
-				return a.card.composer.SetValue(draft)
-			}
-			key := "slashCmd.core.queue.countOther"
-			if len(shown) == 1 {
-				key = "slashCmd.core.queue.countOne"
-			}
-			r.sys(tr(key, strconv.Itoa(len(shown))))
-			return nil
-		}},
+				return r.applyQueuePlan(plan)
+			}},
 		{name: "steer", aliases: []string{"s"}, help: "inject a message after the next tool call, no interrupt", usage: "<text>", run: func(r *slashRun) tea.Cmd {
 			payload := trimJS(r.arg)
 			if payload == "" {
@@ -644,6 +685,26 @@ func (a *app) transcriptCommands() []slashCommand {
 				return settle(res.Status)
 			})
 		}},
+		{name: "rewind", help: "rewind to an earlier prompt, edit and resend it or fork from it, also Esc Esc on an empty composer", usage: "[N | fork N]",
+			suggest: func(string) []string { return []string{"fork"} }, run: func(r *slashRun) tea.Cmd {
+				args := strings.Fields(r.arg)
+				fork := len(args) > 0 && strings.EqualFold(args[0], "fork")
+				if fork {
+					args = args[1:]
+				}
+				if len(args) == 0 && !fork {
+					return tea.Batch(r.ran(), a.openRewindPicker())
+				}
+				if len(args) != 1 || strings.Trim(args[0], "0123456789") != "" {
+					r.sys(tr("slashCmd.core.rewind.usage"))
+					return nil
+				}
+				number, err := strconv.Atoi(args[0])
+				if err != nil {
+					number = math.MaxInt
+				}
+				return tea.Batch(r.ran(), a.rewindToPrompt(number, args[0], fork))
+			}},
 		{name: "undo", help: "undo the last exchange", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
 				r.sys(tr("slashCmd.core.undo.nothing"))
@@ -666,6 +727,9 @@ func (a *app) transcriptCommands() []slashCommand {
 					key = "slashCmd.core.undo.undidOne"
 				}
 				r.sys(tr(key, strconv.FormatInt(res.Removed, 10)))
+				if line := undoRollbackHintLine(res.UndoHint); line != "" {
+					r.sys(line)
+				}
 				return nil
 			})
 		}},
@@ -681,7 +745,7 @@ func (a *app) transcriptCommands() []slashCommand {
 			if r.sid == "" {
 				return a.sendExpanded(last, true, "", submitOpts{})
 			}
-			return ask(r.rpc, a.sys, tuigateway.SessionUndo, tuigateway.SessionUndoParams{SessionID: r.sid}, func(res *tuigateway.SessionUndoResult) tea.Cmd {
+			return ask(r.rpc, a.sys, tuigateway.SessionUndo, tuigateway.SessionUndoParams{SessionID: r.sid, Intent: "retry"}, func(res *tuigateway.SessionUndoResult) tea.Cmd {
 				if res == nil {
 					return nil
 				}
@@ -700,10 +764,10 @@ func (a *app) transcriptCommands() []slashCommand {
 func (a *app) copyText(r *slashRun, text string, done func() string) tea.Cmd {
 	if isRemoteShellSession(os.LookupEnv) {
 		r.sys(tr("slashCmd.core.copy.sentOsc52"))
-		return tea.SetClipboard(text)
+		return clip.Send(text)
 	}
 	return func() tea.Msg {
-		ok := writeClipboardText(a.ctx, text)
+		ok := clip.WriteText(a.ctx, text)
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if r.stale() {
 				return nil
@@ -713,7 +777,7 @@ func (a *app) copyText(r *slashRun, text string, done func() string) tea.Cmd {
 				return nil
 			}
 			r.sys(tr("slashCmd.core.copy.sentOsc52"))
-			return tea.SetClipboard(text)
+			return clip.Send(text)
 		}}
 	}
 }
@@ -1111,13 +1175,68 @@ func (a *app) opsCommands() []slashCommand {
 				}
 				return r.viaGateway(tr("slashCmd.ops.gatewayExec.skillsTitle"), tr("slashCmd.ops.gatewayExec.skillsNoOutput"))
 			}},
-		{name: "plugins", help: "view and toggle plugins", usage: "[enable|disable <name>]", run: func(r *slashRun) tea.Cmd {
-			if trimJS(r.arg) == "" {
-				return a.openPluginsHub()
-			}
-			return r.viaGateway(tr("slashCmd.ops.gatewayExec.pluginsTitle"), tr("slashCmd.ops.gatewayExec.pluginsNoOutput"))
-		}},
+		{name: "plugins", help: "view and toggle plugins, or update every installed one", usage: "[update | enable|disable <name>]",
+			suggest: func(string) []string { return []string{"update", "enable", "disable"} }, run: func(r *slashRun) tea.Cmd {
+				switch trimJS(r.arg) {
+				case "":
+					return a.openPluginsHub()
+				case "update":
+					return r.updateAllPlugins()
+				}
+				return r.viaGateway(tr("slashCmd.ops.gatewayExec.pluginsTitle"), tr("slashCmd.ops.gatewayExec.pluginsNoOutput"))
+			}},
 	}
+}
+
+// Wait an update of every plugin gets, ten single update budgets
+const pluginsUpdateAllTimeout = 600 * time.Second
+
+// Lines of an update of every plugin, one row per plugin it handled, the skipped ones and what is left to review
+func pluginsUpdateAllLines(outcome tuigateway.PluginsManageResult) []string {
+	marks := map[tuigateway.PluginUpdateStatus]string{
+		"current": tr("slashCmd.ops.pluginsUpdate.current"), "failed": tr("slashCmd.ops.pluginsUpdate.failed"),
+		"needs_review": tr("slashCmd.ops.pluginsUpdate.needsReview"), "updated": tr("slashCmd.ops.pluginsUpdate.updated"),
+	}
+	lines := []string{tr("slashCmd.ops.pluginsUpdate.title")}
+	review := false
+	for _, row := range outcome.Results {
+		mark := marks[row.Status]
+		if mark == "" {
+			mark = string(row.Status)
+		}
+		line := "  " + mark + "  " + row.Name
+		if row.Detail != "" {
+			line += "  (" + row.Detail + ")"
+		}
+		lines = append(lines, line)
+		review = review || row.Status == "needs_review"
+	}
+	for _, skip := range outcome.Skipped {
+		lines = append(lines, "  - "+tr("slashCmd.ops.pluginsUpdate.skipped", skip.Name, skip.Reason))
+	}
+	if len(outcome.Results) == 0 {
+		lines = append(lines, "  "+tr("slashCmd.ops.pluginsUpdate.none"))
+	}
+	if review {
+		lines = append(lines, "  "+tr("slashCmd.ops.pluginsUpdate.review"))
+	}
+	return lines
+}
+
+// Checks every installed plugin and updates the ones that can move, through the typed verb so a long clone or scan is not cut off
+func (r *slashRun) updateAllPlugins() tea.Cmd {
+	r.sys(tr("slashCmd.ops.pluginsUpdate.running"))
+	params := tuigateway.PluginsManageParams{Action: "update_all"}
+	return callWithin(r.a.gw, tuigateway.PluginsManage, params, pluginsUpdateAllTimeout, func(res *tuigateway.PluginsManageResult, err error) tea.Cmd {
+		if r.stale() {
+			return nil
+		}
+		if err != nil {
+			r.fail(err)
+			return nil
+		}
+		return r.a.page(strings.Join(pluginsUpdateAllLines(*res), "\n"), tr("slashCmd.ops.gatewayExec.pluginsTitle"))
+	})
 }
 
 // First n characters of a text

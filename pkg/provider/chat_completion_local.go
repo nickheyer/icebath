@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 type staleStreakKey struct{}
@@ -44,7 +47,7 @@ func checkStaleGiveup(s *RetrySession) error {
 
 var prefillProgress = GetPrefillProgress
 
-var localHealthClient = &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 3 * time.Second}
+var localHealthClient = &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: nil}, Timeout: 3 * time.Second}
 
 // True when the llama-server at baseURL answers its health check with 200 within a few seconds
 func localServerAnswers(baseURL string) bool {

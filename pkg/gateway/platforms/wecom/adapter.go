@@ -1,6 +1,7 @@
 package wecom
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -95,6 +96,17 @@ func isRuntimeError(err error) bool {
 
 // str of an exception as a percent s log argument renders it
 func errText(err error) string { return pyrepr.ExceptionMessage(err) }
+
+// Kind of a failure and the proxy's host when the proxy URL the connection to wsURL reads from the environment holds a secret the raw error text could
+// repeat, empty when the raw text is safe to show
+func proxyErrorShown(ctx context.Context, err error, wsURL string) string {
+	return gateway.DescribeProxyError(err, gateway.TrustedEnvProxyForRedaction(ctx, wsURL))
+}
+
+// Text of a failed send over the connection to wsURL for a send result, redacted when the raw text could repeat a proxy secret
+func sendErrText(ctx context.Context, err error, wsURL string) string {
+	return cmp.Or(proxyErrorShown(ctx, err, wsURL), errText(err))
+}
 
 // Thirty two lowercase hex digits of a random UUID
 func uuidHex() string {
@@ -339,7 +351,8 @@ func (a *WeComAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 	if a.botID == "" || a.secret == "" {
 		return a.startupFailure(ctx, "wecom_missing_credentials", "WeCom startup failed: WECOM_BOT_ID and WECOM_SECRET are required"), nil
 	}
-	client := gateway.PlatformHTTPClient(ctx, gateway.PlatformHTTPClientOptions{})
+	trustEnv := gateway.GatewayTrustEnv(ctx)
+	client := gateway.PlatformHTTPClient(ctx, gateway.PlatformHTTPClientOptions{TrustEnv: &trustEnv})
 	a.mu.Lock()
 	a.httpClient = client
 	a.mu.Unlock()
@@ -347,8 +360,13 @@ func (a *WeComAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		a.SetFatalError(ctx, "wecom_connect_error", "WeCom startup failed: "+errText(err), true)
-		pkgLog().Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), errText(err)), "error", err)
+		if shown := proxyErrorShown(ctx, err, a.wsURL); shown != "" {
+			a.SetFatalError(ctx, "wecom_connect_error", "WeCom startup failed: "+shown, true)
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), shown))
+		} else {
+			a.SetFatalError(ctx, "wecom_connect_error", "WeCom startup failed: "+errText(err), true)
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to connect: %s", a.Name(), errText(err)), "error", err)
+		}
 		a.teardown(ctx)
 		return false, nil
 	}

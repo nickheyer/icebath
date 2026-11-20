@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // HTTP client for Slack calls with the proxy pinned, direct when proxyURL is empty and HTTP_PROXY ignored
 func slackHTTPClient(proxyURL string) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if proxyURL != "" {
 		if u, err := url.Parse(proxyURL); err == nil {
@@ -101,7 +102,7 @@ func cancelSocketTasks(tasks []*socketTask) {
 
 // HTTP client honouring proxy environment variables only when the gateway trusts the environment
 func trustEnvHTTPClient(ctx context.Context, timeout time.Duration) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if gateway.GatewayTrustEnv(ctx) {
 		transport.Proxy = http.ProxyFromEnvironment
@@ -119,7 +120,7 @@ func resolveSlackProxyURL(ctx context.Context) string {
 	}
 	normalized := strings.ToLower(proxyURL)
 	if !strings.HasPrefix(normalized, "http://") && !strings.HasPrefix(normalized, "https://") {
-		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring unsupported proxy scheme for Slack transport: %s", gateway.SafeURLForLog(proxyURL, 80)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Ignoring unsupported proxy scheme for Slack transport: %s", gateway.SafeProxyURLForLog(proxyURL)))
 		return ""
 	}
 	for _, host := range slackProxyHosts {

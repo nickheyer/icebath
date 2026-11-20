@@ -216,19 +216,6 @@ func (c *relayFakeConn) onFrame(ws *websocket.Conn, frame map[string]any) bool {
 	return true
 }
 
-// Outbound actions of one op
-func (c *relayFakeConn) ops(op string) []map[string]any {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	var out []map[string]any
-	for _, a := range c.outbound {
-		if a["op"] == op {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
 // Next scripted answer of a route, nil meaning success
 func (c *relayFakeConn) next(script *[]relayFakeScript, auth string) *relayFakeSpec {
 	if len(*script) == 0 {

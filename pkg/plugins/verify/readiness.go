@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -39,7 +40,7 @@ func urlopenClient(timeout time.Duration) *http.Client {
 		Proxy:             pyurl.UrlopenProxy,
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, network, addr)
+			conn, err := netpref.DialContext(dialer.DialContext)(ctx, network, addr)
 			if err != nil {
 				return nil, &dialError{err}
 			}

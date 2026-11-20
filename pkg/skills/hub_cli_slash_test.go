@@ -10,42 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 )
 
-type uninstallCall struct {
-	name                    string
-	skipConfirm, deferCache bool
-}
-
-func recordUninstalls(x *HubCLI) *[]uninstallCall {
-	calls := &[]uninstallCall{}
-	x.seams.uninstall = func(_ context.Context, name string, _ *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error) {
-		*calls = append(*calls, uninstallCall{name, skipConfirm, deferCache})
-		return HubNoop, nil
-	}
-	return calls
-}
-
-func TestSlashUninstallWithoutFlagsStillSkipsConfirm(t *testing.T) {
-	x, _, _ := newTestCLI(t)
-	calls := recordUninstalls(x)
-	if err := x.HandleSkillsSlash(context.Background(), "/skills uninstall test-skill", nil); err != nil {
-		t.Fatal(err)
-	}
-	if len(*calls) != 1 || !(*calls)[0].skipConfirm {
-		t.Fatalf("%+v", *calls)
-	}
-}
-
-func TestSlashUninstallDefaultDefersCacheInvalidation(t *testing.T) {
-	x, _, _ := newTestCLI(t)
-	calls := recordUninstalls(x)
-	if err := x.HandleSkillsSlash(context.Background(), "/skills uninstall test-skill", nil); err != nil {
-		t.Fatal(err)
-	}
-	if len(*calls) != 1 || !(*calls)[0].deferCache {
-		t.Fatalf("%+v", *calls)
-	}
-}
-
 func TestDoUninstallSkipConfirmBypassesInput(t *testing.T) {
 	x, _, _ := newTestCLI(t)
 	var removed []string

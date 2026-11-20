@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -64,6 +65,10 @@ type PlatformEntry struct {
 	StandaloneSend             *StandaloneSendPolicy                                                                                                        `py:"standalone_send"`
 	EnvOverrides               []EnvStep                                                                                                                    `py:"env_overrides"`
 	EnvEnableCredentials       []string                                                                                                                     `py:"env_enable_credentials"`
+	// Lines the setup of the platform shows before its questions
+	SetupInstructions []string `py:"setup_instructions"`
+	// Questions the setup of the platform asks when it has no setup function, each answer saved under its variable
+	SetupVars []SetupVar `py:"setup_vars"`
 }
 
 // Result of the entry's check, the scoped check reading the caller's profile secret scope when declared
@@ -773,7 +778,7 @@ func guardedCall[T any](fn func() (T, error)) (out T, err error) {
 	return fn()
 }
 
-// Converts a plugin's register_platform keywords into Go field values, installed by the process wiring over the hosted platform package
+// Converts a plugin's register_platform keywords into Go field values, installed by the plugins tier over the hosted platform package
 var HostedEntryKeywords func(name string, kwargs map[string]any) (map[string]any, error)
 
 // Whether a keyword value holds a callable or object living in the plugin host
@@ -822,7 +827,7 @@ func (s platformRegistryService) NewEntry(spec plugins.PlatformSpec) (any, error
 	}
 	if containsHosted(kwargs) {
 		if HostedEntryKeywords == nil {
-			return nil, &PyError{"RuntimeError", "hosted platform keyword conversion is not wired"}
+			return nil, &PyError{"RuntimeError", linktier.Missing("the "+spec.Name+" platform a plugin registers", linktier.Plugins)}
 		}
 		converted, err := HostedEntryKeywords(spec.Name, kwargs)
 		if err != nil {

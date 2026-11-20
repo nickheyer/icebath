@@ -19,13 +19,12 @@ import (
 
 // Discovery sources in precedence order, bundled first so a provider dropped in a tree never shadows a shipped one
 const (
-	SourceBundled    = "bundled"
-	SourceUser       = "user"
-	SourceProject    = "project"
-	SourceEntryPoint = "entry_point"
+	SourceBundled = "bundled"
+	SourceUser    = "user"
+	SourceProject = "project"
 )
 
-var sourceRank = map[string]int{SourceBundled: 0, SourceUser: 1, SourceProject: 2, SourceEntryPoint: 3}
+var sourceRank = map[string]int{SourceBundled: 0, SourceUser: 1, SourceProject: 2}
 
 // Config key recording the plugins an update turned off and why
 const disabledByUpdateRecord = "disabled_by_update"
@@ -161,7 +160,7 @@ func visibleRegistrations(ctx context.Context, env *tools.Env) []*ProviderRegist
 	return out
 }
 
-// Registration a name resolves to, bundled then user, project, then entry point
+// Registration a name resolves to, bundled then user, then project
 func FindProvider(ctx context.Context, env *tools.Env, name string) *ProviderRegistration {
 	for _, r := range visibleRegistrations(ctx, env) {
 		if r.Name == name {
@@ -187,11 +186,7 @@ func DiscoverMemoryProviders(ctx context.Context, env *tools.Env) []DiscoveredPr
 			continue
 		}
 		seen[r.Name] = true
-		description := ""
-		if r.Source != SourceEntryPoint {
-			description = r.Description()
-		}
-		out = append(out, DiscoveredProvider{Name: r.Name, Description: description, Available: probeAvailability(ctx, env, r)})
+		out = append(out, DiscoveredProvider{Name: r.Name, Description: r.Description(), Available: probeAvailability(ctx, env, r)})
 	}
 	return out
 }
@@ -206,6 +201,9 @@ func probeAvailability(ctx context.Context, env *tools.Env, r *ProviderRegistrat
 	p, _ := r.New(ctx, env, LoadOptions{})
 	if p == nil {
 		return false
+	}
+	if probe, ok := p.(interface{ dismiss() }); ok {
+		defer probe.dismiss()
 	}
 	return p.Available(ctx)
 }
@@ -234,10 +232,10 @@ func loadMemoryProvider(ctx context.Context, env *tools.Env, name string, regist
 	log := envLog(env)
 	r := FindProvider(ctx, env, name)
 	if r == nil {
-		log.Debug(fmt.Sprintf("Memory provider '%s' not found in bundled, user plugins, or entry points", name))
+		log.Debug(fmt.Sprintf("Memory provider '%s' not found in bundled or user plugins", name))
 		return nil
 	}
-	if hasProviderDir(r) && explicitlyDisabled(ctx, env, r) {
+	if explicitlyDisabled(ctx, env, r) {
 		notice, _ := ParkedProviderNotice(ctx, env, name)
 		log.Warn(notice)
 		return nil
@@ -321,11 +319,6 @@ func providerSpellings(r *ProviderRegistration) map[string]bool {
 	return names
 }
 
-// Whether a registration has a provider directory, entry points only when their package directory resolved
-func hasProviderDir(r *ProviderRegistration) bool {
-	return r.Source != SourceEntryPoint || r.Dir != ""
-}
-
 // True when a non bundled provider is parked in plugins.disabled under any of its spellings
 func explicitlyDisabled(ctx context.Context, env *tools.Env, r *ProviderRegistration) bool {
 	if r.Source == SourceBundled {
@@ -351,7 +344,7 @@ func explicitlyDisabled(ctx context.Context, env *tools.Env, r *ProviderRegistra
 // User facing reason a configured provider is not loading because plugins.disabled parks it, false when not parked
 func ParkedProviderNotice(ctx context.Context, env *tools.Env, name string) (string, bool) {
 	r := FindProvider(ctx, env, name)
-	if r == nil || !hasProviderDir(r) || !explicitlyDisabled(ctx, env, r) {
+	if r == nil || !explicitlyDisabled(ctx, env, r) {
 		return "", false
 	}
 	why := ""
@@ -387,9 +380,6 @@ func DiscoverPluginCLICommands(ctx context.Context, env *tools.Env) []PluginCLIC
 		return nil
 	}
 	cli := r.CLI
-	if cli == nil && r.Source != SourceBundled && r.Dir != "" {
-		cli = hostedProviderCLI(ctx, env, r)
-	}
 	if cli == nil || cli.Setup == nil {
 		return nil
 	}

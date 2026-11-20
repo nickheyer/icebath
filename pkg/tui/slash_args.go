@@ -115,13 +115,20 @@ func matchOffers(offers []cards.Offer, partial string) []cards.Offer {
 	return out
 }
 
-// Values of the local command's own list for its first argument
+// Values of the local command's own list for its first argument, or for a later one when the command lists those
 func localArgOffers(c *slashCommand, a slashArg) []cards.Offer {
-	if c == nil || c.suggest == nil || len(a.done) > 0 {
+	if c == nil {
 		return nil
 	}
+	var values []string
+	switch {
+	case len(a.done) == 0 && c.suggest != nil:
+		values = c.suggest(a.partial)
+	case len(a.done) > 0 && c.suggestAfter != nil:
+		values = c.suggestAfter(a.done)
+	}
 	var out []cards.Offer
-	for _, v := range c.suggest(a.partial) {
+	for _, v := range values {
 		out = append(out, cards.Offer{Text: v, Display: v, Meta: c.help})
 	}
 	return matchOffers(out, a.partial)

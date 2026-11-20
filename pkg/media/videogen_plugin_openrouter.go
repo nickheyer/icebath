@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -341,7 +343,7 @@ func newOpenRouterVideoGenProvider() *openRouterVideoGenProvider {
 	p.catalog = p.liveCatalog
 	p.configured = openRouterConfiguredModel
 	p.session = func() *http.Client {
-		return &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true}}
+		return &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true}}
 	}
 	p.sleep = videoPollSleep
 	return p
@@ -413,7 +415,7 @@ func (p *openRouterVideoGenProvider) fetchCatalog(ctx context.Context) ([]map[st
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment}}
+	client := &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment}}
 	defer client.CloseIdleConnections()
 	resp, raw, err := requestsDo(ctx, client, http.MethodGet, base+"/videos/models", nil, nil, openRouterVideoCatalogTimeout)
 	if err != nil {

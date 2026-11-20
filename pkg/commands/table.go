@@ -62,6 +62,7 @@ var Builtin = []Def{
 	def("prompt", "Compose your next prompt in $EDITOR (markdown), then send it", CategorySession,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[initial text]", Aliases: []string{"compose"}}),
 	def("undo", "Back up N user turns and re-prompt (default 1)", CategorySession, Meta{}, Def{ArgsHint: "[N]"}),
+	def("rewind", "Rewind to an earlier prompt to edit and resend it, or fork from there (Esc Esc)", CategorySession, Meta{}, Def{CLIOnly: true, ArgsHint: "[N | fork N]"}),
 	def("title", "Set a title for the current session", CategorySession, Meta{}, Def{ArgsHint: "[name]"}),
 	def("handoff", "Hand off this session to a messaging platform (Telegram, Discord, etc.)", CategorySession,
 		Meta{}, Def{ArgsHint: "<platform>", CLIOnly: true}),
@@ -222,7 +223,8 @@ var Builtin = []Def{
 		Meta{}, Def{Aliases: []string{"reload_skills"}}),
 	def("browser", "Connect browser tools to your live Chromium-family browser via CDP", CategoryToolsSkills,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[connect|disconnect|status]", Subcommands: []string{"connect", "disconnect", "status"}}),
-	def("plugins", "List installed plugins and their status", CategoryToolsSkills, Meta{}, Def{CLIOnly: true}),
+	def("plugins", "List installed plugins and their status", CategoryToolsSkills, Meta{},
+		Def{CLIOnly: true, ArgsHint: "[update]", Subcommands: []string{"update"}}),
 
 	def("commands", "Browse all commands and skills (paginated)", CategoryInfo,
 		Meta{GatewayOnly: true, Execute: "gateway_commands"}, Def{ArgsHint: "[page]", BusyPolicy: BusyDispatch}),

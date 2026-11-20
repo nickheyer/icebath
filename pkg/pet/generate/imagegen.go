@@ -16,8 +16,6 @@ import (
 // Providers that can ground generation on a reference image, in preference order
 var refCapable = []string{"openai", "openai-codex", "openrouter", "krea"}
 
-var providerLabels = map[string]string{"openrouter": "OpenRouter", "openai": "OpenAI", "openai-codex": "OpenAI (Codex)", "krea": "Krea"}
-
 // GenerationError is any image generation failure, no provider, API error or IO
 type GenerationError struct{ Msg string }
 

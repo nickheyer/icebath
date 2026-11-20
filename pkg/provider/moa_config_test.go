@@ -94,13 +94,6 @@ func TestMissingMoAPresetIsNonRetryable(t *testing.T) {
 	}
 }
 
-func moaValidPresetPayload() map[string]any {
-	return map[string]any{
-		"reference_models": []any{map[string]any{"provider": "openrouter", "model": "deepseek/deepseek-v4-pro"}},
-		"aggregator":       map[string]any{"provider": "openrouter", "model": "anthropic/claude-opus-4.8"},
-	}
-}
-
 func TestConfigKeyAggregatorFieldsAreTheSlotFieldsCleanSlotKeeps(t *testing.T) {
 	clean := cleanMoASlot(map[string]any{"provider": "p", "model": "m", "reasoning_effort": "high", "extra": "dropped"}, false)
 	keys := map[string]bool{}

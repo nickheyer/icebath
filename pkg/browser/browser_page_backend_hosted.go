@@ -61,29 +61,11 @@ func (h hostedBrowserPageBackend) Evaluate(taskID, expression string, secret boo
 	return h.obj.Call(context.Background(), "evaluate", []any{taskID, expression}, map[string]any{"secret": secret})
 }
 
-// Scoped registry view that wraps plugin host objects as BrowserPageBackend values before delegating
-type hostedBrowserPageBackendScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedBrowserPageBackendScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedBrowserPageBackend(p))
-}
-func (s hostedBrowserPageBackendScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedBrowserPageBackend(p))
-}
-func (s hostedBrowserPageBackendScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedBrowserPageBackend(p))
-}
-func (s hostedBrowserPageBackendScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedBrowserPageBackendScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedBrowserPageBackend(p), scope)
-}
-func (s hostedBrowserPageBackendScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedBrowserPageBackend(current), adaptHostedBrowserPageBackend(replacement), scope)
-}
-
-// Plugin facing registry that register_browser_page_backend writes into, adapting hosted Python backends
+// Plugin facing registry that register_browser_page_backend writes into, a plugin host object stored as the backend adapted from it
 func BrowserPageBackendScopedRegistry() plugins.ScopedRegistry {
-	return hostedBrowserPageBackendScopedRegistry{BrowserPageBackendRegistry.Scoped()}
+	return plugins.HostedScopedRegistry{Inner: BrowserPageBackendRegistry.Scoped(), Adapt: adaptHostedBrowserPageBackend,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedBrowserPageBackend)
+			return h.obj, ok
+		}}
 }

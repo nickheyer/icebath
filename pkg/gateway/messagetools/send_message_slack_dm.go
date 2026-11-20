@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -25,23 +27,23 @@ func resolveSlackUserTarget(ctx context.Context, token any, chatID string) (stri
 	if !strings.HasPrefix(chatID, "user:") && !strings.HasPrefix(chatID, "user_name:") {
 		return chatID, nil
 	}
-	id, errPayload, err := resolveSlackUserTargetOnce(ctx, token, chatID)
+	proxyURL, err := gateway.ResolveProxyURL(ctx, "", nil, "")
 	if err != nil {
 		return "", sendError(fmt.Sprintf("Slack DM resolution failed: %v", err))
+	}
+	id, errPayload, err := resolveSlackUserTargetOnce(ctx, token, chatID, proxyURL)
+	if err != nil {
+		return "", sendError("Slack DM resolution failed: " + gateway.ProxySafeErrorText(err, proxyURL))
 	}
 	return id, errPayload
 }
 
-func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID string) (string, map[string]any, error) {
-	proxyURL, err := gateway.ResolveProxyURL(ctx, "", nil, "")
-	if err != nil {
-		return "", nil, err
-	}
+func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL string) (string, map[string]any, error) {
 	sessKw, _, err := gateway.ProxyKwargsForAiohttp(proxyURL)
 	if err != nil {
 		return "", nil, err
 	}
-	transport := &http.Transport{ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second}
+	transport := &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second}
 	if sessKw.Connector != nil {
 		transport = sessKw.Connector.Transport()
 	}

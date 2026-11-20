@@ -43,11 +43,6 @@ func TestParseOpenRouterReasoningCapabilities(t *testing.T) {
 	}
 }
 
-var reasoningCapsTestCatalog = map[string]any{"data": []any{
-	map[string]any{"id": "deepseek/deepseek-v4-pro", "supported_parameters": []any{"reasoning", "tools"}, "reasoning": map[string]any{"mandatory": false, "supported_efforts": []any{"xhigh", "high"}}},
-	map[string]any{"id": "arcee-ai/trinity-large-thinking", "supported_parameters": []any{"reasoning"}, "reasoning": map[string]any{"mandatory": true}},
-}}
-
 // Cold process with no mirror on disk and background warms run inline
 func reasoningCapsColdProcess(t *testing.T) context.Context {
 	t.Helper()

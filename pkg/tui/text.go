@@ -430,9 +430,10 @@ func verboseToolTrailLine(call string, v toolVerdict, duration *float64, argsTex
 	return line + " " + resultMark(v)
 }
 
-// Whether a trail line is a passing status that a real row replaces
+// Whether a trail line is a passing status that a real row replaces, the drafting line of the language in effect or the analyzing line
 func isTransientTrailLine(line string) bool {
-	return strings.HasPrefix(line, "drafting ") || line == "analyzing tool output…"
+	before, after, _ := strings.Cut(tr("tool.drafting", "\x00"), "\x00")
+	return line == analyzingToolOutput || (len(line) > len(before)+len(after) && strings.HasPrefix(line, before) && strings.HasSuffix(line, after))
 }
 
 // Whether a trail entry belongs to the tool group of the label

@@ -10,9 +10,6 @@ import (
 	"time"
 )
 
-const holdStreamRedactor = "def register(ctx):\n" +
-	"    ctx.register_hook('transform_llm_output', lambda response_text, **_: response_text, hold_stream=True)\n"
-
 func noopHook(context.Context, map[string]any) (any, error) { return nil, nil }
 
 func TestTheHoldLastsAsLongAsTheRegistrationThatDeclaredIt(t *testing.T) {

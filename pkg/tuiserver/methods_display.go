@@ -20,9 +20,10 @@ var (
 	leaseWatcherStart func()
 )
 
-// Registers the display card methods, each refused with the build line when the bot desktop is absent
+// Registers the display card methods, each refused with the build line when the bot desktop is absent, the screen grab on the worker pool since a sandbox grab runs a command
 func init() {
-	for _, method := range []string{"display.status", "display.start", "display.stop", "display.switchSandboxImage", "display.install"} {
+	for _, method := range []string{"display.status", "display.thumbnail", "display.start", "display.stop", "display.switchSandboxImage",
+		"display.install", "display.lease.acquire", "display.lease.release"} {
 		displayRegistry.scopedMethod(method, func(ctx context.Context, rid any, params map[string]any) map[string]any {
 			if handler := displayHandlers[method]; handler != nil {
 				return handler(ctx, rid, params)
@@ -31,6 +32,7 @@ func init() {
 		})
 	}
 	displayRegistry.install()
+	addLongHandlers("display.thumbnail")
 }
 
 // Starts the bot desktop lease watcher once per process, nothing in a build without the bot desktop

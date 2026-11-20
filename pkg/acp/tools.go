@@ -8,8 +8,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -57,11 +55,6 @@ func GetToolKind(toolName string) string {
 		return k
 	}
 	return "other"
-}
-
-// Fresh tool call id of tc- and twelve hex characters
-func MakeToolCallID() string {
-	return "tc-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 }
 
 func textContent(content string) pyacp.ToolCallContent {

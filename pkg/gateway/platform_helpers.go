@@ -1010,6 +1010,8 @@ type PlatformHTTPClientOptions struct {
 	Limits          *HTTPXLimits
 	DefaultLimits   bool
 	ResponseHooks   []func(resp *http.Response) error
+	// Whether the client reads the proxy variables of the environment, nil reading them
+	TrustEnv *bool
 }
 
 // Transport running the redirect guard then the caller hooks on every response hop
@@ -1071,6 +1073,9 @@ func PlatformHTTPClient(ctx context.Context, opts PlatformHTTPClientOptions) *ht
 	}
 	if tr, ok := client.Transport.(*http.Transport); ok {
 		applyHTTPXLimits(tr, limits)
+		if opts.TrustEnv != nil && !*opts.TrustEnv {
+			tr.Proxy = nil
+		}
 	}
 	guard := func(resp *http.Response) error { return SSRFRedirectGuard(env, redirectTargetFromResponse(resp)) }
 	client.Transport = &platformHookTransport{base: client.Transport, hooks: append([]func(*http.Response) error{guard}, opts.ResponseHooks...)}

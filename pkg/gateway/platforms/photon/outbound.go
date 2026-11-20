@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -384,7 +386,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return gateway.SendError(reason), nil
 		}
 	}
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: sidecarCallTimeout}
+	client := &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: nil}, Timeout: sidecarCallTimeout}
 	defer client.CloseIdleConnections()
 	base := fmt.Sprintf("http://%s:%d", defaultSidecarBind, port)
 	post := func(path string, body map[string]any) (int, string, map[string]any, error) {

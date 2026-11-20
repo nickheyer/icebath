@@ -805,6 +805,31 @@ var Distributions = map[string]Distribution{
 	"mixed_tasks":    dist("Mixed distribution with high browser, terminal, and file availability for complex tasks", "browser", 92, "terminal", 92, "file", 92, "web", 35, "vision", 15, "image_gen", 15),
 }
 
+// Distribution names in the order the table declares them
+var distributionOrder = []string{
+	"default", "image_gen", "research", "science", "development", "safe", "balanced", "minimal", "terminal_only", "terminal_web",
+	"creative", "reasoning", "browser_use", "browser_only", "browser_tasks", "terminal_tasks", "mixed_tasks",
+}
+
+// DistributionNames lists every distribution name in declaration order, names outside the declared order sorted after them
+func DistributionNames() []string {
+	names := make([]string, 0, len(Distributions))
+	seen := make(map[string]bool, len(Distributions))
+	for _, name := range distributionOrder {
+		if _, ok := Distributions[name]; ok {
+			names, seen[name] = append(names, name), true
+		}
+	}
+	var rest []string
+	for name := range Distributions {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	return append(names, rest...)
+}
+
 // ListDistributions returns a copy of every distribution keyed by name
 func ListDistributions() map[string]Distribution {
 	out := make(map[string]Distribution, len(Distributions))

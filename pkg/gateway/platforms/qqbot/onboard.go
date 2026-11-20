@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -48,7 +49,7 @@ func portalPost(ctx context.Context, path string, payload any, timeout float64, 
 		return nil, err
 	}
 	rawURL := "https://" + PortalHost + path
-	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(), CheckRedirect: pyhttpx.RedirectPolicy(true)}
+	client := &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: pyhttpx.RedirectPolicy(true)}
 	defer client.CloseIdleConnections()
 	resp, err := httpRequest(ctx, client, http.MethodPost, rawURL, GetAPIHeaders(), body, timeout)
 	if err != nil {

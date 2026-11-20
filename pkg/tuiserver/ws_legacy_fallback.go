@@ -78,6 +78,12 @@ func profileUnavailable(req map[string]any) map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": req["id"], "error": map[string]any{"code": 4064, "message": "profile unavailable"}}
 }
 
+// Profile unavailable error frame of a request refused before any handler ran, its reason the bounded code a client keeps to tell this refusal from an outage inside a handler
+func profileRefusedUnrouted(req map[string]any) map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": req["id"], "error": map[string]any{"code": 4064, "message": "profile unavailable",
+		"data": map[string]any{"reason": "profile_unavailable"}}}
+}
+
 // Home an explicit profile param names, empty for launch, ok false with the refusal when unresolved
 func explicitProfileRequest(req map[string]any) (resp map[string]any, home string, ok bool, named bool) {
 	params, isDict := req["params"].(map[string]any)
@@ -90,7 +96,7 @@ func explicitProfileRequest(req map[string]any) (resp map[string]any, home strin
 	}
 	resolved, err := profileHome(explicit)
 	if err != nil {
-		return profileUnavailable(req), "", false, true
+		return profileRefusedUnrouted(req), "", false, true
 	}
 	return req, resolved, true, true
 }
@@ -101,7 +107,7 @@ func ticketProfileRequest(req map[string]any, ticketHome string) (map[string]any
 	if !isDict {
 		params = map[string]any{}
 	}
-	refused := profileUnavailable(req)
+	refused := profileRefusedUnrouted(req)
 	if resp, target, ok, named := explicitProfileRequest(req); named {
 		return resp, target, ok
 	}

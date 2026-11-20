@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -359,7 +360,7 @@ func (c *ProxyConnector) dialSOCKS4(ctx context.Context, proxyAddr, addr string)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := c.dialer.DialContext(ctx, "tcp", proxyAddr)
+	conn, err := netpref.DialContext(c.dialer.DialContext)(ctx, "tcp", proxyAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +396,7 @@ func (c *ProxyConnector) dialSOCKS4(ctx context.Context, proxyAddr, addr string)
 
 // HTTP CONNECT tunnel to the address through the proxy
 func (c *ProxyConnector) dialHTTPConnect(ctx context.Context, proxyAddr, addr string) (net.Conn, error) {
-	conn, err := c.dialer.DialContext(ctx, "tcp", proxyAddr)
+	conn, err := netpref.DialContext(c.dialer.DialContext)(ctx, "tcp", proxyAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +503,7 @@ func GatewayTrustEnv(ctx context.Context) bool {
 
 // HTTP client with a total timeout reading proxy env vars only when the gateway trusts the environment
 func TrustEnvHTTPClient(ctx context.Context, timeout time.Duration) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if GatewayTrustEnv(ctx) {
 		transport.Proxy = http.ProxyFromEnvironment
@@ -542,46 +543,6 @@ func SSRFRedirectGuard(env *tools.Env, target string) error {
 		return &mediacache.ValueError{Msg: "Blocked redirect to private/internal address: " + SafeURLForLog(target, 80)}
 	}
 	return nil
-}
-
-// URL without query, fragment or credentials and clipped to the length for logs
-func SafeURLForLog(raw string, maxLen int) string {
-	if maxLen <= 0 || raw == "" {
-		return ""
-	}
-	parsed, err := pyurl.Split(raw)
-	if err != nil {
-		return string(clipRunes([]rune(raw), maxLen))
-	}
-	safe := raw
-	if parsed.Scheme != "" && parsed.Netloc != "" {
-		tail := ""
-		if p := parsed.Path; p != "" && p != "/" {
-			base := p[strings.LastIndex(p, "/")+1:]
-			if base != "" {
-				tail = "/.../" + base
-			} else {
-				tail = "/..."
-			}
-		}
-		netloc := parsed.Netloc[strings.LastIndex(parsed.Netloc, "@")+1:]
-		safe = parsed.Scheme + "://" + netloc + tail
-	}
-	rs := []rune(safe)
-	if len(rs) <= maxLen {
-		return safe
-	}
-	if maxLen <= 3 {
-		return strings.Repeat(".", maxLen)
-	}
-	return string(rs[:maxLen-3]) + "..."
-}
-
-func clipRunes(rs []rune, n int) []rune {
-	if len(rs) > n {
-		return rs[:n]
-	}
-	return rs
 }
 
 type httpStatusError struct {

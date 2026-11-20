@@ -8,8 +8,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -17,12 +15,6 @@ var launchEnvSnapshot struct {
 	sync.Mutex
 	env map[string]string
 }
-
-// Profile listing the eager activation reads, replaced by tests that simulate an unreadable profiles directory
-var launchProfilesToServe = profiles.ProfilesToServe
-
-// Per profile log routing the eager activation turns on, replaced by tests that record the routed homes
-var enableProfileLogRouting = logging.EnableProfileLogRouting
 
 // Process env frozen as the launch profile's own, the first capture wins and later calls return a copy
 func CaptureLaunchEnv() map[string]string {

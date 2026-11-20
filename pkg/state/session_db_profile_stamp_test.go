@@ -142,39 +142,3 @@ func TestLegacyBackfillStillTargetsOnlyNull(t *testing.T) {
 		t.Fatal(got)
 	}
 }
-
-func TestBackfillPromotesCwdFromModelConfig(t *testing.T) {
-	ctx := context.Background()
-	db := usageDB(t)
-	for _, n := range []NewSession{{ID: "legacy", Source: "acp", Model: "m", ModelConfig: map[string]any{"cwd": "/work/hs-wwd"}},
-		{ID: "cli", Source: "cli", Model: "m", ModelConfig: map[string]any{"cwd": "/somewhere"}},
-		{ID: "bare", Source: "acp", Model: "m", ModelConfig: map[string]any{"provider": "anthropic"}}} {
-		if err := db.CreateSession(n); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if n, err := db.BackfillACPSessionCwd(ctx); n != 1 || err != nil {
-		t.Fatal(n, err)
-	}
-	for id, want := range map[string]string{"legacy": "/work/hs-wwd", "cli": "", "bare": ""} {
-		if got := crossField(t, db, id, "cwd"); pyStrOr(got) != want {
-			t.Fatalf("%s = %v", id, got)
-		}
-	}
-	if n, err := db.BackfillACPSessionCwd(ctx); n != 0 || err != nil {
-		t.Fatal(n, err)
-	}
-}
-
-func TestBackfillNeverOverwritesAnExistingCwd(t *testing.T) {
-	db := usageDB(t)
-	if err := db.CreateSession(NewSession{ID: "fine", Source: "acp", Model: "m", Cwd: "/real/path", ModelConfig: map[string]any{"cwd": "/stale/json/path"}}); err != nil {
-		t.Fatal(err)
-	}
-	if n, err := db.BackfillACPSessionCwd(context.Background()); n != 0 || err != nil {
-		t.Fatal(n, err)
-	}
-	if got := crossField(t, db, "fine", "cwd"); got != "/real/path" {
-		t.Fatal(got)
-	}
-}

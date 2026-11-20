@@ -100,7 +100,7 @@ var PreArgparseInheritedFlags = [][2]string{{"--profile", "1"}, {"-p", "1"}}
 var BuiltinSubcommands = map[string]bool{}
 
 func init() {
-	for _, n := range strings.Fields(`acp approvals auth backup bundles checkpoints codex-runtime completion computer-use
+	for _, n := range strings.Fields(`acp approvals auth backup batch bundles checkpoints codex-runtime completion computer-use
 		config console cron curator debug doctor dump egress fallback gateway hooks import insights
 		kanban login logout logs lsp mcp memory migrate moa journey memory-graph learning
 		model monitoring pairing pause peer pets plugins profile project proxy prompt-size resume send sessions
@@ -194,6 +194,7 @@ func NewCLI() *CLI {
 	c.addTreeA(root)
 	c.addTreeB(root)
 	c.addTreeC(root)
+	c.addBatch(root)
 	c.addPM(root)
 	c.bindMCP()
 	c.bindWebhook()

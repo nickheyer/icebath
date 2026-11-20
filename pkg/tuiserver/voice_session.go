@@ -106,7 +106,7 @@ func openLocalVoiceTurn(ctx context.Context, source *gateway.SessionSource) gate
 		suppress(func() { ready = media.CheckTTSRequirements(turn.ctx) })
 	}
 	if ready {
-		turn.queue = &ttsTurnQueue{items: make(chan any, 4096)}
+		turn.queue = newTTSTurnQueue()
 		go media.StreamTTSToFiles(turn.ctx, turn.queue, ttsEvent{turn.stop}, ttsEvent{turn.done}, "", turn.deliver)
 	} else {
 		turn.done.Set()

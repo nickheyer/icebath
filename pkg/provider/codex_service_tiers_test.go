@@ -142,54 +142,6 @@ func TestCatalogCeilingUnknownExpiryAndRouteIsolation(t *testing.T) {
 	}
 }
 
-func TestUltrafastIsOfferedOnTheCodexPlanOnlyWhenItsCatalogListsIt(t *testing.T) {
-	down := false
-	tierTest(t, func(account string) (int, any, error) {
-		if down {
-			return 503, map[string]any{}, nil
-		}
-		tiers := map[string]map[string][]string{
-			"A": {"gpt-6-astra": {"priority", "ultrafast"}, "gpt-6.1-sol": {"priority"}},
-			"B": {"gpt-6-astra": {"priority", "ultrafast"}, "gpt-6.1-sol": {"priority", "ultrafast"}},
-		}
-		var models []any
-		for _, slug := range []string{"gpt-6-astra", "gpt-6.1-sol"} {
-			var ids []any
-			for _, id := range tiers[account][slug] {
-				ids = append(ids, map[string]any{"id": id})
-			}
-			models = append(models, map[string]any{"slug": slug, "context_window": 272000, "service_tiers": ids})
-		}
-		return 200, map[string]any{"models": models}, nil
-	})
-	offered := func(model, providerName, baseURL, token string) bool {
-		got, err := UltrafastOffered(model, providerName, baseURL, token)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
-	if !offered("gpt-6-astra", "openai-codex", tierBase, tierToken("A")) {
-		t.Fatal("astra lists ultrafast for A")
-	}
-	if offered("gpt-6.1-sol-900k", "openai-codex", tierBase, tierToken("A")) {
-		t.Fatal("plan lacks Sol Ultrafast")
-	}
-	if !offered("gpt-6.1-sol-900k", "openai-codex", tierBase, tierToken("B")) {
-		t.Fatal("B lists Sol Ultrafast")
-	}
-	if !offered("gpt-6.1-sol", "openai-api", "https://api.openai.com/v1", "") {
-		t.Fatal("the API key route is not plan gated")
-	}
-	down = true
-	if !offered("gpt-6.1-sol", "openai-codex", tierBase, tierToken("C")) {
-		t.Fatal("an unreadable catalog never refuses")
-	}
-	if got, err := UltrafastOfferedFor(Route{Provider: "openai-codex", BaseURL: tierBase, APIKey: tierToken("A")}, "gpt-6.1-sol"); err != nil || got {
-		t.Fatalf("route form follows the cached plan %v %v", got, err)
-	}
-}
-
 var daybreakCatalog = map[string][]any{
 	"A": {
 		map[string]any{"slug": "gpt-6-sol", "context_window": 272000, "available_access_programs": map[string]any{"cyber": []any{"standard", "daybreak_blue"}}},

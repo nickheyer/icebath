@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -508,7 +509,7 @@ func (t *WebSocketRelayTransport) dial(ctx context.Context) (*relayConn, error) 
 	netDialer := &net.Dialer{FallbackDelay: relayWSHappyEyeballs}
 	dialer := websocket.Dialer{
 		Proxy: pyurl.UrlopenProxy, HandshakeTimeout: relayWSOpenTimeout, EnableCompression: true,
-		NetDialContext: netDialer.DialContext,
+		NetDialContext: netpref.DialContext(netDialer.DialContext),
 	}
 	header := http.Header{}
 	for k, v := range t.upgradeHeaders() {

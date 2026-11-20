@@ -70,7 +70,7 @@ func rateLimitBucketDict(b provider.RateLimitBucket) *pyjson.Object {
 }
 
 // Last captured rate limit state as its dataclass dict, nil before any headers were captured
-func usageRateLimit(a *AIAgent) any {
+func UsageRateLimit(a *AIAgent) any {
 	capture := a.HeaderCapture()
 	if capture == nil {
 		return nil
@@ -135,7 +135,7 @@ func UsageStats(ctx context.Context, a *AIAgent) *pyjson.Object {
 	var rateLimit, fallbackModel any
 	model, providerName := "", ""
 	if a != nil {
-		rateLimit = usageRateLimit(a)
+		rateLimit = UsageRateLimit(a)
 		model, providerName = a.model, a.provider
 		if a.fallbackActivated && model != "" {
 			fallbackModel = model

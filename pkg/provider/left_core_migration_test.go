@@ -62,16 +62,6 @@ func writeLeftCoreFile(t *testing.T, path, text string) {
 	}
 }
 
-// Named profile home under a root bound as the process home so install commands carry the profile
-func leftCoreProfileHome(t *testing.T) (string, context.Context) {
-	t.Helper()
-	root := t.TempDir()
-	t.Setenv(home.EnvHome, root)
-	home.ResetKeyCache()
-	h := leftCoreHome(t, root, filepath.Join("profiles", "work"), "", "")
-	return h, home.WithOverride(context.Background(), h)
-}
-
 func mkPluginDir(t *testing.T, h, plugin string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(h, "plugins", plugin), 0o755); err != nil {

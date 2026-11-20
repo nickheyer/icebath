@@ -23,6 +23,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
@@ -305,10 +306,10 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Transport with the resolved verification, proxy settings read from the normalized environment
 func oauthTransport(verify oauthVerify) *http.Transport {
 	config.NormalizeProxyEnvVars()
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = http.ProxyFromEnvironment
 	transport.TLSClientConfig = verify.TLS
-	transport.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, FallbackDelay: 300 * time.Millisecond}).DialContext
+	transport.DialContext = netpref.DialContext((&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, FallbackDelay: 300 * time.Millisecond}).DialContext)
 	return transport
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -55,7 +56,8 @@ type ContextReferenceProvider interface {
 var BuiltinPrefixes = map[string]bool{"diff": true, "staged": true, "file": true, "folder": true, "git": true, "url": true}
 
 var (
-	contextReferenceProviders   = map[string]ContextReferenceProvider{}
+	// Plugin reference providers by profile scope then lower case prefix, the empty scope holding the ones every profile sees
+	contextReferenceProviders   = map[string]map[string]ContextReferenceProvider{}
 	contextReferenceProvidersMu sync.Mutex
 )
 
@@ -77,12 +79,7 @@ func (h hostedContextReferenceProvider) Autocomplete(ctx context.Context, query 
 	items, _ := raw.([]any)
 	out := make([]ContextCompletionItem, 0, len(items))
 	for _, item := range items {
-		m, _ := item.(map[string]any)
-		if m == nil {
-			if rec, ok := item.(plugins.Record); ok {
-				m = map[string]any(rec)
-			}
-		}
+		m := plugins.FieldsOf(item)
 		out = append(out, NewContextCompletionItem(pyrepr.Str(m["text"]), pyrepr.Str(m["display"]), pyrepr.Str(m["meta"])))
 	}
 	return out, nil
@@ -113,64 +110,163 @@ func adaptHostedContextReferenceProvider(p any) any {
 	return hostedContextReferenceProvider{obj: obj, prefix: pyrepr.Str(prefix), description: pyrepr.Str(description)}
 }
 
-// HostedContextObjectName names a context engine or context reference provider, false when obj is neither
+// HostedContextObjectName names a context engine, false when obj is none
 func HostedContextObjectName(kind string, obj any) (string, bool) {
-	switch kind {
-	case "context_engine":
-		if engine, ok := obj.(ContextEngine); ok {
-			return engine.Name(), true
+	if kind != "context_engine" {
+		return "", false
+	}
+	if engine, ok := obj.(ContextEngine); ok {
+		return engine.Name(), true
+	}
+	if hosted, ok := obj.(*plugins.HostedObject); ok && hosted != nil && hosted.Base == hostedContextEngineBase {
+		name, err := hosted.Get(context.Background(), "name")
+		if err != nil {
+			return "", false
 		}
-		if hosted, ok := obj.(*plugins.HostedObject); ok && hosted != nil && hosted.Base == hostedContextEngineBase {
-			name, err := hosted.Get(context.Background(), "name")
-			if err != nil {
-				return "", false
-			}
-			return pyrepr.Str(name), true
-		}
-	case "context_reference":
-		if p, ok := adaptHostedContextReferenceProvider(obj).(ContextReferenceProvider); ok {
-			return p.Prefix(), true
-		}
+		return pyrepr.Str(name), true
 	}
 	return "", false
 }
 
-// RegisterContextReference registers a plugin reference provider, a foreign value failing like the Python TypeError
-func RegisterContextReference(provider any) error {
-	p, ok := adaptHostedContextReferenceProvider(provider).(ContextReferenceProvider)
-	if !ok {
-		return &plugins.HostBuiltinError{Type: "TypeError", Message: "provider must be a ContextReferenceProvider instance"}
-	}
-	return RegisterContextReferenceProvider(p)
+// Registers the context reference kind plugins load into
+func init() {
+	plugins.RegisterProviderRegistry("context_reference", func() plugins.ScopedRegistry { return contextReferenceScopedRegistry{} })
 }
 
-// RegisterContextReferenceProvider claims a lower case prefix, refusing empty, builtin and taken ones
+// Lower case prefix a provider claims
+func contextReferencePrefix(provider ContextReferenceProvider) string {
+	return strings.TrimSpace(strings.ToLower(provider.Prefix()))
+}
+
+// RegisterContextReferenceProvider claims a lower case prefix for every profile, refusing empty, builtin and taken ones
 func RegisterContextReferenceProvider(provider ContextReferenceProvider) error {
-	prefix := strings.TrimSpace(strings.ToLower(provider.Prefix()))
+	return registerContextReferenceProvider(provider, "")
+}
+
+// Claims a prefix in one profile scope, a prefix every profile sees or that scope already holds counting as taken
+func registerContextReferenceProvider(provider ContextReferenceProvider, scope string) error {
+	prefix := contextReferencePrefix(provider)
 	if prefix == "" {
 		return &plugins.HostBuiltinError{Type: "ValueError", Message: "prefix must be a non-empty string"}
 	}
 	if BuiltinPrefixes[prefix] {
 		return &plugins.HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("prefix '%s' is reserved for built-in references", prefix)}
 	}
+	scope = home.NormalizeScope(scope)
 	contextReferenceProvidersMu.Lock()
 	defer contextReferenceProvidersMu.Unlock()
-	if _, taken := contextReferenceProviders[prefix]; taken {
+	_, global := contextReferenceProviders[""][prefix]
+	_, scoped := contextReferenceProviders[scope][prefix]
+	if global || scoped {
 		return &plugins.HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("prefix '%s' is already registered", prefix)}
 	}
-	contextReferenceProviders[prefix] = provider
+	if contextReferenceProviders[scope] == nil {
+		contextReferenceProviders[scope] = map[string]ContextReferenceProvider{}
+	}
+	contextReferenceProviders[scope][prefix] = provider
 	return nil
 }
 
-// GetContextReferenceProviders is a snapshot of every registered plugin provider by prefix
-func GetContextReferenceProviders() map[string]ContextReferenceProvider {
+// ContextReferenceProviders is a snapshot of the plugin providers the profile of ctx sees by prefix, its own beside the ones every profile sees
+func ContextReferenceProviders(ctx context.Context) map[string]ContextReferenceProvider {
+	scope := home.Key(home.Dir(ctx))
 	contextReferenceProvidersMu.Lock()
 	defer contextReferenceProvidersMu.Unlock()
-	out := make(map[string]ContextReferenceProvider, len(contextReferenceProviders))
-	for k, v := range contextReferenceProviders {
+	out := make(map[string]ContextReferenceProvider, len(contextReferenceProviders[""])+len(contextReferenceProviders[scope]))
+	for k, v := range contextReferenceProviders[""] {
+		out[k] = v
+	}
+	for k, v := range contextReferenceProviders[scope] {
 		out[k] = v
 	}
 	return out
+}
+
+// Plugin context view of the reference providers that register_context_reference drives
+type contextReferenceScopedRegistry struct{}
+
+var _ plugins.ScopedRegistry = contextReferenceScopedRegistry{}
+
+// Whether the value is a reference provider or a plugin host object standing in for one
+func (contextReferenceScopedRegistry) Accepts(provider any) bool {
+	if obj, ok := provider.(*plugins.HostedObject); ok {
+		return obj != nil && obj.Base == hostedContextReferenceBase
+	}
+	_, ok := provider.(ContextReferenceProvider)
+	return ok
+}
+
+// Prefix the provider claims, read from the plugin for a plugin host object
+func (contextReferenceScopedRegistry) ProviderName(provider any) string {
+	switch p := provider.(type) {
+	case *plugins.HostedObject:
+		if p == nil {
+			return ""
+		}
+		prefix, _ := p.Get(context.Background(), "prefix")
+		return pyrepr.Str(prefix)
+	case ContextReferenceProvider:
+		return p.Prefix()
+	}
+	return ""
+}
+
+// Reference providers are judged by the prefix checks of their registration
+func (contextReferenceScopedRegistry) Identity(any) error { return nil }
+
+// Provider holding a prefix in a scope, a plugin host provider answered as the object the plugin handed over
+func (contextReferenceScopedRegistry) Snapshot(name, scope string) any {
+	contextReferenceProvidersMu.Lock()
+	defer contextReferenceProvidersMu.Unlock()
+	held, ok := contextReferenceProviders[home.NormalizeScope(scope)][name]
+	if !ok {
+		return nil
+	}
+	if hosted, isHosted := held.(hostedContextReferenceProvider); isHosted {
+		return hosted.obj
+	}
+	return held
+}
+
+// Claims the prefix of the provider in the scope
+func (contextReferenceScopedRegistry) Register(provider any, scope string) (bool, error) {
+	p, ok := adaptHostedContextReferenceProvider(provider).(ContextReferenceProvider)
+	if !ok {
+		return false, &plugins.HostBuiltinError{Type: "TypeError", Message: "provider must be a ContextReferenceProvider instance"}
+	}
+	if err := registerContextReferenceProvider(p, scope); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// Gives the prefix back, or to the replacement, while the provider the plugin registered still holds it
+func (contextReferenceScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
+	scope = home.NormalizeScope(scope)
+	contextReferenceProvidersMu.Lock()
+	defer contextReferenceProvidersMu.Unlock()
+	held, ok := contextReferenceProviders[scope][name]
+	if !ok || !sameContextReference(held, current) {
+		return false
+	}
+	if previous, isProvider := adaptHostedContextReferenceProvider(replacement).(ContextReferenceProvider); isProvider {
+		contextReferenceProviders[scope][name] = previous
+		return true
+	}
+	delete(contextReferenceProviders[scope], name)
+	if len(contextReferenceProviders[scope]) == 0 {
+		delete(contextReferenceProviders, scope)
+	}
+	return true
+}
+
+// Whether a stored provider is the value a plugin registered, a plugin host provider matched by its object without asking the plugin
+func sameContextReference(held ContextReferenceProvider, registered any) bool {
+	if hosted, ok := held.(hostedContextReferenceProvider); ok {
+		obj, isObject := registered.(*plugins.HostedObject)
+		return isObject && obj == hosted.obj
+	}
+	return providerregistry.Same(held, registered)
 }
 
 const quotedReferenceValue = "(?:`[^`\\n]+`|\"[^\"\\n]+\"|'[^'\\n]+')"
@@ -316,8 +412,8 @@ type referenceExpansion struct {
 	block   string
 }
 
-// ParseContextReferences reads the built in references and, with plugins, the registered plugin prefixes
-func ParseContextReferences(message string, usePlugins bool) []ContextReference {
+// ParseContextReferences reads the built in references and, with plugins, the plugin prefixes the profile of ctx sees
+func ParseContextReferences(ctx context.Context, message string, usePlugins bool) []ContextReference {
 	var refs []ContextReference
 	if message == "" {
 		return refs
@@ -340,7 +436,7 @@ func ParseContextReferences(message string, usePlugins bool) []ContextReference 
 		}
 		refs = append(refs, ContextReference{Raw: m.Text, Kind: kind, Target: target, Start: m.Start, End: m.End, LineStart: lineStart, LineEnd: lineEnd})
 	}
-	providers := GetContextReferenceProviders()
+	providers := ContextReferenceProviders(ctx)
 	if !usePlugins || len(providers) == 0 {
 		return refs
 	}
@@ -378,7 +474,7 @@ type ContextReferenceOptions struct {
 
 // PreprocessContextReferences expands every @ reference of a message within the token budget, concurrently per reference
 func PreprocessContextReferences(ctx context.Context, message string, o ContextReferenceOptions) (*ContextReferenceResult, error) {
-	refs := ParseContextReferences(message, !o.NoPlugins)
+	refs := ParseContextReferences(ctx, message, !o.NoPlugins)
 	if len(refs) == 0 {
 		return &ContextReferenceResult{Message: message, OriginalMessage: message}, nil
 	}
@@ -491,7 +587,7 @@ func expandReference(ctx context.Context, ref ContextReference, cwd string, fetc
 		}
 		return referenceExpansion{block: fmt.Sprintf("\U0001F310 %s (%d tokens)\n%s", ref.Raw, provider.EstimateTokens(content), content)}
 	}
-	if p, ok := GetContextReferenceProviders()[ref.Kind]; ok {
+	if p, ok := ContextReferenceProviders(ctx)[ref.Kind]; ok {
 		content, err := p.Expand(ctx, ref.Target)
 		if err != nil {
 			return referenceExpansion{warning: fmt.Sprintf("%s: plugin expansion error: %s", ref.Raw, referenceErrorText(err))}

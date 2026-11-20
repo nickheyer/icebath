@@ -19,6 +19,7 @@ import (
 	"math/big"
 	mrand "math/rand/v2"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -939,7 +941,7 @@ func gcpGDCHFromInfo(info map[string]any) (*gcpCredentials, error) {
 			}
 			pool := x509.NewCertPool()
 			pool.AppendCertsFromPEM(pemCA)
-			client.Transport = &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+			client.Transport = &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
 		}
 		data, err := gcpTokenEndpointRequest(ctx, tokenURI, nil, gcpObject("grant_type", "urn:ietf:params:oauth:token-type:token-exchange", "audience", nil,
 			"requested_token_type", "urn:ietf:params:oauth:token-type:access_token", "subject_token", jwt,
@@ -1291,7 +1293,7 @@ func gcpX509SubjectToken(cert map[string]any) (gcpSubjectTokenSupplier, *http.Cl
 		}
 	}
 	client := gcpHTTPClient()
-	client.Transport = &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}}
+	client.Transport = &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}}
 	token, _ := json.Marshal(chain)
 	return func(context.Context) (string, error) { return string(token), nil }, client, nil
 }

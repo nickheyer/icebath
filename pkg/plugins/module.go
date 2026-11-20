@@ -36,12 +36,10 @@ type Services struct {
 	BoundSessionKey                   func(ctx context.Context) string
 	ResolveBuiltinCommand             func(name string) bool
 	DispatchTool                      func(ctx context.Context, scope, toolName string, args, kwargs map[string]any) (string, error)
-	RegisterContextReference          func(provider any) error
 	Platforms                         PlatformRegistry
 	ProviderRegistries                map[string]ScopedRegistry
 	BuiltinAuxTaskKeys                func() []string
 	RegisterRedactionPatterns         func(patterns any, source string) (int, error)
-	PluginSDK                         func(ctx context.Context, home, op string, args []any, kwargs map[string]any) (any, error)
 	BuildPluginBlueprint              func(pluginName string, key any, spec BlueprintSpec) (string, any, error)
 	SecretSources                     SecretSources
 	PlatformDeclarations              PlatformDeclarations

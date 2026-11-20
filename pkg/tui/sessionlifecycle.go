@@ -19,7 +19,7 @@ type sessionGateway interface {
 	turnGateway
 	holdAttach(sessionID string) *attachHold
 	settleAttach(hold *attachHold, snapshot *tuigateway.CanonicalSnapshot)
-	hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot)
+	hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot, open []tuigateway.OpenRequestEntry)
 	creationEnv() func(string) string
 }
 
@@ -49,6 +49,8 @@ type sessionView interface {
 	cols() int
 	scroll() scrollHandle
 	onFreshSessionStarted(sid string)
+	// A session was left mid turn and keeps working out of view
+	leftRunning(sid string)
 	uncaught(err error)
 }
 
@@ -424,6 +426,7 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 	flight := l.attachmentFlight
 	previousSid := l.store.ui.Sid
 	previousSubscription := l.subscriptions[previousSid]
+	leftBusy := keepCurrent && l.store.ui.Busy
 	l.pendingAttachments[flight] = true
 	settle := func(sid string) tea.Cmd {
 		cmds := []tea.Cmd{l.finishAttachment(flight)}
@@ -444,6 +447,9 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 			return settle("")
 		}
 		requestedTitle := strings.TrimFunc(title, isJSSpace)
+		if leftBusy {
+			l.view.leftRunning(previousSid)
+		}
 		l.resetSession()
 		l.view.setSessionStartedAt(l.store.nowMillis())
 		writeActiveSessionFile(a.StoredSID)
@@ -502,21 +508,45 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 			return created(closed, &attachment{SessionID: r.SessionID, StoredSID: stored, Info: &info})
 		})
 	}
-	afterSetup := func(setup *tuigateway.SetupStatusResult) tea.Cmd {
-		if flight != l.attachmentFlight || setup == nil {
-			return settle("")
-		}
-		if setup.ProviderConfigured != nil && !*setup.ProviderConfigured {
-			l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
-			l.store.ui.Status = tr("session.status.setupRequired")
-			return settle("")
-		}
+	proceed := func() tea.Cmd {
 		if keepCurrent {
 			return create(nil)
 		}
 		return l.closeSession(previousSid, true, create)
 	}
+	afterSetup := func(setup *tuigateway.SetupStatusResult) tea.Cmd {
+		if flight != l.attachmentFlight || setup == nil {
+			return settle("")
+		}
+		if setup.ProviderConfigured == nil || *setup.ProviderConfigured {
+			return proceed()
+		}
+		return l.launchRouteServes(func(serves bool) tea.Cmd {
+			if flight != l.attachmentFlight {
+				return settle("")
+			}
+			if !serves {
+				l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
+				l.store.ui.Status = tr("session.status.setupRequired")
+				return settle("")
+			}
+			return proceed()
+		})
+	}
 	return l.setupStatus(afterSetup)
+}
+
+// Whether the launch's own provider can carry a session on a profile the setup status calls unconfigured, counted only with a model from the launch or the profile
+func (l *sessionLifecycle) launchRouteServes(then func(bool) tea.Cmd) tea.Cmd {
+	env := l.gw.creationEnv()
+	launchProvider, launchModel := env("ICEBATH_TUI_PROVIDER"), env("ICEBATH_MODEL")
+	if !l.gw.canonical() || launchProvider == "" {
+		return then(false)
+	}
+	params := tuigateway.SetupRuntimeCheckParams{Provider: &launchProvider}
+	return ask(l.rpc, l.view.sys, tuigateway.SetupRuntimeCheck, params, func(check *tuigateway.SetupRuntimeCheckResult) tea.Cmd {
+		return then(check != nil && check.OK && (launchModel != "" || val(check.Model) != ""))
+	})
 }
 
 // Names a freshly created session, reporting the title or the failure while it stays current
@@ -586,7 +616,7 @@ func (l *sessionLifecycle) applyAttachment(a attachment, hold *attachHold) tea.C
 	connected := true
 	l.store.ui.Busy, l.store.ui.GatewayConnected = a.Running, &connected
 	l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = a.Info, a.SessionID, statusFromLiveSession(a.Status, a.Running), a.StoredSID, usageFrom(a.Info)
-	l.gw.hydrateSharedPrompts(a.Snapshot)
+	l.gw.hydrateSharedPrompts(a.Snapshot, a.OpenRequests)
 	l.hydrateLiveSessionInflight(a.Inflight)
 	l.gw.settleAttach(hold, a.Snapshot)
 	return l.scheduleResumeScrollToBottom()

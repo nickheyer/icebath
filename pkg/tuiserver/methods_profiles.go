@@ -23,6 +23,7 @@ var profilesRegistry = &handlerRegistry{}
 
 func init() {
 	profileHandler("profiles.list", 5061, profilesList)
+	profilesRegistry.method("profiles.create", profilesCreate)
 	profilesRegistry.install()
 }
 

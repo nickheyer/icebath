@@ -151,7 +151,7 @@ func activateKey(ctx context.Context, h, key string, enable bool, console *Conso
 	if target[key] && !intersects(aliases, other) {
 		byUpdate := false
 		if !enable {
-			if byUpdate, err = disabledByUpdate(h, key, aliases); err != nil {
+			if byUpdate, err = disabledByUpdate(ctx, h, key, aliases); err != nil {
 				return false, err
 			}
 		}
@@ -163,8 +163,8 @@ func activateKey(ctx context.Context, h, key string, enable bool, console *Conso
 }
 
 // Whether an update disabled the plugin and records it for retry
-func disabledByUpdate(h, key string, aliases map[string]bool) (bool, error) {
-	selection, err := pm.ReadHomeSelection(h)
+func disabledByUpdate(ctx context.Context, h, key string, aliases map[string]bool) (bool, error) {
+	selection, err := pm.ReadHomeSelection(ctx, h)
 	if err != nil {
 		return false, err
 	}
@@ -243,7 +243,7 @@ func setPluginEnabled(ctx context.Context, h, name string, enable bool, aliases 
 	if err != nil {
 		return err
 	}
-	selection, err := pm.ReadHomeSelection(h)
+	selection, err := pm.ReadHomeSelection(ctx, h)
 	if err != nil {
 		return err
 	}

@@ -223,34 +223,3 @@ func TestVisionPickerCustomEndpoint(t *testing.T) {
 		t.Fatalf("env %v", keys)
 	}
 }
-
-func TestResolveToolsetModelPluginBranches(t *testing.T) {
-	for _, c := range []struct {
-		ts   string
-		row  *pyjson.Object
-		want string
-	}{
-		{"image_gen", caseRow("image_gen_plugin_name", "openai", "imagegen_backend", "fal"), "openai"},
-		{"image_gen", caseRow("image_gen_plugin_name", "", "imagegen_backend", "fal"), "fal"},
-		{"image_gen", caseRow("name", "x"), ""},
-		{"video_gen", caseRow("video_gen_plugin_name", "xai", "image_gen_plugin_name", "fal"), "xai"},
-		{"tts", caseRow("image_gen_plugin_name", "fal"), ""},
-	} {
-		if got := resolveToolsetModelPlugin(c.ts, c.row); got != c.want {
-			t.Fatalf("%s %v: %q", c.ts, rowPairs(c.row), got)
-		}
-	}
-	s, _ := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil, pickerFake("catimg", "-model-v1", true, nil)))
-	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, fakePickerRegistry(nil, pickerFake("vidx", "-video-v1", true, nil)))
-	if c, def := s.toolsetModelCatalog("image_gen", "catimg", config.Tree{}); def != "catimg-model-v1" || !c.has(def) {
-		t.Fatalf("plugin image catalog %v %q", c.ids, def)
-	}
-	falCat, falDef := imagegenBackends["fal"].catalogFn(s, config.Tree{})
-	if c, def := s.toolsetModelCatalog("image_gen", "fal", config.Tree{}); def != falDef || !slices.Equal(c.ids, falCat.ids) {
-		t.Fatalf("fal catalog %q", def)
-	}
-	if c, def := s.toolsetModelCatalog("video_gen", "vidx", config.Tree{}); def != "vidx-video-v1" || !c.has(def) {
-		t.Fatalf("video catalog %v %q", c.ids, def)
-	}
-}

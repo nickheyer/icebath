@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -369,7 +370,7 @@ func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName 
 			jobName, jobModel, pyrepr.Repr(envModel), jobID)
 	}
 	if netCfg, ok := jc.cfg["network"].(map[string]any); ok && pyTruthy(netCfg["force_ipv4"]) {
-		home.ApplyIPv4Preference(true)
+		netpref.ApplyIPv4Preference(true)
 	}
 	jc.model = model
 	return jc, nil

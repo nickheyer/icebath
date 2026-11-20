@@ -313,6 +313,15 @@ type DisplayLeasePayload struct {
 	Lease      DisplayLease `json:"lease"`
 }
 
+// One frame of the screen as an image file of the gateway host, no path while the screen is down or while a person holds it, suppressed saying so
+type DisplayThumbnailResult struct {
+	Path       *string `json:"path"`
+	Suppressed string  `json:"suppressed,omitzero"`
+}
+
+// Grabs one frame of this profile's screen without touching the lease
+var DisplayThumbnail = NewMethod[ProfileParams, DisplayThumbnailResult]("display.thumbnail")
+
 // Runtime and lease of this profile's screen
 var DisplayStatusMethod = NewMethod[ProfileParams, DisplayStatus]("display.status")
 
@@ -324,6 +333,31 @@ var DisplayStop = NewMethod[DisplayStopParams, DisplayStopResult]("display.stop"
 
 // Decides the pending default sandbox image switch of this profile
 var DisplaySwitchSandboxImage = NewMethod[DisplaySwitchSandboxImageParams, DisplaySwitchSandboxImageResult]("display.switchSandboxImage")
+
+// Asks for the screen for the person at a client, named by an id only that client knows
+type DisplayLeaseAcquireParams struct {
+	Profile  *string `json:"profile,omitzero"`
+	ViewerID string  `json:"viewer_id"`
+	Reason   string  `json:"reason,omitzero"`
+}
+
+// Hands the screen back, by the client that took it or by force
+type DisplayLeaseReleaseParams struct {
+	Profile  *string `json:"profile,omitzero"`
+	ViewerID string  `json:"viewer_id,omitzero"`
+	Force    bool    `json:"force,omitzero"`
+}
+
+// Lease of the screen after a take or a hand back
+type DisplayLeaseResult struct {
+	Lease DisplayLease `json:"lease"`
+}
+
+// A person takes the screen, the agent's actions on it refused until it is handed back
+var DisplayLeaseAcquire = NewMethod[DisplayLeaseAcquireParams, DisplayLeaseResult]("display.lease.acquire")
+
+// Hands the screen back to the agent, refused with viewer_mismatch while another viewer holds it unless forced
+var DisplayLeaseRelease = NewMethod[DisplayLeaseReleaseParams, DisplayLeaseResult]("display.lease.release")
 
 // Runs the package install on the gateway host, progress streamed as display.install.log and done
 var DisplayInstall = NewMethod[ProfileParams, DisplayInstallResult]("display.install")

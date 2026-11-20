@@ -363,24 +363,6 @@ func ProfileHasIdentity(profileHome string) bool {
 	return false
 }
 
-// Reports identity a host changes posture for, where an empty regular .env alone does not count
-func ProfileHasServableIdentity(profileHome string) bool {
-	for _, m := range identityMarkers {
-		p := pypath.PathJoin(profileHome, m)
-		if lst, err := os.Lstat(p); err == nil && lst.Mode()&os.ModeSymlink != 0 {
-			return true
-		}
-		st, err := os.Stat(p)
-		if err != nil {
-			continue
-		}
-		if st.Mode().IsRegular() && (m != ".env" || st.Size() > 0) {
-			return true
-		}
-	}
-	return false
-}
-
 // Reports whether the profile exists, has identity and is not deleted
 func ProfileLive(profileHome string) bool {
 	return pathIsDir(profileHome) && ProfileHasIdentity(profileHome) && !ProfileDeleted(profileHome)

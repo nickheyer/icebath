@@ -208,8 +208,6 @@ const anthFastModeBeta = "fast-mode-2026-02-01"
 // Betas required for OAuth subscription auth
 var anthropicOAuthOnlyBetas = []string{"claude-code-20250219", "oauth-2025-04-20"}
 
-const anthAPIVersionHeader = "2023-06-01"
-
 const anthClaudeCodeVersionFallback = "2.1.74"
 
 // Install prefixes probed in addition to PATH for the Claude Code CLI

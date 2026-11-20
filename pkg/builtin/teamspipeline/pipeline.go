@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -396,7 +397,7 @@ func (w *httpSinkWriter) request(ctx context.Context, method, rawURL string, hea
 	}
 	client, closeClient := &http.Client{Transport: w.transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}, func() {}
 	if w.transport == nil {
-		t := http.DefaultTransport.(*http.Transport).Clone()
+		t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 		client.Transport, closeClient = t, t.CloseIdleConnections
 	}
 	resp, err := pyhttpx.Do(client, req, 30*time.Second)

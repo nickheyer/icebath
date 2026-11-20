@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Bare directory or file stem a provider name must be so a hand edited config cannot aim the copy elsewhere
@@ -174,6 +179,49 @@ func ClonedMemoryProvider(profileDir string) string {
 		return provider
 	}
 	return ""
+}
+
+// Whether the config.yaml of a profile or the managed overlay names a memory provider outside the core, the cheap check before its secrets are bound
+func namesExternalProvider(profileDir string) bool {
+	for _, cfg := range []map[string]any{loadProfileConfigDict(profileDir), config.LoadManagedConfig()} {
+		memory, _ := cfg["memory"].(map[string]any)
+		if name, ok := memory["provider"].(string); ok && pyStrip(name) != "" && !IsCoreMemoryProvider(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// NotifyMemoryProvider runs call on the memory provider the config of a profile selects with that profile's home and its own secrets bound, best effort so a failing provider never fails the create or rename that called it
+func NotifyMemoryProvider(ctx context.Context, profileDir string, call func(ctx context.Context, p Provider) error) {
+	name := ""
+	failed := func(reason any) {
+		pkgLog().Warn(fmt.Sprintf("memory provider %s: profile hook failed for %s: %v", pyrepr.Repr(name), profileDir, reason))
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			failed(r)
+		}
+	}()
+	if !namesExternalProvider(profileDir) {
+		return
+	}
+	provider.HydrateProfileSecretSources(profileDir)
+	scoped := provider.BindProfileSecretScope(home.WithOverride(ctx, profileDir), profileDir)
+	env := &tools.Env{Home: profileDir}
+	if name = ExternalMemoryProvider(map[string]any{"memory": map[string]any{"provider": ActiveMemoryProvider(scoped, env)}}); name == "" {
+		return
+	}
+	p := LoadMemoryProviderWithSkills(scoped, env, name, false)
+	if p == nil {
+		return
+	}
+	if transient, ok := p.(interface{ dismiss() }); ok {
+		defer transient.dismiss()
+	}
+	if err := call(scoped, p); err != nil {
+		failed(err)
+	}
 }
 
 // Profile memory config cloning has no import time effects, profile create calls it directly

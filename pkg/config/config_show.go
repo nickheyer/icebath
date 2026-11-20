@@ -153,11 +153,6 @@ func (p showPrinter) displaySection(cfg map[string]any, src ShowSources) {
 	p.line("  Personality:  %s", personality)
 	p.line("  Reasoning:    %s", onOff(getOr(display, "show_reasoning", true)))
 	p.line("  Bell:         complete=%s, prompt=%s", onOff(getOr(display, "bell_on_complete", false)), onOff(getOr(display, "bell_on_prompt", false)))
-	ump := AsMap(getOr(display, "user_message_preview", map[string]any{}))
-	if ump == nil {
-		ump = map[string]any{}
-	}
-	p.line("  User preview: first %s line(s), last %s line(s)", PyStr(getOr(ump, "first_lines", 2)), PyStr(getOr(ump, "last_lines", 2)))
 }
 
 func (p showPrinter) terminalSection(cfg map[string]any, src ShowSources) {

@@ -17,6 +17,7 @@ import (
 	_ "github.com/nickheyer/icebath/pkg/agentimport/openclaw"
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/backup"
+	"github.com/nickheyer/icebath/pkg/batchrun"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser"
 	_ "github.com/nickheyer/icebath/pkg/builtin/agentimporters"
@@ -26,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/hosted"
 	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -68,7 +68,7 @@ func init() {
 	childEntriesLast = append(childEntriesLast, func(ctx context.Context) { acp.DispatchModuleEntry(ctx, exit) })
 	tierWiring = append(tierWiring, installExtrasWiring)
 	tierCLI = append(tierCLI, bindCron, bindLSP, bindComputerUse, func(cli *commands.CLI) {
-		bindGroups(cli, map[string]groupHandler{"acp": acpGroup, "backup": backupGroup, "browser": browserGroup, "import": importGroup,
+		bindGroups(cli, map[string]groupHandler{"acp": acpGroup, "backup": backupGroup, "batch": batchGroup, "browser": browserGroup, "import": importGroup,
 			"kanban": kanbanGroup, "vault": vaultGroup, "security": securityGroup, "update": updateGroup, "update-takeover": updateTakeoverGroup,
 			"update-finish": updateFinishGroup, "update-restart-recovery": updateRestartRecoveryGroup,
 			"update-completion": updateCompletionGroup, "venv-sync": venvSyncGroup, "source-completion": sourceCompletionGroup,
@@ -97,7 +97,6 @@ func init() {
 		}
 		s.BuildPluginBlueprint = cron.BuildPluginBlueprint
 	})
-	tierPluginSDK = append(tierPluginSDK, cron.ServePluginSDK)
 }
 
 // Hooks the extras tier installs into the core packages
@@ -107,7 +106,6 @@ func installExtrasWiring() {
 	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
 	selfupdate.RunCLIHook = run
 	acp.RunModelSetup = func(context.Context) int { return run([]string{"model"}) }
-	gateway.HostedEntryKeywords = hosted.EntryKeywords
 	cron.SetupWorkerLogging = logging.SetupHomeLogging
 	cron.WorkerProcessBoot = cronWorkerProcessBoot
 	cron.RegisterWorkerConfigHooks = gateway.RegisterWorkerConfigHooks
@@ -130,6 +128,11 @@ func installExtrasWiring() {
 
 func acpGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return acp.CmdACP(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
+}
+
+// Runs icebath batch, the agent over a prompt dataset in parallel workers
+func batchGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return batchrun.Command(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
 // Binds icebath cron and every subcommand onto cron.CronCommand, the handler's int the exit code

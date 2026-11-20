@@ -1,10 +1,7 @@
 package acp
 
 import (
-	"context"
-	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -16,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var mntDrive = regexp.MustCompile(`^/mnt/[A-Za-z]/`)
@@ -117,53 +113,6 @@ func updatedAtSortKey(value any) float64 {
 	return math.Inf(-1)
 }
 
-// Prints incidental agent output to stderr since stdout carries JSON-RPC
-func acpStderrPrint(args ...any) {
-	parts := make([]string, len(args))
-	for i, a := range args {
-		parts[i] = pyStr(a)
-	}
-	fmt.Fprintln(os.Stderr, strings.Join(parts, " "))
-}
-
-// Binds a task id to the editor cwd for tools, WSL translated
-func registerTaskCwd(ctx context.Context, taskID, cwd string) {
-	if taskID == "" {
-		return
-	}
-	if err := tools.RegisterTaskEnvOverrides(nil, taskID, map[string]any{"cwd": translateACPCwd(cwd)}); err != nil {
-		pkgLog().Debug("Failed to register ACP task cwd override")
-	}
-}
-
-// ACP toolsets plus one mcp toolset per selected server, deduplicated in order
-func expandACPEnabledToolsets(toolsets []string, useDefault bool, mcpServerNames []string) []string {
-	names := toolsets
-	if useDefault {
-		names = []string{"icebath-acp"}
-	}
-	var out []string
-	seen := map[string]bool{}
-	add := func(n string) {
-		if n != "" && !seen[n] {
-			seen[n] = true
-			out = append(out, n)
-		}
-	}
-	for _, n := range names {
-		add(n)
-	}
-	for _, s := range mcpServerNames {
-		if s != "" {
-			add("mcp-" + s)
-		}
-	}
-	if out == nil {
-		out = []string{}
-	}
-	return out
-}
-
 // Decoded model_config JSON blob, empty when absent, invalid or not a dict
 func parseModelConfig(mc any) *pyjson.Object {
 	s, ok := mc.(string)
@@ -187,17 +136,4 @@ func sessionInfo(sid, cwd string, model any, historyLen int, title, preview, upd
 	o.Set("title", buildSessionTitle(title, preview, cwd))
 	o.Set("updated_at", formatUpdatedAt(updatedAt))
 	return o
-}
-
-// First non blank user message content of a history, def when none
-func firstUserPreview(history []map[string]any, def string) string {
-	for _, m := range history {
-		if m["role"] != "user" {
-			continue
-		}
-		if s := strings.TrimSpace(pyStr(pyrepr.Or(m["content"], ""))); s != "" {
-			return s
-		}
-	}
-	return def
 }

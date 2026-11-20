@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -440,7 +441,7 @@ func urlopenPost(ctx context.Context, rawURL string, payload any, headers map[st
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}, CheckRedirect: urlopenRedirect}
+	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}, CheckRedirect: urlopenRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		var httpErr *HTTPError

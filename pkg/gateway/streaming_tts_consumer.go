@@ -9,17 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Binds text to speech, the provider media save URL SDK operation and the streaming TTS of voice turns to the media backends
+// Binds text to speech and the streaming TTS of voice turns to the media backends
 func init() {
 	SpeechReady = media.CheckTTSRequirements
 	SpeechToFile = media.TextToSpeechTool
-	pluginSDKOps["provider_media.save_url"] = sdkProviderMediaSaveURL
 	OpenTTSStream = func(ctx context.Context, env *tools.Env, adapter PlatformAdapter, chatID string, metadata map[string]any) (TTSStream, error) {
 		c, err := NewStreamingTTSConsumer(ctx, env, adapter, chatID, media.LoadTTSConfig(ctx, env), metadata, nil)
 		if err != nil {
@@ -27,63 +24,6 @@ func init() {
 		}
 		return c, nil
 	}
-}
-
-// Stream downloads a provider URL into the media cache of the home under the SSRF guard, the cached path
-func sdkProviderMediaSaveURL(ctx context.Context, h string, args []any, kwargs map[string]any) (any, error) {
-	const fn = "save_url"
-	a, err := bindSDKSignature(fn, []sdkParam{{name: "kind"}, {name: "url"}, {name: "prefix", kwOnly: true}, {name: "timeout", kwOnly: true},
-		{name: "max_bytes", kwOnly: true}, {name: "chunk_size", kwOnly: true}, {name: "content_types", kwOnly: true},
-		{name: "url_extensions", kwOnly: true}, {name: "default_extension", kwOnly: true}, {name: "label", kwOnly: true},
-		{name: "empty_error", kwOnly: true}, {name: "headers", kwOnly: true, optional: true},
-		{name: "require_known_content_type", kwOnly: true, optional: true, def: false},
-		{name: "trusted_origin", kwOnly: true, optional: true, def: false}}, args, kwargs)
-	if err != nil {
-		return nil, err
-	}
-	text := map[string]string{}
-	for _, name := range []string{"kind", "url", "prefix", "default_extension", "label", "empty_error"} {
-		if text[name], err = sdkString(fn, name, a[name]); err != nil {
-			return nil, err
-		}
-	}
-	timeout, err := sdkFloat(fn, "timeout", a["timeout"])
-	if err != nil {
-		return nil, err
-	}
-	maxBytes, err := sdkInt(fn, "max_bytes", a["max_bytes"])
-	if err != nil {
-		return nil, err
-	}
-	chunkSize, err := sdkInt(fn, "chunk_size", a["chunk_size"])
-	if err != nil {
-		return nil, err
-	}
-	contentTypes, err := sdkStringMap(fn, "content_types", a["content_types"])
-	if err != nil {
-		return nil, err
-	}
-	rawExtensions, ok := a["url_extensions"].([]any)
-	if !ok {
-		return nil, sdkTypeError("the url_extensions argument of %s must be a list, got %s", fn, errchain.Kind(a["url_extensions"]))
-	}
-	extensions := make([]string, len(rawExtensions))
-	for i, item := range rawExtensions {
-		if extensions[i], err = sdkString(fn, "url_extensions", item); err != nil {
-			return nil, err
-		}
-	}
-	var headers map[string]string
-	if config.PyTruthy(a["headers"]) {
-		if headers, err = sdkStringMap(fn, "headers", a["headers"]); err != nil {
-			return nil, err
-		}
-	}
-	return media.SaveURL(ctx, sdkToolsEnv(ctx, h), text["kind"], text["url"], media.SaveURLOptions{
-		Prefix: text["prefix"], Timeout: secondsDuration(timeout), MaxBytes: maxBytes, ChunkSize: int(chunkSize),
-		ContentTypes: contentTypes, URLExtensions: extensions, DefaultExtension: text["default_extension"],
-		Label: text["label"], EmptyError: text["empty_error"], Headers: headers,
-		RequireKnownContentType: config.PyTruthy(a["require_known_content_type"]), TrustedOrigin: config.PyTruthy(a["trusted_origin"])})
 }
 
 // Queue sentinels of the drain loop, the abort and end of text markers

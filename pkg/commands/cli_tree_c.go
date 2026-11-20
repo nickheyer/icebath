@@ -454,6 +454,8 @@ func (c *CLI) addProfile(root *cobra.Command) {
 	bf(create, "clone-channels", "", "Also copy the source's messaging channels (bot tokens, allowlists, platform sections). Two profiles holding one bot token collide; refused when the source is served by a live multiplexed gateway.")
 	bf(create, "sync-imports", "", "With --clone/--clone-from: also carry over the `icebath import-agent` sync manifest so the new profile stays registered against the same Claude Code / Codex trees (`icebath -p <name> import-agent --sync`). Never syncs config from the source profile.")
 	bf(create, "no-alias", "", "Skip wrapper script creation")
+	bf(create, "isolated-auth", "", "Copy the logins (auth.json) once instead of sharing the default profile's. Single-use OAuth logins are left out of the copy and still read from the default profile. From a named profile its logins are always copied this way.")
+	bf(create, "no-credentials", "", "Copy no API keys, logins or model from the launch profile (start `<name>` and type /setup afterwards; not with --clone*, which copies the source's keys). The default profile's logins stay readable for any provider the new profile has not signed in to.")
 	bf(create, "no-skills", "", "Create an empty profile with no bundled skills (opts out of `icebath update` skill sync)")
 	sf(create, "description", "", "", "One- or two-sentence description of what this profile is good at. Used by the kanban decomposer to route tasks based on role instead of profile name alone. Skip and add later via `icebath profile describe`.")
 	del := c.newCmd(profile, "delete", "Delete a profile", "")

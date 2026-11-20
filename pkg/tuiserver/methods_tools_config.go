@@ -3,6 +3,7 @@ package tuiserver
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -86,7 +87,29 @@ func toolsConfigure(ctx context.Context, rid any, params map[string]any, _ *tuih
 	return configureSessionTools(scoped, rid, params, sid, session)
 }
 
-// Applies a tools enable or disable to the saved cli selection and answers what changed
+// Toolsets the launch fixed for every agent this process builds, nil when the launch named none that resolves
+func launchToolsetPin(ctx context.Context) []string {
+	var explicit []string
+	for _, item := range strings.Split(os.Getenv("ICEBATH_TUI_TOOLSETS"), ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			explicit = append(explicit, item)
+		}
+	}
+	if len(explicit) == 0 {
+		return nil
+	}
+	scope := tools.ScopeKey(home.Dir(ctx))
+	resolved, all, valid := resolveExplicitToolsets(ctx, explicit, func(name string) bool { return validateToolset(ctx, scope, name) })
+	switch {
+	case !valid:
+		return nil
+	case all:
+		return []string{"all"}
+	}
+	return resolved
+}
+
+// Applies a tools enable or disable to the saved cli selection and answers what changed, or the launch pin that keeps the change from applying
 func configureSessionTools(ctx context.Context, rid any, params map[string]any, sid string, session *tuihost.Session) (map[string]any, error) {
 	action := strings.ToLower(pystr.Strip(strOr(params["action"])))
 	var targets []string
@@ -117,6 +140,10 @@ func configureSessionTools(ctx context.Context, rid any, params map[string]any, 
 	}
 	if len(targets) == 0 {
 		return rpcErr(rid, 4018, "names required", nil), nil
+	}
+	if pinned := launchToolsetPin(ctx); pinned != nil {
+		return ok(rid, map[string]any{"changed": []string{}, "enabled_toolsets": pinned, "info": nil,
+			"missing_servers": []string{}, "reset": false, "unknown": []string{}, "launch_toolsets": pinned}), nil
 	}
 	cfg, err := loadConfig(ctx)
 	if err != nil {

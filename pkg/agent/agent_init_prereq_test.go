@@ -297,33 +297,3 @@ func TestQuietGatesAndRetryBuffer(t *testing.T) {
 		t.Fatal("unattended turn rule")
 	}
 }
-
-type hostedEngineSecrets struct{}
-
-func (hostedEngineSecrets) ManagedDotenvKeys() []string   { return nil }
-func (hostedEngineSecrets) SourceSuppliedNames() []string { return nil }
-func (hostedEngineSecrets) BuildProfileSecretScope(string) map[string]string {
-	return map[string]string{}
-}
-func (hostedEngineSecrets) CurrentSecretScope(context.Context) map[string]string {
-	return map[string]string{}
-}
-
-const hostedEngineSrc = `
-from agent.context_engine import ContextEngine
-class Hosted(ContextEngine):
-    @property
-    def name(self):
-        return "hosted_demo"
-    def update_from_response(self, usage):
-        self.last_prompt_tokens = usage.get("prompt_tokens", 0)
-    def should_compress(self, prompt_tokens=None):
-        return (prompt_tokens or self.last_prompt_tokens) >= self.threshold_tokens
-    def compress(self, messages, current_tokens=None):
-        self.compression_count += 1
-        return messages[-1:]
-    def get_status(self):
-        return {"threshold_tokens": self.threshold_tokens}
-def register(ctx):
-    ctx.register_context_engine(Hosted())
-`

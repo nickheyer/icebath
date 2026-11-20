@@ -25,11 +25,6 @@ func auxRelayAttemptsClient(outcomes ...any) *auxCallFakeClient {
 	return c
 }
 
-// Chat completion dict naming its model and holding one assistant message
-func auxRelayAnswer(model, content string) map[string]any {
-	return map[string]any{"model": model, "choices": []any{map[string]any{"message": map[string]any{"content": content}}}}
-}
-
 // Restores the relay execute and completion seams after the test
 func auxSwapRelaySeams(t *testing.T) {
 	t.Helper()

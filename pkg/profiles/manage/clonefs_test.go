@@ -9,11 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 func TestNonExportableEntriesSkipsSocketsCachesAndTempNames(t *testing.T) {
-	dir := t.TempDir()
+	dir := hermetic.ShortDir(t)
 	for _, n := range []string{"keep.txt", "x.tmp", "y.pyc", "z.sock"} {
 		writeFile(t, filepath.Join(dir, n), "")
 	}

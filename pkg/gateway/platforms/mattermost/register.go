@@ -1,6 +1,7 @@
 package mattermost
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -41,17 +43,13 @@ func standaloneMediaPaths(raw any) []any {
 	return out
 }
 
-// HTTP client of the standalone sender going through the resolved proxy
-func standaloneClient(ctx context.Context) (*http.Client, error) {
-	proxyURL, err := gateway.ResolveProxyURL(ctx, "MATTERMOST_PROXY", nil, "")
-	if err != nil {
-		return nil, err
-	}
+// HTTP client of the standalone sender going through the proxy
+func standaloneClient(proxyURL string) (*http.Client, error) {
 	sessionKw, requestKw, err := gateway.ProxyKwargsForAiohttp(proxyURL)
 	if err != nil {
 		return nil, err
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if sessionKw.Connector != nil {
 		transport = sessionKw.Connector.Transport()
@@ -89,23 +87,28 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	uploadHeaders := map[string]string{"Authorization": "Bearer " + token}
 	headers := map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}
-	result, err := standalonePost(ctx, baseURL, chatID, message, threadID, kwargs["media_files"], uploadHeaders, headers)
+	proxyURL, err := gateway.ResolveProxyURL(ctx, "MATTERMOST_PROXY", nil, "")
+	if err != nil {
+		return nil, err
+	}
+	result, err := standalonePost(ctx, proxyURL, baseURL, chatID, message, threadID, kwargs["media_files"], uploadHeaders, headers)
 	if err == nil {
 		return result, nil
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	shown := gateway.DescribeProxyError(err, proxyURL)
 	var ce *clientError
 	if errors.As(err, &ce) {
-		return gateway.SendError("Mattermost send failed (network): " + ce.text), nil
+		return gateway.SendError("Mattermost send failed (network): " + cmp.Or(shown, ce.text)), nil
 	}
-	return gateway.SendError("Mattermost send failed: " + pyrepr.ExceptionMessage(err)), nil
+	return gateway.SendError("Mattermost send failed: " + cmp.Or(shown, pyrepr.ExceptionMessage(err))), nil
 }
 
 // Uploads each existing media file, then creates the post with the collected file ids
-func standalonePost(ctx context.Context, baseURL, chatID, message string, threadID, mediaFiles any, uploadHeaders, headers map[string]string) (map[string]any, error) {
-	client, err := standaloneClient(ctx)
+func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message string, threadID, mediaFiles any, uploadHeaders, headers map[string]string) (map[string]any, error) {
+	client, err := standaloneClient(proxyURL)
 	if err != nil {
 		return nil, err
 	}

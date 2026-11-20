@@ -55,12 +55,11 @@ type TelegramAdapter struct {
 	bot       atomic.Pointer[bot.Bot]
 	botUserID atomic.Int64
 
-	mu            sync.Mutex
-	app           *ptbApp
-	tgApp         *TelegramApplication
-	admission     *UpdateAdmission
-	coreHandlers  map[Handler]struct{}
-	webhookServer *webhookServer
+	mu           sync.Mutex
+	app          *ptbApp
+	tgApp        *TelegramApplication
+	admission    *UpdateAdmission
+	coreHandlers map[Handler]struct{}
 
 	mentionPatterns         []*regexp2.Regexp
 	replyToMode             string

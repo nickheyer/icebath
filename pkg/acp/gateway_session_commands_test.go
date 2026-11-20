@@ -15,8 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-type rpcFunc func(method string, params map[string]any) (*pyjson.Object, error)
-
 func cmdAgent(t *testing.T, rpc func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error)) (*GatewayACPAgent, *fakeGateway, *editorFake) {
 	t.Helper()
 	a := newGatewayAgent(t)

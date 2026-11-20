@@ -130,6 +130,8 @@ type Usage struct {
 	ActiveSubagents  *int64   `json:"active_subagents,omitzero"`
 	CostUsd          *float64 `json:"cost_usd,omitzero"`
 	CostStatus       *string  `json:"cost_status,omitzero"`
+	// Rate limit windows the provider's last answer carried, absent before any answer carried them
+	RateLimit map[string]any `json:"rate_limit,omitzero"`
 }
 
 type ProjectRef struct {
@@ -221,12 +223,19 @@ type SessionSaveParams struct {
 }
 
 type SessionUndoResult struct {
-	Removed int64 `json:"removed"`
+	Removed  int64             `json:"removed"`
+	UndoHint *UndoRollbackHint `json:"undo_hint,omitzero"`
 }
 
+// Why a client drops the last exchange, a retry sending the dropped prompt again
+type UndoIntent string
+
+func (UndoIntent) Values() []string { return []string{"undo", "retry"} }
+
 type SessionUndoParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
+	SessionID string     `json:"session_id"`
+	Profile   *string    `json:"profile,omitzero"`
+	Intent    UndoIntent `json:"intent,omitzero"`
 }
 
 type SessionBranchResult struct {
@@ -883,6 +892,16 @@ type CanonicalSessionInfoParams struct {
 	SessionID string `json:"session_id"`
 }
 
+// Session whose provider account limits are read
+type SessionAccountUsageParams struct {
+	SessionID string `json:"session_id"`
+}
+
+// Account limit lines of the provider a session runs on, empty when the provider reports none
+type SessionAccountUsage struct {
+	Lines []string `json:"lines"`
+}
+
 type SessionPruneResult struct {
 	Deleted        int64  `json:"deleted"`
 	RoutingDeleted *int64 `json:"routing_deleted,omitzero"`
@@ -957,6 +976,9 @@ var CanonicalSessionInfo = NewCanonicalMethod[CanonicalSessionInfoParams, Sessio
 
 // Cumulative token, context, latency and rate limit counters of a session
 var CanonicalSessionStats = NewCanonicalMethod[SessionStatsParams, SessionStats]("session.stats")
+
+// Account limits of the provider a session runs on, as the lines the usage command prints under the totals
+var CanonicalSessionAccountUsage = NewCanonicalMethod[SessionAccountUsageParams, SessionAccountUsage]("session.account_usage")
 
 // Revision fenced, retry safe session edit, its operation projection riding beside the receipt
 var CanonicalSessionMutate = NewCanonicalMethod[SessionMutateParams, SessionMutateResult]("session.mutate")

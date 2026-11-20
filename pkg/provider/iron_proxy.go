@@ -27,6 +27,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"gopkg.in/yaml.v3"
@@ -443,7 +444,7 @@ func (p IronProxy) ReloadProxy() error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{Timeout: ironMgmtReloadTimeout, Transport: &http.Transport{Proxy: nil}}
+	client := &http.Client{Timeout: ironMgmtReloadTimeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: nil}}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not reach the management API at %s:%d (%v).  If the daemon was started before reload support, run `icebath egress restart` once.", host, port, err)

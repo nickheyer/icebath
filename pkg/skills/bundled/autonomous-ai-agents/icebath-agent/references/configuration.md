@@ -11,7 +11,7 @@ Full reference: the sections of `cli-config.yaml.example` and `icebath config --
 | `agent` | `max_turns` (90), `tool_use_enforcement`, `service_tier`, `verify_on_stop` |
 | `terminal` | `backend` (local/docker/ssh/modal/daytona/vercel_sandbox, or a plugin backend like singularity), `cwd`, `timeout` (180) |
 | `compression` | `enabled`, `threshold` (0.50), `target_ratio` (0.20) |
-| `display` | `skin`, `interface` (cli/tui), `language`, `show_reasoning`, `show_cost`, `pet` |
+| `display` | `skin`, `language`, `show_reasoning`, `turn_summary`, `spinner_token_flow`, `pet` |
 | `approvals` | `mode` (smart/manual/off), `timeout`, `cron_mode` |
 | `stt` | `enabled`, `provider` (local/groq/openai/mistral/elevenlabs/deepinfra) |
 | `tts` | `provider` (edge/elevenlabs/openai/minimax/mistral/neutts/gemini/piper/kittentts/deepinfra/xai) |

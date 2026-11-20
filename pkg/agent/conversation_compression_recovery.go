@@ -37,10 +37,6 @@ type orphanReopener interface {
 	ReopenOrphanedCompressionSession(ctx context.Context, sessionID string) (bool, error)
 }
 
-type compressionLockHolderReader interface {
-	GetCompressionLockHolder(sessionID string) (*string, error)
-}
-
 // Sleep between rotated parent recovery polls, a seam the tests shorten
 var compressionRecoveryPoll = 50 * time.Millisecond
 

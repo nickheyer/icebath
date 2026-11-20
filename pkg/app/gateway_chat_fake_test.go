@@ -88,22 +88,6 @@ func (p *fakeGatewayPeer) drained() {
 	time.Sleep(5 * time.Millisecond)
 }
 
-// Requests recorded so far
-func (p *fakeGatewayPeer) recorded() []fakeGatewayCall {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]fakeGatewayCall(nil), p.calls...)
-}
-
-// Methods of the recorded requests in order
-func (p *fakeGatewayPeer) methods() []string {
-	var out []string
-	for _, c := range p.recorded() {
-		out = append(out, c.method)
-	}
-	return out
-}
-
 // Connector handing the launch this fake
 func (p *fakeGatewayPeer) connector() func(ctx context.Context) (gatewayChatConn, error) {
 	return func(ctx context.Context) (gatewayChatConn, error) { return p, nil }
@@ -131,11 +115,4 @@ func runViewWithin(t *testing.T, v *GatewayChatView, query string) (int, error) 
 		t.Fatal("view did not finish within 2s")
 	}
 	return 0, nil
-}
-
-// Runs a view method under the view lock the way a coroutine runs on the loop
-func onViewLoop[T any](v *GatewayChatView, fn func() T) T {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return fn()
 }

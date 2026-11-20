@@ -22,6 +22,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -132,8 +133,8 @@ func (r *httpResponse) json() (any, error) {
 
 // HTTP/1.1 client like an aiohttp session with only its total timeout, proxy env honoured only when trustEnv
 func newSession(trustEnv bool) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = (&net.Dialer{KeepAlive: 30 * time.Second}).DialContext
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
+	transport.DialContext = netpref.DialContext((&net.Dialer{KeepAlive: 30 * time.Second}).DialContext)
 	transport.TLSHandshakeTimeout = 0
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}

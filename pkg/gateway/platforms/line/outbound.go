@@ -87,12 +87,13 @@ func (a *LineAdapter) sendMessages(ctx context.Context, chatID string, messages 
 	}
 	for i := start; i < len(batches); i++ {
 		if err := client.push(ctx, chatID, batches[i]); err != nil {
+			shown := pushErrorText(ctx, err)
 			if i > 0 {
-				pkgLog().Warn(fmt.Sprintf("LINE: push for follow-up batch failed: %v", err))
+				pkgLog().Warn("LINE: push for follow-up batch failed: " + shown)
 			} else if text {
-				pkgLog().Error(fmt.Sprintf("LINE: push send failed: %v", err))
+				pkgLog().Error("LINE: push send failed: " + shown)
 			}
-			return gateway.SendResult{Success: false, Error: err.Error()}, nil
+			return gateway.SendResult{Success: false, Error: shown}, nil
 		}
 	}
 	return gateway.SendResult{Success: true}, nil

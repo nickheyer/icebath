@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -64,7 +66,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if homeserver == "" || token == "" {
 		return gateway.SendError("Matrix not configured (MATRIX_HOMESERVER, MATRIX_ACCESS_TOKEN required)"), nil
 	}
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
+	client := &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: nil}}
 	defer client.CloseIdleConnections()
 	doSend := func(payload map[string]any) (map[string]any, error) {
 		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)

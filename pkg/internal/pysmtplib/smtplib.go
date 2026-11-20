@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyemail"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -69,7 +70,7 @@ type Dialer func(ctx context.Context, host string, port int, timeout time.Durati
 // Connects to the first address of the host that answers, any family
 func DialDefault(ctx context.Context, host string, port int, timeout time.Duration) (net.Conn, error) {
 	dialer := net.Dialer{Timeout: timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	conn, err := netpref.DialContext(dialer.DialContext)(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

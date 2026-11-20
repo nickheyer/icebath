@@ -25,6 +25,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -179,7 +180,7 @@ func transportFor(base *http.Transport, t Timeout, bundle string) *http.Transpor
 		return v.(*http.Transport)
 	}
 	tr := base.Clone()
-	tr.DialContext = (&net.Dialer{Timeout: t.Connect, KeepAlive: 30 * time.Second}).DialContext
+	tr.DialContext = netpref.DialContext((&net.Dialer{Timeout: t.Connect, KeepAlive: 30 * time.Second}).DialContext)
 	tr.TLSHandshakeTimeout = t.Connect
 	tr.ResponseHeaderTimeout = t.Read
 	if key.verify.path != "" {

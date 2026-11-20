@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/bundled"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/hosted"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
@@ -67,6 +68,7 @@ func installPluginsWiring() {
 	}
 	startupfast.VersionLines = append(startupfast.VersionLines, matrix.E2EEVersionLine)
 	gatewaycli.SendMessageTool = messagetools.SendMessageTool
+	gateway.HostedEntryKeywords = hosted.EntryKeywords
 	slack.SubcommandMap = func(ctx context.Context) map[string]string {
 		return commands.SlackSubcommandMap(ctx, commands.Default, rawConfigTree(ctx))
 	}

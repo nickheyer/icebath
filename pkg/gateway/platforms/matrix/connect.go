@@ -48,7 +48,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 		client.AccessToken = a.accessToken
 		resp, err := client.Whoami(ctx)
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("Matrix: whoami failed — check MATRIX_ACCESS_TOKEN and MATRIX_HOMESERVER: %v", err))
+			pkgLog().Error("Matrix: whoami failed — check MATRIX_ACCESS_TOKEN and MATRIX_HOMESERVER: " + a.proxySafeErrText(ctx, err))
 			return abortConnect(client, nil)
 		}
 		resolvedUserID := string(resp.UserID)
@@ -115,7 +115,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 			Password:   a.password, DeviceID: id.DeviceID(a.deviceID), InitialDeviceDisplayName: "Icebath Agent",
 			StoreCredentials: true})
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("Matrix: login failed — %v", err))
+			pkgLog().Error("Matrix: login failed — " + a.proxySafeErrText(ctx, err))
 			return abortConnect(client, nil)
 		}
 		if resp != nil {
@@ -133,7 +133,7 @@ func (a *MatrixAdapter) connectAuthenticate(ctx context.Context, client *mautrix
 func (a *MatrixAdapter) connectInitialSync(ctx context.Context, client *mautrix.Client) {
 	resp, err := client.SyncRequest(ctx, 10000, "", "", true, "")
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Matrix: initial sync error: %v", err))
+		pkgLog().Warn("Matrix: initial sync error: " + a.proxySafeErrText(ctx, err))
 		return
 	}
 	a.mu.Lock()
@@ -303,10 +303,10 @@ func (a *MatrixAdapter) syncLoop(ctx context.Context) {
 			return
 		}
 		if isPermanentMatrixAuthError(err) {
-			pkgLog().Error(fmt.Sprintf("Matrix: permanent auth error, stopping sync: %v", err))
+			pkgLog().Error("Matrix: permanent auth error, stopping sync: " + a.proxySafeErrText(ctx, err))
 			return
 		}
-		pkgLog().Warn(fmt.Sprintf("Matrix: sync error: %v — retrying in 5s", err))
+		pkgLog().Warn(fmt.Sprintf("Matrix: sync error: %s — retrying in 5s", a.proxySafeErrText(ctx, err)))
 		select {
 		case <-ctx.Done():
 			return

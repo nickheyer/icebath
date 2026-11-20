@@ -140,29 +140,11 @@ func hostedWebPage(row map[string]any) *tools.WebPage {
 	return page
 }
 
-// Scoped registry view that wraps plugin host objects as WebProvider values before delegating
-type hostedWebSearchScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedWebSearchScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedWebSearchProvider(p))
-}
-func (s hostedWebSearchScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedWebSearchProvider(p))
-}
-func (s hostedWebSearchScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedWebSearchProvider(p))
-}
-func (s hostedWebSearchScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedWebSearchScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedWebSearchProvider(p), scope)
-}
-func (s hostedWebSearchScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedWebSearchProvider(current), adaptHostedWebSearchProvider(replacement), scope)
-}
-
-// Plugin facing registry that register_web_search_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_web_search_provider writes into, a plugin host object stored as the provider adapted from it
 func WebSearchScopedRegistry() plugins.ScopedRegistry {
-	return hostedWebSearchScopedRegistry{tools.WebSearchRegistryScoped()}
+	return plugins.HostedScopedRegistry{Inner: tools.WebSearchRegistryScoped(), Adapt: adaptHostedWebSearchProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedWebSearchProvider)
+			return h.obj, ok
+		}}
 }

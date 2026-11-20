@@ -48,20 +48,6 @@ func FrozenManual(rows ...ManualRow) ManualMoves {
 	return m
 }
 
-// Destinations allowed from src sorted, nil when src has no row
-func (m ManualMoves) Get(src string) []string {
-	set, ok := m.dsts[src]
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(set))
-	for d := range set {
-		out = append(out, d)
-	}
-	slices.Sort(out)
-	return out
-}
-
 // Board columns in board order and the manual move allow list
 type Workflow struct {
 	Columns []Column

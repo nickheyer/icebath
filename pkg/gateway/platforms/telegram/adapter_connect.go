@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -115,7 +116,7 @@ func (a *TelegramAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 		return false, err
 	}
 	a.ReleasePlatformLock()
-	safeError := redactTelegramErrorText(err)
+	safeError := redactTelegramProxyErrorText(err, cmp.Or(a.polling.ptbProxy(), gateway.EnvProxyForRedaction(apiProxyTargets(a.Config.Extra)...)))
 	if looksLikeAuthError(err) {
 		message := fmt.Sprintf("Telegram bot token rejected: %s. The token is invalid or was revoked — generate a new one "+
 			"with @BotFather and update TELEGRAM_BOT_TOKEN.", safeError)
@@ -350,10 +351,10 @@ func (a *TelegramAdapter) startPollingMode(ctx context.Context, isReconnect bool
 			p.disarmPTBRetryLoop()
 			p.spawnPollingRecovery(func(c context.Context) error { return p.handlePollingConflict(c, err) })
 		} else if looksLikeNetworkError(err) {
-			pkgLog().Warn(fmt.Sprintf("[%s] Telegram network error, scheduling reconnect: %s", a.Name(), redactTelegramErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Telegram network error, scheduling reconnect: %s", a.Name(), redactTelegramProxyErrorText(err, p.ptbProxy())))
 			p.spawnPollingRecovery(func(c context.Context) error { p.handlePollingNetworkError(c, err); return nil })
 		} else {
-			pkgLog().Error(fmt.Sprintf("[%s] Telegram polling error: %s", a.Name(), redactTelegramErrorText(err)))
+			pkgLog().Error(fmt.Sprintf("[%s] Telegram polling error: %s", a.Name(), redactTelegramProxyErrorText(err, p.ptbProxy())))
 		}
 	}
 	p.mu.Lock()

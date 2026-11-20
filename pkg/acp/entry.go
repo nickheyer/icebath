@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 
@@ -20,10 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Entry word the binary runs the ACP adapter module under
@@ -156,19 +153,11 @@ var runSetupBrowser = func(ctx context.Context, assumeYes bool, stderr io.Writer
 	return 0
 }
 
-// Imports the configured memory provider module before the ACP threads start
-func warmMemoryProviderImport(ctx context.Context) {
-	env := &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
-	if !memory.ImportMemoryProviderModule(ctx, env, "") {
-		pkgLog().Debug("memory provider not warmed (none configured or import failed; agent init reports that)")
-	}
-}
-
 // Agent the entry point serves and closes
 type entryAgent interface{ Close() }
 
 // Agent of the entry point, the gateway projection
-var newEntryAgent = func() entryAgent { return NewAgent(nil).(entryAgent) }
+var newEntryAgent = func() entryAgent { return NewAgent().(entryAgent) }
 
 // Serves the agent over stdio until the editor disconnects
 var runAgent = func(agent any, useUnstableProtocol bool) error {
@@ -203,9 +192,6 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	}
 	pkgLog().Info("Starting icebath-agent ACP adapter")
 	installTruststore()
-	if runtime.GOOS == "windows" {
-		warmMemoryProviderImport(ctx)
-	}
 	agent := newEntryAgent()
 	interrupted := make(chan os.Signal, 1)
 	signal.Notify(interrupted, os.Interrupt)

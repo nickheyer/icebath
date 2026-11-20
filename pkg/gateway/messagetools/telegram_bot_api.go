@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -70,7 +71,7 @@ var newTelegramBot = func(token any, proxy string) (telegramBotAPI, error) {
 		return nil, newTelegramError("InvalidToken", "You must pass the token you received from https://t.me/Botfather!")
 	}
 	transport := &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: telegramConnectTimeout}).DialContext,
+		DialContext:           netpref.DialContext((&net.Dialer{Timeout: telegramConnectTimeout}).DialContext),
 		TLSHandshakeTimeout:   telegramConnectTimeout,
 		ResponseHeaderTimeout: telegramReadTimeout,
 	}

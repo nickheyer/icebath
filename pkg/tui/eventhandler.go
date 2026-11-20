@@ -35,6 +35,7 @@ type eventApp interface {
 	setVoiceProcessing(on bool)
 	interruptTurn() tea.Cmd
 	recoverSidRef() *string
+	onGatewayReady()
 	bellOnComplete() bool
 	bellOnPrompt() bool
 	uncaught(err error)
@@ -419,8 +420,9 @@ func (h *eventHandler) noteGatewayBuild(ready tuigateway.GatewayReadyPayload) fu
 	}
 }
 
-// First gateway.ready of a connection, skin, wake listener, catalog and the session to open, then the build line
+// First gateway.ready of a connection, the outage report armed again, skin, wake listener, catalog and the session to open, then the build line
 func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
+	h.app.onGatewayReady()
 	tell := h.noteGatewayBuild(ready)
 	if skin := gatewaySkinOf(ready.Skin); skin != nil {
 		h.queue(h.store.applySkin(skin))

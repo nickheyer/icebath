@@ -48,7 +48,9 @@ type slashCommand struct {
 	usage   string
 	// Values the argument completes to
 	suggest func(prefix string) []string
-	run     func(r *slashRun) tea.Cmd
+	// Values a later argument completes to after the finished words before it
+	suggestAfter func(done []string) []string
+	run          func(r *slashRun) tea.Cmd
 }
 
 // Whether a newer command or another session replaced this run
@@ -313,52 +315,100 @@ var hotkeyGroups = []struct {
 	ids []string
 	key string
 }{
+	{[]string{"interrupt"}, "hints.ctrlC"},
+	{[]string{"composer.paste"}, "hints.paste"},
+	{[]string{"complete.accept"}, "hints.applyCompletion"},
+	{[]string{"composer.up", "composer.down"}, "hints.arrows"},
 	{[]string{"composer.undo", "composer.redo"}, "hints.undoRedo"},
 	{[]string{"tui.suspend"}, "hints.suspend"},
+	{[]string{"composer.word.left", "composer.word.right"}, "hints.jumpWord"},
+	{[]string{"composer.line.start", "composer.line.end"}, "hints.lineStartEnd"},
+	{[]string{"composer.copy"}, "hints.copySelection"},
+	{[]string{"tui.paste.expand"}, "hints.pasteExpand"},
 }
 
-// Row of a grouped action, empty unless it leads the group and the terminal can send a chord of it
-func (a *app) hotkeyGroupRow(id string) ([2]string, bool) {
-	for _, g := range hotkeyGroups {
-		if !slices.Contains(g.ids, id) {
-			continue
-		}
-		if g.ids[0] != id {
-			return [2]string{}, true
-		}
-		var chords []string
-		for _, member := range g.ids {
-			if c := a.keys.DisplayAll(member); c != "" {
-				chords = append(chords, c)
+// Actions the key help opens with, the keys people reach for first and the ones the quick help card shows
+var hotkeyLead = []string{"interrupt", "tui.exit", "tui.editor", "tui.redraw", "composer.paste", "session.stop", "complete.accept", "composer.up"}
+
+// Chords each key of the session window answers, spelled for a legend: a chord a key of an earlier context takes in every state is left out of
+// the later keys it hides, while a key that acts only in some state, such as dropping a queued input, hides nothing
+func (a *app) sessionChords() map[string][]string {
+	conditional := map[string]bool{}
+	for _, c := range a.commands() {
+		conditional[c.ID] = c.When != nil
+	}
+	out, taken := map[string][]string{}, map[string]bool{}
+	for _, action := range a.keys.Actions() {
+		if action.Context == keys.Complete {
+			for _, chord := range a.keys.Sendable(action.ID) {
+				out[action.ID] = append(out[action.ID], keys.Format(chord))
 			}
 		}
-		if len(chords) == 0 {
-			return [2]string{}, true
-		}
-		return [2]string{strings.Join(chords, " / "), tr(g.key)}, true
 	}
-	return [2]string{}, false
-}
-
-// Hotkeys of the session as the keymap binds them now
-func (a *app) hotkeyRows() [][2]string {
-	var rows [][2]string
-	commands := map[string]bool{"palette": true, "quit": true, "interrupt": true}
 	for _, action := range a.keys.InContexts([]string{tuiContext, keys.Session}) {
-		if action.Context == keys.Global && !commands[action.ID] {
-			continue
-		}
-		if row, grouped := a.hotkeyGroupRow(action.ID); grouped {
-			if row[0] != "" {
-				rows = append(rows, row)
+		for _, chord := range a.keys.Sendable(action.ID) {
+			if taken[chord] {
+				continue
 			}
-			continue
-		}
-		if chord := a.keys.DisplayAll(action.ID); chord != "" && action.Doc != "" && (action.Context == tuiContext || !action.Quiet || strings.HasPrefix(action.ID, "composer.delete")) {
-			rows = append(rows, [2]string{chord, action.Doc})
+			out[action.ID] = append(out[action.ID], keys.Format(chord))
+			taken[chord] = !conditional[action.ID]
 		}
 	}
-	return append(rows, [2]string{`\ + enter`, "continue the prompt on a new line"}, [2]string{"!<cmd>", "run a shell command in the session"}, [2]string{"{!<cmd>}", "put the output of a shell command into the prompt"})
+	return out
+}
+
+// Hotkeys of the session as the keymap binds them now, the most used first
+func (a *app) hotkeyRows() [][2]string {
+	chords := a.sessionChords()
+	spelled := func(id string) string { return strings.Join(chords[id], " ") }
+	group := func(id string) int {
+		return slices.IndexFunc(hotkeyGroups, func(g struct {
+			ids []string
+			key string
+		}) bool {
+			return slices.Contains(g.ids, id)
+		})
+	}
+	var rows [][2]string
+	listed := map[string]bool{}
+	add := func(id string) {
+		if listed[id] {
+			return
+		}
+		listed[id] = true
+		if g := group(id); g >= 0 {
+			var parts []string
+			for _, member := range hotkeyGroups[g].ids {
+				listed[member] = true
+				if chord := spelled(member); chord != "" {
+					parts = append(parts, chord)
+				}
+			}
+			if len(parts) > 0 {
+				rows = append(rows, [2]string{strings.Join(parts, " / "), tr(hotkeyGroups[g].key)})
+			}
+			return
+		}
+		if action, known := a.keys.Action(id); known && spelled(id) != "" && action.Doc != "" {
+			rows = append(rows, [2]string{spelled(id), action.Doc})
+		}
+	}
+	for _, id := range hotkeyLead {
+		if id != "session.stop" {
+			add(id)
+		} else if chord := spelled(id); chord != "" {
+			rows = append(rows, [2]string{chord + " " + chord, tr("hints.discardDraft")}, [2]string{chord + " " + chord, tr("hints.rewindPicker")})
+		}
+	}
+	commands := map[string]bool{"palette": true, "quit": true}
+	for _, action := range a.keys.InContexts([]string{tuiContext, keys.Session}) {
+		switch {
+		case action.Context == keys.Global && !commands[action.ID]:
+		case action.Context == tuiContext, !action.Quiet, group(action.ID) >= 0, action.ID == "session.stop", strings.HasPrefix(action.ID, "composer.delete"):
+			add(action.ID)
+		}
+	}
+	return append(rows, [2]string{`\ + enter`, tr("hints.continuation")}, [2]string{"!<cmd>", tr("hints.shell")}, [2]string{"{!<cmd>}", tr("hints.interpolate")})
 }
 
 // Whether destructive commands skip their confirmation
@@ -462,10 +512,13 @@ func (a *app) coreCommands() []slashCommand {
 				return r.saveDisplayPref("mouse", next)
 			}},
 		{name: "clear", aliases: []string{"new"}, help: "start a new session", usage: "[title]", run: func(r *slashRun) tea.Cmd {
+			isNew := strings.HasPrefix(r.cmd, "/new")
+			if isNew && a.store.ui.Busy {
+				return tea.Batch(r.ran(), a.life.newLiveSession(tr("slashCmd.core.clear.previousKeptRunning"), trimJS(r.arg), nil))
+			}
 			if a.life.guardBusySessionSwitch(tr("slashCmd.core.clear.switchSessions")) {
 				return nil
 			}
-			isNew := strings.HasPrefix(r.cmd, "/new")
 			title, message := "", ""
 			if isNew {
 				title, message = trimJS(r.arg), tr("slashCmd.core.clear.newSessionStarted")

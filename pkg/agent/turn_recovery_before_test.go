@@ -13,12 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Python exception double carrying its class name and message
-type pyClassErr struct{ class, msg string }
-
-func (e *pyClassErr) Error() string      { return e.msg }
-func (e *pyClassErr) PyTypeName() string { return e.class }
-
 // Status error double with response headers, the SDK APIStatusError shape
 type statusHeaderErr struct {
 	msg     string

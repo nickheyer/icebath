@@ -1,9 +1,7 @@
 package tools
 
 import (
-	"errors"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -12,8 +10,7 @@ import (
 )
 
 const (
-	tuiGitTimeout     = 1500 * time.Millisecond
-	tuiGitWarmWorkers = 8
+	tuiGitTimeout = 1500 * time.Millisecond
 )
 
 // How long a not a repo answer is trusted so a fresh git init shows within seconds
@@ -159,56 +156,4 @@ func GitProbeCommonRepoRoot(cwd string) string {
 		}
 		return GitProbeRepoRoot(cwd)
 	})
-}
-
-// GitProbeResolve maps cwd to its repo_root and worktree_root, nil outside a repository
-func GitProbeResolve(cwd string) map[string]any {
-	worktree := GitProbeRepoRoot(cwd)
-	if worktree == "" {
-		return nil
-	}
-	root := GitProbeCommonRepoRoot(cwd)
-	if root == "" {
-		root = worktree
-	}
-	return map[string]any{"repo_root": root, "worktree_root": worktree}
-}
-
-// GitProbeWarmRoots resolves every distinct cwd in parallel on at most maxWorkers goroutines
-func GitProbeWarmRoots(cwds []string, maxWorkers int) error {
-	seen := map[string]bool{}
-	var pending []string
-	for _, cwd := range cwds {
-		if cwd = strings.TrimFunc(cwd, pyIsSpace); cwd != "" && !seen[cwd] {
-			seen[cwd] = true
-			pending = append(pending, cwd)
-		}
-	}
-	sort.Strings(pending)
-	switch {
-	case len(pending) == 1:
-		GitProbeResolve(pending[0])
-		return nil
-	case len(pending) == 0:
-		return nil
-	}
-	workers := min(maxWorkers, len(pending))
-	if workers <= 0 {
-		return errors.New("max_workers must be greater than 0")
-	}
-	jobs := make(chan string)
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Go(func() {
-			for cwd := range jobs {
-				GitProbeResolve(cwd)
-			}
-		})
-	}
-	for _, cwd := range pending {
-		jobs <- cwd
-	}
-	close(jobs)
-	wg.Wait()
-	return nil
 }

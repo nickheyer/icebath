@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -100,22 +99,6 @@ func pluginStreams(backend string) bool {
 	return p != nil && p.SupportsStreams()
 }
 
-// True when plugins run in the plugin host process
-func pluginHostIsolated(env *tools.Env) bool {
-	cfg, err := loadConfigReadonly(env)
-	var m map[string]any
-	if err == nil {
-		m = map[string]any(cfg)
-	}
-	return plugins.IsolationMode(envCtx(env), m) == plugins.IsolationHost
-}
-
-// True when the backend declares its environments live in this process whatever the plugin isolation
-func backendInProcess(backend string) bool {
-	hosted, ok := tools.GetTerminalBackend(backend).(tools.HostedBackend)
-	return ok && !hosted.RunsInPluginHost()
-}
-
 // Gateway, terminal or refused from config and backend class alone, never starting a sandbox
 func Resolve(env *tools.Env) (Placement, error) {
 	backend, err := terminalBackend(env)
@@ -136,13 +119,7 @@ func Resolve(env *tools.Env) (Placement, error) {
 		return Placement{Where: Terminal, Backend: backend}, nil
 	}
 	if pluginStreams(backend) {
-		if backendInProcess(backend) || !pluginHostIsolated(env) {
-			return Placement{Where: Terminal, Backend: backend}, nil
-		}
-		return Placement{Refused, backend, fmt.Sprintf("terminal.backend is %s, a plugin that runs in the plugin host (plugins.isolation: host), "+
-			"and the host cannot hand its sandbox's exec channel to Icebath, so the screen cannot follow it. "+
-			"Set plugins.isolation: in_process, or bot_desktop.placement: gateway to run the desktop on the "+
-			"gateway host.", backend)}, nil
+		return Placement{Where: Terminal, Backend: backend}, nil
 	}
 	reason := fmt.Sprintf("terminal.backend is %s, which cannot host a screen yet, and running the desktop on the "+
 		"gateway host would put the agent's screen, browser and computer_use outside the sandbox you chose "+

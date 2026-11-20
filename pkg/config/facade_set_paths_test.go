@@ -345,9 +345,9 @@ func TestConfigSetListValues(t *testing.T) {
 	t.Run("test_scalar_values_unaffected", func(t *testing.T) {
 		s, _ := newCfgSetHome(t, nil)
 		s.mustSet("agent.max_turns", "300")
-		s.mustSet("display.compact", "true")
+		s.mustSet("display.bell_on_complete", "true")
 		s.mustSet("tts.provider", "edge")
-		if !pyEq(s.at("agent", "max_turns"), 300) || s.at("display", "compact") != true || s.at("tts", "provider") != "edge" {
+		if !pyEq(s.at("agent", "max_turns"), 300) || s.at("display", "bell_on_complete") != true || s.at("tts", "provider") != "edge" {
 			t.Fatalf("scalars %v", s.raw())
 		}
 	})

@@ -88,12 +88,6 @@ type OneshotRequest struct {
 	MainRuntime                       map[string]any
 }
 
-// Request with the Python defaults filled for zero task, token and timeout fields
-func NewOneshotRequest() OneshotRequest {
-	temp := 0.3
-	return OneshotRequest{Task: "title_generation", MaxTokens: 1024, Temperature: &temp, Timeout: 60.0}
-}
-
 // Runs one stateless LLM request outside any conversation and returns its fence stripped text
 func RunOneshot(ctx context.Context, req OneshotRequest) (string, error) {
 	instructions, userInput := req.Instructions, req.UserInput

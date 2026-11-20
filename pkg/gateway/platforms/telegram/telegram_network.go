@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -162,7 +163,7 @@ func (h *httpTransport) transportFor(sni string) *http.Transport {
 		tlsConfig.ServerName = sni
 	}
 	t := &http.Transport{
-		DialContext:     dialer.DialContext,
+		DialContext:     netpref.DialContext(dialer.DialContext),
 		TLSClientConfig: tlsConfig,
 		MaxConnsPerHost: limits.MaxConnections,
 		IdleConnTimeout: limits.KeepaliveExpiry,
@@ -600,7 +601,7 @@ func DiscoverFallbackIPs(ctx context.Context) []string {
 
 // DoH client verifying with the shared platform trust context and honouring the proxy env
 func newDoHClient() *http.Client {
-	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig()}, CheckRedirect: pyhttpx.RedirectPolicy(false)}
+	return &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig()}, CheckRedirect: pyhttpx.RedirectPolicy(false)}
 }
 
 func discoverFallbackIPs(ctx context.Context, client *http.Client, resolveSystem func() []string) []string {

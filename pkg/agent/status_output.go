@@ -38,13 +38,6 @@ func stdoutIsTTY(w io.Writer) bool {
 	return ok && t.IsTerminal()
 }
 
-// Routes agent stdout through w until the returned restore runs, the patch_stdout swap of sys.stdout
-func PatchStatusStdout(w io.Writer) (restore func()) {
-	prev := statusStdout
-	statusStdout = w
-	return func() { statusStdout = prev }
-}
-
 type retryStatusLine struct {
 	kind    string
 	message any
@@ -333,10 +326,6 @@ func (a *AIAgent) emitNotice(notice provider.AgentNotice) {
 
 // Sends one out of band notice to the notice callback, a failing callback only logged
 func (a *AIAgent) EmitNotice(notice provider.AgentNotice) { a.emitNotice(notice) }
-
-func (a *AIAgent) emitNoticeClear(key string) {
-	a.callCallback("notice_clear_callback", a.noticeClearCallback, "_emit_notice_clear", key)
-}
 
 // Rewrites the live status line so a long provider wait is not an anonymous spinner
 func (a *AIAgent) emitWaitNotice(text string) { a.emitWaitNoticeValue(text) }

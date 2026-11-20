@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // Characters of a rejection body kept for diagnostics
@@ -137,7 +139,7 @@ func newOwnedClient(opts HTTPOptions) (*ownedClient, error) {
 	}
 	transport := &http.Transport{
 		Proxy:                 func(req *http.Request) (*url.URL, error) { return mounts[req.URL.Scheme], nil },
-		DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
+		DialContext:           netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext),
 		TLSClientConfig:       tlsConf,
 		TLSHandshakeTimeout:   connect,
 		ResponseHeaderTimeout: readTimeoutOr(opts.ReadTimeout),

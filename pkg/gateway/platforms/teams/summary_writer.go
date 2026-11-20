@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -195,7 +196,7 @@ func (w *TeamsSummaryWriter) writeSummaryViaIncomingWebhook(ctx context.Context,
 	req.Header.Set("Content-Type", "application/json")
 	client, closeClient := &http.Client{Transport: w.transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}, func() {}
 	if w.transport == nil {
-		t := http.DefaultTransport.(*http.Transport).Clone()
+		t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 		client.Transport, closeClient = t, t.CloseIdleConnections
 	}
 	resp, err := pyhttpx.Do(client, req, 20*time.Second)

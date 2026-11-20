@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // In process Secret Service daemon speaking the wire protocol, a locked collection unlocking through a prompt
@@ -171,7 +173,7 @@ func (f *fakeSecretService) handle(t *testing.T, conn net.Conn) {
 }
 
 func TestSecretServiceKeyringRoundTripsThroughTheWireProtocol(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "bus")
+	sock := filepath.Join(hermetic.ShortDir(t), "bus")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)

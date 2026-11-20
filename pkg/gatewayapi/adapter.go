@@ -71,7 +71,6 @@ type APIServerAdapter struct {
 	metricsLastHeartbeatAt *float64
 
 	backgroundTasks map[*agentTask]struct{}
-	heartbeatStop   chan struct{}
 	mu              sync.Mutex
 }
 

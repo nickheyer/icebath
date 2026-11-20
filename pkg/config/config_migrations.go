@@ -1329,6 +1329,7 @@ func migrationSteps() []migrationStep {
 		{65, migrateTo65},
 		{66, migrateTo66},
 		{67, migrateTo67},
+		{68, migrateTo68},
 	}
 }
 

@@ -47,29 +47,11 @@ func GetTTSProvider(ctx context.Context, name any, scope string) TTSProvider {
 	return ttsRegistry.GetProvider(ctx, s, scope)
 }
 
-// Plugin facing registry that register_tts_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_tts_provider writes into, a plugin host object stored as the provider adapted from it
 func TTSScopedRegistry() plugins.ScopedRegistry {
-	return hostedTTSScopedRegistry{ttsRegistry.Scoped()}
-}
-
-// Scoped registry view that wraps plugin host objects as TTSProvider values before delegating
-type hostedTTSScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedTTSScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedTTSProvider(p))
-}
-func (s hostedTTSScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedTTSProvider(p))
-}
-func (s hostedTTSScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedTTSProvider(p))
-}
-func (s hostedTTSScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedTTSScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedTTSProvider(p), scope)
-}
-func (s hostedTTSScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedTTSProvider(current), adaptHostedTTSProvider(replacement), scope)
+	return plugins.HostedScopedRegistry{Inner: ttsRegistry.Scoped(), Adapt: adaptHostedTTSProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedTTSProvider)
+			return h.obj, ok
+		}}
 }

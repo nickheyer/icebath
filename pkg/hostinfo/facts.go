@@ -4,7 +4,6 @@ package hostinfo
 import (
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -89,18 +88,6 @@ func cached[T any](compute func() T) func() T {
 
 var cacheResets []func()
 
-// ParseCPUInfo returns the first model name or Hardware line of cpuinfo, else the device tree model
-func ParseCPUInfo(text, deviceTreeModel string) string {
-	for _, key := range []string{"model name", "Hardware"} {
-		for _, line := range strings.Split(text, "\n") {
-			if strings.HasPrefix(strings.ToLower(line), strings.ToLower(key)) && strings.Contains(line, ":") {
-				return strings.TrimSpace(line[strings.Index(line, ":")+1:])
-			}
-		}
-	}
-	return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(deviceTreeModel, "\x00", ""), "_", " "))
-}
-
 // Reads up to limit bytes of a file, empty on any error, with a UTF-8 BOM stripped
 func readText(path string, limit int) string {
 	f, err := os.Open(path)
@@ -112,32 +99,6 @@ func readText(path string, limit int) string {
 	n, _ := f.Read(buf)
 	text := strings.TrimPrefix(string(buf[:n]), "\xEF\xBB\xBF")
 	return strings.ToValidUTF8(text, "�")
-}
-
-var armImplementers = map[int]string{
-	0x41: "ARM", 0x42: "Broadcom", 0x43: "Cavium", 0x46: "Fujitsu", 0x48: "HiSilicon", 0x4E: "NVIDIA",
-	0x50: "Ampere", 0x51: "Qualcomm", 0x61: "Apple", 0x69: "Intel", 0x6D: "Microsoft", 0xC0: "Ampere",
-}
-
-// ParseCPUInfoVendor returns vendor_id on x86 or the named CPU implementer on arm64 from cpuinfo text
-func ParseCPUInfoVendor(text string) string {
-	fields := map[string]string{}
-	for _, line := range strings.Split(text, "\n") {
-		if i := strings.Index(line, ":"); i >= 0 {
-			key := strings.TrimSpace(line[:i])
-			if _, seen := fields[key]; !seen {
-				fields[key] = strings.TrimSpace(line[i+1:])
-			}
-		}
-	}
-	if fields["vendor_id"] != "" {
-		return fields["vendor_id"]
-	}
-	code, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(fields["CPU implementer"]), "0x"), 16, 64)
-	if err != nil {
-		return ""
-	}
-	return armImplementers[int(code)]
 }
 
 var gpuPCIVendors = map[string]string{"10de": "nvidia", "1002": "amd", "8086": "intel"}
@@ -226,48 +187,6 @@ func GPUClass() string {
 		return *p
 	}
 	return gpuClassOnce()
-}
-
-const (
-	nvidiaProcGPUs  = "/proc/driver/nvidia/gpus"
-	nvidiaPCIVendor = 0x10DE
-	sysPCIDevices   = "/sys/bus/pci/devices"
-)
-
-// ParseNvidiaGPUModel returns the Model value of a nvidia gpus information file
-func ParseNvidiaGPUModel(information string) string {
-	for _, line := range strings.Split(information, "\n") {
-		if strings.HasPrefix(line, "Model:") {
-			return strings.TrimSpace(line[len("Model:"):])
-		}
-	}
-	return ""
-}
-
-// NvidiaGPU is one NVIDIA GPU with its NVML packed PCI id, zero when unknown
-type NvidiaGPU struct {
-	Name  string
-	PCIID int
-}
-
-// NVML packing of a device id above the 16 bit vendor id, zero when unparsable
-func pciID(deviceHex string) int {
-	n, err := strconv.ParseInt(strings.TrimSpace(deviceHex), 16, 64)
-	if err != nil {
-		return 0
-	}
-	return int(n)<<16 | nvidiaPCIVendor
-}
-
-// NvidiaGPUsFromAdapters is the NVIDIA entries of parsed Windows display adapters
-func NvidiaGPUsFromAdapters(adapters []DisplayAdapter) []NvidiaGPU {
-	var out []NvidiaGPU
-	for _, a := range adapters {
-		if strings.ToLower(a.VendorID) == "10de" {
-			out = append(out, NvidiaGPU{a.Description, pciID(a.DeviceID)})
-		}
-	}
-	return out
 }
 
 // InteractiveSession reports whether this process can reach an interactive user session

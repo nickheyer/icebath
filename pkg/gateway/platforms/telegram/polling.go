@@ -213,12 +213,20 @@ type pollingLifecycle struct {
 	sendPathDegraded           bool
 	generalDrainLock           sync.Mutex
 	recoveryCtx                context.Context
+	ptbProxyURL                string
 }
 
 // Polling lifecycle reporting through the host with the timings
 func newPollingLifecycle(host pollingHost) *pollingLifecycle {
 	return &pollingLifecycle{host: host, timings: defaultPollingTimings(), progress: newPollEvent(),
 		recoveryCtx: context.Background()}
+}
+
+// Proxy the Bot API requests were built with, empty for a direct connection
+func (p *pollingLifecycle) ptbProxy() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ptbProxyURL
 }
 
 // Live application, nil while torn down
@@ -739,12 +747,12 @@ func (p *pollingLifecycle) handlePollingNetworkError(ctx context.Context, err er
 	p.mu.Unlock()
 	if attempt > maxRetries {
 		message := fmt.Sprintf("Telegram polling could not reconnect after %d network error retries. Escalating to gateway recovery.", maxRetries)
-		p.goFatalNetwork(ctx, message, fmt.Sprintf("[%s] %s Last error: %s", p.host.Name(), message, redactTelegramErrorText(err)))
+		p.goFatalNetwork(ctx, message, fmt.Sprintf("[%s] %s Last error: %s", p.host.Name(), message, redactTelegramProxyErrorText(err, p.ptbProxy())))
 		return
 	}
 	delay := math.Min(p.timings.networkBaseDelay*math.Pow(2, float64(attempt-1)), p.timings.networkMaxDelay)
 	pkgLog().Warn(fmt.Sprintf("[%s] Telegram network error (attempt %d/%d), reconnecting in %ds. Error: %s", p.host.Name(), attempt,
-		maxRetries, int(delay), redactTelegramErrorText(err)))
+		maxRetries, int(delay), redactTelegramProxyErrorText(err, p.ptbProxy())))
 	if !sleepCtx(ctx, delay) || p.isTeardownStarted() {
 		return
 	}
@@ -779,7 +787,7 @@ func (p *pollingLifecycle) handlePollingNetworkError(ctx context.Context, err er
 	if _, abort := retryErr.(*pollingLifecycleAbort); abort || p.isTeardownStarted() || ctx.Err() != nil {
 		return
 	}
-	pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling reconnect failed: %s", p.host.Name(), redactTelegramErrorText(retryErr)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling reconnect failed: %s", p.host.Name(), redactTelegramProxyErrorText(retryErr, p.ptbProxy())))
 	if !p.host.HasFatalError() && !p.isTeardownStarted() {
 		task := gateway.SpawnAdapterTask(ctx, func(ctx context.Context) error {
 			p.handlePollingNetworkError(ctx, retryErr)
@@ -1148,7 +1156,7 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 			return ctx.Err()
 		}
 		pkgLog().Warn(fmt.Sprintf("[%s] Telegram polling retry %d/%d failed: %s. Scheduling next attempt.", p.host.Name(), count,
-			maxRetries, redactTelegramErrorText(retryErr)))
+			maxRetries, redactTelegramProxyErrorText(retryErr, p.ptbProxy())))
 		if count < maxRetries && !p.isTeardownStarted() {
 			p.restartPollingInTask(func(ctx context.Context) error { return p.handlePollingConflict(ctx, retryErr) })
 			return nil
@@ -1163,7 +1171,7 @@ func (p *pollingLifecycle) handlePollingConflict(ctx context.Context, err error)
 	}
 	message := fmt.Sprintf("Telegram polling could not recover after %d retries (%ds total wait). The previous gateway session is still held open on Telegram's servers, or another process is using the same bot token. To recover: ensure no other Icebath or OpenClaw instance is running with this token, then restart the gateway with 'icebath gateway restart'.",
 		maxRetries, int(totalWait))
-	pkgLog().Error(fmt.Sprintf("[%s] %s Original error: %s", p.host.Name(), message, redactTelegramErrorText(err)))
+	pkgLog().Error(fmt.Sprintf("[%s] %s Original error: %s", p.host.Name(), message, redactTelegramProxyErrorText(err, p.ptbProxy())))
 	alreadyFatal := p.host.HasFatalError() && fatalCodeIs(p.host, "telegram_polling_conflict")
 	p.host.SetFatalError(ctx, "telegram_polling_conflict", message, false)
 	if app := p.currentApp(); app != nil && app.Updater() != nil {

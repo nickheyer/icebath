@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/spf13/cobra"
 )
 
 var migrationImageExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true}
@@ -30,7 +32,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	mediaFiles, _ := kwargs["media_files"].([]gateway.MediaRef)
 	adapter, err := NewFeishuAdapter(ctx, pconfig)
 	if err != nil {
-		return gateway.SendError("Feishu send failed: " + err.Error()), nil
+		return gateway.SendError("Feishu send failed: " + proxySafeErrorText(err, onboardOpenURLs["feishu"], onboardOpenURLs["lark"])), nil
 	}
 	adapter.mu.Lock()
 	adapter.client = adapter.buildLarkClient(sdkDomain(adapter.settings.DomainName))
@@ -43,7 +45,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pystr.Strip(message) != "" {
 		r, err := adapter.Send(ctx, chatID, message, "", metadata)
 		if err != nil {
-			return gateway.SendError("Feishu send failed: " + err.Error()), nil
+			return gateway.SendError("Feishu send failed: " + proxySafeErrorText(err, onboardOpenURLs["feishu"], onboardOpenURLs["lark"])), nil
 		}
 		last = &r
 		if !r.Success {
@@ -67,7 +69,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			r, err = adapter.SendDocument(ctx, chatID, media.Path, "", "", "", metadata, nil)
 		}
 		if err != nil {
-			return gateway.SendError("Feishu send failed: " + err.Error()), nil
+			return gateway.SendError("Feishu send failed: " + proxySafeErrorText(err, onboardOpenURLs["feishu"], onboardOpenURLs["lark"])), nil
 		}
 		last = &r
 		if !r.Success {
@@ -147,7 +149,44 @@ func (feishuPlatformPlugin) Register(ctx *plugins.Context) error {
 		InstallHint: "Start `icebath` and type `/setup gateway` to install Feishu support.",
 		Extra:       extra,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	ctx.RegisterCLICommand("feishu", "Feishu helpers (document comment access rules)", setupCommentRulesCLI, nil,
+		"Feishu host side administration: show the document comment rules, test who may comment, and manage the approved users.")
+	return nil
+}
+
+// Exit status 1 with no message of its own, the command having printed what went wrong
+type silentFailure struct{}
+
+func (silentFailure) Error() string { return "" }
+
+// Binds the comment rules administration onto the feishu command, its words handed on as typed
+func setupCommentRulesCLI(parser any) {
+	cmd, ok := parser.(*cobra.Command)
+	if !ok {
+		panic(fmt.Sprintf("the CLI parser is %T, expected an argument parser", parser))
+	}
+	rules := &cobra.Command{Use: "comment-rules <status | check <fileType:token> <user> | pairing add|remove|list [user]>",
+		Short:              "Show the document comment rules, test an access check, or manage the approved users",
+		DisableFlagParsing: true, SilenceUsage: true}
+	rules.RunE = func(c *cobra.Command, args []string) error {
+		ctx := c.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		code, err := Main(ctx, args, c.OutOrStdout())
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			return silentFailure{}
+		}
+		return nil
+	}
+	cmd.AddCommand(rules)
+	cmd.RunE = func(c *cobra.Command, _ []string) error { return c.Help() }
 }
 
 // Publishes the bundled plugin and the adapter class the plugin factory's module holds

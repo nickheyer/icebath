@@ -37,12 +37,6 @@ func newVoiceFakeLLM(t *testing.T, script ...string) *voiceFakeLLM {
 
 func (f *voiceFakeLLM) baseURL() string { return f.srv.URL + "/v1" }
 
-func (f *voiceFakeLLM) mainRequests() []map[string]any {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]map[string]any(nil), f.main...)
-}
-
 // Serves the model list and scripted completions, streamed as SSE chunks when the body asks for a stream
 func (f *voiceFakeLLM) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {

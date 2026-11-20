@@ -2,9 +2,7 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -12,21 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Body or response of an API error as Python str renders it, cut to the first 200 characters
-func apiErrorBodyOrResponse(err error) string {
-	text := ""
-	var apiErr *provider.APIError
-	if errors.As(err, &apiErr) && apiErr.Body != "" {
-		text = apiErrorBodyText(apiErr)
-	} else if status := apiErrorStatus(err); status != nil {
-		text = fmt.Sprintf("<Response [%d %s]>", *status, http.StatusText(*status))
-	}
-	if r := []rune(text); len(r) > 200 {
-		text = string(r[:200])
-	}
-	return text
-}
 
 // Prints the Anthropic auth method and fixes once a credential refresh could not lift a 401
 func printAnthropic401Diagnostics(ctx context.Context, a *AIAgent, key any) {

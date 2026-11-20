@@ -19,8 +19,47 @@ var (
 // Per turn text queue feeding the streaming TTS consumer, a nil item ending the text
 type ttsTurnQueue struct{ items chan any }
 
+// Runes of spoken text kept for the playback listener, enough to hold the stretch a capture can overlap
+const spokenKeep = 3000
+
+// Tail of what the reply in flight says aloud, which the playback listener compares a capture with to tell the speaker's own sound from a person
+var spoken struct {
+	mu   sync.Mutex
+	text []rune
+}
+
+// Starts the record of a new spoken reply
+func newTTSTurnQueue() *ttsTurnQueue {
+	spoken.mu.Lock()
+	spoken.text = nil
+	spoken.mu.Unlock()
+	return &ttsTurnQueue{items: make(chan any, 4096)}
+}
+
+// Adds text handed to speech to the record
+func noteSpoken(text string) {
+	spoken.mu.Lock()
+	spoken.text = append(spoken.text, []rune(text)...)
+	if extra := len(spoken.text) - spokenKeep; extra > 0 {
+		spoken.text = append([]rune(nil), spoken.text[extra:]...)
+	}
+	spoken.mu.Unlock()
+}
+
+// Text of the record
+func spokenText() string {
+	spoken.mu.Lock()
+	defer spoken.mu.Unlock()
+	return string(spoken.text)
+}
+
 // Queues one reply delta
-func (q *ttsTurnQueue) Put(item any) { q.items <- item }
+func (q *ttsTurnQueue) Put(item any) {
+	if text, isText := item.(string); isText {
+		noteSpoken(text)
+	}
+	q.items <- item
+}
 
 // Queues the end of text sentinel
 func (q *ttsTurnQueue) Finish() { q.items <- nil }

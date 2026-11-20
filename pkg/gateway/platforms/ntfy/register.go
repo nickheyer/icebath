@@ -1,6 +1,7 @@
 package ntfy
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -95,7 +96,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("ntfy standalone send failed: " + pyhttpx.ErrorText(err)), nil
+		return gateway.SendError("ntfy standalone send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(server)), pyhttpx.ErrorText(err))), nil
 	}
 	if resp.StatusCode >= 300 {
 		return gateway.SendError(fmt.Sprintf("ntfy HTTP %d: %s", resp.StatusCode, pystr.Slice(resp.Text(), 0, 200))), nil

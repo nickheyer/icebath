@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -19,6 +20,7 @@ func init() {
 		return key, ok
 	}
 	hooks.STTDefaultLocalModel = func() string { return sttDefaultLocalModel }
+	hooks.PiperVoices = func() ([]string, string) { return speech.PiperVoices(), defaultPiperVoice }
 	hooks.DeepInfraModelIDs = deepInfraModelIDs
 	hooks.FALModels = func() ([]string, map[string]map[string]any, string) {
 		return slices.Clone(falModelOrder), falModels, falDefaultModel

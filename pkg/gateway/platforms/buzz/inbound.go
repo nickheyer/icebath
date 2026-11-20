@@ -24,6 +24,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -340,7 +341,7 @@ func (a *BuzzAdapter) websocketSession(ctx context.Context, reconnecting *bool, 
 		return err
 	}
 	netDialer := &net.Dialer{Timeout: wsAuthTimeout, FallbackDelay: 250 * time.Millisecond}
-	dialer := websocket.Dialer{HandshakeTimeout: wsAuthTimeout, Proxy: http.ProxyFromEnvironment, NetDialContext: netDialer.DialContext}
+	dialer := websocket.Dialer{HandshakeTimeout: wsAuthTimeout, Proxy: http.ProxyFromEnvironment, NetDialContext: netpref.DialContext(netDialer.DialContext)}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
 		return err
@@ -815,7 +816,7 @@ func (a *BuzzAdapter) downloadAttachment(ctx context.Context, meta attachmentMet
 		return nil
 	}
 	req.Header.Set("Accept-Encoding", "identity")
-	client := &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone(),
+	client := &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	defer client.CloseIdleConnections()
 	resp, err := client.Do(req)

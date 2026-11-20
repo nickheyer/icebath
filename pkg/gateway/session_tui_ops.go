@@ -27,7 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Save, export, reload, delegation pause, rollback, context breakdown and history verbs of the shared owner
+// Save, export, reload, delegation pause, rollback, context breakdown, history, account usage and runtime check verbs of the shared owner
 func tuiOpsHandlers(c *AuthorityConnection) map[string]controlHandler {
 	bind := func(fn func(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error)) controlHandler {
 		return func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
@@ -43,11 +43,14 @@ func tuiOpsHandlers(c *AuthorityConnection) map[string]controlHandler {
 		"reload.env": bind(reloadEnv), "delegation.pause": bind(pauseDelegation),
 		"rollback.list": rollbackOf("list"), "rollback.diff": rollbackOf("diff"), "rollback.restore": rollbackOf("restore"),
 		"rollback.session_diff": rollbackOf("session_diff"), "session.context_breakdown": bind(contextBreakdown),
-		"session.history": bind(sessionHistory)}
+		"session.history": bind(sessionHistory), "session.account_usage": bind(accountUsage),
+		"setup.runtime_check": func(ctx context.Context, _ SessionRef, params *pyjson.Object) (any, error) {
+			return readiness(ctx, c.authority, c.actor, params, true)
+		}}
 }
 
 // Params each rollback verb accepts
-var rollbackFields = map[string][]string{"list": {"session_id", "profile"}, "diff": {"session_id", "profile", "hash"},
+var rollbackFields = map[string][]string{"list": {"session_id", "profile", "undo_since", "undo_message_id"}, "diff": {"session_id", "profile", "hash"},
 	"restore":      {"session_id", "profile", "hash", "file_path", "all"},
 	"session_diff": {"session_id", "profile"}}
 
@@ -267,6 +270,22 @@ func rollback(ctx context.Context, c *AuthorityConnection, ref SessionRef, param
 			invalid = true
 		}
 	}
+	undoSince := params.GetOr("undo_since", nil)
+	switch undoSince.(type) {
+	case nil, int64, int, float64:
+	default:
+		invalid = true
+	}
+	undoCut, cutNamed := int64(0), false
+	switch cut := params.GetOr("undo_message_id", nil).(type) {
+	case nil:
+	case int64:
+		undoCut, cutNamed = cut, true
+	case int:
+		undoCut, cutNamed = int64(cut), true
+	default:
+		invalid = true
+	}
 	if invalid {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -313,8 +332,38 @@ func rollback(ctx context.Context, c *AuthorityConnection, ref SessionRef, param
 	for key, value := range terminalFields {
 		terminal[key] = pyrepr.Str(value)
 	}
+	var undoSpan func() (float64, bool, error)
+	if kind == "list" && undoSince != nil {
+		undoSpan = func() (float64, bool, error) {
+			var kept []map[string]any
+			if cutNamed {
+				transcript, err := transcriptTarget(ctx, a, ref)
+				if err != nil {
+					return 0, false, err
+				}
+				rows, err := a.DB.GetMessagesAsConversation(ctx, transcript, state.ConversationOptions{IncludeRowIDs: true})
+				if err != nil {
+					return 0, false, err
+				}
+				for _, row := range rows {
+					switch id := row["_row_id"].(type) {
+					case int64:
+						if id < undoCut {
+							kept = append(kept, row)
+						}
+					case int:
+						if int64(id) < undoCut {
+							kept = append(kept, row)
+						}
+					}
+				}
+			}
+			start, known := UndoSpanStart(undoSince, kept)
+			return start, known, nil
+		}
+	}
 	result, err := forwardOffThread(ctx, func() (any, error) {
-		return runRollback(ctx, kind, kwargs, terminal, policy.Cwd, taskID, params, filePath)
+		return runRollback(ctx, kind, kwargs, terminal, policy.Cwd, taskID, params, filePath, undoSpan)
 	})
 	if err != nil {
 		return nil, err
@@ -336,8 +385,8 @@ func RestoreOutcome(res map[string]any) (tuigateway.RollbackRestoreResult, error
 	return out, tuigateway.Strict(res, &out)
 }
 
-// One rollback verb against a checkpoint manager built from the session's frozen checkpoints policy
-func runRollback(ctx context.Context, kind string, kwargs map[string]any, terminal tools.TerminalPolicy, cwd, taskID string, params *pyjson.Object, filePath string) (any, error) {
+// One rollback verb against a checkpoint manager built from the session's frozen checkpoints policy, a list also naming the files an undone span changed when its start is given
+func runRollback(ctx context.Context, kind string, kwargs map[string]any, terminal tools.TerminalPolicy, cwd, taskID string, params *pyjson.Object, filePath string, undoSpan func() (float64, bool, error)) (any, error) {
 	options, err := tools.CheckpointManagerOptionsFromKwargs(pyrepr.Truthy(kwargs["checkpoints_enabled"]), kwargs)
 	if err != nil {
 		return nil, err
@@ -350,16 +399,27 @@ func runRollback(ctx context.Context, kind string, kwargs map[string]any, termin
 		}
 		return tuigateway.RollbackSessionDiffResult{}, nil
 	}
+	backendRefusal := func() string {
+		scoped := *env
+		scoped.TerminalScope = &tools.TerminalScope{Policy: terminal}
+		return tools.NewCheckpointManager(&scoped, options).UnsupportedBackendReason(taskID)
+	}
 	if kind == "list" {
 		rows := []tuigateway.RollbackCheckpoint{}
 		for _, entry := range mgr.ListCheckpoints(cwd) {
 			rows = append(rows, tuigateway.RollbackCheckpoint{Hash: entry.Hash, Timestamp: entry.Timestamp, Message: entry.Reason})
 		}
-		return tuigateway.RollbackListResult{Enabled: true, Checkpoints: rows}, nil
+		listed := tuigateway.RollbackListResult{Enabled: true, Checkpoints: rows}
+		if undoSpan != nil && backendRefusal() == "" {
+			since, known, err := undoSpan()
+			if err != nil {
+				return nil, err
+			}
+			listed.UndoHint = UndoHint(mgr, cwd, since, known)
+		}
+		return listed, nil
 	}
-	scoped := *env
-	scoped.TerminalScope = &tools.TerminalScope{Policy: terminal}
-	refusal := tools.NewCheckpointManager(&scoped, options).UnsupportedBackendReason(taskID)
+	refusal := backendRefusal()
 	if kind == "session_diff" {
 		return sessionDiff(mgr, cwd, refusal), nil
 	}

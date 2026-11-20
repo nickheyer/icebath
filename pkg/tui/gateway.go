@@ -361,6 +361,15 @@ func (c *gatewayClient) locked(step func()) {
 	c.deliver()
 }
 
+// Runs a locked step for a caller on the update loop and delivers what it queued from another goroutine: the program takes no message while it
+// updates, so a delivery made right there would wait on itself for good
+func (c *gatewayClient) lockedOnLoop(step func()) {
+	c.mu.Lock()
+	step()
+	c.mu.Unlock()
+	go c.deliver()
+}
+
 // Event of a gateway frame's params, its payload an object or empty
 func wireEvent(params map[string]any) gatewayEventMsg {
 	ev := gatewayEventMsg{Payload: map[string]any{}}
@@ -634,7 +643,7 @@ func (c *gatewayClient) holdAttach(sessionID string) *attachHold {
 
 // Ends a hold, replaying only the frames past the applied snapshot's fence, or all of them without one
 func (c *gatewayClient) settleAttach(hold *attachHold, snapshot *tuigateway.CanonicalSnapshot) {
-	c.locked(func() {
+	c.lockedOnLoop(func() {
 		if hold == nil || c.hold != hold {
 			return
 		}
@@ -652,18 +661,18 @@ func (c *gatewayClient) settleAttach(hold *attachHold, snapshot *tuigateway.Cano
 	})
 }
 
-// Publishes a resumed session's shared prompts and redelivers its open server requests
-func (c *gatewayClient) hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot) {
-	c.locked(func() {
-		if !c.isCanonical || snapshot == nil {
-			return
+// Publishes the shared prompts of a session authority snapshot and delivers the open server requests of an attached session again on either route:
+// the copy that came with the attach answer arrived while the view still showed the session it was leaving, and the reset of the view dropped it
+func (c *gatewayClient) hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot, open []tuigateway.OpenRequestEntry) {
+	c.lockedOnLoop(func() {
+		if c.isCanonical && snapshot != nil {
+			for _, prompt := range snapshot.Prompts {
+				generation := prompt.ExecutionGeneration
+				c.publishLocalEventLocked(gatewayEventMsg{Type: string(prompt.Kind) + ".request", SessionID: snapshot.SessionID,
+					Payload: wireParams(prompt), Epoch: ptr(snapshot.AuthorityEpoch), Generation: &generation})
+			}
 		}
-		for _, prompt := range snapshot.Prompts {
-			generation := prompt.ExecutionGeneration
-			c.publishLocalEventLocked(gatewayEventMsg{Type: string(prompt.Kind) + ".request", SessionID: snapshot.SessionID,
-				Payload: wireParams(prompt), Epoch: ptr(snapshot.AuthorityEpoch), Generation: &generation})
-		}
-		for _, req := range snapshot.OpenRequests {
+		for _, req := range open {
 			params := req.Params
 			if params == nil {
 				params = map[string]any{}
@@ -675,7 +684,7 @@ func (c *gatewayClient) hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnaps
 
 // Publishes a client side event as an event frame
 func (c *gatewayClient) publishLocalEvent(ev gatewayEventMsg) {
-	c.locked(func() { c.publishLocalEventLocked(ev) })
+	c.lockedOnLoop(func() { c.publishLocalEventLocked(ev) })
 }
 
 func (c *gatewayClient) publishLocalEventLocked(ev gatewayEventMsg) {

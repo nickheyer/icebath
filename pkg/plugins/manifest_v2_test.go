@@ -29,38 +29,12 @@ func mv2Logs(t *testing.T, level slog.Level) *bytes.Buffer {
 	return &buf
 }
 
-// Python statement appending the repr of expr to a probe file
-func mv2Probe(probe, expr string) string {
-	return "open(" + pyQuote(probe) + ", 'a').write(repr(" + expr + ") + '\\n')"
-}
-
 // File write that creates the parent directories first
 func mv2Write(t *testing.T, path, body string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, path, body)
-}
-
-func readProbe(t *testing.T, probe string) []string {
-	raw, err := os.ReadFile(probe)
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	return strings.Fields(string(raw))
-}
-
-// Fake pip pip3 and uv executables ahead of PATH that record every invocation
-func mv2SpyInstallers(t *testing.T) string {
-	bin, calls := t.TempDir(), filepath.Join(t.TempDir(), "calls.txt")
-	for _, name := range []string{"pip", "pip3", "uv"} {
-		writeFile(t, filepath.Join(bin, name), "#!/bin/sh\necho \"$0 $*\" >> "+calls+"\n")
-		if err := os.Chmod(filepath.Join(bin, name), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return calls
 }
 
 func TestListManifestIsRejectedWithAClearReasonAndHooksAlias(t *testing.T) {

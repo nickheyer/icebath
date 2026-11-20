@@ -218,6 +218,3 @@ func queueAttachedImage(ctx context.Context, session *tuihost.Session, imgBytes 
 	session.Set("attached_images", append(images, path))
 	return path, nil
 }
-
-// ValueError of an attachment staging step
-type attachmentError struct{ msg string }

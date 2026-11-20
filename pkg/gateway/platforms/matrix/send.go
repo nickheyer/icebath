@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -157,7 +158,7 @@ func (a *MatrixAdapter) downloadExternalMediaWithCap(ctx context.Context, rawURL
 	if fname == "" {
 		fname = "image.png"
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if a.proxyURL != "" {
 		connector, err := gateway.NewProxyConnector(a.proxyURL)

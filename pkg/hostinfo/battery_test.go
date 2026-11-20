@@ -36,16 +36,8 @@ func TestBatteryCategoryThresholds(t *testing.T) {
 			t.Fatalf("%d%% plugged %v gave %q, want %q", tc.percent, tc.plugged, got, tc.expected)
 		}
 	}
-	if BatteryCategory(BatteryStatus{}) != "dim" || FormatBattery(BatteryStatus{}) != "" {
-		t.Fatal("an unavailable reading must be dim and unlabelled")
-	}
-	percent, plugged := 82, true
-	if got := FormatBattery(BatteryStatus{Available: true, Percent: &percent, Plugged: &plugged}); got != "⚡ 82%" {
-		t.Fatalf("charging label %q", got)
-	}
-	plugged = false
-	if got := FormatBattery(BatteryStatus{Available: true, Percent: &percent, Plugged: &plugged}); got != "🔋 82%" {
-		t.Fatalf("discharging label %q", got)
+	if BatteryCategory(BatteryStatus{}) != "dim" {
+		t.Fatal("an unavailable reading must be dim")
 	}
 }
 

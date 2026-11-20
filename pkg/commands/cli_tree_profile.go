@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"syscall"
 
@@ -20,9 +19,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/profiles/gatewaycreate"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/spf13/cobra"
 )
 
@@ -36,6 +37,8 @@ type ProfileArgs struct {
 	CloneChannels bool
 	SyncImports   bool
 	NoAlias       bool
+	IsolatedAuth  bool
+	NoCredentials bool
 	NoSkills      bool
 	Description   *string
 	Yes           bool
@@ -133,6 +136,7 @@ func runProfile(cmd *cobra.Command, action string, args []string) error {
 		a.Clone, a.CloneAll, a.CloneFrom = flag("clone"), flag("clone-all"), opt("clone-from")
 		a.CloneChannels, a.SyncImports = flag("clone-channels"), flag("sync-imports")
 		a.NoAlias, a.NoSkills, a.Description = flag("no-alias"), flag("no-skills"), opt("description")
+		a.IsolatedAuth, a.NoCredentials = flag("isolated-auth"), flag("no-credentials")
 	case "delete":
 		a.Yes = flag("yes")
 	case "describe":
@@ -475,118 +479,125 @@ func profileUse(p *profileIO, a ProfileArgs) error {
 	return nil
 }
 
-// Directory of the clone source profile, a not found error when it is not a directory
-func sourceProfileDir(label string) (string, error) {
-	dir, err := profiles.GetProfileDir(label)
-	if err != nil {
-		return "", err
-	}
-	if !isDirPath(dir) {
-		return "", &profiles.NotFoundError{Msg: dir}
-	}
-	return dir, nil
-}
-
 // Names the channels a clone left behind, or warns about credentials a channel clone now shares
-func printChannelCloneNotice(p *profileIO, name, sourceLabel string, cloneChannels bool, cloneFlag string) error {
-	sourceDir, err := sourceProfileDir(sourceLabel)
-	if isNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
+func printChannelCloneNotice(p *profileIO, name string, made *tuigateway.ProfileCreateReceipt, cloneChannels bool, cloneFlag string) {
 	if !cloneChannels {
-		platforms, err := manage.ChannelPlatformsConfigured(p.ctx, sourceDir)
-		if err != nil {
-			return err
-		}
-		for _, line := range manage.FormatStrippedNotice(name, platforms, cloneFlag) {
+		for _, line := range manage.FormatStrippedNotice(name, made.ChannelsLeftBehind, cloneFlag) {
 			p.println("%s", line)
 		}
-		return nil
+		return
 	}
-	dir, err := profiles.GetProfileDir(name)
-	if err != nil {
-		return err
+	if len(made.SharedChannels) > 0 {
+		p.println("%s", manage.SharedCredentialWarning(name, made.SharedChannels, made.SourceLabel))
 	}
-	shared, err := manage.SharedChannelCredentials(p.ctx, dir, sourceDir)
-	if err != nil {
-		return err
+}
+
+// What the new profile took from the launch profile
+func printMirrored(p *profileIO, mirrored map[string]tuigateway.MirroredValue, launch string, isolateHint bool) {
+	if mirrored["env"].Held() {
+		p.println("Copied API keys from '%s' (bot tokens and allowlists left out).", launch)
 	}
-	if len(shared) > 0 {
-		p.println("%s", manage.SharedCredentialWarning(name, shared, sourceLabel))
+	switch auth := mirrored["auth"]; {
+	case auth.Shared:
+		hint := ""
+		if isolateHint {
+			hint = " (--isolated-auth copies them)"
+		}
+		p.println("Logins and subscriptions are shared with the default profile%s.", hint)
+	case auth.Done:
+		p.println("Copied logins from '%s' (single-use OAuth logins are still read from the default profile).", launch)
+	}
+	if mirrored["model_inherited"].Held() {
+		p.println("Model inherited from '%s'.", launch)
+	}
+}
+
+// Refuses the flag combinations no create takes, here or through a gateway
+func refuseCreateArgs(p *profileIO, a ProfileArgs, cloned bool) error {
+	if a.CloneFrom != nil && pystr.Strip(*a.CloneFrom) == "" {
+		return p.die("Error: profile name cannot be empty", 1, false)
+	}
+	if cloned && a.NoCredentials {
+		return p.die("Error: --no-credentials cannot be combined with --clone / --clone-from / --clone-all "+
+			"(a clone copies the source's keys); create without cloning instead.", 1, true)
 	}
 	return nil
 }
 
-// Length of a Python sized value, zero for anything unsized
-func pyLen(v any) int {
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Slice, reflect.Array, reflect.Map, reflect.String:
-		return rv.Len()
+// Receipt of a create made by the gateway serving this terminal, else of one made here
+func createProfile(ctx context.Context, req manage.ProfileCreateRequest) (*tuigateway.ProfileCreateReceipt, error) {
+	made, err := gatewaycreate.CreateThroughGateway(ctx, req)
+	if err != nil || made != nil {
+		return made, err
 	}
-	return 0
+	result, err := manage.ProvisionProfile(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	receipt := manage.ReceiptOf(ctx, req, result)
+	return &receipt, nil
 }
 
-// Creates a profile, seeding or cloning it, then its wrapper and the next steps
+// Creates a profile through the gateway serving this terminal or here, then says what it got and the next steps
 func profileCreate(p *profileIO, a ProfileArgs) error {
 	name := a.ProfileName
 	cloneConfig := a.Clone || a.CloneFrom != nil
 	cloned := cloneConfig || a.CloneAll
-	sourceLabel := ""
-	if a.CloneFrom != nil {
-		sourceLabel = *a.CloneFrom
+	if err := refuseCreateArgs(p, a, cloned); err != nil {
+		return err
 	}
-	if sourceLabel == "" {
-		sourceLabel = profiles.GetActiveProfileName(p.ctx)
-	}
-	profileDir, err := manage.CreateProfile(p.ctx, name, manage.CreateOptions{
-		CloneFrom: a.CloneFrom, CloneAll: a.CloneAll, CloneConfig: cloneConfig, NoSkills: a.NoSkills,
-		Description: a.Description, CloneChannels: a.CloneChannels, SyncImports: a.SyncImports,
+	made, err := createProfile(p.ctx, manage.ProfileCreateRequest{
+		Name: name, CloneFrom: a.CloneFrom, CloneAll: a.CloneAll, CloneConfig: cloneConfig, NoSkills: a.NoSkills,
+		Description: a.Description, CloneChannels: a.CloneChannels, SyncImports: a.SyncImports, NoAlias: a.NoAlias, Verbose: true,
+		NoCredentials: a.NoCredentials, IsolatedAuth: a.IsolatedAuth,
 	})
 	if err != nil {
-		if isValueError(err) || isExists(err) || isNotFound(err) {
+		var unconfirmed *gatewaycreate.GatewayCreateError
+		switch {
+		case errors.Is(err, tools.ErrKeyboardInterrupt):
+			return &ExitError{Code: 130}
+		case errors.As(err, &unconfirmed), manage.RefusalKind(err) != "":
 			return p.dieErr(err)
 		}
 		return err
 	}
-	p.println("\nProfile '%s' created at %s", name, profileDir)
+	p.println("\nProfile '%s' created at %s", name, made.Path)
 	if cloned {
-		if err := printCloneSummary(p, a, name, sourceLabel, profileDir); err != nil {
-			return err
-		}
+		printCloneSummary(p, a, name, made)
 	} else {
-		result := manage.SeedProfileSkills(p.ctx, profileDir, false)
 		switch {
-		case len(result) > 0 && pyrepr.Truthy(result["skipped_opt_out"]):
+		case made.SkillsOptedOut:
 			p.println("No bundled skills seeded (--no-skills). Delete .no-bundled-skills in the profile to opt back in.")
-		case len(result) > 0:
-			p.println("%d bundled skills synced.", pyLen(result["copied"]))
+		case made.SkillsSynced != nil:
+			p.println("%d bundled skills synced.", *made.SkillsSynced)
 		default:
 			p.println("⚠ Skills could not be seeded. Run `%s update` to retry.", name)
 		}
 	}
 	if !a.NoAlias {
-		if err := createProfileAlias(p, name); err != nil {
+		if err := printProfileAlias(p, name, made); err != nil {
 			return err
 		}
 	}
-	return printCreateNextSteps(p, a, name, profileDir)
+	printMirrored(p, made.Mirrored, made.LaunchLabel, !a.IsolatedAuth && !a.NoCredentials)
+	for _, warning := range made.Warnings {
+		p.println("⚠ %s", warning)
+	}
+	printCreateNextSteps(p, name, made, cloned)
+	return nil
 }
 
 // What a clone carried over and the channel notice
-func printCloneSummary(p *profileIO, a ProfileArgs, name, sourceLabel, profileDir string) error {
+func printCloneSummary(p *profileIO, a ProfileArgs, name string, made *tuigateway.ProfileCreateReceipt) {
 	if a.CloneAll {
-		p.println("Full copy from %s (excluding session history, cron jobs, backups, and snapshots).", sourceLabel)
+		p.println("Full copy from %s (excluding session history, cron jobs, backups, and snapshots).", made.SourceLabel)
 	} else {
-		p.println("Cloned config, .env, SOUL.md, and skills from %s.", sourceLabel)
-		if names := manage.ClonedPluginNames(profileDir); len(names) > 0 {
-			p.println("Cloned installed plugins too: %s.", strings.Join(names, ", "))
+		p.println("Cloned config, .env, SOUL.md, and skills from %s.", made.SourceLabel)
+		if len(made.ClonedPlugins) > 0 {
+			p.println("Cloned installed plugins too: %s.", strings.Join(made.ClonedPlugins, ", "))
 		}
-		if provider := memory.ClonedMemoryProvider(profileDir); provider != "" {
-			p.println("Cloned memory provider config (%s) too.", provider)
+		if made.MemoryProvider != nil && *made.MemoryProvider != "" {
+			p.println("Cloned memory provider config (%s) too.", *made.MemoryProvider)
 		}
 	}
 	if a.SyncImports {
@@ -597,26 +608,21 @@ func printCloneSummary(p *profileIO, a ProfileArgs, name, sourceLabel, profileDi
 	if a.CloneAll {
 		cloneFlag = "--clone-all"
 	}
-	return printChannelCloneNotice(p, name, sourceLabel, a.CloneChannels, cloneFlag)
+	printChannelCloneNotice(p, name, made, a.CloneChannels, cloneFlag)
 }
 
-// Creates the profile wrapper unless its name collides, warning when the wrapper dir is off PATH
-func createProfileAlias(p *profileIO, name string) error {
-	collision, err := profiles.CheckAliasCollision(name)
-	if err != nil {
-		return err
-	}
-	if collision != "" {
-		p.println("\n⚠ Cannot create alias '%s' — %s", name, collision)
+// Says where the profile wrapper is or why none was made, warning when the wrapper dir is off PATH
+func printProfileAlias(p *profileIO, name string, made *tuigateway.ProfileCreateReceipt) error {
+	if made.AliasCollision != nil && *made.AliasCollision != "" {
+		p.println("\n⚠ Cannot create alias '%s' — %s", name, *made.AliasCollision)
 		p.println("  Choose a custom alias:  icebath profile alias %s --name <custom>", name)
 		p.println("  Or access via flag:     icebath -p %s chat", name)
 		return nil
 	}
-	wrapperPath, err := profiles.CreateWrapperScript(name, "")
-	if err != nil || wrapperPath == "" {
-		return err
+	if made.AliasPath == nil || *made.AliasPath == "" {
+		return nil
 	}
-	p.println("Wrapper created: %s", wrapperPath)
+	p.println("Wrapper created: %s", *made.AliasPath)
 	inPath, err := profiles.IsWrapperDirInPath()
 	if err != nil || inPath {
 		return err
@@ -632,47 +638,27 @@ func createProfileAlias(p *profileIO, name string) error {
 }
 
 // Next steps after a create, naming the running multiplexer when it serves or can serve the profile
-func printCreateNextSteps(p *profileIO, a ProfileArgs, name, profileDir string) error {
-	display := tildePosix(profileDir)
+func printCreateNextSteps(p *profileIO, name string, made *tuigateway.ProfileCreateReceipt, cloned bool) {
 	p.println("\nNext steps:")
 	p.println("  %s, type /setup       Configure API keys and model", name)
 	p.println("  %s chat               Start chatting", name)
-	served, recorded, err := manage.RecordedServedProfiles()
-	if err != nil {
-		return err
-	}
-	servedNow := false
-	if recorded {
-		canon, err := profiles.NormalizeProfileName(name)
-		if err != nil {
-			return err
-		}
-		for _, s := range served {
-			sc, err := profiles.NormalizeProfileName(s)
-			if err != nil {
-				return err
-			}
-			servedNow = servedNow || sc == canon
-		}
-	}
 	switch {
-	case servedNow:
+	case made.ServedNow != nil && *made.ServedNow:
 		p.println("  (served now by the running multiplexed gateway — add its bot token and it connects)")
-	case recorded:
+	case made.ServedNow != nil:
 		p.println("  icebath gateway restart    Serve this profile from the running multiplexed gateway")
 	default:
 		p.println("  %s gateway start      Start the messaging gateway", name)
 	}
-	if a.Clone || a.CloneAll {
-		p.println("\n  Edit %s/.env for different API keys", display)
-		p.println("  Edit %s/SOUL.md for different personality", display)
+	if cloned || made.Mirrored["env"].Held() {
+		p.println("\n  Edit %s/.env for different API keys", made.DisplayPath)
+		p.println("  Edit %s/SOUL.md for different personality", made.DisplayPath)
 	} else {
 		p.println("\n  ⚠ This profile has no API keys yet. Start '%s' and type '/setup model' first,", name)
 		p.println("    or it will inherit keys from your shell environment.")
-		p.println("  Edit %s/SOUL.md to customize personality", display)
+		p.println("  Edit %s/SOUL.md to customize personality", made.DisplayPath)
 	}
 	p.println("")
-	return nil
 }
 
 // Deletes a profile after its confirmation

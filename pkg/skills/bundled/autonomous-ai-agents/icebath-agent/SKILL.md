@@ -96,6 +96,7 @@ Profiles use `~/.icebath/profiles/<name>/` with the same layout. When a profile 
 | `icebath project` workspaces and multi-folder projects | `references/projects-and-folders.md` |
 | MCP servers (add, catalog, `icebath mcp`) | `references/native-mcp.md` |
 | Webhook routes and event-driven runs | `references/webhooks.md` |
+| `icebath batch`: running a prompt dataset in parallel, trajectory files, resume | `references/batch-processing.md` |
 | A custom theme/skin ("synthwave theme", "change the gold ●") | `references/themes.md` + `templates/skin.yaml` |
 | A live TUI panel or modal widget (ticker, clock, dashboard) | `references/tui-widgets.md` + `templates/clock-widget/` |
 | Pet mascots — install, select, scale, diagnose | `references/petdex.md` |

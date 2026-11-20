@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"strconv"
 	"sync"
@@ -28,8 +27,6 @@ import (
 
 // KanbanWorkerClientEntry is the argv word that runs this binary as the kanban worker client
 const KanbanWorkerClientEntry = "__icebath_kanban_worker_client__"
-
-var driveLetterRE = regexp.MustCompile(`^[A-Za-z]:`)
 
 // Context bound to a profile's secrets and, with bindHome, its home and terminal policy
 func workerProfileScope(ctx context.Context, profileHome string, bindHome bool) context.Context {
@@ -53,11 +50,6 @@ func workerProfileScope(ctx context.Context, profileHome string, bindHome bool) 
 	}
 	return ctx
 }
-
-var (
-	retaggedWorkspaceRootsMu sync.Mutex
-	retaggedWorkspaceRoots   = map[string]bool{}
-)
 
 // Worker argv running this binary as the owner submitting client
 func workerArgv() ([]string, error) {

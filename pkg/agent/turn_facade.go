@@ -182,8 +182,6 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	result, err = func() (map[string]any, error) {
 		loopCtx := bindSubagentParent(turnCtx, a)
 		loopCtx, _ = provider.ScopedRuntimeMain(loopCtx, map[string]any{})
-		loopCtx, untrack := trackInInterruptScope(loopCtx, a)
-		defer untrack()
 		if lease != nil {
 			lease.Start(loopCtx)
 			defer lease.StopRefresher()

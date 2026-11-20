@@ -38,22 +38,6 @@ func DaemonIdentity(env map[string]string) [5]string {
 	return identity
 }
 
-// Copy of env pointed at the dirs and BU_NAME the identity names
-func DaemonEnv(env map[string]string, identity [5]string) map[string]string {
-	target := make(map[string]string, len(env)+1)
-	for k, v := range env {
-		target[k] = v
-	}
-	for i, key := range HarnessDirKeys {
-		delete(target, key)
-		if identity[i] != "" {
-			target[key] = identity[i]
-		}
-	}
-	target["BU_NAME"] = identity[4]
-	return target
-}
-
 // Runtime dir byte budget of a sys.platform value where the harness binds AF_UNIX sockets, nil elsewhere
 func SocketDirBudget(platform string) *int {
 	budget := 0
@@ -95,36 +79,6 @@ func harnessHome(env map[string]string) (string, error) {
 		}
 	}
 	return pypath.PathExpanduser(root)
-}
-
-// Pid file of the daemon a call with env drives, bu.pid inside an isolated dir no other name shares
-func HarnessPidFile(env map[string]string) (string, error) {
-	isolated := env["BH_RUNTIME_DIR"]
-	if isolated == "" {
-		isolated = env["BH_TMP_DIR"]
-	}
-	var runtimeDir string
-	if isolated != "" {
-		expanded, err := pypath.PathExpanduser(isolated)
-		if err != nil {
-			return "", err
-		}
-		runtimeDir = expanded
-	} else {
-		root, err := harnessHome(env)
-		if err != nil {
-			return "", err
-		}
-		runtimeDir = pypath.PathJoin(root, "runtime")
-	}
-	if isolated != "" && env["BH_RUNTIME_DIR_SHARED"] != "1" {
-		return pypath.PathJoin(runtimeDir, "bu.pid"), nil
-	}
-	name, ok := env["BU_NAME"]
-	if !ok {
-		name = "default"
-	}
-	return pypath.PathJoin(runtimeDir, "bu-"+name+".pid"), nil
 }
 
 // First twelve hex digits of the SHA-256 of text

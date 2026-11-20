@@ -340,6 +340,60 @@ func spawnTreeHeadline(subagents []subagentProgress, c renderCtx) string {
 	return spawnInk(title, c.t.Color.Label, false, "") + spawnInk("  "+suffix+"  "+tr("chatBits.thinking.agentsHint"), c.t.Color.Muted, false, "")
 }
 
+// Fan out read-out of the status row, the spawn pause, the depth and the widest level against their caps with the agents running beyond that level, in the role that warns from two thirds of a cap and alarms at a cap or a pause
+func spawnHUD(subagents []subagentProgress, d delegationState) (string, wm.SegmentStyle) {
+	tree := buildSpawnTree(subagents)
+	totals := spawnTreeTotals(tree)
+	if totals.descendantCount == 0 && !d.Paused {
+		return "", wm.Dim
+	}
+	maxDepth, maxWidth := orZero(d.MaxSpawnDepth), orZero(d.MaxConcurrentChildren)
+	depth, widest := max(0, totals.maxDepthFromHere), 0
+	for _, width := range spawnWidthByDepth(tree) {
+		widest = max(widest, width)
+	}
+	depthRatio, widthRatio := 0.0, 0.0
+	if maxDepth != 0 {
+		depthRatio = float64(depth) / maxDepth
+	}
+	if maxWidth != 0 {
+		widthRatio = float64(widest) / maxWidth
+	}
+	style := wm.Dim
+	switch ratio := math.Max(depthRatio, widthRatio); {
+	case d.Paused || ratio >= 1:
+		style = wm.Bad
+	case ratio >= 0.66:
+		style = wm.Hot
+	}
+	var pieces []string
+	if d.Paused {
+		pieces = append(pieces, tr("status.paused"))
+	}
+	if totals.descendantCount > 0 {
+		label := "d" + strconv.Itoa(depth)
+		if maxDepth != 0 {
+			label += "/" + spawnNumber(maxDepth)
+		}
+		pieces = append(pieces, label)
+		if active := totals.activeCount; active > 0 {
+			label = "⚡" + strconv.Itoa(widest)
+			if maxWidth != 0 {
+				label += "/" + spawnNumber(maxWidth)
+			}
+			if extra := active - widest; extra > 0 {
+				label += "+" + strconv.Itoa(extra)
+			}
+			pieces = append(pieces, label)
+		}
+	}
+	text := strings.Join(pieces, " ")
+	if depthRatio >= 1 || widthRatio >= 1 {
+		text = "⚠ " + text
+	}
+	return text, style
+}
+
 // Pointer to the spawn tree beside a running delegation, empty for any other tool
 func delegateMonitorHint(name string, c renderCtx) string {
 	if name != "delegate_task" {

@@ -27,7 +27,10 @@ type Context struct {
 	collector                *memoryCollector
 	engineCollector          *engineCollector
 	delegationSink           func(provider any)
-	hostInProcess            map[string]bool
+	// Host objects a category load hands its plugin, answered under their facade names
+	categoryFacades map[string]HostFacade
+	// Whether a category load keeps every registration but the captured one from reaching the host
+	captureOnly bool
 }
 
 // Context whose register_delegation_provider hands the provider to sink instead of the registry, the bundled registrar

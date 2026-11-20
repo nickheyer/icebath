@@ -169,11 +169,3 @@ func compiledProvidesTools(name string) ([]string, bool) {
 	}
 	return names, true
 }
-
-// Plugins package root the host child execs parent packages from, the override directory when set, else the SDK plugins package
-func hostPluginsRoot() (string, error) {
-	if dir := bundledOverrideDir(); dir != "" {
-		return dir, nil
-	}
-	return "", errPythonSource()
-}

@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
@@ -36,7 +38,7 @@ var qrGetJSON = func(ctx context.Context, url string, timeout time.Duration) (an
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "icebath-agent/1.0")
-	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}).Do(req)
+	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}).Do(req)
 	if err != nil {
 		reason := err.Error()
 		if pypath.OSErrorClass(err) != "OSError" {

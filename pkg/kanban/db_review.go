@@ -771,6 +771,49 @@ type InvalidationResult struct {
 	Terminations []WorkerTermination
 }
 
+// Takes a done or archived task back to ready, or todo while a parent is still open, with its status event; every descendant that went on from the
+// finished work returns to todo and the workers running them are stopped once the change is committed
+func ReopenTask(ctx context.Context, conn state.SQLiteConn, taskID, author string) (bool, error) {
+	var terminations []WorkerTermination
+	status, reopened := "", false
+	err := WriteTxn(ctx, conn, false, func() error {
+		var err error
+		if status, err = landingStatusAfterParents(ctx, conn, taskID); err != nil {
+			return err
+		}
+		res, err := conn.ExecContext(ctx, "UPDATE tasks SET status = ?, claim_lock = NULL, claim_expires = NULL, worker_pid = NULL "+
+			"WHERE id = ? AND status IN ('done', 'archived')", status, taskID)
+		if err != nil {
+			return err
+		}
+		if rowsAffected(res) != 1 {
+			return nil
+		}
+		if err := appendEvent(ctx, conn, taskID, "status", payload("status", status, "requested_status", "ready"), nil); err != nil {
+			return err
+		}
+		result, err := InvalidateDescendantsForParentReopen(ctx, conn, taskID, author)
+		if err != nil {
+			return err
+		}
+		terminations = result.Terminations
+		reopened = true
+		return nil
+	})
+	if err != nil || !reopened {
+		return false, err
+	}
+	for _, t := range terminations {
+		terminateReclaimedWorker(t.Pid, t.ClaimLock, nil, t.StartedAt)
+	}
+	if status == "ready" {
+		if _, err := RecomputeReady(ctx, conn, nil); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // Demotes every ready, review, running or done descendant of a reopened ancestor to todo with its audit trail
 func InvalidateDescendantsForParentReopen(ctx context.Context, conn state.SQLiteConn, taskID, author string) (*InvalidationResult, error) {
 	callerOwnsTxn := inTransaction(conn)

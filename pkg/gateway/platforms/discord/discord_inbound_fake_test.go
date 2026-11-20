@@ -61,15 +61,6 @@ func textChannel(t *testing.T, a *DiscordAdapter, id string) *discordgo.Channel 
 	return ch
 }
 
-// Public thread under a parent channel cached in the client state
-func threadChannel(t *testing.T, a *DiscordAdapter, id, parent string) *discordgo.Channel {
-	ch := &discordgo.Channel{ID: id, GuildID: "g1", Name: "thread", ParentID: parent, Type: discordgo.ChannelTypeGuildPublicThread}
-	if err := a.client.State.ChannelAdd(ch); err != nil {
-		t.Fatal(err)
-	}
-	return ch
-}
-
 // Direct message channel
 func dmChannel(id string) *discordgo.Channel {
 	return &discordgo.Channel{ID: id, Type: discordgo.ChannelTypeDM}

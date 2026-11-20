@@ -3,7 +3,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -369,5 +368,3 @@ func TestSkillSafetyRuleSurvivesPruneOnlyAndSalvageRewrites(t *testing.T) {
 		t.Fatal("salvage dropped the rule or kept the full handoff")
 	}
 }
-
-var errDiskFull = errors.New("disk full")

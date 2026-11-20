@@ -1,6 +1,7 @@
 package messagetools
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -193,21 +194,23 @@ func isTelegramThreadNotFound(err error) bool {
 
 // Bot honouring TELEGRAM_PROXY, a direct connection when attaching the proxy fails
 func telegramBot(ctx context.Context, token any) (telegramBotAPI, error) {
+	proxy := ""
 	bot, err := func() (telegramBotAPI, error) {
-		proxy, err := gateway.ResolveProxyURL(ctx, "TELEGRAM_PROXY", []string{"api.telegram.org"}, "")
-		if err != nil {
+		var err error
+		if proxy, err = gateway.ResolveProxyURL(ctx, "TELEGRAM_PROXY", []string{"api.telegram.org"}, ""); err != nil {
 			return nil, err
 		}
 		if proxy == "" {
 			return newTelegramBot(token, "")
 		}
-		pkgLog().Info(fmt.Sprintf("send_message: standalone Telegram send routed through proxy %s", proxy))
+		pkgLog().Info(fmt.Sprintf("send_message: standalone Telegram send routed through proxy %s", gateway.SafeProxyURLForLog(proxy)))
 		return newTelegramBot(token, proxy)
 	}()
 	if err == nil {
 		return bot, nil
 	}
-	pkgLog().Warn(fmt.Sprintf("send_message: failed to attach Telegram proxy (%s), falling back to direct connection", err))
+	pkgLog().Warn(fmt.Sprintf("send_message: failed to attach Telegram proxy (%s), falling back to direct connection",
+		cmp.Or(gateway.DescribeProxyError(err, proxy), sanitizeErrorText(err))))
 	return newTelegramBot(token, "")
 }
 

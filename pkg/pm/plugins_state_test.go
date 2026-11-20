@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -216,11 +217,10 @@ func TestPluginsStateParsesConfigOncePerHome(t *testing.T) {
 	wsWriteConfig(t, root, "a-plug")
 	wsWriteConfig(t, profile, "c-plug")
 	calls := 0
-	original := selectionYAMLUnmarshal
-	peSwap(t, &selectionYAMLUnmarshal, func(data []byte, out any) error {
+	t.Cleanup(config.SwapFileReadUserDoc(func(b config.FileBackend, _ context.Context, layerHome string) (any, error) {
 		calls++
-		return original(data, out)
-	})
+		return b.ReadPath(b.ConfigPath(layerHome))
+	}))
 	wsSelection(t, EnabledPluginsOptions{})
 	if calls != 2 {
 		t.Fatalf("parsed %d times", calls)
@@ -230,12 +230,18 @@ func TestPluginsStateParsesConfigOncePerHome(t *testing.T) {
 func TestPluginsStatePMReadsTheLocalSelection(t *testing.T) {
 	root, _ := wsHomes(t)
 	peWrite(t, filepath.Join(root, "config.yaml"), "plugins:\n  enabled: [alpha]\n")
-	config, err := ReadHomeSelection(root)
-	if err != nil || !reflect.DeepEqual(config["plugins"].(map[string]any)["enabled"], []any{"alpha"}) {
-		t.Fatalf("selection %v %v", config, err)
+	t.Setenv(config.BackendEnv, "remote")
+	runtime := withRuntime(context.Background())
+	selection, err := ReadHomeSelection(runtime, root)
+	if err != nil || !reflect.DeepEqual(selection["plugins"].(map[string]any)["enabled"], []any{"alpha"}) {
+		t.Fatalf("selection %v %v", selection, err)
 	}
-	if config, err := ReadHomeSelection(filepath.Join(root, "absent")); config != nil || err != nil {
-		t.Fatalf("absent home %v %v", config, err)
+	if selection, err := ReadHomeSelection(runtime, filepath.Join(root, "absent")); selection != nil || err != nil {
+		t.Fatalf("absent home %v %v", selection, err)
+	}
+	var unavailable *config.ConfigBackendUnavailable
+	if _, err := ReadHomeSelection(context.Background(), root); !errors.As(err, &unavailable) {
+		t.Fatalf("application read %v", err)
 	}
 }
 

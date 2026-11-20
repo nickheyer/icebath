@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/net/http/httpproxy"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -124,7 +125,7 @@ func (t *ReleaseTarget) AssetDigest(name string) string {
 // Client honouring the proxy environment with header and whole request bounds
 func releaseHTTPClient(follow bool) *http.Client {
 	proxy := httpproxy.FromEnvironment().ProxyFunc()
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }
 	transport.ResponseHeaderTimeout = 20 * time.Second
 	c := &http.Client{Timeout: 60 * time.Second, Transport: transport}

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -178,7 +179,7 @@ func httpOpen(full string, proxy *proxyRoute, visited map[string]int, f *fetchFr
 		if target.Host == "" {
 			raise("URLError", "<urlopen error no host given>")
 		}
-		transport := &http.Transport{DisableCompression: true, TLSClientConfig: &tls.Config{}}
+		transport := &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), DisableCompression: true, TLSClientConfig: &tls.Config{}}
 		if proxy != nil {
 			proxyURL := &url.URL{Scheme: proxy.scheme, Host: proxy.hostport, User: proxy.auth}
 			transport.Proxy = func(*http.Request) (*url.URL, error) { return proxyURL, nil }

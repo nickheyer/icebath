@@ -383,14 +383,6 @@ func (s *ToolsSetup) codexSignIn(login func(context.Context, string, io.Writer) 
 	return save(s.ctx(), s.home(), tokens, lastRefresh, false)
 }
 
-func (s *ToolsSetup) xaiCredentialsReady() bool { return xaiCredentialsPresent(s.ctx()) }
-
-// Credential bootstrap keys and their credentials present check, these rows having no install side effect
-var postSetupAuthReady = map[string]func(*ToolsSetup) bool{
-	"xai_grok":     (*ToolsSetup).xaiCredentialsReady,
-	"openai_codex": (*ToolsSetup).codexCredentialsPresent,
-}
-
 // Post setup key to its hook, unknown keys a silent no op since callers validate against the visible rows
 var postSetupHooks = buildPostSetupHooks()
 
@@ -528,45 +520,4 @@ func (s *ToolsSetup) moduleInstalled(moduleName string) (found bool) {
 		}
 	}()
 	return postSetupModuleImportable(s.ctx(), moduleName)
-}
-
-// Everything the chromium hook provides is present, a Chromium
-func (s *ToolsSetup) chromiumInstalled() (bool, error) {
-	chromium := ToolsConfigHooks.ChromiumExecutable
-	requireToolsConfigHook("ChromiumExecutable", chromium != nil)
-	return chromium(s.toolEnv()) != "", nil
-}
-
-// Installed check of the cloud browser rows, whose local contract is the built in browser driver
-func (s *ToolsSetup) builtInBrowserReady() (bool, error) { return true, nil }
-
-// Whether a lightpanda binary is on PATH or in a known install dir
-func (s *ToolsSetup) lightpandaInstalled() (found bool, err error) {
-	find := ToolsConfigHooks.LightpandaBinary
-	if find == nil {
-		return false, nil
-	}
-	defer func() {
-		if recover() != nil {
-			found, err = false, nil
-		}
-	}()
-	return find(s.toolEnv()) != "", nil
-}
-
-// Installed checks of the keyless post setup rows, ready against needs_setup in the picker
-var postSetupReady = buildPostSetupReady()
-
-func buildPostSetupReady() map[string]func(*ToolsSetup) (bool, error) {
-	ready := map[string]func(*ToolsSetup) (bool, error){
-		"chromium":    (*ToolsSetup).chromiumInstalled,
-		"browserbase": (*ToolsSetup).builtInBrowserReady,
-		"lightpanda":  (*ToolsSetup).lightpandaInstalled,
-		"cua_driver":  (*ToolsSetup).cuaDriverInstallReady,
-	}
-	for _, key := range pythonPostSetupHookKeys {
-		module := pythonPostSetupHooks[key].module
-		ready[key] = func(s *ToolsSetup) (bool, error) { return s.moduleInstalled(module), nil }
-	}
-	return ready
 }

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"reflect"
 	"strings"
 	"sync"
@@ -108,29 +107,6 @@ func TestInheritedHardInterruptBypassesLegacySubclassOverride(t *testing.T) {
 	}
 	if len(agent.legacyCalls) != 0 || !agent.hardInterruptRequested.IsSet() || !agent.interruptRequested.Load() || agent.interruptMessage != "stop now" {
 		t.Fatalf("legacy %v hard %v requested %v message %q", agent.legacyCalls, agent.hardInterruptRequested.IsSet(), agent.interruptRequested.Load(), agent.interruptMessage)
-	}
-}
-
-type scopeStopAgent struct{ stops []string }
-
-func (s *scopeStopAgent) HardInterrupt(message, toolReason string) {
-	s.stops = append(s.stops, message)
-}
-
-func TestInterruptScopeCancelsAgentsThatStartAfterTheCancel(t *testing.T) {
-	scope := NewInterruptScope()
-	early, late, unscoped := &scopeStopAgent{}, &scopeStopAgent{}, &scopeStopAgent{}
-	ctx := WithInterruptScope(context.Background(), scope)
-	releaseEarly := TrackInInterruptScope(ctx, early)
-	scope.CancelByHost("Console command cancelled")
-	TrackInInterruptScope(ctx, late)()
-	releaseEarly()
-	releaseUnscoped := TrackInInterruptScope(context.Background(), unscoped)
-	scope.CancelByHost("Console command cancelled")
-	releaseUnscoped()
-	want := []string{"Console command cancelled"}
-	if !reflect.DeepEqual(early.stops, want) || !reflect.DeepEqual(late.stops, want) || len(unscoped.stops) != 0 {
-		t.Fatalf("early %v late %v unscoped %v", early.stops, late.stops, unscoped.stops)
 	}
 }
 

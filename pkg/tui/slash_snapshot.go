@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Drops the gateway socket and blocks every reconnect until the returned func starts the owner again
+// Drops the gateway socket and blocks every reconnect until the returned func, which the update loop calls, starts the owner again
 func (c *gatewayClient) releaseForMaintenance() func() {
 	c.locked(func() {
 		c.clearReconnectLocked()
@@ -22,7 +22,7 @@ func (c *gatewayClient) releaseForMaintenance() func() {
 		c.attachURL = ""
 	})
 	return func() {
-		c.locked(func() {
+		c.lockedOnLoop(func() {
 			c.reconnectStop, c.reconnectToken = nil, nil
 			c.reconnects = 0
 			c.localStarted = false

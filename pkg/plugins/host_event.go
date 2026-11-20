@@ -13,12 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
-// Flag a hosted plugin sees as a threading.Event whose state stays on the side that created it
+// Flag living in this process that a plugin reads, waits on and sets through its host
 type HostEvent struct {
 	mu         sync.Mutex
 	flag       bool
 	woken      chan struct{}
-	child      *childEventRef
 	registered map[*PluginHost]hostEventSlot
 }
 
@@ -28,22 +27,11 @@ type hostEventSlot struct {
 	generation int
 }
 
-// Plugin host child event a HostEvent proxy reads and changes over the wire
-type childEventRef struct {
-	host       *PluginHost
-	ref        int64
-	generation int
-}
-
 // Unset event living in this process
 func NewHostEvent() *HostEvent { return &HostEvent{woken: make(chan struct{})} }
 
-// Sets the flag and wakes every waiter in this process and in the plugin host child
+// Sets the flag and wakes every waiter in this process and in the plugins that wait on it
 func (e *HostEvent) Set() {
-	if e.child != nil {
-		_, _ = e.child.call(context.Background(), "set", nil)
-		return
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if !e.flag {
@@ -54,10 +42,6 @@ func (e *HostEvent) Set() {
 
 // Resets the flag so later waits block again
 func (e *HostEvent) clear() {
-	if e.child != nil {
-		_, _ = e.child.call(context.Background(), "clear", nil)
-		return
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.flag {
@@ -66,12 +50,8 @@ func (e *HostEvent) clear() {
 	}
 }
 
-// Whether the flag is set, a child event whose plugin host is gone reading as set
+// Whether the flag is set
 func (e *HostEvent) IsSet() bool {
-	if e.child != nil {
-		v, err := e.child.call(context.Background(), "is_set", nil)
-		return err != nil || v == true
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.flag
@@ -79,17 +59,6 @@ func (e *HostEvent) IsSet() bool {
 
 // Blocks until the flag is set, ctx ends or timeout passes (negative waits without limit) and answers the flag
 func (e *HostEvent) Wait(ctx context.Context, timeout time.Duration) bool {
-	if e.child != nil {
-		var seconds any
-		if timeout >= 0 {
-			seconds = timeout.Seconds()
-		}
-		v, err := e.child.call(ctx, "wait", seconds)
-		if err != nil {
-			return ctx.Err() == nil
-		}
-		return v == true
-	}
 	e.mu.Lock()
 	if e.flag {
 		e.mu.Unlock()
@@ -115,26 +84,8 @@ func (e *HostEvent) Wait(ctx context.Context, timeout time.Duration) bool {
 	return e.IsSet()
 }
 
-// Reason attribute of a child event, empty when it has none and for an event made in this process
-func (e *HostEvent) Reason() string {
-	if e.child == nil {
-		return ""
-	}
-	v, _ := e.child.call(context.Background(), "reason", nil)
-	s, _ := v.(string)
-	return s
-}
-
-// Runs one event operation on the child event the ref names
-func (c *childEventRef) call(ctx context.Context, op string, timeout any) (any, error) {
-	return c.host.call(ctx, "event", map[string]any{"ref": c.ref, "op": op, "timeout": timeout}, &c.generation, 0, nil)
-}
-
 // Wire reference of an event for the running child, one id per event and child for as long as the event lives
 func (h *PluginHost) eventRef(e *HostEvent) map[string]any {
-	if e.child != nil && e.child.host == h {
-		return map[string]any{"__child_event__": e.child.ref}
-	}
 	h.mu.Lock()
 	generation := h.generation
 	h.mu.Unlock()
@@ -165,29 +116,20 @@ func (h *PluginHost) forgetParentEvent(id int64) {
 	}
 }
 
-// Event a child ref names, the parent event handed to the child or a proxy for an event made in the child
+// Event of this process a plugin ref names, ok false for a ref that names none
 func (h *PluginHost) resolveEventRef(ref map[string]any) (*HostEvent, bool, error) {
-	if raw, ok := ref["__parent_event__"]; ok {
-		id, _ := wireInt(raw)
-		h.stateMu.Lock()
-		slot, held := h.parents[id]
-		h.stateMu.Unlock()
-		e := slot.event.Value()
-		if !held || e == nil {
-			return nil, true, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("icebath event %d was released", id)}
-		}
-		return e, true, nil
-	}
-	raw, ok := ref["__child_event__"]
+	raw, ok := ref["__parent_event__"]
 	if !ok {
 		return nil, false, nil
 	}
 	id, _ := wireInt(raw)
-	h.mu.Lock()
-	generation := h.generation
-	h.mu.Unlock()
-	e := &HostEvent{child: &childEventRef{host: h, ref: id, generation: generation}}
-	runtime.AddCleanup(e, func(r releaseRef) { r.host.release(r.generation, r.ref) }, releaseRef{host: h, generation: generation, ref: id})
+	h.stateMu.Lock()
+	slot, held := h.parents[id]
+	h.stateMu.Unlock()
+	e := slot.event.Value()
+	if !held || e == nil {
+		return nil, true, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("icebath event %d was released", id)}
+	}
 	return e, true, nil
 }
 

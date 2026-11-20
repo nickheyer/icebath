@@ -274,8 +274,8 @@ func TestVersionBumpKeepsConfigLean(t *testing.T) {
 		if v, _ := CfgGet(loaded, "curator", "enabled"); !pyEq(v, AsMap(Defaults()["curator"])["enabled"]) {
 			t.Fatalf("curator.enabled %v", v)
 		}
-		if v, _ := CfgGet(loaded, "display", "compact"); !pyEq(v, AsMap(Defaults()["display"])["compact"]) {
-			t.Fatalf("display.compact %v", v)
+		if v, _ := CfgGet(loaded, "display", "bell_on_complete"); !pyEq(v, AsMap(Defaults()["display"])["bell_on_complete"]) {
+			t.Fatalf("display.bell_on_complete %v", v)
 		}
 	}
 }

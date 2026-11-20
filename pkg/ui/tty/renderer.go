@@ -75,6 +75,14 @@ type Renderer struct {
 	awaitView bool
 	restore   []byte
 	onRestore func([]byte)
+	// Failed writes since the last one the terminal took
+	fails int
+	// Told once when the writes failed often enough in a row for the terminal to count as gone
+	onDead func(error)
+	// Told the timing of every frame written, nil when nobody measures
+	onFrame func(FrameStat)
+	// Time the model took for the view waiting to be written
+	viewTook time.Duration
 }
 
 // Renderer writing to the terminal, sized w by h
@@ -95,9 +103,13 @@ func (r *Renderer) poke() {
 }
 
 // Takes the view to show next, the latest one winning
-func (r *Renderer) Render(v tea.View) {
+func (r *Renderer) Render(v tea.View) { r.render(v, 0) }
+
+// Takes the view to show next with the time the model took to build it
+func (r *Renderer) render(v tea.View, took time.Duration) {
 	r.mu.Lock()
 	r.view = &v
+	r.viewTook = took
 	r.awaitView = false
 	if v.Content != r.content {
 		r.content, r.parsed = v.Content, false

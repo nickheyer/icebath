@@ -18,8 +18,6 @@ type credentialRefreshState struct {
 	envCredsSeen *[2]string
 }
 
-var decodeJWTClaims = provider.DecodeJWTClaims
-
 // Python str of an arbitrary value, empty for nil
 func pyStrValue(v any) string {
 	if v == nil {

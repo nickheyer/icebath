@@ -32,6 +32,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -241,7 +242,7 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 	if err != nil {
 		var de *pyjson.DecodeError
 		if errors.As(err, &de) {
-			return nil, &peerRuntimeError{"Peer returned non-JSON response: " + pystr.Slice(payload, 0, 200)}
+			return nil, &peerRuntimeError{"Peer returned non-JSON response: " + tools.SanitizeDisplayText(pystr.Slice(payload, 0, 200))}
 		}
 		return nil, err
 	}
@@ -503,12 +504,8 @@ var peerEnsureBotChat = func(ctx context.Context, base, key string) (string, err
 	if err != nil {
 		var he *peerHTTPError
 		if errors.As(err, &he) {
-			detail := peerHTTPErrorDetail(he)
 			if he.code == 400 {
-				text, isText := detail.(string)
-				if !isText {
-					return "", &peerAttributeError{fmt.Sprintf("a peer bot chat detail is %s, expected text", errchain.Kind(detail))}
-				}
+				text := peerHTTPErrorDetail(he)
 				if strings.Contains(pystr.Lower(text), "title") {
 					return "", &peerRuntimeError{fmt.Sprintf("Peer already has a '%s' session but it is hidden and the "+
 						"peer's gateway is too old to expose hidden sessions to this lookup "+
@@ -562,31 +559,31 @@ func peerParseTarget(target any) (string, string, error) {
 	return peer, profile, nil
 }
 
-// Message the peer put in its JSON error body, else the first 200 body characters or the exception text
-func peerHTTPErrorDetail(e *peerHTTPError) any {
+// Message the peer put in its JSON error body, else the first 200 body characters or the exception text, with escapes and control characters removed
+func peerHTTPErrorDetail(e *peerHTTPError) string {
 	raw, err := e.read()
 	if err != nil {
-		return e.Error()
+		return tools.SanitizeDisplayText(e.Error())
 	}
 	body := pystr.DecodeUTF8Replace(raw)
 	parsed, err := pyjson.Loads(body)
 	if err != nil {
-		return e.Error()
+		return tools.SanitizeDisplayText(e.Error())
 	}
 	var message any
 	if obj, ok := parsed.(*pyjson.Object); ok {
 		if refusal, has := obj.Get("error"); has {
 			inner, isObj := refusal.(*pyjson.Object)
 			if !isObj {
-				return e.Error()
+				return tools.SanitizeDisplayText(e.Error())
 			}
 			message, _ = inner.Get("message")
 		}
 	}
 	if pyrepr.Truthy(message) {
-		return message
+		return tools.SanitizeDisplayText(pyrepr.Str(message))
 	}
-	return pystr.Slice(body, 0, 200)
+	return tools.SanitizeDisplayText(pystr.Slice(body, 0, 200))
 }
 
 // Name, profile, registry entry and key of a registered target
@@ -668,7 +665,7 @@ func peerRunDurability(ctx context.Context, base, key string) (*bool, error) {
 func peerFailure(c *peerCLI, peerName string, err error) int {
 	var he *peerHTTPError
 	if errors.As(err, &he) {
-		c.eprintln(fmt.Sprintf("Peer '%s' rejected the request (HTTP %d): %s", peerName, he.code, pyrepr.Str(peerHTTPErrorDetail(he))))
+		c.eprintln(fmt.Sprintf("Peer '%s' rejected the request (HTTP %d): %s", peerName, he.code, peerHTTPErrorDetail(he)))
 		return 1
 	}
 	c.eprintln(fmt.Sprintf("Could not reach peer '%s': %s", peerName, err.Error()))

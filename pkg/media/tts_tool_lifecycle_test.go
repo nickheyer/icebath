@@ -1,14 +1,9 @@
 package media
 
 import (
-	"bufio"
 	"context"
-	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -49,56 +44,6 @@ func (f *fakePiperEngine) loadCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.loads
-}
-
-// Mono 16 bit 16kHz WAV of 160 silent frames
-func silentWAV() []byte {
-	data := make([]byte, 320)
-	header := make([]byte, 44)
-	copy(header, "RIFF")
-	binary.LittleEndian.PutUint32(header[4:], uint32(36+len(data)))
-	copy(header[8:], "WAVEfmt ")
-	binary.LittleEndian.PutUint32(header[16:], 16)
-	binary.LittleEndian.PutUint16(header[20:], 1)
-	binary.LittleEndian.PutUint16(header[22:], 1)
-	binary.LittleEndian.PutUint32(header[24:], 16000)
-	binary.LittleEndian.PutUint32(header[28:], 32000)
-	binary.LittleEndian.PutUint16(header[32:], 2)
-	binary.LittleEndian.PutUint16(header[34:], 16)
-	copy(header[36:], "data")
-	binary.LittleEndian.PutUint32(header[40:], uint32(len(data)))
-	return append(header, data...)
-}
-
-// Worker answering synthesis requests in process, bound to an exited helper so Close waits cleanly
-func (f *fakePiperEngine) worker(t *testing.T) (*localTTSWorker, error) {
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	reqR, reqW := io.Pipe()
-	repR, repW := io.Pipe()
-	go func() {
-		defer repW.Close()
-		lines := bufio.NewScanner(reqR)
-		for lines.Scan() {
-			var req map[string]any
-			if err := json.Unmarshal(lines.Bytes(), &req); err != nil {
-				t.Error(err)
-				return
-			}
-			f.mu.Lock()
-			f.synthesized = append(f.synthesized, req["text"].(string))
-			f.mu.Unlock()
-			if err := os.WriteFile(req["wav_path"].(string), silentWAV(), 0o600); err != nil {
-				t.Error(err)
-			}
-			if _, err := repW.Write([]byte("{}\n")); err != nil {
-				return
-			}
-		}
-	}()
-	return &localTTSWorker{cmd: cmd, stdin: reqW, out: bufio.NewReader(repR)}, nil
 }
 
 // Voice of the Piper double, recording each text and answering 160 silent samples at 16 kHz

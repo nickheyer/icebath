@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -210,7 +211,7 @@ func CheckedURL(url, envName string) (string, error) {
 }
 
 var credentialedClient = &http.Client{
-	Transport:     &http.Transport{Proxy: http.ProxyFromEnvironment},
+	Transport:     &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment},
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 

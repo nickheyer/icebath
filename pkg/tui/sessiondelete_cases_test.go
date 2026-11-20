@@ -46,8 +46,9 @@ func press(a *app, key string) {
 	drain(a, cmd)
 }
 
-// Deletes the stored row of the switcher through its confirmation
+// Deletes the stored row of the switcher through its confirmation, the cursor leaving the row a new session is typed into first
 func deleteStoredRow(a *app) {
+	press(a, "down")
 	press(a, "d")
 	press(a, "y")
 }

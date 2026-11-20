@@ -150,3 +150,23 @@ type SetupStatusResult struct {
 
 // Whether any provider is configured for the launch or a named profile, an unknown profile answering not ok with the error
 var SetupStatus = NewMethod[ProfileParams, SetupStatusResult]("setup.status")
+
+// Provider a runtime check resolves alone, or none for the route a new session would take, in the launch or a named profile
+type SetupRuntimeCheckParams struct {
+	Provider *string `json:"provider,omitzero"`
+	Profile  *string `json:"profile,omitzero"`
+}
+
+// Whether the resolved route can serve a session, with its provider, model and credential source, or the error and its code
+type SetupRuntimeCheckResult struct {
+	OK        bool    `json:"ok"`
+	Provider  *string `json:"provider,omitzero"`
+	Model     *string `json:"model,omitzero"`
+	Source    *string `json:"source,omitzero"`
+	Error     *string `json:"error,omitzero"`
+	ErrorCode *string `json:"error_code,omitzero"`
+	Profile   *string `json:"profile,omitzero"`
+}
+
+// Strict check of the route a session would be built with, one provider alone when named
+var SetupRuntimeCheck = NewMethod[SetupRuntimeCheckParams, SetupRuntimeCheckResult]("setup.runtime_check")

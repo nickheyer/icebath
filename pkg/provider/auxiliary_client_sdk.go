@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -74,13 +75,14 @@ var auxSDKDefaultHTTPClient = sync.OnceValues(func() (*http.Client, error) {
 	}
 	connect := time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second))
 	t := &http.Transport{
+		DialContext:           netpref.DialContext((&net.Dialer{}).DialContext),
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   100,
 		MaxConnsPerHost:       1000,
 		IdleConnTimeout:       5 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
-	wireEnvDials(t, (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext, PlatformTLSConfig(), connect, proxies)
+	wireEnvDials(t, netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext), PlatformTLSConfig(), connect, proxies)
 	return &http.Client{Transport: auxTrackPoolConns(t)}, nil
 })
 

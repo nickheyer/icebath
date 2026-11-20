@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"math/big"
 )
 
 // Paths a distribution owns when the manifest names none, config.yaml preserved on update by default
@@ -741,6 +741,7 @@ func copyDistPayload(ctx context.Context, staged, target string, m *profiles.Dis
 			return err
 		}
 	}
+	dropOtherAccess(ctx, filepath.Join(target, "config.yaml"))
 	example := filepath.Join(target, profiles.EnvExampleFilename)
 	if _, err := os.Stat(example); len(m.EnvRequires) > 0 && err != nil {
 		if err := os.WriteFile(example, []byte(textForWrite(envTemplateFromManifest(m))), 0o666); err != nil {

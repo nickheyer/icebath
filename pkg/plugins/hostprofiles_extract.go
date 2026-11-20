@@ -59,15 +59,86 @@ func guestManifestOfDir(dir string) *Manifest {
 	return mf
 }
 
-// Manifest of a plugin directory that declares a wasm or program runtime, nil otherwise
-func GuestManifestOfDir(dir string) *Manifest { return guestManifestOfDir(dir) }
+// Categories a wasm or program plugin is found under by the category that selects it
+const (
+	CategoryMemoryProvider      = "memory_provider"
+	CategoryContextEngine       = "context_engine"
+	CategoryCronScheduler       = "cron_scheduler"
+	CategoryComputerUseProvider = "computer_use_provider"
+)
 
-// Host running the code of a plugin directory, its own guest when it declares a runtime, else the profile host
+// Categories the provides list of a manifest names, lower case
+func manifestProvides(mf *Manifest) []string {
+	raw := mf.Raw["provides"]
+	if one, ok := raw.(string); ok {
+		raw = []any{one}
+	}
+	var out []string
+	for _, name := range stringList(raw) {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// Whether a plugin directory holds a wasm or program plugin offering a category, one that lists it under provides or one of the exclusive kind that lists nothing
+func GuestProvides(dir, category string) bool {
+	mf := guestManifestOfDir(dir)
+	if mf == nil {
+		return false
+	}
+	provides := manifestProvides(mf)
+	if len(provides) == 0 {
+		return mf.Kind == "exclusive"
+	}
+	for _, name := range provides {
+		if name == category {
+			return true
+		}
+	}
+	return false
+}
+
+// Sorted child directories of a plugins root that hold a wasm or program plugin, underscore and dot names skipped
+func GuestPluginDirs(root string) []string {
+	children, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var dirs []string
+	for _, c := range children {
+		name := c.Name()
+		if strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if child := filepath.Join(root, name); isDir(child) && guestManifestOfDir(child) != nil {
+			dirs = append(dirs, child)
+		}
+	}
+	sort.Strings(dirs)
+	return dirs
+}
+
+// Guest host running the code of a plugin directory, the Python source refusal for a directory that declares no runtime
 func (m *Manager) hostForDir(dir string) (*PluginHost, error) {
 	if mf := guestManifestOfDir(dir); mf != nil {
 		return m.guestHost(mf)
 	}
-	return m.pluginHost()
+	return nil, errPythonSource()
+}
+
+// Loads the one provider a wasm or program plugin directory registers for a category, its other registrations kept from the host and the objects in facades answering it under their names
+func LoadCategoryInstance(ctx context.Context, pluginDir, baseRef, capture string, facades map[string]HostFacade) (*HostedObject, error) {
+	m := GetPluginManager(ctx)
+	host, err := m.hostForDir(pluginDir)
+	if err != nil {
+		return nil, err
+	}
+	name := filepath.Base(pluginDir)
+	c := newContext(&Manifest{Name: name, Key: name, Path: pluginDir}, m)
+	c.categoryFacades, c.captureOnly = facades, true
+	return host.LoadInstance(ctx, pluginDir, baseRef, capture, c, nil)
 }
 
 // Digest of the cache version, this executable, the product version and every plugin file size and mtime

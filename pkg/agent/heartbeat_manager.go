@@ -292,9 +292,3 @@ func (m *HeartbeatManager) AbandonFire() bool {
 	SaveHeartbeat(m.ctx, m.SessionID, s)
 	return true
 }
-
-// Reports a refused heartbeat set
-func IsHeartbeatValueError(err error) bool {
-	var hv *HeartbeatValueError
-	return errors.As(err, &hv)
-}

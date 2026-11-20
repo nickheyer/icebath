@@ -16,8 +16,6 @@ import (
 
 const depDist = "icebath-depprobe-fixture"
 
-var depReq = depDist + ">=1.0,<2"
-
 // Writes a dist-info directory for the fixture distribution at a version into a site directory
 func writeDistInfo(t *testing.T, site, version string) {
 	t.Helper()

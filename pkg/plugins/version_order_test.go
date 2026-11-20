@@ -47,13 +47,6 @@ func writeFeedManifest(t *testing.T, plugin, version, feedURL string) string {
 	return manifest
 }
 
-func boolOrNil(b *bool) any {
-	if b == nil {
-		return nil
-	}
-	return *b
-}
-
 func TestCadenceNeverAppliesAnUnparseableVersion(t *testing.T) {
 	ctx, h, _ := cadenceHome(t)
 	t.Setenv(pm.EnvRuntimeDir, filepath.Join(filepath.Dir(h), "tools"))

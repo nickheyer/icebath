@@ -160,23 +160,6 @@ func TestContextFileCwd(t *testing.T) {
 	})
 }
 
-// Replaces only the soul and environment builders, the context files built for real
-func soulAndHintsOnly(t *testing.T) {
-	t.Helper()
-	prevSoul, prevHints := loadSoulMDFn, buildEnvironmentHintsFn
-	t.Cleanup(func() { loadSoulMDFn, buildEnvironmentHintsFn = prevSoul, prevHints })
-	loadSoulMDFn = func(context.Context, *tools.Env, *int, string) (string, bool) { return "", true }
-	buildEnvironmentHintsFn = func(context.Context, *tools.Env) (string, error) { return "", nil }
-}
-
-// Points the install tree root the context discovery guards at the directory
-func withPackageRoot(t *testing.T, dir string) {
-	t.Helper()
-	prev := tools.PackageRoot
-	tools.PackageRoot = dir
-	t.Cleanup(func() { tools.PackageRoot = prev })
-}
-
 // A git repo holding a source file, what the coding posture needs to engage
 func initCodeRepo(t *testing.T, dir string) {
 	t.Helper()

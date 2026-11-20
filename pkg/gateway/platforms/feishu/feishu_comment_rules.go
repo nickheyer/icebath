@@ -587,7 +587,7 @@ func pairingCmd(ctx context.Context, w io.Writer, args []string) (int, error) {
 // Main runs the status, check and pairing commands over args without the program name and returns the exit code
 func Main(ctx context.Context, args []string, w io.Writer) (int, error) {
 	_, _ = provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{})
-	usage := fmt.Sprintf(`Usage: python -m gateway.platforms.feishu_comment_rules <command> [args]
+	usage := fmt.Sprintf(`Usage: icebath feishu comment-rules <command> [args]
 
 Commands:
   status                              Show rules config and pairing state

@@ -26,6 +26,15 @@ func init() {
 	voiceHandlers["wake.status"] = wakeStatus
 	voiceHandlers["voice.toggle"] = voiceToggle
 	voiceHandlers["voice.record"] = voiceRecord
+	registerAtExit(sweepVoiceRecordings)
+}
+
+// Longest a voice recording stays on disk once nothing reads it, a capture removing its own file after the transcription
+const voiceRecordingKeepSeconds = 3600
+
+// Removes the voice recordings a capture that died left behind
+func sweepVoiceRecordings() {
+	suppress(func() { media.CleanupTempRecordings(voiceRecordingKeepSeconds) })
 }
 
 // Tool env of the scoped profile home a voice call reads
@@ -307,6 +316,9 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 		action = "status"
 	}
 	text, isText := action.(string)
+	if isText && (text == "on" || text == "off") {
+		go sweepVoiceRecordings()
+	}
 	if isText && (text == "status" || text == "on" || text == "off" || text == "tts") {
 		if sid := relayString(params["session_id"]); sid != "" {
 			mode, held, err := gateway.LocalVoiceMode(sid)

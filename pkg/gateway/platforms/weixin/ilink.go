@@ -2,6 +2,7 @@ package weixin
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/aes"
 	"crypto/rand"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -104,6 +106,17 @@ func isTimeout(err error) bool {
 // str of an exception as a percent s log argument renders it
 func errText(err error) string { return pyrepr.ExceptionMessage(err) }
 
+// Kind of a failure and the proxy's host when the proxy URL a session to the hosts reads from the environment holds a secret the raw error text could
+// repeat, empty when the raw text is safe to show
+func proxyErrorShown(ctx context.Context, err error, hosts ...string) string {
+	return gateway.DescribeProxyError(err, gateway.TrustedEnvProxyForRedaction(ctx, hosts...))
+}
+
+// Text of a failed request to the adapter's hosts for a log line or a send result, redacted when the raw text could repeat a proxy secret
+func (a *WeixinAdapter) proxySafeErrText(ctx context.Context, err error) string {
+	return cmp.Or(proxyErrorShown(ctx, err, a.baseURL, a.cdnBaseURL), errText(err))
+}
+
 // Dict view of a decoded value, an empty object for a falsy value and the AttributeError of any other
 func objOrEmpty(v any) (*pyjson.Object, error) {
 	if !pyrepr.Truthy(v) {
@@ -174,7 +187,7 @@ type ilinkSession struct {
 
 // Session trusting proxy env vars when the gateway does, idle connections reaped after two seconds
 func newSession(ctx context.Context) *ilinkSession {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if gateway.GatewayTrustEnv(ctx) {
 		transport.Proxy = http.ProxyFromEnvironment

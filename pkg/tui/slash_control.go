@@ -2,20 +2,12 @@ package tui
 
 import (
 	"errors"
-	"fmt"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"os"
-	"path/filepath"
-	"runtime"
-	"runtime/pprof"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/ui/render"
 )
 
 // Prints the report of a compress, its headline, token line and note
@@ -120,6 +112,29 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 	})
 }
 
+// Whether two optional values are both unset or hold the same value
+func sameOptional[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+// Whether a compress answer came back after the session moved on, to another turn, owner or stored session, or names an older execution than the one shown
+func staleCompressReply(res *tuigateway.SessionCompressResult, current, baseline *tuigateway.SessionInfo, busy, wasBusy bool) bool {
+	now, then := infoOf(current), infoOf(baseline)
+	if busy != wasBusy || !sameOptional(now.StoredSessionID, then.StoredSessionID) || !sameStamp(now.AuthorityEpoch, then.AuthorityEpoch) ||
+		!sameStamp(now.ExecutionGeneration, then.ExecutionGeneration) || !sameOptional(now.Running, then.Running) {
+		return true
+	}
+	if now.ExecutionGeneration == nil {
+		return false
+	}
+	answered := infoOf(res.Info)
+	return !sameStamp(answered.AuthorityEpoch, now.AuthorityEpoch) || answered.ExecutionGeneration == nil ||
+		*answered.ExecutionGeneration < *now.ExecutionGeneration
+}
+
 // Whole number with a comma between every three digits
 func groupDigits(n float64) string {
 	digits := strconv.FormatInt(int64(n), 10)
@@ -135,7 +150,7 @@ func groupDigits(n float64) string {
 
 // Compress, branch and the commands that inspect the terminal UI itself
 func (a *app) controlCommands() []slashCommand {
-	return []slashCommand{
+	return append([]slashCommand{
 		{name: "compress", help: "compress the transcript", usage: "[focus]", run: func(r *slashRun) tea.Cmd {
 			if a.gw.canonical() {
 				return r.canonicalControl("compress")
@@ -144,8 +159,9 @@ func (a *app) controlCommands() []slashCommand {
 			if r.arg != "" {
 				params.FocusTopic = &r.arg
 			}
+			baseline, wasBusy := a.store.ui.Info, a.store.ui.Busy
 			return ask(r.rpc, a.sys, tuigateway.SessionCompress, params, func(res *tuigateway.SessionCompressResult) tea.Cmd {
-				if res == nil {
+				if res == nil || staleCompressReply(res, a.store.ui.Info, baseline, a.store.ui.Busy, wasBusy) {
 					return nil
 				}
 				info := a.store.ui.Info
@@ -304,7 +320,25 @@ func (a *app) controlCommands() []slashCommand {
 			if !a.gw.canonical() {
 				return a.sessionUsage(r)
 			}
-			return tea.Batch(r.ran(), ask(r.rpc, a.sys, tuigateway.CanonicalSessionStats, tuigateway.SessionStatsParams{SessionID: r.sid}, func(res *tuigateway.SessionStats) tea.Cmd {
+			var limits []string
+			totalsShown, limitsRead := false, false
+			showLimits := func() {
+				if !totalsShown || !limitsRead || r.stale() {
+					return
+				}
+				for _, line := range limits {
+					r.sys(line)
+				}
+			}
+			account := call(a.gw, tuigateway.CanonicalSessionAccountUsage, tuigateway.SessionAccountUsageParams{SessionID: r.sid}, func(res *tuigateway.SessionAccountUsage, err error) tea.Cmd {
+				if err == nil {
+					limits = res.Lines
+				}
+				limitsRead = true
+				showLimits()
+				return nil
+			})
+			totals := ask(r.rpc, a.sys, tuigateway.CanonicalSessionStats, tuigateway.SessionStatsParams{SessionID: r.sid}, func(res *tuigateway.SessionStats) tea.Cmd {
 				if res == nil {
 					return nil
 				}
@@ -318,10 +352,13 @@ func (a *app) controlCommands() []slashCommand {
 					r.sys(tr("slashCmd.session.usage.noCalls"))
 				} else {
 					a.store.ui.Usage = mergeUsageStable(a.store.ui.Usage, usage)
-					a.panel(tr("slashCmd.session.usage.usageTitle"), usageTotalsSections(usage))
+					a.panel(tr("slashCmd.session.usage.usageTitle"), append(usageTotalsSections(usage), rateLimitSections(res.RateLimit, a.store.now())...))
 				}
+				totalsShown = true
+				showLimits()
 				return nil
-			}))
+			})
+			return tea.Batch(r.ran(), account, totals)
 		}},
 		{name: "voice", help: "voice mode", usage: "[on|off|tts|status]", suggest: func(string) []string { return []string{"on", "off", "tts", "status"} }, run: func(r *slashRun) tea.Cmd {
 			action := strings.ToLower(trimJS(r.arg))
@@ -337,13 +374,13 @@ func (a *app) controlCommands() []slashCommand {
 				if res == nil {
 					return nil
 				}
-				a.voiceEnabled = res.Enabled
+				a.voiceEnabled, a.voiceTTS = res.Enabled, res.TTS
 				key := a.voiceKey
 				if raw := res.RecordKey; raw != "" {
 					key = parseVoiceRecordKey(raw)
 					a.setVoiceRecordKey(key)
 				}
-				label := a.keys.Display("tui.voice")
+				label := a.voiceKeyLabel()
 				onOffWord := func(on bool) string {
 					if on {
 						return tr("slashCmd.session.voice.on")
@@ -461,57 +498,5 @@ func (a *app) controlCommands() []slashCommand {
 				return nil
 			})
 		}},
-		{name: "theme-info", help: "show the colors and brand of the active theme", run: func(r *slashRun) tea.Cmd {
-			t := a.store.ui.Theme
-			rows := [][2]string{{"brand", t.Brand.Name}, {"prompt", t.Brand.Prompt}, {"terminal background", a.store.themes.terminalBg}, {"terminal foreground", a.store.themes.terminalFg}}
-			for _, slot := range []string{"primary", "accent", "border", "text", "muted", "label", "ok", "warn", "error", "tool", "thinking", "prompt", "diffAdded", "diffRemoved"} {
-				if tone := t.Color.slot(slot); tone != nil {
-					rows = append(rows, [2]string{slot, *tone})
-				}
-			}
-			a.panel("Theme", []panelSection{{Rows: rows}})
-			return nil
-		}},
-		{name: "mem", help: "show the memory the terminal UI holds", run: func(r *slashRun) tea.Cmd {
-			var stats runtime.MemStats
-			runtime.ReadMemStats(&stats)
-			a.panel("Memory", []panelSection{{Rows: [][2]string{
-				{"heap in use", render.Bytes(int64(stats.HeapInuse))}, {"heap objects", fmt.Sprint(stats.HeapObjects)}, {"from the system", render.Bytes(int64(stats.Sys))},
-				{"collections", fmt.Sprint(stats.NumGC)}, {"goroutines", fmt.Sprint(runtime.NumGoroutine())}, {"transcript rows", fmt.Sprint(len(a.history))},
-				{"rendered blocks kept", fmt.Sprint(len(a.card.view.cache))},
-			}}})
-			return nil
-		}},
-		{name: "heapdump", help: "write a heap profile of the terminal UI to a file", run: func(r *slashRun) tea.Cmd {
-			dir := filepath.Join(home.Process(), "logs")
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				r.sys("error: " + err.Error())
-				return nil
-			}
-			stamp := strings.NewReplacer(":", "-", ".", "-").Replace(time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
-			path := filepath.Join(dir, fmt.Sprintf("icebath-%s-%d-manual.pprof", stamp, os.Getpid()))
-			file, err := os.Create(path)
-			if err != nil {
-				r.sys("error: " + err.Error())
-				return nil
-			}
-			defer file.Close()
-			runtime.GC()
-			if err := pprof.WriteHeapProfile(file); err != nil {
-				r.sys("error: " + err.Error())
-				return nil
-			}
-			r.sys("heap profile written to " + path + ", read it with `go tool pprof`")
-			return nil
-		}},
-		{name: "widgets-reload", help: "read the widgets of plugins again", run: func(r *slashRun) tea.Cmd {
-			widgets := a.widgets.list()
-			names := make([]string, len(widgets))
-			for i, w := range widgets {
-				names[i] = "/" + w.ID
-			}
-			r.sys(countNoun(len(widgets), "widget") + ": " + strings.Join(names, " "))
-			return nil
-		}},
-	}
+	}, a.debugCommands()...)
 }

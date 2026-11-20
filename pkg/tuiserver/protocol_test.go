@@ -189,7 +189,7 @@ func TestServerRequestRoundTripUsesResponseFrame(t *testing.T) {
 	if got := <-box; got != "hunter2" {
 		t.Fatalf("answer %q", got)
 	}
-	if tuihost.OpenRequestCount() != 0 {
+	if len(tuihost.OpenRequests("s1")) != 0 {
 		t.Fatal("request left open")
 	}
 }
@@ -478,7 +478,7 @@ func TestClearPendingCancelsOnlyThatSession(t *testing.T) {
 	go func() { _, _ = tuihost.Send(ctx, "sudo", "sid-a", pyjson.NewObject(), nil, nil); close(doneA) }()
 	go func() { _, _ = tuihost.Send(ctx, "sudo", "sid-b", pyjson.NewObject(), nil, nil); close(doneB) }()
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && tuihost.OpenRequestCount() < 2 {
+	for time.Now().Before(deadline) && len(tuihost.OpenRequests("sid-a"))+len(tuihost.OpenRequests("sid-b")) < 2 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if sessionPendingKind("sid-a") != "sudo" {

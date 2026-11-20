@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -63,7 +64,7 @@ func (c *chatCompletionsClient) httpClient(connect time.Duration) *http.Client {
 	if !ok {
 		tr = &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext,
+			DialContext:           netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext),
 			TLSClientConfig:       PlatformTLSConfig(),
 			TLSHandshakeTimeout:   connect,
 			ForceAttemptHTTP2:     true,

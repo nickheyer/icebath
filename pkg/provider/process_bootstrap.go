@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
@@ -48,7 +49,7 @@ var (
 		return ips, nil
 	}
 	happyEyeballsConnectFn = func(ctx context.Context, network, address string) (net.Conn, error) {
-		return (&net.Dialer{FallbackDelay: -1}).DialContext(ctx, network, address)
+		return netpref.DialContext((&net.Dialer{FallbackDelay: -1}).DialContext)(ctx, network, address)
 	}
 )
 
@@ -247,7 +248,7 @@ func (d *keepaliveDialer) DialContext(ctx context.Context, network, address stri
 	if d.racing.Load() {
 		conn, err = happyEyeballsDial(ctx, network, address, keepaliveConnectTimeout)
 	} else {
-		conn, err = (&net.Dialer{Timeout: keepaliveConnectTimeout, FallbackDelay: -1}).DialContext(ctx, network, address)
+		conn, err = netpref.DialContext((&net.Dialer{Timeout: keepaliveConnectTimeout, FallbackDelay: -1}).DialContext)(ctx, network, address)
 	}
 	if err != nil {
 		<-d.slots
@@ -600,7 +601,7 @@ func enableHappyEyeballsOnClient(client *http.Client) {
 func raceDirectDials(t *http.Transport) {
 	serial, proxy := t.DialContext, t.Proxy
 	if serial == nil {
-		serial = (&net.Dialer{}).DialContext
+		serial = netpref.DialContext((&net.Dialer{}).DialContext)
 	}
 	var proxies sync.Map
 	if proxy != nil {

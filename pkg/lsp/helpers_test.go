@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/workspaces"
 	"log/slog"
 	"maps"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
 // One captured log record
@@ -75,12 +76,6 @@ type ledger struct {
 	owned    []int
 	children []int
 	released []int
-}
-
-func (l *ledger) snapshot() (owned, children, released []int) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return append([]int{}, l.owned...), append([]int{}, l.children...), append([]int{}, l.released...)
 }
 
 // Line diff opcodes from a longest common subsequence for the test runtime

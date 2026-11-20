@@ -35,8 +35,6 @@ const (
 	petMinBandBody = 4
 	// Narrowest transcript the band layout leaves beside nothing, below it the corner stack hides
 	petMinBandCols = 24
-	// Alpha a half block pixel needs to be drawn, the threshold of the reference sprite painter
-	petOpaque = 32
 	// Nominal pixels of a terminal cell the reference sizes an iTerm2 image box by
 	petCellPxW, petCellPxH = 8, 16
 )
@@ -211,24 +209,12 @@ func (p *petView) refresh() tea.Cmd {
 			p.enabled = true
 			return tea.Batch(cmd, p.startTicking(), p.probe(), p.pullSheet())
 		}
-		cells := tuigateway.PetCellsParams{Graphics: p.graphics, State: state, Terminal: petTerminalGraphics(getenv)}
+		cells := tuigateway.PetCellsParams{Graphics: p.graphics, State: state, Terminal: terminalGraphicsPick(getenv)}
 		return tea.Batch(cmd, quietPet(p, tuigateway.PetCells, cells, func(res *tuigateway.PetCellsResult) tea.Cmd {
 			p.syncing = false
 			return p.applyCells(state, meta, res)
 		}))
 	})
-}
-
-// Image form this terminal paints for the pet, kitty placeholders or half blocks, read from the environment alone.
-// It travels with pet.cells because one gateway serves many clients, so the gateway's environment names no client's terminal
-func petTerminalGraphics(env func(string) string) string {
-	if env("TMUX") != "" || env("STY") != "" {
-		return "unicode"
-	}
-	if pet.SupportsKittyPlaceholders() {
-		return "kitty"
-	}
-	return "unicode"
 }
 
 // Releases the terminal side kitty image of the selection
@@ -671,20 +657,6 @@ func (p *petView) place(w, h, top int) petPlacement {
 		return out
 	}
 	return petPlacement{}
-}
-
-// Half block of two pixels, a lone opaque half drawn alone so the window shows through the other
-func halfBlock(top, bottom [4]uint8) string {
-	upper, lower := top[3] >= petOpaque, bottom[3] >= petOpaque
-	switch {
-	case upper && lower:
-		return fmt.Sprintf("\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm▀\x1b[m", top[0], top[1], top[2], bottom[0], bottom[1], bottom[2])
-	case upper:
-		return fmt.Sprintf("\x1b[38;2;%d;%d;%dm▀\x1b[m", top[0], top[1], top[2])
-	case lower:
-		return fmt.Sprintf("\x1b[38;2;%d;%d;%dm▄\x1b[m", bottom[0], bottom[1], bottom[2])
-	}
-	return " "
 }
 
 // Half block rows of a cell grid of the pet renderer

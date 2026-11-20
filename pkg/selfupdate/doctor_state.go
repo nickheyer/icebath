@@ -31,7 +31,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"gopkg.in/yaml.v3"
 )
 
 // doctorStatRow is one rendered state.db stats row, kind info or warn
@@ -960,46 +959,10 @@ func checkMemoryProvider(ctx context.Context, d *Doctor, shouldFix bool) (*Findi
 	})
 }
 
-// Key order of the mapping at a path of a YAML file, nil when no mapping sits there
-func doctorYAMLKeyOrder(path string, keys ...string) []string {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(raw, &doc); err != nil || len(doc.Content) == 0 {
-		return nil
-	}
-	node := doc.Content[0]
-	for _, key := range keys {
-		if node.Kind != yaml.MappingNode {
-			return nil
-		}
-		var next *yaml.Node
-		for i := 0; i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == key {
-				next = node.Content[i+1]
-			}
-		}
-		if next == nil {
-			return nil
-		}
-		node = next
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil
-	}
-	order := []string{}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		order = append(order, node.Content[i].Value)
-	}
-	return order
-}
-
 // Reports each plugin an update turned off and still lists as disabled
 func checkPluginsDisabledByUpdate(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheckGuarded(d.W, "", "", func(f *Finding) error {
-		selection, err := pm.ReadHomeSelection(d.Home)
+		selection, err := pm.ReadHomeSelection(ctx, d.Home)
 		if err != nil {
 			return err
 		}
@@ -1019,23 +982,8 @@ func checkPluginsDisabledByUpdate(ctx context.Context, d *Doctor, shouldFix bool
 				disabled[string(r)] = true
 			}
 		}
-		order := doctorYAMLKeyOrder(filepath.Join(d.Home, "config.yaml"), "plugins", pm.DisabledByUpdateRecord)
-		ordered, seen := []string{}, map[string]bool{}
-		for _, name := range order {
-			if _, ok := record[name]; ok && !seen[name] {
-				seen[name] = true
-				ordered = append(ordered, name)
-			}
-		}
-		rest := []string{}
-		for name := range record {
-			if !seen[name] {
-				rest = append(rest, name)
-			}
-		}
-		sort.Strings(rest)
 		names := []string{}
-		for _, name := range append(ordered, rest...) {
+		for _, name := range config.MappingKeys(record) {
 			if disabled[name] {
 				names = append(names, name)
 			}

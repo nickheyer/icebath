@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 const (
@@ -111,17 +112,9 @@ func privateFor(ctx context.Context, st *profileState) *private {
 	return nil
 }
 
-// Diff base each profile had when this context last read it
+// Diff base each profile had when one goroutine last read it, the map replaced and never mutated so a held one stays as it was
 type readScope struct {
-	mu   sync.Mutex
 	seen map[*profileState]map[string]any
-}
-
-type readScopeKey struct{}
-
-// Context whose config reads remember their own diff base, the way a new Python thread starts a fresh context
-func WithReadScope(ctx context.Context) context.Context {
-	return context.WithValue(ctx, readScopeKey{}, &readScope{})
 }
 
 type bootingKey struct{}
@@ -214,13 +207,13 @@ type remoteBackend struct {
 	stopOnce      sync.Once
 	managedWarned bool
 	unknownWarned map[string]bool
-	rootScope     *readScope
+	scopes        pythread.Local
 }
 
 func newRemoteBackend() config.ConfigBackend {
 	return &remoteBackend{
 		states: map[string]*profileState{}, fetchLocks: map[string]*sync.Mutex{}, stop: make(chan struct{}),
-		unknownWarned: map[string]bool{}, rootScope: &readScope{},
+		unknownWarned: map[string]bool{},
 	}
 }
 
@@ -595,35 +588,34 @@ func (b *remoteBackend) snapshot(ctx context.Context, st *profileState, take fun
 	return config.NewConfigWriteError("Remote Config: the profile's config kept changing while it was read", "config_version_conflict")
 }
 
-func (b *remoteBackend) scope(ctx context.Context) *readScope {
-	if s, ok := ctx.Value(readScopeKey{}).(*readScope); ok {
-		return s
+// Read scope of the calling goroutine, each goroutine keeping its own the way each thread and task starts with its own context
+func (b *remoteBackend) scope() *readScope {
+	if held, ok := b.scopes.Get(); ok {
+		return held.(*readScope)
 	}
-	return b.rootScope
+	s := &readScope{}
+	b.scopes.Set(s)
+	return s
 }
 
-// Records under st.mu the base this context just read
-func (b *remoteBackend) rememberRead(ctx context.Context, st *profileState) {
-	s := b.scope(ctx)
+// Records under st.mu the base the calling goroutine just read
+func (b *remoteBackend) rememberRead(st *profileState) {
+	s := b.scope()
 	base := st.base
 	if base == nil {
 		base = st.serverConfig
 	}
-	s.mu.Lock()
 	seen := make(map[*profileState]map[string]any, len(s.seen)+1)
 	for k, v := range s.seen {
 		seen[k] = v
 	}
 	seen[st] = base
 	s.seen = seen
-	s.mu.Unlock()
 }
 
-func (b *remoteBackend) readBaseFor(ctx context.Context, st *profileState) map[string]any {
-	s := b.scope(ctx)
-	s.mu.Lock()
-	held := s.seen[st]
-	s.mu.Unlock()
+// Base the calling goroutine last read st at, nil when it never read it
+func (b *remoteBackend) readBaseFor(st *profileState) map[string]any {
+	held := b.scope().seen[st]
 	if held == nil {
 		return nil
 	}
@@ -643,7 +635,7 @@ func (b *remoteBackend) ReadUserLayer(ctx context.Context, h string) (config.Use
 		m := privateFor(ctx, st)
 		doc := st.doc
 		if m == nil {
-			b.rememberRead(ctx, st)
+			b.rememberRead(st)
 		} else {
 			doc = m.doc
 		}
@@ -686,7 +678,7 @@ func (b *remoteBackend) ReadUserDocReadonly(ctx context.Context, h string) (any,
 			doc = m.doc
 			return
 		}
-		b.rememberRead(ctx, st)
+		b.rememberRead(st)
 		doc = st.doc
 	})
 	if err != nil {
@@ -703,7 +695,7 @@ func versionOf(ctx context.Context, st *profileState) []any {
 	return []any{st.changedNS, st.etag, st.gen}
 }
 
-// Version of home, remembered as this context's read base when the doc is completed output
+// Version of home, remembered as the calling goroutine's read base when the doc is completed output
 func (b *remoteBackend) Version(ctx context.Context, h string) ([]any, error) {
 	st, err := b.state(ctx, h)
 	if err != nil {
@@ -712,7 +704,7 @@ func (b *remoteBackend) Version(ctx context.Context, h string) ([]any, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if privateFor(ctx, st) == nil && st.postprocessed {
-		b.rememberRead(ctx, st)
+		b.rememberRead(st)
 	}
 	return versionOf(ctx, st), nil
 }
@@ -817,7 +809,7 @@ func (b *remoteBackend) sendChanges(ctx context.Context, st *profileState, chang
 			}
 			if resp.Status == 200 && effectiveOK(resp.Body) {
 				*notes = append(*notes, b.install(st, resp.Body, resp.ETag)...)
-				b.rememberRead(ctx, st)
+				b.rememberRead(st)
 				*notes = append(*notes, inheritedNotes(st, unsets)...)
 				st.mu.Unlock()
 				return nil
@@ -867,7 +859,7 @@ func (b *remoteBackend) intent(ctx context.Context, st *profileState, changes co
 	var next map[string]any
 	if changes.Document != nil {
 		if privateFor(ctx, st) == nil {
-			if read := b.readBaseFor(ctx, st); read != nil {
+			if read := b.readBaseFor(st); read != nil {
 				base = read
 			}
 		}
@@ -1128,17 +1120,13 @@ func (b *remoteBackend) DeploymentEnvNames() []string {
 
 func (b *remoteBackend) BootstrapEnvNames() []string { return slices.Clone(PlaneCredentialEnvNames) }
 
-// Restores the read bases this context held, so a guard read never becomes the base of a later save
-func (b *remoteBackend) PreserveReadBase(ctx context.Context) func() {
-	s := b.scope(ctx)
-	s.mu.Lock()
+// Restores the read bases the calling goroutine held, so a guard read never becomes the base of a later save
+func (b *remoteBackend) PreserveReadBase(context.Context) func() {
+	s := b.scope()
 	held := s.seen
-	s.mu.Unlock()
 	return func() {
 		if held != nil {
-			s.mu.Lock()
 			s.seen = held
-			s.mu.Unlock()
 		}
 	}
 }

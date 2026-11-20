@@ -27,18 +27,8 @@ type clipboardReadCmd struct {
 	base64 bool
 }
 
-// One clipboard write command, fed the text on stdin or through a PowerShell script argument
-type clipboardWriteCmd struct {
-	cmd   string
-	args  []string
-	stdin bool
-}
-
 // Runs a command and returns its stdout, the clipboard read seam
 type clipboardRun func(ctx context.Context, cmd string, args []string) (string, error)
-
-// Runs a command with optional stdin and reports a zero exit, the clipboard write seam
-type clipboardStart func(ctx context.Context, cmd string, args []string, stdin *string) bool
 
 // Writer that fails once more than its limit arrives
 type cappedBuffer struct {
@@ -62,15 +52,6 @@ func runClipboardCommand(ctx context.Context, cmd string, args []string) (string
 		return "", err
 	}
 	return out.String(), nil
-}
-
-// Runs a clipboard writer, piping the text to its stdin when given, true on a zero exit
-func startClipboardCommand(ctx context.Context, cmd string, args []string, stdin *string) bool {
-	c := exec.CommandContext(ctx, cmd, args...)
-	if stdin != nil {
-		c.Stdin = strings.NewReader(*stdin)
-	}
-	return c.Run() == nil
 }
 
 // Clipboard text that looks like real text, not empty, whitespace or binary residue
@@ -128,54 +109,6 @@ func readClipboardTextWith(ctx context.Context, platform string, run clipboardRu
 // Clipboard text of the host platform
 func readClipboardText(ctx context.Context) (string, bool) {
 	return readClipboardTextWith(ctx, runtime.GOOS, runClipboardCommand, getenv)
-}
-
-// PowerShell command that sets the clipboard from base64 text
-func powershellWriteScript(b64 string) string {
-	return "Set-Clipboard -Value ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('" + b64 + "')))"
-}
-
-// Write commands to try in order for a platform and environment
-func writeClipboardCommands(platform string, env func(string) string) []clipboardWriteCmd {
-	switch platform {
-	case "darwin":
-		return []clipboardWriteCmd{{cmd: "pbcopy", stdin: true}}
-	case "windows":
-		return []clipboardWriteCmd{{cmd: "powershell", args: []string{"-NoProfile", "-NonInteractive"}}}
-	}
-	var attempts []clipboardWriteCmd
-	if env("WSL_INTEROP") != "" || env("WSL_DISTRO_NAME") != "" {
-		attempts = append(attempts, clipboardWriteCmd{cmd: "powershell.exe", args: []string{"-NoProfile", "-NonInteractive"}})
-	}
-	if env("WAYLAND_DISPLAY") != "" {
-		attempts = append(attempts, clipboardWriteCmd{cmd: "wl-copy", args: []string{"--type", "text/plain"}, stdin: true})
-	}
-	return append(attempts,
-		clipboardWriteCmd{cmd: "xclip", args: []string{"-selection", "clipboard", "-in"}, stdin: true},
-		clipboardWriteCmd{cmd: "xsel", args: []string{"--clipboard", "--input"}, stdin: true})
-}
-
-// Writes text through the first clipboard backend that succeeds, false when none did
-func writeClipboardTextWith(ctx context.Context, text, platform string, start clipboardStart, env func(string) string) bool {
-	for _, c := range writeClipboardCommands(platform, env) {
-		args := append([]string(nil), c.args...)
-		if c.stdin {
-			if start(ctx, c.cmd, args, &text) {
-				return true
-			}
-			continue
-		}
-		script := powershellWriteScript(base64.StdEncoding.EncodeToString([]byte(text)))
-		if start(ctx, c.cmd, append(args, "-Command", script), nil) {
-			return true
-		}
-	}
-	return false
-}
-
-// Writes text to the host clipboard
-func writeClipboardText(ctx context.Context, text string) bool {
-	return writeClipboardTextWith(ctx, text, runtime.GOOS, startClipboardCommand, getenv)
 }
 
 // Whitespace as a JavaScript regular expression class matches it

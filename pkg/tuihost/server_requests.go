@@ -544,13 +544,6 @@ func OpenRequests(sid string) []*pyjson.Object {
 	return out
 }
 
-// Unanswered server requests across every session
-func OpenRequestCount() int {
-	requestsMu.Lock()
-	defer requestsMu.Unlock()
-	return len(openRequests)
-}
-
 // Method of the oldest open request of a session, empty when it waits on nothing
 func PendingKind(sid string) string {
 	requestsMu.Lock()

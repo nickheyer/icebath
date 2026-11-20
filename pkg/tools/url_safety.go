@@ -19,6 +19,7 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
@@ -149,14 +150,6 @@ func normalizeURLForRequest(raw string) string {
 
 // Url re quoted the way a request client sends it, path query and fragment percent encoded
 func NormalizeURLForRequest(raw string) string { return normalizeURLForRequest(raw) }
-
-// Credential bearing query parameter names, deliberately narrow
-var sensitiveQueryParamNames = map[string]bool{
-	"access_token": true, "api_key": true, "apikey": true, "auth_token": true, "authorization": true, "awsaccesskeyid": true,
-	"client_secret": true, "credential": true, "credentials": true, "jwt": true, "password": true, "passwd": true, "secret": true,
-	"session_id": true, "signature": true, "token": true, "x_amz_security_token": true, "x_amz_signature": true,
-	"x-amz-security-token": true, "x-amz-signature": true,
-}
 
 // Cloud metadata hostnames always blocked regardless of DNS or config toggle
 var blockedHostnames = map[string]bool{"metadata.google.internal": true, "metadata.goog": true}
@@ -637,6 +630,20 @@ func (e *BlockedRedirectError) Error() string {
 	return "Blocked redirect to private/internal address: " + e.Target
 }
 
+// The IPv4 addresses of a validated address list when it holds any, the whole list otherwise
+func ipv4First(ips []string) []string {
+	var v4 []string
+	for _, ip := range ips {
+		if addr, err := netip.ParseAddr(ip); err == nil && addr.Unmap().Is4() {
+			v4 = append(v4, ip)
+		}
+	}
+	if len(v4) == 0 {
+		return ips
+	}
+	return v4
+}
+
 func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, onRedirect func(target string) error) *http.Client {
 	var proxyMu sync.Mutex
 	proxyHosts := map[string]bool{}
@@ -660,7 +667,7 @@ func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, on
 		isProxy := proxyHosts[strings.ToLower(addr)]
 		proxyMu.Unlock()
 		if isProxy {
-			return dialer.DialContext(ctx, network, addr)
+			return netpref.DialContext(dialer.DialContext)(ctx, network, addr)
 		}
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -673,6 +680,9 @@ func newSSRFSafeClient(env *Env, timeout time.Duration, followRedirects bool, on
 		ips, err := resolvedHTTPConnectIPs(ctx, env, host, scheme)
 		if err != nil {
 			return nil, err
+		}
+		if netpref.IPv4Preferred() {
+			ips = ipv4First(ips)
 		}
 		var last error
 		for _, ip := range ips {

@@ -1,7 +1,6 @@
 package browser
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,7 +30,6 @@ const (
 	dialogBridgeHost               = "icebath-dialog-bridge.invalid"
 	dialogBridgeURLPattern         = "http://" + dialogBridgeHost + "/*"
 	supervisorStartTimeoutS        = 15.0
-	supervisorNoTimeout            = -1.0
 	supervisorMaxMessage           = 50 * 1024 * 1024
 )
 
@@ -147,7 +144,6 @@ type supervisorLoop struct {
 	wake    chan struct{}
 	closed  bool
 	running bool
-	gid     uint64
 	stopped chan struct{}
 }
 
@@ -155,22 +151,10 @@ func newSupervisorLoop() *supervisorLoop {
 	return &supervisorLoop{wake: make(chan struct{}, 1), stopped: make(chan struct{})}
 }
 
-// Goroutine id read from the runtime stack header
-func goroutineID() uint64 {
-	var buf [64]byte
-	n := runtime.Stack(buf[:], false)
-	field := bytes.Fields(buf[:n])
-	if len(field) < 2 {
-		return 0
-	}
-	id, _ := strconv.ParseUint(string(field[1]), 10, 64)
-	return id
-}
-
 // Runs queued callbacks in order until quit closes, then refuses new work
 func (l *supervisorLoop) serve(quit <-chan struct{}) {
 	l.mu.Lock()
-	l.running, l.gid = true, goroutineID()
+	l.running = true
 	l.mu.Unlock()
 	defer close(l.stopped)
 	for {
@@ -222,13 +206,6 @@ func (l *supervisorLoop) isClosed() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.closed
-}
-
-// True when the caller runs on the loop goroutine itself
-func (l *supervisorLoop) onLoop() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.running && l.gid == goroutineID()
 }
 
 // One JS dialog currently open on some frame's session
@@ -438,12 +415,6 @@ func (s *cdpSupervisor) currentWS() supervisorWS {
 	s.wsMu.Lock()
 	defer s.wsMu.Unlock()
 	return s.ws
-}
-
-func (s *cdpSupervisor) isActive() bool {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	return s.active
 }
 
 func (s *cdpSupervisor) setActive(v bool) {
@@ -1639,151 +1610,3 @@ func supervisorStop(taskID string) { supervisors.stop(taskID) }
 func supervisorStopHome(homeKey string) { supervisors.stopHome(homeKey) }
 
 func supervisorStopAll() { supervisors.stopAll() }
-
-// CDP channel pinned to one supervisor connection, invalid once it reconnects, stops or is replaced
-type CapturedCDP struct {
-	sup                           *cdpSupervisor
-	registry                      *supervisorRegistry
-	loop                          *supervisorLoop
-	ws                            supervisorWS
-	TaskID, CDPURL, PageSessionID string
-}
-
-// True while the captured connection is still the supervisor's live one
-func (c *CapturedCDP) IsValid() bool {
-	sup := c.sup
-	return c.registry.get(c.TaskID) == sup && sup.isActive() && !sup.stopRequested.Load() && sup.currentWS() == c.ws && c.loop.isRunning()
-}
-
-func (c *CapturedCDP) invalid() error {
-	return pyError("CapturedCDPInvalid", fmt.Sprintf("captured CDP connection for task %s is gone "+
-		"(supervisor reconnected, stopped or was replaced); capture again", pyrepr.StrRepr(c.TaskID)))
-}
-
-const threadingTimeoutMax = 9223372036.854776
-
-// Seam the captured dispatch is queued through
-var submitCaptureSend = func(loop *supervisorLoop, fn func()) bool { return loop.submit(fn) }
-
-// Sends method on the captured connection and returns the raw reply, nil timeout waiting until the socket closes
-func (c *CapturedCDP) Call(method string, params any, sessionID string, timeout any, beforeSend func() any) (*pyjson.Object, error) {
-	var limit float64
-	if timeout != nil {
-		switch t := timeout.(type) {
-		case int:
-			limit = float64(t)
-		case float64:
-			limit = t
-		default:
-			return nil, pyError("ValueError", "Captured CDP timeout must be positive and finite, or None")
-		}
-		if limit != limit || limit <= 0 || limit > threadingTimeoutMax-1.0 {
-			return nil, pyError("ValueError", "Captured CDP timeout must be positive and finite, or None")
-		}
-	}
-	var deadline time.Time
-	if timeout != nil {
-		deadline = time.Now().Add(seconds(limit))
-	}
-	if c.loop.onLoop() {
-		return nil, runtimeError("CapturedCDP.call() blocks and cannot run on the supervisor loop")
-	}
-	if !c.IsValid() {
-		return nil, c.invalid()
-	}
-	res := make(chan supervisorReply, 1)
-	expired := func() bool { return timeout != nil && !time.Now().Before(deadline) }
-	send := func() {
-		if !c.IsValid() {
-			res <- supervisorReply{err: c.invalid()}
-			return
-		}
-		if expired() {
-			res <- supervisorReply{err: timeoutError("Captured CDP dispatch deadline expired")}
-			return
-		}
-		if beforeSend != nil {
-			if out := beforeSend(); out != nil {
-				if err, ok := out.(error); ok {
-					res <- supervisorReply{err: err}
-				} else {
-					res <- supervisorReply{err: pyError("TypeError", "before_send must return None synchronously")}
-				}
-				return
-			}
-		}
-		if expired() {
-			res <- supervisorReply{err: timeoutError("Captured CDP dispatch deadline expired")}
-			return
-		}
-		if !c.IsValid() {
-			res <- supervisorReply{err: c.invalid()}
-			return
-		}
-		wait := supervisorNoTimeout
-		if timeout != nil {
-			wait = limit
-		}
-		go func() {
-			msg, err := c.sup.cdpCall(method, params, sessionID, wait)
-			if err != nil && !c.IsValid() {
-				err = c.invalid()
-			}
-			res <- supervisorReply{msg, err}
-		}()
-	}
-	if !submitCaptureSend(c.loop, send) {
-		return nil, c.invalid()
-	}
-	if timeout == nil {
-		for {
-			select {
-			case r := <-res:
-				return r.msg, r.err
-			case <-time.After(time.Second):
-				if c.loop.isClosed() {
-					return nil, c.invalid()
-				}
-			}
-		}
-	}
-	select {
-	case r := <-res:
-		return r.msg, r.err
-	case <-time.After(seconds(limit + 1.0)):
-		shown := pyrepr.Float(limit)
-		if _, isInt := timeout.(int); isInt {
-			shown = strconv.Itoa(timeout.(int))
-		}
-		return nil, timeoutError(fmt.Sprintf("CDP %s got no reply within %ss", method, shown))
-	}
-}
-
-// Pins the running supervisor of a task, never starting, reconnecting or refocusing one
-func (r *supervisorRegistry) capture(taskID string, timeout float64) (*CapturedCDP, error) {
-	gone := pyError("CapturedCDPInvalid", "no running browser supervisor for task "+pyrepr.StrRepr(taskID))
-	found := r.get(taskID)
-	if found == nil || !found.currentLoop().isRunning() {
-		return nil, gone
-	}
-	loop := found.currentLoop()
-	out, err := found.schedule(func() (any, error) {
-		if !found.isActive() || found.currentWS() == nil || found.pageSession() == "" {
-			return nil, pyError("CapturedCDPInvalid", "browser supervisor for task "+pyrepr.StrRepr(taskID)+" has no attached page")
-		}
-		return &CapturedCDP{sup: found, registry: r, loop: loop, ws: found.currentWS(), TaskID: found.taskID,
-			CDPURL: found.cdpURL, PageSessionID: found.pageSession()}, nil
-	}, timeout, true)
-	if errors.Is(err, errLoopUnavailable) {
-		return nil, gone
-	}
-	if err != nil {
-		return nil, err
-	}
-	return out.(*CapturedCDP), nil
-}
-
-// Captured CDP handle of a task's running supervisor for trusted in process plugins
-func CaptureSupervisor(taskID string, timeout float64) (*CapturedCDP, error) {
-	return supervisors.capture(taskID, timeout)
-}

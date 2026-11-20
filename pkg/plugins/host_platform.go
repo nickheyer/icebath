@@ -16,8 +16,6 @@ type HostedCallOptions struct {
 	Dump []string
 	// Per positional argument, an item of another argument's attribute passed in its place
 	Derive []*HostedDerive
-	// Whether the call runs with the user's terminal attached to the child's standard streams
-	Terminal bool
 	// Longest time the call may run, zero for no limit
 	Timeout time.Duration
 }
@@ -33,7 +31,7 @@ type HostedDerive struct {
 // Calls the plugin callable with built arguments, answering the value and the dumped arguments
 func (f *HostedCallable) CallWith(ctx context.Context, args []any, kwargs map[string]any, opts HostedCallOptions) (any, []any, error) {
 	params := map[string]any{"ref": f.ref, "args": f.host.encodeArgs(nonNilArgs(args)), "kwargs": f.host.encodeArgs(nonNilKwargs(kwargs)),
-		"build": anyList(opts.Build), "describe": opts.Describe, "dump": anyList(opts.Dump), "terminal": opts.Terminal}
+		"build": anyList(opts.Build), "describe": opts.Describe, "dump": anyList(opts.Dump)}
 	if len(opts.Derive) > 0 {
 		derive := make([]any, len(opts.Derive))
 		for i, d := range opts.Derive {

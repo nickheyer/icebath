@@ -2,11 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"hash/fnv"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -21,11 +22,12 @@ const blockCacheLimit = 4000
 // Columns every transcript block is indented by
 const transcriptIndent = 2
 
-// Identity of a rendered block, its content, width and the look it was painted with
+// Identity of a rendered block, its content, width, the look it was painted with and what the user opened or closed in it
 type blockKey struct {
 	key   string
 	width int
 	look  string
+	state string
 }
 
 // Everything a block is painted with, the session tones, the toolkit palette and the details in view
@@ -42,18 +44,38 @@ type renderCtx struct {
 	compact bool
 	// Chord that expands every folded detail, empty when unbound
 	expandKey string
+	// Pictures drawn under the rows that carry them, nil or off drawing none
+	images       *inlineImages
+	inlineImages bool
 }
 
 // Scrollable rows of the transcript and the live turn, rendered once per content and width
 type transcriptView struct {
 	md       *render.Markdown
-	cache    map[blockKey][]string
+	cache    map[blockKey]blockRows
 	offset   int
 	follow   bool
 	total    int
 	height   int
+	width    int
 	manualAt float64
 	now      func() float64
+	// Blocks of the last layout in row order, the rows of the turn in flight last
+	placed []placedBlock
+	// What the user opened or closed, by the identity of the block and the part of it
+	open map[uint64]map[string]bool
+	// Whether the pasted text of sent prompts shows unless a section says otherwise
+	pastesOpen bool
+	// Mode of every details section at the last layout, a change of one dropping what the user chose among the trail sections
+	details string
+	// Identity the newest block was given
+	lastID uint64
+	// Transcript row of a header just clicked, minus one when none waits to be kept in the window
+	keep int
+	// Block the window is held at across the next layout
+	anchor *rowAnchor
+	// Whether the first row of the window shows the prompt kept in view over its own row
+	sticky bool
 	// Row each user prompt starts at and its text, for the prompt kept in view while its reply scrolls
 	prompts []promptRow
 	stable  struct {
@@ -70,7 +92,7 @@ type promptRow struct {
 
 // View pinned to the newest row
 func newTranscriptView(now func() float64) *transcriptView {
-	return &transcriptView{md: render.NewMarkdown(), cache: map[blockKey][]string{}, follow: true, now: now}
+	return &transcriptView{md: render.NewMarkdown(), cache: map[blockKey]blockRows{}, open: map[uint64]map[string]bool{}, follow: true, keep: -1, now: now}
 }
 
 func (v *transcriptView) lastManualScrollAt() float64 { return v.manualAt }
@@ -124,25 +146,32 @@ func paintedFields(m msg) string {
 			fmt.Fprintf(h, "%q%q%q%q", title, text, s.Items, s.Rows)
 		}
 	}
-	fmt.Fprint(h, m.Label, m.IsMoaReference, m.IsLiveReasoning, m.ThinkingTokens, m.ToolTokens, m.Todos)
+	fmt.Fprint(h, m.Label, m.IsMoaReference, m.IsLiveReasoning, m.ThinkingTokens, m.ToolTokens, m.Todos, m.TodoIncomplete, m.TodoCollapsedByDefault, m.Images, m.ImageRevision, m.ImageRows)
+	for _, paste := range m.Pastes {
+		fmt.Fprint(h, paste.Label, paste.Digest)
+	}
 	return strconv.FormatUint(h.Sum64(), 36)
 }
 
-// Rows of one block, rendered on the first ask and kept until anything it paints changes
-func (v *transcriptView) block(m msg, c renderCtx) []string {
-	key := blockKey{key: messageHeightKey(m) + ":" + paintedFields(m), width: c.width, look: c.look}
+// Rows of one block with its parts that take a click, rendered on the first ask and kept until anything it paints or what the user opened in it changes
+func (v *transcriptView) block(m msg, c renderCtx) blockRows {
+	st := v.state(m)
+	key := blockKey{key: messageHeightKey(m) + ":" + paintedFields(m), width: c.width, look: c.look, state: st.key()}
 	if m.CreatedAt != nil && c.timestamps {
 		key.key += "@" + strconv.FormatFloat(*m.CreatedAt, 'f', 0, 64)
 	}
-	if lines, ok := v.cache[key]; ok {
-		return lines
+	if len(m.Images) > 0 && c.images != nil {
+		key.key += "#" + strconv.Itoa(c.images.gen)
+	}
+	if rows, ok := v.cache[key]; ok {
+		return rows
 	}
 	if len(v.cache) > blockCacheLimit {
 		clear(v.cache)
 	}
-	lines := v.renderBlock(m, c)
-	v.cache[key] = lines
-	return lines
+	rows := v.renderBlock(m, c, st)
+	v.cache[key] = rows
+	return rows
 }
 
 // Wraps text to the block width under an indent, the first row led by a mark
@@ -161,43 +190,79 @@ func wrapUnder(text string, width int, lead string, st lipgloss.Style) []string 
 	return out
 }
 
-// Paints one transcript block by its kind and role
-func (v *transcriptView) renderBlock(m msg, c renderCtx) []string {
-	var lines []string
+// Units of a system message past which it folds to its first line
+const systemFoldUnits = 400
+
+// Units of the first line a folded system message keeps
+const systemFoldHead = 120
+
+// Paints one transcript block by its kind and role under what the user opened or closed in it
+func (v *transcriptView) renderBlock(m msg, c renderCtx, st blockState) blockRows {
+	var out blockRows
 	switch {
 	case m.Kind == "intro":
-		lines = introLines(m.Info, c)
+		out = introRows(m.Info, c)
 	case m.Kind == "panel" && m.PanelData != nil:
-		lines = panelLines(*m.PanelData, c)
+		out.lines = panelLines(*m.PanelData, c)
 	case m.Kind == "trail":
-		lines = trailLines(m, c)
+		out = trailRows(m, c, st)
 	case m.Kind == "diff":
-		lines = diffLines(m, c)
+		out.lines = diffLines(m, c)
+	case m.Kind == "image":
+		return blockRows{lines: imageLines(m, c)}
 	case m.Kind == "slash":
-		lines = wrapUnder(m.Text, c.width, "", toneStyle(c.t.Color.Accent))
+		out.lines = wrapUnder(m.Text, c.width, "", toneStyle(c.t.Color.Accent))
 	case m.Kind == "delegation":
-		lines = delegationLines(m, c)
+		out.lines = delegationLines(m, c)
 	case m.Role == "user":
 		lead := toneStyle(c.t.Color.Prompt).Bold(true).Render(c.ut.Glyphs.Prompt + " ")
-		lines = userLines(m.Text, c, lead)
+		out.lines = userLines(m.Text, c, lead)
 	case m.Role == "assistant":
 		if len(m.Tools) > 0 {
-			lines = trailLines(msg{Kind: "trail", Role: "system", Tools: m.Tools}, c)
+			out = trailRows(msg{Kind: "trail", Role: "system", Tools: m.Tools}, c, st)
 		}
-		lines = append(lines, v.markdownLines(m.Text, c)...)
+		out.lines = append(out.lines, v.markdownLines(m.Text, c)...)
 	case isUsageGaugeRow(m):
-		lines = []string{strings.Repeat(" ", transcriptIndent) + usageGaugeRowView(c.t, m.Text)}
+		out.lines = []string{strings.Repeat(" ", transcriptIndent) + usageGaugeRowView(c.t, m.Text)}
 	default:
 		tone := c.t.Color.Muted
 		if strings.HasPrefix(m.Text, "error:") || strings.HasPrefix(m.Text, "✗") {
 			tone = c.t.Color.Error
 		}
-		lines = wrapUnder(stripAnsi(m.Text), c.width, "", toneStyle(tone))
+		if m.Role == "system" && m.Kind == "" && unitLen(m.Text) > systemFoldUnits {
+			out = systemRows(m.Text, tone, c, st)
+		} else {
+			out.lines = wrapUnder(stripAnsi(m.Text), c.width, "", toneStyle(tone))
+		}
 	}
-	if stamp, ok := fmtMsgTimestamp(m.CreatedAt); ok && c.timestamps && len(lines) > 0 && m.Kind != "intro" {
-		lines[0] = render.Fit(lines[0], max(c.width-ansi.StringWidth(stamp)-1, 1), c.ut) + " " + toneStyle(c.t.Color.Muted).Render(stamp)
+	if pictures := imageLines(m, c); len(pictures) > 0 {
+		out.lines = append(append(out.lines, ""), pictures...)
 	}
-	return lines
+	if len(m.Pastes) > 0 {
+		out.add(pasteRows(m, c, st))
+	}
+	if stamp, ok := fmtMsgTimestamp(m.CreatedAt); ok && c.timestamps && len(out.lines) > 0 && m.Kind != "intro" {
+		out.lines[0] = render.Fit(out.lines[0], max(c.width-ansi.StringWidth(stamp)-1, 1), c.ut) + " " + toneStyle(c.t.Color.Muted).Render(stamp)
+	}
+	return out
+}
+
+// Long system message folded to its first line and its size, the whole text under the header once opened
+func systemRows(text, tone string, c renderCtx, st blockState) blockRows {
+	plain := stripAnsi(text)
+	first, _, _ := strings.Cut(plain, "\n")
+	if first = jsSlice(trimJS(first), 0, systemFoldHead); first == "" {
+		first = tr("chatBits.messageLine.systemMessage")
+	}
+	size := " — " + tr("chatBits.messageLine.chars", groupDigits(float64(unitLen(text))))
+	open := st.open(partSystem, false)
+	room := max(c.width-transcriptIndent-2-ansi.StringWidth(size), 8)
+	var out blockRows
+	out.head(partSystem, open, strings.Repeat(" ", transcriptIndent)+chevron(open, c)+toneStyle(tone).Render(truncateEnd(first, room))+toneStyle(c.t.Color.Muted).Faint(true).Render(size))
+	if open {
+		out.lines = append(out.lines, nested(wrapUnder(plain, c.width-2, "", toneStyle(tone)))...)
+	}
+	return out
 }
 
 // Lines a folded delegation result shows before its more line
@@ -295,8 +360,8 @@ func (v *transcriptView) streamLines(text string, c renderCtx) []string {
 	return append(lines, v.markdownLines(text[cut:], c)...)
 }
 
-// Session banner of a fresh or resumed session, the art, the brand, model, folder and what the agent has loaded
-func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
+// Session banner of a fresh or resumed session, the art, the brand, model, folder, what the agent has loaded and the size of its system prompt on a row that takes a click
+func introRows(raw *tuigateway.SessionInfo, c renderCtx) blockRows {
 	info := infoOf(raw)
 	pad := strings.Repeat(" ", transcriptIndent)
 	name := c.t.Brand.Name
@@ -305,6 +370,9 @@ func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 	}
 	head := toneStyle(c.t.Color.Primary).Bold(true).Render(strings.TrimSpace(c.ut.Glyphs.Brand + " " + name))
 	if version := infoText(info.Version); version != "" && version != "unknown" {
+		if released := infoText(info.ReleaseDate); released != "" {
+			version += " (" + released + ")"
+		}
 		head += toneStyle(c.t.Color.Muted).Render("  " + version)
 	}
 	lines := bannerArt(c)
@@ -324,16 +392,31 @@ func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 	row("provider", infoText(info.Provider))
 	row("cwd", shortCwd(infoText(info.Cwd), max(c.width-14, 16)))
 	row("session", infoText(info.StoredSessionID))
+	connected := 0
+	for _, server := range info.MCPServers {
+		if server.Connected {
+			connected++
+		}
+	}
 	counts := []string{}
 	for _, part := range []struct {
 		n     int
 		label string
-	}{{groupedCount(info.Tools), "tools"}, {groupedCount(info.Skills), "skills"}, {len(info.MCPServers), "MCP servers"}} {
+	}{{groupedCount(info.Tools), "tools"}, {groupedCount(info.Skills), "skills"}, {connected, "MCP servers"}} {
 		if part.n > 0 {
 			counts = append(counts, strconv.Itoa(part.n)+" "+part.label)
 		}
 	}
+	if len(counts) == 0 && val(info.Lazy) {
+		counts = append(counts, tr("chatBits.branding.scanningSkills")+"…")
+	}
 	row("loaded", strings.Join(counts, " · "))
+	var parts []blockPart
+	if size := unitLen(val(info.SystemPrompt)); size > 0 {
+		parts = append(parts, blockPart{name: partPrompt, from: len(lines), to: len(lines) + 1})
+		title := toneStyle(c.t.Color.Label).Render(tr("chatBits.branding.systemPrompt")) + toneStyle(c.t.Color.Muted).Render(" "+tr("chatBits.branding.charsSuffix", groupDigits(float64(size))))
+		lines = append(lines, pad+chevron(false, c)+ansi.Truncate(title, max(c.width-transcriptIndent*2-2, 8), "…"))
+	}
 	if notice := updateNotice(info); notice != "" {
 		lines = append(lines, pad+toneStyle(c.t.Color.Warn).Bold(true).Render(truncateEnd(notice, max(c.width-transcriptIndent*2, 8))))
 	}
@@ -341,7 +424,7 @@ func introLines(raw *tuigateway.SessionInfo, c renderCtx) []string {
 	for _, line := range lines {
 		span = max(span, ansi.StringWidth(line)-transcriptIndent)
 	}
-	return append(lines, pad+toneStyle(c.t.Color.Border).Render(strings.Repeat("─", max(min(span, c.width-transcriptIndent*2), 4))))
+	return blockRows{lines: append(lines, pad+toneStyle(c.t.Color.Border).Render(strings.Repeat("─", max(min(span, c.width-transcriptIndent*2), 4)))), parts: parts}
 }
 
 // Entries of every group of a grouped listing
@@ -412,12 +495,30 @@ func toolRow(line string, c renderCtx) []string {
 	return out
 }
 
-// Task list rows, each item marked by its status and nested under its parent
-func todoLines(todos []todoItem, c renderCtx) []string {
+// Task list under a header that takes a click, folded to the header alone or each item marked by its status and nested under its parent up to four levels, the header saying so when the turn ended with items still open
+func todoRows(todos []todoItem, c renderCtx, incomplete, folded bool) blockRows {
 	pad := strings.Repeat(" ", transcriptIndent)
 	open := countPendingTodos(todos)
-	lines := []string{pad + toneStyle(c.t.Color.Label).Bold(true).Render("Tasks") + toneStyle(c.t.Color.Muted).Render(fmt.Sprintf("  %d open of %d", open, len(todos)))}
-	for _, todo := range todos {
+	head := toneStyle(c.t.Color.Label).Bold(true).Render("Tasks") + toneStyle(c.t.Color.Muted).Render(fmt.Sprintf("  %d open of %d", open, len(todos)))
+	if folded && isTodoDone(todos) {
+		head = toneStyle(c.t.Color.Ok).Render(fmt.Sprintf("☑ %d tasks done", len(todos)))
+	}
+	if incomplete && open > 0 {
+		key := "chatBits.todo.incompleteOther"
+		if open == 1 {
+			key = "chatBits.todo.incompleteOne"
+		}
+		head += toneStyle(c.t.Color.Muted).Faint(true).Render(" " + tr(key, open))
+	}
+	var out blockRows
+	out.head(partTodos, !folded, pad+chevron(!folded, c)+head)
+	if folded {
+		return out
+	}
+	pad += "  "
+	lines := out.lines
+	for _, row := range todoTree(todos) {
+		todo := row.item
 		mark, tone := "☐", c.t.Color.Text
 		switch todo.Status {
 		case "completed":
@@ -427,55 +528,70 @@ func todoLines(todos []todoItem, c renderCtx) []string {
 		case "cancelled":
 			mark, tone = "☒", c.t.Color.Muted
 		}
-		indent := pad
-		if todo.Parent != "" {
-			indent += "  "
-		}
+		indent := pad + strings.Repeat("  ", min(row.depth, 4))
 		lines = append(lines, indent+toneStyle(tone).Render(mark+" "+truncateEnd(todo.Content, max(c.width-ansi.StringWidth(indent)-2, 8))))
 	}
-	return lines
+	out.lines = lines
+	return out
 }
 
-// Trail of a turn, its reasoning, tool rows and task list as the details sections allow
-func trailLines(m msg, c renderCtx) []string {
+// Header of a tool calls section, how many calls it holds and the tokens they took
+func toolsHead(count, tokens int, open bool, c renderCtx) string {
+	head := chevron(open, c) + toneStyle(c.t.Color.Tool).Render(tr("chatBits.thinking.toolCalls")) + toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(count)+")")
+	if tokens > 0 {
+		head += toneStyle(c.t.Color.Muted).Render(" · " + render.Tokens(tokens) + " tokens")
+	}
+	return head
+}
+
+// Trail of a turn, its reasoning and tool rows each under a header that opens and closes it and its task list, as the details sections allow and the user chose
+func trailRows(m msg, c renderCtx, st blockState) blockRows {
 	pad := strings.Repeat(" ", transcriptIndent)
 	mode := func(section string) string {
 		return sectionMode(section, c.details.DetailsMode, c.details.Sections, c.details.CommandOverride)
 	}
-	var lines []string
-	if thinking := cleanThinkingText(m.Thinking); thinking != "" && (m.IsMoaReference || mode("thinking") != "hidden") {
-		label := "thinking"
+	muted := toneStyle(c.t.Color.Muted)
+	var out blockRows
+	thinkingTokens := 0
+	if thinking := cleanThinkingText(m.Thinking); thinking != "" && (m.IsMoaReference || mode(partThinking) != "hidden") {
+		if thinkingTokens = m.ThinkingTokens; thinkingTokens == 0 {
+			thinkingTokens = estimateTokensRough(thinking)
+		}
+		label := tr("chatBits.thinking.thinking")
 		if m.IsMoaReference {
 			label = "reference"
 		}
-		head := toneStyle(c.t.Color.Thinking).Render("◇ " + label)
+		open := st.open(partThinking, mode(partThinking) == "expanded" || m.IsLiveReasoning || m.IsMoaReference)
+		head := chevron(open, c) + toneStyle(c.t.Color.Thinking).Render(label)
 		if m.ThinkingTokens > 0 {
-			head += toneStyle(c.t.Color.Muted).Render(" · " + render.Tokens(m.ThinkingTokens) + " tokens")
+			head += muted.Render(" · " + render.Tokens(m.ThinkingTokens) + " tokens")
 		}
-		if mode("thinking") == "expanded" || m.IsLiveReasoning {
-			lines = append(lines, pad+head)
-			lines = append(lines, wrapUnder(boundedRenderText(thinking, "", liveRenderMaxChars, liveRenderMaxLines), c.width-2, "", toneStyle(c.t.Color.Muted).Italic(true))...)
+		if open {
+			out.head(partThinking, true, pad+head)
+			out.lines = append(out.lines, nested(wrapUnder(boundedRenderText(thinking, "", liveRenderMaxChars, liveRenderMaxLines), c.width-4, "", muted.Italic(true)))...)
 		} else {
 			preview := compactPreview(strings.Join(strings.Fields(thinking), " "), max(c.width-ansi.StringWidth(ansi.Strip(head))-transcriptIndent-3, 8))
-			lines = append(lines, pad+head+toneStyle(c.t.Color.Muted).Italic(true).Render("  "+preview))
+			out.head(partThinking, false, pad+head+muted.Italic(true).Render("  "+preview))
 		}
 	}
-	if len(m.Tools) > 0 && mode("tools") != "hidden" {
-		for _, line := range m.Tools {
-			lines = append(lines, toolRow(line, c)...)
+	if len(m.Tools) > 0 && mode(partTools) != "hidden" {
+		open := st.open(partTools, mode(partTools) == "expanded")
+		out.head(partTools, open, pad+toolsHead(len(m.Tools), m.ToolTokens, open, c))
+		if open {
+			inner := c
+			inner.width -= 2
+			for _, line := range m.Tools {
+				out.lines = append(out.lines, nested(toolRow(line, inner))...)
+			}
 		}
-		if m.ToolTokens > 0 {
-			lines = append(lines, pad+toneStyle(c.t.Color.Muted).Render("  "+render.Tokens(m.ToolTokens)+" tool tokens"))
-		}
+	}
+	if thinkingTokens > 0 && m.ToolTokens > 0 && len(out.lines) > 0 {
+		out.lines = append(out.lines, pad+muted.Faint(true).Render("Σ "+tr("chatBits.thinking.approxTotal", render.Tokens(thinkingTokens+m.ToolTokens))))
 	}
 	if len(m.Todos) > 0 {
-		if m.TodoCollapsedByDefault && mode("tools") != "expanded" {
-			lines = append(lines, pad+toneStyle(c.t.Color.Ok).Render(fmt.Sprintf("☑ %d tasks done", len(m.Todos))))
-		} else {
-			lines = append(lines, todoLines(m.Todos, c)...)
-		}
+		out.add(todoRows(m.Todos, c, m.TodoIncomplete, !st.open(partTodos, !m.TodoCollapsedByDefault || mode(partTools) == "expanded")))
 	}
-	return lines
+	return out
 }
 
 // Inline diff of a file edit, added rows in the added tone and removed rows in the removed tone
@@ -503,30 +619,46 @@ func diffLines(m msg, c renderCtx) []string {
 	return lines
 }
 
-// Rows of the turn in flight, its settled segments, reasoning, running tools, streamed text, activity and tasks
-func (v *transcriptView) liveLines(s *tuiStore, stream string, c renderCtx, tick int) []string {
+// Rows of the turn in flight, its settled segments, running tools, streamed text, activity and tasks, the tools, the activity and the tasks each under a header that opens and closes them, with where each segment landed among the rows
+func (v *transcriptView) liveRows(s *tuiStore, stream string, c renderCtx, tick int) (blockRows, []placedBlock) {
 	pad := strings.Repeat(" ", transcriptIndent)
 	turn := s.turn
-	var lines []string
+	st := v.state(msg{ID: liveBlock})
+	mode := func(section string) string {
+		return sectionMode(section, c.details.DetailsMode, c.details.Sections, c.details.CommandOverride)
+	}
+	var out blockRows
+	var placed []placedBlock
 	gap := func() {
-		if len(lines) > 0 && lines[len(lines)-1] != "" {
-			lines = append(lines, "")
+		if n := len(out.lines); n > 0 && out.lines[n-1] != "" {
+			out.lines = append(out.lines, "")
 		}
 	}
-	for _, seg := range turn.StreamSegments {
-		if blockRenders(seg, c.details) {
+	for i := range turn.StreamSegments {
+		v.identify(&turn.StreamSegments[i])
+		if seg := turn.StreamSegments[i]; blockRenders(seg, c.details) {
 			gap()
-			lines = append(lines, v.block(seg, c)...)
+			block := v.block(seg, c)
+			placed = append(placed, placedBlock{id: seg.ID, row: len(out.lines), rows: len(block.lines), parts: block.parts})
+			out.lines = append(out.lines, block.lines...)
 		}
 	}
-	thinkingMode := sectionMode("thinking", c.details.DetailsMode, c.details.Sections, c.details.CommandOverride)
-	if turn.ReasoningActive && thinkingMode != "hidden" && trimJS(turn.Reasoning) != "" {
-		gap()
-		lines = append(lines, trailLines(msg{Kind: "trail", Role: "system", Thinking: turn.Reasoning, ThinkingTokens: turn.ReasoningTokens, IsLiveReasoning: thinkingMode == "expanded"}, c)...)
-	}
-	if sectionMode("tools", c.details.DetailsMode, c.details.Sections, c.details.CommandOverride) != "hidden" {
+	if mode(partTools) != "hidden" {
+		calls := len(turn.Tools) + len(turn.StreamPendingTools)
 		for _, line := range turn.TurnTrail {
-			lines = append(lines, toolRow(line, c)...)
+			if line != analyzingToolOutput {
+				calls++
+			}
+		}
+		open, inner := true, c
+		if calls > 0 {
+			open = st.open(partTools, mode(partTools) == "expanded")
+			out.head(partTools, open, pad+toolsHead(calls, 0, open, c))
+			inner.width -= 2
+		}
+		var rows []string
+		for _, line := range turn.TurnTrail {
+			rows = append(rows, toolRow(line, inner)...)
 		}
 		for _, tool := range turn.Tools {
 			call := formatToolCall(tool.Name, tool.Context)
@@ -544,21 +676,42 @@ func (v *transcriptView) liveLines(s *tuiStore, stream string, c renderCtx, tick
 			} else if d := s.now().Sub(tool.StartedAt); !tool.StartedAt.IsZero() && d >= 12*time.Second {
 				elapsed += toneStyle(c.t.Color.Muted).Italic(true).Render(" · " + longRunCharms[int(d/(12*time.Second))%len(longRunCharms)])
 			}
-			lines = append(lines, pad+render.Spinner(tick, c.ut)+" "+toneStyle(c.t.Color.Tool).Render(truncateEnd(call, max(c.width-transcriptIndent-40, 8)))+delegateMonitorHint(tool.Name, c)+elapsed)
+			rows = append(rows, pad+render.Spinner(tick, c.ut)+" "+toneStyle(c.t.Color.Tool).Render(truncateEnd(call, max(inner.width-transcriptIndent-40, 8)))+delegateMonitorHint(tool.Name, c)+elapsed)
 			if tool.VerboseArgs != "" {
-				lines = append(lines, wrapUnder(boundedRenderText(tool.VerboseArgs, "", 600, 8), c.width-2, "", toneStyle(c.t.Color.Muted))...)
+				rows = append(rows, wrapUnder(boundedRenderText(tool.VerboseArgs, "", 600, 8), inner.width-2, "", toneStyle(c.t.Color.Muted))...)
 			}
 		}
-		for _, name := range turn.StreamPendingTools {
-			lines = append(lines, pad+toneStyle(c.t.Color.Muted).Render("… "+name))
+		for _, line := range turn.StreamPendingTools {
+			rows = append(rows, toolRow(line, inner)...)
+		}
+		switch {
+		case !open:
+		case calls > 0:
+			out.lines = append(out.lines, nested(rows)...)
+		default:
+			out.lines = append(out.lines, rows...)
 		}
 	}
 	if strings.TrimSpace(stream) != "" {
 		gap()
-		lines = append(lines, v.streamLines(stream, c)...)
+		out.lines = append(out.lines, v.streamLines(stream, c)...)
 	}
-	if sectionMode("activity", c.details.DetailsMode, c.details.Sections, c.details.CommandOverride) != "hidden" {
+	if len(turn.Activity) > 0 && mode(partActivity) != "hidden" {
+		open := st.open(partActivity, mode(partActivity) == "expanded")
+		head := c.t.Color.Muted
 		for _, item := range turn.Activity {
+			switch {
+			case item.Tone == "error":
+				head = c.t.Color.Error
+			case item.Tone == "warn" && head != c.t.Color.Error:
+				head = c.t.Color.Warn
+			}
+		}
+		out.head(partActivity, open, pad+chevron(open, c)+toneStyle(head).Render(tr("chatBits.thinking.activity"))+toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(len(turn.Activity))+")"))
+		for _, item := range turn.Activity {
+			if !open {
+				break
+			}
 			tone := c.t.Color.Muted
 			switch item.Tone {
 			case "warn":
@@ -566,49 +719,59 @@ func (v *transcriptView) liveLines(s *tuiStore, stream string, c renderCtx, tick
 			case "error":
 				tone = c.t.Color.Error
 			}
-			lines = append(lines, wrapUnder(item.Text, c.width, "", toneStyle(tone))...)
+			out.lines = append(out.lines, nested(wrapUnder(item.Text, c.width-2, "", toneStyle(tone)))...)
 		}
 	}
 	if len(turn.Todos) > 0 {
 		gap()
-		if turn.TodoCollapsed {
-			lines = append(lines, pad+toneStyle(c.t.Color.Label).Render(fmt.Sprintf("Tasks  %d open of %d", countPendingTodos(turn.Todos), len(turn.Todos))))
-		} else {
-			lines = append(lines, todoLines(turn.Todos, c)...)
-		}
+		out.add(todoRows(turn.Todos, c, false, turn.TodoCollapsed))
 	}
-	if sectionMode("subagents", c.details.DetailsMode, c.details.Sections, c.details.CommandOverride) != "hidden" {
+	if mode("subagents") != "hidden" {
 		if len(turn.Subagents) > 0 {
-			lines = append(lines, pad+ansi.Truncate(spawnTreeHeadline(turn.Subagents, c), max(c.width-transcriptIndent, 8), "…"))
+			out.lines = append(out.lines, pad+ansi.Truncate(spawnTreeHeadline(turn.Subagents, c), max(c.width-transcriptIndent, 8), "…"))
 		}
 		for _, sub := range turn.Subagents {
 			mark, tone := render.Spinner(tick, c.ut), c.t.Color.Tool
 			switch sub.Status {
+			case "", "running", "finalizing":
 			case "completed":
 				mark, tone = toneStyle(c.t.Color.Ok).Render("✓"), c.t.Color.Muted
-			case "failed", "error", "interrupted":
-				mark, tone = toneStyle(c.t.Color.Error).Render("✗"), c.t.Color.Error
+			default:
+				glyph, glyphTone := agentStatusGlyph(sub.Status, c.t)
+				mark, tone = toneStyle(glyphTone).Render(glyph), glyphTone
+				if sub.Status == "queued" || sub.Status == "dispatched" {
+					tone = c.t.Color.Muted
+				}
 			}
 			detail := fmt.Sprintf(" · %d tools", sub.ToolCount)
 			goal := truncateEnd(sub.Goal, max(c.width-transcriptIndent-ansi.StringWidth(detail)-4-sub.Depth*2, 8))
-			lines = append(lines, pad+strings.Repeat("  ", sub.Depth)+mark+" "+toneStyle(tone).Render(goal)+toneStyle(c.t.Color.Muted).Render(detail))
+			out.lines = append(out.lines, pad+strings.Repeat("  ", sub.Depth)+mark+" "+toneStyle(tone).Render(goal)+toneStyle(c.t.Color.Muted).Render(detail))
 		}
 	}
-	return lines
+	return out, placed
 }
 
-// Every row of the transcript followed by the live turn, blocks separated where their groups change
+// Every row of the transcript followed by the live turn, blocks separated where their groups change, each block given its identity and its place among the rows kept for the clicks it takes
 func (v *transcriptView) rows(history []msg, s *tuiStore, stream string, c renderCtx, tick int) []string {
 	var lines []string
 	var prev *msg
-	v.prompts = v.prompts[:0]
+	v.prompts, v.placed = v.prompts[:0], v.placed[:0]
+	details := ""
+	for _, section := range sectionNames {
+		details += sectionMode(section, c.details.DetailsMode, c.details.Sections, c.details.CommandOverride) + " "
+	}
+	if details != v.details {
+		v.details = details
+		v.dropSections()
+	}
 	for i := range history {
+		v.identify(&history[i])
 		m := history[i]
 		if !blockRenders(m, c.details) || (c.focus && m.Role != "user" && m.Role != "assistant" && m.Kind != "intro") {
 			continue
 		}
 		block := v.block(m, c)
-		if len(block) == 0 {
+		if len(block.lines) == 0 {
 			continue
 		}
 		if !c.compact && (hasLeadGap(prev, m) || (prev != nil && messageGroup(*prev) == "user" && messageGroup(m) != "user") || (prev != nil && messageGroup(m) == "user")) {
@@ -617,16 +780,24 @@ func (v *transcriptView) rows(history []msg, s *tuiStore, stream string, c rende
 		if m.Role == "user" && m.Kind == "" {
 			v.prompts = append(v.prompts, promptRow{row: len(lines), text: userDisplay(m.Text)})
 		}
-		lines = append(lines, block...)
+		v.placed = append(v.placed, placedBlock{id: m.ID, row: len(lines), rows: len(block.lines), parts: block.parts})
+		lines = append(lines, block.lines...)
 		prev = &history[i]
 	}
-	if live := v.liveLines(s, stream, c, tick); len(live) > 0 {
-		if len(lines) > 0 {
-			lines = append(lines, "")
-		}
-		lines = append(lines, live...)
+	live, segments := v.liveRows(s, stream, c, tick)
+	if len(live.lines) == 0 {
+		delete(v.open, liveBlock)
+		return lines
 	}
-	return lines
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	for _, segment := range segments {
+		segment.row += len(lines)
+		v.placed = append(v.placed, segment)
+	}
+	v.placed = append(v.placed, placedBlock{id: liveBlock, row: len(lines), rows: len(live.lines), parts: live.parts})
+	return append(lines, live.lines...)
 }
 
 // Prompt of the exchange at the top of the view once the prompt itself scrolled above it
@@ -651,7 +822,8 @@ func scrollbarRoom(width int) int {
 
 // Window of rows at the scroll position with a scrollbar column when the transcript overflows
 func (v *transcriptView) view(lines []string, width, height int, c renderCtx) string {
-	v.total, v.height = len(lines), height
+	v.total, v.height, v.width = len(lines), height, width
+	v.settle()
 	top := v.top()
 	out := make([]string, 0, height)
 	for i := top; i < top+height && i < len(lines); i++ {
@@ -660,7 +832,8 @@ func (v *transcriptView) view(lines []string, width, height int, c renderCtx) st
 	for len(out) < height {
 		out = append(out, "")
 	}
-	if sticky := v.stickyPrompt(top); sticky != "" && height > 2 {
+	sticky := v.stickyPrompt(top)
+	if v.sticky = sticky != "" && height > 2; v.sticky {
 		lead := toneStyle(c.t.Color.Prompt).Render(c.ut.Glyphs.Prompt + " ")
 		out[0] = lead + toneStyle(c.t.Color.Muted).Render(truncateEnd(strings.ReplaceAll(sticky, "\n", " "), max(width-6, 8)))
 	}

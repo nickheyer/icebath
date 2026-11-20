@@ -29,6 +29,8 @@ type CreateOptions struct {
 	CloneChannels bool
 	SyncImports   bool
 	Soul          *string
+	// Leaves a fresh profile without the launch model block, which may hold an inline api key
+	NoSeedModel bool
 }
 
 // Directory a clone copies from, the named profile or the active home when no name is given
@@ -112,8 +114,8 @@ func cloneAllInto(sourceDir, profileDir, canon string) (map[string]any, error) {
 	return ref, nil
 }
 
-// Fresh layout, seeding a model block without a source or cloning config, skills, plugins and identity files
-func bootstrapProfileDir(ctx context.Context, profileDir, sourceDir string, syncImports bool) error {
+// Fresh layout, seeding a model block without a source unless told not to, or cloning config, skills, plugins and identity files
+func bootstrapProfileDir(ctx context.Context, profileDir, sourceDir string, syncImports, seedModel bool) error {
 	if err := os.MkdirAll(profileDir, 0o777); err != nil {
 		return err
 	}
@@ -123,6 +125,9 @@ func bootstrapProfileDir(ctx context.Context, profileDir, sourceDir string, sync
 		}
 	}
 	if sourceDir == "" {
+		if !seedModel {
+			return nil
+		}
 		return seedModelConfig(ctx, profileDir)
 	}
 	for _, rel := range profiles.CloneConfigFiles {
@@ -267,7 +272,7 @@ func CreateProfile(ctx context.Context, name string, o CreateOptions) (string, e
 		if cloneKey, err = cloneAllInto(sourceDir, staging, canon); err != nil {
 			return "", err
 		}
-	} else if err := bootstrapProfileDir(ctx, staging, sourceDir, o.SyncImports); err != nil {
+	} else if err := bootstrapProfileDir(ctx, staging, sourceDir, o.SyncImports, !o.NoSeedModel); err != nil {
 		return "", err
 	}
 	if sourceDir != "" && !o.CloneChannels {
@@ -286,6 +291,9 @@ func CreateProfile(ctx context.Context, name string, o CreateOptions) (string, e
 		return "", err
 	}
 	published = true
+	memory.NotifyMemoryProvider(ctx, profileDir, func(ctx context.Context, p memory.Provider) error {
+		return p.OnProfileCreated(ctx, canon, profileDir)
+	})
 	maybeRegisterGatewayService(canon)
 	notifyMultiplexer(canon)
 	return profileDir, nil
@@ -313,18 +321,26 @@ var liveDefaultMultiplexer = func() bool {
 
 // Seeds bundled skills into a profile home, nil with a warning when the sync fails or runs past 60 seconds
 func SeedProfileSkills(ctx context.Context, profileDir string, quiet bool) map[string]any {
+	return seedProfileSkills(ctx, profileDir, quiet, nil)
+}
+
+// Seeds bundled skills into a profile home, a failure line collected in problems and printed unless quiet
+func seedProfileSkills(ctx context.Context, profileDir string, quiet bool, problems *[]string) map[string]any {
 	sctx, cancel := context.WithTimeout(home.WithOverride(ctx, profileDir), 60*time.Second)
 	defer cancel()
 	result, err := skills.SyncSkills(sctx, true)
 	if err == nil {
 		return result
 	}
+	line := fmt.Sprintf("⚠ Skill seeding failed: %v", err)
+	if errors.Is(err, context.DeadlineExceeded) {
+		line = "⚠ Skill seeding timed out (60s)"
+	}
+	if problems != nil {
+		*problems = append(*problems, line)
+	}
 	if !quiet {
-		if errors.Is(err, context.DeadlineExceeded) {
-			fmt.Fprintln(stdout, "⚠ Skill seeding timed out (60s)")
-		} else {
-			fmt.Fprintf(stdout, "⚠ Skill seeding failed: %v\n", err)
-		}
+		fmt.Fprintln(stdout, line)
 	}
 	return nil
 }

@@ -8,8 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -20,16 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Recorded output of one wizard scenario
-type wizardRef struct {
-	Out    string   `json:"out"`
-	Stderr string   `json:"stderr"`
-	Err    *string  `json:"err"`
-	Asked  []string `json:"asked"`
-}
-
-var setupStampRe = regexp.MustCompile(`\d{8}-\d{6}`)
-
 // A wizard run's home, its console streams and the recorded calls of the doubled sections
 type wizardRun struct {
 	tmp, home string
@@ -39,13 +27,6 @@ type wizardRun struct {
 	asked     []string
 	answers   map[string]int
 	service   []gateway.ServiceSetupOptions
-}
-
-// Clean output with the temp dir, install root and backup stamps replaced like the recording
-func (w *wizardRun) screen() string {
-	text := strings.ReplaceAll(w.out.String(), config.GetProjectRoot(), "<ROOT>")
-	text = strings.ReplaceAll(text, w.tmp, "<TMP>")
-	return setupStampRe.ReplaceAllString(text, "<STAMP>")
 }
 
 // Prints a section marker on the setup console and counts the call
@@ -111,46 +92,6 @@ func pyBoolText(b bool) string {
 		return "True"
 	}
 	return "False"
-}
-
-// Writes config.yaml, auth.json and .env of the run home
-func (w *wizardRun) seed(t *testing.T, configText string, auth map[string]any, env map[string]string) {
-	t.Helper()
-	if configText != "" {
-		if err := os.WriteFile(home.ConfigPath(w.home), []byte(configText), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if auth != nil {
-		data, _ := json.Marshal(auth)
-		if err := os.WriteFile(filepath.Join(w.home, "auth.json"), data, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var lines []string
-	for k, v := range env {
-		lines = append(lines, k+"="+v)
-	}
-	if len(lines) > 0 {
-		if err := os.WriteFile(home.EnvPath(w.home), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-// Compares a run's screen and menus with the recorded scenario
-func (w *wizardRun) assertMatches(t *testing.T, ref wizardRef) {
-	t.Helper()
-	if got, want := w.screen(), ref.Out; got != want {
-		t.Fatalf("screen\n%s\nwant\n%s", got, want)
-	}
-	want := make([]string, len(ref.Asked))
-	for i, q := range ref.Asked {
-		want[i] = q
-	}
-	if !slices.Equal(w.asked, want) && !(len(w.asked) == 0 && len(want) == 0) {
-		t.Fatalf("menus %q want %q", w.asked, want)
-	}
 }
 
 // Python config.yaml of a home as a map

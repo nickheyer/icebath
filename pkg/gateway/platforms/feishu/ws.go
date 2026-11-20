@@ -17,6 +17,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // Keepalive ping cadence and pong wait the Python websockets client applies when the profile sets none
@@ -58,7 +59,7 @@ func newWSLink(a *FeishuAdapter, domain string, handler *dispatcher.EventDispatc
 		reconnectSeconds: a.settings.WSReconnectInterval, pingInterval: a.settings.WSPingInterval, pingTimeout: a.settings.WSPingTimeout}
 	dialer := *websocket.DefaultDialer
 	dialer.NetDialContext = func(dctx context.Context, network, addr string) (net.Conn, error) {
-		conn, err := (&net.Dialer{}).DialContext(dctx, network, addr)
+		conn, err := netpref.DialContext((&net.Dialer{}).DialContext)(dctx, network, addr)
 		if err != nil {
 			return nil, err
 		}

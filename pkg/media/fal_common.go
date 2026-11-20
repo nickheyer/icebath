@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -394,18 +393,3 @@ var defaultFalClientModule = newFalClientModule()
 
 // The FAL client module, compiled in so no runtime package acquisition is needed
 func importFalClient() *falClientModule { return defaultFalClientModule }
-
-// HTTP status of a FAL or HTTP error, the response status first
-func extractHTTPStatus(err error) (int, bool) {
-	var rs interface{ ResponseStatus() (int, bool) }
-	if errors.As(err, &rs) {
-		if s, ok := rs.ResponseStatus(); ok {
-			return s, true
-		}
-	}
-	var es interface{ ExcStatus() (int, bool) }
-	if errors.As(err, &es) {
-		return es.ExcStatus()
-	}
-	return 0, false
-}

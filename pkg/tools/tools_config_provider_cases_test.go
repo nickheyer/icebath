@@ -154,17 +154,6 @@ func TestConfigWritesWriteProviderConfigSetsSttProvider(t *testing.T) {
 	}
 }
 
-func TestConfigWritesApplyProviderSelectionStt(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	cfg := config.Tree{}
-	if err := s.ApplyProviderSelection("stt", "OpenAI", cfg); err != nil {
-		t.Fatal(err)
-	}
-	if section(cfg, "stt")["provider"] != "openai" {
-		t.Fatalf("stt %v", cfg["stt"])
-	}
-}
-
 func TestActiveDetectionActiveMatchesConfig(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	cfg := config.Tree{"stt": map[string]any{"provider": "groq"}}
@@ -449,20 +438,6 @@ func TestCodexOAuthBootstrapHookHookPrintsAuthCommandInsteadOfDeviceLoginWhenNon
 	}
 }
 
-func TestCodexOAuthBootstrapHookReadinessReportsCodexRowFromAuthStore(t *testing.T) {
-	s, _ := newTestToolsSetup(t, "")
-	row := caseRow("name", "OpenAI (Codex auth)", "env_vars", []any{}, "image_gen_plugin_name", "openai-codex", "post_setup", "openai_codex")
-	for _, c := range []struct {
-		loggedIn bool
-		want     string
-	}{{false, "needs_auth"}, {true, "ready"}} {
-		swapHook(t, &ToolsConfigHooks.CodexAuthStatus, func(context.Context, string) map[string]any { return map[string]any{"logged_in": c.loggedIn} })
-		if got, err := s.ProviderReadinessStatus(row, config.Tree{}, nil); err != nil || got != c.want {
-			t.Fatalf("logged_in %v: %q %v", c.loggedIn, got, err)
-		}
-	}
-}
-
 func TestLightpandaPostSetupReportsBinaryWhenFound(t *testing.T) {
 	s, out := newTestToolsSetup(t, "")
 	ensured := 0
@@ -496,19 +471,10 @@ func TestLightpandaPostSetupPrintsInstallHintWhenMissing(t *testing.T) {
 	}
 }
 
-func TestLightpandaPostSetupPostSetupKeyIsValidAndReadinessGated(t *testing.T) {
+func TestLightpandaPostSetupKeyIsValidAndNeverForcesSetup(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	if !s.ValidPostSetupKeys()["lightpanda"] {
 		t.Fatal("lightpanda is not a valid post-setup key")
-	}
-	ready := postSetupReady["lightpanda"]
-	swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { return "/opt/lightpanda" })
-	if ok, err := ready(s); err != nil || !ok {
-		t.Fatalf("found %v %v", ok, err)
-	}
-	swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { return "" })
-	if ok, err := ready(s); err != nil || ok {
-		t.Fatalf("missing %v %v", ok, err)
 	}
 	if _, gated := postSetupInstalled["lightpanda"]; gated {
 		t.Fatal("lightpanda forces setup")

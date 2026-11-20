@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -40,6 +41,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
@@ -578,7 +580,7 @@ func (c *entraManagedIdentityCredential) request(ctx context.Context, resource s
 		if c.clientID != "" {
 			q.Set("client_id", c.clientID)
 		}
-		client.Transport = &http.Transport{Proxy: pyhttpx.EnvProxy, TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
+		client.Transport = &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyhttpx.EnvProxy, TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
 	case "azure_ml":
 		endpoint, headers["secret"] = env("MSI_ENDPOINT"), env("MSI_SECRET")
 		q.Set("api-version", "2017-09-01")

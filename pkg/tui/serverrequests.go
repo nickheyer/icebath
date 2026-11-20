@@ -69,8 +69,48 @@ func requestParams[P, R any](r *serverRequest, sink promptSink, req tuigateway.R
 	return params, true
 }
 
+// Requests that open the prompt card of one session
+var sessionPromptMethods = map[string]bool{
+	tuigateway.ApprovalRequest.Name(): true, tuigateway.ClarifyRequest.Name(): true, tuigateway.SecretRequest.Name(): true,
+	tuigateway.SudoRequest.Name(): true, tuigateway.VaultCodeRequest.Name(): true, tuigateway.VaultSaveLoginRequest.Name(): true,
+	tuigateway.VaultUnlockRequest.Name(): true,
+}
+
+// Whether a prompt request is of a session other than the one in view: it stays open on the backend unanswered, and activating its session
+// delivers it again once the view shows that session
+func (s *tuiStore) belongsElsewhere(r *serverRequest) bool {
+	owner, _ := r.Params["session_id"].(string)
+	return sessionPromptMethods[r.Method] && owner != "" && s.ui.Sid != "" && owner != s.ui.Sid
+}
+
+// Forgets the request a cancel names and closes the card that carries it, whichever session the cancel is of
+func (s *tuiStore) withdrawServerRequest(id string) {
+	if id == "" {
+		return
+	}
+	s.forgetServerRequest(id)
+	for _, key := range append([]string{"approval", "clarify"}, sensitivePrompts...) {
+		if s.overlay.promptRequestID(key) == id {
+			s.overlay.closePrompt(key)
+		}
+	}
+}
+
+// Withdraws the request a cancel of a session out of view names, a card left over from that session closing without the timeout notice
+func (s *tuiStore) withdrawOutOfView(ev gatewayEventMsg) {
+	if ev.Type != tuigateway.RequestCancelEvent.Name() {
+		return
+	}
+	if cancel, err := tuigateway.RequestCancelEvent.Payload(ev.Payload); err == nil {
+		s.withdrawServerRequest(cancel.ID)
+	}
+}
+
 // Opens the card of a server request, false for a method the terminal cannot answer
 func (s *tuiStore) handleServerRequest(r *serverRequest, sink promptSink) bool {
+	if s.belongsElsewhere(r) {
+		return true
+	}
 	open := func(status string) {
 		s.rememberServerRequest(r)
 		sink.setStatus(status)

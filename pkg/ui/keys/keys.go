@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -144,11 +145,15 @@ func (m *Map) DisplayAll(id string) string {
 // Records whether the terminal reports ctrl and shift on a letter apart from ctrl alone
 func (m *Map) SetShiftApart(on bool) { m.shiftApart = on }
 
-// Chords of the action the terminal can send, ctrl and shift on a letter needing a terminal reporting them apart
+// Chords of the action the terminal can send, ctrl and shift on a letter needing a terminal reporting them apart and the command key a Mac whose terminal reports it
 func (m *Map) Sendable(id string) []string {
 	var out []string
 	for _, c := range m.binds[id] {
-		if p, err := parse(c); err == nil && !m.shiftApart && p.name == "" && unicode.IsLetter(p.r) && p.mods&(tea.ModCtrl|tea.ModShift) == tea.ModCtrl|tea.ModShift {
+		p, err := parse(c)
+		if err == nil && !m.shiftApart && p.name == "" && unicode.IsLetter(p.r) && p.mods&(tea.ModCtrl|tea.ModShift) == tea.ModCtrl|tea.ModShift {
+			continue
+		}
+		if err == nil && p.mods&tea.ModSuper != 0 && !(m.shiftApart && runtime.GOOS == "darwin") {
 			continue
 		}
 		out = append(out, c)
@@ -533,7 +538,7 @@ func Press(chord string) tea.KeyPressMsg {
 	return k
 }
 
-// Chord as legends and the file spell it, a shifted letter as its capital and other keys by name
+// Chord as legends and the file spell it, a shifted letter as its capital, other keys by name and the command key as cmd on a Mac
 func Format(chord string) string {
 	if chord == "" {
 		return ""
@@ -544,6 +549,9 @@ func Format(chord string) string {
 	}
 	if p.name == "" && unicode.IsLetter(p.r) && p.mods == tea.ModShift {
 		return string(unicode.ToUpper(p.r))
+	}
+	if runtime.GOOS == "darwin" {
+		return strings.Replace(canon(p.mods, p.name, p.r), "super+", "cmd+", 1)
 	}
 	return canon(p.mods, p.name, p.r)
 }

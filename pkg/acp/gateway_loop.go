@@ -10,6 +10,8 @@ import (
 type coLoop struct {
 	mu      sync.Mutex
 	changed chan struct{}
+	// Blocking calls started off the loop, a cancelled coroutine having stopped waiting for its own
+	offLoop sync.WaitGroup
 }
 
 func newCoLoop() *coLoop { return &coLoop{changed: make(chan struct{})} }
@@ -33,7 +35,9 @@ func (l *coLoop) awaitCtx(ctx context.Context, fn func()) error {
 		return err
 	}
 	done := make(chan any, 1)
+	l.offLoop.Add(1)
 	go func() {
+		defer l.offLoop.Done()
 		defer func() { done <- recover() }()
 		fn()
 	}()
@@ -51,6 +55,9 @@ func (l *coLoop) awaitCtx(ctx context.Context, fn func()) error {
 	}
 	return err
 }
+
+// Suspends the coroutine until every blocking call started off the loop has returned
+func (l *coLoop) settle() { l.await(l.offLoop.Wait) }
 
 // Wakes every coroutine waiting on the loop's condition
 func (l *coLoop) notifyAll() {

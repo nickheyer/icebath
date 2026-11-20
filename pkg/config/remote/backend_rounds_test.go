@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -87,7 +88,7 @@ func TestEditDuringAnInMemoryMigrationNeverSendsTheMigration(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ctx := context.WithValue(WithReadScope(context.Background()), migratorKey{}, true)
+		ctx := context.WithValue(context.Background(), migratorKey{}, true)
 		_, failure = config.ReadConfigDoc(ctx, filepath.Join(p.Home, "config.yaml"))
 	}()
 	waitOrFail(t, stepsRan)
@@ -423,12 +424,12 @@ func pauseFirstMigration(t *testing.T) (entered, resume chan struct{}) {
 	return entered, resume
 }
 
-// Runs read in its own goroutine and read scope marked as the migrator
+// Runs read in its own goroutine marked as the migrator
 func startMigrator(read func(ctx context.Context) (any, error)) (done chan struct{}, result *any, failure *error) {
 	done, result, failure = make(chan struct{}), new(any), new(error)
 	go func() {
 		defer close(done)
-		*result, *failure = read(context.WithValue(WithReadScope(context.Background()), migratorKey{}, true))
+		*result, *failure = read(context.WithValue(context.Background(), migratorKey{}, true))
 	}()
 	return done, result, failure
 }

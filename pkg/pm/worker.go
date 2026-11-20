@@ -305,7 +305,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 	if id, ok := request["update_id"].(string); ok {
 		updateID = &id
 	}
-	workerCtx := context.WithValue(ctx, receiptScopeKey{}, &receiptScope{})
+	workerCtx := withRuntime(context.WithValue(ctx, receiptScopeKey{}, &receiptScope{}))
 	restore := WorkerContext(workerCtx, updateID)
 	result, failure := func() (any, error) {
 		definitions, err := requestDefinitions(request["packages"])

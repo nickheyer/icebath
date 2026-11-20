@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -41,7 +42,12 @@ func ask[P, R any](via rpcVia, sys func(string), m tuigateway.Method[P, R], para
 
 // Typed request whose decoded answer or failure continues on the update loop
 func call[P, R any](gw turnGateway, m tuigateway.Method[P, R], params P, then func(*R, error) tea.Cmd) tea.Cmd {
-	return gatewayCall(gw, m.Name(), wireParams(params), func(v any, err error) tea.Cmd {
+	return callWithin(gw, m, params, 0, then)
+}
+
+// Typed request given its own wait, the client's default for zero, whose decoded answer or failure continues on the update loop
+func callWithin[P, R any](gw turnGateway, m tuigateway.Method[P, R], params P, timeout time.Duration, then func(*R, error) tea.Cmd) tea.Cmd {
+	return gatewayCallWithin(gw, m.Name(), wireParams(params), timeout, func(v any, err error) tea.Cmd {
 		if err != nil {
 			return then(nil, err)
 		}

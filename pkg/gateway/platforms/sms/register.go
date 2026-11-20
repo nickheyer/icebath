@@ -10,6 +10,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -72,24 +73,24 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return gateway.SendError("SMS not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER required)"), nil
 	}
 	message = stripMarkdownForSMS(message)
-	result, err := standalonePost(ctx, accountSID, authToken, fromNumber, chatID, message)
-	if err != nil {
-		return gateway.SendError(fmt.Sprintf("SMS send failed: %v", err)), nil
-	}
-	return result, nil
-}
-
-// One Messages.json post over the resolved proxy, a send error for a Twilio error answer
-func standalonePost(ctx context.Context, accountSID, authToken, fromNumber, chatID, message string) (map[string]any, error) {
 	proxyURL, err := gateway.ResolveProxyURL(ctx, "", nil, "")
 	if err != nil {
 		return nil, err
 	}
+	result, err := standalonePost(ctx, proxyURL, accountSID, authToken, fromNumber, chatID, message)
+	if err != nil {
+		return gateway.SendError("SMS send failed: " + gateway.ProxySafeErrorText(err, proxyURL)), nil
+	}
+	return result, nil
+}
+
+// One Messages.json post over the proxy, a send error for a Twilio error answer
+func standalonePost(ctx context.Context, proxyURL, accountSID, authToken, fromNumber, chatID, message string) (map[string]any, error) {
 	sessionKw, requestKw, err := gateway.ProxyKwargsForAiohttp(proxyURL)
 	if err != nil {
 		return nil, err
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.Proxy = nil
 	if sessionKw.Connector != nil {
 		transport = sessionKw.Connector.Transport()

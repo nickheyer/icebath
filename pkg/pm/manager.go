@@ -13,19 +13,9 @@ var (
 	ensurePythonToolEntry         func(ctx context.Context, opts EnsurePythonToolOptions) (string, error)
 	ensureExtraEntry              func(ctx context.Context, name string, opts ExtraOptions) (string, error)
 	extraSupportedEntry           func(ctx context.Context, extra string) (bool, error)
-	payloadVenvEntry              func(projectRoot string) (string, error)
-	selectedVenvEntry             func(ctx context.Context, projectRoot string) (string, error)
-	sitePackagesEntry             func(venv string) (string, error)
 	pythonToolEntry               func(name, executable, root string) (string, bool, error)
-	pinnedPythonVersionEntry      func() (major, minor string, err error)
 	venvCommandEntry              func(ctx context.Context, projectRoot, venv string, options []string) ([]string, error)
-	baseVenvEntry                 func(projectRoot string) (string, error)
 	anchorImportableEntry         func(ctx context.Context, anchor string) bool
-	projectPythonEntry            func(ctx context.Context, projectRoot string) (string, error)
-	selectedSitePackagesEntry     func(ctx context.Context) (string, error)
-	selectedEntryPointsEntry      func(ctx context.Context) ([]EntryPoint, error)
-	resolveModuleOriginEntry      func(ctx context.Context, moduleName string) (string, bool)
-	distInstalledEntry            func(req, site string) (installed, known bool)
 	requirementAppliesHereEntry   func(ctx context.Context, req string) bool
 	activationEnvironmentEntry    func(ctx context.Context, projectRoot string) ([]string, error)
 	venvIsCurrentEntry            func(ctx context.Context, opts VenvIsCurrentOptions) (bool, error)
@@ -39,7 +29,6 @@ var (
 	runtimeEnvironmentReadyEntry  func(ctx context.Context) (string, bool, error)
 	nemoRelayWheelEntry           func(target string) (Wheel, bool)
 	activateDependenciesEntry     func(ctx context.Context, projectRoot string) error
-	committedVenvEntry            func(ctx context.Context, projectRoot string) (string, error)
 	runtimeRequirementsEntry      func() ([]RuntimeRequirement, error)
 )
 

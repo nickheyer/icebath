@@ -52,18 +52,6 @@ func (g *fakeGateway) Close() error {
 	return nil
 }
 
-func (g *fakeGateway) called(method string) []map[string]any {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	var out []map[string]any
-	for _, call := range g.calls {
-		if call.method == method {
-			out = append(out, call.params)
-		}
-	}
-	return out
-}
-
 func (g *fakeGateway) put(frame any) { g.events.PutNowait(frame) }
 
 type editorFake struct {

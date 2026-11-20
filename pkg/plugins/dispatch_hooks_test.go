@@ -365,6 +365,11 @@ func TestAInvokeHookAwaitsOnCallerAndBoundsPolicyHooks(t *testing.T) {
 	}
 }
 
+// Deferred result backed by a plain function, the shape a plugin callback hands the dispatcher to await
+type AwaitFunc func(ctx context.Context) (any, error)
+
+func (f AwaitFunc) Await(ctx context.Context) (any, error) { return f(ctx) }
+
 func TestResolvePluginCommandResult(t *testing.T) {
 	ctx := pyctx.WithRunningLoop(context.Background())
 	if v, err := ResolvePluginCommandResult(ctx, AwaitFunc(func(context.Context) (any, error) { return "done", nil })); v != "done" || err != nil {

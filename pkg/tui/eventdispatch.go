@@ -80,6 +80,7 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	h.renewOnRedraw()
 	sid := h.store.ui.Sid
 	if ev.SessionID != "" && sid != "" && ev.SessionID != sid && !strings.HasPrefix(ev.Type, "gateway.") {
+		h.store.withdrawOutOfView(ev)
 		return
 	}
 	current := h.store.ui.Info
@@ -227,6 +228,7 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		}
 	case "reasoning.delta":
 		if delta, ok := eventPayload(h, tuigateway.ReasoningDeltaEvent, p); ok && delta.Text != "" {
+			h.turn.countReasoning(delta.Text)
 			h.turn.recordReasoningDelta(delta.Text, val(delta.Verbose))
 		}
 	case "reasoning.available":
@@ -384,7 +386,7 @@ func (h *eventHandler) statusUpdate(update tuigateway.StatusUpdatePayload) {
 	h.turn.restoreStatusAfter(statusNoteHold)
 }
 
-// Finished tool call, an inline diff segment when the diff is shown, else its trail row
+// Finished tool call, an inline diff segment when the diff is shown, else its trail row, then the image it made or looked at
 func (h *eventHandler) toolComplete(p tuigateway.ToolCompletePayload) {
 	if p.Name == "clarify" {
 		h.flushAbandonedClarify()
@@ -395,11 +397,13 @@ func (h *eventHandler) toolComplete(p tuigateway.ToolCompletePayload) {
 	}
 	resultText := strippedText(p.ResultText)
 	duration, labels, verdict := p.DurationS, toolLabelsOf(p.Labels), verdictOf(p.IsError, p.Refused, p.Error)
+	h.turn.summary.recordTool(p.Name, val(p.Result), val(p.IsError) || val(p.Refused))
 	if inlineDiff != "" {
 		h.turn.recordInlineDiffToolComplete(inlineDiff, p.ToolID, p.Name, duration, resultText, labels, verdict)
-		return
+	} else {
+		h.turn.recordToolComplete(p.ToolID, p.Name, val(p.Summary), duration, p.Todos, resultText, labels, verdict)
 	}
-	h.turn.recordToolComplete(p.ToolID, p.Name, val(p.Summary), duration, p.Todos, resultText, labels, verdict)
+	h.turn.pushImageSegment(val(p.ImagePath), p.ToolID)
 }
 
 // Progress line of a running call, the server's message with the percent done when it reports a total
@@ -432,12 +436,7 @@ func (h *eventHandler) requestCancel(cancel tuigateway.RequestCancelPayload) {
 	if text, has := promptTimeoutNotice(cancel.Method, cancel.Reason); has {
 		h.app.sys(text)
 	}
-	h.store.forgetServerRequest(id)
-	for _, key := range append([]string{"approval", "clarify"}, sensitivePrompts...) {
-		if h.store.overlay.promptRequestID(key) == id {
-			h.store.overlay.closePrompt(key)
-		}
-	}
+	h.store.withdrawServerRequest(id)
 }
 
 // Completed turn, its final rows, interrupt rewrite, failure copy, bell, usage, spawn tree and billing wall
@@ -497,6 +496,9 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 			h.queue(tea.Raw("\x07"))
 		}
 	}
+	if line := h.turn.summaryLine(); line != "" {
+		h.app.appendMessage(msg{Kind: "event", Role: "system", Text: line})
+	}
 	h.setStatus("ready")
 	if warning := val(p.Warning); warning != "" {
 		h.turn.pushActivity(warning, "warn", "")
@@ -549,7 +551,11 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 	for _, started := range h.store.newlyStartedRows(current, &incoming) {
 		h.store.markBubbleShown(started.InputID)
 		row := tuigateway.TranscriptMessage{Role: "user", Text: &started.User, DisplayKind: started.DisplayKind, DisplayMetadata: started.DisplayMetadata}
+		staged, typedHere := h.store.takePastes(started.User)
 		for _, shown := range toTranscriptMessages([]tuigateway.TranscriptMessage{row}) {
+			if typedHere && shown.Role == "user" && shown.Kind == "" {
+				shown.Text, shown.Pastes = staged.display, staged.pastes
+			}
 			h.app.appendMessage(shown)
 		}
 	}

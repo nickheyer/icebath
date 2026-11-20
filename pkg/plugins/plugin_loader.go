@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -42,42 +40,6 @@ func pathlibProbe(p string, wantDir bool) (bool, error) {
 		return false, err
 	}
 	return !wantDir || st.IsDir(), nil
-}
-
-// Sorted child dirs holding an __init__.py, skipping underscore and dot names and warning past an unreadable child
-func IterPluginDirs(root string) ([]string, error) {
-	if isDir, err := pathlibProbe(root, true); err != nil || !isDir {
-		return nil, err
-	}
-	children, err := os.ReadDir(root)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(children))
-	for _, c := range children {
-		names = append(names, c.Name())
-	}
-	sort.Strings(names)
-	var dirs []string
-	for _, name := range names {
-		if strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
-			continue
-		}
-		child := filepath.Join(root, name)
-		isDir, err := pathlibProbe(child, true)
-		hasInit := false
-		if err == nil && isDir {
-			hasInit, err = pathlibProbe(filepath.Join(child, "__init__.py"), false)
-		}
-		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, errchain.OSText(err)))
-			continue
-		}
-		if hasInit {
-			dirs = append(dirs, child)
-		}
-	}
-	return dirs, nil
 }
 
 // Description of a plugin.yaml, empty when absent, falsy or unreadable
@@ -132,27 +94,6 @@ func ProbeAvailability(load func() (any, error)) (ok bool) {
 		return v.IsAvailable()
 	}
 	return true
-}
-
-// Plugin host of this manager, started on first use
-func (m *Manager) PluginHost() (*PluginHost, error) { return m.pluginHost() }
-
-// Parameter names of a hosted method in order and whether it takes var keywords, an unknown signature taking anything
-func (o *HostedObject) MethodParams(name string) (names []string, varKeyword bool) {
-	sig := o.methods[name].Sig
-	if sig == nil {
-		return nil, true
-	}
-	for _, p := range sig {
-		switch p.Kind {
-		case paramVarKeyword:
-			varKeyword = true
-		case paramVarPositional:
-		default:
-			names = append(names, p.Name)
-		}
-	}
-	return names, varKeyword
 }
 
 // Shared body of a named category load, a warning on the category logger and nil when it fails or yields no instance

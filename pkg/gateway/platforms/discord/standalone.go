@@ -275,8 +275,16 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if token == "" {
 		return gateway.SendError("Discord standalone send: DISCORD_BOT_TOKEN is not set"), nil
 	}
-	result, err := standaloneSendWithToken(ctx, token, chatID, message, threadID, caption, mediaFiles)
+	proxyURL, err := gateway.ResolveProxyURL(ctx, "DISCORD_PROXY", nil, "")
 	if err != nil {
+		return nil, err
+	}
+	result, err := standaloneSendWithToken(ctx, proxyURL, token, chatID, message, threadID, caption, mediaFiles)
+	if err != nil {
+		if shown := gateway.DescribeProxyError(err, proxyURL); shown != "" {
+			pkgLog().Error("Discord standalone send failed: " + shown)
+			return gateway.SendError("Discord send failed: " + shown), nil
+		}
 		pkgLog().Error("Discord standalone send failed", "err", err)
 		return gateway.SendError(fmt.Sprintf("Discord send failed: %s: %s", pyErrorTypeName(err), err)), nil
 	}
@@ -296,12 +304,8 @@ func pyErrorTypeName(err error) string {
 	return "ClientError"
 }
 
-// Body of the standalone send once the token is known, errors surfacing as the caller's send failure
-func standaloneSendWithToken(ctx context.Context, token, chatID, message, threadID, caption string, mediaFiles [][2]any) (map[string]any, error) {
-	proxyURL, err := gateway.ResolveProxyURL(ctx, "DISCORD_PROXY", nil, "")
-	if err != nil {
-		return nil, err
-	}
+// Body of the standalone send through the proxy once the token is known, errors surfacing as the caller's send failure
+func standaloneSendWithToken(ctx context.Context, proxyURL, token, chatID, message, threadID, caption string, mediaFiles [][2]any) (map[string]any, error) {
 	session, _, err := gateway.ProxyKwargsForAiohttp(proxyURL)
 	if err != nil {
 		return nil, err
@@ -359,7 +363,7 @@ func standaloneSendWithToken(ctx context.Context, token, chatID, message, thread
 					return err
 				}()
 				if uploadErr != nil {
-					return gateway.SendError(fmt.Sprintf("Discord forum thread upload failed: %s", uploadErr)), nil
+					return gateway.SendError("Discord forum thread upload failed: " + gateway.ProxySafeErrorText(uploadErr, proxyURL)), nil
 				}
 			} else {
 				resp, err := standalonePostJSON(ctx, client, threadURL, jsonHeaders, map[string]any{"name": threadName, "message": map[string]any{"content": message}})
@@ -460,7 +464,7 @@ func standaloneSendWithToken(ctx context.Context, token, chatID, message, thread
 			return nil
 		}()
 		if mediaErr != nil {
-			warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, mediaErr))["error"]
+			warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, gateway.ProxySafeErrorText(mediaErr, proxyURL)))["error"]
 			pkgLog().Error(pyrepr.Str(warning))
 			warnings = append(warnings, warning)
 		}

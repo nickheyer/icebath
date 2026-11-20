@@ -49,13 +49,3 @@ func (m *LoopManager) Session() string { return m.SessionID }
 
 // Session id the heartbeat manager is bound to
 func (m *HeartbeatManager) Session() string { return m.SessionID }
-
-// Loop manager whose reads run on a state held by another process, nothing loaded from the session store
-func MirrorLoopManager(sessionID string, state *SessionLoopState) *LoopManager {
-	return &LoopManager{SessionID: sessionID, state: state}
-}
-
-// Heartbeat manager whose reads run on a state held by another process, nothing loaded from the session store
-func MirrorHeartbeatManager(ctx context.Context, sessionID string, state *HeartbeatState) *HeartbeatManager {
-	return &HeartbeatManager{SessionID: sessionID, ctx: ctx, state: state}
-}

@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -136,7 +138,7 @@ func newOpenAIClient(env *tools.Env, o openAIClientOptions) (*openAIClient, erro
 		}
 	}
 	if c.HTTPClient == nil {
-		c.HTTPClient = &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true,
+		c.HTTPClient = &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true,
 			MaxIdleConns: 1000, MaxIdleConnsPerHost: 1000, IdleConnTimeout: 5 * time.Second}}
 	}
 	return c, nil

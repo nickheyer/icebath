@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -116,7 +117,7 @@ func TestOAuthCancelIsScopedIdempotentAndReleasesWorker(t *testing.T) {
 			if ok, _ := CancelOAuthFlow(ctx, sid.(string), "reports", h).Get("ok"); ok != true {
 				t.Fatal("repeat cancel refused")
 			}
-			if ok, _ := DeliverOAuthCallbackFlow(ctx, sid.(string), "reports", "late", "test", "", "").Get("ok"); ok != false {
+			if ok, _ := deliverOAuthCallback(ctx, sid.(string), "reports", "late", "test", "", "").Get("ok"); ok != false {
 				t.Fatal("late callback accepted")
 			}
 			retry, err := StartOAuthFlow(ctx, &tools.Env{}, h, "reports", map[string]any{"url": "https://mcp.example"}, false, 30*time.Second,
@@ -149,7 +150,7 @@ func TestOAuthSessionOperationsRequireResolvedOwner(t *testing.T) {
 				case "poll":
 					return plainJSON(PollOAuthFlow(ctx, "owned", "reports"))
 				case "callback":
-					return plainJSON(DeliverOAuthCallbackFlow(ctx, "owned", "reports", "valid", "test", "", ""))
+					return plainJSON(deliverOAuthCallback(ctx, "owned", "reports", "valid", "test", "", ""))
 				}
 				return plainJSON(CancelOAuthFlow(ctx, "owned", "reports", home.Dir(ctx)))
 			}
@@ -246,7 +247,7 @@ func TestOAuthStartFlowClientRedirectSkipsGatewayListener(t *testing.T) {
 	if rec.httpd != nil || rec.flow.RedirectURI != "http://127.0.0.1:8412/callback" {
 		t.Fatalf("rec %+v", rec)
 	}
-	DeliverOAuthCallbackFlow(ctx, sid.(string), "clicky", "authcode", "teststate123", "", "")
+	deliverOAuthCallback(ctx, sid.(string), "clicky", "authcode", "teststate123", "", "")
 	waitWorkerDone(rec.flow)
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("mcp_servers:\n  cardy:\n    url: https://mcp.example.com/mcp\n    auth: oauth\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -266,7 +267,7 @@ func TestOAuthStartFlowClientRedirectSkipsGatewayListener(t *testing.T) {
 	if !registered {
 		t.Fatal("card flow not registered")
 	}
-	DeliverOAuthCallbackFlow(ctx, attempt.flow.FlowID, "cardy", "authcode", "teststate123", "", "")
+	deliverOAuthCallback(ctx, attempt.flow.FlowID, "cardy", "authcode", "teststate123", "", "")
 	waitWorkerDone(attempt.flow)
 	pinned := NewClientOAuthFlow("pinned", "asana", "", home.Dir(ctx), "", false)
 	var pinnedBound []*ClientOAuthFlow
@@ -321,7 +322,7 @@ func TestOAuthDeliverCallbackAcceptsMatchingState(t *testing.T) {
 	resetOAuthSessions(t)
 	isolateHome(t)
 	flow := makeRelaySession(t, "sess-relay-1", "hosp", "s3cr3tstate")
-	out := DeliverOAuthCallbackFlow(context.Background(), "sess-relay-1", "hosp", "abc", "s3cr3tstate", "", "")
+	out := deliverOAuthCallback(context.Background(), "sess-relay-1", "hosp", "abc", "s3cr3tstate", "", "")
 	if connJSON(out) != `{"ok":true,"session_id":"sess-relay-1"}` || flowCallback(flow) != [3]string{"abc", "s3cr3tstate", ""} {
 		t.Fatalf("out %s callback %v", connJSON(out), flowCallback(flow))
 	}
@@ -352,7 +353,7 @@ func TestOAuthDeliverCallbackRejectsStateMismatch(t *testing.T) {
 	resetOAuthSessions(t)
 	isolateHome(t)
 	makeRelaySession(t, "sess-relay-1", "hosp", "s3cr3tstate")
-	out := plainJSON(DeliverOAuthCallbackFlow(context.Background(), "sess-relay-1", "hosp", "abc", "WRONG", "", ""))
+	out := plainJSON(deliverOAuthCallback(context.Background(), "sess-relay-1", "hosp", "abc", "WRONG", "", ""))
 	if out["ok"] != false || !strings.Contains(strings.ToLower(out["error_message"].(string)), "state") {
 		t.Fatalf("out %v", out)
 	}
@@ -363,10 +364,10 @@ func TestOAuthDeliverCallbackRejectsReplay(t *testing.T) {
 	isolateHome(t)
 	makeRelaySession(t, "sess-relay-1", "hosp", "s3cr3tstate")
 	ctx := context.Background()
-	if ok, _ := DeliverOAuthCallbackFlow(ctx, "sess-relay-1", "hosp", "abc", "s3cr3tstate", "", "").Get("ok"); ok != true {
+	if ok, _ := deliverOAuthCallback(ctx, "sess-relay-1", "hosp", "abc", "s3cr3tstate", "", "").Get("ok"); ok != true {
 		t.Fatal("first delivery refused")
 	}
-	if ok, _ := DeliverOAuthCallbackFlow(ctx, "sess-relay-1", "hosp", "abc", "s3cr3tstate", "", "").Get("ok"); ok != false {
+	if ok, _ := deliverOAuthCallback(ctx, "sess-relay-1", "hosp", "abc", "s3cr3tstate", "", "").Get("ok"); ok != false {
 		t.Fatal("replay accepted")
 	}
 }
@@ -376,10 +377,10 @@ func TestOAuthDeliverCallbackUnknownSessionAndNameMismatch(t *testing.T) {
 	isolateHome(t)
 	makeRelaySession(t, "sess-relay-1", "hosp", "s3cr3tstate")
 	ctx := context.Background()
-	if ok, _ := DeliverOAuthCallbackFlow(ctx, "nope", "hosp", "a", "s", "", "").Get("ok"); ok != false {
+	if ok, _ := deliverOAuthCallback(ctx, "nope", "hosp", "a", "s", "", "").Get("ok"); ok != false {
 		t.Fatal("unknown session accepted")
 	}
-	out := plainJSON(DeliverOAuthCallbackFlow(ctx, "sess-relay-1", "other-server", "a", "s", "", ""))
+	out := plainJSON(deliverOAuthCallback(ctx, "sess-relay-1", "other-server", "a", "s", "", ""))
 	if out["ok"] != false || !strings.Contains(out["error_message"].(string), "mismatch") {
 		t.Fatalf("out %v", out)
 	}
@@ -389,10 +390,29 @@ func TestOAuthDeliverCallbackPropagatesProviderError(t *testing.T) {
 	resetOAuthSessions(t)
 	isolateHome(t)
 	flow := makeRelaySession(t, "sess-relay-1", "hosp", "s3cr3tstate")
-	if ok, _ := DeliverOAuthCallbackFlow(context.Background(), "sess-relay-1", "hosp", "", "s3cr3tstate", "access_denied", "").Get("ok"); ok != true {
+	if ok, _ := deliverOAuthCallback(context.Background(), "sess-relay-1", "hosp", "", "s3cr3tstate", "access_denied", "").Get("ok"); ok != true {
 		t.Fatal("provider error refused")
 	}
 	if _, _, _, err := flow.WaitForCallback(context.Background(), time.Second); err == nil || !strings.Contains(err.Error(), "access_denied") {
 		t.Fatalf("wait %v", err)
 	}
+}
+
+// Hands a redirect to the flow of a session the way its loopback listener does, answering the listener's verdict
+func deliverOAuthCallback(ctx context.Context, sessionID, serverName, code, state, errText, iss string) *pyjson.Object {
+	out := pyjson.NewObject()
+	rec, msg := oauthLookup(ctx, sessionID, serverName, "")
+	if rec == nil {
+		out.Set("ok", false)
+		out.Set("error_message", msg)
+		return out
+	}
+	if err := rec.flow.DeliverCallback(code, state, errText, iss); err != nil {
+		out.Set("ok", false)
+		out.Set("error_message", err.Error())
+		return out
+	}
+	out.Set("ok", true)
+	out.Set("session_id", sessionID)
+	return out
 }

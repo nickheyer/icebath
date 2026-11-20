@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -73,7 +74,7 @@ func cdpHTTPReachable(parsed pyurl.URL, timeout time.Duration) bool {
 		scheme = parsed.Scheme
 	}
 	root := strings.TrimRight(scheme+"://"+parsed.Netloc, "/")
-	client := &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}
+	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}
 	for _, target := range []string{root + "/json/version", root + "/json"} {
 		resp, err := client.Get(target)
 		if err != nil {

@@ -329,19 +329,6 @@ func SetActiveSkin(ctx context.Context, name string) *SkinConfig {
 	return skin
 }
 
-// Name of the active skin, default for a routed home that never chose one
-func GetActiveSkinName(ctx context.Context) string {
-	skinStateMu.Lock()
-	defer skinStateMu.Unlock()
-	if key := routedHomeKey(ctx); key != "" {
-		if entry, ok := activeSkinsByHome[key]; ok {
-			return entry.name
-		}
-		return "default"
-	}
-	return activeSkinName
-}
-
 // Activates display.skin of a config, default when it is unset, blank or not a string
 func InitSkinFromConfig(ctx context.Context, cfg map[string]any) {
 	name := "default"
@@ -358,8 +345,17 @@ func activeBranding(ctx context.Context, key, fallback string) string {
 	return GetActiveSkin(ctx).GetBranding(key, fallback)
 }
 
-func GetActiveHelpHeader(ctx context.Context, fallback string) string {
-	return activeBranding(ctx, "help_header", fallback)
+// Name of the active skin, default for a routed home that never chose one
+func GetActiveSkinName(ctx context.Context) string {
+	skinStateMu.Lock()
+	defer skinStateMu.Unlock()
+	if key := routedHomeKey(ctx); key != "" {
+		if entry, ok := activeSkinsByHome[key]; ok {
+			return entry.name
+		}
+		return "default"
+	}
+	return activeSkinName
 }
 
 func GetActiveGoodbye(ctx context.Context, fallback string) string {

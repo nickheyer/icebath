@@ -153,11 +153,10 @@ func TestRegistryBundledStillWinsOverProjectAndUser(t *testing.T) {
 	if r := FindProvider(context.Background(), nil, "byterover"); r == nil || r.Source != SourceBundled {
 		t.Fatalf("byterover resolved to %+v", r)
 	}
-	RegisterProvider(ProviderRegistration{Name: "shared", Source: SourceEntryPoint, New: regFactory("shared")})
 	RegisterProvider(ProviderRegistration{Name: "shared", Source: SourceProject, Dir: "/p/shared", New: regFactory("shared")})
 	RegisterProvider(ProviderRegistration{Name: "shared", Source: SourceUser, Home: h, Dir: filepath.Join(h, "plugins", "shared"), New: regFactory("shared")})
 	if r := FindProvider(context.Background(), nil, "shared"); r == nil || r.Source != SourceUser {
-		t.Fatalf("user source should win over project and entry point, got %+v", r)
+		t.Fatalf("user source should win over project, got %+v", r)
 	}
 	names := listedProviderNames(context.Background())
 	count := 0
@@ -183,36 +182,6 @@ func TestRegistryUserSourceIsScopedToItsHome(t *testing.T) {
 	}
 	if FindProvider(context.Background(), &tools.Env{Home: a}, "onlya") == nil {
 		t.Fatal("session environment home not honoured")
-	}
-}
-
-func TestRegistryEntryPointProviderIsListedWithoutLoading(t *testing.T) {
-	isolateRegistry(t)
-	loads := 0
-	pkgDir := filepath.Join(t.TempDir(), "pipmem_pkg")
-	RegisterProvider(ProviderRegistration{Name: "pipmem", Source: SourceEntryPoint, Dir: pkgDir,
-		New: func(context.Context, *tools.Env, LoadOptions) (Provider, error) {
-			loads++
-			return &regProvider{name: "pipmem"}, nil
-		}})
-	RegisterProvider(ProviderRegistration{Name: "flatmem", Source: SourceEntryPoint, New: regFactory("flatmem")})
-	ctx := context.Background()
-	if !containsString(listedProviderNames(ctx), "pipmem") {
-		t.Fatal("entry point provider not listed")
-	}
-	if r := FindProvider(ctx, nil, "pipmem"); r == nil || r.Dir != pkgDir {
-		t.Fatalf("package entry point dir %+v", r)
-	}
-	if loads != 0 {
-		t.Fatal("resolving an entry point constructed it")
-	}
-	if r := FindProvider(ctx, nil, "flatmem"); r == nil || r.Dir != "" || hasProviderDir(r) {
-		t.Fatalf("bare module entry point has a directory %+v", r)
-	}
-	for _, d := range DiscoverMemoryProviders(ctx, nil) {
-		if d.Name == "pipmem" && (d.Description != "" || !d.Available) {
-			t.Fatalf("entry point discovery %+v", d)
-		}
 	}
 }
 
@@ -362,22 +331,13 @@ func TestRegistryPluginCLICommandsForTheActiveProviderOnly(t *testing.T) {
 	}
 }
 
-func TestRegistryWarmAndDiscoverBundled(t *testing.T) {
+func TestRegistryDiscoverBundled(t *testing.T) {
 	isolateRegistry(t)
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	ctx := context.Background()
-	if ImportMemoryProviderModule(ctx, nil, "") {
-		t.Fatal("warmed with no provider configured")
-	}
 	writeConfig(t, h, "memory:\n  provider: retaindb\n")
-	if !ImportMemoryProviderModule(ctx, nil, "") || ImportMemoryProviderModule(ctx, nil, "nope") {
-		t.Fatal("warm resolution wrong")
-	}
 	RegisterProvider(ProviderRegistration{Name: "usermem", Source: SourceUser, Home: h, Dir: filepath.Join(h, "plugins", "usermem"), New: regFactory("usermem")})
-	if ImportMemoryProviderModule(ctx, nil, "usermem") {
-		t.Fatal("user provider warmed in process")
-	}
 	var names []string
 	for _, d := range DiscoverMemoryProviders(ctx, nil) {
 		names = append(names, d.Name)

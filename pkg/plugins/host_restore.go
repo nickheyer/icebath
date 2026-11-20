@@ -92,7 +92,7 @@ var hostDeclaredReturns = map[string]map[string]string{
 	"agent.terminal_env_provider:TerminalEnvironmentProvider": returnsOf(providerBaseReturns, map[string]string{"description": "str",
 		"skip_container_guards": "bool", "cache_path_base": "Optional[str]", "default_cwd": "Optional[str]", "strip_env_keys": "frozenset",
 		"env_description": "str", "check_requirements": "bool", "setup_instructions": "list[str]",
-		"post_setup": "None", "doctor_checks": "list[tuple[bool, str, str]]"}),
+		"post_setup": "None", "doctor_checks": "list[tuple[bool, str, str]]", "create_environment": "BaseEnvironment"}),
 	"agent.secret_sources.base:SecretSource": {"fetch": "FetchResult", "is_enabled": "bool", "override_existing": "bool",
 		"token_env": "str", "protected_env_vars": "frozenset[str]", "fetch_timeout_seconds": "float", "config_schema": "dict",
 		"remediation": "str"},
@@ -122,7 +122,8 @@ var hostDeclaredReturns = map[string]map[string]string{
 		"recall_status": "Optional[RecallStatus]", "sync_turn": "None", "get_tool_schemas": "list[dict[str, Any]]",
 		"handle_tool_call": "str", "shutdown": "None", "on_turn_start": "None", "identity_signature": "dict[str, Any]",
 		"on_session_end": "None", "on_session_switch": "None", "on_pre_compress": "str", "on_delegation": "None",
-		"get_config_schema": "list[dict[str, Any]]", "save_config": "None", "on_memory_write": "None", "backup_paths": "list[str]"},
+		"get_config_schema": "list[dict[str, Any]]", "save_config": "None", "on_memory_write": "None", "backup_paths": "list[str]",
+		"on_profile_created": "None", "on_profile_renamed": "None"},
 }
 
 var parsedHints sync.Map
@@ -145,8 +146,14 @@ func cachedHint(src string) *pyHint {
 	return h
 }
 
-// Provider base ref a hint names when a hosted object may stand in for it, empty otherwise
+// Base of an object a hosted method returns for the parent to step through, its declared return an iterator
+const hostedIteratorBase = "typing:Iterator"
+
+// Provider base ref a hint names when a hosted object may stand in for it, the iterator base for an iterator, empty otherwise
 func hostObjectBase(hint *pyHint) string {
+	if hint != nil && hint.name == "Iterator" {
+		return hostedIteratorBase
+	}
 	if hint == nil || hint.sub {
 		return ""
 	}
@@ -250,6 +257,21 @@ func hintContainer(h *pyHint) string {
 		}
 	}
 	return ""
+}
+
+// Fields of a mapping a hosted call answered, a record or a rebuilt dataclass read by its fields, nil for any other value
+func FieldsOf(v any) map[string]any {
+	switch m := v.(type) {
+	case map[string]any:
+		return m
+	case Record:
+		return map[string]any(m)
+	case *Dataclass:
+		if m != nil {
+			return map[string]any(m.Fields)
+		}
+	}
+	return nil
 }
 
 // Rebuilds a decoded wire value as the declared hint, a value that does not fit staying as decoded

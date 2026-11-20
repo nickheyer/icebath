@@ -348,8 +348,6 @@ func TestLSPShellLinterSkippedWhenLSPWillHandle(t *testing.T) {
 	}
 }
 
-var ()
-
 func TestLSPDeferredExportedPostTrackAndSettle(t *testing.T) {
 	owner := "S-exported"
 	token := LSPDeferredTrackPending(owner)

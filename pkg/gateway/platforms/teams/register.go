@@ -93,8 +93,14 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return gateway.SendError("Teams standalone send: " + check.msg), nil
 		}
 	}
-	result, err := standalonePost(ctx, tenantID, clientID, clientSecret, serviceURL+"v3/conversations/"+chatID+"/activities", message)
+	activitiesURL := serviceURL + "v3/conversations/" + chatID + "/activities"
+	result, err := standalonePost(ctx, tenantID, clientID, clientSecret, activitiesURL, message)
 	if err != nil {
+		tokenURL, _ := bfTokenRequest(tenantID, clientID, clientSecret)
+		if shown := gateway.DescribeProxyError(err, gateway.TrustedEnvProxyForRedaction(ctx, tokenURL, activitiesURL)); shown != "" {
+			pkgLog().Debug("Teams standalone send raised")
+			return gateway.SendError("Teams standalone send failed: " + shown), nil
+		}
 		pkgLog().Debug(fmt.Sprintf("Teams standalone send raised: %v", err))
 		return gateway.SendError("Teams standalone send failed: " + err.Error()), nil
 	}

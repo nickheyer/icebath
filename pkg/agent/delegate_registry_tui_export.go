@@ -35,23 +35,6 @@ func VisibleSubagentRecords(sessionID string, transport, owner any, parent *AIAg
 	return out
 }
 
-// Durable owner conversation of every live top level child, in registration order
-func TopLevelSubagentOwners() []string {
-	activeSubagentsMu.Lock()
-	defer activeSubagentsMu.Unlock()
-	out := []string{}
-	for _, record := range activeSubagents.values() {
-		if !pyTruthy(record["depth"]) {
-			owner := ""
-			if pyTruthy(record["owner_agent_session_id"]) {
-				owner = pyrepr.Str(record["owner_agent_session_id"])
-			}
-			out = append(out, owner)
-		}
-	}
-	return out
-}
-
 // Live transcript path of a child agent, empty when it has none
 func LiveTranscriptPathOf(child any) string {
 	holder, isHolder := child.(liveTranscriptHolder)

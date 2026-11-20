@@ -3,6 +3,8 @@ package plugins
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 )
 
@@ -78,7 +80,7 @@ func (c *hostedCLICommand) build(ctx context.Context) error {
 	return nil
 }
 
-// Parses argv with the plugin parser onto the top level namespace and runs the func it selects in the child
+// Parses argv with the plugin parser onto the top level namespace and runs the func it selects in the child, printing the output a plugin without a terminal answers
 func (c *hostedCLICommand) parse(ctx context.Context, top map[string]any, argv []string) (CLIOutcome, error) {
 	c.mu.Lock()
 	built := c.built
@@ -97,6 +99,9 @@ func (c *hostedCLICommand) parse(ctx context.Context, top map[string]any, argv [
 		return CLIOutcome{}, err
 	}
 	reply, _ := raw.(map[string]any)
+	if output := wireStr(reply["output"]); output != "" {
+		fmt.Fprint(os.Stdout, output)
+	}
 	out := CLIOutcome{Dispatched: reply["dispatched"] == true}
 	if code, ok := wireInt(reply["exit"]); ok {
 		out.Code, out.Exited = int(code), true

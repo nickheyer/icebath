@@ -318,20 +318,6 @@ func TestSubagentParentBindingAndContextService(t *testing.T) {
 	}
 }
 
-const hostLifecyclePlugin = `
-import json, os
-from agent.subagent_lifecycle import SubagentLaunchRequest
-def register(ctx):
-    def run(args, **kw):
-        service = ctx.subagent_lifecycle
-        handle = service.launch(SubagentLaunchRequest(goal="review from host"))
-        return json.dumps({"pid": os.getpid(), "state": service.status(handle).state,
-                           "accepted": service.steer(handle, "check correctness"), "handle": handle})
-    ctx.register_tool(name="host_lifecycle", toolset="hostlife",
-        schema={"name": "host_lifecycle", "description": "d",
-                "parameters": {"type": "object", "properties": {}}}, handler=run)
-`
-
 func TestSubagentParentRefResolvesUntilCollected(t *testing.T) {
 	parent := &fakeParent{session: "weak"}
 	var live any = parent

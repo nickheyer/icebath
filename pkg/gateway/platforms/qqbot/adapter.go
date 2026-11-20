@@ -2,6 +2,7 @@ package qqbot
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -289,9 +290,14 @@ func (a *QQAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error)
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		message := "QQ startup failed: " + errText(err)
+		shown := describeConnectProxyError(err, wsProxy())
+		message := "QQ startup failed: " + cmp.Or(shown, errText(err))
 		a.SetFatalError(ctx, "qq_connect_error", message, true)
-		pkgLog().Error(fmt.Sprintf("[%s] %s", a.logTag(), message), "error", err)
+		if shown != "" {
+			pkgLog().Error(fmt.Sprintf("[%s] %s", a.logTag(), message))
+		} else {
+			pkgLog().Error(fmt.Sprintf("[%s] %s", a.logTag(), message), "error", err)
+		}
 		a.cleanup(ctx)
 		a.ReleasePlatformLock()
 		return false, nil
@@ -514,17 +520,20 @@ func (a *QQAdapter) openGatewayWS(ctx context.Context, logURL bool) error {
 	return a.openWS(ctx, gatewayURL)
 }
 
+// Proxy the websocket dials, the first proxy env var that is set
+func wsProxy() string {
+	for _, name := range []string{"WSS_PROXY", "wss_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
+		if v := os.Getenv(name); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // Opens the websocket through the first proxy env var that is set
 func (a *QQAdapter) openWS(ctx context.Context, gatewayURL string) error {
 	a.closeWS(ctx)
-	wsProxy := ""
-	for _, name := range []string{"WSS_PROXY", "wss_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
-		if v := os.Getenv(name); v != "" {
-			wsProxy = v
-			break
-		}
-	}
-	ws, err := pyaiohttpws.Connect(ctx, gatewayURL, pyaiohttpws.Options{TrustEnv: gateway.GatewayTrustEnv(ctx), Proxy: wsProxy,
+	ws, err := pyaiohttpws.Connect(ctx, gatewayURL, pyaiohttpws.Options{TrustEnv: gateway.GatewayTrustEnv(ctx), Proxy: wsProxy(),
 		Header: http.Header{"User-Agent": []string{BuildUserAgent()}}, CloseTimeout: time.Duration(ConnectTimeoutSeconds * float64(time.Second))})
 	if err != nil {
 		return err
@@ -652,7 +661,7 @@ func (a *QQAdapter) reconnect(ctx context.Context, backoffIdx int) (bool, error)
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.logTag(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.logTag(), cmp.Or(describeConnectProxyError(err, wsProxy()), errText(err))))
 		return false, nil
 	}
 	a.MarkConnected(ctx, "")

@@ -2,6 +2,7 @@ package signal
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -46,8 +48,14 @@ func rpcErrorMember(data any) (rpcErr any, present bool, err error) {
 	return nil, false, &pyErr{"TypeError", fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(data))}
 }
 
-// One batch under the scheduler with rate limit retries, lost when retries ran out and a payload for an RPC error
-func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAttachmentScheduler, idx, nBatches int, attBatch []any, batchMessage string) (lost bool, errPayload map[string]any, err error) {
+// Text of a failed request to the signal-cli daemon at target for a log line or a send result, the kind of error and the proxy's host when the proxy URL
+// the client reads from the environment holds a secret the raw text could repeat
+func proxySafeErrText(err error, target string) string {
+	return cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(target)), errText(err))
+}
+
+// One batch posted to target under the scheduler with rate limit retries, lost when retries ran out and a payload for an RPC error
+func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAttachmentScheduler, idx, nBatches int, attBatch []any, batchMessage, target string) (lost bool, errPayload map[string]any, err error) {
 	n, maxAttempts := len(attBatch), SignalRateLimitMaxAttempts
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		var data, rpcErr any
@@ -98,10 +106,10 @@ func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAtt
 			return false, nil, ctx.Err()
 		}
 		if attempt >= maxAttempts {
-			pkgLog().Error(fmt.Sprintf("Signal: send error on batch %d/%d after %d attempts: %s", idx+1, nBatches, attempt, errText(attemptErr)))
+			pkgLog().Error(fmt.Sprintf("Signal: send error on batch %d/%d after %d attempts: %s", idx+1, nBatches, attempt, proxySafeErrText(attemptErr, target)))
 			return true, nil, nil
 		}
-		pkgLog().Warn(fmt.Sprintf("Signal: transient error on batch %d/%d (attempt %d/%d): %s; will retry", idx+1, nBatches, attempt, maxAttempts, errText(attemptErr)))
+		pkgLog().Warn(fmt.Sprintf("Signal: transient error on batch %d/%d (attempt %d/%d): %s; will retry", idx+1, nBatches, attempt, maxAttempts, proxySafeErrText(attemptErr, target)))
 	}
 	return false, nil, nil
 }
@@ -121,7 +129,7 @@ func standaloneRPCSend(ctx context.Context, httpURL string, params *pyjson.Objec
 	req.Header.Set("Content-Type", "application/json")
 	transport := standaloneTransport
 	if transport == nil {
-		transport = http.DefaultTransport.(*http.Transport).Clone()
+		transport = netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}
 	defer client.CloseIdleConnections()
@@ -146,7 +154,11 @@ func sendSignal(ctx context.Context, extra map[string]any, chatID, message strin
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError(fmt.Sprintf("Signal send failed: %s", errText(err))), nil
+		target := ""
+		if v := getOr(extra, "http_url", "http://127.0.0.1:8080"); pyrepr.Truthy(v) {
+			target = pyrepr.Str(v)
+		}
+		return gateway.SendError("Signal send failed: " + proxySafeErrText(err, target)), nil
 	}
 	return result, nil
 }
@@ -219,7 +231,7 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
 					}
-					pkgLog().Warn(fmt.Sprintf("Signal: inline notice failed: %s", errText(err)))
+					pkgLog().Warn("Signal: inline notice failed: " + proxySafeErrText(err, httpURL))
 				}
 			}
 		}
@@ -227,7 +239,7 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 		if idx == 0 {
 			batchMessage = plainText
 		}
-		lost, errPayload, err := signalSendBatch(ctx, post, scheduler, idx, nBatches, attBatch, batchMessage)
+		lost, errPayload, err := signalSendBatch(ctx, post, scheduler, idx, nBatches, attBatch, batchMessage, httpURL)
 		switch {
 		case err != nil:
 			return nil, err

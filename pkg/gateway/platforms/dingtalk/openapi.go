@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -41,7 +42,7 @@ type openAPIClient struct {
 
 // Client over the central OpenAPI endpoint
 func newOpenAPIClient() *openAPIClient {
-	return &openAPIClient{http: &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()}}
+	return &openAPIClient{http: &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())}}
 }
 
 // Sends one ROA request with a JSON body and returns the decoded JSON answer, a 4xx or 5xx raised as the Tea error

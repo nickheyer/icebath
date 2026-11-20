@@ -251,13 +251,8 @@ func NewGatewayACPAgent() *GatewayACPAgent {
 	return a
 }
 
-// Agent serving ACP, the gateway projection when no session manager is given
-func NewAgent(sessionManager Sessions) any {
-	if sessionManager == nil {
-		return NewGatewayACPAgent()
-	}
-	return NewIcebathACPAgent(sessionManager)
-}
+// Agent serving ACP, the projection of the profile gateway that never owns a session itself
+func NewAgent() any { return NewGatewayACPAgent() }
 
 // Stores the editor connection and observes its raw initialize message
 func (a *GatewayACPAgent) OnConnect(conn *pyacp.AgentSideConnection) {
@@ -2416,4 +2411,5 @@ func (a *GatewayACPAgent) Close() {
 	}
 	clear(a.permissions)
 	a.teardown()
+	a.loop.settle()
 }

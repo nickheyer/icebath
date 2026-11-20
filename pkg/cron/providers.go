@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,9 +15,10 @@ import (
 )
 
 const (
-	cronUserNamespace    = "_icebath_user_cron"
 	cronSchedulerBaseRef = "cron.scheduler_provider:CronScheduler"
 	cronSchedulerCapture = "register_cron_scheduler"
+	// Name a loaded scheduler plugin reaches the cron operations of its profile under
+	cronFacadeName = "cron"
 )
 
 // One discovered provider, a user plugin directory
@@ -29,17 +27,9 @@ type cronProviderDir struct {
 	dir  string
 }
 
-// Whether the first 8192 characters of __init__.py mention the cron scheduler contract
+// Whether a user plugin directory holds a wasm or program plugin that offers a cron scheduler
 func isCronProviderDir(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "__init__.py"))
-	if err != nil {
-		return false
-	}
-	source := strings.ToValidUTF8(strings.TrimPrefix(string(raw), "\ufeff"), "\ufffd")
-	if utf8.RuneCountInString(source) > 8192 {
-		source = string([]rune(source)[:8192])
-	}
-	return strings.Contains(source, cronSchedulerCapture) || strings.Contains(source, "CronScheduler")
+	return plugins.GuestProvides(path, plugins.CategoryCronScheduler)
 }
 
 // Provider of a name, a user plugin dir that holds a cron provider
@@ -75,26 +65,25 @@ var loadCronScheduler = func(s *Store, name string) (CronScheduler, error) {
 	return instance, nil
 }
 
-// A user provider directory loads in the plugin host behind the hosted wrapper
+// A user provider directory loads in the guest of its plugin behind the hosted wrapper, the cron operations of the store handed to it
 func loadCronProviderFromDir(ctx context.Context, s *Store, d cronProviderDir) (CronScheduler, error) {
-	host, err := plugins.GetPluginManager(ctx).PluginHost()
-	if err != nil {
-		return nil, err
-	}
-	obj, err := host.LoadInstance(ctx, d.dir, cronUserNamespace+"."+d.name, cronSchedulerBaseRef, cronSchedulerCapture, nil, nil)
+	obj, err := plugins.LoadCategoryInstance(ctx, d.dir, cronSchedulerBaseRef, cronSchedulerCapture,
+		map[string]plugins.HostFacade{cronFacadeName: &schedulerFacade{s: s}})
 	if err != nil || obj == nil {
 		return nil, err
 	}
 	return &hostedCronScheduler{obj: obj, s: s, ctx: ctx}, nil
 }
 
-// CronScheduler whose every hook runs on the provider object in the plugin host child
+// CronScheduler whose hooks run on the provider object in the guest of its plugin, a hook the plugin leaves out keeping the base behaviour
 type hostedCronScheduler struct {
 	obj  *plugins.HostedObject
 	s    *Store
 	ctx  context.Context
 	mu   sync.Mutex
 	name string
+	// Stop event of the last start, held so the plugin can still read it after it was set
+	stop *plugins.HostEvent
 }
 
 // Hooks resolve_cron_scheduler reads with their raised exceptions, a hosted provider being the one that raises
@@ -116,8 +105,11 @@ func (h *hostedCronScheduler) checkName() (string, error) {
 	return name, nil
 }
 
-// Result of is_available in the child
+// Result of is_available in the plugin, true for a plugin that declares none
 func (h *hostedCronScheduler) checkAvailable() (bool, error) {
+	if !h.obj.HasMethod("is_available") {
+		return true, nil
+	}
 	res, err := h.obj.Call(h.ctx, "is_available", nil, nil)
 	if err != nil {
 		return false, err
@@ -153,6 +145,9 @@ func (h *hostedCronScheduler) IsAvailable() bool {
 func (h *hostedCronScheduler) Start(ctx context.Context, stop <-chan struct{}, o StartOptions) {
 	rememberHostedStart(h.s.home, o)
 	ev := plugins.NewHostEvent()
+	h.mu.Lock()
+	h.stop = ev
+	h.mu.Unlock()
 	go func() {
 		<-stop
 		ev.Set()
@@ -170,21 +165,30 @@ func (h *hostedCronScheduler) Start(ctx context.Context, stop <-chan struct{}, o
 	}
 }
 
-// Eager teardown in the child, a raised exception escaping as a panic
+// Eager teardown in the plugin when it declares one, a raised exception escaping as a panic
 func (h *hostedCronScheduler) Stop() {
+	if !h.obj.HasMethod("stop") {
+		return
+	}
 	if _, err := h.obj.Call(h.ctx, "stop", nil, nil); err != nil {
 		panic(err)
 	}
 }
 
-// Store mutation notice forwarded to the child
+// Store mutation notice forwarded to a plugin that takes it
 func (h *hostedCronScheduler) OnJobsChanged() error {
+	if !h.obj.HasMethod("on_jobs_changed") {
+		return nil
+	}
 	_, err := h.obj.Call(h.ctx, "on_jobs_changed", nil, nil)
 	return err
 }
 
-// Persisted job dict handed to the child register_job
+// Persisted job dict handed to the register_job of a plugin that declares one
 func (h *hostedCronScheduler) RegisterJob(job *Job) error {
+	if !h.obj.HasMethod("register_job") {
+		return nil
+	}
 	o, err := jobToObject(job)
 	if err != nil {
 		return err
@@ -193,8 +197,11 @@ func (h *hostedCronScheduler) RegisterJob(job *Job) error {
 	return err
 }
 
-// Recovered attempt count the child recover_interrupted returns
+// Recovered attempt count the plugin recover_interrupted returns, the executions ledger recovery for a plugin that declares none
 func (h *hostedCronScheduler) RecoverInterrupted(ctx context.Context) (int, error) {
+	if !h.obj.HasMethod("recover_interrupted") {
+		return recoverInterruptedExecutions(ctx, cronStoreFrom(ctx))
+	}
 	res, err := h.obj.Call(h.ctx, "recover_interrupted", nil, nil)
 	if err != nil {
 		return 0, err
@@ -215,8 +222,11 @@ func (h *hostedCronScheduler) RecoverInterrupted(ctx context.Context) (int, erro
 	return 0, fmt.Errorf("recover_interrupted returned %s, expected a whole number", errchain.Kind(res))
 }
 
-// Child claim_fire snapshot, nil when the claim was not acquired
+// Plugin claim_fire snapshot, nil when the claim was not acquired, the base claim for a plugin that declares none
 func (h *hostedCronScheduler) ClaimFire(ctx context.Context, jobID string, force, manual bool) (*Job, error) {
+	if !h.obj.HasMethod("claim_fire") {
+		return baseClaimFire(ctx, h, jobID, force, manual)
+	}
 	res, err := h.obj.Call(h.ctx, "claim_fire", []any{jobID}, map[string]any{"force": force, "manual": manual})
 	if err != nil || res == nil {
 		return nil, err
@@ -224,8 +234,11 @@ func (h *hostedCronScheduler) ClaimFire(ctx context.Context, jobID string, force
 	return claimedJobFromWire(res)
 }
 
-// Child fire_claimed of the exact snapshot
+// Plugin fire_claimed of the exact snapshot, the shared run path for a plugin that declares none
 func (h *hostedCronScheduler) FireClaimed(ctx context.Context, job *Job, o FireOptions) (bool, error) {
+	if !h.obj.HasMethod("fire_claimed") {
+		return baseFireClaimed(ctx, h, job, o)
+	}
 	wire, err := claimedJobToWire(job)
 	if err != nil {
 		return false, err

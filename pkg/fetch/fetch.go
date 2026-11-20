@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // One downloadable file pinned by size and sha256
@@ -50,7 +52,7 @@ func (e *StatusError) Error() string {
 const attempts = 4
 
 var (
-	client   = &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 60 * time.Second}}
+	client   = &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 60 * time.Second}}
 	locks    sync.Map
 	retryGap = 2 * time.Second
 )

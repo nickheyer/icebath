@@ -161,6 +161,10 @@ type Provider interface {
 	OnMemoryWrite(ctx context.Context, action, target, content string, metadata map[string]any) error
 	// Absolute paths of provider state outside the home for backup and import, the error a failing provider raised
 	BackupPaths() ([]string, error)
+	// A profile whose config selects this provider was created, home its directory, the place to set up per profile provider state
+	OnProfileCreated(ctx context.Context, profileName, home string) error
+	// A profile whose config selects this provider was renamed, home its new directory, the place to re-key what is stored under the old name
+	OnProfileRenamed(ctx context.Context, oldName, newName, home string) error
 }
 
 // Default tool call refusal of a provider that exposes no such tool
@@ -230,6 +234,12 @@ func (BaseProvider) OnMemoryWrite(ctx context.Context, action, target, content s
 }
 
 func (BaseProvider) BackupPaths() ([]string, error) { return []string{}, nil }
+
+func (BaseProvider) OnProfileCreated(ctx context.Context, profileName, home string) error { return nil }
+
+func (BaseProvider) OnProfileRenamed(ctx context.Context, oldName, newName, home string) error {
+	return nil
+}
 
 // Spawner values without its cancellation over a copy of its Python context, as contextvars copy_context gives a thread
 func CtxBound(ctx context.Context) context.Context {

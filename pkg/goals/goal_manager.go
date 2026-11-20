@@ -58,11 +58,6 @@ func NewGoalManager(ctx context.Context, sessionID string, defaultMaxTurns int64
 	return &GoalManager{SessionID: sessionID, DefaultMaxTurns: defaultMaxTurns, ctx: ctx, state: LoadGoal(ctx, sessionID)}
 }
 
-// Manager whose reads run on a state held by another process, nothing loaded from the session store
-func MirrorGoalManager(ctx context.Context, sessionID string, state *GoalState) *GoalManager {
-	return &GoalManager{SessionID: sessionID, DefaultMaxTurns: DefaultGoalMaxTurns, ctx: ctx, state: state}
-}
-
 // Calls of a goal manager the goal command and the CLI make, answered in process or by the gateway
 type Manager interface {
 	Session() string

@@ -49,7 +49,7 @@ func (a *BlueBubblesAdapter) sendAttachment(ctx context.Context, chatID, filePat
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		return gateway.SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
+		return gateway.SendResult{Success: false, Error: safeError(err, a.serverURL)}, nil
 	}
 	return result, nil
 }
@@ -193,7 +193,7 @@ func (a *BlueBubblesAdapter) downloadAttachmentToCache(ctx context.Context, attG
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[bluebubbles] failed to download attachment %s: %s", redact(attGUID), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[bluebubbles] failed to download attachment %s: %s", redact(attGUID), safeError(err, a.serverURL)))
 		return "", nil
 	}
 	return path, nil

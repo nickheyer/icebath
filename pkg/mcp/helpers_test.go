@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-var ()
-
 // One captured log record
 type logRecord struct {
 	level slog.Level

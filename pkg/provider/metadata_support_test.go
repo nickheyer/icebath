@@ -227,8 +227,6 @@ func codexContextRequest(model string) ContextLengthRequest {
 	return ContextLengthRequest{Model: model, BaseURL: "https://chatgpt.com/backend-api/codex", APIKey: codexJWT("fake-token"), Provider: "openai-codex"}
 }
 
-const codexCatalogURL = "https://chatgpt.com/backend-api/codex/models?client_version=99.0.0"
-
 func mustEqual[T comparable](t *testing.T, got, want T, what string) {
 	t.Helper()
 	if got != want {

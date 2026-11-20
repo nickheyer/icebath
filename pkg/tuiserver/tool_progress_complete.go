@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -63,6 +64,9 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 	payload["result"] = gateway.BoundedToolResult(result, failed)
 	if summary := toolSummary(name, result, durationS); summary != "" {
 		payload["summary"] = summary
+	}
+	if path := tuigateway.ToolImagePath(name, args, result, failed); path != "" {
+		payload["image_path"] = path
 	}
 	if sessionVerbose(sid) {
 		if text := tuihost.ToolResultText(result); text != "" {

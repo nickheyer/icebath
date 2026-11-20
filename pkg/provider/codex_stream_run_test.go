@@ -119,11 +119,6 @@ func (a *codexStreamAgent) RetryStatusMessages() []string {
 	defer a.fakeChatAgent.mu.Unlock()
 	return append([]string(nil), a.statuses...)
 }
-func (a *codexStreamAgent) setInterrupted(on bool) {
-	a.fakeChatAgent.mu.Lock()
-	a.interrupted = on
-	a.fakeChatAgent.mu.Unlock()
-}
 func (a *codexStreamAgent) snapshot() (deltas, reasoning, commentary []string) {
 	a.cmu.Lock()
 	defer a.cmu.Unlock()

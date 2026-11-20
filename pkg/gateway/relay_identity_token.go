@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -49,7 +50,7 @@ func (e *RelayURLError) Error() string { return "could not reach the relay: " + 
 // urllib client with environment proxies, a per operation socket timeout and urllib redirect rules
 func relayURLOpenClient(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: timeout}
-	transport := &http.Transport{Proxy: pyurl.UrlopenProxy, DisableKeepAlives: true, DialContext: dialer.DialContext}
+	transport := &http.Transport{Proxy: pyurl.UrlopenProxy, DisableKeepAlives: true, DialContext: netpref.DialContext(dialer.DialContext)}
 	return &http.Client{Transport: pyhttpx.TimeoutTransport(transport, timeout), CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if via[0].Method == http.MethodPost && (req.Response.StatusCode == 307 || req.Response.StatusCode == 308) {
 			return http.ErrUseLastResponse

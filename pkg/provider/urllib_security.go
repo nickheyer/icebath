@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // Header names forwarded to a different origin, every other header is dropped there
@@ -211,7 +213,7 @@ func (o *Opener) roundTripper(timeout time.Duration) http.RoundTripper {
 	if inner == nil {
 		inner = &http.Transport{
 			Proxy:                 probeProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			DialContext:           netpref.DialContext((&net.Dialer{Timeout: timeout}).DialContext),
 			TLSClientConfig:       o.TLS,
 			TLSHandshakeTimeout:   timeout,
 			ResponseHeaderTimeout: timeout,

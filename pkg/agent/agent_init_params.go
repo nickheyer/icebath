@@ -9,6 +9,7 @@ func copyPassthroughParams(a *AIAgent, o AIAgentOptions) {
 	a.providerRequireParameters, a.providerDataCollection, a.openrouterMinCodingScore = o.ProviderRequireParameters, o.ProviderDataCollection, o.OpenRouterMinCodingScore
 	a.enabledToolsets, a.disabledToolsets = o.EnabledToolsets, o.DisabledToolsets
 	a.maxTokens, a.reasoningConfig, a.serviceTier, a.sideAgent = o.MaxTokens, o.ReasoningConfig, o.ServiceTier, o.SideAgent
+	a.memoryAgentContext = o.MemoryAgentContext
 }
 
 // Copies the gateway identity params, the gateway session key being the stable per chat key

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -150,7 +151,7 @@ func itoa(n int) string {
 
 func TestSocketServerLoopTokenDecodeAndDispatch(t *testing.T) {
 	env := testEnv(t)
-	sock := filepath.Join(t.TempDir(), "rpc.sock")
+	sock := filepath.Join(hermetic.ShortDir(t), "rpc.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +209,7 @@ func TestSocketServerLoopTokenDecodeAndDispatch(t *testing.T) {
 
 func TestSocketServerLoopStopsBeforeAnyClient(t *testing.T) {
 	env := testEnv(t)
-	ln, err := net.Listen("unix", filepath.Join(t.TempDir(), "s.sock"))
+	ln, err := net.Listen("unix", filepath.Join(hermetic.ShortDir(t), "s.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +282,7 @@ func TestPrivateDirsAndCheckedRemoteWrite(t *testing.T) {
 
 func TestMissingTokenRejected(t *testing.T) {
 	env := testEnv(t)
-	sock := filepath.Join(t.TempDir(), "rpc.sock")
+	sock := filepath.Join(hermetic.ShortDir(t), "rpc.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)

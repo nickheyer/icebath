@@ -1,7 +1,6 @@
 package pm
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io/fs"
@@ -10,11 +9,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"gopkg.in/yaml.v3"
 )
 
 // Plugins config key mapping each plugin an update disabled to what to undo once it fits
@@ -35,53 +35,71 @@ type EnabledPluginsOptions struct {
 	SkipInvalidSecondary bool
 }
 
-// YAML parser a home selection is read with, one parse per home
-var selectionYAMLUnmarshal = yaml.Unmarshal
+type runtimeKey struct{}
+
+// Context of code running as the dependency runtime, the far side of the worker boundary and the pm command
+func withRuntime(ctx context.Context) context.Context {
+	return context.WithValue(ctx, runtimeKey{}, true)
+}
 
 // Profiles dir under the home root that plugin discovery and dependency publication share
 func profilesRoot(ctx context.Context) string {
 	return filepath.Join(DependencyHomeRoot(ctx), "profiles")
 }
 
-// Plugin and memory selection a home's config.yaml declares, nil when the home has no config yet
-func ReadHomeSelection(homeDir string) (map[string]any, error) {
+// Version and document readers of a home selection, the selected backend except inside the dependency runtime of a deployment with no local config layer, which reads the file it publishes to
+func selectionReaders(ctx context.Context, configPath string) (version func(context.Context, string) ([]any, error), read func(context.Context, string) (any, error)) {
+	kind := pystr.Lower(pystr.Strip(os.Getenv(config.BackendEnv)))
+	if inRuntime, _ := ctx.Value(runtimeKey{}).(bool); kind == "" || kind == "file" || !inRuntime {
+		return config.ConfigVersion, config.ReadConfigDoc
+	}
+	backend, layerHome := config.LocalFileLayer(configPath)
+	return func(ctx context.Context, _ string) ([]any, error) { return backend.Version(ctx, layerHome) },
+		func(ctx context.Context, _ string) (any, error) { return backend.ReadUserDoc(ctx, layerHome) }
+}
+
+// Plugin and memory selection a home's config declares, nil when the home has no config yet
+func ReadHomeSelection(ctx context.Context, homeDir string) (map[string]any, error) {
 	configPath := filepath.Join(homeDir, "config.yaml")
-	if _, err := os.Stat(configPath); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+	configVersion, readConfigDoc := selectionReaders(ctx, configPath)
+	unreadable := &PyError{Class: "ValueError", Message: "could not read plugin selection: " + configPath}
+	if _, err := configVersion(ctx, configPath); err != nil {
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
 			return nil, nil
+		case config.IsOSError(err):
+			return nil, unreadable
 		}
-		return nil, &PyError{Class: "ValueError", Message: "could not read plugin selection: " + configPath}
+		return nil, err
 	}
-	data, err := os.ReadFile(configPath)
+	doc, err := readConfigDoc(ctx, configPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+		var load *config.YAMLError
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
 			return nil, nil
+		case config.IsOSError(err), errors.As(err, &load) && strings.HasPrefix(load.PyTypeName(), "Unicode"):
+			return nil, unreadable
+		case errors.As(err, &load) && ry.IsYAMLError(load.Err):
+			return nil, &PyError{Class: "ValueError", Message: "could not parse plugin selection: " + configPath}
 		}
-		return nil, &PyError{Class: "ValueError", Message: "could not read plugin selection: " + configPath}
-	}
-	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
-	if strictUTF8(data) != nil {
-		return nil, &PyError{Class: "ValueError", Message: "could not read plugin selection: " + configPath}
-	}
-	var doc any
-	if err := selectionYAMLUnmarshal(data, &doc); err != nil {
-		return nil, &PyError{Class: "ValueError", Message: "could not parse plugin selection: " + configPath}
+		return nil, err
 	}
 	if doc == nil {
 		return map[string]any{}, nil
 	}
-	config, ok := yamlNormalize(doc).(map[string]any)
+	selection, ok := doc.(map[string]any)
 	if !ok {
 		return nil, &PyError{Class: "ValueError", Message: "configuration must be a mapping: " + configPath}
 	}
 	for _, section := range []string{"plugins", "memory"} {
-		if value := config[section]; value != nil {
+		if value := selection[section]; value != nil {
 			if _, ok := value.(map[string]any); !ok {
 				return nil, &PyError{Class: "ValueError", Message: section + " must be a mapping: " + configPath}
 			}
 		}
 	}
-	plugins, _ := config["plugins"].(map[string]any)
+	plugins, _ := selection["plugins"].(map[string]any)
 	for _, key := range []string{"enabled", "disabled"} {
 		names := plugins[key]
 		if names == nil {
@@ -97,13 +115,13 @@ func ReadHomeSelection(homeDir string) (map[string]any, error) {
 			return nil, &PyError{Class: "ValueError", Message: "plugins." + key + " must be a list of names: " + configPath}
 		}
 	}
-	memory, _ := config["memory"].(map[string]any)
+	memory, _ := selection["memory"].(map[string]any)
 	if provider := memory["provider"]; provider != nil {
 		if _, ok := provider.(string); !ok {
 			return nil, &PyError{Class: "ValueError", Message: "memory.provider must be a name: " + configPath}
 		}
 	}
-	return config, nil
+	return selection, nil
 }
 
 // String items of a decoded list as a set, other items never equal to a plugin name
@@ -119,8 +137,8 @@ func stringSet(v any) map[string]bool {
 }
 
 // Enabled plugin names of a parsed config in order, duplicates and disabled names or leaves dropped
-func enabledFromConfig(config map[string]any) []string {
-	plugins, ok := config["plugins"].(map[string]any)
+func enabledFromConfig(selection map[string]any) []string {
+	plugins, ok := selection["plugins"].(map[string]any)
 	if !ok {
 		return nil
 	}
@@ -198,7 +216,7 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 	}
 	var out []HomePlugins
 	for i, homeDir := range homes {
-		config, err := ReadHomeSelection(homeDir)
+		selection, err := ReadHomeSelection(ctx, homeDir)
 		if err != nil {
 			var pyErr *PyError
 			if !opts.SkipInvalidSecondary || i == 0 || !errors.As(err, &pyErr) || pyErr.Class != "ValueError" {
@@ -207,12 +225,12 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 			pkgLog().Warn("Skipping broken secondary profile during dependency verification", "home", homeDir, "error", err.Error())
 			continue
 		}
-		if config == nil {
-			config = map[string]any{}
+		if selection == nil {
+			selection = map[string]any{}
 		}
 		if opts.ProposedHome != "" && resolvePath(homeDir) == resolvePath(opts.ProposedHome) {
-			proposed := make(map[string]any, len(config)+1)
-			for k, v := range config {
+			proposed := make(map[string]any, len(selection)+1)
+			for k, v := range selection {
 				proposed[k] = v
 			}
 			enabled := make([]any, len(opts.Enabled))
@@ -224,10 +242,10 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 				disabled[j] = name
 			}
 			proposed["plugins"] = map[string]any{"enabled": enabled, "disabled": disabled}
-			config = proposed
+			selection = proposed
 		}
-		names := enabledFromConfig(config)
-		provider, err := providerFromConfig(homeDir, config, opts.Installing)
+		names := enabledFromConfig(selection)
+		provider, err := providerFromConfig(homeDir, selection, opts.Installing)
 		if err != nil {
 			return nil, err
 		}
@@ -242,8 +260,8 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 }
 
 // Memory provider of a parsed config when its plugin dir exists and plugins.disabled does not park it
-func providerFromConfig(homeDir string, config map[string]any, installing string) (string, error) {
-	memory, _ := config["memory"].(map[string]any)
+func providerFromConfig(homeDir string, selection map[string]any, installing string) (string, error) {
+	memory, _ := selection["memory"].(map[string]any)
 	provider, _ := memory["provider"].(string)
 	name := pystr.Strip(provider)
 	if name == "" {
@@ -257,7 +275,7 @@ func providerFromConfig(homeDir string, config map[string]any, installing string
 	if err != nil || !isDir {
 		return "", err
 	}
-	plugins, _ := config["plugins"].(map[string]any)
+	plugins, _ := selection["plugins"].(map[string]any)
 	disabled := stringSet(plugins["disabled"])
 	spellings, err := pluginSpellings(pluginDir, "")
 	if err != nil {

@@ -90,8 +90,6 @@ const sessionColumns = `s.id, s.source, s.user_id, s.model, s.model_config, COAL
 	s.api_call_count, s.profile_name, s.rewind_count, s.archived, s.auto_archived, s.pinned, s.hidden, s.last_read_at,
 	s.tool_names, s.transcript_revision`
 
-const sessionFrom = ` FROM sessions s LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash`
-
 // Row scanner shared by every session query
 type rowScanner interface {
 	Scan(dest ...any) error

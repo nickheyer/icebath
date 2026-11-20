@@ -247,6 +247,7 @@ type AIAgent struct {
 	parentSubagentID                   string
 	delegateRole                       string
 	skipMemory                         bool
+	memoryAgentContext                 string
 	delegateOutputSchema               any
 	subagentFinalizationMu             sync.Mutex
 	delegateImages                     []string
@@ -456,6 +457,7 @@ type AIAgentOptions struct {
 	ThreadID, GatewaySessionKey        string
 	SkipContextFiles, LoadSoulIdentity bool
 	SkipMemory, SkipBackgroundReview   bool
+	MemoryAgentContext                 string
 	SessionDB                          SessionStore
 	ParentSessionID                    string
 	IterationBudget                    *IterationBudget

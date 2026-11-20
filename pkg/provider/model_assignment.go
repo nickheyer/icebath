@@ -14,7 +14,7 @@ import (
 )
 
 // Built in auxiliary task slots in canonical order
-var auxTaskSlotsBuiltin = []string{"vision", "compression", "skills_hub", "approval", "mcp", "title_generation", "review",
+var auxTaskSlotsBuiltin = []string{"vision", "compression", "approval", "mcp", "title_generation", "review",
 	"voice_chat", "triage_specifier", "kanban_decomposer", "profile_describer", "curator"}
 
 // Bare selectors whose submitted URL defines a route of its own

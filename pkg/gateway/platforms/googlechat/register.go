@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"time"
 
@@ -134,20 +135,23 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if errors.Is(err, context.DeadlineExceeded) {
 			return standaloneError("token refresh timed out"), nil
 		}
-		return standaloneError(fmt.Sprintf("token refresh failed: %v", err)), nil
+		return standaloneError("token refresh failed: " + excText(err)), nil
 	}
 	if token == "" {
 		return standaloneError("refreshed credentials have no token"), nil
 	}
 	api := newRESTClient(creds)
 	api.http.Timeout = 30 * time.Second
+	if transport, ok := api.http.Transport.(*http.Transport); ok && !gateway.GatewayTrustEnv(ctx) {
+		transport.Proxy = nil
+	}
 	resp, err := api.createMessage(ctx, chatID, threadBody(message, threadID))
 	if err != nil {
 		var h *httpError
 		if errors.As(err, &h) {
 			return standaloneError(fmt.Sprintf("API returned %d: %s", h.status, pystr.Slice(h.reason, 0, 300))), nil
 		}
-		return gateway.SendError(fmt.Sprintf("Google Chat standalone send failed: %v", err)), nil
+		return gateway.SendError("Google Chat standalone send failed: " + gateway.ProxySafeErrorText(err, gateway.TrustedEnvProxyForRedaction(ctx, "https://chat.googleapis.com"))), nil
 	}
 	return map[string]any{"success": true, "message_id": resp["name"]}, nil
 }

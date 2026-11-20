@@ -408,25 +408,6 @@ func ResolveDisplayContextLength(ctx context.Context, req DisplayContextRequest)
 	return 0, false
 }
 
-// ResolveDisplayContextLengthAsync runs the display resolution off the caller goroutine, returning early on cancellation
-func ResolveDisplayContextLengthAsync(ctx context.Context, req DisplayContextRequest) (int, bool, error) {
-	type result struct {
-		n  int
-		ok bool
-	}
-	done := make(chan result, 1)
-	go func() {
-		n, ok := ResolveDisplayContextLength(ctx, req)
-		done <- result{n, ok}
-	}()
-	select {
-	case r := <-done:
-		return r.n, r.ok, nil
-	case <-ctx.Done():
-		return 0, false, ctx.Err()
-	}
-}
-
 // ConfiguredMatch is a configured provider slug and the declared model id that matched a typed name
 type ConfiguredMatch struct {
 	Slug  string

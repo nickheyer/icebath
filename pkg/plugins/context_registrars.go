@@ -132,7 +132,10 @@ func (c *Context) DelegationBackends() (any, error) {
 }
 
 // Active profile name derived from the context home, default or custom outside named profiles
-func (c *Context) ProfileName(ctx context.Context) string {
+func (c *Context) ProfileName(ctx context.Context) string { return profileNameOf(ctx) }
+
+// Name of the profile whose home ctx is bound to, default when it binds none
+func profileNameOf(ctx context.Context) string {
 	h := home.Dir(ctx)
 	if h == "" {
 		return "default"
@@ -773,28 +776,9 @@ func (c *Context) registerContextEngine(engine any) (*Registration, error) {
 	return handle, nil
 }
 
-// Registers an at prefix context reference provider, built-in prefixes refused with a warning
-func (c *Context) RegisterContextReference(provider any) error {
-	if c.ignoredAfterAbandonedLoad("register_context_reference") {
-		return nil
-	}
-	prefix, ok, err := c.hostObject("context_reference", provider)
-	if err != nil {
-		return err
-	}
-	if c.wrongType(ok, "a", "context reference provider", "ContextReferenceProvider") {
-		return nil
-	}
-	register, err := needService("RegisterContextReference", func(s *Services) func(any) error { return s.RegisterContextReference })
-	if err != nil {
-		return err
-	}
-	if err := register(provider); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Plugin '%s' context reference registration failed: %v", c.manifest.Name, err))
-		return nil
-	}
-	pkgLog().Info(fmt.Sprintf("Plugin '%s' registered context reference: @%s:", c.manifest.Name, prefix))
-	return nil
+// Registers an at prefix context reference provider for the profile, an empty, built-in or taken prefix refused with a warning
+func (c *Context) RegisterContextReference(provider any) (*Registration, error) {
+	return c.RegisterProvider("context_reference", provider)
 }
 
 // Records an inert memory provider whose activation the memory plugin loader owns

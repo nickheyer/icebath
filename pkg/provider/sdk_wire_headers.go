@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
@@ -607,7 +608,7 @@ func requestsLines(call ...pyhttpx.HeaderLine) *pyhttpx.Headers {
 
 // HTTP/1.1 wire transport of a urllib3 or http.client stack, the proxy the chooser names and the http.client CONNECT head
 func pyStackWireTransport(choose func(*url.URL) (*url.URL, error), connect time.Duration, maxIdle int) *http.Transport {
-	dial := (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext
+	dial := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
 	t := &http.Transport{MaxIdleConns: maxIdle, MaxIdleConnsPerHost: maxIdle, IdleConnTimeout: 90 * time.Second, DisableCompression: true}
 	t.Proxy = func(req *http.Request) (*url.URL, error) {
 		if req.URL.Scheme != "http" {
@@ -661,7 +662,7 @@ func httpxWireTransportTLS(limits httpxLimits, connect time.Duration, wrap func(
 	if err != nil {
 		return nil, err
 	}
-	base := (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext
+	base := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
 	dial := base
 	if wrap != nil {
 		dial = func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -888,7 +889,7 @@ func urllibWireTransport(tlsCfg *tls.Config, connect time.Duration) *http.Transp
 	if tlsCfg == nil {
 		tlsCfg = PlatformTLSConfig()
 	}
-	dial := (&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext
+	dial := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
 	forward := func(target *url.URL) (*url.URL, error) {
 		proxy := pyhttpx.URLLibProxy(target)
 		if proxy == nil {

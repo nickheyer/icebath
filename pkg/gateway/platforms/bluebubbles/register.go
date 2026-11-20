@@ -47,6 +47,14 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		var serverURL string
+		if pconfig != nil && pyrepr.Truthy(pconfig.Extra["server_url"]) {
+			serverURL = pyrepr.Str(pconfig.Extra["server_url"])
+		}
+		if shown := gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(serverURL)); shown != "" {
+			pkgLog().Debug("BlueBubbles standalone send failed")
+			return gateway.SendError("BlueBubbles send failed: " + shown), nil
+		}
 		pkgLog().Debug("BlueBubbles standalone send failed", "error", err)
 		return gateway.SendError("BlueBubbles send failed: " + pyrepr.ExceptionMessage(err)), nil
 	}

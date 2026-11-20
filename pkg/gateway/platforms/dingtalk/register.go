@@ -1,6 +1,7 @@
 package dingtalk
 
 import (
+	"cmp"
 	"context"
 	"time"
 
@@ -30,24 +31,28 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if !pyrepr.Truthy(webhookURL) {
 		return gateway.SendError("DingTalk not configured. Set DINGTALK_WEBHOOK_URL env var or webhook_url in dingtalk platform extra config."), nil
 	}
+	target := pyrepr.Str(webhookURL)
+	sendFailed := func(err error, text string) map[string]any {
+		return gateway.SendError("DingTalk send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(target)), text))
+	}
 	failed := func(err error) (map[string]any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("DingTalk send failed: " + pyrepr.ExceptionMessage(err)), nil
+		return sendFailed(err, pyrepr.ExceptionMessage(err)), nil
 	}
 	client := gateway.LimitedHTTPClient(gateway.DefaultHTTPXLimits(), false)
 	defer client.CloseIdleConnections()
-	target := pyrepr.Str(webhookURL)
 	resp, err := postJSON(ctx, client, target, pyjson.ObjectOf("msgtype", "text", "text", pyjson.ObjectOf("content", message)), 30*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("DingTalk send failed: " + pyhttpx.ErrorText(err)), nil
+		return sendFailed(err, pyhttpx.ErrorText(err)), nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return gateway.SendError("DingTalk send failed: " + resp.StatusErrorText(resp.URL)), nil
+		text := resp.StatusErrorText(resp.URL)
+		return sendFailed(&gateway.PyError{Kind: "HTTPStatusError", Msg: text}, text), nil
 	}
 	parsed, err := resp.JSON()
 	if err != nil {

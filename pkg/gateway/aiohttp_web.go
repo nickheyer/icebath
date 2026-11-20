@@ -280,7 +280,6 @@ type webResource struct {
 	origPath string
 	path     string
 	pattern  *regexp.Regexp
-	names    []string
 	routes   map[string]WebHandler
 	anyRoute WebHandler
 	allowed  map[string]bool

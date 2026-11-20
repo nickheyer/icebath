@@ -20,6 +20,15 @@ import (
 // Bubble Tea's default frame rate, the pace frames are written at
 const frameRate = 60
 
+// Longest a model may take to end the program after a stop request or the loss of the terminal before the program is ended for it
+const endGrace = 5 * time.Second
+
+// Gap between two looks at whether the terminal is still there
+const goneProbeEvery = time.Second
+
+// Failure of a program whose terminal went away under it
+var ErrTerminalGone = errors.New("tty: the terminal is gone")
+
 // Bubble Tea program whose terminal bytes, modes, size, job control and restore tty owns
 type Program struct {
 	ctx     context.Context
@@ -41,6 +50,9 @@ type Program struct {
 	fault   error
 	done    chan struct{}
 	ready   chan struct{}
+	onFrame func(FrameStat)
+	onPanic func(any)
+	lost    sync.Once
 }
 
 // Program for the model, run on the process's terminal until it quits or ctx ends
@@ -48,6 +60,12 @@ func NewProgram(ctx context.Context, model tea.Model) *Program {
 	p := &Program{ctx: ctx, model: model, done: make(chan struct{}), ready: make(chan struct{})}
 	return p
 }
+
+// Has fn told the timing of every frame written to the terminal, set before Run
+func (p *Program) OnFrame(fn func(FrameStat)) { p.onFrame = fn }
+
+// Has fn told the value of a panic in the model before the program reports it and ends, set before Run
+func (p *Program) OnPanic(fn func(any)) { p.onPanic = fn }
 
 // Sends a message to the model, waiting until the program runs and dropping it once the program ended
 func (p *Program) Send(msg tea.Msg) {
@@ -67,9 +85,25 @@ type host struct {
 	p     *Program
 }
 
-func (h *host) Init() tea.Cmd { return h.inner.Init() }
+func (h *host) Init() tea.Cmd {
+	defer h.p.caught()
+	return h.inner.Init()
+}
+
+// Tells the panic listener the value of a panic on its way out of the model, the panic going on to Bubble Tea's own report and restore
+func (p *Program) caught() {
+	r := recover()
+	if r == nil {
+		return
+	}
+	if p.onPanic != nil {
+		p.onPanic(r)
+	}
+	panic(r)
+}
 
 func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer h.p.caught()
 	switch req := msg.(type) {
 	case execRequest:
 		h.p.runExec(req)
@@ -86,9 +120,11 @@ func (h *host) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (h *host) View() tea.View {
+	defer h.p.caught()
+	began := time.Now()
 	v := h.inner.View()
 	h.p.last.Store(&v)
-	h.p.r.Render(v)
+	h.p.r.render(v, time.Since(began))
 	return tea.View{}
 }
 
@@ -104,7 +140,9 @@ func (p *Program) Run() (model tea.Model, err error) {
 	p.r = NewRenderer(p.out, w, hgt)
 	p.r.SetProfile(profile)
 	p.r.onRestore = p.guard.restore
-	p.tea = tea.NewProgram(h, tea.WithContext(p.ctx), tea.WithInput(p.in), tea.WithOutput(p.r), tea.WithoutRenderer(),
+	p.r.onFrame, p.r.onDead = p.onFrame, p.gone
+	// The stop signals are tty's own, so the model always hears of one and ends the session itself
+	p.tea = tea.NewProgram(h, tea.WithContext(p.ctx), tea.WithInput(p.in), tea.WithOutput(p.r), tea.WithoutRenderer(), tea.WithoutSignalHandler(),
 		tea.WithFilter(p.filter), tea.WithColorProfile(profile), tea.WithWindowSize(w, hgt))
 	close(p.ready)
 	stopSignals := p.signals()
@@ -113,6 +151,7 @@ func (p *Program) Run() (model tea.Model, err error) {
 		defer close(loopDone)
 		p.r.Loop(time.Second/frameRate, p.done)
 	}()
+	go p.watch()
 	final, err := p.tea.Run()
 	model = h.inner
 	if hm, ok := final.(*host); ok {
@@ -298,10 +337,10 @@ func Suspend(line string) tea.Cmd {
 // Answer to a suspend the program refused with the terminal untouched, no shell job control holding its process group
 type SuspendRefusedMsg struct{}
 
-// Stop request of the operating system, a terminate or a hangup, that the model answers by ending the program
+// Stop request of the operating system, an interrupt, a terminate or a hangup, that the model answers by ending the program
 type TerminateMsg struct{ Signal syscall.Signal }
 
-// Records the first stop request of the operating system and hands it to the model
+// Records the first stop request of the operating system and hands it to the model, ending the program for a model that does not in time
 func (p *Program) terminate(s syscall.Signal) {
 	p.mu.Lock()
 	first := p.ended == 0
@@ -311,6 +350,60 @@ func (p *Program) terminate(s syscall.Signal) {
 	p.mu.Unlock()
 	if first {
 		go p.tea.Send(TerminateMsg{Signal: s})
+		time.AfterFunc(endGrace, func() { p.end(nil) })
+	}
+}
+
+// Loss of the terminal without a hangup signal, every write to it failing, that the model answers by ending the program
+type GoneMsg struct{ Err error }
+
+// Tells the model once that the terminal is gone, ending the program with that failure for a model that does not in time
+func (p *Program) gone(err error) {
+	p.lost.Do(func() {
+		go p.tea.Send(GoneMsg{Err: err})
+		time.AfterFunc(endGrace, func() { p.end(fmt.Errorf("%w: %w", ErrTerminalGone, err)) })
+	})
+}
+
+// Ends a program still running, Run returning the failure when there is one
+func (p *Program) end(fault error) {
+	select {
+	case <-p.done:
+		return
+	default:
+	}
+	p.mu.Lock()
+	if fault != nil && p.fault == nil {
+		p.fault = fault
+	}
+	p.mu.Unlock()
+	p.tea.Kill()
+}
+
+// Looks every second whether the terminal is still there, since one that went away without a hangup signal ends the input in silence and fails
+// no write while nothing is drawn
+func (p *Program) watch() {
+	tick := time.NewTicker(goneProbeEvery)
+	defer tick.Stop()
+	misses := 0
+	for {
+		select {
+		case <-p.done:
+			return
+		case <-tick.C:
+		}
+		p.mu.Lock()
+		held := p.held
+		p.mu.Unlock()
+		err := hungUp(p.out)
+		if held || err == nil {
+			misses = 0
+			continue
+		}
+		if misses++; misses == deadWriteLimit {
+			p.gone(err)
+			return
+		}
 	}
 }
 

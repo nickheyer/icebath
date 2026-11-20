@@ -12,7 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const cuFakePluginSource = "from tools.computer_use.backend import ComputerUseProvider\n\ndef register(ctx):\n    ctx.register_computer_use_provider(None)\n"
+// Manifest lines of a program plugin that offers a computer use provider, its entry a program that does not exist
+const cuFakePluginManifest = "runtime: program\nentry: [cu-driver-that-is-not-installed]\nprovides: [computer_use_provider]\n"
 
 // Profile home holding the named user plugins and an optional computer_use.backend and isolation mode
 func cuPluginHome(t *testing.T, dir string, plugins []string, backend, isolation string) *tools.Env {
@@ -22,10 +23,7 @@ func cuPluginHome(t *testing.T, dir string, plugins []string, backend, isolation
 		if err := os.MkdirAll(pd, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(pd, "plugin.yaml"), []byte("name: "+p+"\ndescription: "+p+" driver\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(pd, "__init__.py"), []byte(cuFakePluginSource), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(pd, "plugin.yaml"), []byte("name: "+p+"\ndescription: "+p+" driver\n"+cuFakePluginManifest), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -82,7 +80,7 @@ func TestDiscoveryListsBundledThenUserWithoutLoading(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "plugins", "not-cu"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "plugins", "not-cu", "__init__.py"), []byte("def register(ctx): pass\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "plugins", "not-cu", "plugin.yaml"), []byte("name: not-cu\nruntime: program\nentry: [x]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	found, err := discoverComputerUseProviders(env)
@@ -122,8 +120,8 @@ func TestEachProfileGetsItsOwnConfiguredBackend(t *testing.T) {
 	}
 }
 
-func TestHostIsolationRefusesUserProvider(t *testing.T) {
-	env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), []string{"cu-alpha"}, "cu-alpha", "host")
+func TestUserProviderWhoseProgramCannotStartIsReported(t *testing.T) {
+	env := cuPluginHome(t, filepath.Join(t.TempDir(), "home"), []string{"cu-alpha"}, "cu-alpha", "")
 	_, err := getActiveProvider(env)
 	var le *lookupError
 	if !errors.As(err, &le) || !strings.Contains(le.Error(), "could not be loaded (see the log)") || !strings.Contains(le.Error(), "available: cua, cu-alpha") {

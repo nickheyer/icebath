@@ -301,12 +301,10 @@ func pluginServices() *plugins.Services {
 		BoundSessionKey:            func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
 		ResolveBuiltinCommand:      func(name string) bool { return commands.Resolve(name) != nil },
 		DispatchTool:               tools.DispatchForPlugin,
-		RegisterContextReference:   agent.RegisterContextReference,
 		Platforms:                  gateway.PlatformRegistryService(),
 		ProviderRegistries:         pluginservices.ProviderRegistries(),
 		BuiltinAuxTaskKeys:         provider.BuiltinAuxTaskKeys,
 		RegisterRedactionPatterns:  tools.RegisterRedactionPatterns,
-		PluginSDK:                  pluginSDK,
 		SecretSources:              provider.PluginSecretSources(),
 		PlatformDeclarations:       agent.PlatformDeclarationsService(),
 		OAuthSurface:               provider.OAuthSurface,
@@ -368,14 +366,6 @@ func pluginServices() *plugins.Services {
 	return s
 }
 
-// Session Env of the calling turn bound on ctx, the process Env of the bound home outside a turn
-func callerToolsEnv(ctx context.Context) *tools.Env {
-	if env := tools.ToolEnvFrom(ctx); env != nil {
-		return env
-	}
-	return processToolsEnv(ctx)
-}
-
 // The tool environment of one home with its config, for plugin facing memory calls
 func homeToolsEnv(ctx context.Context, h string) *tools.Env {
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
@@ -383,28 +373,12 @@ func homeToolsEnv(ctx context.Context, h string) *tools.Env {
 	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
 }
 
-// Serves the plugin SDK ops, the cron ops first and the media, provider and gateway ops after
-func pluginSDK(ctx context.Context, h, op string, args []any, kwargs map[string]any) (any, error) {
-	if op == "moved_command_hint" {
-		if len(args) != 2 {
-			return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("moved_command_hint() takes 2 positional arguments but %d were given", len(args))}
-		}
-		return provider.MovedCommandHint(ctx, config.PyStr(args[0]), config.PyStr(args[1]), ""), nil
-	}
-	for _, serve := range tierPluginSDK {
-		if result, handled, err := serve(ctx, h, op, args, kwargs); handled || err != nil {
-			return result, err
-		}
-	}
-	return gateway.ServePluginSDK(ctx, h, op, args, kwargs)
-}
-
 // Name under which the host registers a hosted object of a kind, false when the object is not one
 func hostedObjectName(kind string, obj any) (string, bool) {
 	switch kind {
 	case "memory_provider":
 		return memory.HostedProviderName(obj)
-	case "context_engine", "context_reference":
+	case "context_engine":
 		return agent.HostedContextObjectName(kind, obj)
 	}
 	return "", false

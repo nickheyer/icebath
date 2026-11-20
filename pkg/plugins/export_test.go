@@ -42,8 +42,3 @@ func InstalledServicesForTests() *Services { return installedServices() }
 
 // Host of a home with its base context built the way discovery builds it, for the external test package
 func NewPluginHostForTests(h string) (*PluginHost, error) { return newPluginHost(NewManager(h)) }
-
-// Answers one SDK request the host child sends with no caller request of ours behind it
-func (h *PluginHost) ServeChildSDKRequestForTests(op string, kwargs map[string]any) (any, error) {
-	return h.serveSDK(h.contextForOrigin(nil), map[string]any{"op": op, "args": []any{}, "kwargs": kwargs})
-}

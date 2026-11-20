@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/containerinit"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -81,27 +80,6 @@ func runStage(ctx context.Context, name string, args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "%s: unknown step %s\n", stageVerb, name)
 	return 2
-}
-
-// Python truth value of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case *pyjson.Object:
-		return x.Len() > 0
-	}
-	return true
 }
 
 // Links the pm installed interpreters, package managers, media and search tools onto PATH and pins Chromium

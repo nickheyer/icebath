@@ -299,10 +299,6 @@ func challenge401(req *http.Request, wwwAuth string) *http.Response {
 	return &http.Response{StatusCode: http.StatusUnauthorized, Header: h, Request: req, Body: http.NoBody}
 }
 
-type roundTripFunc func(*http.Request) *http.Response
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r), nil }
-
 type standIn struct {
 	mu     sync.Mutex
 	hits   [][2]string

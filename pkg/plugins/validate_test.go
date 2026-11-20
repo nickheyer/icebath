@@ -68,16 +68,6 @@ func vtHasCheck(r *ValidationReport, name string, ok bool) bool {
 	return false
 }
 
-func vtFailed(r *ValidationReport) map[string]string {
-	out := map[string]string{}
-	for _, c := range r.Checks {
-		if !c.OK {
-			out[c.Name] = c.Detail
-		}
-	}
-	return out
-}
-
 func vtPortable(t *testing.T, root string, servers, declarations map[string]any) string {
 	t.Helper()
 	manifest, _ := json.Marshal(map[string]any{"$schema": PluginSchemaV1, "name": "example-plugin",

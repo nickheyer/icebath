@@ -39,11 +39,17 @@ func sessionCaseScope(t *testing.T) string {
 	}
 	pollersBefore := notificationPollerStops()
 	t.Cleanup(func() {
+		var builds []*agentBuildThread
 		for _, live := range tuihost.LiveSessions() {
 			if !before[live.SID] {
+				record := tuihost.SessionRecord(live.SID)
 				tuihost.SetSessionRecord(live.SID, nil)
+				if build := pendingAgentBuild(record); build != nil {
+					builds = append(builds, build)
+				}
 			}
 		}
+		joinAgentBuilds(t, builds)
 		joinNotificationPollers(t, pollersBefore)
 		sessionsLock.Lock()
 		clear(idempotencyKeys)

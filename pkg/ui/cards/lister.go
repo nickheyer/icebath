@@ -2,6 +2,7 @@ package cards
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -18,7 +19,22 @@ type question struct {
 	yes  func() tea.Cmd
 }
 
-// Table card with a cursor, filter bar, detail pane, keymap actions, an editable cell, captured keys and questions
+// Row typed into in place while the cursor sits on it, the table keys making way for the text
+type rowInput struct {
+	// Reports whether row i of the data is the one typed into
+	row func(i int) bool
+	// Cell the text shows in
+	col int
+	// Keymap contexts in force on the row, ahead of the cell keys
+	ctxs []string
+	// Handed the trimmed text on the apply key
+	done func(l *lister, text string) tea.Cmd
+	// Runs on the cancel key, which clears the text when nil
+	cancel func(l *lister) tea.Cmd
+	text   string
+}
+
+// Table card with a cursor, filter bar, detail pane, keymap actions, an editable cell, a row typed into, captured keys and questions
 type lister struct {
 	env   *Env
 	title string
@@ -26,6 +42,8 @@ type lister struct {
 	id    string
 	// Keymap context holding the actions of the tab, empty for a tab that only lists
 	ctx string
+	// Keymap contexts in force on every row besides ctx, the row typed into included
+	shared []string
 	// Action a click on the selected row runs
 	primary string
 	cols    []render.Column
@@ -40,6 +58,14 @@ type lister struct {
 	onFocus func(l *lister) tea.Cmd
 	// Legend of the row under the cursor in place of every action of the context, nil for the actions as bound
 	hints func(l *lister, i int) []wm.Hint
+	// Line above the table while it has something to say, such as a part of the rows that failed to load
+	banner func() string
+	// Takes text typed or pasted while the table holds the keys, an unbound printable key or a paste
+	typed func(l *lister, text string, pasted bool) tea.Cmd
+	// Runs on a digit picking one of the first ten rows in view, which show their digit
+	quick func(l *lister, i int) tea.Cmd
+	// Row typed into in place, nil for a table without one
+	input *rowInput
 	// Keeps the cursor on the newest row while it sits there
 	follow   bool
 	data     [][]string
@@ -55,9 +81,13 @@ type lister struct {
 	ask      *question
 	status   func() string
 	start    int
-	xs       []int
-	widths   []int
-	w, h     int
+	// Rows the view spends above the table and rows of the table in view at the last paint
+	lead, seen int
+	// Columns the view put ahead of those of the spec
+	shift  int
+	xs     []int
+	widths []int
+	w, h   int
 }
 
 func (l *lister) Title() string    { return l.title }
@@ -80,11 +110,14 @@ func (l *lister) Contexts() []string {
 		return []string{keys.Edit}
 	case l.bar.Active():
 		return l.bar.Contexts()
+	case l.typing():
+		return append(append(slices.Clone(l.input.ctxs), l.shared...), keys.Edit)
 	}
 	out := []string{keys.Filter, keys.List, keys.Panel}
 	if l.detailShown() {
 		out = append([]string{keys.Detail}, out...)
 	}
+	out = append(slices.Clone(l.shared), out...)
 	if l.ctx != "" {
 		out = append([]string{l.ctx}, out...)
 	}
@@ -93,6 +126,64 @@ func (l *lister) Contexts() []string {
 
 // Reports whether the detail pane of the selected row is open
 func (l *lister) detailShown() bool { return l.expanded && l.detail != nil && l.index() >= 0 }
+
+// Reports whether the cursor sits on the row typed into while nothing else holds the keys
+func (l *lister) typing() bool {
+	if l.input == nil || l.capture != nil || l.ask != nil || l.edit != nil || l.bar.Active() {
+		return false
+	}
+	i := l.index()
+	return i >= 0 && l.input.row(i)
+}
+
+// Cell being typed into, the one opened for an edit or the row input once it holds text, nil for none
+func (l *lister) cell() *render.Edit {
+	if l.edit != nil {
+		return l.edit
+	}
+	if l.typing() && l.input.text != "" {
+		return &render.Edit{Col: l.input.col, Text: strings.Join(strings.Fields(l.input.text), " ")}
+	}
+	return nil
+}
+
+// Moves the cursor to row i of the data when the filter shows it
+func (l *lister) selectRow(i int) bool {
+	at := slices.Index(l.shown, i)
+	if at < 0 {
+		return false
+	}
+	l.sel = at
+	return true
+}
+
+// First row a table of n rows shows in room lines with the cursor on sel, as window cuts it
+func windowStart(n, sel, room int) int {
+	body := room - render.TableHead
+	if n <= body || body <= 0 || sel < body {
+		return 0
+	}
+	return sel - body + 1
+}
+
+// Takes text the table keys left over, a digit picking one of the first ten rows in view and the rest going to the spec
+func (l *lister) leftover(text string) tea.Cmd {
+	if l.quick != nil && len(text) == 1 && text[0] >= '0' && text[0] <= '9' {
+		n := int(text[0] - '0')
+		if n == 0 {
+			n = 10
+		}
+		if row := l.start + n - 1; row < len(l.shown) && n <= l.seen {
+			l.sel = row
+			return l.quick(l, l.index())
+		}
+		return nil
+	}
+	if l.typed != nil {
+		return l.typed(l, text, false)
+	}
+	return nil
+}
 
 // Reads the rows again and keeps those holding the filter text, following the newest row when asked
 func (l *lister) refresh() {
@@ -172,6 +263,11 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 				l.bar.Type(msg.Text)
 				l.refresh()
 			}
+		case l.ask != nil:
+		case l.typing():
+			l.input.text += msg.Text
+		case msg.Text != "":
+			return l, l.leftover(msg.Text)
 		}
 	case tea.PasteMsg:
 		switch {
@@ -180,6 +276,11 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		case l.bar.Active():
 			l.bar.Type(msg.Content)
 			l.refresh()
+		case l.capture != nil || l.ask != nil:
+		case l.typing():
+			l.input.text += msg.Content
+		case l.typed != nil:
+			return l, l.typed(l, msg.Content, true)
 		}
 	case tea.MouseClickMsg:
 		if msg.Button != tea.MouseLeft || l.edit != nil || l.capture != nil || l.ask != nil {
@@ -193,8 +294,8 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 			return l, nil
 		}
 		l.bar.Accept()
-		row := msg.Y - render.TableHead + l.start
-		if msg.Y < render.TableHead || row >= len(l.shown) {
+		row := msg.Y - l.lead - render.TableHead + l.start
+		if msg.Y < l.lead+render.TableHead || row >= len(l.shown) {
 			return l, nil
 		}
 		if row == l.sel && l.primary != "" {
@@ -240,6 +341,9 @@ func (l *lister) act(id string) tea.Cmd {
 		return nil
 	case "edit.apply":
 		if l.edit == nil {
+			if l.typing() && l.input.done != nil {
+				return l.input.done(l, strings.TrimSpace(l.input.text))
+			}
 			return nil
 		}
 		text := strings.TrimSpace(l.edit.Text)
@@ -250,6 +354,13 @@ func (l *lister) act(id string) tea.Cmd {
 		}
 		return nil
 	case "edit.cancel":
+		if l.edit == nil && l.typing() {
+			if l.input.cancel != nil {
+				return l.input.cancel(l)
+			}
+			l.input.text = ""
+			return nil
+		}
 		l.edit, l.onDone = nil, nil
 		return nil
 	case "edit.delete.back":
@@ -260,11 +371,17 @@ func (l *lister) act(id string) tea.Cmd {
 				l.edit.Text = string(r[:len(r)-1])
 			}
 			l.edit.Selected = false
+		} else if l.typing() {
+			if r := []rune(l.input.text); len(r) > 0 {
+				l.input.text = string(r[:len(r)-1])
+			}
 		}
 		return nil
 	case "edit.clear":
 		if l.edit != nil {
 			l.edit.Text, l.edit.Selected = "", false
+		} else if l.typing() {
+			l.input.text = ""
 		}
 		return nil
 	case "edit.end":
@@ -332,12 +449,21 @@ func (l *lister) View(w, h int) string {
 	if foot != "" {
 		body--
 	}
+	var head []string
+	if l.banner != nil {
+		if text := l.banner(); text != "" {
+			head = append(head, render.Fit(" "+render.Warm(text, t), w, t))
+		}
+	}
+	l.lead = len(head)
+	body -= l.lead
 	var rows [][]string
 	for _, i := range l.shown {
 		rows = append(rows, l.data[i])
 	}
 	if len(rows) == 0 {
 		l.pane.hide()
+		l.start, l.seen = 0, 0
 		empty := "empty"
 		switch {
 		case l.bar.Query() != "":
@@ -345,16 +471,37 @@ func (l *lister) View(w, h int) string {
 		case l.empty != nil:
 			empty = l.empty()
 		}
-		return footed(strings.Split(emptyView(w, body, render.Wrap(empty, max(w-2, 1)), t), "\n"), foot, h)
+		return footed(append(head, strings.Split(emptyView(w, body, render.Wrap(empty, max(w-2, 1)), t), "\n")...), foot, h)
 	}
-	l.xs, l.widths = render.Columns(l.cols, rows, w)
-	table := strings.Split(render.TableEdit(l.cols, rows, w, l.sel, l.edit, t), "\n")
 	room := body
 	if l.detailShown() {
 		room = max(body/2, render.TableHead+2)
 	}
+	cols, ed := l.cols, l.cell()
+	l.shift = 0
+	if l.quick != nil {
+		l.shift = 1
+		cols = append([]render.Column{{Title: "#", Right: true}}, cols...)
+		first := windowStart(len(rows), l.sel, room)
+		numbered := make([][]string, len(rows))
+		for i, r := range rows {
+			digit := ""
+			if n := i - first + 1; n >= 1 && n <= 10 {
+				digit = string(rune('0' + n%10))
+			}
+			numbered[i] = append([]string{digit}, r...)
+		}
+		rows = numbered
+		if ed != nil {
+			ed = &render.Edit{Col: ed.Col + 1, Text: ed.Text, Selected: ed.Selected}
+		}
+	}
+	l.xs, l.widths = render.Columns(cols, rows, w)
+	table := strings.Split(render.TableEdit(cols, rows, w, l.sel, ed, t), "\n")
 	var lines []string
 	lines, l.start = window(table, l.sel, room)
+	l.seen = len(lines) - render.TableHead
+	lines = append(head, lines...)
 	if !l.detailShown() {
 		l.pane.hide()
 		return footed(lines, foot, h)
@@ -368,25 +515,41 @@ func (l *lister) View(w, h int) string {
 	return footed(lines, foot, h)
 }
 
-// Trailer on the frame, where the tab says where its settings live
+// Trailer on the frame, what the tab says about its rows and then how many of them a scrolled table hides above and below
 func (l *lister) Status() string {
-	if l.status == nil {
-		return ""
+	var parts []string
+	if l.status != nil {
+		if text := l.status(); text != "" {
+			parts = append(parts, text)
+		}
 	}
-	return l.status()
+	if above, below := l.start, len(l.shown)-l.start-l.seen; l.seen > 0 && (above > 0 || below > 0) {
+		parts = append(parts, wm.HiddenText(above, max(below, 0)))
+	}
+	return strings.Join(parts, " "+l.env.Theme.Glyphs.Sep+" ")
 }
 
-// Cursor in the filter bar while it takes typing, else at the end of the cell being typed into
+// Cursor in the filter bar while it takes typing, else at the end of the cell being typed into, the start of the row input while it is empty
 func (l *lister) Cursor() *tea.Cursor {
 	if l.bar.Active() && l.edit == nil && l.capture == nil && l.ask == nil {
 		return tea.NewCursor(l.bar.CursorX(), l.h-1)
 	}
-	if l.edit == nil || l.edit.Col >= len(l.xs) || l.widths[l.edit.Col] == 0 {
+	col, n := -1, 0
+	switch {
+	case l.edit != nil:
+		col, n = l.edit.Col, len([]rune(l.edit.Text))
+	case l.typing():
+		col, n = l.input.col, ansi.StringWidth(strings.Join(strings.Fields(l.input.text), " "))
+	}
+	if col < 0 {
 		return nil
 	}
-	y := render.TableHead + l.sel - l.start
-	n := len([]rune(l.edit.Text))
-	x := l.xs[l.edit.Col] + min(n, max(l.widths[l.edit.Col]-1, 0))
+	col += l.shift
+	if col >= len(l.xs) || l.widths[col] == 0 {
+		return nil
+	}
+	y := l.lead + render.TableHead + l.sel - l.start
+	x := l.xs[col] + min(n, max(l.widths[col]-1, 0))
 	return tea.NewCursor(x, y)
 }
 
@@ -405,6 +568,9 @@ func (l *lister) Hints() []wm.Hint {
 	var out []wm.Hint
 	if l.hints != nil {
 		out = append(out, l.hints(l, l.index())...)
+	}
+	if l.typing() {
+		return out
 	}
 	for _, a := range l.env.Keys.InContexts([]string{l.ctx}) {
 		if _, ok := l.actions[a.ID]; ok && l.hints == nil && a.Context == l.ctx && (l.free[a.ID] || l.index() >= 0) {

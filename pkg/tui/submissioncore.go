@@ -2,10 +2,12 @@ package tui
 
 import (
 	"errors"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -64,13 +66,15 @@ type promptSubmitter struct {
 	turn  *turnController
 	gw    submitGateway
 	deps  submitDeps
+	// Count of sent turns that carried images, the revision of the pictures of each
+	imageTurns int
 }
 
 // Marks the session busy at the choke point every submit funnels through
 func (s *tuiStore) markSubmitting() { s.ui.Busy, s.ui.Status = true, "running…" }
 
-// Starts the turn this client owns, its bubble and busy state
-func (p *promptSubmitter) beginOwnedTurn(text, displayOverride, displayText string, show bool) {
+// Starts the turn this client owns, its bubble with the images sent along and busy state, each turn its own image revision so a file attached again is drawn again
+func (p *promptSubmitter) beginOwnedTurn(text, displayOverride, displayText string, show bool, images []string) {
 	p.turn.clearStatusTimer()
 	p.deps.setLastUserMsg(text)
 	if show {
@@ -78,7 +82,15 @@ func (p *promptSubmitter) beginOwnedTurn(text, displayOverride, displayText stri
 		if bubble == "" {
 			bubble = displayText
 		}
-		p.deps.appendMessage(msg{Role: "user", Text: bubble})
+		row := msg{Role: "user", Text: bubble}
+		if staged, found := p.store.takePastes(text); found && staged.display == bubble {
+			row.Pastes = staged.pastes
+		}
+		if len(images) > 0 {
+			p.imageTurns++
+			row.Images, row.ImageRevision = images, "turn-"+strconv.Itoa(p.imageTurns)
+		}
+		p.deps.appendMessage(row)
 	}
 	p.store.ui.Busy, p.store.ui.Status = true, "running…"
 	p.turn.bufRef = ""
@@ -300,7 +312,15 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 	}
 	startSubmit = func(displayText, submitText string, show bool) (tea.Cmd, error) {
 		if ownsTurn() {
-			p.beginOwnedTurn(text, displayOverride, displayText, show)
+			sent := opts.Attachments
+			if opts.QueueItem != nil && opts.QueueItem.Attachments != nil {
+				sent = opts.QueueItem.Attachments
+			}
+			images := make([]string, len(sent))
+			for i, attachment := range sent {
+				images[i] = attachment.Path
+			}
+			p.beginOwnedTurn(text, displayOverride, displayText, show, images)
 		}
 		item := opts.QueueItem
 		if item != nil {

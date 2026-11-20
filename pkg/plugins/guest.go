@@ -95,8 +95,8 @@ func guestNumber(v any, def float64) float64 {
 	return def
 }
 
-// Every registrar the parent serves for a guest, which reaches each one through its wire callbacks
-func guestServedCtxMethods() map[string]bool {
+// Registrars the host serves for a guest though they take a live object or a callback, each reached through its wire callbacks
+var guestServedMethods = func() map[string]bool {
 	served := map[string]bool{}
 	for name := range HostInProcessObjectBases {
 		served[name] = true
@@ -105,7 +105,7 @@ func guestServedCtxMethods() map[string]bool {
 		served[name] = true
 	}
 	return served
-}
+}()
 
 // Host of one third party plugin, kept for the life of the manager so its restart history survives reloads
 func (m *Manager) guestHost(mf *Manifest) (*PluginHost, error) {
@@ -155,7 +155,7 @@ func (m *Manager) loadGuest(ctx context.Context, mf *Manifest, pctx *Context) (s
 	if err != nil {
 		return "", err
 	}
-	if _, err := host.Load(ctx, mf, pctx, "", false, false); err != nil {
+	if err := host.Load(ctx, mf, pctx); err != nil {
 		host.Shutdown()
 		return "", err
 	}

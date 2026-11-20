@@ -31,7 +31,7 @@ var wsProfileStartWait = 20 * time.Second
 
 // Read only projections that run beside the serial lane, and verbs that answer an open server request
 var (
-	wsConcurrentReadMethods = setOf("session.context_breakdown")
+	wsConcurrentReadMethods = setOf("session.context_breakdown", "session.account_usage")
 	wsAnswerMethods         = setOf("clarify.lock")
 )
 

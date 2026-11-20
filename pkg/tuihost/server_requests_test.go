@@ -192,7 +192,7 @@ func TestSendReturnsAnAnswerCommittedAfterTheDeadlineExpired(t *testing.T) {
 	if err != nil || result == nil || objText(t, result) != `{"value": "yes"}` {
 		t.Fatalf("result = %v err = %v", result, err)
 	}
-	if len(cancels) != 0 || OpenRequestCount() != 0 {
-		t.Fatalf("cancels = %v open = %d", cancels, OpenRequestCount())
+	if open := len(OpenRequests("s1")); len(cancels) != 0 || open != 0 {
+		t.Fatalf("cancels = %v open = %d", cancels, open)
 	}
 }

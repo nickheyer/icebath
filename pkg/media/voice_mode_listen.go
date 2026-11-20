@@ -34,38 +34,7 @@ func (d *boundedDeque[T]) append(v T) {
 	}
 }
 
-// ListenOptions are the listen_for_speech keywords
-type ListenOptions struct {
-	Threshold         int
-	SustainedMS       int
-	CalibrationMS     int
-	Capture           bool
-	OnTrigger         func()
-	PreRollMS         int
-	EndpointSilenceMS int
-	MaxUtteranceMS    int
-}
-
-// DefaultListenOptions are the listen_for_speech defaults
-func DefaultListenOptions() ListenOptions {
-	return ListenOptions{SustainedMS: 300, CalibrationMS: 400, PreRollMS: 1200, EndpointSilenceMS: 1250, MaxUtteranceMS: 30_000}
-}
-
 func pyFloorDivMS(ms int) int { return pyFloorDiv(ms, 30) }
-
-// Blocks until sustained speech rises over an adaptive floor, capturing the utterance to a WAV in capture mode
-func ListenForSpeech(shouldStop func() bool, o ListenOptions) (bool, string) {
-	sd, err := importAudio()
-	if err != nil {
-		return false, ""
-	}
-	tripped, path, err := listenForSpeech(sd, shouldStop, o)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Barge-in listener failed: %s", err))
-		return false, ""
-	}
-	return tripped, path
-}
 
 // Opens a 30 ms block input stream, stopping and closing it on the way out once it started
 func withListenStream(sd pysounddevice.Module, body func(pysounddevice.InputStream) error) error {
@@ -92,80 +61,6 @@ func callQuietlyErr(fn func() error) (err error) {
 		}
 	}()
 	return fn()
-}
-
-func listenForSpeech(sd pysounddevice.Module, shouldStop func() bool, o ListenOptions) (tripped bool, path string, err error) {
-	block := int(float64(voiceSampleRate) * 0.03)
-	calibBlocks := max(1, pyFloorDivMS(o.CalibrationMS))
-	tripBlocks := max(1, pyFloorDivMS(o.SustainedMS))
-	endpointBlocks := max(1, pyFloorDivMS(o.EndpointSilenceMS))
-	maxBlocks := max(1, pyFloorDivMS(o.MaxUtteranceMS))
-	floorWindow := &boundedDeque[float64]{maxlen: max(calibBlocks, 100)}
-	preRoll := &boundedDeque[[]int16]{maxlen: max(1, pyFloorDivMS(o.PreRollMS))}
-	consecutive, minFloor, blockIdx := 0, 0.0, 0
-	err = withListenStream(sd, func(stream pysounddevice.InputStream) error {
-		for !shouldStop() {
-			data, _, err := stream.Read(block)
-			if err != nil {
-				return err
-			}
-			rms := pynumpy.RMSInt16(data)
-			if o.Capture {
-				preRoll.append(data)
-			}
-			blockIdx++
-			if len(floorWindow.items) < calibBlocks {
-				floorWindow.append(rms)
-				continue
-			}
-			pct90 := pynumpy.Percentile(floorWindow.items, 90)
-			if minFloor == 0.0 && len(floorWindow.items) >= calibBlocks {
-				minFloor = max(pct90, float64(silenceRMSThreshold*2))
-			}
-			floor := max(pct90, minFloor)
-			base := float64(o.Threshold)
-			if o.Threshold == 0 {
-				base = float64(silenceRMSThreshold * 2)
-			}
-			trigger := min(max(base, floor*8.0), 4000.0)
-			if rms < trigger {
-				floorWindow.append(rms)
-			}
-			if rms >= trigger {
-				consecutive++
-			} else {
-				consecutive = 0
-			}
-			if consecutive > 0 {
-				pkgLog().Debug(fmt.Sprintf("VAD above-trigger: block=%d rms=%.0f floor=%.0f trigger=%.0f consec=%d/%d min_floor=%.0f window_len=%d",
-					blockIdx, rms, floor, trigger, consecutive, tripBlocks, minFloor, len(floorWindow.items)))
-			}
-			if consecutive < tripBlocks {
-				continue
-			}
-			pkgLog().Info(fmt.Sprintf("VAD TRIPPED: block=%d rms=%.0f floor=%.0f trigger=%.0f consec=%d min_floor=%.0f — cutting TTS playback",
-				blockIdx, rms, floor, trigger, consecutive, minFloor))
-			if o.OnTrigger != nil {
-				if err := callQuietly(o.OnTrigger); err != nil {
-					pkgLog().Debug(fmt.Sprintf("Barge-in trigger callback failed: %s", err))
-				}
-			}
-			tripped = true
-			if !o.Capture {
-				return nil
-			}
-			path, err = captureUntilQuiet(stream, block, preRoll.items, endpointBlocks, maxBlocks)
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return false, "", err
-	}
-	if o.Capture && path == "" {
-		return false, "", nil
-	}
-	return tripped, path, nil
 }
 
 // Runs a user callback, its panic returned as an error

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -426,7 +428,7 @@ func outboundWorkerLoop() {
 }
 
 // Transport that refuses redirects so a redirected POST never turns into a body less GET
-var outboundWebhookClient = &http.Client{Transport: &http.Transport{Proxy: pyurl.UrlopenProxy},
+var outboundWebhookClient = &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy},
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
 // POST with bounded retries, connection errors and 5xx retried once, 4xx and 3xx final

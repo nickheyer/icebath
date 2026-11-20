@@ -177,3 +177,10 @@ func TestCancelFencesTheRunAndProceedsPastTheDeadline(t *testing.T) {
 		t.Fatal("cancel dispatched twice")
 	}
 }
+
+// Agent double recording the hard stops it is handed
+type scopeStopAgent struct{ stops []string }
+
+func (s *scopeStopAgent) HardInterrupt(message, toolReason string) {
+	s.stops = append(s.stops, message)
+}

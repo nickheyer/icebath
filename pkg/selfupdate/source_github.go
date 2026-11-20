@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/net/http/httpproxy"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -162,7 +163,7 @@ func sourceRequestWith(ctx context.Context, target, accept, token string) (strin
 	proxy := httpproxy.FromEnvironment().ProxyFunc()
 	client := &http.Client{Timeout: sourceRequestTimeout, Transport: &http.Transport{
 		Proxy:       func(r *http.Request) (*url.URL, error) { return proxy(r.URL) },
-		DialContext: (&net.Dialer{Timeout: sourceRequestTimeout}).DialContext,
+		DialContext: netpref.DialContext((&net.Dialer{Timeout: sourceRequestTimeout}).DialContext),
 	}}
 	resp, err := client.Do(req)
 	if err != nil {

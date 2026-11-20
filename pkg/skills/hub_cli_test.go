@@ -297,24 +297,6 @@ func TestScanGateBlocksInstallWithExitOne(t *testing.T) {
 	}
 }
 
-func TestSlashInstallAndUninstallSkipConfirm(t *testing.T) {
-	x, _, _ := newTestCLI(t)
-	var got HubInstallOptions
-	x.seams.install = func(_ context.Context, _ string, o HubInstallOptions) (HubOutcome, error) { got = o; return HubOK, nil }
-	x.HandleSkillsSlash(context.Background(), "/skills install test/skill --yes", nil)
-	if !got.SkipConfirm || got.Force || !got.DeferCache {
-		t.Fatalf("%+v", got)
-	}
-	writeTestFile(t, filepath.Join(x.S.SkillsDir(), "test-skill", "SKILL.md"), "---\nname: test-skill\n---\n")
-	x.Hub.LockFile("").RecordInstall(context.Background(), "test-skill", "github", "o/r/test-skill", "community", "safe", "h", "test-skill", []string{"SKILL.md"}, nil, nil)
-	if err := x.HandleSkillsSlash(context.Background(), "/skills uninstall test-skill", nil); err != nil {
-		t.Fatal(err)
-	}
-	if e, _ := x.lockInstalled("test-skill"); e != nil {
-		t.Fatal("not uninstalled")
-	}
-}
-
 // Index or GitHub catalog of 60 OpenAI and 3 NVIDIA skills behind the sources seam, as the catalog fixture
 func providerCatalog(t *testing.T, x *HubCLI, param string) (SkillSource, []SkillMeta, []SkillMeta) {
 	entry := func(repo, provider, name string) SkillMeta {

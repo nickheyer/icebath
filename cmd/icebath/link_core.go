@@ -43,8 +43,6 @@ var (
 	tierChatLaunch []func()
 	// Collaborators a tier adds to the services pkg/plugins reaches
 	tierServices []func(s *plugins.Services)
-	// Plugin SDK operations a tier serves, handled false for an operation it does not own
-	tierPluginSDK []func(ctx context.Context, h, op string, args []any, kwargs map[string]any) (any, bool, error)
 )
 
 func init() { linktier.Link(linktier.Core) }

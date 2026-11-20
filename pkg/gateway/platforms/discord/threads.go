@@ -12,7 +12,9 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -165,6 +167,57 @@ var handoffCreateThreadTypes = map[discordgo.ChannelType]bool{discordgo.ChannelT
 var handoffSendTypes = map[discordgo.ChannelType]bool{discordgo.ChannelTypeGuildText: true, discordgo.ChannelTypeGuildNews: true,
 	discordgo.ChannelTypeGuildVoice: true, discordgo.ChannelTypeGuildStageVoice: true, discordgo.ChannelTypeGuildNewsThread: true,
 	discordgo.ChannelTypeGuildPublicThread: true, discordgo.ChannelTypeGuildPrivateThread: true, discordgo.ChannelTypeDM: true, discordgo.ChannelTypeGroupDM: true}
+
+// Renames a thread, a guarded rename leaving a thread a person renamed or one that already carried another name alone
+func (a *DiscordAdapter) RenameThread(ctx context.Context, threadID, name string, opts gateway.ThreadRenameOptions) (bool, error) {
+	client := a.liveClient()
+	if client == nil {
+		return false, nil
+	}
+	id, err := snowflakeInt(threadID)
+	if err != nil {
+		return false, nil
+	}
+	cleaned := pystr.Strip(whitespaceRunRE.ReplaceAllString(name, " "))
+	if cleaned == "" {
+		return false, nil
+	}
+	if gateway.UTF16Len(cleaned) > 80 {
+		cleaned = pystr.Rstrip(gateway.PrefixWithinUTF16Limit(cleaned, 77)) + "..."
+	}
+	thread := a.stateChannel(id)
+	if thread == nil {
+		if thread, err = client.Channel(id, discordgo.WithContext(ctx)); err != nil {
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to resolve Discord thread %s for rename: %s", a.Name(), threadID, dpyError(err)))
+			return false, nil
+		}
+	}
+	current := thread.Name
+	if opts.OnlyIfCurrentName != nil && current != *opts.OnlyIfCurrentName {
+		pkgLog().Info(fmt.Sprintf("[%s] Discord semantic thread rename skipped for %s: current name %s != expected %s",
+			a.Name(), threadID, pyrepr.Repr(current), pyrepr.Repr(*opts.OnlyIfCurrentName)))
+		return false, nil
+	}
+	if current == cleaned {
+		return true, nil
+	}
+	edit := func() error {
+		_, err := client.ChannelEdit(id, &discordgo.ChannelEdit{Name: cleaned}, discordgo.WithContext(ctx),
+			discordgo.WithAuditLogReason("Icebath semantic session title"))
+		return err
+	}
+	if opts.OnlyIfCurrentName != nil {
+		err = a.semanticThreadRenames.attempt(id, *opts.OnlyIfCurrentName, cleaned, edit)
+	} else {
+		err = edit()
+	}
+	if err != nil {
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to rename Discord thread %s: %s", a.Name(), threadID, dpyError(err)))
+		return false, nil
+	}
+	pkgLog().Info(fmt.Sprintf("[%s] Renamed Discord thread %s from %s to %s", a.Name(), threadID, pyrepr.Repr(current), pyrepr.Repr(cleaned)))
+	return true, nil
+}
 
 // Handoff thread under a text channel, a seed message thread when the direct create fails, none for DMs
 func (a *DiscordAdapter) CreateHandoffThread(ctx context.Context, parentChatID, name string) (string, bool, error) {

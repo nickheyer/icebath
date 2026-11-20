@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 67
+const Version = 68
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -199,8 +199,7 @@ func defaultsLiteral() Tree {
 		"mcp_discovery_timeout":              1.5,
 		"mcp_single_query_discovery_timeout": 15.0,
 		"mcp": map[string]any{
-			"auto_reload_on_config_change": true,
-			"discovery_concurrency":        4,
+			"discovery_concurrency": 4,
 		},
 		"tool_output": map[string]any{
 			"max_bytes":       50000,
@@ -272,11 +271,6 @@ func defaultsLiteral() Tree {
 		},
 		"bedrock": map[string]any{
 			"region": "",
-			"discovery": map[string]any{
-				"enabled":          true,
-				"provider_filter":  []any{},
-				"refresh_interval": 3600,
-			},
 			"guardrail": map[string]any{
 				"guardrail_identifier":   "",
 				"guardrail_version":      "",
@@ -308,15 +302,6 @@ func defaultsLiteral() Tree {
 				"extra_body":          map[string]any{},
 				"reasoning_effort":    "",
 				"no_progress_timeout": nil,
-			},
-			"skills_hub": map[string]any{
-				"provider":         "auto",
-				"model":            "",
-				"base_url":         "",
-				"api_key":          "",
-				"timeout":          30,
-				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
 			},
 			"approval": map[string]any{
 				"provider":         "auto",
@@ -464,20 +449,16 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"display": map[string]any{
-			"compact":                          false,
 			"personality":                      "",
-			"resume_display":                   "full",
-			"resume_exchanges":                 10,
-			"resume_max_user_chars":            300,
-			"resume_max_assistant_chars":       200,
-			"resume_max_assistant_lines":       3,
-			"resume_skip_tool_only":            true,
 			"busy_input_mode":                  "interrupt",
 			"busy_steer_ack_enabled":           true,
 			"cli_layout":                       "modern",
 			"tui_native":                       false,
 			"tui_auto_resume_recent":           false,
 			"tui_agents_nudge":                 true,
+			"tui_theme":                        "auto",
+			"tui_compact":                      false,
+			"tui_statusbar":                    "top",
 			"bell_on_complete":                 false,
 			"bell_on_prompt":                   false,
 			"show_reasoning":                   true,
@@ -488,34 +469,29 @@ func defaultsLiteral() Tree {
 			"timestamps":                       false,
 			"timestamp_format":                 "%H:%M",
 			"final_response_markdown":          "strip",
-			"persist_prompts":                  true,
 			"inline_diffs":                     true,
+			"inline_images":                    "auto",
 			"file_mutation_verifier":           true,
-			"credits_notices":                  true,
 			"turn_completion_explainer":        true,
-			"show_cost":                        false,
 			"battery":                          false,
 			"focus_view":                       false,
 			"focus_saved_tool_progress":        "all",
 			"skin":                             "default",
 			"language":                         "en",
 			"tui_status_indicator":             "unicode",
-			"user_message_preview": map[string]any{
-				"first_lines": 2,
-				"last_lines":  2,
-			},
-			"interim_assistant_messages":     true,
-			"suppress_warning_notifications": false,
-			"show_commentary":                true,
-			"tool_progress_command":          false,
-			"tool_preview_length":            0,
-			"friendly_tool_labels":           true,
-			"turn_summary":                   true,
-			"spinner_token_flow":             true,
-			"tool_progress_grouping":         "accumulate",
-			"status_phrases":                 map[string]any{},
-			"reasoning_style":                "code",
-			"ephemeral_system_ttl":           0,
+			"interim_assistant_messages":       true,
+			"suppress_warning_notifications":   false,
+			"show_commentary":                  true,
+			"tool_progress_command":            false,
+			"tool_preview_length":              0,
+			"friendly_tool_labels":             true,
+			"turn_summary":                     true,
+			"spinner_token_flow":               true,
+			"tool_progress_grouping":           "accumulate",
+			"status_phrases":                   map[string]any{},
+			"reasoning_style":                  "code",
+			"ephemeral_system_ttl":             0,
+			"sections":                         map[string]any{},
 			"platforms": map[string]any{
 				"telegram": map[string]any{
 					"streaming": true,
@@ -537,7 +513,6 @@ func defaultsLiteral() Tree {
 			"status_bar": map[string]any{
 				"fields": []any{},
 			},
-			"copy_shortcut": "auto",
 			"pet": map[string]any{
 				"enabled":      false,
 				"slug":         "",
@@ -657,17 +632,10 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"voice": map[string]any{
-			"voice_chat_mode": "chained",
-			"gpt_live": map[string]any{
-				"model":        "gpt-live-1",
-				"voice":        "marin",
-				"instructions": "",
-			},
 			"record_key":                    "ctrl+b",
 			"submit_mode":                   "direct",
 			"max_recording_seconds":         120,
 			"auto_tts":                      false,
-			"client_direct":                 true,
 			"beep_enabled":                  true,
 			"beep_volume":                   0.3,
 			"thinking_sound":                true,
@@ -854,7 +822,6 @@ func defaultsLiteral() Tree {
 			"channel_prompts":                          map[string]any{},
 			"dm_role_auth_guild":                       "",
 			"server_actions":                           "",
-			"allow_any_attachment":                     false,
 			"max_attachment_bytes":                     33554432,
 			"approval_mentions":                        false,
 			"voice_channel_inactivity_timeout_seconds": 300,
@@ -987,8 +954,7 @@ func defaultsLiteral() Tree {
 			"done_sub_retention_days":        30,
 		},
 		"bot_mode": map[string]any{
-			"envelope_ttl_seconds": 900,
-			"turn_wait_seconds":    120,
+			"turn_wait_seconds": 120,
 		},
 		"code_execution": map[string]any{
 			"mode":                "project",
@@ -1004,9 +970,6 @@ func defaultsLiteral() Tree {
 				"listing":              "auto",
 				"listing_max_tokens":   4000,
 				"defer":                []any{"computer_use", "session_search", "image_generate", "todo_list", "process_manage", "cronjob_manage", "browser_vault", "desktop_project"},
-			},
-			"connectors": map[string]any{
-				"enabled": true,
 			},
 		},
 		"logging": map[string]any{
@@ -1208,9 +1171,8 @@ func defaultsLiteral() Tree {
 				"override_existing":         true,
 			},
 		},
-		"paste_collapse_threshold":          5,
-		"paste_collapse_threshold_fallback": 5,
-		"paste_collapse_char_threshold":     2000,
+		"paste_collapse_threshold":      5,
+		"paste_collapse_char_threshold": 2000,
 		"bot_desktop": map[string]any{
 			"geometry":           "1440x900",
 			"auto_start":         false,

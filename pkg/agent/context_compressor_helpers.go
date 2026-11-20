@@ -126,12 +126,10 @@ var (
 	ghTokenTailRE             = mustPyRE(`\bgh[pousr]_[A-Za-z0-9_.-]+`)
 	whitespaceRunRE           = mustPyRE(`\s+`)
 	gatewayReplyPointerRE     = regexp.MustCompile(`(?s)\A(?:\[Triggering message id: [^\n]*\]\n\n)?\[Replying to(?: your previous message)?: ".*?"\]\n\n`)
-	taskSnapshotHeadings      = []string{state.HistoricalTaskHeading, legacyActiveTaskHeading}
 	imagePartTypes            = map[string]bool{"image_url": true, "input_image": true, "image": true}
 	alwaysReplayedBudgetKeys  = []string{"codex_reasoning_items", "codex_message_items"}
 	newestTurnOnlyBudgetKeys  = []string{"reasoning", "reasoning_content"}
 	staleReplayPruneKeys      = []string{"codex_reasoning_items"}
-	replayBudgetKeys          = []string{"reasoning", "reasoning_content", "codex_reasoning_items", "codex_message_items"}
 	errStaleHeldHistoryMarker = errors.New("stale held history")
 )
 

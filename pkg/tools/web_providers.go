@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -35,9 +37,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
-
-// Every vendor here caps max_results at 20 server side
-const webSearchLimitCap = 20
 
 // Longest error body a tool result may carry
 const maxToolErrorChars = 2048
@@ -203,6 +202,7 @@ func truthyValue(v any, fallback bool) bool {
 
 // Shared transport so vendor calls reuse connections
 var webHTTPTransport = &http.Transport{
+	DialContext:           netpref.DialContext((&net.Dialer{}).DialContext),
 	Proxy:                 http.ProxyFromEnvironment,
 	MaxIdleConns:          32,
 	IdleConnTimeout:       90 * time.Second,
@@ -1267,9 +1267,6 @@ func parallelSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 		return fmt.Sprintf("Keyless Parallel search returned an unexpected payload: %v", err)
 	})
 }
-
-// payloadError marks a vendor payload that did not parse
-type payloadError struct{ err error }
 
 // Parallel keyless extract over the public MCP endpoint, an unexpected payload shape raised to the caller
 func parallelExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, error) {

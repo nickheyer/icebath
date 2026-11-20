@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -285,12 +286,12 @@ func (p *providerRequestIdleReader) Read(b []byte) (int, error) {
 
 // Sends without following redirects under per phase connect, write, header and read timeouts
 func providerRequestSend(req *http.Request, timeout time.Duration) (*ProviderResponse, error) {
-	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true}
+	transport := &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true}
 	ctx, cancel := context.WithCancel(req.Context())
 	defer cancel()
 	var timer *time.Timer
 	if timeout > 0 {
-		transport.DialContext = (&net.Dialer{Timeout: timeout}).DialContext
+		transport.DialContext = netpref.DialContext((&net.Dialer{Timeout: timeout}).DialContext)
 		transport.TLSHandshakeTimeout = timeout
 		transport.ResponseHeaderTimeout = timeout
 		timer = time.AfterFunc(timeout, cancel)

@@ -566,10 +566,6 @@ func TestAccountUsagePluginHookPanicStaysInTheCaller(t *testing.T) {
 
 func usageF64(v float64) *float64 { return &v }
 
-func usageBoolRef(b bool) *bool { return &b }
-
-func usageInt64Ref(v int64) *int64 { return &v }
-
 func codexUsageServer(t *testing.T, statuses map[string]int, payload map[string]any) (*httptest.Server, *[]string) {
 	var mu sync.Mutex
 	var seen []string

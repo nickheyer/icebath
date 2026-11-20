@@ -2,7 +2,6 @@ package hostinfo
 
 import (
 	"math"
-	"strconv"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -90,20 +89,4 @@ func BatteryCategory(status BatteryStatus) string {
 		}
 	}
 	return BatteryCategoryGood
-}
-
-// BatteryGlyph is a bolt while charging and a battery otherwise
-func BatteryGlyph(status BatteryStatus) string {
-	if status.Charging() {
-		return "⚡"
-	}
-	return "\U0001f50b"
-}
-
-// FormatBattery renders the compact glyph and percent label, empty when no reading is available
-func FormatBattery(status BatteryStatus) string {
-	if !status.Available || status.Percent == nil {
-		return ""
-	}
-	return BatteryGlyph(status) + " " + strconv.Itoa(*status.Percent) + "%"
 }

@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -137,7 +139,7 @@ func (r *GatewayRunner) runAgentViaProxy(ctx context.Context, p proxyRunParams) 
 	if !runStillCurrent() {
 		return staleResult("result"), nil
 	}
-	pkgLog().Info(fmt.Sprintf("proxy response: url=%s session=%s time=%.1fs response=%d chars", proxyURL, firstRunes(p.sessionID, 20), elapsed, utf8.RuneCountInString(fullResponse)))
+	pkgLog().Info(fmt.Sprintf("proxy response: url=%s session=%s time=%.1fs response=%d chars", gateway.SafeProxyURLForLog(proxyURL), firstRunes(p.sessionID, 20), elapsed, utf8.RuneCountInString(fullResponse)))
 	final := fullResponse
 	if final == "" {
 		final = i18n.T(ctx, "gateway.proxy.no_response", "", nil)
@@ -205,7 +207,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 		req.Header.Set("X-Icebath-Session-Id", sessionID)
 	}
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{Timeout: proxySockConnect}).DialContext}}
+		DialContext: netpref.DialContext((&net.Dialer{Timeout: proxySockConnect}).DialContext)}}
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -218,7 +220,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(reader)
 		errorText := pystr.DecodeUTF8Replace(raw)
-		pkgLog().Warn(fmt.Sprintf("Proxy error (%d) from %s: %s", resp.StatusCode, proxyURL, firstRunes(errorText, 500)))
+		pkgLog().Warn(fmt.Sprintf("Proxy error (%d) from %s: %s", resp.StatusCode, gateway.SafeProxyURLForLog(proxyURL), firstRunes(errorText, 500)))
 		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.http_error", "", map[string]any{"status": resp.StatusCode, "error": firstRunes(errorText, 300)})), nil
 	}
 	buffer := ""
@@ -260,7 +262,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 		sawDone = consumeLine(buffer)
 	}
 	if !sawDone {
-		pkgLog().Warn(fmt.Sprintf("Proxy SSE stream from %s ended without [DONE] — response may be truncated (%d chars received)", proxyURL, utf8.RuneCountInString(fullResponse)))
+		pkgLog().Warn(fmt.Sprintf("Proxy SSE stream from %s ended without [DONE] — response may be truncated (%d chars received)", gateway.SafeProxyURLForLog(proxyURL), utf8.RuneCountInString(fullResponse)))
 		if fullResponse == "" {
 			return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.closed_early", "", nil)), nil
 		}
@@ -270,9 +272,10 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 
 // Logs a proxy failure, the connection error reply when nothing streamed, else the partial response
 func (r *GatewayRunner) proxyConnectionError(ctx context.Context, proxyURL, fullResponse string, err error) (string, map[string]any, error) {
-	pkgLog().Error(fmt.Sprintf("Proxy connection error to %s: %s", proxyURL, pyrepr.ExceptionMessage(err)))
+	shown := cmp.Or(gateway.DescribeProxyError(err, proxyURL), pyrepr.ExceptionMessage(err))
+	pkgLog().Error(fmt.Sprintf("Proxy connection error to %s: %s", gateway.SafeProxyURLForLog(proxyURL), shown))
 	if fullResponse == "" {
-		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.connection_error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})), nil
+		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.connection_error", "", map[string]any{"error": shown})), nil
 	}
 	return fullResponse, nil, nil
 }

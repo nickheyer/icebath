@@ -2,14 +2,17 @@ package tuiserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // Readiness budgets, the overlapping poll join grace and the retryable in progress code
@@ -40,7 +43,9 @@ var configSetupRegistry = &handlerRegistry{}
 func init() {
 	registerAtExit(func() { readinessPool.Shutdown(true) })
 	configSetupRegistry.method("setup.status", setupStatus)
+	configSetupRegistry.method("setup.runtime_check", setupRuntimeCheck)
 	configSetupRegistry.install()
+	addLongHandlers("setup.runtime_check")
 }
 
 // Forgets a settled probe so the next poll re-probes, logging a failure nobody waited for
@@ -153,6 +158,77 @@ func setupStatus(ctx context.Context, rid any, params map[string]any) (response 
 		return withScoped(map[string]any{"provider_configured": gateway.HasAnyProviderConfigured(scoped, profile != "")}, stamp)
 	}
 	return readinessCheck(ctx, rid, params, probe, "status", readinessStatusShareWaitSeconds)
+}
+
+// Strict check of the route a session would be built with, one provider alone when named, a failed resolve answered as not ok with its error
+func setupRuntimeCheck(ctx context.Context, rid any, params map[string]any) (response map[string]any) {
+	defer func() {
+		failure := recover()
+		if failure == nil {
+			return
+		}
+		if configOutage(failure) {
+			panic(failure)
+		}
+		err, isError := failure.(error)
+		if !isError {
+			err = errors.New(failureText(failure))
+		}
+		answer := map[string]any{}
+		refused := gateway.ReadinessFailure(err)
+		for _, key := range refused.Keys {
+			answer[key] = refused.Vals[key]
+		}
+		response = ok(rid, answer)
+	}()
+	requested := strings.TrimSpace(relayString(params["provider"]))
+	probe := func(scoped context.Context, profile string, stamp map[string]any) map[string]any {
+		startupModel, startupProvider := resolveStartupRuntime(scoped)
+		model := startupModel
+		var runtime *provider.Runtime
+		var err error
+		if requested != "" {
+			runtime, err = provider.ResolveRuntimeProvider(scoped, home.Dir(scoped), requested, startupModel, "", "")
+		} else {
+			model, runtime, _, err = resolveAgentModelRuntime(scoped, nil, "")
+		}
+		panicIf(err)
+		configured := gateway.HasAnyProviderConfigured(scoped, profile != "")
+		resolved := runtime.Provider
+		if resolved == "" {
+			resolved = "provider"
+		}
+		pinned := requested
+		if pinned == "" {
+			pinned = startupProvider
+		}
+		if section, isDict := loadCfg(scoped)["model"].(map[string]any); pinned == "" && isDict {
+			pinned = strings.TrimSpace(relayString(section["provider"]))
+		}
+		blamed := pinned
+		if blamed == "" {
+			blamed = resolved
+		}
+		var source any
+		if runtime.Source != "" {
+			source = runtime.Source
+		}
+		fail := func(message string) map[string]any {
+			return withScoped(map[string]any{"ok": false, "provider": blamed, "model": model, "source": source, "error": message}, stamp)
+		}
+		if !configured && resolved == "bedrock" && (runtime.Source == "iam-role" || runtime.Source == "aws-sdk-default-chain") {
+			return fail("No Icebath provider is configured.")
+		}
+		if !provider.RuntimeHasCredentials(runtime) {
+			return fail("No usable credentials found for " + blamed + "." + provider.MissingCredentialsSuffix(scoped, blamed))
+		}
+		var served any
+		if runtime.Provider != "" {
+			served = runtime.Provider
+		}
+		return withScoped(map[string]any{"ok": true, "provider": served, "model": model, "source": source}, stamp)
+	}
+	return readinessCheck(ctx, rid, params, probe, "runtime:"+requested, readinessShareWaitSeconds)
 }
 
 // First truthy value, else the last one as Python or does

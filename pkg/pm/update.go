@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
@@ -544,6 +546,7 @@ func indexKey(raw string, headers map[string]string, kind string) string {
 
 // Transport index reads use, replaceable by tests the way Python installs an opener
 var indexTransport http.RoundTripper = &http.Transport{
+	DialContext:        netpref.DialContext((&net.Dialer{}).DialContext),
 	Proxy:              http.ProxyFromEnvironment,
 	DisableCompression: true,
 	IdleConnTimeout:    90 * time.Second,

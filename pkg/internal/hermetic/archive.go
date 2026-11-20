@@ -20,3 +20,14 @@ func UnpackTarZst(t testing.TB, archive string) string {
 	}
 	return dir
 }
+
+// Short directory of the test for unix sockets, whose whole path the kernel caps near a hundred bytes
+func ShortDir(t testing.TB) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}

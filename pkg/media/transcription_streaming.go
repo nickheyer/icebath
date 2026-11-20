@@ -658,26 +658,6 @@ func pluginStreamingSession(ctx context.Context, providerName, language, prompt 
 	return newStreamingSession(ctx, providerName, onPartial, &pluginStreamDriver{inner: inner}), nil
 }
 
-// StreamingAvailable reports whether live STT is enabled and the active provider can open a session
-func StreamingAvailable(ctx context.Context, sttConfig map[string]any) (bool, error) {
-	if sttConfig == nil {
-		sttConfig = loadSTTConfig(ctx)
-	}
-	if !streamingEnabled(sttConfig) {
-		return false, nil
-	}
-	providerName, err := getProvider(ctx, sttConfig)
-	if err != nil {
-		return false, err
-	}
-	if streamingProviders[providerName] {
-		session, err := builtinStreamingSession(ctx, providerName, sttConfig, "", "", nil)
-		return session != nil, err
-	}
-	registered := GetTranscriptionProvider(ctx, providerName, "")
-	return registered != nil && registered.StreamingCapable(), nil
-}
-
 // OpenStreamingSession starts a live session for the active provider, nil when streaming is off or none opens
 func OpenStreamingSession(ctx context.Context, onPartial func(string), sttConfig map[string]any) (*StreamingSession, error) {
 	if sttConfig == nil {

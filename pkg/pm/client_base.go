@@ -142,7 +142,7 @@ func workerCall(ctx context.Context, operation string, args policyArgs, run func
 		return err
 	}
 	updateID := ambientUpdate(ctx)
-	workerCtx := context.WithValue(ctx, receiptScopeKey{}, &receiptScope{})
+	workerCtx := withRuntime(context.WithValue(ctx, receiptScopeKey{}, &receiptScope{}))
 	if lazyDisabled {
 		workerCtx = withLazyInstallsDisabled(workerCtx)
 	}

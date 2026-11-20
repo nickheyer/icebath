@@ -52,8 +52,9 @@ var HostInProcessObjectBases = map[string]string{
 	"register_platform":             "gateway.platforms.send_targets:StandaloneSendPolicy",
 }
 
-// Provider bases a category loader hands back as hosted objects though no ctx registration names them
-var HostResultObjectBases = []string{"tools.computer_use.backend:ComputerUseProvider", "tools.computer_use.backend:ComputerUseBackend"}
+// Bases a category loader or a hosted provider method hands back as hosted objects though no ctx registration names them
+var HostResultObjectBases = []string{"tools.computer_use.backend:ComputerUseProvider", "tools.computer_use.backend:ComputerUseBackend",
+	"agent.transcription_provider:TranscriptionStreamSession", "tools.environments.base:BaseEnvironment"}
 
 // Hooks whose payload reaches hosted callbacks only as opaque values
 var HostDegradedHooks = map[string]string{

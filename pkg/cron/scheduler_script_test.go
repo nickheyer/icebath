@@ -128,18 +128,6 @@ func TestRunJobScriptScriptSubprocessEnvSanitized(t *testing.T) {
 	}
 }
 
-func runBootstrapArgv(t *testing.T, argv []string) string {
-	t.Helper()
-	cmd := exec.Command(argv[0], argv[1:]...)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("bootstrap failed %v %s", err, stderr.String())
-	}
-	return strings.TrimSpace(string(out))
-}
-
 func TestRunJobScriptEmojiStdoutRoundTripsThroughScriptCapture(t *testing.T) {
 	s := scriptStore(t)
 	writeScript(t, s, "emoji.py", "import sys\nsys.stdout.buffer.write(\"backup done \\N{PARTY POPPER} 日次\".encode(\"utf-8\"))\n")

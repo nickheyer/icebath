@@ -67,9 +67,139 @@ func init() {
 
 All handlers return JSON strings (`JSON`, `ErrorResult`). Use `home.Dir(ctx)`
 from `pkg/home` for paths, never hardcode `~/.icebath`. For custom/local-only
-tools, write a plugin with `pkg/pluginsdk` (`Host.RegisterTool`) and drop it
-with its `plugin.yaml` in `~/.icebath/plugins/` instead of editing core —
-`icebath plugins --help` lists the validate, doctor and pack verbs.
+tools, write a plugin (next section) instead of editing core.
+
+### Writing a Plugin
+
+A third-party plugin is a directory in `~/.icebath/plugins/<name>/` holding a
+`plugin.yaml` and a guest built from Go that imports
+`github.com/nickheyer/icebath/pkg/pluginsdk`. The guest runs apart from
+icebath's own code, a program in its own process and a WebAssembly module in
+a sandbox, and talks to icebath over a framed wire. Python plugin source is
+not loaded. `icebath plugins --help` lists the validate, doctor and pack verbs;
+`icebath plugins enable <name>` activates a plugin.
+
+**Two forms**, picked by `runtime` in the manifest:
+
+| `runtime` | Guest | Build | Reach |
+|---|---|---|---|
+| `program` | native executable | `go build -o <entry> .` | an operating system process started with the profile environment, free to do what any program can; what it asks of the host still follows `grants` |
+| `wasm` | WebAssembly module | `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o <entry>.wasm .` | only what `grants` allow, memory and run time capped by `limits`; runs only while icebath calls it |
+
+`main` is `func main() { pluginsdk.Main() }` in both forms.
+
+**Entry point.** An `init` function names the register function; icebath runs
+it once per load with the `Host` it registers on:
+
+```go
+func init() {
+	pluginsdk.Register(func(h pluginsdk.Host) error {
+		_, err := h.RegisterTool(pluginsdk.Tool{Name: "hello", Toolset: "hello", Description: "Say hello",
+			Schema:  map[string]any{"name": "hello", "description": "Say hello", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
+			Handler: func(ctx context.Context, call pluginsdk.ToolCall) (string, error) { return `{"ok": true}`, nil }})
+		return err
+	})
+}
+
+func main() { pluginsdk.Main() }
+```
+
+**Manifest (`plugin.yaml`).**
+
+| Field | Meaning |
+|---|---|
+| `name`, `version`, `description`, `author`, `license`, `homepage`, `tags` | identity shown in listings |
+| `runtime`, `entry` | `program` or `wasm`, and the program (plus arguments) or the module file inside the plugin directory |
+| `kind` | `standalone` (default, loaded when enabled), `backend`, `platform`, `model-provider`, `exclusive` (loaded only by the category that selects it) |
+| `provides` | categories the plugin is found under: `memory_provider` (`memory.provider`), `context_engine` (`context.engine`), `cron_scheduler` (`cron.provider`), `computer_use_provider` (`computer_use.backend`); a `kind: exclusive` plugin that lists nothing is offered to every category |
+| `grants.read`, `grants.write` | path roots the host reads and writes for the plugin, absolute or starting with `~`, `$ICEBATH_HOME`, `$PLUGIN_DIR`, `$PLUGIN_DATA` |
+| `grants.net` | host names `Host.HTTP` may reach, exact, `*.suffix` or `*` |
+| `grants.env` | environment variable names `Host.Env` may read |
+| `limits.memory_mb`, `limits.call_seconds` | wasm memory cap (16 to 4096, default 256) and run time of one call (default 120) |
+| `requires_env`, `optional_env`, `config_schema`, `requires_icebath`, `requires_plugins`, `capabilities` | credentials asked at install, typed settings, version floor, advisory dependencies, gated host powers |
+| `provides_tools`, `provides_hooks`, `provides_middleware`, `provides_locales` | what the plugin declares it registers, checked by `plugins doctor` |
+| `requires_auth`, `oauth` | sign in the host attaches to `Host.ProviderRequest` |
+
+A value the plugin was not granted is refused by the host: `Host.Env` of an
+ungranted name, `Host.ReadFile` outside the granted roots and `Host.HTTP` to
+an ungranted host all answer an error. A plugin never reads the credential
+store; a provider call that needs the user's sign in goes through
+`Host.ProviderRequest`.
+
+**Host methods** (`pkg/pluginsdk/sdk.go`).
+
+| Group | Methods |
+|---|---|
+| Identity | `PluginID`, `PluginKey`, `Name`, `Dir`, `ProfileName`, `Manifest` |
+| Settings | `Config`, `SetConfig`, `HasPlugin`, `HasCapability` |
+| Registration | `RegisterTool`, `RegisterHook`, `RegisterMiddleware`, `RegisterCommand`, `RegisterCLICommand`, `RegisterProvider`, `RegisterLoginBackend`, `RegisterTerminalBackend`, `RegisterCronScheduler`, `RegisterPlatform`, `RegisterSlackActionHandler`, `RegisterApprovalTransport`, `RegisterWidget`, `RegisterSkill`, `RegisterLocale`, `RegisterLocaleDir`, `RegisterSystemPromptSection`, `RegisterAutomationBlueprint`, `RegisterAuxiliaryTask`, `RegisterRedactionPatterns`, `Subscribe`, `Emit`, `OnUnload` |
+| Session | `DispatchTool`, `CallMCP`, `InjectMessage`, `InjectMessageAt`, `PostMessage`, `AskChoice`, `SideQuestion`, `SessionCwd`, `SessionSurface`, `CurrentCronExecution`, `Facade`, `Call` |
+| Granted input and output | `ReadFile`, `WriteFile`, `ListDir`, `Remove`, `HTTP`, `ProviderRequest`, `Env` |
+
+A registration returns a `*Handle`; `Handle.Dispose` removes it before unload,
+and unloading the plugin removes every registration it made. Model provider
+profiles are named with `pluginsdk.RegisterProfile` from `init`.
+
+**Provider kinds** of `Host.RegisterProvider(kind, *pluginsdk.Object)`. An
+`Object` carries `Attrs` icebath reads and `Methods` it calls by name; a
+member a kind leaves optional gets its base behaviour, a missing required one
+fails the registration. A method reads the object icebath addressed with
+`pluginsdk.Self(ctx)`.
+
+| Kind | Required members | Selected by |
+|---|---|---|
+| `image_gen`, `video_gen` | `name`, `generate` | `image_gen.provider`, `video_gen.provider` |
+| `web_search` | `name`, `is_available` (`search`, `extract` with `supports_search`, `supports_extract`) | web backend settings |
+| `browser` | `name`, `is_available`, `create_session`, `close_session`, `emergency_cleanup` | `browser.cloud_provider` |
+| `browser_page_backend` | `name`, `has_page`, `evaluate` | the browser vault |
+| `terminal_environment` | `name`, `is_available`, `create_environment` | `terminal.backend` |
+| `secret_source` | `name`, `fetch` (answers `pluginsdk.Record{Type: "FetchResult"}` or a mapping with its fields) | `secrets.<name>.enabled` |
+| `tts`, `transcription` | `name`, `synthesize` / `transcribe` | `tts.provider`, `stt.provider` |
+| `delegation` | `name`, `route_task` | `delegation.backend` |
+| `context_engine` | `name`, `update_from_response`, `should_compress`, `compress` | `context.engine` |
+| `context_reference` | `prefix`, `autocomplete`, `expand` | `@prefix:` in a message, for the profile that loaded the plugin |
+| `memory` | `name`, `is_available`, `initialize`, `get_tool_schemas` | `memory.provider` |
+| `login_backend` | `name`, `prefix`, `list_items`, `get_meta`, `resolve_password` | `vault.<name>.enabled` |
+| `cron_scheduler` | `name`, `start` | `cron.provider` |
+| `computer_use` | `name`, `is_available`, `create_backend` | `computer_use.backend` |
+
+**Typed surfaces** build the provider object for you:
+
+- `pluginsdk.Platform` (`RegisterPlatform`): a messaging platform. `Adapter`
+  builds one `pluginsdk.Adapter` per connection (`Connect`, `Disconnect`,
+  `Send` required, every other hook optional); the `pluginsdk.Gateway` it
+  receives takes inbound messages (`HandleMessage`) and connection state
+  (`MarkConnected`, `MarkDisconnected`, `SetFatalError`). Setup is declarative:
+  `SetupInstructions` and `SetupVars` are the questions icebath asks in the
+  terminal UI and saves as profile environment variables; a plugin has no
+  terminal, so a setup function is refused. Platforms need the plugins tier
+  (the full and noextras builds).
+- `pluginsdk.LoginBackend` (`RegisterLoginBackend`): a browser vault backend
+  listing `VaultItem`s and resolving passwords, one time codes and secrets by
+  handle.
+- `pluginsdk.TerminalBackend` (`RegisterTerminalBackend`): `CreateEnvironment`
+  answers a `pluginsdk.TerminalEnvironment` whose `Execute` runs one command
+  (`TerminalCommand` in, `TerminalResult` out) and whose `Cleanup` releases it.
+  Optional: `ExecPrefix` (an argv on the icebath machine that runs its
+  remainder inside the environment, with `SupportsStreams` on the backend),
+  `FetchFile`, `FetchRealpath`. The one thing that does not cross: a running
+  foreground command cannot be handed to the background, since icebath holds
+  no process of it; it runs to its end or its timeout.
+- `pluginsdk.CronScheduler` (`RegisterCronScheduler`): `Start` receives the
+  stop `*pluginsdk.Event` and a `pluginsdk.Cron` whose `ClaimFire`,
+  `FireClaimed`, `FireDue` and `RecoverInterrupted` run a job through the
+  run and delivery path of icebath. Only the plugin `cron.provider` names
+  gets these operations.
+- `pluginsdk.CLICommand` (`RegisterCLICommand`): an `icebath <name>`
+  subcommand whose `Run` answers its output and exit code.
+- `pluginsdk.Widget` (`RegisterWidget`): see `references/tui-widgets.md`.
+- `pluginsdk.Message` (`PostMessage`): a posted message with `Edit`,
+  `Refresh` and `Result`. `pluginsdk.HostObject` is any other object living
+  in icebath, read with `Get` and called with `Call`; `pluginsdk.HostFunc` is
+  a callback icebath handed over.
+
+`icebath plugins doctor <dir>` loads the plugin under a throwaway home, with
+`Host.HTTP` denied, and reports what it registered.
 
 ### Adding a Slash Command
 

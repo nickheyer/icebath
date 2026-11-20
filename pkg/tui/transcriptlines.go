@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-var ()
-
 // Local hour and minute stamp of a message, empty when its time is missing or invalid
 func fmtMsgTimestamp(createdAt *float64) (string, bool) {
 	if createdAt == nil || math.IsNaN(*createdAt) || math.IsInf(*createdAt, 0) || *createdAt <= 0 {

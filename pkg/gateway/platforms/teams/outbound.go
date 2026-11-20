@@ -76,6 +76,12 @@ func (a *TeamsAdapter) sendCard(ctx context.Context, chatID string, card *pyjson
 	return a.sendViaConvRef(ctx, chatID, cardActivity(card))
 }
 
+// Text of a failed connector call for a log line or a send result, the kind of error and the proxy's host when the proxy URL the client reads from the
+// environment holds a secret the raw text could repeat
+func connectorErrorText(err error) string {
+	return gateway.ProxySafeErrorText(err, gateway.EnvProxyForRedaction(appServiceURL(), defaultTeamsServiceURL, bfTokenScope, entraLoginEndpoint))
+}
+
 // Text chunks as message activities, threaded under a numeric reply id with a flat send fallback
 func (a *TeamsAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	if !a.appReady() {
@@ -98,7 +104,7 @@ func (a *TeamsAdapter) Send(ctx context.Context, chatID, content, replyTo string
 			result, err = a.appSend(ctx, chatID, textActivity(chunk))
 		}
 		if err != nil {
-			return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true}, nil
+			return gateway.SendResult{Success: false, Error: connectorErrorText(err), Retryable: true}, nil
 		}
 		lastMessageID = sentID(result)
 		a.rememberSent(result)
@@ -146,8 +152,9 @@ func (a *TeamsAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gatew
 	}
 	result, err := a.sendCard(ctx, prompt.ChatID, adaptiveCard(body, actions))
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("[teams] send_exec_approval failed: %v", err))
-		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true}, nil
+		shown := connectorErrorText(err)
+		pkgLog().Error("[teams] send_exec_approval failed: " + shown)
+		return gateway.SendResult{Success: false, Error: shown, Retryable: true}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(result)}, nil
 }
@@ -185,8 +192,9 @@ func (a *TeamsAdapter) sendMediaAttachment(ctx context.Context, chatID, source, 
 		return a.sendViaConvRef(ctx, chatID, activity)
 	}()
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("[teams] send_%s failed: %v", mediaLabel, err))
-		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: true}, nil
+		shown := connectorErrorText(err)
+		pkgLog().Error(fmt.Sprintf("[teams] send_%s failed: %s", mediaLabel, shown))
+		return gateway.SendResult{Success: false, Error: shown, Retryable: true}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(result)}, nil
 }

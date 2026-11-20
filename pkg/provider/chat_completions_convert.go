@@ -684,14 +684,6 @@ var reasoningCarrierRoutes = []carrierRoute{
 // Reasoning tag names every surface hides
 var ThinkTagNames = []string{"think", "thinking", "reasoning", "thought", "REASONING_SCRATCHPAD", "思考", "反思", "推理", "推敲"}
 
-var thinkTagAlt = func() string {
-	parts := make([]string, len(ThinkTagNames))
-	for i, n := range ThinkTagNames {
-		parts[i] = regexp.QuoteMeta(n)
-	}
-	return strings.Join(parts, "|")
-}()
-
 // Tool call wrapper tag names of the strip passes, an XML namespace prefix allowed before each
 const (
 	toolCallTagAlt  = `tool_call|tool_calls|tool_result|function_call|function_calls`
@@ -733,24 +725,6 @@ var inlineReasoningPatterns = func() []*regexp2.Regexp {
 	}
 	return out
 }()
-
-// StripStrayToolCallClosers drops orphan tool_call and function closing tags
-func StripStrayToolCallClosers(s string) string {
-	out, err := StrayToolCallCloserPattern.Replace(s, "", -1, -1)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
-
-// StripUnterminatedToolCalls drops a tool_call opened on its own line and never closed
-func StripUnterminatedToolCalls(s string) string {
-	out, err := UnterminatedToolCallPattern.Replace(s, "", -1, -1)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
 
 // StripThinkBlocks removes reasoning blocks and stray tool call XML from assistant text
 func StripThinkBlocks(content string) string {

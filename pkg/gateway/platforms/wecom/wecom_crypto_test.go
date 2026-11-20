@@ -54,7 +54,11 @@ func TestWecomCryptoRoundtripEncryptDecrypt(t *testing.T) {
 	}
 }
 
-func (e *EncryptError) Error() string { return e.Msg }
+// Failure of the encrypt side the tests drive
+type EncryptError struct{ Msg string }
+
+func (e *EncryptError) Error() string   { return e.Msg }
+func (*EncryptError) weComCryptoError() {}
 
 // PKCS7Encode pads to a 32 byte block, adding a full block when already aligned
 func PKCS7Encode(text []byte) []byte {

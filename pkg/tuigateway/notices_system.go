@@ -49,6 +49,28 @@ type I18nCatalogResult struct {
 	Messages map[string]string `json:"messages"`
 }
 
+// Language the UI can be shown in: its own name for itself, whether it reads right to left, the layer that supplies it and the surfaces it covers
+type LanguageOption struct {
+	ID       string   `json:"id"`
+	Endonym  string   `json:"endonym"`
+	RTL      bool     `json:"rtl"`
+	Source   string   `json:"source"`
+	Surfaces []string `json:"surfaces"`
+}
+
+// Asks for the languages of a profile, and for the id a code, alias or regional tag stands for
+type I18nLanguagesParams struct {
+	Profile *string `json:"profile,omitzero"`
+	Resolve string  `json:"resolve,omitzero"`
+}
+
+// Languages of a profile, the language in effect, and the id the value to resolve stands for, empty when no language answers to it
+type I18nLanguagesResult struct {
+	Languages []LanguageOption `json:"languages"`
+	Current   string           `json:"current"`
+	Resolved  string           `json:"resolved,omitzero"`
+}
+
 // Informational one liner for the session
 var NoticeEvent = NewEvent[NoticePayload]("notice")
 
@@ -60,6 +82,9 @@ var NotificationClearEvent = NewEvent[NotificationClearPayload]("notification.cl
 
 // Battery of the host the gateway runs on
 var SystemBattery = NewMethod[ProfileParams, SystemBatteryResult]("system.battery")
+
+// Languages the UI can be shown in
+var I18nLanguages = NewMethod[I18nLanguagesParams, I18nLanguagesResult]("i18n.languages")
 
 // Messages of one language pack and surface
 var I18nCatalog = NewMethod[I18nCatalogParams, I18nCatalogResult]("i18n.catalog")

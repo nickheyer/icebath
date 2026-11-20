@@ -8,12 +8,6 @@ import (
 	"testing"
 )
 
-func isoHooks(m *Manager, name string) int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.hooks[name])
-}
-
 type isoInline struct{ ids *[]uint64 }
 
 func (p isoInline) Manifest() Manifest { return Manifest{Name: "inline"} }

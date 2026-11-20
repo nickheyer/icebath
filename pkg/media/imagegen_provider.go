@@ -151,31 +151,13 @@ func GetImageGenProvider(ctx context.Context, name, scope string) ImageGenProvid
 	return imageGenRegistry.GetProvider(ctx, name, scope)
 }
 
-// Plugin facing registry that register_image_gen_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_image_gen_provider writes into, a plugin host object stored as the provider adapted from it
 func ImageGenScopedRegistry() plugins.ScopedRegistry {
-	return hostedImageScopedRegistry{imageGenRegistry.Scoped()}
-}
-
-// Scoped registry view that wraps plugin host objects as ImageGenProvider values before delegating
-type hostedImageScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedImageScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedImageGenProvider(p))
-}
-func (s hostedImageScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedImageGenProvider(p))
-}
-func (s hostedImageScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedImageGenProvider(p))
-}
-func (s hostedImageScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedImageScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedImageGenProvider(p), scope)
-}
-func (s hostedImageScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedImageGenProvider(current), adaptHostedImageGenProvider(replacement), scope)
+	return plugins.HostedScopedRegistry{Inner: imageGenRegistry.Scoped(), Adapt: adaptHostedImageGenProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedImageGenProvider)
+			return h.obj, ok
+		}}
 }
 
 // Context whose home resolution answers the environment home

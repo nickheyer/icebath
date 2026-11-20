@@ -743,7 +743,7 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 		attempt++
 		wait := a.sendChunkRetryDelaySeconds * float64(attempt)
 		pkgLog().Warn(fmt.Sprintf("[%s] send chunk failed to=%s attempt=%d/%d, retrying in %.2fs: %s", a.Name(), safeID(chatID), attempt,
-			a.sendChunkRetries+1, wait, errText(err)))
+			a.sendChunkRetries+1, wait, a.proxySafeErrText(ctx, err)))
 		if wait > 0 {
 			if serr := sleep(ctx, wait); serr != nil {
 				return serr

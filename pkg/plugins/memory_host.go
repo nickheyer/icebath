@@ -3,14 +3,12 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"sync"
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -72,6 +70,8 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 			})(ctx, h, c, args, kwargs)
 	case "register_memory_provider", "register_cli_command":
 		return nil, nil
+	case "rewrite_memory_query":
+		return hostCtxCall(ctx, h, c, method, args, kwargs)
 	case "register_skill":
 		if !mc.registerSkills {
 			return nil, nil
@@ -101,6 +101,19 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 	return result, nil
 }
 
+// Rewrite of a user message into one memory retrieval question, installed by the memory package for memory provider plugins
+var MemoryQueryRewrite func(ctx context.Context, userMessage string) string
+
+func init() {
+	hostCtxDispatch["rewrite_memory_query"] = hostMethod("rewrite_memory_query", []pyParam{req("user_message")},
+		func(ctx context.Context, _ *PluginHost, _ *Context, a, _ map[string]any) (any, error) {
+			if MemoryQueryRewrite == nil {
+				return "", nil
+			}
+			return MemoryQueryRewrite(ctx, argStr(a["user_message"])), nil
+		})
+}
+
 // Replays one plugin context method by Python name, an AttributeError for a name the context lacks
 func hostCtxCall(ctx context.Context, h *PluginHost, c *Context, method string, args []any, kwargs map[string]any) (any, error) {
 	fn, ok := hostCtxDispatch[method]
@@ -110,105 +123,20 @@ func hostCtxCall(ctx context.Context, h *PluginHost, c *Context, method string, 
 	return fn(ctx, h, c, args, kwargs)
 }
 
-// Sets the hook source a hosted entry point collector reports and drops that source's fallback hooks
-func (h *PluginHost) serveCollectSource(ctx context.Context, params map[string]any) (any, error) {
-	c, err := h.pluginCtx(params)
-	if err != nil {
-		return nil, err
-	}
-	if c.collector == nil {
-		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("plugin %s does not collect a memory provider", errchain.Show(params["plugin"]))}
-	}
-	var src *hookSource
-	if file, ok := params["source"].(string); ok {
-		src = hookSourceOf(c.collector.name, file)
-	}
-	c.collector.setSource(src)
-	c.collector.dropHooks(ctx, c.manager)
-	return nil, nil
-}
-
-// Loads a user memory provider package in the plugin host with its other registrations collected here
-func CollectMemoryProviderInHost(ctx context.Context, name, providerDir, moduleName string, registerSkills bool, trackSkill func(qualifiedName string)) (*HostedObject, error) {
+// Loads the memory provider a wasm or program plugin directory registers, its hooks and skills collected the way the memory loader collects them
+func CollectMemoryProviderInHost(ctx context.Context, name, providerDir string, registerSkills bool, trackSkill func(qualifiedName string)) (*HostedObject, error) {
 	m := GetPluginManager(ctx)
 	host, err := m.hostForDir(providerDir)
 	if err != nil {
 		return nil, err
 	}
 	c := newMemoryCollectorContext(m, name, registerSkills, trackSkill)
-	c.collector.setSource(hookSourceOf(name, filepath.Join(providerDir, "__init__.py")))
+	if spec := host.guest; spec != nil && len(spec.entry) > 0 {
+		c.collector.setSource(hookSourceOf(name, filepath.Join(providerDir, spec.entry[0])))
+	}
 	drop := func(ctx context.Context) { c.collector.dropHooks(ctx, m) }
 	drop(ctx)
-	return host.LoadInstance(ctx, providerDir, moduleName, memoryProviderBase, memoryProviderCapture, c, drop)
-}
-
-// Loads a pip memory provider entry point in the plugin host as an instance, subclass, register module, factory or namespace
-func CollectMemoryProviderEntryPoint(ctx context.Context, name string, registerSkills bool, trackSkill func(qualifiedName string)) (*HostedObject, error) {
-	m := GetPluginManager(ctx)
-	host, err := m.pluginHost()
-	if err != nil {
-		return nil, err
-	}
-	c := newMemoryCollectorContext(m, name, registerSkills, trackSkill)
-	load := func(ctx context.Context) (map[string]any, error) {
-		return host.instanceRef(ctx, memoryProviderCapture+":"+name, "load_memory_entry_point", map[string]any{
-			"plugin_id": c.PluginID(), "name": name, "base": memoryProviderBase,
-			"manifest": map[string]any{"name": name, "source": "entrypoint"},
-		}, c)
-	}
-	drop := func(ctx context.Context) { c.collector.dropHooks(ctx, m) }
-	return host.reloadableInstance(ctx, memoryProviderCapture, name, memoryProviderBase, load, drop)
-}
-
-// Imports a memory provider package or entry point in the plugin host ahead of construction, false when that import fails
-func WarmMemoryProviderImport(ctx context.Context, name, providerDir, moduleName string, nativeWarm []string) bool {
-	host, err := GetPluginManager(ctx).pluginHost()
-	if err == nil {
-		_, err = host.ensureStarted(ctx)
-	}
-	var root string
-	if err == nil {
-		root, err = hostPluginsRoot()
-	}
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
-		return false
-	}
-	params := map[string]any{"name": name, "path": providerDir, "module_name": moduleName, "parents": providerModuleParents,
-		"plugins_root": root, "synthetic_namespace": nil, "native_warm": anyList(nativeWarm)}
-	if providerDir != "" && !bundledMemoryProviderDir(providerDir) {
-		params["synthetic_namespace"] = UserMemoryNamespace
-	}
-	raw, err := host.call(ctx, "warm_import", params, nil, 0, nil)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
-		return false
-	}
-	imported, _ := raw.(bool)
-	return imported
-}
-
-// Imports a memory provider cli.py in the profile plugin host, reporting whether it has register_cli and a command handler
-func DescribeMemoryProviderCLI(ctx context.Context, name, providerDir, moduleName string) (registerCLI, handler bool, err error) {
-	host, err := GetPluginManager(ctx).pluginHost()
-	if err != nil {
-		return false, false, err
-	}
-	if _, err := host.ensureStarted(ctx); err != nil {
-		return false, false, err
-	}
-	raw, err := host.call(ctx, "describe_memory_cli", map[string]any{"name": name, "path": providerDir, "module_name": moduleName}, nil, 0, nil)
-	if err != nil {
-		return false, false, err
-	}
-	reply, _ := raw.(map[string]any)
-	return reply["register_cli"] == true, reply["handler"] == true, nil
-}
-
-// Runs a memory provider argparse command in a fresh plugin host child on the given streams
-func RunMemoryProviderCLI(ctx context.Context, name, providerDir, moduleName, description string, handler bool, argv []string, stdin io.Reader, stdout, stderr io.Writer) (rc int, dispatched bool, err error) {
-	_, err = GetPluginManager(ctx).pluginHost()
-	return 0, false, err
+	return host.LoadInstance(ctx, providerDir, memoryProviderBase, memoryProviderCapture, c, drop)
 }
 
 // Whether the hosted method takes keyword, true for an unknown signature or one taking var keywords

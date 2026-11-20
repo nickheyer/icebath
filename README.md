@@ -24,6 +24,7 @@ scoop bucket add nickheyer https://github.com/nickheyer/scoop-bucket && scoop in
 choco install icebath
 nix profile add github:nickheyer/nixpkg#icebath
 mise use -g github:nickheyer/icebath
+pipx install icebath-cli
 docker run -it --rm -e ICEBATH_UID=$(id -u) -e ICEBATH_GID=$(id -g) -v ~/.icebath:/opt/data ghcr.io/nickheyer/icebath
 go install -tags goolm github.com/nickheyer/icebath/cmd/icebath@latest
 git clone https://github.com/nickheyer/icebath && icebath/setup-icebath.sh

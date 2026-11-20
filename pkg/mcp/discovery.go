@@ -1156,14 +1156,3 @@ func RegisteredServerNames() map[string]bool {
 	}
 	return out
 }
-
-// ServerKeys lists the connection keys of every live MCP server task
-func ServerKeys() []ServerKey {
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	out := make([]ServerKey, 0, len(mcpServers))
-	for k := range mcpServers {
-		out = append(out, k)
-	}
-	return out
-}

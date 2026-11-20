@@ -1092,7 +1092,7 @@ prompt_caching:
 # Two stores: MEMORY.md (agent's notes) and USER.md (user profile).
 # Character limits keep the memory small and focused. The agent manages
 # pruning -- when at the limit, it must consolidate or replace entries.
-# Disabled by default in batch_runner.
+# Not loaded in `icebath batch` runs.
 #
 memory:
   # Agent's personal notes: environment facts, conventions, things learned
@@ -2039,11 +2039,6 @@ delegation:
 # Display
 # =============================================================================
 display:
-  # Use compact banner mode (hides the ASCII-art banner, shows a single line).
-  #   true:  Compact single-line banner
-  #   false: Full ASCII banner with tool/skill summary (default)
-  compact: false
-
   # Tool progress display level (CLI, gateway, and the TUI tool feed)
   #   off:     Silent — no tool activity shown, just the final response
   #   new:     Show a tool indicator only when the tool changes (skip repeats)
@@ -2157,6 +2152,65 @@ display:
   #   true:  Ring whenever the agent is waiting for your input
   #   false: Silent (default)
   bell_on_prompt: false
+
+  # Close each turn in the terminal UI with one dim line of what it did and how long it took:
+  #   ⋯ 12.4s · edited 2 files +18 -3 · read 4 files · ran 3 commands
+  # A quick reply without tools prints nothing. Off in the focus view.
+  #   true:  Print the line (default)
+  #   false: No line
+  turn_summary: true
+
+  # Count the tokens the model produced so far in the running turn on the
+  # status line of the terminal UI, after the timer: thinking… · 12s · ↓ 1.2k tok
+  # The count is estimated from the text, reasoning and tool calls as they stream in.
+  #   true:  Show the count (default)
+  #   false: Timer only
+  spinner_token_flow: true
+
+  # Color mode of the terminal UI. Change it at runtime with /theme.
+  #   auto:  Light or dark, following the terminal background (default)
+  #   light: Light colors
+  #   dark:  Dark colors
+  tui_theme: auto
+
+  # Draw the terminal UI with less blank space. Toggle at runtime with /density.
+  #   true:  Compact
+  #   false: Regular spacing (default)
+  tui_compact: false
+
+  # Where the terminal UI puts its status bar. Toggle at runtime with /statusbar.
+  #   top:    At the top (default)
+  #   bottom: At the bottom
+  #   off:    Hidden
+  tui_statusbar: top
+
+  # How images show in the terminal UI transcript: the ones you attach and
+  # the local image a tool produced or looked at.
+  #   auto:    Full resolution in kitty and Ghostty, colored half blocks elsewhere (default)
+  #   kitty:   The kitty graphics protocol whenever the terminal draws graphics
+  #   unicode: Always half blocks
+  #   off:     File paths only
+  inline_images: auto
+
+  # How much of a turn's detail the terminal UI shows (thinking, tools,
+  # subagents, activity). Change it at runtime with /details.
+  #   hidden | collapsed | expanded     (collapsed when unset)
+  # details_mode: collapsed
+
+  # Detail level of single sections, over details_mode. Any subset of
+  # thinking, tools, subagents and activity; set one at runtime with
+  # /details <section> [hidden|collapsed|expanded|reset].
+  sections: {}
+  #   thinking: expanded
+  #   activity: collapsed
+
+  # Mouse reporting the terminal UI asks the terminal for. Change it at
+  # runtime with /mouse.
+  #   off:     No mouse
+  #   wheel:   Scroll and click
+  #   buttons: Adds drag
+  #   all:     Adds hover (used when unset)
+  # mouse_tracking: all
 
   # Show model reasoning/thinking before each response.
   # When enabled, a dim box shows the model's thought process above the response.
@@ -2302,6 +2356,33 @@ display:
 #     - command: "~/.icebath/agent-hooks/log-orchestration.sh"
 #
 # hooks_auto_accept: false
+#
+# Gateway hook directories
+# ------------------------
+# The gateway also fires its own events to hook directories of the profile:
+# ~/.icebath/hooks/<name>/HOOK.yaml names the events and the command that
+# handles them (a program inside the directory or any command line):
+#
+#   name: notify
+#   description: Post gateway events to a channel
+#   events: [gateway:startup, session:start, agent:end, "command:*"]
+#   command: ./notify.sh
+#   timeout: 30          # seconds, default 60, at most 300
+#
+# Events: gateway:startup, session:start, session:end, session:reset,
+# agent:start, agent:step, agent:end and command:<name> (command:* for every
+# command).  The command runs as a subprocess the way the shell hooks above
+# do (no shell, same environment, timeout and consent) and reads one JSON
+# object on stdin: {"hook_event_name": "<event>", "context": {...},
+# "cwd": "...", "profile": "..."}.  A JSON object printed on stdout is the
+# handler's answer; a command:<name> handler may answer
+# {"decision": "deny", "message": "..."}, {"decision": "handled"} or
+# {"decision": "rewrite", "command_name": "...", "raw_args": "..."}.
+# A failing or timed out handler is logged and never blocks the gateway.
+# Each (event, command) pair needs the same consent as a shell hook; the
+# gateway never prompts, so approve with --accept-hooks,
+# ICEBATH_ACCEPT_HOOKS=1 or hooks_auto_accept: true.  A directory that holds
+# only a Python handler.py is named and skipped: Python source is not loaded.
 
 
 # =============================================================================

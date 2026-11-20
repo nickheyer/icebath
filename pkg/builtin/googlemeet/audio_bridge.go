@@ -38,12 +38,10 @@ func toText(s string) string { return strings.ToValidUTF8(s, "�") }
 
 // Non zero exit of a checked command, carrying its captured output
 type calledProcessError struct {
-	argv       []string
-	code       int
-	stdout     string
-	stderr     string
-	combined   string
-	hasCombine bool
+	argv   []string
+	code   int
+	stdout string
+	stderr string
 }
 
 func (e *calledProcessError) Error() string {

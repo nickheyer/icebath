@@ -1,10 +1,12 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"encoding/json"
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -54,7 +56,71 @@ func delegationResultMsg(text string, meta *tuigateway.DisplayMetadata, createdA
 	return msg{Kind: "delegation", Role: "system", Label: label, Text: text, CreatedAt: createdAt}
 }
 
-// Transcript rows of a stored session, tool rows folded into the next reply and display only events projected
+// Trail row and the question → answer lines a settled clarify leaves in the transcript, a blank answer read as skipped
+func clarifySettledRows(questions []clarifyQuestion, answers map[string]string) (string, string) {
+	rows := make([]string, len(questions))
+	for i, q := range questions {
+		answer := tr("session.main.skipped")
+		if trimJS(answers[q.QID]) != "" {
+			answer = clarifyAnswerText(answers[q.QID], q.MultiSelect)
+		}
+		rows[i] = q.Question + " → " + answer
+	}
+	return buildToolTrailLine("clarify", countNoun(len(questions), "question"), toolVerdict{}, "", nil), strings.Join(rows, "\n")
+}
+
+// Stored result of a clarify tool call, as much of it as the transcript reads
+type storedClarifyResult struct {
+	Notice    *string `json:"notice"`
+	Outcome   *string `json:"outcome"`
+	Responses []struct {
+		Question     string `json:"question"`
+		UserResponse any    `json:"user_response"`
+	} `json:"responses"`
+}
+
+// Trail row and text of a stored clarify result as the live turn showed it, the answers of a submitted form or the abandoned block of one that ended otherwise, found false when the result holds no responses
+func storedClarifyRows(content string) (trail, text string, abandoned, found bool) {
+	var result storedClarifyResult
+	if json.Unmarshal([]byte(content), &result) != nil || len(result.Responses) == 0 {
+		return "", "", false, false
+	}
+	questions := make([]clarifyQuestion, len(result.Responses))
+	answers := map[string]string{}
+	for i, row := range result.Responses {
+		qid := "q" + strconv.Itoa(i)
+		questions[i] = clarifyQuestion{QID: qid, Question: row.Question}
+		switch answer := row.UserResponse.(type) {
+		case string:
+			answers[qid] = answer
+		case []any:
+			picked := make([]string, len(answer))
+			for j, item := range answer {
+				picked[j], _ = item.(string)
+			}
+			answers[qid] = strings.Join(picked, ", ")
+		}
+	}
+	trail, text = clarifySettledRows(questions, answers)
+	outcome := "submitted"
+	if result.Outcome != nil {
+		outcome = *result.Outcome
+	}
+	reason := outcome
+	switch {
+	case outcome == "submitted":
+		return trail, text, false, true
+	case outcome == "cancelled":
+		reason = tr("gatewayMsg.clarify.cancelled")
+	case outcome == "timed_out":
+		reason = tr("gatewayMsg.clarify.timedOut")
+	case result.Notice != nil:
+		reason = *result.Notice
+	}
+	return trail, formatAbandonedClarify(questions, answers, reason), true, true
+}
+
+// Transcript rows of a stored session, tool rows folded into the next reply, a clarify result shown as its settled rows and display only events projected
 func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 	var out []msg
 	var pending []string
@@ -67,6 +133,17 @@ func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 			name := "tool"
 			if row.Name != nil {
 				name = *row.Name
+			}
+			if content, _ := row.Content.(string); name == "clarify" && content != "" {
+				if trail, text, abandoned, found := storedClarifyRows(content); found {
+					role := "user"
+					if abandoned {
+						role = "system"
+					}
+					out = append(out, msg{Kind: "trail", Role: "system", Tools: append(pending, trail)}, msg{Role: role, Text: text})
+					pending = nil
+					continue
+				}
 			}
 			pending = append(pending, buildToolTrailLine(name, val(row.Context), verdictOf(row.IsError, row.Refused, row.Error), "", nil))
 			continue
@@ -155,6 +232,8 @@ func messageGroup(m msg) string {
 		return "intro"
 	case "slash", "event", "diff", "trail":
 		return m.Kind
+	case "image":
+		return "trail"
 	}
 	switch m.Role {
 	case "user":
@@ -190,9 +269,9 @@ type detailsCtx struct {
 	Sections        map[string]string
 }
 
-// Whether a block draws anything, a trail only with content and a visible section
+// Whether a block draws anything, a trail only with content and a visible section, a mixture of agents reference always
 func blockRenders(m msg, ctx detailsCtx) bool {
-	if m.Kind != "trail" || len(m.Todos) > 0 {
+	if m.Kind != "trail" || len(m.Todos) > 0 || (m.IsMoaReference && strings.TrimFunc(m.Thinking, isJSSpace) != "") {
 		return true
 	}
 	if len(m.Tools) == 0 && strings.TrimFunc(m.Thinking, isJSSpace) == "" {

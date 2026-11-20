@@ -4,9 +4,7 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -279,16 +277,6 @@ func TestPluginLoadingUserCronPluginAutoCoercedToExclusive(t *testing.T) {
 	if entry == nil || entry.Manifest.Kind != "exclusive" || entry.Module != "" || entry.Enabled {
 		t.Fatalf("entry %+v", entry)
 	}
-}
-
-// JSON text of a value, the comparison form for results that crossed the plugin host wire
-func casesJSON(t *testing.T, v any) string {
-	t.Helper()
-	raw, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
 }
 
 // Undiscovered registry manager of a fresh home whose sweep runs register through a compiled-in plugin
@@ -711,27 +699,6 @@ func TestPluginCommandsRegisterCommandInfersTextArgumentModeFromArgsHint(t *test
 	if m.pluginCommands["lcm"].ArgumentMode != "text" || m.pluginCommands["ping"].ArgumentMode != "" {
 		t.Fatalf("argument modes lcm=%q ping=%q", m.pluginCommands["lcm"].ArgumentMode, m.pluginCommands["ping"].ArgumentMode)
 	}
-}
-
-// Registry manager of a home whose plugin host is shut down and the registry reset with the test
-func casesRegistryManager(t *testing.T, h string) *Manager {
-	t.Helper()
-	m := GetPluginManager(homeCtx(h))
-	t.Cleanup(ResetPluginManagersForTests)
-	return m
-}
-
-const casesEnginePlugin = "from agent.context_engine import ContextEngine\n\nclass StubEngine(ContextEngine):\n    def __init__(self):\n        import os\n" +
-	"        self.home = os.environ.get('ICEBATH_HOME')\n\n    @property\n    def name(self):\n        return %s\n\n" +
-	"    def update_from_response(self, usage):\n        return None\n\n    def should_compress(self, prompt_tokens=None):\n        return False\n\n" +
-	"    def compress(self, messages, current_tokens=None, focus_topic=None):\n        return messages\n\ndef register(ctx):\n    ctx.register_context_engine(StubEngine())\n"
-
-// Writes an enabled plugin registering a context engine of the given name into a home
-func casesWriteEnginePlugin(t *testing.T, h, engine string) {
-	t.Helper()
-	mv2Write(t, filepath.Join(h, "plugins", "engine-plugin", "plugin.yaml"), "name: engine-plugin\nversion: 0.1.0\ndescription: Test engine plugin\n")
-	mv2Write(t, filepath.Join(h, "plugins", "engine-plugin", "__init__.py"), fmt.Sprintf(casesEnginePlugin, "'"+engine+"'"))
-	writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [engine-plugin]\n")
 }
 
 func TestPluginCommandResultResolutionAwaitsAsyncResultWithRunningLoop(t *testing.T) {

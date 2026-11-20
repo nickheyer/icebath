@@ -17,13 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Idle frame cell of a sheet and the width of its cached thumbnail
-const (
-	thumbFrameW = 192
-	thumbFrameH = 208
-	thumbW      = 96
-)
-
 // Cached thumbnail of a slug under pets/.thumbs, outside the pet directory
 func thumbPath(h, slug string) (string, error) {
 	root, err := PetsDir(h)

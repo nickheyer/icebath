@@ -115,6 +115,13 @@ func standaloneHTTPClient(ctx context.Context, timeout time.Duration) *http.Clie
 	return client
 }
 
+// Text of a failed standalone request for a log line or a send result, the kind of error and the proxy's host when the resolved proxy URL holds a
+// secret the raw text could repeat
+func standaloneErrorText(ctx context.Context, err error) string {
+	proxyURL, _ := gateway.ResolveProxyURL(ctx, "", nil, "")
+	return gateway.ProxySafeErrorText(err, proxyURL)
+}
+
 // POSTs a JSON payload to a Web API method with a bearer token and returns the decoded body
 func slackJSONPost(ctx context.Context, client *http.Client, token, method string, payload map[string]any) (map[string]any, error) {
 	body, err := json.Marshal(payload)
@@ -150,7 +157,7 @@ func resolveSlackUserDM(ctx context.Context, token, userID string) string {
 	}
 	data, err := slackJSONPost(ctx, standaloneHTTPClient(ctx, 15*time.Second), token, "conversations.open", map[string]any{"users": userID})
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open exception for %s: %v", userID, err))
+		pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open exception for %s: %s", userID, standaloneErrorText(ctx, err)))
 		return ""
 	}
 	if pyrepr.Truthy(data["ok"]) {
@@ -252,7 +259,7 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 	if pystr.Strip(textToSend) != "" {
 		payload, err := standalonePostText(ctx, client, chatID, textToSend, unfurlKwargs, threadID)
 		if err != nil {
-			return gateway.SendError(fmt.Sprintf("Slack send failed: %v", err))
+			return gateway.SendError("Slack send failed: " + gateway.ProxySafeErrorText(err, proxyURL))
 		}
 		if !pyrepr.Truthy(getOr(payload, "ok", true)) {
 			return gateway.SendError("Slack API error: " + pyrepr.Str(getOr(payload, "error", "unknown")))
@@ -268,7 +275,9 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 			warnings = append(warnings, warning)
 			if captionPending {
 				fb, err := standalonePostText(ctx, client, chatID, formattedCaption, unfurlKwargs, threadID)
-				if err != nil {
+				if err != nil && gateway.DescribeProxyError(err, proxyURL) != "" {
+					pkgLog().Warn("[Slack] Caption-fallback send failed for missing media")
+				} else if err != nil {
 					pkgLog().Warn("[Slack] Caption-fallback send failed for missing media", "error", err)
 				} else if pyrepr.Truthy(getOr(fb, "ok", true)) {
 					lastMessageID = firstTruthyValue(fb["ts"], lastMessageID)
@@ -283,7 +292,7 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 		}
 		uploadResult, err := standaloneUploadFile(ctx, client, chatID, media.Path, comment, threadID)
 		if err != nil {
-			warning := fmt.Sprintf("Failed to send media %s: %v", media.Path, err)
+			warning := fmt.Sprintf("Failed to send media %s: %s", media.Path, gateway.ProxySafeErrorText(err, proxyURL))
 			pkgLog().Error("[Slack] " + warning)
 			warnings = append(warnings, warning)
 			continue
@@ -369,7 +378,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	for _, tok := range tokens {
 		data, err := slackJSONPost(ctx, client, tok, "chat.postMessage", payload)
 		if err != nil {
-			return gateway.SendError(fmt.Sprintf("Slack send failed: %v", err)), nil
+			return gateway.SendError("Slack send failed: " + standaloneErrorText(ctx, err)), nil
 		}
 		if pyrepr.Truthy(data["ok"]) {
 			return map[string]any{"success": true, "platform": "slack", "chat_id": chatID, "message_id": data["ts"]}, nil

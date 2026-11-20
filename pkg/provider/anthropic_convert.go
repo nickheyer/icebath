@@ -31,9 +31,6 @@ var thinkingBlockTypes = map[string]bool{"thinking": true, "redacted_thinking": 
 var cacheableBlockTypes = map[string]bool{"text": true, "tool_use": true}
 var bedrockRegionPrefixes = []string{"global.", "us.", "eu.", "apac.", "ap.", "au.", "jp.", "ca.", "sa.", "me.", "af."}
 
-// Record type stamped by the Bedrock Converse wire naming the model that minted a turn's reasoning
-const converseIssuerType = "bedrock.native_assistant"
-
 func asMap(v any) (map[string]any, bool) {
 	return pyjson.Dict(v)
 }

@@ -256,7 +256,12 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 		ConfiguredProvider: pyrepr.Str(pyrepr.Or(modelCfg["provider"], "")), ConfiguredBaseURL: pyrepr.Str(pyrepr.Or(modelCfg["base_url"], "")),
 	})
 	if ok && ctxLen != 0 {
-		lines = append(lines, i18n.T(ctx, "gateway.model.context_label", "", map[string]any{"tokens": pystr.GroupThousands(int64(ctxLen))}))
+		var pin any
+		if configCtx != nil {
+			pin = *configCtx
+		}
+		lines = append(lines, i18n.T(ctx, "gateway.model.context_label", "", map[string]any{"tokens": pystr.GroupThousands(int64(ctxLen))})+
+			agent.ContextPinSuffix(ctxLen, pin))
 	}
 	if mi != nil && mi.MaxOutput != 0 {
 		lines = append(lines, i18n.T(ctx, "gateway.model.max_output_label", "", map[string]any{"tokens": pystr.GroupThousands(int64(mi.MaxOutput))}))

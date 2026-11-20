@@ -83,22 +83,6 @@ func TestAGatewayHostedCLISessionPrintsTheStartupWarningOnItsFirstTurn(t *testin
 	}
 }
 
-const ctxDemoEngineSrc = `
-from agent.context_engine import ContextEngine
-class Demo(ContextEngine):
-    @property
-    def name(self):
-        return "ctx_demo"
-    def update_from_response(self, usage):
-        pass
-    def should_compress(self, prompt_tokens=None):
-        return False
-    def compress(self, messages, current_tokens=None):
-        return messages
-def register(ctx):
-    ctx.register_context_engine(Demo())
-`
-
 type lcmEngine struct{ stubEngine }
 
 func (e *lcmEngine) Name() string { return "lcm" }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -270,7 +271,7 @@ func freshHTTPClient(transport http.RoundTripper) (*http.Client, func()) {
 	if transport != nil {
 		return &http.Client{Transport: transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}, func() {}
 	}
-	t := http.DefaultTransport.(*http.Transport).Clone()
+	t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	return &http.Client{Transport: t, CheckRedirect: pyhttpx.RedirectPolicy(false)}, t.CloseIdleConnections
 }
 

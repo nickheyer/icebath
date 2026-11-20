@@ -11,24 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Catalog provider double whose availability probe answers, or panics like a raising is_available
-type fakeCatalogProvider struct {
-	name, display string
-	available     *bool
-}
-
-func (p fakeCatalogProvider) Name() string                   { return p.name }
-func (p fakeCatalogProvider) DisplayName() string            { return p.display }
-func (p fakeCatalogProvider) GetSetupSchema() map[string]any { return nil }
-func (p fakeCatalogProvider) ListModels() []map[string]any   { return nil }
-func (p fakeCatalogProvider) DefaultModel() string           { return "" }
-func (p fakeCatalogProvider) IsAvailable() bool {
-	if p.available == nil {
-		panic("probe failed")
-	}
-	return *p.available
-}
-
 // Probe answers of one summary scenario
 type summaryProbes struct {
 	ready         bool

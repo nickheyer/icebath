@@ -217,7 +217,9 @@ func memoryProviderInitOptions(ctx context.Context, a *AIAgent, platform string)
 		platform = "cli"
 	}
 	o := memory.InitOptions{Home: home.Dir(ctx), Platform: platform, AgentContext: "primary"}
-	if platform == "cron" || platform == "subagent" {
+	if a.memoryAgentContext != "" {
+		o.AgentContext = a.memoryAgentContext
+	} else if platform == "cron" || platform == "subagent" {
 		o.AgentContext = platform
 	}
 	if platform == "cli" {
@@ -254,6 +256,9 @@ func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMe
 		memConfig = cfgDict(agentCfg, "memory")
 		a.memoryEnabled = isTruthyValue(memConfig["memory_enabled"], true)
 		a.userProfileEnabled = isTruthyValue(memConfig["user_profile_enabled"], true)
+		if a.memoryAgentContext == "subagent" && !toolsetRequested {
+			a.memoryEnabled, a.userProfileEnabled = false, false
+		}
 		if nudge, ok := configIntOf(cfgValue(memConfig, "nudge_interval", 10)); ok {
 			a.memoryNudgeInterval = nudge
 			if a.memoryEnabled || a.userProfileEnabled {

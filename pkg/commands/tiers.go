@@ -11,13 +11,13 @@ import (
 
 // CLI command paths outside the core and the tier that carries each, a top level name or a parent path and subcommand
 var CLITiers = map[string]string{
-	"acp": linktier.Extras, "backup": linktier.Extras, "import": linktier.Extras, "browser": linktier.Extras, "vault": linktier.Extras,
+	"acp": linktier.Extras, "backup": linktier.Extras, "batch": linktier.Extras, "import": linktier.Extras, "browser": linktier.Extras, "vault": linktier.Extras,
 	"computer-use": linktier.Extras, "cron": linktier.Extras, "kanban": linktier.Extras, "lsp": linktier.Extras, "pets": linktier.Extras,
 	"update": linktier.Extras, "update-takeover": linktier.Extras, "update-finish": linktier.Extras, "update-restart-recovery": linktier.Extras,
 	"update-completion": linktier.Extras, "venv-sync": linktier.Extras, "source-completion": linktier.Extras, "import-health": linktier.Extras,
 	"pm": linktier.Extras, "security": linktier.Extras, "import-agent": linktier.Extras, "claw": linktier.Extras,
 	"slack": linktier.Plugins, "whatsapp": linktier.Plugins, "whatsapp-cloud": linktier.Plugins, "send": linktier.Plugins,
-	"camofox": linktier.Plugins, "google_chat": linktier.Plugins, "mcp-serve": linktier.Plugins, "meet": linktier.Extras,
+	"camofox": linktier.Plugins, "feishu": linktier.Plugins, "google_chat": linktier.Plugins, "mcp-serve": linktier.Plugins, "meet": linktier.Extras,
 	"photon": linktier.Plugins, "spotify": linktier.Plugins, "teams-pipeline": linktier.Plugins,
 	"pairing": linktier.Plugins, "gateway setup": linktier.Plugins, "project bind-board": linktier.Extras,
 	"egress": linktier.Plugins,

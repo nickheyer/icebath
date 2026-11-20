@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/term"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -447,7 +448,7 @@ func (t *Terminal) drain() tea.Cmd {
 			t.title = ev.Text
 		case term.EventClipboard:
 			if strings.ContainsAny(ev.Body, "cs") || ev.Body == "" {
-				cmds = append(cmds, tea.SetClipboard(ev.Text))
+				cmds = append(cmds, clip.Copy(ev.Text))
 			}
 			if strings.Contains(ev.Body, "p") {
 				cmds = append(cmds, tea.SetPrimaryClipboard(ev.Text))
@@ -622,7 +623,7 @@ func (t *Terminal) copy() tea.Cmd {
 		return wm.Notify("nothing to copy", wm.Info)
 	}
 	n := strings.Count(text, "\n") + 1
-	return tea.Batch(tea.SetClipboard(text), wm.Notify("copied "+render.Count(n, "line"), wm.Success))
+	return tea.Batch(clip.Copy(text), wm.Notify("copied "+render.Count(n, "line"), wm.Success))
 }
 
 // Position of a content cell in absolute rows

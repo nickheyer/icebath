@@ -15,44 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Probe plugin picking a route per option, refusing the reserved one
-const dbProbePlugin = `
-from agent.delegation_provider import DelegationProvider, DelegationRouteError
-
-class Options(DelegationProvider):
-    @property
-    def name(self):
-        return "probe-options"
-
-    def task_parameters(self, config):
-        opts = self.settings(config).get("options") or []
-        return {"option": {"type": "string", "enum": [o["name"] for o in opts],
-                           "description": "; ".join(f"{o['name']}: {o['description']}" for o in opts)}}
-
-    def description(self, config):
-        return "Pick an ` + "`option`" + ` per task."
-
-    def route_task(self, task, config):
-        if task.get("option") == "refused":
-            raise DelegationRouteError("that option is reserved for humans")
-        for o in self.settings(config).get("options") or []:
-            if o["name"] == task.get("option"):
-                return {"base_url": o["base_url"], "api_key": "k-" + o["name"], "model": o["model"],
-                        "reasoning_effort": o.get("reasoning_effort"), "label": o["name"],
-                        "fallback_providers": o.get("fallback_providers")}
-        return dict(config)
-
-def register(ctx):
-    ctx.register_delegation_provider(Options())
-`
-
-// Options of the probe backend
-var dbOptions = []any{
-	map[string]any{"name": "fast", "description": "cheap and quick", "base_url": "http://127.0.0.1:9/v1", "model": "fast-model"},
-	map[string]any{"name": "deep", "description": "slow and careful", "base_url": "http://127.0.0.1:9/v1", "model": "deep-model", "reasoning_effort": "high"},
-	map[string]any{"name": "refused", "description": "never allowed", "base_url": "http://127.0.0.1:9/v1", "model": "x"},
-}
-
 // Plugin services carrying the delegation provider registry the plugin manager registers into
 func dbServices(t *testing.T) {
 	t.Helper()
@@ -136,31 +98,6 @@ func dbDelegate(t *testing.T, ctx context.Context, parent *AIAgent, tasks ...map
 		t.Fatalf("result %q: %v", raw, err)
 	}
 	return out
-}
-
-// Result rows of a delegate_task answer
-func dbResults(t *testing.T, out map[string]any) []map[string]any {
-	t.Helper()
-	rows, _ := out["results"].([]any)
-	var results []map[string]any
-	for _, row := range rows {
-		m, ok := row.(map[string]any)
-		if !ok {
-			t.Fatalf("result row %v", row)
-		}
-		results = append(results, m)
-	}
-	return results
-}
-
-// The delegate_task function definition of a home
-func dbDefinition(h string) map[string]any {
-	return pyjson.Plain(tools.BuildDelegateDynamicSchemaOverrides(&tools.Env{Home: h, Values: &sync.Map{}})).(map[string]any)
-}
-
-// Per task properties of a definition
-func dbTaskProps(definition map[string]any) map[string]any {
-	return definition["parameters"].(map[string]any)["properties"].(map[string]any)["tasks"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
 }
 
 // JSON text of a definition

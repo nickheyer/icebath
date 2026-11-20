@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -226,7 +227,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	}
 	a.proxyURL = proxyURL
 	if a.proxyURL != "" {
-		pkgLog().Info(fmt.Sprintf("Matrix: proxy configured — %s", a.proxyURL))
+		pkgLog().Info(fmt.Sprintf("Matrix: proxy configured — %s", gateway.SafeProxyURLForLog(a.proxyURL)))
 	}
 	a.maxMediaBytes = envInt(ctx, "MATRIX_MAX_MEDIA_BYTES", matrixDefaultMaxMediaBytes)
 	delay, err := pyint.ParseFloat(envOr("ICEBATH_MATRIX_TEXT_BATCH_DELAY_SECONDS", "0.6"))
@@ -347,9 +348,19 @@ func parseThreadRequireMention(ctx context.Context, cfg *gateway.PlatformConfig)
 // UTF-8 bytes, the unit of the homeserver event cap
 func (a *MatrixAdapter) MessageLenFn() func(string) int { return utf8Len }
 
+// Text of a failed homeserver request for a log line, the kind of error and the proxy's host when the proxy the session uses holds a secret the raw
+// text could repeat: the configured proxy the session dials, else the environment it reads while the gateway trusts it
+func (a *MatrixAdapter) proxySafeErrText(ctx context.Context, err error) string {
+	proxy := a.proxyURL
+	if proxy == "" {
+		proxy = gateway.TrustedEnvProxyForRedaction(ctx, a.homeserver)
+	}
+	return gateway.ProxySafeErrorText(err, proxy)
+}
+
 // HTTP client whose proxy applies to every request, the env proxy honored when no proxy is configured
 func newMatrixHTTPClient(ctx context.Context, proxyURL string) (*http.Client, error) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	switch {
 	case proxyURL == "":
 		if gateway.GatewayTrustEnv(ctx) {

@@ -95,7 +95,7 @@ func writeText(t *testing.T, path, text string) {
 
 func TestParseTypedReferencesIgnoresEmailsAndHandles(t *testing.T) {
 	referenceTestHome(t)
-	refs := ParseContextReferences("email me at user@example.com and ping @teammate but include @file:src/main.py:1-2 plus @diff and @git:2 and @url:https://example.com/docs", true)
+	refs := ParseContextReferences(context.Background(), "email me at user@example.com and ping @teammate but include @file:src/main.py:1-2 plus @diff and @git:2 and @url:https://example.com/docs", true)
 	kinds := make([]string, len(refs))
 	for i, r := range refs {
 		kinds[i] = r.Kind
@@ -659,7 +659,7 @@ func TestRegisterValidProvider(t *testing.T) {
 	if err := RegisterContextReferenceProvider(dummyRefProvider{"test"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := GetContextReferenceProviders()["test"]; !ok {
+	if _, ok := ContextReferenceProviders(context.Background())["test"]; !ok {
 		t.Fatal("registered prefix missing")
 	}
 }
@@ -686,7 +686,7 @@ func TestRegisterRejectsDuplicatePrefix(t *testing.T) {
 
 func TestRegisterRejectsNonProvider(t *testing.T) {
 	referenceTestHome(t)
-	err := RegisterContextReference("not a provider")
+	_, err := contextReferenceScopedRegistry{}.Register("not a provider", "")
 	var builtin *plugins.HostBuiltinError
 	if !errors.As(err, &builtin) || builtin.Type != "TypeError" || !strings.Contains(err.Error(), "must be a ContextReferenceProvider") {
 		t.Fatal(err)
@@ -703,7 +703,7 @@ func TestRegisterRejectsEmptyPrefix(t *testing.T) {
 func TestParsePluginReference(t *testing.T) {
 	referenceTestHome(t)
 	RegisterContextReferenceProvider(dummyRefProvider{"test"})
-	refs := ParseContextReferences("check @test:ENG-123 and @file:README.md", true)
+	refs := ParseContextReferences(context.Background(), "check @test:ENG-123 and @file:README.md", true)
 	var testRef *ContextReference
 	hasFile := false
 	for i := range refs {
@@ -721,7 +721,7 @@ func TestParsePluginReference(t *testing.T) {
 
 func TestParsePluginReferenceIgnoredWhenNotRegistered(t *testing.T) {
 	referenceTestHome(t)
-	if refs := ParseContextReferences("check @test:ENG-123", true); len(refs) != 0 {
+	if refs := ParseContextReferences(context.Background(), "check @test:ENG-123", true); len(refs) != 0 {
 		t.Fatalf("%+v", refs)
 	}
 }
@@ -767,10 +767,10 @@ func TestCompletionItemDefaults(t *testing.T) {
 
 func TestHostedContextObjectNameReadsEnginesAndReferenceProviders(t *testing.T) {
 	referenceTestHome(t)
-	if name, ok := HostedContextObjectName("context_reference", dummyRefProvider{"issue"}); !ok || name != "issue" {
-		t.Fatal(name, ok)
+	if name := (contextReferenceScopedRegistry{}).ProviderName(dummyRefProvider{"issue"}); name != "issue" {
+		t.Fatal(name)
 	}
-	if _, ok := HostedContextObjectName("context_reference", "nope"); ok {
+	if (contextReferenceScopedRegistry{}).Accepts("nope") {
 		t.Fatal("a foreign value has no name")
 	}
 	if _, ok := HostedContextObjectName("context_engine", "nope"); ok {
@@ -782,5 +782,5 @@ func TestHostedContextObjectNameReadsEnginesAndReferenceProviders(t *testing.T) 
 func ClearContextReferenceProvidersForTests() {
 	contextReferenceProvidersMu.Lock()
 	defer contextReferenceProvidersMu.Unlock()
-	contextReferenceProviders = map[string]ContextReferenceProvider{}
+	contextReferenceProviders = map[string]map[string]ContextReferenceProvider{}
 }

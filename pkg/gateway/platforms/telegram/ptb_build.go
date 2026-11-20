@@ -51,6 +51,18 @@ func customAPIHosts(extra map[string]any) []string {
 	return hosts
 }
 
+// URLs of the Bot API hosts the adapter calls, each of which NO_PROXY must keep off the proxy before a failed request's text is shown
+func apiProxyTargets(extra map[string]any) []string {
+	targets := []string{"https://" + TelegramAPIHost}
+	for _, host := range customAPIHosts(extra) {
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		targets = append(targets, "https://"+host)
+	}
+	return targets
+}
+
 // Builds the general and getUpdates request pair over fallback IPs, an explicit proxy or direct DNS
 func buildPTBRequests(ctx context.Context, name string, extra map[string]any, lifecycle *pollingLifecycle) (*ptbRequest, *ptbRequest, error) {
 	poolSize := int(config.EnvInt("ICEBATH_TELEGRAM_HTTP_POOL_SIZE", 512))
@@ -80,7 +92,7 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 			discoveryTimeout, nil, "telegram", true)
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("[%s] Telegram fallback-IP discovery failed after %.0fs; using seed IPv4 Telegram API IPs so a blackholed IPv6 hostname path cannot hang initialize() (#87015): %s",
-				name, discoveryTimeout, redactTelegramErrorText(err)))
+				name, discoveryTimeout, redactTelegramProxyErrorText(err, gateway.EnvProxyForRedaction())))
 			fallbackIPs = slices.Clone(SeedFallbackIPs)
 		} else {
 			fallbackIPs, _ = discovered.([]string)
@@ -99,6 +111,9 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	if err != nil {
 		return nil, nil, err
 	}
+	lifecycle.mu.Lock()
+	lifecycle.ptbProxyURL = proxyURL
+	lifecycle.mu.Unlock()
 	tlsConfig := provider.PlatformTLSConfig()
 	general, updates := settings, settings
 	switch {
@@ -109,7 +124,7 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 		updates.transport = TransportOptions{Limits: &updatesLimits, SocketOptions: &keepalive, TLSConfig: tlsConfig}
 		general.fallbackIPs, updates.fallbackIPs = fallbackIPs, fallbackIPs
 	case proxyURL != "":
-		pkgLog().Info(fmt.Sprintf("[%s] Proxy detected; passing explicitly to HTTPXRequest: %s", name, proxyURL))
+		pkgLog().Info(fmt.Sprintf("[%s] Proxy detected; passing explicitly to HTTPXRequest: %s", name, gateway.SafeProxyURLForLog(proxyURL)))
 		general.transport = TransportOptions{Proxy: &proxyURL, Limits: &poolLimits, TLSConfig: tlsConfig}
 		updates.transport = TransportOptions{Proxy: &proxyURL, Limits: &updatesLimits, TLSConfig: tlsConfig}
 	default:

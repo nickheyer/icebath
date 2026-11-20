@@ -3,26 +3,8 @@ package memory
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
-
-const discoveryProviderSource = `from agent.memory_provider import MemoryProvider
-
-class Provider(MemoryProvider):
-    @property
-    def name(self):
-        return "%s"
-    def is_available(self):
-        return True
-    def initialize(self, *a, **kw):
-        pass
-    def get_tool_schemas(self):
-        return []
-
-def register(ctx):
-    ctx.register_memory_provider(Provider())
-`
 
 func discWrite(t *testing.T, path, text string) {
 	t.Helper()
@@ -32,20 +14,6 @@ func discWrite(t *testing.T, path, text string) {
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func discProvider(t *testing.T, root, name string) string {
-	dir := filepath.Join(root, name)
-	discWrite(t, filepath.Join(dir, "__init__.py"), strings.Replace(discoveryProviderSource, "%s", name, 1))
-	return dir
-}
-
-// Installs an entry point of the memory group on the import path
-func discEntryPoint(t *testing.T, name, value string) string {
-	root := t.TempDir()
-	discWrite(t, filepath.Join(root, name+"_dist-1.0.dist-info", "entry_points.txt"), "[icebath_agent.memory_providers]\n"+name+" = "+value+"\n")
-	t.Setenv("PYTHONPATH", root)
-	return root
 }
 
 func TestDefinesMemoryProviderParsesInsteadOfMatchingText(t *testing.T) {

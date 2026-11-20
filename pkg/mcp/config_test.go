@@ -35,18 +35,6 @@ func setExactEnv(t *testing.T, vars map[string]string) {
 	})
 }
 
-// Env whose secrets read a fresh profile home
-func profileEnv(t *testing.T, dotenv string) *tools.Env {
-	t.Helper()
-	h := t.TempDir()
-	if dotenv != "" {
-		if err := os.WriteFile(filepath.Join(h, ".env"), []byte(dotenv), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return &tools.Env{Home: h, Secrets: config.NewSecrets(h)}
-}
-
 // Interpolated string through the active profile's secrets
 func interp(t *testing.T, env *tools.Env, s string) string {
 	t.Helper()

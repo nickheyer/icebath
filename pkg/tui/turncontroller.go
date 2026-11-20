@@ -3,12 +3,13 @@ package tui
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -227,7 +228,11 @@ type turnController struct {
 	segmentMessages     []msg
 	pendingSegmentTools []string
 	toolTokenAcc        int
-	turnTools           []string
+	// What the turn did so far by its finished tool calls, when it began, and the UTF-16 units of everything the model produced in it
+	summary   *turnSummaryCollector
+	began     time.Time
+	flowUnits int
+	turnTools []string
 
 	activeTools           []activeTool
 	activeReasoningText   string
@@ -243,7 +248,7 @@ type turnController struct {
 
 // Controller of the store's turn
 func newTurnController(store *tuiStore) *turnController {
-	return &turnController{store: store, persistedToolLabels: map[string]bool{}, reasoningSegmentIndex: -1, interimBoundaryIndex: -1, streamDelay: streamIdleBatch}
+	return &turnController{store: store, summary: newTurnSummaryCollector(), persistedToolLabels: map[string]bool{}, reasoningSegmentIndex: -1, interimBoundaryIndex: -1, streamDelay: streamIdleBatch}
 }
 
 // Timer commands queued since the last call, for the program to run
@@ -516,7 +521,7 @@ func (c *turnController) pruneTransient() {
 	}
 }
 
-// Writes the open reasoning into its segment, live while the phase runs
+// Writes the open reasoning into its segment, live while the phase runs, the segment keeping the identity the transcript gave it
 func (c *turnController) syncReasoningSegment(live bool) {
 	thinking := strings.TrimFunc(c.activeReasoningText, isJSSpace)
 	if thinking == "" {
@@ -527,6 +532,7 @@ func (c *turnController) syncReasoningSegment(live bool) {
 		c.reasoningSegmentIndex = len(c.segmentMessages)
 		c.segmentMessages = append(slices.Clone(c.segmentMessages), m)
 	} else {
+		m.ID = c.segmentMessages[c.reasoningSegmentIndex].ID
 		c.segmentMessages = slices.Clone(c.segmentMessages)
 		c.segmentMessages[c.reasoningSegmentIndex] = m
 	}
@@ -613,6 +619,16 @@ func (c *turnController) pushInlineDiffSegment(diffText string, tools []string) 
 		return
 	}
 	c.segmentMessages = append(slices.Clone(c.segmentMessages), msg{Kind: "diff", Role: "assistant", Text: block, Tools: tools})
+	c.store.turn.StreamSegments = c.segmentMessages
+}
+
+// Hangs the image a tool made or looked at under the trail line of its call, ahead of whatever streams next
+func (c *turnController) pushImageSegment(path, toolID string) {
+	if path == "" || c.interrupted {
+		return
+	}
+	c.flushStreamingSegment()
+	c.segmentMessages = append(slices.Clone(c.segmentMessages), msg{Kind: "image", Role: "system", Images: []string{path}, ImageRevision: toolID})
 	c.store.turn.StreamSegments = c.segmentMessages
 }
 
@@ -746,6 +762,7 @@ func (c *turnController) recordMessageDelta(text string) {
 	}
 	c.pruneTransient()
 	c.endReasoningPhase()
+	c.flowUnits += unitLen(text)
 	c.bufRef += text
 	if c.store.ui.Streaming {
 		c.scheduleStreaming()
@@ -905,6 +922,7 @@ func (c *turnController) recordToolStart(toolID, name, context, verboseArgs stri
 	c.endReasoningPhase()
 	if sample := strings.TrimFunc(name+" "+context, isJSSpace); sample != "" {
 		c.toolTokenAcc += estimateTokensRough(sample)
+		c.flowUnits += unitLen(sample)
 	}
 	c.activeTools = append(slices.Clone(c.activeTools), activeTool{Context: context, ID: toolID, Labels: labels, Name: name, StartedAt: c.store.now(), VerboseArgs: verboseArgs})
 	c.store.turn.ToolTokens, c.store.turn.Tools = c.toolTokenAcc, c.activeTools
@@ -973,11 +991,32 @@ func (c *turnController) startMessage() {
 	c.toolTokenAcc = 0
 	c.interrupted = false
 	c.sealed = nil
+	c.summary.begin()
+	c.began, c.flowUnits = c.store.now(), 0
 	clear(c.persistedToolLabels)
 	c.store.ui.Busy = true
 	c.segmentMessages, c.pendingSegmentTools = nil, nil
 	t := &c.store.turn
 	t.Activity, t.Outcome, t.StreamPendingTools, t.StreamSegments, t.Subagents, t.ToolTokens, t.Tools, t.TurnTrail = nil, "", nil, nil, nil, 0, nil, nil
+}
+
+// Tokens the model produced in the running turn, estimated from the text, reasoning and tool calls that streamed in
+func (c *turnController) flowTokens() int { return (c.flowUnits + 3) >> 2 }
+
+// Counts reasoning the model streamed toward the tokens of the turn, shown or not
+func (c *turnController) countReasoning(text string) {
+	if !c.interrupted {
+		c.flowUnits += unitLen(text)
+	}
+}
+
+// Line of what the finished turn did and how long it took, empty for a quick reply without tools and when the line is turned off or the focus view
+// keeps tool activity out of the transcript
+func (c *turnController) summaryLine() string {
+	if !c.store.ui.TurnSummary || c.store.ui.FocusView || c.began.IsZero() {
+		return ""
+	}
+	return c.summary.render(max(c.store.now().Sub(c.began).Seconds(), 0))
 }
 
 // Creates or updates a subagent from its event, a child of a finished tree patched there with that tree's index returned

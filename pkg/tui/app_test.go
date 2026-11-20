@@ -170,8 +170,8 @@ func TestBuiltInWidgetsOpenFromTheirCommands(t *testing.T) {
 		t.Fatalf("overlay %T", a.wm.Overlay())
 	}
 	card.Update(keys.Press("right"))
-	card.Update(keys.Press("space"))
-	if g := card.active.state.(*gridState); g.cols != 4 || g.rows != 2 || g.x != 1 || !g.marked[[2]int{1, 0}] {
+	card.Update(keys.Press("enter"))
+	if g := card.active.state.(*gridState); g.cols != 4 || g.rows != 2 || g.col != 1 || !g.zoomed {
 		t.Fatalf("grid %+v", g)
 	}
 	drain(a, a.dispatchSubmission("/grid-test 99"))

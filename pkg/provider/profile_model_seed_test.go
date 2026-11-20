@@ -143,7 +143,7 @@ func TestModelSeedMatchesEnvReferencedEndpointNames(t *testing.T) {
 			t.Fatalf("seed = %v", seed)
 		}
 		dst := map[string]any{"providers": map[string]any{"stale": map[string]any{"name": "lab", "base_url": "http://127.0.0.1:1/v1"}}}
-		if _, ok := MergeEndpointSeed(context.Background(), dst, seed)["providers"].(map[string]any)["stale"]; ok {
+		if _, ok := MergeEndpointSeed(context.Background(), dst, seed, nil)["providers"].(map[string]any)["stale"]; ok {
 			t.Fatalf("%v: stale entry kept", c.endpoint)
 		}
 	}
@@ -184,7 +184,7 @@ func TestMergeEndpointSeedDropsSameIdentityEntries(t *testing.T) {
 		{legacy(), map[string]any{"other": map[string]any{"base_url": seedURL + "x"}}, map[string]any{"other": map[string]any{"base_url": seedURL + "x"}}},
 	} {
 		seed := map[string]any{"model": map[string]any{"provider": "custom:lab", "default": "synthetic-model"}, "custom_providers": c.seed}
-		merged := MergeEndpointSeed(context.Background(), map[string]any{"providers": c.dst}, seed)
+		merged := MergeEndpointSeed(context.Background(), map[string]any{"providers": c.dst}, seed, nil)
 		if want := map[string]any{"providers": c.expected, "custom_providers": c.seed}; !reflect.DeepEqual(merged, want) {
 			t.Fatalf("case %d: merged = %v", i, merged)
 		}
@@ -202,7 +202,7 @@ func TestMergeEndpointSeedTuningSeedReplacesOnlyItsKey(t *testing.T) {
 	}
 	dst := map[string]any{"providers": map[string]any{"local": map[string]any{"name": "custom", "base_url": seedURL + "x"}}}
 	want := map[string]any{"custom": map[string]any{"request_timeout_seconds": 5}, "local": map[string]any{"name": "custom", "base_url": seedURL + "x"}}
-	if got := MergeEndpointSeed(context.Background(), dst, seed)["providers"]; !reflect.DeepEqual(got, want) {
+	if got := MergeEndpointSeed(context.Background(), dst, seed, nil)["providers"]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("providers = %v", got)
 	}
 }

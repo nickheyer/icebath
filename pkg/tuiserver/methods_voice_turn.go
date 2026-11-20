@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -208,7 +209,7 @@ func voiceTTSStreamBegin(ctx context.Context) *ttsTurnQueue {
 		return nil
 	}
 	ttsStreamStop(true)
-	queue := &ttsTurnQueue{items: make(chan any, 4096)}
+	queue := newTTSTurnQueue()
 	stop, done := &pythread.Event{}, &pythread.Event{}
 	go media.StreamTTSToSpeaker(context.WithoutCancel(ctx), queue, ttsEvent{stop}, ttsEvent{done}, nil, "")
 	ttsStreamMu.Lock()
@@ -288,10 +289,12 @@ func fullDuplexListener(ctx context.Context) {
 		return !direct && !sessionVoiceLive()
 	}
 	tripped := &pythread.Event{}
+	var trippedDuring atomic.Value
 	mult, graceMS := fdBargeParams(voiceCfgDict(ctx))
 	opts := media.DefaultDuplexOptions()
 	opts.IsPlaying, opts.Multiplier, opts.GraceMS = media.IsAudioOutputActive, mult, graceMS
 	opts.OnTrigger = func(phase string) {
+		trippedDuring.Store(phase)
 		tripped.Set()
 		fdTrip(ctx, phase)
 	}
@@ -306,6 +309,10 @@ func fullDuplexListener(ctx context.Context) {
 	}
 	if truthy(result["success"]) {
 		if text := pystr.Strip(strOr(result["transcript"])); text != "" {
+			if phase, _ := trippedDuring.Load().(string); phase == "playback" && media.IsTTSEcho(text, spokenText()) {
+				pkgLog().Debug("full-duplex listener: capture during playback repeats the spoken reply, dropped as speaker bleed")
+				return
+			}
 			deliverFDTranscript(ctx, text)
 		}
 	}
@@ -389,6 +396,7 @@ func deliverFDTranscript(ctx context.Context, text string) {
 
 // Speaks a whole reply on a pipeline the full duplex listener can cut and waits on
 func voiceSpeakWithBarge(ctx context.Context, text string) {
+	noteSpoken(text)
 	pipeline := &speakPipeline{stop: &pythread.Event{}, done: &pythread.Event{}}
 	fdListenerMu.Lock()
 	fdSpeakPipelines[pipeline] = true

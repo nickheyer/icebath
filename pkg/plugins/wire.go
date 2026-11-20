@@ -347,8 +347,7 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 		_, o := v["__object__"]
 		_, h := v["__handle__"]
 		_, pe := v["__parent_event__"]
-		_, ce := v["__child_event__"]
-		if (c || o || h || pe || ce) && resolve != nil {
+		if (c || o || h || pe) && resolve != nil {
 			return resolve(v)
 		}
 		out := map[string]any{}

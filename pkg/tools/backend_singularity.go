@@ -563,9 +563,6 @@ func (singularityBackend) StripEnvKeys() []string                 { return nil }
 func (singularityBackend) SessionIsolatedWhenNonpersistent() bool { return false }
 func (singularityBackend) SupportsStreams() bool                  { return true }
 
-// Environments of the built in backend always live in this process whatever the plugin isolation
-func (singularityBackend) RunsInPluginHost() bool { return false }
-
 // IsAvailable reports whether apptainer or singularity is on PATH
 func (singularityBackend) IsAvailable() bool { return findSingularityExecutable() != "" }
 

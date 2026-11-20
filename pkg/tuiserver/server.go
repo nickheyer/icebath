@@ -268,6 +268,9 @@ func getUsage(ctx context.Context, a *agent.AIAgent) map[string]any {
 		}
 		usage["compressions"] = comp.Base().CompressionCount
 	}
+	if limits := agent.UsageRateLimit(a); limits != nil {
+		usage["rate_limit"] = limits
+	}
 	promptTotal, cacheRead := a.SessionPromptTokens(), a.SessionCacheReadTokens()
 	if promptTotal > 0 && cacheRead > 0 {
 		usage["cache_hit_pct"] = max(0, min(100, int(math.RoundToEven(float64(cacheRead)/float64(promptTotal)*100))))

@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -59,14 +57,4 @@ func TestOrdinaryPartialIsKeptAsTheInterruptedRow(t *testing.T) {
 		verdict.FinalResponse != "Visible draft." {
 		t.Fatalf("interrupted row %+v final %v", last, verdict.FinalResponse)
 	}
-}
-
-func guardJWT(t *testing.T, tier string) string {
-	t.Helper()
-	raw, err := json.Marshal(map[string]any{"account_tier": tier})
-	if err != nil {
-		t.Fatal(err)
-	}
-	seg := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
-	return seg([]byte(`{"alg":"none"}`)) + "." + seg(raw) + ".sig"
 }

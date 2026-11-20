@@ -104,15 +104,6 @@ func typesOf(items []map[string]any) []string {
 	return out
 }
 
-func containsType(items []map[string]any, kind string) bool {
-	for _, it := range items {
-		if it["type"] == kind {
-			return true
-		}
-	}
-	return false
-}
-
 func functionNames(kwargs map[string]any) []string {
 	out := []string{}
 	tools, _ := kwargs["tools"].([]map[string]any)

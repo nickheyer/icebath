@@ -14,6 +14,7 @@ import (
 	"time"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -394,7 +395,7 @@ func auxTrackPoolConns(t *http.Transport) *http.Transport {
 	set := &auxConnSet{}
 	dial := t.DialContext
 	if dial == nil {
-		dial = (&net.Dialer{}).DialContext
+		dial = netpref.DialContext((&net.Dialer{}).DialContext)
 	}
 	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		conn, err := dial(ctx, network, address)

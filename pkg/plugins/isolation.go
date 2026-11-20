@@ -40,12 +40,3 @@ func IsolationMode(ctx context.Context, cfg map[string]any) string {
 	}
 	return mode
 }
-
-// Reason an in process import of third party code must not happen, empty when allowed
-func InProcessImportRefusal(ctx context.Context, what, source string, cfg map[string]any) string {
-	if source == "bundled" || IsolationMode(ctx, cfg) != IsolationHost {
-		return ""
-	}
-	return what + " runs only in-process, and plugins.isolation is 'host' (third-party plugin code " +
-		"never runs inside the Icebath process); set plugins.isolation: in_process to load it"
-}

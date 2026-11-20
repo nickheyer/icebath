@@ -23,13 +23,11 @@ type WeComCryptoError interface {
 
 type SignatureError struct{ Msg string }
 type DecryptError struct{ Msg string }
-type EncryptError struct{ Msg string }
 
 func (e *SignatureError) Error() string   { return e.Msg }
 func (e *DecryptError) Error() string     { return e.Msg }
 func (*SignatureError) weComCryptoError() {}
 func (*DecryptError) weComCryptoError()   {}
-func (*EncryptError) weComCryptoError()   {}
 
 const pkcs7BlockSize = 32
 

@@ -59,8 +59,10 @@ func TestSafeURLForLog(t *testing.T) {
 		{"https://example.com/a", 10, "https:/..."},
 		{"https://example.com/a", 0, ""},
 		{"", 80, ""},
-		{"http://[::1/x", 6, "http:/"},
-		{"no-scheme/path", 80, "no-scheme/path"},
+		{"http://[::1/x", 6, "<unpar"},
+		{"no-scheme/path", 80, "<unparseable URL redacted>"},
+		{"https://example.com/services/T0/B0/secrettoken", 80, "https://example.com/..."},
+		{"file:///cache/image.png?x=1", 80, "file:///cache/image.png"},
 	} {
 		if got := SafeURLForLog(c.raw, c.max); got != c.want {
 			t.Fatalf("SafeURLForLog(%q, %d) = %q", c.raw, c.max, got)

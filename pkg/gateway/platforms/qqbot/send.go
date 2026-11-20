@@ -1,6 +1,7 @@
 package qqbot
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -199,7 +201,7 @@ func qqbotDeliverOneMedia(ctx context.Context, client *http.Client, headers map[
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			failures = append(failures, chatType+": "+errText(err))
+			failures = append(failures, chatType+": "+cmp.Or(describeSendProxyError(err), errText(err)))
 			continue
 		}
 		if result != nil {
@@ -260,6 +262,10 @@ func sendQQBot(ctx context.Context, pconfig *gateway.PlatformConfig, chatID, mes
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		if shown := describeSendProxyError(err); shown != "" {
+			pkgLog().Debug("QQBot standalone send failed")
+			return gateway.SendError("QQBot send failed: " + shown), nil
+		}
 		pkgLog().Debug("QQBot standalone send failed", "error", err)
 		return gateway.SendError("QQBot send failed: " + errText(err)), nil
 	}
@@ -270,7 +276,7 @@ func sendQQBot(ctx context.Context, pconfig *gateway.PlatformConfig, chatID, mes
 func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, mediaFiles []gateway.MediaRef, caption string, clientTimeout float64) (map[string]any, error) {
 	transport := standaloneTransport
 	if transport == nil {
-		transport = http.DefaultTransport.(*http.Transport).Clone()
+		transport = netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}
 	defer client.CloseIdleConnections()

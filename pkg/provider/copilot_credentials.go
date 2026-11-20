@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -218,7 +219,7 @@ func copilotHTTPClient(timeout time.Duration, redirect func(*http.Request, []*ht
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy:                 probeProxyFromEnvironment,
-			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			DialContext:           netpref.DialContext((&net.Dialer{Timeout: timeout}).DialContext),
 			TLSHandshakeTimeout:   timeout,
 			ResponseHeaderTimeout: timeout,
 		},

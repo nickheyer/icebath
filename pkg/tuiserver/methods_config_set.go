@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -46,10 +47,10 @@ func init() {
 		"approval_mode": setApprovalMode, "approvals.mode": setWord, "yolo": cfgsetGuarded(setYolo),
 		"reasoning": cfgsetGuarded(setReasoning), "details_mode": setWord, "thinking_mode": setWord,
 		"density": setToggle, "battery": setToggle, "timestamps": setToggle, "theme": setWord,
-		"statusbar": setToggle, "mouse": setToggle, "indicator": setWord, "voice.voice_chat_mode": setWord,
+		"statusbar": setToggle, "mouse": setToggle, "indicator": setWord,
 		"cwd": setCwd, "terminal.cwd": setCwd, "workdir": setCwd,
 		"prompt": cfgsetGuarded(setPrompt), "personality": cfgsetGuarded(setPersonality), "skin": cfgsetGuarded(setSkin),
-		"daybreak": setDaybreak}
+		"daybreak": setDaybreak, "language": setLanguage}
 	configSetRegistry.scopedMethod("config.set", configSet)
 	configSetRegistry.install()
 }
@@ -638,12 +639,7 @@ func wordSetters() map[string]wordSetter {
 			func(value any, raw string) string {
 				return "unknown indicator: " + raw + "; pick one of " + strings.Join(home.IndicatorStyles, "|")
 			},
-			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.tui_status_indicator", w)) }},
-		"voice.voice_chat_mode": {cfgWord, []string{"chained", "gpt-live"},
-			func(value any, raw string) string {
-				return "unknown voice chat mode: " + pyrepr.Str(value) + "; pick chained|gpt-live"
-			},
-			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "voice.voice_chat_mode", w)) }}}
+			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.tui_status_indicator", w)) }}}
 }
 
 // Applies an accepted word setter value, 4002 for any other word
@@ -655,6 +651,25 @@ func setWord(ctx context.Context, rid any, params map[string]any, key string, va
 	}
 	spec.apply(ctx, raw)
 	return cfgKV(rid, key, raw)
+}
+
+// Display language of the profile, a language a bundled catalog, the locale overlay or a language pack supplies, stored as its canonical id; the
+// answer warns when ICEBATH_LANGUAGE keeps another language in effect
+func setLanguage(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
+	raw := pystr.Strip(strOr(value))
+	loadLanguagePacks(ctx)
+	i18n.ResetLanguageCache()
+	id := i18n.ResolveLanguageID(ctx, raw, "")
+	if id == "" {
+		return rpcErr(rid, 4002, "unknown language: "+raw+"; pick one of "+strings.Join(i18n.SupportedLanguagesFor(ctx, ""), "|"), nil)
+	}
+	panicIf(writeConfigKey(ctx, config.DisplayLanguageKey, id))
+	i18n.ResetLanguageCache()
+	answer := tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(id)}
+	if effective := i18n.GetLanguage(ctx); effective != id {
+		answer.Warning = "ICEBATH_LANGUAGE is set to " + effective + " and overrides display.language for this profile"
+	}
+	return setAnswer(rid, answer)
 }
 
 // Per section details mode override, an empty value clearing it

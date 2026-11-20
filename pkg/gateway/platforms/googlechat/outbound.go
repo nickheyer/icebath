@@ -99,7 +99,7 @@ func (a *GoogleChatAdapter) buildMessageEvent(ctx context.Context, msg, envelope
 		att, _ := raw.(map[string]any)
 		path, mime, err := a.downloadAttachment(ctx, att)
 		if err != nil {
-			pkgLog().Error("[GoogleChat] attachment download failed", "error", err)
+			pkgLog().Error("[GoogleChat] attachment download failed: "+excText(err), errAttr(err)...)
 			continue
 		}
 		if path == "" {
@@ -190,7 +190,7 @@ func (a *GoogleChatAdapter) downloadAttachment(ctx context.Context, att map[stri
 	if resourceName != "" {
 		got, err := a.api.downloadMedia(ctx, resourceName)
 		if err != nil {
-			pkgLog().Warn("[GoogleChat] media.download_media failed: " + redactSensitive(err.Error()))
+			pkgLog().Warn("[GoogleChat] media.download_media failed: " + excText(err))
 		} else {
 			data = got
 		}
@@ -202,7 +202,7 @@ func (a *GoogleChatAdapter) downloadAttachment(ctx context.Context, att map[stri
 		}
 		got, err := a.api.fetchURI(ctx, downloadURI)
 		if err != nil {
-			pkgLog().Warn("[GoogleChat] downloadUri fetch failed (SA tokens often lack access here; this is expected for user-uploaded content): " + redactSensitive(err.Error()))
+			pkgLog().Warn("[GoogleChat] downloadUri fetch failed (SA tokens often lack access here; this is expected for user-uploaded content): " + excText(err, downloadURI, "https://oauth2.googleapis.com"))
 			return "", mime, nil
 		}
 		data = got
@@ -253,7 +253,7 @@ func (a *GoogleChatAdapter) VerifyHTTPEventRequest(ctx context.Context, authHead
 	}
 	claims, err := verifyGoogleIDToken(ctx, token, a.httpEventsAudience)
 	if err != nil {
-		pkgLog().Warn("[GoogleChat] HTTP event bearer verification failed: " + redactSensitive(err.Error()))
+		pkgLog().Warn("[GoogleChat] HTTP event bearer verification failed: " + excText(err))
 		return false, "invalid_google_bearer", nil
 	}
 	expected := map[string]bool{}
@@ -487,7 +487,7 @@ func (a *GoogleChatAdapter) sendCard(ctx context.Context, chatID string, card an
 		if status := httpStatus(err); status != 0 {
 			retryable = retryableStatuses[status]
 		}
-		return gateway.SendResult{Success: false, Error: redactSensitive(err.Error()), Retryable: retryable}
+		return gateway.SendResult{Success: false, Error: excText(err), Retryable: retryable}
 	}
 	if res.RawResponse == nil {
 		res.RawResponse = map[string]any{"cardsV2": body["cardsV2"]}
@@ -554,7 +554,7 @@ func (a *GoogleChatAdapter) EditMessage(ctx context.Context, chatID, messageID, 
 		if httpStatus(err) == 429 {
 			a.noteRateLimit(chatID)
 		}
-		return gateway.SendResult{Success: false, Error: redactSensitive(err.Error())}, nil
+		return gateway.SendResult{Success: false, Error: excText(err)}, nil
 	}
 	return res, nil
 }
@@ -566,7 +566,7 @@ func (a *GoogleChatAdapter) DeleteMessage(ctx context.Context, chatID, messageID
 	}
 	if err := a.api.deleteMessage(ctx, messageID); err != nil {
 		if status := httpStatus(err); status != 403 && status != 404 {
-			pkgLog().Debug("[GoogleChat] delete_message failed: " + redactSensitive(err.Error()))
+			pkgLog().Debug("[GoogleChat] delete_message failed: " + excText(err))
 		}
 		return false, nil
 	}
@@ -608,7 +608,7 @@ func (a *GoogleChatAdapter) SendTyping(ctx context.Context, chatID string, metad
 		}()
 		res, err := a.createMessage(detached, chatID, body)
 		if err != nil {
-			pkgLog().Debug("[GoogleChat] send_typing background create failed", "error", err)
+			pkgLog().Debug("[GoogleChat] send_typing background create failed", errAttr(err)...)
 			return
 		}
 		if id := pyrepr.Str(orEmpty(res.MessageID)); res.Success && id != "" {
@@ -641,7 +641,7 @@ func (a *GoogleChatAdapter) StopTyping(ctx context.Context, chatID string, metad
 // Patches a quietly failing message text update
 func (a *GoogleChatAdapter) patchQuietly(ctx context.Context, name, text, logMsg string) {
 	if _, err := a.patchMessage(ctx, name, map[string]any{"text": text}); err != nil {
-		pkgLog().Debug(logMsg, "error", err)
+		pkgLog().Debug(logMsg, errAttr(err)...)
 	}
 }
 
@@ -712,7 +712,7 @@ func (a *GoogleChatAdapter) SendImage(ctx context.Context, chatID, imageURL, cap
 	}
 	var h *httpError
 	if errors.As(err, &h) {
-		return gateway.SendResult{Success: false, Error: redactSensitive(err.Error())}, nil
+		return gateway.SendResult{Success: false, Error: excText(err)}, nil
 	}
 	return gateway.SendResult{}, err
 }
@@ -838,7 +838,7 @@ func (a *GoogleChatAdapter) sendFile(ctx context.Context, chatID, path, caption,
 		cardText = " "
 	}
 	if _, err := a.consumeTypingCardWithText(ctx, chatID, cardText); err != nil {
-		pkgLog().Debug("[GoogleChat] _send_file pre-patch typing-card failed", "error", err)
+		pkgLog().Debug("[GoogleChat] _send_file pre-patch typing-card failed", errAttr(err)...)
 	}
 	upload, err := api.uploadMedia(ctx, chatID, filename, path, mime)
 	if err != nil {
@@ -847,7 +847,7 @@ func (a *GoogleChatAdapter) sendFile(ctx context.Context, chatID, path, caption,
 			a.invalidateUserCreds(identity)
 			return a.postAttachmentFallback(ctx, chatID, path, filename, caption, threadID), nil
 		}
-		return gateway.SendResult{Success: false, Error: redactSensitive(err.Error())}, nil
+		return gateway.SendResult{Success: false, Error: excText(err)}, nil
 	}
 	ref, ok := upload["attachmentDataRef"]
 	if !ok || !pyrepr.Truthy(ref) {
@@ -862,7 +862,7 @@ func (a *GoogleChatAdapter) sendFile(ctx context.Context, chatID, path, caption,
 	}
 	resp, err := api.createMessage(ctx, chatID, body)
 	if err != nil {
-		return gateway.SendResult{Success: false, Error: redactSensitive(err.Error())}, nil
+		return gateway.SendResult{Success: false, Error: excText(err)}, nil
 	}
 	a.trackOutboundThread(chatID, resp)
 	return gateway.SendResult{Success: true, MessageID: resp["name"]}, nil
@@ -883,7 +883,7 @@ func (a *GoogleChatAdapter) postAttachmentFallback(ctx context.Context, chatID, 
 	body := a.WarningText(ctx, visible, &caption, a.Platform, chatID, nil)
 	if body != nil && *body != "" {
 		if _, err := a.createMessage(ctx, chatID, threadBody(*body, threadID)); err != nil {
-			pkgLog().Debug("[GoogleChat] attachment fallback notice send failed", "error", err)
+			pkgLog().Debug("[GoogleChat] attachment fallback notice send failed", errAttr(err)...)
 		}
 	}
 	return gateway.SendResult{Success: false, Error: "google_chat: native attachment requires user OAuth — run /setup-files in chat"}
@@ -896,7 +896,7 @@ func (a *GoogleChatAdapter) GetChatInfo(ctx context.Context, chatID string) (map
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		pkgLog().Debug("[GoogleChat] get_chat_info failed: " + redactSensitive(err.Error()))
+		pkgLog().Debug("[GoogleChat] get_chat_info failed: " + excText(err))
 		return map[string]any{"name": chatID, "type": "group", "chat_id": chatID}, nil
 	}
 	spaceType := strings.ToUpper(pyrepr.Str(orEmpty(firstTruthy(info["spaceType"], info["type"]))))

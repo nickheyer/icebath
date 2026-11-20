@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -26,7 +27,11 @@ type Widget struct {
 	Zone  string
 	Width int
 	// Interval at which Tick advances the state of an animated widget, zero for a still one
-	Every  time.Duration
+	Every time.Duration
+	// Rows the window of a modal widget asks for at a width, six tenths of the screen when the widget has no say
+	Rows func(state any, cols int) int
+	// Step a modal widget takes back at the close key before its window closes, false once it has none left
+	Back   func(ctx context.Context, state any) (next any, stepped bool, err error)
 	Open   func(ctx context.Context, arg string) (state any, ok bool, err error)
 	Input  func(ctx context.Context, state any, in WidgetInput) (next any, open bool, err error)
 	Tick   func(ctx context.Context, state any) (next any, err error)
@@ -69,8 +74,43 @@ type WidgetSpan struct {
 // Widgets the plugins of the profile registered, read each time the list is asked for, assigned where the plugin manager is wired
 var PluginWidgets func(ctx context.Context) []Widget
 
-// Plugin widgets were read for the first time, the composer learns their commands
-type widgetsLoadedMsg struct{}
+// Plugin that failed to load at a scan, with the reason
+type WidgetLoadFailure struct {
+	Plugin  string
+	Message string
+}
+
+// Widgets the plugins of the profile register and the plugins that failed to load, after a scan of the plugins that is forced anew when asked or
+// else runs only the first time, assigned where the plugin manager is wired
+var ScanPluginWidgets func(ctx context.Context, force bool) ([]Widget, []WidgetLoadFailure)
+
+// Plugin widgets were scanned, the composer learns their commands and the transcript what came, went or failed
+type widgetsLoadedMsg struct {
+	widgets  []Widget
+	failures []WidgetLoadFailure
+	// Told the ids of the plugin widgets and the failures once the transcript has them, nil for a scan nobody asked for
+	report func(loaded []string, failures []WidgetLoadFailure)
+}
+
+// Key the widget host travels under in the context of a widget's input call
+type widgetHostKey struct{}
+
+// Widget a running widget asked to open in its place, with the state it handed over
+type widgetOpening struct {
+	id    string
+	state any
+}
+
+// Opens the widget of an id in place of the modal one whose input function is running, with a state that needs no argument to parse,
+// false outside such a call and for an id no widget has
+func OpenWidget(ctx context.Context, id string, state any) bool {
+	h, _ := ctx.Value(widgetHostKey{}).(*widgetHost)
+	if h == nil || !h.has(id) {
+		return false
+	}
+	h.opening = &widgetOpening{id: id, state: state}
+	return true
+}
 
 var (
 	builtinMu      sync.Mutex
@@ -114,17 +154,115 @@ type widgetHost struct {
 	gen     int
 	// Set once the plugins were loaded beside the UI, so listing them never waits on a plugin start
 	loaded bool
+	// Ids of the plugin widgets the last scan found, what the next scan is compared with
+	known map[string]bool
+	// Widget the input function of the modal one asked to open, taken once that function returned
+	opening *widgetOpening
 }
 
 // Loads the plugins of the profile beside the UI and reports when their widgets can be listed
-func (h *widgetHost) warm() tea.Cmd {
-	if PluginWidgets == nil {
+func (h *widgetHost) warm() tea.Cmd { return h.scan(false, nil) }
+
+// Scans the plugins again beside the UI, the transcript told what came, went or failed and the report what the scan found
+func (h *widgetHost) rescan(report func(loaded []string, failures []WidgetLoadFailure)) tea.Cmd {
+	if report == nil {
+		report = func([]string, []WidgetLoadFailure) {}
+	}
+	return h.scan(true, report)
+}
+
+// Reads the plugin widgets beside the UI, through the scan hook when one is wired and else as the plugins stand
+func (h *widgetHost) scan(force bool, report func(loaded []string, failures []WidgetLoadFailure)) tea.Cmd {
+	if ScanPluginWidgets == nil && PluginWidgets == nil {
+		if report != nil {
+			report(nil, nil)
+		}
 		return nil
 	}
 	return func() tea.Msg {
-		PluginWidgets(h.app.ctx)
-		return widgetsLoadedMsg{}
+		m := widgetsLoadedMsg{report: report}
+		if ScanPluginWidgets != nil {
+			m.widgets, m.failures = ScanPluginWidgets(h.app.ctx, force)
+		} else {
+			m.widgets = PluginWidgets(h.app.ctx)
+		}
+		return m
 	}
+}
+
+// Takes a finished scan: widgets that came or went and plugins that failed are told in the transcript, since a widget registered in silence
+// cannot be told from one that failed, and the widgets on screen follow their plugins
+func (h *widgetHost) onScanned(m widgetsLoadedMsg) tea.Cmd {
+	h.loaded = true
+	builtinMu.Lock()
+	found, defs := map[string]bool{}, map[string]Widget{}
+	for _, w := range m.widgets {
+		if _, builtin := builtinWidgets[w.ID]; !builtin && w.ID != "" && w.Render != nil {
+			found[w.ID], defs[w.ID] = true, w
+		}
+	}
+	builtinMu.Unlock()
+	ids := make([]string, 0, len(found))
+	for id := range found {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var lines []string
+	for _, id := range ids {
+		if !h.known[id] {
+			lines = append(lines, tr("session.main.widgetLive", id))
+		}
+	}
+	var gone []string
+	for id := range h.known {
+		if !found[id] {
+			gone = append(gone, id)
+		}
+	}
+	sort.Strings(gone)
+	for _, id := range gone {
+		lines = append(lines, tr("session.main.widgetRemoved", id))
+	}
+	for _, failure := range m.failures {
+		lines = append(lines, tr("session.main.widgetFailedToLoad", failure.Plugin, failure.Message))
+	}
+	closing := h.follow(defs)
+	h.known = found
+	// The scan of the start finishes before the first session stands, whose start would take the lines with it
+	return tea.Batch(closing, h.app.onceSessionStands(sessionWaitTries, func() {
+		for _, line := range lines {
+			h.app.sys(line)
+		}
+		if m.report != nil {
+			m.report(ids, m.failures)
+		}
+	}))
+}
+
+// Points the plugin widgets on screen at the functions their plugins registered at the last scan and closes those whose plugin no longer provides them
+func (h *widgetHost) follow(defs map[string]Widget) tea.Cmd {
+	kept := h.ambient[:0]
+	for _, active := range h.ambient {
+		def, still := defs[active.widget.ID]
+		switch {
+		case still:
+			active.widget = def
+		case h.known[active.widget.ID]:
+			continue
+		}
+		kept = append(kept, active)
+	}
+	h.ambient = kept
+	if h.modal == nil {
+		return nil
+	}
+	active := h.modal.active
+	if def, still := defs[active.widget.ID]; still {
+		active.widget = def
+	} else if h.known[active.widget.ID] {
+		return wm.RequestDismissOf(h.modal)
+	}
+	return nil
 }
 
 func newWidgetHost(a *app) *widgetHost { return &widgetHost{app: a} }
@@ -202,16 +340,34 @@ func (h *widgetHost) launch(id, arg string) tea.Cmd {
 		}
 		state = opened
 	}
+	return h.show(w, state)
+}
+
+// Puts a widget on screen with its first state, an ambient one in its zone and a modal one in the window over the session, in place of any modal one up
+func (h *widgetHost) show(w Widget, state any) tea.Cmd {
 	h.gen++
-	active := &activeWidget{widget: w, state: state, gen: h.gen}
-	if ambient {
+	active := &activeWidget{widget: w, state: state, gen: h.gen, last: time.Now()}
+	if w.Mode == "ambient" {
 		h.ambient = append(h.ambient, active)
-		active.last = time.Now()
 		return nil
 	}
 	h.modal = &widgetCard{host: h, active: active}
-	active.last = time.Now()
 	return h.app.wm.ShowOverlay(h.modal)
+}
+
+// Opens the widget the input function of the modal one asked for, an ambient one of the same id replaced
+func (h *widgetHost) open() tea.Cmd {
+	opening := h.opening
+	h.opening = nil
+	if opening == nil {
+		return nil
+	}
+	w, ok := h.find(opening.id)
+	if !ok {
+		return nil
+	}
+	h.ambient = slices.DeleteFunc(h.ambient, func(active *activeWidget) bool { return active.widget.ID == w.ID })
+	return h.show(w, opening.state)
 }
 
 // Refreshes each widget whose interval passed on this frame, its tick queued for the loop, reporting whether one draws anew
@@ -428,7 +584,11 @@ func (c *widgetCard) MinSize() (int, int) {
 	if width <= 0 {
 		width = w * 7 / 10
 	}
-	return min(width, max(w-8, 20)), max(h*6/10, 8)
+	width = min(width, max(w-8, 20))
+	if c.active.widget.Rows != nil {
+		return width, max(c.active.widget.Rows(c.active.state, width), 1)
+	}
+	return width, max(h*6/10, 8)
 }
 
 func (c *widgetCard) View(w, h int) string {
@@ -436,22 +596,59 @@ func (c *widgetCard) View(w, h int) string {
 	return strings.Join(rows[:min(len(rows), h)], "\n")
 }
 
+// Keys the window manager hands an overlay as actions and not as key presses, by the action each arrives as, so a widget sees the arrows,
+// the enter key and the editing keys it would otherwise never hear of
+var widgetActionKeys = map[string]string{
+	"palette.up": "up", "palette.down": "down", "palette.left": "left", "palette.right": "right", "palette.pick": "enter",
+	"palette.page.up": "pgup", "palette.page.down": "pgdown", "palette.home": "home", "palette.end": "end",
+	"palette.delete.back": "backspace", "palette.delete.forward": "delete", "palette.clear": "ctrl+u", "palette.delete.word": "ctrl+w",
+}
+
+// Takes the close key for a widget that has a step of its own behind it, a zoom to leave or a mode to end, the window closing when it has none
+func (c *widgetCard) Back() bool {
+	if c.active.widget.Back == nil {
+		return false
+	}
+	next, stepped, err := c.active.widget.Back(c.host.app.ctx, c.active.state)
+	if err != nil {
+		c.host.app.sys("⚠ /" + c.active.widget.ID + ": " + err.Error())
+		return false
+	}
+	if stepped {
+		c.active.state = next
+	}
+	return stepped
+}
+
 func (c *widgetCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
-	key, isKey := m.(tea.KeyPressMsg)
-	if !isKey {
+	var in WidgetInput
+	switch m := m.(type) {
+	case tea.KeyPressMsg:
+		in = WidgetInput{Text: m.Text, Key: m.String(), Ctrl: m.Mod&tea.ModCtrl != 0, Alt: m.Mod&tea.ModAlt != 0, Shift: m.Mod&tea.ModShift != 0}
+	case wm.ActionMsg:
+		key, mapped := widgetActionKeys[m.ID]
+		if !mapped {
+			return c, nil
+		}
+		in = WidgetInput{Key: key}
+	default:
 		return c, nil
 	}
-	in := WidgetInput{Text: key.Text, Key: key.String(), Ctrl: key.Mod&tea.ModCtrl != 0, Alt: key.Mod&tea.ModAlt != 0, Shift: key.Mod&tea.ModShift != 0}
 	if c.active.widget.Input == nil {
 		if in.Key == "esc" || in.Text == "q" || in.Key == "ctrl+c" {
 			return c, wm.RequestDismissOf(c)
 		}
 		return c, nil
 	}
-	next, open, err := c.active.widget.Input(c.host.app.ctx, c.active.state, in)
+	next, open, err := c.active.widget.Input(context.WithValue(c.host.app.ctx, widgetHostKey{}, c.host), c.active.state, in)
 	if err != nil {
+		c.host.opening = nil
 		c.host.app.sys("⚠ /" + c.active.widget.ID + ": " + err.Error())
 		return c, wm.RequestDismissOf(c)
+	}
+	// A widget opened from the input takes the window, so the one that asked neither stays nor dismisses what replaced it
+	if c.host.opening != nil {
+		return c, c.host.open()
 	}
 	if !open {
 		return c, wm.RequestDismissOf(c)

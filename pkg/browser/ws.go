@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // WebSocket opcodes from RFC 6455 section 5.2
@@ -192,7 +194,7 @@ func DialWS(ctx context.Context, rawURL string, opts WSOptions) (*WSConn, error)
 func dialMaybeProxied(ctx context.Context, scheme, host, addr string) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	if isLoopbackHost(host) {
-		return dialer.DialContext(ctx, "tcp", addr)
+		return netpref.DialContext(dialer.DialContext)(ctx, "tcp", addr)
 	}
 	proxyScheme := "http"
 	if scheme == "wss" {
@@ -200,7 +202,7 @@ func dialMaybeProxied(ctx context.Context, scheme, host, addr string) (net.Conn,
 	}
 	proxyURL, err := http.ProxyFromEnvironment(&http.Request{URL: &url.URL{Scheme: proxyScheme, Host: addr}})
 	if err != nil || proxyURL == nil {
-		return dialer.DialContext(ctx, "tcp", addr)
+		return netpref.DialContext(dialer.DialContext)(ctx, "tcp", addr)
 	}
 	proxyPort := proxyURL.Port()
 	if proxyPort == "" {
@@ -209,7 +211,7 @@ func dialMaybeProxied(ctx context.Context, scheme, host, addr string) (net.Conn,
 			proxyPort = "443"
 		}
 	}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(proxyURL.Hostname(), proxyPort))
+	conn, err := netpref.DialContext(dialer.DialContext)(ctx, "tcp", net.JoinHostPort(proxyURL.Hostname(), proxyPort))
 	if err != nil {
 		return nil, fmt.Errorf("proxy dial: %w", err)
 	}

@@ -93,7 +93,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		}
 	}
 	if err := newLineClient(token).push(ctx, chatID, messages); err != nil {
-		return gateway.SendError(err.Error()), nil
+		return gateway.SendError(pushErrorText(ctx, err)), nil
 	}
 	return map[string]any{"success": true, "message_id": nil}, nil
 }

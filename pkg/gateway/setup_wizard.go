@@ -129,7 +129,7 @@ func AllPlatforms(ctx context.Context) []SetupPlatform {
 			tokenVar = entry.RequiredEnv[0]
 		}
 		platforms = append(platforms, SetupPlatform{Key: entry.Name, Label: entry.Label, Emoji: entry.Emoji, TokenVar: tokenVar,
-			InstallHint: entry.InstallHint, Entry: entry})
+			InstallHint: entry.InstallHint, SetupInstructions: entry.SetupInstructions, Vars: entry.SetupVars, Entry: entry})
 	}
 	return platforms
 }

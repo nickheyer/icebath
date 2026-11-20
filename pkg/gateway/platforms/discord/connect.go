@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -78,10 +79,11 @@ func (a *DiscordAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		a.SetFatalError(ctx, "discord_connect_timeout", "Timed out waiting for the Discord gateway to become ready", true)
 		return false, nil
 	}
-	pkgLog().Error(fmt.Sprintf("[%s] Failed to connect to Discord: %s", a.Name(), err))
+	shown := discordProxyError(ctx, err)
+	pkgLog().Error(fmt.Sprintf("[%s] Failed to connect to Discord: %s", a.Name(), cmp.Or(shown, err.Error())))
 	a.cancelBotTask()
 	a.ReleasePlatformLock()
-	code, message, retryable := a.classifyConnectException(err)
+	code, message, retryable := a.classifyConnectException(err, shown)
 	a.SetFatalError(ctx, code, message, retryable)
 	return false, nil
 }
@@ -118,7 +120,7 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 		return false, err
 	}
 	if proxyURL != "" {
-		pkgLog().Info(fmt.Sprintf("[%s] Using proxy for Discord: %s", a.Name(), proxyURL))
+		pkgLog().Info(fmt.Sprintf("[%s] Using proxy for Discord: %s", a.Name(), gateway.SafeProxyURLForLog(proxyURL)))
 	}
 	a.mu.Lock()
 	previous := a.link

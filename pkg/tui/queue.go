@@ -629,3 +629,161 @@ func (q *composerQueue) removeQ(i int) (tea.Cmd, error) {
 	removeAtInPlace(&queue.items, i)
 	return nil, nil
 }
+
+// Number of inputs in the local queue of the session in view
+func (q *composerQueue) size() int {
+	queue, err := q.getQueue(nil)
+	if err != nil {
+		return 0
+	}
+	return len(queue.items)
+}
+
+// Whether the head of the local queue can go out now, it being there, not in flight and the gateway reachable
+func (q *composerQueue) headWaits() bool {
+	if c := q.store.ui.GatewayConnected; c != nil && !*c {
+		return false
+	}
+	queue, err := q.getQueue(nil)
+	return err == nil && len(queue.items) > 0 && !queue.items[0].InFlight
+}
+
+// Shell command a person typed between braces in a queued input, with where it stands in the display and in the text sent
+type typedInterpolation struct {
+	command       string
+	display, text [2]int
+}
+
+// Shell interpolations of a queued input its person typed, found in the display and placed in the text sent by lining up the typed stretches between
+// the paste and image labels, so one that only appears inside an expanded paste is never run
+func typedInterpolations(display, text string) []typedInterpolation {
+	matches := interpolationRe.FindAllStringSubmatchIndex(display, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	var out []typedInterpolation
+	if display == text {
+		for _, m := range matches {
+			out = append(out, typedInterpolation{command: display[m[2]:m[3]], display: [2]int{m[0], m[1]}, text: [2]int{m[0], m[1]}})
+		}
+		return out
+	}
+	labels := pasteTokenRunRe.FindAllStringIndex(display, -1)
+	start, from := 0, 0
+	for i := 0; i <= len(labels); i++ {
+		end := len(display)
+		if i < len(labels) {
+			end = labels[i][0]
+		}
+		stretch := display[start:end]
+		core := strings.TrimFunc(stretch, isJSSpace)
+		lead := strings.Index(stretch, core)
+		at := -1
+		switch {
+		case core == "":
+		case i == 0 && strings.HasPrefix(text, core):
+			at = 0
+		case i == len(labels) && strings.HasSuffix(text, core) && len(text)-len(core) >= from:
+			at = len(text) - len(core)
+		default:
+			if found := strings.Index(text[from:], core); found >= 0 {
+				at = from + found
+			}
+		}
+		if at >= 0 {
+			for _, m := range matches {
+				if m[0] < start+lead || m[1] > start+lead+len(core) {
+					continue
+				}
+				shift := at - start - lead
+				out = append(out, typedInterpolation{command: display[m[2]:m[3]], display: [2]int{m[0], m[1]}, text: [2]int{m[0] + shift, m[1] + shift}})
+			}
+			from = at + len(core)
+		}
+		if i < len(labels) {
+			start = labels[i][1]
+		}
+	}
+	return out
+}
+
+// Display and text of an input with the output of each typed shell interpolation put in its place
+func spliceInterpolations(display, text string, typed []typedInterpolation, outputs []string) (string, string) {
+	for i := len(typed) - 1; i >= 0; i-- {
+		t := typed[i]
+		display = display[:t.display[0]] + outputs[i] + display[t.display[1]:]
+		text = text[:t.text[0]] + outputs[i] + text[t.text[1]:]
+	}
+	return display, text
+}
+
+// Marks the queued input the composer holds for editing, nil when it holds none
+func (a *app) setQueueEdit(index *int) {
+	a.queueEdit = index
+	if err := a.queue.setQueueEdit(index); err != nil {
+		a.sys("error: " + err.Error())
+	}
+}
+
+// Whether the first queued input can be sent now
+func (a *app) queueHeadWaits() bool { return a.store.ui.Sid != "" && a.queue.headWaits() }
+
+// Sends the first queued input now, one the owner never confirmed going out again
+func (a *app) sendQueueHead() tea.Cmd {
+	if a.store.ui.Sid == "" {
+		return nil
+	}
+	item, err := a.queue.dequeue(true)
+	if err != nil {
+		a.sys("error: " + err.Error())
+		return nil
+	}
+	if item == nil {
+		return nil
+	}
+	a.setQueueEdit(nil)
+	return a.sendQueued(item)
+}
+
+// Puts the next queued input into the composer for editing, up from the first and down from the last, false when nothing is queued
+func (a *app) cycleQueue(dir int) (tea.Cmd, bool) {
+	rows, err := a.queue.queuedDisplay()
+	if err != nil {
+		return nil, false
+	}
+	if len(rows) == 0 {
+		if a.queueEdit != nil {
+			a.setQueueEdit(nil)
+		}
+		return nil, false
+	}
+	index := 0
+	switch n := len(rows); {
+	case a.queueEdit != nil:
+		index = ((*a.queueEdit+dir)%n + n) % n
+	case dir < 0:
+		index = n - 1
+	}
+	draft, err := a.queue.queueDraft(index)
+	if err != nil {
+		a.sys("error: " + err.Error())
+		return nil, true
+	}
+	a.cancelPendingRewind(true)
+	a.setQueueEdit(&index)
+	a.draftRevision++
+	set := a.card.composer.SetValue(draft)
+	return tea.Batch(set, a.syncTokens()), true
+}
+
+// Deletes the queued input the composer holds for editing and empties the composer
+func (a *app) deleteQueueEdit() tea.Cmd {
+	if a.queueEdit == nil {
+		return nil
+	}
+	removed, err := a.queue.removeQ(*a.queueEdit)
+	if err != nil {
+		a.sys("error: " + err.Error())
+	}
+	return tea.Batch(removed, a.clearIn())
+}

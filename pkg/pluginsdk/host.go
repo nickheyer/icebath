@@ -3,6 +3,7 @@ package pluginsdk
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sync"
 )
 
@@ -28,8 +29,12 @@ var providerRegistrars = map[string]string{
 	"secret_source": "register_secret_source", "tts": "register_tts_provider", "transcription": "register_transcription_provider",
 	"delegation": "register_delegation_provider", "context_engine": "register_context_engine",
 	"context_reference": "register_context_reference", "memory": "register_memory_provider", "login_backend": "register_login_backend",
-	"browser_page_backend": "register_browser_page_backend",
+	"browser_page_backend": "register_browser_page_backend", "cron_scheduler": "register_cron_scheduler",
+	"computer_use": "register_computer_use_provider",
 }
+
+// Provider kinds icebath loads only for the category that selects their plugin, a load of the plugin for anything else leaving them out
+var categoryOnlyKinds = map[string]bool{"cron_scheduler": true, "computer_use": true}
 
 func (h *host) PluginID() string         { return h.id }
 func (h *host) PluginKey() string        { return h.key }
@@ -158,43 +163,19 @@ func (h *host) RegisterProvider(kind string, provider *Object) (*Handle, error) 
 	if provider == nil {
 		return nil, fmt.Errorf("provider of kind %q is nil", kind)
 	}
+	if err := completeProvider(kind, provider); err != nil {
+		return nil, err
+	}
+	switch kind {
+	case "login_backend":
+		provider.identity = loginIdentity(provider)
+	case "browser_page_backend":
+		provider.identity = map[string]any{"is_base": true}
+	}
+	if categoryOnlyKinds[kind] && (h.capture == nil || h.capture.method != method) {
+		return nil, nil
+	}
 	return h.register(method, []any{provider}, nil)
-}
-
-func (h *host) RegisterPlatform(platform Platform) (*Handle, error) {
-	if platform.Adapter == nil {
-		return nil, fmt.Errorf("platform %q has no adapter", platform.Name)
-	}
-	factory := h.peer.funcRef(platform.Name+".adapter", func(ctx context.Context, args []any, _ map[string]any) (any, error) {
-		var config map[string]any
-		if len(args) > 0 {
-			config, _ = args[0].(map[string]any)
-		}
-		return platform.Adapter(ctx, mapOrEmpty(config))
-	})
-	check := platform.Check
-	if check == nil {
-		check = func(context.Context) bool { return true }
-	}
-	kwargs := map[string]any{}
-	for k, v := range platform.Extra {
-		kwargs[k] = v
-	}
-	kwargs["name"], kwargs["label"], kwargs["adapter_factory"] = platform.Name, platform.Label, factory
-	kwargs["check_fn"], kwargs["install_hint"] = h.checkRef(platform.Name+".check", check), platform.InstallHint
-	if len(platform.RequiredEnv) > 0 {
-		kwargs["required_env"] = platform.RequiredEnv
-	}
-	if platform.ValidateConfig != nil {
-		kwargs["validate_config"] = h.peer.funcRef(platform.Name+".validate", func(ctx context.Context, args []any, _ map[string]any) (any, error) {
-			var config map[string]any
-			if len(args) > 0 {
-				config, _ = args[0].(map[string]any)
-			}
-			return platform.ValidateConfig(ctx, mapOrEmpty(config))
-		})
-	}
-	return h.register("register_platform", nil, kwargs)
 }
 
 func (h *host) RegisterSlackActionHandler(actionID any, fn SlackActionFunc) (*Handle, error) {
@@ -214,7 +195,25 @@ func (h *host) RegisterSlackActionHandler(actionID any, fn SlackActionFunc) (*Ha
 		action, _ := args[2].(map[string]any)
 		return nil, fn(ctx, ack, mapOrEmpty(body), mapOrEmpty(action))
 	})
-	return h.register("register_slack_action_handler", []any{actionID, callback}, nil)
+	return h.register("register_slack_action_handler", []any{slackMatcher(actionID), callback}, nil)
+}
+
+// Wire form of a Slack action matcher, a compiled pattern crossing as its source wherever it stands
+func slackMatcher(v any) any {
+	switch x := v.(type) {
+	case *regexp.Regexp:
+		if x == nil {
+			return nil
+		}
+		return map[string]any{"__pattern__": x.String(), "flags": int64(0)}
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, item := range x {
+			out[k] = slackMatcher(item)
+		}
+		return out
+	}
+	return v
 }
 
 func (h *host) RegisterApprovalTransport(name string, present ApprovalFunc) error {
@@ -399,8 +398,14 @@ func (h *host) InjectMessage(ctx context.Context, content, role, sessionKey stri
 	return ok, err
 }
 
-func (h *host) PostMessage(ctx context.Context, text string) (any, error) {
-	return h.Call(ctx, "post_message", []any{text}, nil)
+func (h *host) InjectMessageAt(ctx context.Context, content, role string, origin SessionSource) (bool, error) {
+	kwargs := map[string]any{"origin": origin.fields()}
+	if role != "" {
+		kwargs["role"] = role
+	}
+	value, err := h.Call(ctx, "inject_message", []any{content}, kwargs)
+	ok, _ := value.(bool)
+	return ok, err
 }
 
 func (h *host) AskChoice(ctx context.Context, question string, choices []string) (string, bool, error) {
@@ -431,6 +436,11 @@ func (h *host) SessionSurface(ctx context.Context) (string, error) {
 
 func (h *host) CurrentCronExecution(ctx context.Context) (any, error) {
 	return h.Call(ctx, "current_cron_execution", nil, nil)
+}
+
+func (h *host) RewriteMemoryQuery(ctx context.Context, userMessage string) (string, error) {
+	value, err := h.Call(ctx, "rewrite_memory_query", []any{userMessage}, nil)
+	return text(value), err
 }
 
 // One granted input or output operation on the host

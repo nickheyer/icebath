@@ -266,11 +266,6 @@ func UltrafastOffered(model, providerName, baseURL, accessToken string) (bool, e
 	return !known || offered, nil
 }
 
-// UltrafastOfferedFor checks ultrafast against a shell's resolved route provider, base url and key
-func UltrafastOfferedFor(route Route, model string) (bool, error) {
-	return UltrafastOffered(model, route.Provider, route.BaseURL, route.APIKey)
-}
-
 // Request model from the overrides when present, else the route model
 func overrideModel(route Route, overrides map[string]any) string {
 	if raw, ok := overrides["model"]; ok {

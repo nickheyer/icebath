@@ -49,6 +49,12 @@ func (c *lineClient) api(ctx context.Context, timeout time.Duration) (*messaging
 	return api.WithContext(ctx), nil
 }
 
+// Text of a failed push for a log line or a send result, the kind of error and the proxy's host when the proxy URL the client reads from the
+// environment holds a secret the raw text could repeat
+func pushErrorText(ctx context.Context, err error) string {
+	return gateway.ProxySafeErrorText(err, gateway.TrustedEnvProxyForRedaction(ctx, lineAPIEndpoint+linePushPath))
+}
+
 // Posts a messages payload, an error naming the call, status and first 200 body chars past 400
 func (c *lineClient) postMessages(ctx context.Context, path, label string, payload map[string]any) error {
 	api, err := c.api(ctx, c.timeout)

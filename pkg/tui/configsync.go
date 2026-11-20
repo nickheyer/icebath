@@ -58,16 +58,34 @@ func bootMouseTracking() string {
 	return "off"
 }
 
-// Status bar fields as a set, nil for every field
+// Status bar fields as a set of trimmed lower case names, nil for every field
 func statusBarFieldSet(fields []string) map[string]bool {
-	if len(fields) == 0 {
-		return nil
-	}
 	set := make(map[string]bool, len(fields))
 	for _, name := range fields {
-		set[name] = true
+		if name = strings.ToLower(strings.TrimFunc(name, isJSSpace)); name != "" {
+			set[name] = true
+		}
+	}
+	if len(set) == 0 {
+		return nil
 	}
 	return set
+}
+
+// Whether the status bar shows a fact, under any of the names a field list may call it
+func (ui uiState) statusField(names ...string) bool {
+	if ui.StatusBar == "off" {
+		return false
+	}
+	if len(ui.StatusBarFields) == 0 {
+		return true
+	}
+	for _, name := range names {
+		if ui.StatusBarFields[name] {
+			return true
+		}
+	}
+	return false
 }
 
 // Per section detail modes of the wire as the UI state keeps them
@@ -84,7 +102,9 @@ type configApp interface {
 	setBellOnComplete(on bool)
 	setBellOnPrompt(on bool)
 	setVoiceEnabled(on bool)
+	setVoiceTTS(on bool)
 	setVoiceRecordKey(k voiceRecordKey)
+	inlineImageRetry()
 }
 
 // Refused MCP revision and when it may be retried
@@ -150,11 +170,14 @@ func (c *configSync) applyDisplay(cfg *tuigateway.ClientConfig, applyBusy bool) 
 	ui.Compact = d.Compact
 	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.FocusView = string(d.DetailsMode), false, d.FocusView
 	ui.IndicatorStyle, ui.InlineDiffs, ui.MouseTracking = string(d.Indicator), d.InlineDiffs, string(d.MouseTracking)
+	ui.InlineImages = d.InlineImages
+	c.app.inlineImageRetry()
 	ui.PasteCollapseLines, ui.PasteCollapseChars = int(settings.PasteCollapseThreshold), int(settings.PasteCollapseCharThreshold)
 	ui.Sections, ui.ShowReasoning = sectionModes(d.Sections), d.ShowReasoning
 	ui.StatusBar, ui.StatusBarFields = string(d.StatusBarPlace), statusBarFieldSet(d.StatusBar.Fields)
 	ui.Streaming, ui.Timestamps = d.Streaming, d.Timestamps
 	ui.Arena, ui.PetRenderMode = d.Arena, d.Pet.RenderMode
+	ui.TurnSummary, ui.SpinnerTokenFlow = d.TurnSummary, d.SpinnerTokenFlow
 	return cmd
 }
 
@@ -207,7 +230,7 @@ func configWord(r *tuigateway.ConfigGetResult) string {
 	return r.Value.Text
 }
 
-// Voice mode of a canonical session, enabled for voice_only and all
+// Voice mode of a canonical session, enabled for voice_only and all and speaking its replies for all
 func (c *configSync) hydrateVoiceMode(gen int, sid string) tea.Cmd {
 	if !c.gw.canonical() {
 		return nil
@@ -219,6 +242,7 @@ func (c *configSync) hydrateVoiceMode(gen int, sid string) tea.Cmd {
 			if r != nil && c.current(gen, sid) {
 				mode := configWord(r)
 				c.app.setVoiceEnabled(mode == "voice_only" || mode == "all")
+				c.app.setVoiceTTS(mode == "all")
 			}
 			return nil
 		}}
@@ -247,6 +271,9 @@ func (c *configSync) syncSession(sid string) tea.Cmd {
 	}
 	gen := c.gen
 	c.app.setVoiceEnabled(os.Getenv("ICEBATH_VOICE") == "1")
+	if c.gw.canonical() {
+		c.app.setVoiceTTS(false)
+	}
 	return tea.Batch(
 		c.hydrateVoiceMode(gen, sid),
 		c.readMtime(sid, func(mtime float64, rev string) tea.Cmd {

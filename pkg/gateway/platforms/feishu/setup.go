@@ -7,12 +7,14 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
@@ -51,6 +53,20 @@ func onboardOpenBaseURL(domain string) string {
 	return onboardOpenURLs["feishu"]
 }
 
+// Text of a failed request for a log line or a send result: the kind of error and the proxy's host when the request went through a proxy whose URL
+// holds a secret the raw text could repeat, the raw text otherwise
+func proxySafeErrorText(err error, openURLs ...string) string {
+	if shown := gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(openURLs...)); shown != "" {
+		return shown
+	}
+	return err.Error()
+}
+
+// Text of a failed request to the open platform of the adapter's domain
+func (a *FeishuAdapter) errorText(err error) string {
+	return proxySafeErrorText(err, onboardOpenBaseURL(a.settings.DomainName))
+}
+
 // HTTPError of urlopen, the status and the body the server sent
 type HTTPError struct {
 	Code int
@@ -68,7 +84,7 @@ func (e *URLError) Error() string { return "<urlopen error " + e.Reason + ">" }
 
 // Opens a request like urlopen, the 2xx body, HTTPError for 400 and up and URLError otherwise
 var urlopenFn = func(ctx context.Context, req *http.Request, timeout time.Duration) ([]byte, error) {
-	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}).Do(req.WithContext(ctx))
+	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}).Do(req.WithContext(ctx))
 	if err != nil {
 		reason := err.Error()
 		if pypath.OSErrorClass(err) != "OSError" {

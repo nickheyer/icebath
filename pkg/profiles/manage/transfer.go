@@ -1,6 +1,7 @@
 package manage
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -410,7 +411,16 @@ func ImportProfile(archivePath, name string) (_ string, err error) {
 			return "", err
 		}
 	}
+	dropOtherAccess(context.Background(), filepath.Join(finalSource, "config.yaml"))
+	if st, err := os.Lstat(filepath.Join(finalSource, ".env")); err == nil && st.Mode().IsRegular() {
+		if err := os.Chmod(filepath.Join(finalSource, ".env"), 0o600); err != nil {
+			return "", err
+		}
+	}
 	if _, err := pyfs.Move(finalSource, profileDir); err != nil {
+		return "", err
+	}
+	if err := home.ClearProfileDeleted(profileDir); err != nil {
 		return "", err
 	}
 	return profileDir, nil

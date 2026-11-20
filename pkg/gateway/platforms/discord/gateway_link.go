@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 )
 
 // Most seconds the command sync lets one rate limited request sleep before raising
@@ -69,8 +70,8 @@ func newGatewayLink(token string, intents discordgo.Intent, allowedMentions *dis
 	dialer := *s.Dialer
 	s.Dialer = &dialer
 	l := &gatewayLink{Session: s, disconnected: make(chan struct{}, 1)}
-	base := &http.Transport{Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second}
-	dial := (&net.Dialer{Timeout: 30 * time.Second}).DialContext
+	base := &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second}
+	dial := netpref.DialContext((&net.Dialer{Timeout: 30 * time.Second}).DialContext)
 	switch {
 	case proxy.Connector != nil:
 		base = proxy.Connector.Transport()

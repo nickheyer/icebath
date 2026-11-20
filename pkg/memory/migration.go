@@ -34,8 +34,8 @@ var migrationSteps struct {
 type MemoryInstallFunc func(name string) (map[string]any, error)
 
 // Effective memory.provider of a home, empty when unset, an error when the memory block is not a mapping
-func ConfiguredMemoryProvider(h string) (string, error) {
-	sel, err := pm.ReadHomeSelection(h)
+func ConfiguredMemoryProvider(ctx context.Context, h string) (string, error) {
+	sel, err := pm.ReadHomeSelection(ctx, h)
 	if err != nil {
 		return "", err
 	}
@@ -53,10 +53,9 @@ func ConfiguredMemoryProvider(h string) (string, error) {
 	return pyStrip(pyStr(mem["provider"])), nil
 }
 
-// True when the provider resolves for the home through bundled, its user plugins or an entry point with a directory
+// True when the provider resolves for the home through bundled or its user plugins
 func MemoryProviderPresent(ctx context.Context, name, h string) bool {
-	r := FindProvider(home.WithOverride(ctx, h), nil, name)
-	return r != nil && hasProviderDir(r)
+	return FindProvider(home.WithOverride(ctx, h), nil, name) != nil
 }
 
 // Live catalog entry name shipping the provider, false when the catalog has no such plugin
@@ -82,7 +81,7 @@ func CatalogInstallHint(ctx context.Context, name, category string) string {
 
 // Provider the home still needs from the catalog, empty when nothing is due or a catalog miss was reported
 func pendingMemoryProvider(ctx context.Context, h string, say func(string)) (string, error) {
-	name, err := ConfiguredMemoryProvider(h)
+	name, err := ConfiguredMemoryProvider(ctx, h)
 	if err != nil {
 		return "", err
 	}

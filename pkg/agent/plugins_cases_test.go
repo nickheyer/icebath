@@ -29,14 +29,6 @@ func pluginsCasesWrite(t *testing.T, path string, v any) {
 	}
 }
 
-func pluginsCasesDir(t *testing.T, dir string) string {
-	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return dir
-}
-
 func TestForceReloadSymmetryPreToolCallTimeoutDoesNotReachToolHandler(t *testing.T) {
 	c := bridgePluginContext(t)
 	pluginsCasesWrite(t, filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), "plugins:\n  hook_callback_timeout: 0.1\n")

@@ -58,6 +58,9 @@ type PluginHost struct {
 	parents     map[int64]parentCallableSlot
 	parentIDs   int64
 	guest       *guestSpec
+	// Plugins loaded for good through this host and category instances handed out and not dismissed, what keeps the guest running
+	loaded    int
+	instances int
 }
 
 // One started child with its exit status once known
@@ -433,62 +436,22 @@ func (h *PluginHost) Shutdown() {
 	}
 }
 
-// Public method names of the plugin context the child mirrors so attribute probes answer alike
-func hostCtxMethods() []string {
-	names := map[string]bool{"manifest": true, "plugin_id": true, "profile_name": true, "on_unload": true, "spawn_task": true,
-		"apost_message": true, "post_message": true}
-	for name := range hostCtxDispatch {
-		names[name] = true
-	}
-	for name := range HostUnsupportedCtxMethods {
-		names[name] = true
-	}
-	for name := range HostSkippedCtxMethods {
-		names[name] = true
-	}
-	for name := range HostRemoteFacades {
-		names[name] = true
-	}
-	return sortedKeys(names)
-}
-
-// Unsupported registrars the parent serves for a plugin loaded under in process isolation, none under host isolation
-func hostInProcessCtxMethods(ctx context.Context) map[string]bool {
-	served := map[string]bool{}
-	if IsolationMode(ctx, nil) != IsolationInProcess {
-		return served
-	}
-	for name := range HostInProcessObjectBases {
-		served[name] = true
-	}
-	for name := range hostInProcessServed {
-		served[name] = true
-	}
-	return served
-}
-
-// Imports a plugin in the child and replays its registrations onto the plugin context
-func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint, predeclared bool) (string, error) {
+// Runs the register function of a plugin in its guest and replays its registrations onto the plugin context
+func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context) error {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
-		return "", err
+		return err
 	}
 	key := mf.ID()
-	served := hostInProcessCtxMethods(ctx)
-	if h.guest != nil {
-		served = guestServedCtxMethods()
-	}
 	h.stateMu.Lock()
 	h.contexts[key] = pctx
-	pctx.hostInProcess = served
 	h.loading = key
 	h.stateMu.Unlock()
 	params := map[string]any{
-		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": nilIfEmpty(moduleName),
-		"entrypoint": entrypoint, "predeclared": predeclared, "profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
-		"ctx_methods": anyList(hostCtxMethods()), "in_process_ctx_methods": anyList(sortedKeys(served)),
+		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path,
+		"profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
 	}
-	result, err := ch.Call(ctx, "load", params, 0)
+	_, err = ch.Call(ctx, "load", params, 0)
 	h.stateMu.Lock()
 	h.loading = ""
 	if err != nil {
@@ -496,49 +459,18 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 	}
 	h.stateMu.Unlock()
 	if err != nil {
-		return "", h.unavailableAsExit(err)
+		return h.unavailableAsExit(err)
 	}
-	_, err = pctx.OnUnload(func() error { return h.unload(key) })
-	return replyModuleFile(result), err
-}
-
-// Module file the child reported for an imported plugin, empty for a module without one
-func replyModuleFile(result any) string {
-	reply, _ := result.(map[string]any)
-	return wireStr(reply["file"])
-}
-
-// Imports a deferred platform plugin tools.py in the child and runs its register_tools(ctx)
-func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context, moduleName string) (string, error) {
-	ch, err := h.ensureStarted(ctx)
-	if err != nil {
-		return "", err
-	}
-	key := mf.ID()
-	served := hostInProcessCtxMethods(ctx)
 	h.stateMu.Lock()
-	h.contexts[key] = pctx
-	pctx.hostInProcess = served
-	h.loading = key
+	h.loaded++
 	h.stateMu.Unlock()
-	params := map[string]any{
-		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": moduleName,
-		"profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf), "ctx_methods": anyList(hostCtxMethods()),
-		"in_process_ctx_methods": anyList(sortedKeys(served)),
-	}
-	result, err := ch.Call(ctx, "load_tools", params, 0)
-	h.stateMu.Lock()
-	h.loading = ""
-	h.stateMu.Unlock()
-	if err != nil {
-		return "", h.unavailableAsExit(err)
-	}
-	if reply, _ := result.(map[string]any); reply != nil && reply["register_tools"] == false {
-		pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.",
-			key, errchain.Show(mf.ProvidesTools)))
-	}
-	_, err = pctx.OnUnload(func() error { return h.unload(key) })
-	return replyModuleFile(result), err
+	_, err = pctx.OnUnload(func() error {
+		h.stateMu.Lock()
+		h.loaded--
+		h.stateMu.Unlock()
+		return h.unload(key)
+	})
+	return err
 }
 
 func hostManifestInfo(mf *Manifest) map[string]any {
@@ -553,30 +485,70 @@ func nilIfEmpty(s string) any {
 	return s
 }
 
-// Loads a category plugin in the child and returns a proxy that reloads it after a host restart
-func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func(context.Context)) (*HostedObject, error) {
-	return h.loadInstance(ctx, pluginDir, moduleName, baseRef, capture, pctx, beforeReload, nil)
-}
-
-// Category plugin load whose extra params ask the child for the in process loader path
-func (h *PluginHost) loadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func(context.Context), extra map[string]any) (*HostedObject, error) {
+// Runs the register function of a category plugin in its guest and returns a proxy of the one provider it registered for capture, reloaded after a guest restart
+func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, baseRef, capture string, pctx *Context, beforeReload func(context.Context)) (*HostedObject, error) {
 	name := filepath.Base(pluginDir)
+	manifest := map[string]any{"name": name, "path": pluginDir, "source": "user"}
+	if mf := guestManifestOfDir(pluginDir); mf != nil {
+		manifest = hostManifestInfo(mf)
+	}
 	load := func(ctx context.Context) (map[string]any, error) {
 		pluginID := name
 		if pctx != nil {
 			pluginID = pctx.PluginID()
 		}
-		params := map[string]any{
-			"plugin_id": pluginID, "name": name, "path": pluginDir, "module_name": moduleName,
-			"base": baseRef, "capture": capture, "forward": pctx != nil,
-			"manifest": map[string]any{"name": name, "path": pluginDir, "source": "user"},
-		}
-		for k, v := range extra {
-			params[k] = v
-		}
-		return h.instanceRef(ctx, capture+":"+name, "load_instance", params, pctx)
+		return h.instanceRef(ctx, capture+":"+name, "load_instance", map[string]any{
+			"plugin_id": pluginID, "name": name, "path": pluginDir, "profile_name": profileNameOf(h.baseCtx),
+			"base": baseRef, "capture": capture, "forward": pctx != nil && !pctx.captureOnly, "manifest": manifest,
+		}, pctx)
 	}
-	return h.reloadableInstance(ctx, capture, name, baseRef, load, beforeReload)
+	obj, err := h.reloadableInstance(ctx, capture, name, baseRef, load, beforeReload)
+	if obj != nil {
+		obj.instance = true
+		h.stateMu.Lock()
+		h.instances++
+		h.stateMu.Unlock()
+	}
+	return obj, err
+}
+
+// Gives back a category instance that was loaded only to look at it and stops its guest when no loaded plugin and no other instance uses it
+func (o *HostedObject) Dismiss() {
+	o.mu.Lock()
+	counted := o.instance
+	o.instance = false
+	o.mu.Unlock()
+	if !counted {
+		return
+	}
+	h := o.host
+	h.stateMu.Lock()
+	h.instances--
+	idle := h.instances <= 0 && h.loaded <= 0
+	h.stateMu.Unlock()
+	if idle {
+		h.releaseCategoryRegistrations()
+		h.Shutdown()
+	}
+}
+
+// Drops what the category loads of this host registered beside their provider, the hooks of a memory collector and the slash commands of an engine collector, none of which outlive the guest
+func (h *PluginHost) releaseCategoryRegistrations() {
+	h.stateMu.Lock()
+	contexts := make([]*Context, 0, len(h.contexts))
+	for _, c := range h.contexts {
+		contexts = append(contexts, c)
+	}
+	clear(h.contexts)
+	h.stateMu.Unlock()
+	for _, c := range contexts {
+		switch {
+		case c.collector != nil:
+			c.collector.dropHooks(h.baseCtx, c.manager)
+		case c.engineCollector != nil:
+			c.engineCollector.dropCommands(c.manager)
+		}
+	}
 }
 
 // Proxy over the object load answers, reloading it into a restarted child after beforeReload
@@ -617,9 +589,6 @@ func (h *PluginHost) instanceRef(ctx context.Context, key, method string, params
 	h.loading = key
 	h.stateMu.Unlock()
 	params["plugin_key"] = key
-	if _, ok := params["ctx_methods"]; !ok {
-		params["ctx_methods"] = anyList(hostCtxMethods())
-	}
 	raw, err := ch.Call(ctx, method, params, 0)
 	h.stateMu.Lock()
 	h.loading = ""
@@ -772,8 +741,6 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 		return h.serveCtx(ctx, params)
 	case "facade":
 		return h.serveFacade(ctx, params)
-	case "sdk":
-		return h.serveSDK(ctx, params)
 	case "parent_call":
 		return h.serveParentCall(ctx, params)
 	case "parent_event":
@@ -783,8 +750,6 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 	case "release_parent":
 		h.releaseParentCallables(listOrEmpty(params["ids"]))
 		return nil, nil
-	case "collect_source":
-		return h.serveCollectSource(ctx, params)
 	case "io":
 		result, err := h.serveIO(ctx, params)
 		if err != nil {
@@ -822,9 +787,7 @@ func (h *PluginHost) serveCtx(ctx context.Context, params map[string]any) (any, 
 		return nil, err
 	}
 	method := wireStr(params["method"])
-	h.stateMu.Lock()
-	served := c.hostInProcess[method]
-	h.stateMu.Unlock()
+	served := guestServedMethods[method]
 	_, unsupported := HostUnsupportedCtxMethods[method]
 	_, skipped := HostSkippedCtxMethods[method]
 	if strings.HasPrefix(method, "_") || ((unsupported || skipped) && !served) || method == "on_unload" || method == "spawn_task" {
@@ -868,6 +831,12 @@ func (h *PluginHost) serveFacade(ctx context.Context, params map[string]any) (an
 	}
 	facade, method := wireStr(params["facade"]), wireStr(params["method"])
 	refusal := &PluginHostUnsupported{Msg: fmt.Sprintf("ctx.%s.%s is not available in the plugin host", facade, method)}
+	if owned, ok := c.categoryFacades[facade]; ok {
+		if strings.HasPrefix(method, "_") {
+			return nil, refusal
+		}
+		return h.serveFacadeAttr(ctx, owned, method, params)
+	}
 	if !HostRemoteFacades[facade] || strings.HasPrefix(method, "_") {
 		return nil, refusal
 	}
@@ -1093,6 +1062,8 @@ type HostedObject struct {
 	Base     string
 	// Identity the child judged from the class alone for an object an in process registrar received
 	Identity map[string]any
+	// Whether the object is a category instance its host still counts as handed out
+	instance bool
 }
 
 // Async flag and signature of one hosted object method
@@ -1256,7 +1227,7 @@ func (o *HostedObject) remoteGet(ctx context.Context, name string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	if nested, ok := value.(*HostedObject); ok && (o.Base == hostedClientBase || o.Base == hostedModuleBase) {
+	if nested, ok := value.(*HostedObject); ok && o.Base == hostedClientBase {
 		nested.slot.reload = o.attributeReload(name)
 	}
 	if m, ok := value.(map[string]any); ok && len(m) == 1 {

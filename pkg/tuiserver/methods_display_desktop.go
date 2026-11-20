@@ -13,6 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -24,8 +27,9 @@ var (
 // Binds the display card handlers and the lease watcher of the bot desktop
 func init() {
 	displayHandlers = map[string]func(ctx context.Context, rid any, params map[string]any) map[string]any{
-		"display.status": displayStatus, "display.start": displayStart, "display.stop": displayStop,
+		"display.status": displayStatus, "display.thumbnail": displayThumbnail, "display.start": displayStart, "display.stop": displayStop,
 		"display.switchSandboxImage": displaySwitchSandboxImage, "display.install": displayInstall,
+		"display.lease.acquire": displayLeaseAcquire, "display.lease.release": displayLeaseRelease,
 	}
 	leaseWatcherStart = startLeaseWatcher
 }
@@ -103,6 +107,64 @@ func displayStop(ctx context.Context, rid any, params map[string]any) map[string
 		return rpcErr(rid, displayErr, err.Error(), nil)
 	}
 	return snapshotResponse(ctx, rid, func(snap *pyjson.Object) { snap.Set("stopped", stopped) })
+}
+
+// One frame of the scoped screen saved into the image cache, withheld while a person holds the lease or once it moved during the grab
+func displayThumbnail(ctx context.Context, rid any, params map[string]any) map[string]any {
+	withheld := map[string]any{"path": nil, "suppressed": "human_has_control"}
+	before := botdesktop.LeaseGet(home.Dir(ctx))
+	if before.Holder == botdesktop.LeaseHuman {
+		return ok(rid, withheld)
+	}
+	shot, err := botdesktop.Thumbnail(displayEnv(ctx), botdesktop.ThumbMaxW, botdesktop.ThumbMaxH, botdesktop.ThumbQuality)
+	if err != nil {
+		return rpcErr(rid, displayErr, err.Error(), nil)
+	}
+	if !pyrepr.Equal(botdesktop.LeaseGet(home.Dir(ctx)).Epoch, before.Epoch) {
+		return ok(rid, withheld)
+	}
+	if len(shot) == 0 {
+		return ok(rid, map[string]any{"path": nil})
+	}
+	path, err := mediacache.CacheImageFromBytes(ctx, home.Dir(ctx), shot, ".jpg")
+	if err != nil {
+		return rpcErr(rid, displayErr, err.Error(), nil)
+	}
+	return ok(rid, map[string]any{"path": path})
+}
+
+// A person takes the screen under the viewer id of their client, the agent's actions on it refused until it is handed back
+func displayLeaseAcquire(ctx context.Context, rid any, params map[string]any) map[string]any {
+	viewerID := pystr.Strip(strOr(params["viewer_id"]))
+	if viewerID == "" {
+		return rpcErr(rid, displayErr, "viewer_id required", nil)
+	}
+	botdesktop.TouchActivity(displayEnv(ctx))
+	lease, err := botdesktop.LeaseAcquire(viewerID, home.Dir(ctx), strOr(params["reason"]))
+	if err != nil {
+		panic(err)
+	}
+	return ok(rid, map[string]any{"lease": botdesktop.LeasePublicView(lease)})
+}
+
+// Hands the screen back to the agent, by the viewer that took it or by anyone with force, refused with viewer_mismatch while another viewer holds it
+func displayLeaseRelease(ctx context.Context, rid any, params map[string]any) map[string]any {
+	opts := botdesktop.LeaseReleaseOptions{ProfileKey: home.Dir(ctx)}
+	if !truthy(params["force"]) {
+		viewerID := pystr.Strip(strOr(params["viewer_id"]))
+		if viewerID == "" {
+			return rpcErr(rid, displayErr, "viewer_id required to hand the screen back (or pass force: true)", nil)
+		}
+		opts.ViewerID = &viewerID
+	}
+	lease, err := botdesktop.LeaseRelease(opts)
+	if err != nil {
+		panic(err)
+	}
+	if lease.Holder == botdesktop.LeaseHuman {
+		return rpcErr(rid, displayErr, "another viewer holds this screen; pass force: true to hand it back anyway", map[string]any{"code": "viewer_mismatch"})
+	}
+	return ok(rid, map[string]any{"lease": botdesktop.LeasePublicView(lease)})
 }
 
 // Starts the distro package install in the background, streaming its log and ending with a status snapshot

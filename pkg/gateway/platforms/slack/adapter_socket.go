@@ -573,6 +573,11 @@ func (a *SlackAdapter) authenticateWorkspace(ctx context.Context, token, proxyUR
 	return nil
 }
 
+// Logs a failed connect, the kind of error and the proxy's host standing for its text when the proxy URL holds a secret that text could repeat
+func logConnectionFailed(err error, proxyURL string) {
+	pkgLog().Error("[Slack] Connection failed: " + gateway.ProxySafeErrorText(err, proxyURL))
+}
+
 // Connects through Socket Mode under the app token lock, replacing any previous handler
 func (a *SlackAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	rawToken := strOrEmpty(a.Config.Token)
@@ -585,12 +590,12 @@ func (a *SlackAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 	}
 	proxyURL := resolveSlackProxyURL(ctx)
 	if proxyURL != "" {
-		pkgLog().Info(fmt.Sprintf("[Slack] Using proxy for Slack transport: %s", gateway.SafeURLForLog(proxyURL, 80)))
+		pkgLog().Info(fmt.Sprintf("[Slack] Using proxy for Slack transport: %s", gateway.SafeProxyURLForLog(proxyURL)))
 	}
 	botTokens := loadSlackBotTokens(ctx, rawToken, false)
 	acquired, err := a.AcquirePlatformLock(ctx, "slack-app-token", appToken, "Slack app token")
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+		logConnectionFailed(err, proxyURL)
 		return false, nil
 	}
 	if !acquired {
@@ -620,18 +625,18 @@ func (a *SlackAdapter) connectLocked(ctx context.Context, appToken, proxyURL str
 	a.mu.Unlock()
 	for _, token := range botTokens {
 		if err := a.authenticateWorkspace(ctx, token, proxyURL); err != nil {
-			pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+			logConnectionFailed(err, proxyURL)
 			return false
 		}
 	}
 	if err := a.registerBoltHandlers(ctx); err != nil {
-		pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+		logConnectionFailed(err, proxyURL)
 		return false
 	}
 	if err := a.startSocketModeHandler(ctx); err != nil {
 		a.SetRunning(false)
 		a.stopSocketModeHandler()
-		pkgLog().Error(fmt.Sprintf("[Slack] Connection failed: %v", err))
+		logConnectionFailed(err, proxyURL)
 		return false
 	}
 	a.SetRunning(true)

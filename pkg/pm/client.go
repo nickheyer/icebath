@@ -632,7 +632,7 @@ func managedEnsurePythonTool(ctx context.Context, opts EnsurePythonToolOptions) 
 // Probes dependency currency without bootstrapping, a cold foreign worker answering not current
 func managedVenvIsCurrent(ctx context.Context, opts VenvIsCurrentOptions) (bool, error) {
 	if opts.ProjectRoot == "" || resolvePath(opts.ProjectRoot) == resolvePath(RepoRoot()) {
-		return venvIsCurrent(ctx, opts.Extras, opts.Plugins, opts.ProjectRoot)
+		return venvIsCurrent(withRuntime(ctx), opts.Extras, opts.Plugins, opts.ProjectRoot)
 	}
 	result, err := clientRequest(ctx, "venv_is_current", map[string]any{"extras": optionalList(opts.Extras), "plugins": EncodePluginInput(opts.Plugins)},
 		workerHooks{}, opts.ProjectRoot)

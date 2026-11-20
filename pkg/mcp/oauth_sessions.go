@@ -213,22 +213,3 @@ func CancelOAuthFlow(ctx context.Context, sessionID, serverName, homeDir string)
 	out.Set("status", rec.flow.Snapshot()["status"])
 	return out
 }
-
-// Relays a client captured OAuth redirect into the session's flow, which still checks state and replays
-func DeliverOAuthCallbackFlow(ctx context.Context, sessionID, serverName, code, state, errText, iss string) *pyjson.Object {
-	out := pyjson.NewObject()
-	rec, msg := oauthLookup(ctx, sessionID, serverName, "")
-	if rec == nil {
-		out.Set("ok", false)
-		out.Set("error_message", msg)
-		return out
-	}
-	if err := rec.flow.DeliverCallback(code, state, errText, iss); err != nil {
-		out.Set("ok", false)
-		out.Set("error_message", err.Error())
-		return out
-	}
-	out.Set("ok", true)
-	out.Set("session_id", sessionID)
-	return out
-}

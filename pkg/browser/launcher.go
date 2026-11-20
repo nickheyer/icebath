@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -232,9 +234,6 @@ func sameProfile(recorded any, userDataDir string) bool {
 	return errA == nil && errB == nil && a == b
 }
 
-// Entry points of the launcher module that the session, real profile and Bot Desktop layers call
-var launcherEntryPoints = []any{chromiumReady, runningInstance, launchChromium, getBrowser, stopBrowser, stopAllBrowsers, reapOrphanedBrowsers}
-
 // The DevTools port and browser path once Chromium wrote both lines, an error where Python raises ValueError
 func readDevtoolsFile(userDataDir string) (int, string, bool, error) {
 	raw, err := os.ReadFile(filepath.Join(userDataDir, devtoolsFile))
@@ -311,7 +310,7 @@ func recordNames(records, userDataDir string, pid any) []string {
 	return names
 }
 
-var devtoolsProbeClient = &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: loopbackAwareProxy}}
+var devtoolsProbeClient = &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: loopbackAwareProxy}}
 
 // The port answers json/version with the browser id the DevToolsActivePort file names
 func devtoolsEndpointLive(port int, path string) bool {

@@ -3,6 +3,8 @@ package plugins
 import (
 	"fmt"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/linktier"
 )
 
 // Scope keyed process wide provider registry of one category, owned by a higher package
@@ -13,6 +15,49 @@ type ScopedRegistry interface {
 	Snapshot(name, scope string) any
 	Register(provider any, scope string) (bool, error)
 	Restore(name string, current, replacement any, scope string) bool
+}
+
+// Registry view that stores a plugin host object as the typed provider Adapt makes of it and answers snapshots as the object the plugin handed over
+type HostedScopedRegistry struct {
+	Inner ScopedRegistry
+	// Typed provider standing in for a plugin host object of the kind, any other value unchanged
+	Adapt func(provider any) any
+	// Plugin host object behind a stored provider, false for a provider that is none
+	Object func(held any) (*HostedObject, bool)
+}
+
+var _ ScopedRegistry = HostedScopedRegistry{}
+
+// Whether the inner registry takes the adapted provider
+func (r HostedScopedRegistry) Accepts(provider any) bool { return r.Inner.Accepts(r.Adapt(provider)) }
+
+// Name the inner registry reads off the adapted provider
+func (r HostedScopedRegistry) ProviderName(provider any) string {
+	return r.Inner.ProviderName(r.Adapt(provider))
+}
+
+// Identity verdict of the inner registry on the adapted provider
+func (r HostedScopedRegistry) Identity(provider any) error {
+	return r.Inner.Identity(r.Adapt(provider))
+}
+
+// Occupant of a slot, a stored plugin host provider answered as its host object so the registrar and the leases compare what the plugin registered
+func (r HostedScopedRegistry) Snapshot(name, scope string) any {
+	held := r.Inner.Snapshot(name, scope)
+	if obj, ok := r.Object(held); ok && obj != nil {
+		return obj
+	}
+	return held
+}
+
+// Registers the adapted provider
+func (r HostedScopedRegistry) Register(provider any, scope string) (bool, error) {
+	return r.Inner.Register(r.Adapt(provider), scope)
+}
+
+// Restores the adapted replacement while the adapted current still occupies the slot
+func (r HostedScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
+	return r.Inner.Restore(name, r.Adapt(current), r.Adapt(replacement), scope)
 }
 
 // One generated register category provider method of the plugin context
@@ -27,23 +72,27 @@ type scopedProviderRow struct {
 	admit         func(h string, m *Manifest) string
 	identity      bool
 	customAccept  bool
+	// Tier whose packages own the registry of the kind, empty for a kind of the core
+	tier string
 }
 
 var scopedProviderRegistrars = []scopedProviderRow{
 	{method: "register_login_backend", kind: "login_backend", base: "LoginBackend", label: "login backend", normalize: "none",
-		rejectMessage: "Plugin '%s' login backend rejected: %s", admit: loginBackendProvenanceError, identity: true},
+		rejectMessage: "Plugin '%s' login backend rejected: %s", admit: loginBackendProvenanceError, identity: true, tier: linktier.Extras},
 	{method: "register_browser_page_backend", kind: "browser_page_backend", base: "BrowserPageBackend", label: "browser page backend",
-		rejectMessage: "Plugin '%s' browser page backend rejected: %s", admit: browserPageBackendProvenanceError},
-	{method: "register_image_gen_provider", kind: "image_gen_provider", base: "ImageGenProvider", label: "image_gen provider", article: "an"},
-	{method: "register_video_gen_provider", kind: "video_gen_provider", base: "VideoGenProvider", label: "video_gen provider"},
+		rejectMessage: "Plugin '%s' browser page backend rejected: %s", admit: browserPageBackendProvenanceError, tier: linktier.Extras},
+	{method: "register_image_gen_provider", kind: "image_gen_provider", base: "ImageGenProvider", label: "image_gen provider", article: "an", tier: linktier.Plugins},
+	{method: "register_video_gen_provider", kind: "video_gen_provider", base: "VideoGenProvider", label: "video_gen provider", tier: linktier.Plugins},
 	{method: "register_web_search_provider", kind: "web_search_provider", base: "WebSearchProvider", label: "web provider"},
-	{method: "register_browser_provider", kind: "browser_provider", base: "BrowserProvider", label: "browser provider"},
+	{method: "register_browser_provider", kind: "browser_provider", base: "BrowserProvider", label: "browser provider", tier: linktier.Extras},
 	{method: "register_terminal_environment_provider", kind: "terminal_environment_provider", base: "TerminalEnvironmentProvider",
 		label: "terminal environment provider", normalize: "lower", rejectMessage: "Plugin '%s' terminal environment provider rejected: %s"},
 	{method: "register_secret_source", kind: "secret_source", base: "SecretSource", label: "secret source", normalize: "none", customAccept: true},
-	{method: "register_tts_provider", kind: "tts_provider", base: "TTSProvider", label: "TTS provider", normalize: "lower"},
-	{method: "register_transcription_provider", kind: "transcription_provider", base: "TranscriptionProvider", label: "transcription provider", normalize: "lower"},
+	{method: "register_tts_provider", kind: "tts_provider", base: "TTSProvider", label: "TTS provider", normalize: "lower", tier: linktier.Plugins},
+	{method: "register_transcription_provider", kind: "transcription_provider", base: "TranscriptionProvider", label: "transcription provider", normalize: "lower", tier: linktier.Plugins},
 	{method: "register_delegation_provider", kind: "delegation_provider", base: "DelegationProvider", label: "delegation provider", normalize: "lower"},
+	{method: "register_context_reference", kind: "context_reference", base: "ContextReferenceProvider", label: "context reference", normalize: "lower",
+		rejectMessage: "Plugin '%s' context reference registration failed: %s"},
 }
 
 // Row of a provider kind, false for an unknown kind
@@ -81,6 +130,9 @@ func (c *Context) registerProviderRow(row scopedProviderRow, provider any) (*Reg
 	}
 	registry, err := needService("ProviderRegistries", func(s *Services) ScopedRegistry { return s.ProviderRegistries[row.kind] })
 	if err != nil {
+		if s := installedServices(); row.tier != "" && s != nil && s.ProviderRegistries != nil {
+			return nil, &HostBuiltinError{Type: "RuntimeError", Message: linktier.Missing("the "+row.label+" kind", row.tier)}
+		}
 		return nil, err
 	}
 	if row.identity {

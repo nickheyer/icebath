@@ -412,29 +412,6 @@ func TestDeleteArchivedTaskRemovesRelatedRows(t *testing.T) {
 	}
 }
 
-func TestDeleteTaskRemovesTaskAndCascades(t *testing.T) {
-	conn := openTestBoard(t)
-	ctx := context.Background()
-	tid := mustCreate(t, conn, CreateTaskOptions{Title: "to-delete", Assignee: sp("alice")})
-	for _, body := range []string{"comment", "another"} {
-		if _, err := AddComment(ctx, conn, tid, "user", body); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if ok, err := DeleteTask(ctx, conn, tid); err != nil || !ok {
-		t.Fatal(ok, err)
-	}
-	if task, err := GetTask(ctx, conn, tid); err != nil || task != nil {
-		t.Fatal("task survived", err)
-	}
-	comments, _ := ListComments(ctx, conn, tid)
-	events, _ := ListEvents(ctx, conn, tid)
-	runs, _ := ListRuns(ctx, conn, tid, true, nil, nil)
-	if len(comments) != 0 || len(events) != 0 || len(runs) != 0 {
-		t.Fatal("cascade incomplete", len(comments), len(events), len(runs))
-	}
-}
-
 func TestLinkTasksNoDependencyWaitWhenParentDone(t *testing.T) {
 	conn := openTestBoard(t)
 	ctx := context.Background()

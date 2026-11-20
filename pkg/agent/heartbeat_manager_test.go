@@ -368,3 +368,9 @@ func TestViewerHeartbeatSetConvertsItsIntervalLikeTheManager(t *testing.T) {
 		t.Fatalf("refused %v", refused)
 	}
 }
+
+// Reports a refused heartbeat set
+func IsHeartbeatValueError(err error) bool {
+	var hv *HeartbeatValueError
+	return errors.As(err, &hv)
+}

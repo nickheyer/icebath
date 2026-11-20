@@ -1975,7 +1975,7 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 		return
 	}
 	if content, err := a.tenantGetRaw(ctx, "/open-apis/bot/v3/info", nil); err != nil {
-		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
+		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration: " + a.errorText(err))
 	} else if len(content) > 0 {
 		a.applyBotInfo(content)
 	}
@@ -1992,7 +1992,7 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 		resp, e = client.GetApplication(ctx, req)
 		return e
 	}); err != nil {
-		pkgLog().Debug("[Feishu] Failed to hydrate bot name from application info")
+		pkgLog().Debug("[Feishu] Failed to hydrate bot name from application info: " + a.errorText(err))
 		return
 	}
 	r := wrapResp(resp)

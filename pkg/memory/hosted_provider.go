@@ -64,6 +64,27 @@ func setIf(kwargs map[string]any, key, value string) {
 
 func (p *hostedProvider) Name() string { return p.name }
 
+// Gives the provider back after an availability probe so its guest stops when nothing else uses it
+func (p *hostedProvider) dismiss() { p.obj.Dismiss() }
+
+// Profile creation notice forwarded to a plugin that takes it
+func (p *hostedProvider) OnProfileCreated(ctx context.Context, profileName, home string) error {
+	if !p.obj.HasMethod("on_profile_created") {
+		return nil
+	}
+	_, err := p.obj.Call(ctx, "on_profile_created", []any{profileName, home}, nil)
+	return err
+}
+
+// Profile rename notice forwarded to a plugin that takes it
+func (p *hostedProvider) OnProfileRenamed(ctx context.Context, oldName, newName, home string) error {
+	if !p.obj.HasMethod("on_profile_renamed") {
+		return nil
+	}
+	_, err := p.obj.Call(ctx, "on_profile_renamed", []any{oldName, newName, home}, nil)
+	return err
+}
+
 var (
 	_ postSetupProvider    = (*hostedProvider)(nil)
 	_ statusConfigProvider = (*hostedProvider)(nil)
@@ -164,16 +185,11 @@ func (p *hostedProvider) RecallStatus(ctx context.Context) (*RecallStatus, error
 		return nil, err
 	}
 	field := func(name string) any {
-		switch s := v.(type) {
-		case map[string]any:
-			return s[name]
-		case plugins.Record:
-			return s[name]
-		case *plugins.HostedObject:
+		if s, ok := v.(*plugins.HostedObject); ok {
 			out, _ := s.Get(ctx, name)
 			return out
 		}
-		return nil
+		return plugins.FieldsOf(v)[name]
 	}
 	count, _ := field("count").(int64)
 	status := NewRecallStatus(hostedStr(field("provider_label")), int(count))

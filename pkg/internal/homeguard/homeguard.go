@@ -1,4 +1,4 @@
-// Serves every go test binary a private user home under the temp dir in place of the developer's real one, and takes the developer's terminal away from it
+// Serves every go test binary a private user home and a scratch root under the temp dir, removed when the binary ends, and takes the developer's terminal away from it
 package homeguard
 
 import (
@@ -46,11 +46,20 @@ var guard struct {
 }
 
 func init() {
-	if testing.Testing() {
-		if os.Getenv(tempRootEnv) == "" {
-			leaveTerminal()
-		}
-		isolate()
+	if !testing.Testing() {
+		return
+	}
+	if paths := os.Getenv(sweepEnv); paths != "" {
+		sweep(paths)
+		os.Exit(0)
+	}
+	top := os.Getenv(tempRootEnv) == ""
+	if top {
+		leaveTerminal()
+	}
+	isolate()
+	if top {
+		ownScratch()
 	}
 }
 
@@ -275,7 +284,7 @@ func expandTilde(path, home string) string {
 	return path
 }
 
-// Removes the private homes of exited test binaries of this pid namespace
+// Removes the private homes and scratch roots of exited test binaries of this pid namespace
 func reapStale(tmp string) {
 	entries, err := os.ReadDir(tmp)
 	if err != nil {
@@ -283,15 +292,17 @@ func reapStale(tmp string) {
 	}
 	own := pidNamespace() + "-"
 	for _, e := range entries {
-		rest, ok := strings.CutPrefix(e.Name(), privatePrefix+own)
-		if !ok {
-			continue
+		for _, prefix := range []string{privatePrefix, scratchPrefix} {
+			rest, ok := strings.CutPrefix(e.Name(), prefix+own)
+			if !ok {
+				continue
+			}
+			pid, err := strconv.Atoi(rest)
+			if err != nil || pid <= 0 || pid == os.Getpid() || alive(pid) {
+				continue
+			}
+			removeTree(filepath.Join(tmp, e.Name()))
 		}
-		pid, err := strconv.Atoi(rest)
-		if err != nil || pid <= 0 || pid == os.Getpid() || alive(pid) {
-			continue
-		}
-		os.RemoveAll(filepath.Join(tmp, e.Name()))
 	}
 }
 

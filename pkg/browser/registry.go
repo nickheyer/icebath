@@ -10,7 +10,7 @@ import (
 
 // Registers the browser provider kinds plugins load into
 func init() {
-	plugins.RegisterProviderRegistry("browser_provider", func() plugins.ScopedRegistry { return BrowserProviderRegistry.Scoped() })
+	plugins.RegisterProviderRegistry("browser_provider", BrowserProviderScopedRegistry)
 	plugins.RegisterProviderRegistry("browser_page_backend", BrowserPageBackendScopedRegistry)
 	plugins.RegisterProviderRegistry("login_backend", LoginBackendScopedRegistry)
 }

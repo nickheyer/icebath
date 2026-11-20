@@ -207,7 +207,7 @@ func TestBannerArtFitsTheWindow(t *testing.T) {
 func TestIntroCarriesTheArtTheMarkAndAFittedRule(t *testing.T) {
 	darkTerminal(t)
 	c := artCtx(t, uitheme.DefaultName, 120)
-	lines := introLines(nil, c)
+	lines := introRows(nil, c).lines
 	plain := make([]string, len(lines))
 	for i, line := range lines {
 		plain[i] = ansi.Strip(line)
@@ -222,7 +222,7 @@ func TestIntroCarriesTheArtTheMarkAndAFittedRule(t *testing.T) {
 	if rule := strings.TrimLeft(plain[len(plain)-1], " "); ansi.StringWidth(rule) != widest || strings.Trim(rule, "─") != "" {
 		t.Fatalf("rule is %d cells under a %d cell block", ansi.StringWidth(rule), widest)
 	}
-	tight := introLines(nil, artCtx(t, uitheme.DefaultName, 30))
+	tight := introRows(nil, artCtx(t, uitheme.DefaultName, 30)).lines
 	if rule := strings.TrimLeft(ansi.Strip(tight[len(tight)-1]), " "); ansi.StringWidth(rule) > 30-transcriptIndent*2 {
 		t.Fatalf("rule overflows a 30 cell window: %d", ansi.StringWidth(rule))
 	}

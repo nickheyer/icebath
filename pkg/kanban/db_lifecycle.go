@@ -104,29 +104,6 @@ func DeleteArchivedTask(ctx context.Context, conn state.SQLiteConn, taskID strin
 	return deleted && err == nil, err
 }
 
-// Hard deletes a task and its related rows in one transaction, false when not found
-func DeleteTask(ctx context.Context, conn state.SQLiteConn, taskID string) (bool, error) {
-	deleted := false
-	err := WriteTxn(ctx, conn, false, func() error {
-		res, err := conn.ExecContext(ctx, "DELETE FROM tasks WHERE id = ?", taskID)
-		if err != nil {
-			return err
-		}
-		if rowsAffected(res) != 1 {
-			return nil
-		}
-		deleted = true
-		return deleteTaskRelations(ctx, conn, taskID)
-	})
-	if err != nil || !deleted {
-		return false, err
-	}
-	if _, err := RecomputeReady(ctx, conn, nil); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // Parks a task in scheduled until an unblock re gates it
 func ScheduleTask(ctx context.Context, conn state.SQLiteConn, taskID string, reason *string, expectedRunID *int64) (bool, error) {
 	scheduled := false
@@ -257,8 +234,6 @@ func retentionSeconds(olderThanSeconds int64) (int64, error) {
 	}
 	return olderThanSeconds, nil
 }
-
-const defaultRetentionSeconds = 30 * 24 * 3600
 
 // Prunes old events of done and archived tasks, decomposition identity kept, returning the count deleted
 func GCEvents(ctx context.Context, conn state.SQLiteConn, olderThanSeconds int64) (int64, error) {

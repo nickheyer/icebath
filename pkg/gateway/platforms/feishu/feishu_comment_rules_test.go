@@ -197,7 +197,7 @@ func TestMainCheckAndPairingCommands(t *testing.T) {
 	if run("status") != 0 || !strings.Contains(out.String(), "Document rules (2):\n  [*] (empty — inherits all)\n  [docx:x] enabled=False\n\nPairing approved (1):\n  ou_z  (approved_at=") {
 		t.Fatalf("status output %q", out.String())
 	}
-	if run("bogus") != 1 || !strings.HasPrefix(out.String(), "Unknown command: bogus\nUsage: python -m") {
+	if run("bogus") != 1 || !strings.HasPrefix(out.String(), "Unknown command: bogus\nUsage: icebath feishu comment-rules") {
 		t.Fatalf("unknown command output %q", out.String())
 	}
 }

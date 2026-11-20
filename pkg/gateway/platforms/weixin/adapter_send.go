@@ -128,8 +128,9 @@ func (a *WeixinAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		pkgLog().Error(fmt.Sprintf("[%s] send failed to=%s: %s", a.Name(), safeID(chatID), errText(sendErr)))
-		return gateway.SendResult{Success: false, Error: errText(sendErr)}, nil
+		shown := a.proxySafeErrText(ctx, sendErr)
+		pkgLog().Error(fmt.Sprintf("[%s] send failed to=%s: %s", a.Name(), safeID(chatID), shown))
+		return gateway.SendResult{Success: false, Error: shown}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: lastMessageID}, nil
 }
@@ -227,8 +228,9 @@ func (a *WeixinAdapter) sendFileResult(ctx context.Context, chatID, path, captio
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		pkgLog().Error(fmt.Sprintf("[%s] %s failed to=%s: %s", a.Name(), label, safeID(chatID), errText(err)))
-		return gateway.SendResult{Success: false, Error: errText(err)}, nil
+		shown := a.proxySafeErrText(ctx, err)
+		pkgLog().Error(fmt.Sprintf("[%s] %s failed to=%s: %s", a.Name(), label, safeID(chatID), shown))
+		return gateway.SendResult{Success: false, Error: shown}, nil
 	}
 	return gateway.SendResult{Success: true, MessageID: messageID}, nil
 }

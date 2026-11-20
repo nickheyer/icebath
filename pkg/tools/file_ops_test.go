@@ -31,7 +31,6 @@ func remoteTestEnv(t *testing.T) *Env {
 
 var (
 	fileOpsReadSentinelRe  = regexp.MustCompile(`__ICEBATH_RF_[0-9a-f]{32}__`)
-	fileOpsWriteSentinelRe = regexp.MustCompile(`__ICEBATH_WF_[0-9a-f]{32}__`)
 	fileOpsBytesSentinelRe = regexp.MustCompile(`__ICEBATH_RB_[0-9a-f]+__`)
 )
 
@@ -57,15 +56,6 @@ func compoundReadOutput(sentinel string, r compoundReadReply) string {
 	}
 	return fmt.Sprintf("%d\n%s\n%s%s\n%s%s\n%d\n%s\n%d\n%s\n%d %d\n",
 		r.size, sentinel, sampleSeg, sentinel, r.content, sentinel, r.totalLines, sentinel, trailing, sentinel, r.sampleRC, r.readRC)
-}
-
-// Stdout of the compound write probe for an existing file with its BOM head and body
-func compoundWriteProbeOutput(sentinel string, head3 []byte, body string) string {
-	headSeg := ""
-	if len(head3) > 0 {
-		headSeg = base64.StdEncoding.EncodeToString(head3) + "\n"
-	}
-	return headSeg + sentinel + "\n" + body
 }
 
 // Fenced base64 reply of a byte exact read with the wc size when the command asks for it

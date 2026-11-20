@@ -2,7 +2,6 @@ package acpclient
 
 import (
 	"strings"
-	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -27,7 +26,6 @@ var (
 	copilotCommandEnvVars = []string{"ICEBATH_COPILOT_ACP_COMMAND", "COPILOT_CLI_PATH"}
 	ghExtensionRequired   = []string{"gh-copilot"}
 	ghExtensionMarkers    = []string{"has been deprecated", "no commands will be executed"}
-	formerCopilotWarned   atomic.Bool
 )
 
 // True when the entry meta copilotEnablement reads disabled, AttributeError for a non dict entry or meta

@@ -103,32 +103,6 @@ func TestANonBooleanIsRefusedRatherThanWritten(t *testing.T) {
 	}
 }
 
-func TestEngineChoiceReachesTheConfigFileAndRoundTrips(t *testing.T) {
-	path := configSetHome(t)
-	if got := resultOf(t, cfgSet(t, "voice.voice_chat_mode", "gpt-live")); !reflect.DeepEqual(got, map[string]any{"key": "voice.voice_chat_mode", "value": "gpt-live"}) {
-		t.Fatalf("answer %v", got)
-	}
-	if v := cfgOnDisk(t, path, "voice.voice_chat_mode"); v != "gpt-live" {
-		t.Fatalf("disk %v", v)
-	}
-	if v := resultOf(t, cfgSet(t, "voice.voice_chat_mode", "Chained "))["value"]; v != "chained" {
-		t.Fatalf("value %v", v)
-	}
-	if v := cfgOnDisk(t, path, "voice.voice_chat_mode"); v != "chained" {
-		t.Fatalf("disk %v", v)
-	}
-}
-
-func TestUnknownEngineIsRefusedRatherThanWritten(t *testing.T) {
-	path := configSetHome(t)
-	if code := cfgErrCode(cfgSet(t, "voice.voice_chat_mode", "realtime")); code != 4002 {
-		t.Fatalf("code %v", code)
-	}
-	if _, err := os.Stat(path); err == nil {
-		t.Fatal("config written")
-	}
-}
-
 func TestTheSwitchRoundTripsThroughAgentDaybreak(t *testing.T) {
 	path := configSetHome(t)
 	get := func() map[string]any {

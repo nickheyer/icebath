@@ -479,12 +479,8 @@ func TestPackagedDirsHonorWrappersThenDefaultThenHome(t *testing.T) {
 	t.Setenv(EnvHome, tmp)
 	ctx := context.Background()
 	t.Setenv("ICEBATH_OPTIONAL_SKILLS", "")
-	t.Setenv("ICEBATH_BUNDLED_SKILLS", filepath.Join(tmp, "nix", "skills")+" ")
 	if got := OptionalSkillsDir(ctx, ""); got != filepath.Join(tmp, "optional-skills") {
 		t.Fatalf("optional skills = %q", got)
-	}
-	if got := BundledSkillsDir(ctx, filepath.Join(tmp, "checkout")); got != filepath.Join(tmp, "nix", "skills") {
-		t.Fatalf("bundled skills = %q", got)
 	}
 	over := WithOverride(ctx, filepath.Join(tmp, "profiles", "x"))
 	if got := OptionalSkillsDir(over, ""); got != filepath.Join(tmp, "profiles", "x", "optional-skills") {

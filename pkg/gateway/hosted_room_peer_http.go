@@ -208,11 +208,10 @@ type peerRunKey struct {
 }
 
 type peerStatusEntry struct {
-	status      map[string]any
-	err         *PeerRunsHTTPError
-	delay       float64
-	nextPollAt  float64
-	hasPrevious bool
+	status     map[string]any
+	err        *PeerRunsHTTPError
+	delay      float64
+	nextPollAt float64
 }
 
 type peerBackoff struct{ delay, nextAttemptAt float64 }

@@ -45,22 +45,6 @@ func completedFalHandle(result map[string]any) *falRequestHandle {
 	return in.SyncRequestHandle("r1", "https://q/result", "https://q/status", "https://q/cancel", http.DefaultClient)
 }
 
-type mockHTTPStatusError struct{ status int }
-
-func (e *mockHTTPStatusError) Error() string { return "http error" }
-func (e *mockHTTPStatusError) ResponseStatus() (int, bool) {
-	return e.status, e.status != 0
-}
-
-func TestExtractHTTPStatusMockShapes(t *testing.T) {
-	if s, ok := extractHTTPStatus(&mockHTTPStatusError{403}); !ok || s != 403 {
-		t.Fatalf("%d %v", s, ok)
-	}
-	if _, ok := extractHTTPStatus(&mockHTTPStatusError{}); ok {
-		t.Fatal("response without status code must be none")
-	}
-}
-
 // Runs the FAL path with a native result and a recording upscaler
 func runUpscaleOptIn(t *testing.T, model string, upscale any, upscaled any) (map[string]any, []string) {
 	t.Helper()

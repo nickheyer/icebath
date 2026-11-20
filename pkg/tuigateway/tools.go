@@ -68,8 +68,10 @@ type ToolCompletePayload struct {
 	Summary    *string        `json:"summary,omitzero"`
 	ResultText *string        `json:"result_text,omitzero"`
 	InlineDiff *string        `json:"inline_diff,omitzero"`
-	Todos      []TodoItem     `json:"todos,omitzero"`
-	Revision   *int64         `json:"revision,omitzero"`
+	// Local image of the gateway host the call produced or looked at
+	ImagePath *string    `json:"image_path,omitzero"`
+	Todos     []TodoItem `json:"todos,omitzero"`
+	Revision  *int64     `json:"revision,omitzero"`
 }
 
 // The model is writing the arguments of a call to the named tool
@@ -132,7 +134,7 @@ type ToolsConfigureParams struct {
 	Profile   *string     `json:"profile,omitzero"`
 }
 
-// What a configure call changed, the toolsets now on, MCP servers and names it did not know and the session info after it
+// What a configure call changed, the toolsets now on, MCP servers and names it did not know and the session info after it, or the toolsets the launch fixed when nothing was written
 type ToolsConfigureResult struct {
 	Changed         []string     `json:"changed"`
 	EnabledToolsets []string     `json:"enabled_toolsets"`
@@ -140,6 +142,7 @@ type ToolsConfigureResult struct {
 	MissingServers  []string     `json:"missing_servers"`
 	Reset           bool         `json:"reset"`
 	Unknown         []string     `json:"unknown"`
+	LaunchToolsets  []string     `json:"launch_toolsets,omitzero"`
 }
 
 // Platform whose toolsets the listing shows

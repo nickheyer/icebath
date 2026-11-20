@@ -14,9 +14,18 @@ import (
 const toastLimit = 200
 
 // Error text with secrets redacted, the class name in angle brackets when the text is empty
-func redactTelegramErrorText(err error) (out string) {
+func redactTelegramErrorText(err error) string {
+	return redactTelegramProxyErrorText(err, "")
+}
+
+// Error text of a request through proxyURL with secrets redacted, only the kind of error and the proxy's host when the proxy URL holds a secret the
+// text could repeat
+func redactTelegramProxyErrorText(err error, proxyURL string) (out string) {
 	if err == nil {
 		return ""
+	}
+	if shown := gateway.DescribeProxyError(err, proxyURL); shown != "" {
+		return shown
 	}
 	text := err.Error()
 	if text == "" {

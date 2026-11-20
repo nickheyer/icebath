@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -286,7 +287,7 @@ func ImportRunModule(ctx context.Context) error {
 	}
 	warnOnFailure("IPv4 preference application", func() {
 		if network, isDict := bridgeSection(cfg, "network").(map[string]any); isDict && pyrepr.Truthy(network["force_ipv4"]) {
-			home.ApplyIPv4Preference(true)
+			netpref.ApplyIPv4Preference(true)
 		}
 	})
 	warnOnFailure("config validation", func() {

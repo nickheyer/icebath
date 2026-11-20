@@ -227,6 +227,12 @@ func (g *Tabs) Update(msg tea.Msg) (Card, tea.Cmd) {
 		return g, g.forward(shiftMouse(msg))
 	case tea.MouseReleaseMsg, tea.MouseWheelMsg, tea.MouseMotionMsg:
 		return g, g.forward(shiftMouse(msg.(tea.MouseMsg)))
+	case TapMsg:
+		if msg.Y < tabHead {
+			return g, nil
+		}
+		msg.Y -= tabHead
+		return g, g.forward(msg)
 	case FocusMsg:
 		return g, g.forward(msg)
 	}

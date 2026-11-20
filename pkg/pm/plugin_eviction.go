@@ -445,7 +445,7 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 	}
 	var entries []recordedEviction
 	for _, home := range homes {
-		selection, err := ReadHomeSelection(home)
+		selection, err := ReadHomeSelection(ctx, home)
 		if err != nil {
 			if isPyValueError(err) {
 				continue
@@ -728,7 +728,7 @@ func syncEvicting(ctx context.Context, p VenvState, facts *Facts, fact map[strin
 		if i == 0 {
 			continue
 		}
-		if _, err := ReadHomeSelection(home); err != nil {
+		if _, err := ReadHomeSelection(ctx, home); err != nil {
 			if !isPyValueError(err) {
 				return err
 			}

@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -147,7 +148,7 @@ func filterHeaders(headers http.Header, drop map[string]bool) http.Header {
 var proxyUpstreamClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 15 * time.Second}).DialContext,
+		DialContext:           netpref.DialContext((&net.Dialer{Timeout: 15 * time.Second}).DialContext),
 		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 300 * time.Second,
 	},

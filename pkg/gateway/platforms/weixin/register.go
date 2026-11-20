@@ -168,6 +168,18 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		baseURL, hostErr := extraOrSecret(ctx, extra, "base_url", ilinkBaseURL)
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		cdnBaseURL, hostErr := extraOrSecret(ctx, extra, "cdn_base_url", weixinCDNBaseURL)
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		if shown := proxyErrorShown(ctx, err, baseURL, cdnBaseURL); shown != "" {
+			pkgLog().Debug("Weixin standalone send failed")
+			return gateway.SendError("Weixin send failed: " + shown), nil
+		}
 		pkgLog().Debug("Weixin standalone send failed", "error", err)
 		return gateway.SendError("Weixin send failed: " + errText(err)), nil
 	}

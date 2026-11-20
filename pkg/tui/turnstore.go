@@ -107,6 +107,7 @@ type uiState struct {
 	Timestamps                 bool
 	Info                       *tuigateway.SessionInfo
 	InlineDiffs                bool
+	InlineImages               bool
 	Notice                     *notice
 	ShowReasoning              bool
 	Sid                        string
@@ -117,14 +118,17 @@ type uiState struct {
 	Usage                      *tuigateway.Usage
 	Arena                      any
 	PetRenderMode              tuigateway.PetRenderMode
+	// Whether a turn closes with the line of what it did, and whether the status line counts the tokens it produced so far
+	TurnSummary      bool
+	SpinnerTokenFlow bool
 }
 
 // UI state of a fresh session
 func newUIState() uiState {
 	return uiState{
 		BgTasks: map[string]bool{}, BusyInputMode: defaultBusyMode, DestructiveSlashConfirm: true, DetailsMode: "collapsed", IndicatorStyle: defaultIndicator,
-		InlineDiffs: true, MouseTracking: bootMouseTracking(), PasteCollapseLines: defaultPasteLines, PasteCollapseChars: defaultPasteChars, Sections: map[string]string{},
-		Status: tr("status.summoning"), StatusBar: "top", Streaming: true, Theme: startupTheme(), Usage: zeroUsage(),
+		InlineDiffs: true, InlineImages: true, MouseTracking: bootMouseTracking(), PasteCollapseLines: defaultPasteLines, PasteCollapseChars: defaultPasteChars, Sections: map[string]string{},
+		Status: tr("status.summoning"), StatusBar: "top", Streaming: true, Theme: startupTheme(), Usage: zeroUsage(), TurnSummary: true, SpinnerTokenFlow: true,
 	}
 }
 
@@ -176,6 +180,7 @@ type tuiStore struct {
 	voicePartial           string
 	connectionOp           *connectionOperation
 	settledOperations      []string
+	dismissedOperations    []string
 	controls               controlState
 	loopTickGen            int
 	processSnapshot        processSnapshot
@@ -185,6 +190,8 @@ type tuiStore struct {
 	themes                 themeSync
 	lastAdmission          map[string]string
 	wakeUserDisabled       bool
+	// Chip display and paste bodies of the newest submissions, oldest first, until the row of each is painted
+	sentPastes []stagedPastes
 }
 
 // Marks the next submit of this transcript as a voice turn

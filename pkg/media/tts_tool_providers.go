@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
@@ -216,7 +217,7 @@ var ttsPostJSON = func(ctx context.Context, rawURL string, payload any, headers 
 	}
 	client := &http.Client{Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 60 * time.Second}).DialContext,
+		DialContext:           netpref.DialContext((&net.Dialer{Timeout: 60 * time.Second}).DialContext),
 		TLSHandshakeTimeout:   60 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,
 	}}

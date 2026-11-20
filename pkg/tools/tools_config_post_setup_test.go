@@ -33,23 +33,6 @@ func installSTTCatalogDoubles(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.STTDefaultLocalModel, func() string { return "base" })
 }
 
-func TestLocalBrowserRowReadyOnlyWhenSetupWouldBeANoop(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, c := range []struct {
-		chromium string
-		ready    bool
-	}{{"/pm/chromium/chrome", true}, {"", false}} {
-		s, _ := newTestToolsSetup(t, "")
-		swapHook(t, &ToolsConfigHooks.ChromiumExecutable, func(*Env) string { return c.chromium })
-		if got, err := postSetupReady["chromium"](s); err != nil || got != c.ready {
-			t.Fatalf("chromium ready %v %v for %+v", got, err, c)
-		}
-		if got, err := postSetupReady["browserbase"](s); err != nil || !got {
-			t.Fatalf("browserbase ready %v %v for %+v", got, err, c)
-		}
-	}
-}
-
 func TestImportableSDKDoesNotBypassPMConstraints(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, c := range []struct{ key, extra string }{{"faster_whisper", "stt-whisper"}, {"kittentts", "kittentts"}} {

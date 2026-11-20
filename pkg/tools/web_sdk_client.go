@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -117,7 +118,7 @@ func sdkTransport(t sdkTimeouts) *http.Transport {
 		return v.(*http.Transport)
 	}
 	tr := webHTTPTransport.Clone()
-	tr.DialContext = (&net.Dialer{Timeout: t.connect, KeepAlive: 30 * time.Second}).DialContext
+	tr.DialContext = netpref.DialContext((&net.Dialer{Timeout: t.connect, KeepAlive: 30 * time.Second}).DialContext)
 	tr.TLSHandshakeTimeout = t.connect
 	tr.ResponseHeaderTimeout = t.idle
 	v, _ := sdkTransports.LoadOrStore(t, tr)

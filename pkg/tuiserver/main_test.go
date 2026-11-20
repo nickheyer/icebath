@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,6 +145,32 @@ func notificationPollerStops() map[*pythread.Event]bool {
 		stops[p.stop] = true
 	}
 	return stops
+}
+
+// Build goroutine of a session a case dropped, the session marked so no timer starts one after it
+func pendingAgentBuild(record *tuihost.Session) *agentBuildThread {
+	if record == nil {
+		return nil
+	}
+	lock := record.SetDefault("agent_build_lock", &sync.Mutex{}).(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	record.Set("agent_build_started", true)
+	build, _ := record.Get("_agent_build_thread").(*agentBuildThread)
+	return build
+}
+
+// Waits for the build goroutines of dropped sessions so none writes into the home of a finished case
+func joinAgentBuilds(t *testing.T, builds []*agentBuildThread) {
+	deadline := time.After(30 * time.Second)
+	for _, build := range builds {
+		select {
+		case <-build.done:
+		case <-deadline:
+			t.Error("an agent build was still running 30s after its session was dropped")
+			return
+		}
+	}
 }
 
 // Stops every poller whose stop event is not in kept and waits for each to finish

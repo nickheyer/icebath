@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -124,10 +125,14 @@ func textOf(v any) string {
 	return pyrepr.Str(v)
 }
 
-// str of an exception, the class name when its message is empty
-func errText(err error) string {
-	if msg := pyrepr.ExceptionMessage(err); msg != "" {
-		return msg
+// Text of a REST failure for a log line or a send result: the kind of error and the proxy's host when the proxy URL the client reads from the environment
+// holds a secret the raw text could repeat, else the error text with the password every request URL carries masked, the class name when that is empty
+func safeError(err error, serverURL string) string {
+	if shown := gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(serverURL)); shown != "" {
+		return shown
+	}
+	if text := tools.RedactSensitiveTextWith(nil, pyrepr.ExceptionMessage(err), tools.RedactOptions{Force: true, URLCredentials: true}); text != "" {
+		return text
 	}
 	return pyrepr.ExceptionName(err)
 }
@@ -447,7 +452,7 @@ func (a *BlueBubblesAdapter) postMessage(ctx context.Context, path string, paylo
 	if ctx.Err() != nil {
 		return gateway.SendResult{}, ctx.Err()
 	}
-	return gateway.SendResult{Success: false, Error: errText(err)}, nil
+	return gateway.SendResult{Success: false, Error: safeError(err, a.serverURL)}, nil
 }
 
 // iMessage tapbacks by emoji and by name
@@ -548,7 +553,7 @@ func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (boo
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		pkgLog().Error(fmt.Sprintf("[bluebubbles] cannot reach server at %s: %s", a.serverURL, pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[bluebubbles] cannot reach server at %s: %s", a.serverURL, safeError(err, a.serverURL)))
 		a.closeClient()
 		return false, nil
 	}
@@ -697,7 +702,7 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
-	pkgLog().Warn("[bluebubbles] failed to register webhook with server: " + pyrepr.ExceptionMessage(err))
+	pkgLog().Warn("[bluebubbles] failed to register webhook with server: " + safeError(err, a.serverURL))
 	return false, nil
 }
 
@@ -742,7 +747,7 @@ func (a *BlueBubblesAdapter) unregisterWebhook(ctx context.Context) bool {
 		return nil
 	}()
 	if err != nil {
-		pkgLog().Debug("[bluebubbles] failed to unregister webhook (non-critical): " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("[bluebubbles] failed to unregister webhook (non-critical): " + safeError(err, a.serverURL))
 	}
 	return removed
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,18 +98,43 @@ func recordParentLifecycle(line string) {
 	if n := unitLen(oneLine); n > maxBreadcrumbUnits {
 		oneLine = fmt.Sprintf("%s… [truncated %d chars]", sliceUnits(oneLine, maxBreadcrumbUnits), n)
 	}
-	logDir := filepath.Join(home.Dir(context.Background()), "logs")
-	err := os.MkdirAll(logDir, 0o777)
+	f, err := openCrashLog()
 	if err == nil {
-		var f *os.File
-		if f, err = os.OpenFile(filepath.Join(logDir, "tui_gateway_crash.log"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666); err == nil {
-			_, err = fmt.Fprintf(f, "[tui-parent] %s %s\n", time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), oneLine)
-			if closeErr := f.Close(); err == nil {
-				err = closeErr
-			}
+		_, err = fmt.Fprintf(f, "[tui-parent] %s %s\n", time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), oneLine)
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
 		}
 	}
 	if err != nil {
 		breadcrumbWarned.Do(func() { fmt.Fprint(os.Stderr, "icebath-tui: parent lifecycle log unavailable\n") })
 	}
+}
+
+// Opens the TUI gateway crash log of the home for appending, its folder made when missing
+func openCrashLog() (*os.File, error) {
+	logDir := filepath.Join(home.Dir(context.Background()), "logs")
+	if err := os.MkdirAll(logDir, 0o777); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(logDir, "tui_gateway_crash.log"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+}
+
+// Records a panic of the UI in the crash log, its first line cut to what a breadcrumb may hold
+func recordPanic(value any) {
+	first, _, _ := strings.Cut(fmt.Sprint(value), "\n")
+	recordParentLifecycle("uncaughtException: " + sliceUnits(first, 400))
+}
+
+// Has the runtime append the report of a fatal error, or of a panic nothing recovered, to the crash log as the process dies, until the returned function runs
+func crashReportsToLog() func() {
+	f, err := openCrashLog()
+	if err != nil {
+		return func() {}
+	}
+	// The runtime keeps its own copy of the descriptor
+	defer f.Close()
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		return func() {}
+	}
+	return func() { _ = debug.SetCrashOutput(nil, debug.CrashOptions{}) }
 }

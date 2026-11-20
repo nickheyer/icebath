@@ -141,7 +141,7 @@ func saveSampleTrajectory(w io.Writer, a *AIAgent, result map[string]any, userQu
 	entry.Set("model", model)
 	entry.Set("completed", result["completed"])
 	entry.Set("query", userQuery)
-	text, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false), pyjson.Indent(2))
+	text, err := pyjson.Dumps(RedactTrajectoryValue(entry), pyjson.EnsureASCII(false), pyjson.Indent(2))
 	if err == nil {
 		err = os.WriteFile(filename, []byte(text), 0o644)
 	}

@@ -19,7 +19,7 @@ import (
 // Packages of each component, gating component logs and logs --component
 var ComponentPrefixes = map[string][]string{
 	"gateway": {"gateway", "gatewayrun", "gatewayapi"},
-	"agent":   {"agent", "provider", "providerregistry", "memory", "monitoring", "lsp", "i18n", "pet", "trajectorycompressor"},
+	"agent":   {"agent", "provider", "providerregistry", "memory", "monitoring", "lsp", "i18n", "pet", "trajectorycompressor", "batchrun"},
 	"tools":   {"tools", "media", "mcp", "browser", "codeexec", "skills", "gateway/messagetools"},
 	"cli":     {"cmd/icebath", "app", "commands", "activesessions", "gatewaycli", "goals", "kanban", "selfupdate", "plugins", "profiles", "setupflow"},
 	"cron":    {"cron"},

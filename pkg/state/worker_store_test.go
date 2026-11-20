@@ -244,11 +244,6 @@ func (s *workerStore) tryAcquireSessionTurnLease(sessionID, holder string) (bool
 	return pyTruthy(resultValue(result, "value")), nil
 }
 
-func (s *workerStore) releaseSessionTurnLease(sessionID, holder string) error {
-	_, err := s.apply("turn.cleanup", map[string]any{"target": sessionID, "holder": holder})
-	return err
-}
-
 func (s *workerStore) queueTokenCounts(sessionID string, usage map[string]any) error {
 	if err := s.session(sessionID); err != nil {
 		return err
@@ -503,14 +498,6 @@ func (s *workerStore) getSessionModelConfigValue(sessionID, key string) (any, er
 	return value, nil
 }
 
-func (s *workerStore) getSessionTitle(sessionID string) (any, error) {
-	row, err := s.getSession(sessionID)
-	if err != nil {
-		return nil, err
-	}
-	return rowValue(row, "title"), nil
-}
-
 func (s *workerStore) updateSystemPrompt(sessionID string, prompt any) error {
 	if err := s.session(sessionID); err != nil {
 		return err
@@ -642,28 +629,6 @@ func (s *workerStore) setLatestUserAPIContent(sessionID string, content, apiCont
 	return resultValue(result, "value"), nil
 }
 
-func (s *workerStore) setMessageAPIContent(sessionID string, rowID int64, content, apiContent any) (any, error) {
-	if err := s.session(sessionID); err != nil {
-		return nil, err
-	}
-	result, err := s.apply("session.message_api_content", map[string]any{"row_id": rowID, "content": content, "api_content": apiContent})
-	if err != nil {
-		return nil, err
-	}
-	return resultValue(result, "value"), nil
-}
-
-func (s *workerStore) setUserMessageContent(sessionID string, rowID int64, content any) (any, error) {
-	if err := s.session(sessionID); err != nil {
-		return nil, err
-	}
-	result, err := s.apply("session.user_content", map[string]any{"row_id": rowID, "content": content})
-	if err != nil {
-		return nil, err
-	}
-	return resultValue(result, "value"), nil
-}
-
 func (s *workerStore) endSession(sessionID, reason string) error {
 	if err := s.session(sessionID); err != nil {
 		return err
@@ -683,17 +648,6 @@ func (s *workerStore) sessionLifecycleStatuses(sessionIDs []string) (map[string]
 		return nil, err
 	}
 	return map[string]any{s.scope.SessionID: resultValue(result, "value")}, nil
-}
-
-func (s *workerStore) latestConversationRole(sessionID string) (any, error) {
-	if err := s.session(sessionID); err != nil {
-		return nil, err
-	}
-	result, err := s.apply("session.tail_role", map[string]any{})
-	if err != nil {
-		return nil, err
-	}
-	return resultValue(result, "value"), nil
 }
 
 // Rpc that performs the receipt and then reports a lost acknowledgement

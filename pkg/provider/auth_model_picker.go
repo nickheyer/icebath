@@ -22,9 +22,6 @@ const (
 	pickerANSIYellow    = "\033[33m"
 )
 
-// Style per gateway level, Free green and Large yellow, every other level plain
-var pickerLevelStyle = map[string]string{"free": "green", "top_tier": "yellow"}
-
 // PickerSegment is one styled run of a picker row, an empty style drawing plain
 type PickerSegment struct {
 	Text  string

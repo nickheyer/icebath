@@ -2,7 +2,9 @@ package tui
 
 import (
 	"regexp"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -248,16 +250,6 @@ func slashArgument(command string) string {
 	return ""
 }
 
-// Queue entry of a slash command argument, nil when the command carries no argument
-func queueItemFromSlash(displayCommand, expandedCommand string) *queueItem {
-	display := slashArgument(displayCommand)
-	if strings.TrimFunc(display, isJSSpace) == "" {
-		return nil
-	}
-	item := newQueueItem(slashArgument(expandedCommand), display)
-	return &item
-}
-
 // Newest tokens that fit the count and size caps, the same slice when all fit
 func trimTokens(tokens []composerToken) []composerToken {
 	total := 0
@@ -300,4 +292,145 @@ func looksLikeDroppedPath(text string) bool {
 		return strings.Contains(rest, "/") || strings.Contains(rest, ".")
 	}
 	return false
+}
+
+// Collapsed paste a person expanded back into the draft: the runes from start up to end are the pasted text, editable like the rest, and whatever
+// they hold folds back into a chip
+type pasteSpan struct {
+	start, end int
+}
+
+// Span kept on the same text across one edit of the draft from prev to next: typing inside it or at its very end grows it, typing before it moves
+// it, and an edit that replaces all of it or leaves it empty ends it
+func shiftSpan(prev, next []rune, span pasteSpan) *pasteSpan {
+	if slices.Equal(prev, next) {
+		return &span
+	}
+	limit := min(len(prev), len(next))
+	head := 0
+	for head < limit && prev[head] == next[head] {
+		head++
+	}
+	tail := 0
+	for tail < limit-head && prev[len(prev)-1-tail] == next[len(next)-1-tail] {
+		tail++
+	}
+	oldEnd, newEnd := len(prev)-tail, len(next)-tail
+	start, end := span.start, span.end
+	switch {
+	case oldEnd <= start:
+		start, end = start+newEnd-oldEnd, end+newEnd-oldEnd
+	case head > end:
+	case head >= start && oldEnd <= end:
+		end += newEnd - oldEnd
+	case head <= start && oldEnd >= end:
+		return nil
+	case head < start:
+		start, end = head, end+newEnd-oldEnd
+	default:
+		end = newEnd
+	}
+	if end <= start {
+		return nil
+	}
+	return &pasteSpan{start: start, end: end}
+}
+
+// Chip of a token in a draft, the rune offset its label starts at and the place of the token in the list
+type tokenChip struct {
+	at, index int
+	token     composerToken
+}
+
+// Runes the label of the chip takes in the draft
+func (c tokenChip) width() int { return utf8.RuneCountInString(c.token.Label) }
+
+// Chips of the tokens in a draft in text order, tokens of one label taking its occurrences in list order, the order the expander pairs them in
+func tokenChips(value string, tokens []composerToken) []tokenChip {
+	from := map[string]int{}
+	var chips []tokenChip
+	for i, token := range tokens {
+		found := strings.Index(value[from[token.Label]:], token.Label)
+		if token.Label == "" || found < 0 {
+			continue
+		}
+		at := from[token.Label] + found
+		from[token.Label] = at + len(token.Label)
+		chips = append(chips, tokenChip{at: utf8.RuneCountInString(value[:at]), index: i, token: token})
+	}
+	slices.SortFunc(chips, func(a, b tokenChip) int { return a.at - b.at })
+	return chips
+}
+
+// Chips of the collapsed pastes in a draft in text order
+func pasteChips(value string, tokens []composerToken) []tokenChip {
+	return slices.DeleteFunc(tokenChips(value, tokens), func(c tokenChip) bool { return c.token.Kind != "paste" })
+}
+
+// Whether a draft holds the chip of a collapsed paste
+func hasPasteChip(value string, tokens []composerToken) bool {
+	return len(pasteChips(value, tokens)) > 0
+}
+
+// Draft after a paste chip was expanded or an expanded paste folded back, with the cursor, the tokens left and, after an expansion, the span of the text
+type pasteEdit struct {
+	value  string
+	cursor int
+	span   pasteSpan
+	tokens []composerToken
+}
+
+// Expands the paste chip under the cursor, or the last one of the draft, into its text, the token leaving the list since its text is the draft's own,
+// false when the draft holds no paste chip
+func expandPasteChip(value string, cursor int, tokens []composerToken) (pasteEdit, bool) {
+	chips := pasteChips(value, tokens)
+	if len(chips) == 0 {
+		return pasteEdit{}, false
+	}
+	chip := chips[len(chips)-1]
+	for _, c := range chips {
+		if cursor >= c.at && cursor <= c.at+c.width() {
+			chip = c
+			break
+		}
+	}
+	runes, text := []rune(value), []rune(chip.token.Text)
+	end := chip.at + len(text)
+	return pasteEdit{value: string(runes[:chip.at]) + chip.token.Text + string(runes[chip.at+chip.width():]), cursor: end,
+		span: pasteSpan{start: chip.at, end: end}, tokens: slices.Delete(slices.Clone(tokens), chip.index, chip.index+1)}, true
+}
+
+// Whether the cursor sits inside the expanded paste, where typed and pasted text joins it
+func insideSpan(span *pasteSpan, cursor int) bool {
+	return span != nil && cursor > span.start && cursor <= span.end
+}
+
+// Folds the expanded span back into a chip whose text is what the span holds, the token taking its place among those of the same label by where
+// its chip stands so every chip still pairs with its own text. A span holding another chip, an image attached inside it, is not folded: the
+// outer text would carry that chip's label in place of its content
+func collapsePasteSpan(value string, span pasteSpan, tokens []composerToken) (pasteEdit, bool) {
+	runes := []rune(value)
+	if span.start < 0 || span.end > len(runes) || span.end <= span.start {
+		return pasteEdit{}, false
+	}
+	for _, c := range tokenChips(value, tokens) {
+		if c.at < span.end && c.at+c.width() > span.start {
+			return pasteEdit{}, false
+		}
+	}
+	text := string(runes[span.start:span.end])
+	label := pasteTokenLabel(text, strings.Count(text, "\n")+1)
+	before, seen, at := strings.Count(string(runes[:span.start]), label), 0, len(tokens)
+	for i, token := range tokens {
+		if token.Label != label {
+			continue
+		}
+		if seen == before {
+			at = i
+			break
+		}
+		seen++
+	}
+	return pasteEdit{value: string(runes[:span.start]) + label + string(runes[span.end:]), cursor: span.start + utf8.RuneCountInString(label),
+		tokens: slices.Insert(slices.Clone(tokens), at, composerToken{Kind: "paste", Label: label, Text: text})}, true
 }

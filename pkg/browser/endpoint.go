@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -25,7 +26,7 @@ var (
 )
 
 // HTTP client for CDP discovery that never routes loopback through a proxy
-var discoveryClient = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: loopbackAwareProxy}}
+var discoveryClient = &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: loopbackAwareProxy}}
 
 // Proxy from the environment for every host except loopback
 func loopbackAwareProxy(req *http.Request) (*url.URL, error) {
@@ -165,7 +166,7 @@ func IsBrowserDebugReady(ctx context.Context, rawURL string, timeout time.Durati
 		return false
 	}
 	root := strings.TrimRight(httpScheme+"://"+u.Host, "/")
-	client := &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: loopbackAwareProxy}}
+	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: loopbackAwareProxy}}
 	for _, probe := range []string{root + "/json/version", root + "/json"} {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, probe, nil)
 		if err != nil {

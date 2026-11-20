@@ -403,7 +403,7 @@ func (a *GoogleChatAdapter) clickReply(ctx context.Context, c *cardClick, sync b
 	name := pyrepr.Str(orEmpty(c.message["name"]))
 	if update && name != "" {
 		if _, err := a.patchMessage(ctx, name, message); err != nil {
-			pkgLog().Warn("[GoogleChat] Could not update the clicked card: " + redactSensitive(err.Error()))
+			pkgLog().Warn("[GoogleChat] Could not update the clicked card: " + excText(err))
 		}
 		return nil
 	}
@@ -416,7 +416,7 @@ func (a *GoogleChatAdapter) clickReply(ctx context.Context, c *cardClick, sync b
 		body["thread"] = map[string]any{"name": thread["name"]}
 	}
 	if _, err := a.createMessage(ctx, spaceName, body); err != nil {
-		pkgLog().Warn("[GoogleChat] Could not answer the card click: " + redactSensitive(err.Error()))
+		pkgLog().Warn("[GoogleChat] Could not answer the card click: " + excText(err))
 	}
 	return nil
 }

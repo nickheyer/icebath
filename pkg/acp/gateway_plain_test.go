@@ -64,37 +64,6 @@ func sessionIDs(rows []*pyjson.Object) []string {
 	return ids
 }
 
-func TestEmptyCatalogDoesNotInitializeStorage(t *testing.T) {
-	dir := testingHome(t)
-	m := NewSessionManager(nil, nil)
-	rows, err := m.ListSessions(context.Background(), "")
-	if err != nil || len(rows) != 0 {
-		t.Fatalf("rows = %v, %v", rows, err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "state.db")); !os.IsNotExist(err) {
-		t.Fatalf("state.db stat err = %v", err)
-	}
-	if m.dbInstance != nil {
-		t.Fatal("the catalog opened a store")
-	}
-}
-
-func TestCatalogReadsCommittedHistoryWithoutSchemaWrites(t *testing.T) {
-	dir := testingHome(t)
-	path := filepath.Join(dir, "state.db")
-	seededStore(t, path, state.NewSession{ID: "catalog", Source: "acp", Model: "fixture", ModelConfig: map[string]any{"cwd": dir}})
-	rawExec(t, path, "PRAGMA journal_mode=DELETE")
-	before := readBytes(t, path)
-	m := NewSessionManager(nil, nil)
-	rows, err := m.ListSessions(context.Background(), dir)
-	if err != nil || !reflect.DeepEqual(sessionIDs(rows), []string{"catalog"}) {
-		t.Fatalf("rows = %v, %v", sessionIDs(rows), err)
-	}
-	if !bytes.Equal(readBytes(t, path), before) || m.dbInstance != nil {
-		t.Fatal("the catalog read wrote to the store")
-	}
-}
-
 func TestCatalogPrefersCanonicalCwdWithoutRewritingStorage(t *testing.T) {
 	dir := testingHome(t)
 	path := filepath.Join(dir, "state.db")
@@ -127,12 +96,8 @@ func TestCatalogListsGatewayOwnedEditorThreadsOnly(t *testing.T) {
 
 func TestDefaultAcpDoesNotConstructAnEmbeddedSessionManager(t *testing.T) {
 	testingHome(t)
-	swap(t, &acquireSessionDB, func(context.Context, string) (*state.DB, error) {
-		t.Error("ACP constructed an independent session owner")
-		return nil, errNoStore
-	})
-	if _, ok := NewAgent(nil).(*GatewayACPAgent); !ok {
-		t.Fatalf("default agent is %T", NewAgent(nil))
+	if _, ok := NewAgent().(*GatewayACPAgent); !ok {
+		t.Fatalf("default agent is %T", NewAgent())
 	}
 }
 
@@ -235,27 +200,9 @@ func TestVersionFlagDisplaysDerivedVersion(t *testing.T) {
 	}
 }
 
-func TestVersionSlashCommandDisplaysDerivedVersion(t *testing.T) {
-	fixedVersion(t)
-	a := NewIcebathACPAgent(saveOnly{})
-	reply, known := a.handleSlashCommand(context.Background(), "/version", &SessionState{Cwd: "."})
-	if !known || reply != "Icebath Agent v1.2.3+4.gabcdef0" {
-		t.Fatalf("reply = %q, %v", reply, known)
-	}
-}
-
-func TestInitializeAdvertisesBaseVersion(t *testing.T) {
-	fixedVersion(t)
-	testingHome(t)
-	resp, err := NewIcebathACPAgent(saveOnly{}).Initialize(context.Background(), nil)
-	if err != nil || resp.AgentInfo == nil || resp.AgentInfo.Version != "1.2.3" {
-		t.Fatalf("resp = %+v, %v", resp, err)
-	}
-}
-
 func TestInitializeAdvertisesImagePromptCapability(t *testing.T) {
 	testingHome(t)
-	resp, err := NewAgent(nil).(*GatewayACPAgent).Initialize(context.Background(), nil)
+	resp, err := NewAgent().(*GatewayACPAgent).Initialize(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,12 +280,7 @@ func TestGatewayAcpAdvertisesEverySessionCapabilityItImplements(t *testing.T) {
 	testingHome(t)
 	ctx := context.Background()
 	gatewayAgent := NewGatewayACPAgent()
-	inProcess := NewIcebathACPAgent(NewSessionManager(func() any { return struct{}{} }, nil))
 	advertised, err := gatewayAgent.Initialize(ctx, &pyacp.InitializeRequest{ProtocolVersion: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected, err := inProcess.Initialize(ctx, &pyacp.InitializeRequest{ProtocolVersion: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,9 +289,6 @@ func TestGatewayAcpAdvertisesEverySessionCapabilityItImplements(t *testing.T) {
 		return text
 	}
 	got := dump(advertised.AgentCapabilities.SessionCapabilities)
-	if got != dump(expected.AgentCapabilities.SessionCapabilities) {
-		t.Fatalf("advertised %s", got)
-	}
 	var agent any = gatewayAgent
 	_, forks := agent.(pyacp.SessionForker)
 	_, lists := agent.(pyacp.SessionLister)

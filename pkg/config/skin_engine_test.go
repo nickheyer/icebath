@@ -126,8 +126,8 @@ func TestUnknownSkinFallsBackToDefault(t *testing.T) {
 func TestBrandingHelpersAndConfigInit(t *testing.T) {
 	ctx, _ := skinHome(t)
 	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": "  contrast  "}})
-	if GetActiveSkinName(ctx) != "contrast" || GetActiveHelpHeader(ctx, "x") != "❆ Available Commands" {
-		t.Fatal(GetActiveSkinName(ctx), GetActiveHelpHeader(ctx, "x"))
+	if GetActiveSkinName(ctx) != "contrast" || GetActiveSkin(ctx).Branding["help_header"] != "❆ Available Commands" {
+		t.Fatal(GetActiveSkinName(ctx), GetActiveSkin(ctx).Branding["help_header"])
 	}
 	InitSkinFromConfig(ctx, map[string]any{"display": map[string]any{"skin": 3}})
 	if GetActiveSkinName(ctx) != "default" || GetActiveGoodbye(ctx, "") != "Goodbye! 󰆧" {

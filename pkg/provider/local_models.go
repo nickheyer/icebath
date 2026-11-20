@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime/pprof"
 	"slices"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -43,9 +43,6 @@ const (
 	lmRateMinElapsed    = 0.5
 	lmServerStartFailed = "The local server could not start — check the runtime is installed"
 )
-
-// File name tail a browsed download's model id drops, a split part suffix optional before the extension
-var lmBrowsedModelIDRE = regexp.MustCompile(`(?i)(?:-\p{Nd}{5}-of-\p{Nd}{5})?\.gguf(\n?)\z`)
 
 // Quant reason text of a catalog row by the fit's reason key, the compact text for every other key
 var lmQuantReasons = map[string]string{
@@ -493,7 +490,7 @@ func lmURLOpen(method, rawURL string, headers map[string]string, body []byte, ti
 		Proxy:             pyurl.UrlopenProxy,
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, network, addr)
+			conn, err := netpref.DialContext(dialer.DialContext)(ctx, network, addr)
 			if err != nil {
 				return nil, &lmDialError{err}
 			}

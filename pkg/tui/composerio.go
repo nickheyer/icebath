@@ -15,6 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -24,6 +26,21 @@ var interpolationRe = regexp.MustCompile(`\{!(.+?)\}`)
 
 // Longest the clipboard image save may take
 const clipboardImageLimit = 15 * time.Second
+
+const (
+	// Window in which a second escape discards the draft or stops the turn
+	doubleEscapeWindow = 500 * time.Millisecond
+	// Window in which a second enter on an empty prompt stops the turn or sends the first queued input
+	doubleEnterWindow = 450 * time.Millisecond
+	// Longest the clipboard write of a cut may take before the selection is left in place
+	cutWriteLimit = 2 * time.Second
+)
+
+// Clipboard write of a cut finished, the span it copied and whether the clipboard took it
+type cutDoneMsg struct {
+	span    cards.Selection
+	written bool
+}
 
 // Saves the clipboard image of the host to a PNG file, false when the clipboard holds none
 var ClipboardImage func(dest string) bool
@@ -74,8 +91,8 @@ func (a *app) syncTokens() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Puts an attached image into the draft as its token, with the text that followed its path
-func (a *app) attachImageToken(image *stagedImage) tea.Cmd {
+// Takes an attached image into the tokens of the draft and returns the text that stands for it, its label and what followed its path
+func (a *app) imageTokenText(image *stagedImage) string {
 	index := nextImageIndex(a.tokens)
 	label := imageToken(index)
 	a.tokens = trimTokens(append(a.tokens, composerToken{Index: index, Kind: "image", Label: label, Path: image.Path, Mime: image.Mime}))
@@ -86,10 +103,15 @@ func (a *app) attachImageToken(image *stagedImage) tea.Cmd {
 	if value := a.card.composer.Value(); value != "" && !strings.HasSuffix(value, " ") && !strings.HasSuffix(value, "\n") {
 		text = " " + text
 	}
-	return a.card.composer.Insert(text + " ")
+	return text + " "
 }
 
-// Stages an image path with the session, staged by this client on the canonical wire and by the gateway on a legacy one
+// Puts an attached image into the draft as its token, with the text that followed its path
+func (a *app) attachImageToken(image *stagedImage) tea.Cmd {
+	return a.card.composer.Insert(a.imageTokenText(image))
+}
+
+// Stages an image path with the session, the answer dropped once the draft or the session it was asked for is gone
 func (a *app) stageImage(path string, then func(image *stagedImage, err error) tea.Cmd) tea.Cmd {
 	destination, err := a.store.captureDestination()
 	if err != nil {
@@ -97,10 +119,16 @@ func (a *app) stageImage(path string, then func(image *stagedImage, err error) t
 	}
 	revision := a.composerRevision()
 	current := func() bool { return a.store.isCurrentDestination(destination) && revision == a.composerRevision() }
+	return a.stageImageWhile(path, destination, current, func() tea.Cmd { return nil }, then)
+}
+
+// Stages an image path with a session, staged by this client on the canonical wire and by the gateway on a legacy one, stale running in place of then
+// when current no longer holds as the answer arrives
+func (a *app) stageImageWhile(path string, destination submissionDestination, current func() bool, stale func() tea.Cmd, then func(image *stagedImage, err error) tea.Cmd) tea.Cmd {
 	if a.gw.canonical() {
 		return a.store.stageImagePath(path, a.gw, destination, func(image *stagedImage, err error) tea.Cmd {
 			if !current() {
-				return nil
+				return stale()
 			}
 			return then(image, err)
 		})
@@ -108,9 +136,9 @@ func (a *app) stageImage(path string, then func(image *stagedImage, err error) t
 	return call(a.gw, tuigateway.ImageAttach, tuigateway.ImageAttachParams{Path: path, SessionID: destination.Sid}, func(r *tuigateway.AttachedImageResult, err error) tea.Cmd {
 		if !current() {
 			if r != nil && r.Path != "" {
-				return fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: r.Path, SessionID: destination.Sid})
+				return tea.Batch(fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: r.Path, SessionID: destination.Sid}), stale())
 			}
-			return nil
+			return stale()
 		}
 		if err != nil {
 			return then(nil, err)
@@ -140,6 +168,45 @@ func (a *app) attachImagePath(path string) tea.Cmd {
 			return nil
 		}
 		return a.attachImageToken(image)
+	})
+}
+
+// Attaches the images of an edited prompt again, one after another at the end of the draft so text typed meanwhile stays ahead of them
+func (a *app) restoreImages(paths []string) tea.Cmd {
+	destination, err := a.store.captureDestination()
+	if err != nil || destination.Sid == "" {
+		return nil
+	}
+	return a.restoreImage(paths, 0, destination, a.composerRevision(), a.card.composer.Value())
+}
+
+// One step of an image restore, done counting the images put back and base the draft as the restore last left it: a draft cleared, sent, replaced
+// or edited inside since ends the restore with the number of images left behind
+func (a *app) restoreImage(paths []string, done int, destination submissionDestination, revision int, base string) tea.Cmd {
+	if done >= len(paths) || trimJS(paths[done]) == "" {
+		return nil
+	}
+	current := func() bool {
+		return a.store.isCurrentDestination(destination) && revision == a.composerRevision() && strings.HasPrefix(a.card.composer.Value(), base)
+	}
+	dropped := func() tea.Cmd {
+		if a.store.isCurrentDestination(destination) {
+			a.sys(tr("canonical.queue.imagesNotRestored", len(paths)-done))
+		}
+		return nil
+	}
+	if !current() {
+		return dropped()
+	}
+	return a.stageImageWhile(paths[done], destination, current, dropped, func(image *stagedImage, err error) tea.Cmd {
+		if err != nil {
+			a.sys("error: " + rpcErrorMessage(err))
+		}
+		if err != nil || image == nil {
+			return nil
+		}
+		landed := a.card.composer.Append(a.imageTokenText(image))
+		return tea.Batch(landed, a.restoreImage(paths, done+1, destination, revision, a.card.composer.Value()))
 	})
 }
 
@@ -247,10 +314,10 @@ func (a *app) onClipboardImage(m clipboardImageMsg) tea.Cmd {
 	})
 }
 
-// Inserts pasted text, a long paste collapsed into a token the prompt expands when sent
+// Inserts pasted text, a long paste collapsed into a token the prompt expands when sent unless it lands inside an expanded paste, whose text it joins
 func (a *app) insertPaste(cleaned string) tea.Cmd {
 	lineCount := strings.Count(cleaned, "\n") + 1
-	if !a.store.shouldCollapsePaste(cleaned, lineCount) {
+	if a.inExpandedPaste() || !a.store.shouldCollapsePaste(cleaned, lineCount) {
 		return a.card.composer.Insert(cleaned)
 	}
 	label := pasteTokenLabel(cleaned, lineCount)
@@ -298,16 +365,91 @@ func (a *app) pasted(content string) tea.Cmd {
 	})
 }
 
-// Reads the system clipboard as text and pastes it, the clipboard image when it holds no usable text
-func (a *app) pasteFromClipboard() tea.Cmd {
-	return func() tea.Msg {
-		text, _ := readClipboardText(a.ctx)
-		return clipboardTextMsg{text: text}
-	}
+// Longest the terminal may take to answer a clipboard query before the paste goes on without it
+const terminalClipboardWait = 500 * time.Millisecond
+
+// Paste waiting on the clipboard, the draft and session it was asked for and which of the two sources still has to be read
+type clipboardRead struct {
+	id          int
+	destination submissionDestination
+	captured    bool
+	revision    int
+	toolRead    bool
+	terminalAsk bool
 }
 
 // Text of the system clipboard read off the update loop
-type clipboardTextMsg struct{ text string }
+type clipboardTextMsg struct {
+	id   int
+	text string
+}
+
+// The terminal did not answer a clipboard query in time
+type clipboardWaitedMsg struct{ id int }
+
+// Reads the clipboard as text and pastes it, the clipboard image when it holds no usable text: the terminal's clipboard first over SSH, where the
+// tool of this machine reads the far clipboard, the tool first anywhere else
+func (a *app) pasteFromClipboard() tea.Cmd {
+	a.clipboardSeq++
+	read := &clipboardRead{id: a.clipboardSeq, revision: a.composerRevision()}
+	if destination, err := a.store.captureDestination(); err == nil {
+		read.destination, read.captured = destination, true
+	}
+	a.clipboardRead = read
+	if isRemoteShellSession(os.LookupEnv) {
+		return a.askTerminalClipboard(read)
+	}
+	return a.readClipboardTool(read)
+}
+
+// Reads the clipboard through the tool of this machine
+func (a *app) readClipboardTool(read *clipboardRead) tea.Cmd {
+	read.toolRead = true
+	id := read.id
+	return func() tea.Msg {
+		text, _ := readClipboardText(a.ctx)
+		return clipboardTextMsg{id: id, text: text}
+	}
+}
+
+// Asks the terminal for its clipboard, the wait ending the query when the terminal stays silent
+func (a *app) askTerminalClipboard(read *clipboardRead) tea.Cmd {
+	read.terminalAsk = true
+	id := read.id
+	return tea.Batch(clip.Query(), tea.Tick(terminalClipboardWait, func(time.Time) tea.Msg { return clipboardWaitedMsg{id: id} }))
+}
+
+// Takes what one clipboard source held: usable text is pasted, anything else moves on to the other source and then to the clipboard image
+func (a *app) clipboardAnswered(id int, text string) tea.Cmd {
+	read := a.clipboardRead
+	if read == nil || read.id != id {
+		return nil
+	}
+	if read.revision != a.composerRevision() || (read.captured && !a.store.isCurrentDestination(read.destination)) {
+		a.clipboardRead = nil
+		return nil
+	}
+	switch {
+	case isUsableClipboardText(text):
+		a.clipboardRead = nil
+		return a.pasted(text)
+	case !read.toolRead:
+		return a.readClipboardTool(read)
+	case !read.terminalAsk:
+		return a.askTerminalClipboard(read)
+	}
+	a.clipboardRead = nil
+	return a.pasteClipboardImage(false)
+}
+
+// Whether a clipboard message of the terminal answers the paste in flight, taking it when it does
+func (a *app) terminalClipboardAnswer(m tea.ClipboardMsg) (tea.Cmd, bool) {
+	read := a.clipboardRead
+	if read == nil || !read.terminalAsk {
+		return nil, false
+	}
+	return a.clipboardAnswered(read.id, m.Content), true
+}
 
 // Drops every attachment and collapsed paste of the draft
 func (a *app) clearAttachments() tea.Cmd {
@@ -355,47 +497,47 @@ func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 	return tea.Batch(tea.ClearScreen, emptied, a.submit(text))
 }
 
-// Runs every shell command a prompt names between braces and hands the prompt with their output to then
-func (a *app) interpolate(text string, destination submissionDestination, item *queueItem, then func(result string) tea.Cmd) tea.Cmd {
+// Runs the shell commands a person typed between braces and hands their output on in order, one that cannot run refusing the whole send, its input
+// kept in the queue as unconfirmed so the model never reads a stand-in for output the person expected
+func (a *app) interpolate(typed []typedInterpolation, destination submissionDestination, item *queueItem, then func(outputs []string) tea.Cmd) tea.Cmd {
 	a.store.ui.Status = "interpolating…"
-	matches := interpolationRe.FindAllStringSubmatchIndex(text, -1)
-	results := make([]string, len(matches))
-	pending := len(matches)
-	finish := func() tea.Cmd {
-		if !a.store.isCurrentDestination(destination) {
-			item.settle(false)
-			return nil
-		}
-		out := text
-		for i := len(matches) - 1; i >= 0; i-- {
-			out = out[:matches[i][0]] + results[i] + out[matches[i][1]:]
-		}
-		return then(out)
-	}
-	cmds := make([]tea.Cmd, len(matches))
-	for i, m := range matches {
-		index := i
-		params := tuigateway.CanonicalShellExecParams{Command: text[m[2]:m[3]], SessionID: destination.Sid}
+	outputs := make([]string, len(typed))
+	pending, refused := len(typed), false
+	cmds := make([]tea.Cmd, len(typed))
+	for i, t := range typed {
+		params := tuigateway.CanonicalShellExecParams{Command: t.command, SessionID: destination.Sid}
 		cmds[i] = call(a.gw, tuigateway.CanonicalShellExec, params, func(r *tuigateway.ShellExecResult, err error) tea.Cmd {
-			if err != nil {
-				results[index] = "(error: " + describeShellExecError(err) + ")"
-			} else {
-				results[index] = trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
-			}
 			pending--
-			if pending == 0 {
-				return finish()
+			switch {
+			case refused:
+				return nil
+			case err != nil:
+				refused = true
+				item.settle(false)
+				if a.store.isCurrentDestination(destination) {
+					a.sys(tr("session.common.interpolationFailed", describeShellExecError(err)))
+					a.store.ui.Busy, a.store.ui.Status = false, tr("status.ready")
+				}
+				return nil
 			}
-			return nil
+			outputs[i] = trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
+			if pending > 0 {
+				return nil
+			}
+			return then(outputs)
 		})
 	}
 	return tea.Batch(cmds...)
 }
 
-// Sets the global details mode of the transcript and saves it
+// Sets the details mode of the transcript and of every section of it and saves it
 func (a *app) setDetails(mode string) tea.Cmd {
 	ui := &a.store.ui
-	ui.DetailsMode, ui.DetailsModeCommandOverride = mode, true
+	sections := map[string]string{}
+	for _, section := range sectionNames {
+		sections[section] = mode
+	}
+	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections = mode, true, sections
 	a.card.view.invalidate()
 	return tea.Batch(a.saveSetting("details_mode", mode), wm.Notify("details "+mode, wm.Info))
 }
@@ -417,21 +559,168 @@ func (a *app) toggleThinking() tea.Cmd {
 	return tea.Batch(a.saveSetting("details_mode.thinking", next), wm.Notify("thinking "+next, wm.Info))
 }
 
-// Next way an input typed during a turn is admitted, queue, steer or interrupt
-func (a *app) cycleBusyMode() tea.Cmd {
-	modes := []string{"queue", "steer", "interrupt"}
-	next := modes[0]
-	for i, m := range modes {
-		if m == a.store.ui.BusyInputMode {
-			next = modes[(i+1)%len(modes)]
+// Turns yolo of the session in view on or off without spending a turn
+func (a *app) toggleYolo() tea.Cmd {
+	sid := a.store.ui.Sid
+	if sid == "" {
+		a.sys(tr("session.input.yoloNeedsSession"))
+		return nil
+	}
+	return call(a.gw, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "yolo", SessionID: sid}, func(res *tuigateway.ConfigSetResult, err error) tea.Cmd {
+		switch {
+		case err != nil:
+			a.sys("error: " + rpcErrorMessage(err))
+		case setWord(res) == "1":
+			a.sys(tr("session.input.yoloOn"))
+		case setWord(res) == "0":
+			a.sys(tr("session.input.yoloOff"))
+		default:
+			a.sys(tr("session.input.yoloToggleFailed"))
 		}
+		return nil
+	})
+}
+
+// Empties the composer with everything that rode on its draft, the tokens, an expanded paste, a queued input held for editing and a recalled history line
+func (a *app) clearIn() tea.Cmd {
+	a.clearComposerTokens()
+	a.pasteSpan = nil
+	a.setQueueEdit(nil)
+	return a.card.composer.SetValue("")
+}
+
+// Keeps the expanded paste on its text across whatever edited the draft since the span was last looked at. Text put in at the cursor inside the
+// span or at its very end joins it even where the draft alone cannot tell, a space typed before a space
+func (a *app) followPaste() {
+	if a.pasteSpan == nil {
+		return
 	}
-	a.store.ui.BusyInputMode = next
-	params := tuigateway.ConfigSetParams{Key: "busy", Value: tuigateway.TextValue(next)}
-	if a.gw.canonical() {
-		params.SessionID = a.store.ui.Sid
+	value := a.card.composer.Value()
+	if value == a.pasteDraft {
+		return
 	}
-	return tea.Batch(fire(a.gw, tuigateway.ConfigSet, params), wm.Notify("busy input: "+next, wm.Info))
+	prev, next, span := []rune(a.pasteDraft), []rune(value), *a.pasteSpan
+	a.pasteDraft = value
+	grown := len(next) - len(prev)
+	if at := a.card.composer.Offset() - grown; grown > 0 && at > span.start && at <= min(span.end, len(prev)) && slices.Equal(next[:at], prev[:at]) && slices.Equal(next[at+grown:], prev[at:]) {
+		a.pasteSpan = &pasteSpan{start: span.start, end: span.end + grown}
+		return
+	}
+	a.pasteSpan = shiftSpan(prev, next, span)
+}
+
+// Whether the cursor sits inside the expanded paste, where a paste joins its text instead of becoming a chip of its own
+func (a *app) inExpandedPaste() bool {
+	a.followPaste()
+	return insideSpan(a.pasteSpan, a.card.composer.Offset())
+}
+
+// Paste key on the draft: an expanded paste folds back into a chip, else the paste chip under the cursor, or the last one, expands into text to
+// read and edit, false when the draft holds neither
+func (a *app) togglePaste() (tea.Cmd, bool) {
+	if a.followPaste(); a.pasteSpan != nil {
+		return a.collapsePaste(), true
+	}
+	composer := a.card.composer
+	expanded, found := expandPasteChip(composer.Value(), composer.Offset(), a.tokens)
+	if !found {
+		return nil, false
+	}
+	a.tokens = expanded.tokens
+	placed := composer.SetValueAt(expanded.value, expanded.cursor)
+	a.pasteSpan, a.pasteDraft = &expanded.span, expanded.value
+	return placed, true
+}
+
+// Folds the expanded paste back into a chip holding the text as it reads now. A span another chip landed in is not folded, its text staying in
+// the draft as typed text
+func (a *app) collapsePaste() tea.Cmd {
+	a.followPaste()
+	span := a.pasteSpan
+	if a.pasteSpan = nil; span == nil {
+		return nil
+	}
+	composer := a.card.composer
+	collapsed, folded := collapsePasteSpan(composer.Value(), *span, a.tokens)
+	if !folded {
+		return nil
+	}
+	a.tokens = collapsed.tokens
+	return composer.SetValueAt(collapsed.value, collapsed.cursor)
+}
+
+// Line above the status row naming the paste key while the draft holds a collapsed paste or an expanded one, none once the key is bound elsewhere
+func (a *app) pasteHintRows(rc renderCtx) []string {
+	if a.keys.Display("tui.paste.expand") != "ctrl+p" {
+		return nil
+	}
+	hint := ""
+	switch {
+	case a.pasteSpan != nil:
+		hint = tr("composer.pasteCollapseHint")
+	case hasPasteChip(a.card.composer.Value(), a.tokens):
+		hint = tr("composer.pasteExpandHint")
+	default:
+		return nil
+	}
+	return []string{"  " + toneStyle(rc.t.Color.Muted).Render(hint)}
+}
+
+// Second escape within the window, a draft discarded into the history with an armed rewind dropped, else a running turn stopped, false when neither applies
+func (a *app) doubleEscape() (tea.Cmd, bool) {
+	ui := a.store.ui
+	switch draft := a.card.composer.Value(); {
+	case draft != "":
+		a.card.composer.Remember(draft)
+		cleared := a.clearIn()
+		a.cancelPendingRewind(true)
+		return cleared, true
+	case ui.Busy && ui.Sid != "" && !a.dialogs.waiting():
+		return a.interruptTurn(), true
+	}
+	return nil, false
+}
+
+// Enter on an empty prompt, an armed rewind dropped and a second press within the window stopping the turn or sending the first queued input, false when
+// the prompt holds something to send
+func (a *app) emptyEnter() (tea.Cmd, bool) {
+	composer := a.card.composer
+	if trimJS(composer.Value()) != "" || !composer.Empty() {
+		a.lastEmptyEnter = time.Time{}
+		return nil, false
+	}
+	a.cancelPendingRewind(true)
+	now := a.store.now()
+	double := !a.lastEmptyEnter.IsZero() && now.Sub(a.lastEmptyEnter) < doubleEnterWindow
+	a.lastEmptyEnter = now
+	ui := a.store.ui
+	switch queued := a.queue.size(); {
+	case !double || ui.Sid == "":
+	case ui.Busy:
+		return a.stopTurn(queued > 0), true
+	case queued > 0:
+		return a.sendQueueHead(), true
+	}
+	return nil, true
+}
+
+// Whether prompt text is selected
+func (a *app) selecting() bool {
+	_, selected := a.card.composer.Selection()
+	return selected
+}
+
+// Cuts the selected prompt text, the text removed only once the clipboard took it
+func (a *app) cutSelection() tea.Cmd {
+	span, selected := a.card.composer.Selection()
+	if !selected {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(a.ctx, cutWriteLimit)
+		defer cancel()
+		return cutDoneMsg{span: span, written: clip.WriteText(ctx, span.Text)}
+	}
 }
 
 // Saves one display setting word, its answer and failure unread
@@ -446,6 +735,19 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 		return a.openModelPicker(), true
 	case "tui.sessions":
 		return a.openSessionSwitcher(), true
+	case "tui.cut":
+		return a.cutSelection(), true
+	case "tui.queue.delete":
+		return a.deleteQueueEdit(), true
+	case "tui.queue.send":
+		return a.sendQueueHead(), true
+	case "tui.queue.drop":
+		if a.hasQueued() {
+			return a.dropQueued(), true
+		}
+		return nil, true
+	case "tui.yolo":
+		return a.toggleYolo(), true
 	case "tui.agents":
 		return a.openSpawnTree(0, nil), true
 	case "tui.agents.dock":
@@ -490,46 +792,71 @@ func (a *app) updateExtras(m tea.Msg) (bool, tea.Cmd) {
 	case clipboardImageMsg:
 		return true, a.onClipboardImage(m)
 	case clipboardTextMsg:
-		if isUsableClipboardText(m.text) {
-			return true, a.pasted(m.text)
+		return true, a.clipboardAnswered(m.id, m.text)
+	case clipboardWaitedMsg:
+		return true, a.clipboardAnswered(m.id, "")
+	case cutDoneMsg:
+		if !m.written {
+			return true, nil
 		}
-		return true, a.pasteClipboardImage(false)
+		return true, tea.Batch(a.card.composer.Cut(m.span), a.syncTokens())
+	case tea.ClipboardMsg:
+		if cmd, taken := a.terminalClipboardAnswer(m); taken {
+			return true, cmd
+		}
+	case terminalHintsMsg:
+		a.terminalHints = m.hints
+		return true, nil
 	case widgetTickedMsg:
 		a.widgets.onTicked(m)
 		return true, nil
 	case widgetsLoadedMsg:
-		a.widgets.loaded = true
-		return true, nil
+		return true, a.widgets.onScanned(m)
 	case dieMsg:
 		return true, a.die(m.code)
 	case tty.SuspendRefusedMsg:
 		a.suspendRefused()
 		return true, nil
 	case tty.TerminateMsg:
-		return true, a.die(signalExitCode(m.Signal))
+		return true, a.terminated(m.Signal)
+	case tty.GoneMsg:
+		return true, a.outputGone(m.Err)
 	case completionDueMsg:
 		return true, a.askCompletion(m)
 	}
 	return false, nil
 }
 
-// Starts or stops voice recording of the session
+// Starts or stops voice recording of the session, the recording mark flipped at once and taken back when the gateway did not start, a gateway still
+// transcribing the last capture saying so
 func (a *app) toggleVoiceRecording() tea.Cmd {
 	if !a.voiceEnabled {
-		return wm.Notify("voice is off, /voice on turns it on", wm.Warn)
+		a.sys(tr("session.input.voiceModeOff"))
+		return nil
 	}
-	action := "start"
-	if a.voiceRecording {
-		action = "stop"
+	starting := !a.voiceRecording
+	action := tuigateway.VoiceRecordAction("stop")
+	if starting {
+		action = "start"
 	}
-	params := tuigateway.VoiceRecordParams{Action: tuigateway.VoiceRecordAction(action), SessionID: a.store.ui.Sid}
-	return call(a.gw, tuigateway.VoiceRecord, params, func(_ *tuigateway.VoiceRecordResult, err error) tea.Cmd {
+	a.setVoiceRecording(starting)
+	if !starting {
+		a.setVoiceProcessing(false)
+	}
+	params := tuigateway.VoiceRecordParams{Action: action, SessionID: a.store.ui.Sid}
+	return call(a.gw, tuigateway.VoiceRecord, params, func(r *tuigateway.VoiceRecordResult, err error) tea.Cmd {
 		if err != nil {
 			a.sys("error: " + rpcErrorMessage(err))
+		}
+		if !starting || (err == nil && r.Status == "recording") {
 			return nil
 		}
-		a.voiceRecording = action == "start"
-		a.voiceProcessing = action == "stop"
+		busy := err == nil && r.Status == "busy"
+		a.setVoiceRecording(false)
+		a.setVoiceProcessing(busy)
+		if busy {
+			a.sys(tr("session.input.voiceStillTranscribing"))
+		}
 		return nil
 	})
 }

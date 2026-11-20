@@ -18,11 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/setupflow"
 )
 
-// ProviderSelectionError is the KeyError of a provider selection naming an unknown toolset or provider
-type ProviderSelectionError struct{ Message string }
-
-func (e *ProviderSelectionError) Error() string { return pyrepr.StrRepr(e.Message) }
-
 func rowGet(p *pyjson.Object, key string) any {
 	v, _ := p.Get(key)
 	return v
@@ -362,26 +357,6 @@ func pluginRowsBuilder(fn func(*ToolsSetup) []*pyjson.Object) func(*ToolsSetup) 
 	return func(s *ToolsSetup) ([]*pyjson.Object, error) { return fn(s), nil }
 }
 
-// Capabilities a web backend supports per its registry provider, both when unknown or the lookup fails
-func (s *ToolsSetup) WebProviderCapabilities(backend string) (caps []string) {
-	defer func() {
-		if recover() != nil {
-			caps = []string{"search", "extract"}
-		}
-	}()
-	if p := GetWebProvider(s.toolEnv(), backend); p != nil {
-		caps = []string{}
-		if p.SupportsSearch() {
-			caps = append(caps, "search")
-		}
-		if p.SupportsExtract() {
-			caps = append(caps, "extract")
-		}
-		return caps
-	}
-	return []string{"search", "extract"}
-}
-
 // Plugin row builders keyed by the category display name
 var pluginRowBuilders = map[string]func(*ToolsSetup) ([]*pyjson.Object, error){
 	"Image Generation":                   pluginRowsBuilder((*ToolsSetup).pluginImageGenProviders),
@@ -430,75 +405,6 @@ func (s *ToolsSetup) VisibleProviders(cat *pyjson.Object) ([]*pyjson.Object, err
 		}
 	}
 	return visible, nil
-}
-
-// Readiness of a picker row, ready, needs_keys, needs_auth or needs_setup
-func (s *ToolsSetup) ProviderReadinessStatus(provider *pyjson.Object, cfg config.Tree, isActive *bool) (string, error) {
-	if pyTruthy(rowGetOr(provider, "env_vars", []any{})) {
-		ready, err := providerEnvReady(s.ctx(), s.home(), provider)
-		if err != nil {
-			return "", err
-		}
-		if ready {
-			return "ready", nil
-		}
-		return "needs_keys", nil
-	}
-	if postSetup := rowGet(provider, "post_setup"); pyTruthy(postSetup) {
-		key := pyrepr.Str(postSetup)
-		if authReady, ok := postSetupAuthReady[key]; ok {
-			if authReady(s) {
-				return "ready", nil
-			}
-			return "needs_auth", nil
-		}
-		if predicate, ok := postSetupReady[key]; ok {
-			if ready, failed := s.readyPredicate(predicate); failed || ready {
-				return "ready", nil
-			}
-			return "needs_setup", nil
-		}
-		if isActive == nil {
-			active, err := s.IsProviderActive(provider, cfg)
-			if err != nil {
-				return "", err
-			}
-			isActive = &active
-		}
-		if *isActive {
-			return "ready", nil
-		}
-		return "needs_setup", nil
-	}
-	return s.webRegistryReadiness(provider), nil
-}
-
-// Result of an installed check, failed when it errors so flaky detection never reads as a warning state
-func (s *ToolsSetup) readyPredicate(predicate func(*ToolsSetup) (bool, error)) (ready, failed bool) {
-	defer func() {
-		if recover() != nil {
-			ready, failed = false, true
-		}
-	}()
-	ok, err := predicate(s)
-	if err != nil {
-		return false, true
-	}
-	return ok, false
-}
-
-// Keyless untiered web rows read ready only when their registry provider is available
-func (s *ToolsSetup) webRegistryReadiness(provider *pyjson.Object) string {
-	backend := rowGet(provider, "web_backend")
-	if !pyTruthy(backend) || pyTruthy(rowGet(provider, "web_tier")) {
-		return "ready"
-	}
-	env := s.toolEnv()
-	registered := GetWebProvider(env, pyrepr.Str(backend))
-	if registered == nil || registered.Available(env) {
-		return "ready"
-	}
-	return "needs_auth"
 }
 
 // Whether enabling a toolset should open provider setup
@@ -1219,50 +1125,6 @@ func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tre
 	return nil
 }
 
-// Persists a provider selection for a toolset without prompts, the KeyError of an unknown toolset or provider returned
-func (s *ToolsSetup) ApplyProviderSelection(tsKey, providerName string, cfg config.Tree) error {
-	catValue, ok := ToolCategories.Get(tsKey)
-	cat, _ := catValue.(*pyjson.Object)
-	if !ok || cat == nil {
-		return &ProviderSelectionError{"Toolset has no configurable category: " + tsKey}
-	}
-	providers, err := s.VisibleProviders(cat)
-	if err != nil {
-		return err
-	}
-	var provider *pyjson.Object
-	for _, p := range providers {
-		if pyjson.Equal(rowGet(p, "name"), providerName) {
-			provider = p
-			break
-		}
-	}
-	if provider == nil {
-		return &ProviderSelectionError{"Unknown provider " + pyrepr.StrRepr(providerName) + " for toolset " + pyrepr.StrRepr(tsKey)}
-	}
-	if err := s.writeProviderConfig(provider, cfg); err != nil {
-		return err
-	}
-	var falVendor any
-	if pyTruthy(rowGet(provider, "imagegen_backend")) {
-		falVendor = "fal"
-	}
-	selections := []struct {
-		section string
-		vendor  any
-	}{
-		{"image_gen", rowGet(provider, "image_gen_plugin_name")},
-		{"video_gen", rowGet(provider, "video_gen_plugin_name")},
-		{"image_gen", falVendor},
-	}
-	for _, sel := range selections {
-		if pyTruthy(sel.vendor) {
-			selectInto(cfg, sel.section, "provider", sel.vendor)
-		}
-	}
-	return nil
-}
-
 // Model pickers that follow a provider pick, plugin image or video gen, the in tree image backend, then STT
 func (s *ToolsSetup) finishProviderSelection(provider *pyjson.Object, cfg config.Tree) error {
 	for _, section := range []string{"image_gen", "video_gen"} {
@@ -1279,6 +1141,32 @@ func (s *ToolsSetup) finishProviderSelection(provider *pyjson.Object, cfg config
 	if stt := rowGet(provider, "stt_provider"); pyTruthy(stt) {
 		return s.configureSTTModel(pyrepr.Str(stt), cfg)
 	}
+	if pyrepr.Str(rowGet(provider, "tts_provider")) == "piper" {
+		return s.configurePiperVoice(cfg)
+	}
+	return nil
+}
+
+// Voice prompt after Piper is picked, over the voices the engine can fetch, the configured or default voice preselected
+func (s *ToolsSetup) configurePiperVoice(cfg config.Tree) error {
+	fn := ToolsConfigHooks.PiperVoices
+	requireToolsConfigHook("PiperVoices", fn != nil)
+	voices, defaultVoice := fn()
+	if len(voices) == 0 {
+		return nil
+	}
+	piper := cfgSection(config.Tree(cfgSection(cfg, "tts")), "piper")
+	current := pystr.Strip(pyOrStr(piper["voice"]))
+	if current == "" {
+		current = defaultVoice
+	}
+	def := max(slices.Index(voices, current), 0)
+	idx, err := s.promptChoice("  Select Piper voice (language_REGION-name-quality, downloaded on first use):", voices, def)
+	if err != nil {
+		return err
+	}
+	piper["voice"] = voices[idx]
+	s.Con.PrintSuccess("  Piper voice set to: " + voices[idx])
 	return nil
 }
 

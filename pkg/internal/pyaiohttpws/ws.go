@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -186,7 +187,7 @@ func connectReason(err error) string {
 // Opens a client websocket the way a session ws_connect does, the upgrade bounded by the session total timeout
 func Connect(ctx context.Context, rawURL string, opts Options) (*Conn, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 300 * time.Second, TLSClientConfig: opts.TLSConfig,
-		NetDialContext: (&net.Dialer{Timeout: 30 * time.Second}).DialContext}
+		NetDialContext: netpref.DialContext((&net.Dialer{Timeout: 30 * time.Second}).DialContext)}
 	if opts.TrustEnv {
 		dialer.Proxy = http.ProxyFromEnvironment
 	}

@@ -16,14 +16,13 @@ import (
 )
 
 var (
-	knownDeliveryPlatforms   = map[string]bool{"webhook": true, "wecom_callback": true}
-	nonPushOriginPlatforms   = map[string]bool{"api_server": true}
-	homeTargetPriority       = []string{"matrix", "telegram", "discord", "slack", "signal", "mattermost", "sms", "email", "dingtalk", "feishu", "wecom", "weixin", "bluebubbles", "qqbot", "whatsapp", "whatsapp_cloud"}
-	legacyHomeTargetEnvVars  = map[string]string{"QQBOT_HOME_CHANNEL": "QQ_HOME_CHANNEL"}
-	mirrorProvenanceRank     = map[string]int{"origin": 3, "origin_fallback": 2, "home": 2, "explicit": 1}
-	threadReplyChatType      = map[string]string{"slack": "group", "matrix": "group", "telegram": "group"}
-	cronDeliveryPluginScan   = func(ctx context.Context) { plugins.DiscoverPlugins(ctx, false) }
-	cronDeliveryProfileNames = profiles.ListProfileNames
+	knownDeliveryPlatforms  = map[string]bool{"webhook": true, "wecom_callback": true}
+	nonPushOriginPlatforms  = map[string]bool{"api_server": true}
+	homeTargetPriority      = []string{"matrix", "telegram", "discord", "slack", "signal", "mattermost", "sms", "email", "dingtalk", "feishu", "wecom", "weixin", "bluebubbles", "qqbot", "whatsapp", "whatsapp_cloud"}
+	legacyHomeTargetEnvVars = map[string]string{"QQBOT_HOME_CHANNEL": "QQ_HOME_CHANNEL"}
+	mirrorProvenanceRank    = map[string]int{"origin": 3, "origin_fallback": 2, "home": 2, "explicit": 1}
+	threadReplyChatType     = map[string]string{"slack": "group", "matrix": "group", "telegram": "group"}
+	cronDeliveryPluginScan  = func(ctx context.Context) { plugins.DiscoverPlugins(ctx, false) }
 )
 
 // Target is one resolved delivery destination, an empty ThreadID or ResolvedFrom is the Python None

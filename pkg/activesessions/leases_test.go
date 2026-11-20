@@ -588,12 +588,8 @@ func TestUnknownSiblingLivenessOnlyFencesItsOwnSession(t *testing.T) {
 func TestUnknownSiblingDoesNotBlockGuardedReleaseOrOrphanSweep(t *testing.T) {
 	h, statePath := unknownSiblingRegistry(t)
 	lease := mustAcquire(t, "new-chat", "tui", map[string]any{}, "", true)
-	var active bool
-	if err := ReleaseLivenessGuard(context.Background(), lease, "new-chat", map[string]bool{}, func(a bool) error { active = a; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if active || !lease.Released() {
-		t.Fatalf("active %v released %v", active, lease.Released())
+	if err := lease.Release(); err != nil || !lease.Released() {
+		t.Fatalf("release %v released %v", err, lease.Released())
 	}
 	if mustGuard(t, "new-chat", "", nil) {
 		t.Fatal("released session still leased")

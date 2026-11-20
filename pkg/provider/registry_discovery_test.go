@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -50,15 +49,6 @@ func rediscoverProviders(t *testing.T, ctx context.Context) {
 	resetProviderRegistry(t)
 	regDiscovered.Store(false)
 	discoverProviders(ctx)
-}
-
-// Writes plugins.enabled and plugins.disabled into the home config
-func enablePlugins(t *testing.T, h string, enabled, disabled []string) {
-	t.Helper()
-	body := "plugins:\n  enabled: [" + strings.Join(enabled, ", ") + "]\n  disabled: [" + strings.Join(disabled, ", ") + "]\n"
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestBundledPluginDirsAllRegisterProfiles(t *testing.T) {

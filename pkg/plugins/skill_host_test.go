@@ -225,12 +225,3 @@ func TestASkillSavedUnderTheHashedPortableNameStillLoads(t *testing.T) {
 		t.Fatalf("foreign namespace %q", got)
 	}
 }
-
-// Memory provider package whose register adds a maintenance skill beside its own file
-func skillProviderBody(name string) string {
-	return "from pathlib import Path\nfrom agent.memory_provider import MemoryProvider\nclass Provider(MemoryProvider):\n" +
-		"    @property\n    def name(self): return " + `"` + name + `"` + "\n    def is_available(self): return True\n" +
-		"    def initialize(self, **kw): pass\n    def sync_turn(self, *a, **kw): pass\n    def get_tool_schemas(self): return []\n" +
-		"    def handle_tool_call(self, *a, **kw): return '{}'\ndef register(ctx):\n    ctx.register_memory_provider(Provider())\n" +
-		"    ctx.register_skill('maintenance', Path(__file__).parent / 'skills' / 'maintenance' / 'SKILL.md')\n"
-}

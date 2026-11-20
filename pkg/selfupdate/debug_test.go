@@ -2,7 +2,6 @@ package selfupdate
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -688,23 +687,6 @@ func TestCollectShareBundleRedactionMasksURLCredentials(t *testing.T) {
 		!strings.Contains(text, "***:***@10.0.0.5:3128") {
 		t.Fatal(text)
 	}
-}
-
-func dbgEnvelope(t *testing.T, blob []byte) map[string]any {
-	t.Helper()
-	if len(blob) < 2 || blob[0] != 0x1f || blob[1] != 0x8b {
-		t.Fatal("not gzip")
-	}
-	zr, err := gzip.NewReader(bytes.NewReader(blob))
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := io.ReadAll(zr)
-	var env map[string]any
-	if err := json.Unmarshal(raw, &env); err != nil {
-		t.Fatal(err)
-	}
-	return env
 }
 
 func dbgConsentArgs(over map[string]any) map[string]any {

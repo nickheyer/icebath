@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -270,7 +271,7 @@ func postJSON(ctx context.Context, rawURL string, headers map[string]string, pay
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: timeout.Connect}).DialContext,
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: netpref.DialContext((&net.Dialer{Timeout: timeout.Connect}).DialContext),
 		TLSHandshakeTimeout: timeout.Read, ResponseHeaderTimeout: timeout.Read, ForceAttemptHTTP2: true}
 	defer transport.CloseIdleConnections()
 	resp, err := (&http.Client{Transport: transport}).Do(req)

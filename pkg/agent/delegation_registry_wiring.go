@@ -122,31 +122,13 @@ func (h hostedDelegationProvider) RouteTask(task, config map[string]any) (map[st
 	return route, nil
 }
 
-// Scoped registry view that wraps plugin host objects as DelegationProvider values before delegating
-type hostedDelegationScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedDelegationScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedDelegationProvider(p))
-}
-func (s hostedDelegationScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedDelegationProvider(p))
-}
-func (s hostedDelegationScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedDelegationProvider(p))
-}
-func (s hostedDelegationScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedDelegationScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedDelegationProvider(p), scope)
-}
-func (s hostedDelegationScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedDelegationProvider(current), adaptHostedDelegationProvider(replacement), scope)
-}
-
-// Plugin facing registry that register_delegation_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_delegation_provider writes into, a plugin host object stored as the provider adapted from it
 func DelegationScopedRegistry() plugins.ScopedRegistry {
-	return hostedDelegationScopedRegistry{delegationRegistry.Scoped()}
+	return plugins.HostedScopedRegistry{Inner: delegationRegistry.Scoped(), Adapt: adaptHostedDelegationProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedDelegationProvider)
+			return h.obj, ok
+		}}
 }
 
 // Installs the delegation_registry reads over the plugin manager and the compiled-in strategies

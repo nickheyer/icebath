@@ -1149,7 +1149,6 @@ func (a *TelegramAdapter) EnqueueTextEvent(ctx context.Context, event *gateway.M
 
 // Delayed flush slot store of one batching family
 type flushSlots struct {
-	pending func() map[string]*gateway.MessageEvent
 	owner   func(key string) *gateway.AdapterTask
 	release func(key string, task *gateway.AdapterTask)
 }

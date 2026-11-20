@@ -36,10 +36,3 @@ func TestSanitizeWindowsName(t *testing.T) {
 		}
 	}
 }
-
-type sinkWriter []byte
-
-func (w *sinkWriter) Write(p []byte) (int, error) {
-	*w = append(*w, p...)
-	return len(p), nil
-}

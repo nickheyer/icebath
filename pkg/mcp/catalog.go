@@ -50,7 +50,6 @@ var (
 	catalogEnvRefRe   = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 	catalogEnvNameRe  = regexp.MustCompile(`\A[A-Za-z_][A-Za-z0-9_]*\n?\z`)
 	catalogNameRe     = regexp.MustCompile(`\A[A-Za-z0-9_-]+\n?\z`)
-	appLabelRe        = regexp.MustCompile(`\A[A-Za-z0-9][A-Za-z0-9 ._+-]{0,79}\z`)
 	connectorSlugRe   = regexp.MustCompile(`\A[a-z0-9][a-z0-9_-]*\z`)
 	shaRefRe          = regexp.MustCompile(`\A[0-9a-f]{7,40}\z`)
 )

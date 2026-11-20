@@ -229,7 +229,7 @@ func (c *kanbanCLI) handlers() map[string]func() (int, error) {
 		"complete": c.cmdComplete, "edit": c.cmdEdit, "block": c.cmdBlock,
 		"schedule": c.cmdSchedule, "unblock": c.cmdUnblock,
 		"request-review": c.cmdRequestReview, "request-changes": c.cmdRequestChanges,
-		"reopen-review": c.cmdReopenReview, "promote": c.cmdPromote,
+		"reopen-review": c.cmdReopenReview, "reopen": c.cmdReopen, "promote": c.cmdPromote,
 		"archive": c.cmdArchive, "tail": c.cmdTail, "dispatch": c.cmdDispatch,
 		"daemon": c.cmdDaemon, "watch": c.cmdWatch, "stats": c.cmdStats,
 		"log": c.cmdLog, "runs": c.cmdRuns, "heartbeat": c.cmdHeartbeat,
@@ -253,7 +253,7 @@ var delegatedChildDeniedActions = map[string]bool{
 	"claim": true, "comment": true, "attach": true, "attach-rm": true, "complete": true, "edit": true, "block": true,
 	"schedule": true, "unblock": true, "promote": true, "archive": true, "dispatch": true, "daemon": true, "repair": true,
 	"heartbeat": true, "notify-subscribe": true, "notify-unsubscribe": true, "specify": true, "decompose": true,
-	"request-review": true, "request-changes": true, "reopen-review": true,
+	"request-review": true, "request-changes": true, "reopen-review": true, "reopen": true,
 	"gc": true,
 }
 
@@ -1788,6 +1788,45 @@ func (c *kanbanCLI) cmdRequestChanges() (int, error) {
 		}
 		fmt.Fprintln(c.w, line)
 		return nil
+	})
+	return code, err
+}
+
+// Reopens finished tasks back to ready, or todo while a parent is open, with an optional comment saying why
+func (c *kanbanCLI) cmdReopen() (int, error) {
+	ids, rc := c.requireIDs()
+	if rc != 0 {
+		return rc, nil
+	}
+	var reason *string
+	if raw := nsOptStr(c.ns, "reason"); raw != nil {
+		if s := pystr.Strip(*raw); s != "" {
+			reason = &s
+		}
+	}
+	author := c.profileAuthor()
+	if author == "" {
+		author = "operator"
+	}
+	suffix := reasonSuffix(reason)
+	var code int
+	err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
+		op := func(tid string) (bool, error) {
+			ok, err := ReopenTask(c.ctx, conn, tid, author)
+			if err != nil || !ok {
+				return false, err
+			}
+			if reason != nil {
+				if _, err := AddComment(c.ctx, conn, tid, author, "REOPENED: "+*reason); err != nil {
+					return false, err
+				}
+			}
+			return true, nil
+		}
+		var err error
+		code, err = bulkApply(c, ids, op, func(tid string) string { return "Reopened " + tid + suffix },
+			func(tid string) string { return "cannot reopen " + tid + " (not done or archived?)" })
+		return err
 	})
 	return code, err
 }

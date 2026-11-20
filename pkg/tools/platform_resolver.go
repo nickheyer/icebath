@@ -21,6 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -654,7 +655,7 @@ func platformMCPInitialize(session *platformSession, endpoint string, deadline f
 		path = "/"
 	}
 	f, t := false, true
-	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DialContext: (&net.Dialer{}).DialContext}
+	transport := &http.Transport{Proxy: nil, DisableKeepAlives: true, DialContext: netpref.DialContext((&net.Dialer{}).DialContext)}
 	client := &http.Client{Transport: transport, Timeout: limit, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequest(http.MethodPost, "http://"+net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port))+path, bytes.NewReader([]byte(body)))
 	if err != nil {

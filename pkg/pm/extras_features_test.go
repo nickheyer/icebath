@@ -53,17 +53,6 @@ func svImportable(t *testing.T, present map[string]bool) {
 	peSwap(t, &anchorImportable, func(_ context.Context, anchor string) bool { return present[anchor] })
 }
 
-// Records every client sync's extras instead of syncing
-func svSynced(t *testing.T) *[][]string {
-	t.Helper()
-	calls := &[][]string{}
-	peSwap(t, &clientSyncVenv, func(_ context.Context, opts SyncVenvOptions) error {
-		*calls = append(*calls, append([]string{}, opts.Extras...))
-		return nil
-	})
-	return calls
-}
-
 func TestSVExtraSupportedUngatedExtraIsTrue(t *testing.T) {
 	isolateHome(t)
 	svGates(t, nil)

@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Header tag per rate limit window in state field order
@@ -151,61 +149,6 @@ func FormatSeconds(seconds float64) string {
 		return fmt.Sprintf("%dh %dm", h, m)
 	}
 	return fmt.Sprintf("%dh", h)
-}
-
-func bar(pct float64, width int) string {
-	filled := int(pct / 100 * float64(width))
-	if filled < 0 {
-		filled = 0
-	}
-	if filled > width {
-		filled = width
-	}
-	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
-}
-
-func bucketLine(label string, b RateLimitBucket, now time.Time) string {
-	if b.Limit <= 0 {
-		return fmt.Sprintf("  %-14s  (no data)", label)
-	}
-	pct := b.UsagePct()
-	return fmt.Sprintf("  %-14s %s %5.1f%%  %s/%s used  (%s left, resets in %s)", label, bar(pct, 20), pct,
-		FormatCount(b.Used()), FormatCount(b.Limit), FormatCount(b.Remaining), FormatSeconds(b.RemainingSecondsNow(now)))
-}
-
-// FormatRateLimitDisplay renders the multi line usage view with warnings at eighty percent
-func FormatRateLimitDisplay(s *RateLimitState, now time.Time) string {
-	if !s.HasData() {
-		return "No rate limit data yet — make an API request first."
-	}
-	age := s.AgeSeconds(now)
-	freshness := "just now"
-	if age >= 60 {
-		freshness = FormatSeconds(age) + " ago"
-	} else if age >= 5 {
-		freshness = fmt.Sprintf("%ds ago", int(age))
-	}
-	label := "Provider"
-	if s.Provider != "" {
-		label = pystr.Title(s.Provider)
-	}
-	labeled := []struct {
-		name string
-		b    RateLimitBucket
-	}{{"Requests/min", s.RequestsMin}, {"Requests/hr", s.RequestsHour}, {"Tokens/min", s.TokensMin}, {"Tokens/hr", s.TokensHour}}
-	lines := []string{fmt.Sprintf("%s Rate Limits (captured %s):", label, freshness), ""}
-	lines = append(lines, bucketLine(labeled[0].name, labeled[0].b, now), bucketLine(labeled[1].name, labeled[1].b, now), "")
-	lines = append(lines, bucketLine(labeled[2].name, labeled[2].b, now), bucketLine(labeled[3].name, labeled[3].b, now))
-	var warnings []string
-	for _, l := range labeled {
-		if l.b.Limit > 0 && l.b.UsagePct() >= 80 {
-			warnings = append(warnings, fmt.Sprintf("  ⚠ %s at %.0f%% — resets in %s", pystr.Lower(l.name), l.b.UsagePct(), FormatSeconds(l.b.RemainingSecondsNow(now))))
-		}
-	}
-	if len(warnings) > 0 {
-		lines = append(append(lines, ""), warnings...)
-	}
-	return strings.Join(lines, "\n")
 }
 
 // FormatRateLimitCompact renders the one line RPM RPH TPM TPH summary for status bars

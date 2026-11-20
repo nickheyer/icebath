@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -87,38 +86,6 @@ func (f *falFixture) accepted() falReply {
 	}}
 }
 
-// Error shape with independently present response and exception statuses
-type statusShape struct {
-	resp, exc     int
-	hasResp, hasE bool
-}
-
-func (s statusShape) Error() string               { return "shape" }
-func (s statusShape) ResponseStatus() (int, bool) { return s.resp, s.hasResp }
-func (s statusShape) ExcStatus() (int, bool)      { return s.exc, s.hasE }
-
-func TestFalExceptionStatusShapes(t *testing.T) {
-	cases := []struct {
-		shape statusShape
-		want  int
-		ok    bool
-	}{
-		{statusShape{resp: 404, hasResp: true}, 404, true},
-		{statusShape{exc: 500, hasE: true}, 500, true},
-		{statusShape{}, 0, false},
-		{statusShape{resp: 200, hasResp: true, exc: 500, hasE: true}, 200, true},
-		{statusShape{exc: 503, hasE: true}, 503, true},
-	}
-	for _, c := range cases {
-		if got, ok := extractHTTPStatus(c.shape); got != c.want || ok != c.ok {
-			t.Fatalf("%+v -> %d %v", c.shape, got, ok)
-		}
-	}
-	if _, ok := extractHTTPStatus(errors.New("plain")); ok {
-		t.Fatal("plain error has a status")
-	}
-}
-
 func TestFalWaitPollsQueueStatusAtQueueCadence(t *testing.T) {
 	f := newFalFixture(t)
 	f.replies = append(f.replies, f.accepted(), falReply{status: 200, body: map[string]any{"status": "IN_QUEUE", "queue_position": 0}},
@@ -170,11 +137,4 @@ func (f *falFixture) snapshot() []*http.Request {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]*http.Request(nil), f.requests...)
-}
-
-// Recorded request body under the fixture lock
-func (f *falFixture) body(i int) string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.bodies[i]
 }

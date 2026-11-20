@@ -31,11 +31,6 @@ func isContextPinned(contextLength, configContextLength any) bool {
 	return ok && shown == pin
 }
 
-// IsContextPinned reports a displayed window equal to the positive model.context_length pin
-func IsContextPinned(contextLength, configContextLength any) bool {
-	return isContextPinned(contextLength, configContextLength)
-}
-
 // Pinned label when the shown window comes from model.context_length, empty otherwise
 func contextPinSuffix(contextLength, configContextLength any) string {
 	if isContextPinned(contextLength, configContextLength) {

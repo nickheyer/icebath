@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -52,8 +51,6 @@ var ValidWorkspaceKinds = map[string]bool{"scratch": true, "worktree": true, "di
 
 // Attachment size cap shared by the tools and CLI
 const KanbanAttachmentMaxBytes = 25 * 1024 * 1024
-
-const isWindows = runtime.GOOS == "windows"
 
 // Bytes decoded as UTF-8 with U+FFFD for undecodable sequences, anything else passed through
 func LossyText(value any) any {

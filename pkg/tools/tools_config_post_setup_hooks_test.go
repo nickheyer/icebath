@@ -320,24 +320,6 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 	}
 }
 
-func TestPostSetupAuthReadyPredicates(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	s, _ := newTestToolsSetup(t, "")
-	unsetEnv(t, "XAI_API_KEY")
-	swapHook(t, &XAIOAuthTokensReader, func(context.Context, string) error { return errors.New("none") })
-	if postSetupAuthReady["xai_grok"](s) {
-		t.Fatal("xai ready without credentials")
-	}
-	writeHomeEnv(t, s.home(), map[string]string{"XAI_API_KEY": "k"})
-	if !postSetupAuthReady["xai_grok"](s) {
-		t.Fatal("xai key not read")
-	}
-	swapHook(t, &ToolsConfigHooks.CodexAuthStatus, func(context.Context, string) map[string]any { return map[string]any{"logged_in": "yes"} })
-	if !postSetupAuthReady["openai_codex"](s) {
-		t.Fatal("codex login not read")
-	}
-}
-
 func TestCuaDriverHookRunsTheInstaller(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestToolsSetup(t, "")
@@ -411,59 +393,6 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 	s, out = newTestToolsSetup(t, "")
 	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": 3}); code != 2 || out.String() != "✗ Unknown post-setup key: 3. Valid keys: (none)\n" {
 		t.Fatalf("no keys %d %q", code, out.String())
-	}
-}
-
-func TestPostSetupInstalledChecks(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	s, _ := newTestToolsSetup(t, "")
-	if !s.PostSetupAlreadyInstalled("chromium") {
-		t.Fatal("unchecked key read as missing")
-	}
-	for _, c := range []struct {
-		ready bool
-		err   error
-		want  bool
-	}{{true, nil, true}, {false, nil, false}, {false, errors.New("x"), true}} {
-		swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { return c.ready, c.err })
-		if got := s.PostSetupAlreadyInstalled("cua_driver"); got != c.want {
-			t.Fatalf("%+v got %v", c, got)
-		}
-	}
-	swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { panic("crash") })
-	if !s.PostSetupAlreadyInstalled("cua_driver") {
-		t.Fatal("crashing check read as missing")
-	}
-	swapHook(t, &postSetupModuleImportable, func(context.Context, string) bool { panic("probe crash") })
-	if s.moduleInstalled("kittentts") {
-		t.Fatal("crashing probe read as installed")
-	}
-	var probed []string
-	swapHook(t, &postSetupModuleImportable, func(_ context.Context, m string) bool { probed = append(probed, m); return m == "kittentts" })
-	for key, want := range map[string]bool{"faster_whisper": false, "kittentts": true} {
-		if got, err := postSetupReady[key](s); err != nil || got != want {
-			t.Fatalf("%s ready %v %v", key, got, err)
-		}
-	}
-	slices.Sort(probed)
-	if !slices.Equal(probed, []string{"faster_whisper", "kittentts"}) {
-		t.Fatalf("probed %v", probed)
-	}
-	swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { return "/bin/lightpanda" })
-	if ok, _ := postSetupReady["lightpanda"](s); !ok {
-		t.Fatal("lightpanda binary not read")
-	}
-	swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { panic("crash") })
-	if ok, _ := postSetupReady["lightpanda"](s); ok {
-		t.Fatal("crashing lightpanda lookup read as installed")
-	}
-	swapHook(t, &ToolsConfigHooks.LightpandaBinary, nil)
-	if ok, _ := postSetupReady["lightpanda"](s); ok {
-		t.Fatal("unwired lightpanda lookup read as installed")
-	}
-	swapHook(t, &ToolsConfigHooks.CuaDriverInstallReady, func(*Env) (bool, error) { return true, nil })
-	if ok, err := postSetupReady["cua_driver"](s); !ok || err != nil {
-		t.Fatalf("cua ready %v %v", ok, err)
 	}
 }
 

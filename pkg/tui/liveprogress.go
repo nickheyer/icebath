@@ -14,8 +14,17 @@ type todoItem struct {
 	Status  string
 }
 
+// Collapsed paste of a sent prompt, the chip the row shows, the text the model received and the digest that tells two bodies apart
+type pasteSection struct {
+	Label  string
+	Text   string
+	Digest string
+}
+
 // Transcript row, a role's text with the trail details a turn attached to it
 type msg struct {
+	// Identity the transcript gives the row when it first lays it out, what the user opened or closed in it kept under it
+	ID        uint64
 	CreatedAt *float64
 	Info      *tuigateway.SessionInfo
 	Kind      string
@@ -33,6 +42,58 @@ type msg struct {
 	Todos                  []todoItem
 	TodoIncomplete         bool
 	TodoCollapsedByDefault bool
+	// Image files of the gateway host drawn under the row, the revision telling two pictures at one path apart, the rows each may take when not the default
+	Images        []string
+	ImageRevision string
+	ImageRows     int
+	// Bodies behind the paste chips of a sent prompt, each a section the row unfolds
+	Pastes []pasteSection
+}
+
+// Task list item at its nesting depth
+type todoRow struct {
+	item  todoItem
+	depth int
+}
+
+// Items in depth first order with parents before their children, an item whose parent is missing, itself or part of a cycle at the root
+func todoTree(todos []todoItem) []todoRow {
+	ids := map[string]bool{}
+	for _, t := range todos {
+		ids[t.ID] = true
+	}
+	kids := map[string][]todoItem{}
+	var roots []todoItem
+	for _, t := range todos {
+		if t.Parent != "" && ids[t.Parent] && t.Parent != t.ID {
+			kids[t.Parent] = append(kids[t.Parent], t)
+		} else {
+			roots = append(roots, t)
+		}
+	}
+	out := make([]todoRow, 0, len(todos))
+	seen := map[string]bool{}
+	var walk func(item todoItem, depth int)
+	walk = func(item todoItem, depth int) {
+		if seen[item.ID] {
+			return
+		}
+		seen[item.ID] = true
+		out = append(out, todoRow{item: item, depth: depth})
+		for _, kid := range kids[item.ID] {
+			walk(kid, depth+1)
+		}
+	}
+	for _, root := range roots {
+		walk(root, 0)
+	}
+	for _, t := range todos {
+		if !seen[t.ID] {
+			seen[t.ID] = true
+			out = append(out, todoRow{item: t})
+		}
+	}
+	return out
 }
 
 // Open items, those pending or in progress
@@ -81,7 +142,7 @@ func isBarrierMessage(m *msg) bool {
 		return true
 	}
 	switch m.Kind {
-	case "intro", "panel", "diff":
+	case "intro", "panel", "diff", "image":
 		return true
 	}
 	return m.Role != "" && m.Role != "system" || m.Text != ""

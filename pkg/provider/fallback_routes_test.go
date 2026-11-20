@@ -2,23 +2,9 @@ package provider
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
-
-func fallbackResolver(t *testing.T, dotenv string) *resolver {
-	t.Helper()
-	h := t.TempDir()
-	if err := os.WriteFile(filepath.Join(h, ".env"), []byte(dotenv), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", h)
-	return newResolver(context.Background(), config.Tree{}, config.NewSecrets(h), h, nil)
-}
 
 func TestFallbackChainDedupsCanonicalIDAndAlias(t *testing.T) {
 	cfg := map[string]any{"fallback_providers": []any{

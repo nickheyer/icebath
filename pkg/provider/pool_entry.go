@@ -71,9 +71,6 @@ var poolFieldNames = map[string]bool{
 	"agent_key": true, "agent_key_expires_at": true, "request_count": true, "model_cooldowns": true,
 }
 
-// Fields always written on to_dict even when cleared
-var poolClearStatusKeys = []string{"last_status", "last_status_at", "last_error_code", "last_error_reason", "last_error_message", "last_error_reset_at"}
-
 // PooledCredential is one row of a provider credential pool
 type PooledCredential struct {
 	Provider          string

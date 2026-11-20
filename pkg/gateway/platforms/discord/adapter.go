@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -170,7 +171,7 @@ func (a *DiscordAdapter) handleBotTaskDone(ctx context.Context, task *botTask) {
 	}
 	message := "Discord gateway task exited without an exception"
 	if task.err != nil {
-		message = fmt.Sprintf("Discord gateway task exited: %s", task.err)
+		message = "Discord gateway task exited: " + cmp.Or(discordProxyError(ctx, task.err), task.err.Error())
 	}
 	pkgLog().Error(fmt.Sprintf("[%s] %s", a.Name(), message))
 	a.SetFatalError(ctx, "discord_gateway_task_exited", message, true)
@@ -199,11 +200,21 @@ func (e *privilegedIntentsRequired) Error() string {
 		"If this is not possible, then consider disabling the privileged intents instead."
 }
 
-// Maps a startup error to its fatal code, message and retryability by type, unknown types stay retryable
-func (a *DiscordAdapter) classifyConnectException(err error) (string, string, bool) {
+// Kind of a failure and the proxy's host when the proxy URL the Discord connections use holds a secret the raw error text could repeat, empty otherwise
+func discordProxyError(ctx context.Context, err error) string {
+	proxyURL, proxyErr := gateway.ResolveProxyURL(ctx, "DISCORD_PROXY", nil, "")
+	if proxyErr != nil {
+		return ""
+	}
+	return gateway.DescribeProxyError(err, proxyURL)
+}
+
+// Maps a startup error to its fatal code, message and retryability by type, unknown types stay retryable and shown stands for the error text when set
+func (a *DiscordAdapter) classifyConnectException(err error, shown string) (string, string, bool) {
+	text := cmp.Or(shown, err.Error())
 	var login *loginFailure
 	if errors.As(err, &login) {
-		return "discord_auth_error", fmt.Sprintf("Discord bot token rejected: %s. The token is invalid or was revoked — regenerate it in the Discord Developer Portal and update DISCORD_BOT_TOKEN.", err), false
+		return "discord_auth_error", fmt.Sprintf("Discord bot token rejected: %s. The token is invalid or was revoked — regenerate it in the Discord Developer Portal and update DISCORD_BOT_TOKEN.", text), false
 	}
 	var intents *privilegedIntentsRequired
 	if errors.As(err, &intents) {
@@ -212,7 +223,7 @@ func (a *DiscordAdapter) classifyConnectException(err error) (string, string, bo
 		a.mu.Unlock()
 		return "discord_intents_required", formatPrivilegedIntentsGuidance(needsServerMembersIntent(users, roles)), false
 	}
-	return "discord_connect_error", fmt.Sprintf("Discord startup failed: %s", err), true
+	return "discord_connect_error", "Discord startup failed: " + text, true
 }
 
 func keysOf(s strSet) []string {

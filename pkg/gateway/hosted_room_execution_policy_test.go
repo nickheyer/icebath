@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -28,34 +26,6 @@ func roomTestPolicy(t *testing.T, approvalMode string, maxTurns int) *pyjson.Obj
 		t.Fatal(err)
 	}
 	return policy
-}
-
-// Recipient dispatch for the peer catalog advertising policy
-func roomTestDispatch(t *testing.T, policy *pyjson.Object) *HostedMemberDispatch {
-	t.Helper()
-	mapping, err := CatalogMapping(context.Background(), CatalogOptions{InstallationID: "install-peer",
-		PersistentProcess: true, TargetProfile: "reviewer", ExecutionPolicy: policy})
-	if err != nil {
-		t.Fatal(err)
-	}
-	catalog, err := GatewayRoomCatalogFromMapping(mapping)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt := "Review the user's patch."
-	sum := sha256.Sum256([]byte(prompt))
-	digest, _ := policy.Get("policy_digest")
-	dispatch, err := HostedMemberDispatchFromMapping(map[string]any{
-		"protocol_version": int64(2), "room_id": "room-1", "home_install_id": "install-home",
-		"authority_gateway_id": "gateway-home", "authority_epoch": int64(1), "member_id": "member-reviewer",
-		"target_install_id": "install-peer", "target_profile": "reviewer", "task_id": "task-1",
-		"execution_generation": int64(1), "source_event_seq": int64(1), "cancellation_scope_id": "cancel-1",
-		"prompt": prompt, "prompt_digest": hex.EncodeToString(sum[:]), "capability_digest": catalog.CatalogDigest,
-		"execution_policy_digest": digest, "trace_id": "trace-1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dispatch
 }
 
 func TestExecutionPolicyDigestCoversToolsApprovalsAndIterationLimit(t *testing.T) {

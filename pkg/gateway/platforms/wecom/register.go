@@ -16,10 +16,14 @@ func sendVia(ctx context.Context, adapter gateway.PlatformAdapter, chatID, messa
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if live {
-			return gateway.SendError("WeCom live adapter send failed: " + errText(err)), nil
+		wsURL := defaultWSURL
+		if wecom, ok := adapter.(*WeComAdapter); ok && wecom != nil {
+			wsURL = wecom.wsURL
 		}
-		return gateway.SendError("WeCom send failed: " + errText(err)), nil
+		if live {
+			return gateway.SendError("WeCom live adapter send failed: " + sendErrText(ctx, err, wsURL)), nil
+		}
+		return gateway.SendError("WeCom send failed: " + sendErrText(ctx, err, wsURL)), nil
 	}
 	if result.Success {
 		return map[string]any{"success": true, "platform": "wecom", "chat_id": chatID, "message_id": result.MessageID}, nil
@@ -37,19 +41,19 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return sendVia(ctx, live, chatID, message, true)
 		}
 	}
-	fail := func(err error) (map[string]any, error) {
+	fail := func(err error, wsURL string) (map[string]any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("WeCom send failed: " + errText(err)), nil
+		return gateway.SendError("WeCom send failed: " + sendErrText(ctx, err, wsURL)), nil
 	}
 	adapter, err := NewWeComAdapter(ctx, pconfig)
 	if err != nil {
-		return fail(err)
+		return fail(err, defaultWSURL)
 	}
 	connected, err := adapter.Connect(ctx, false)
 	if err != nil {
-		return fail(err)
+		return fail(err, adapter.wsURL)
 	}
 	if !connected {
 		reason := "unknown error"
@@ -60,7 +64,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	result, sendErr := sendVia(ctx, adapter, chatID, message, false)
 	if err := adapter.Disconnect(ctx); err != nil {
-		return fail(err)
+		return fail(err, adapter.wsURL)
 	}
 	return result, sendErr
 }

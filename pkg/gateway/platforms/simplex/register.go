@@ -1,6 +1,7 @@
 package simplex
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"time"
@@ -99,7 +100,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("SimpleX send failed: " + pyrepr.ExceptionMessage(err)), nil
+		return gateway.SendError("SimpleX send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(pyrepr.Str(wsURL))), pyrepr.ExceptionMessage(err))), nil
 	}
 	command, err := sendCmd(chatID, []any{pyjson.ObjectOf("msgContent", pyjson.ObjectOf("type", "text", "text", message))})
 	if err != nil {

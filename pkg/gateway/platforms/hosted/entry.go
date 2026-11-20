@@ -47,6 +47,8 @@ func entryValue(name, key string, value any) (any, error) {
 			return standaloneSendPolicy(o)
 		}
 		return value, nil
+	case "setup_vars":
+		return setupVars(name, value)
 	case "env_overrides":
 		items, ok := value.([]any)
 		if !ok {
@@ -86,10 +88,8 @@ func entryValue(name, key string, value any) (any, error) {
 	case "ensure_deps_fn":
 		return func(ctx context.Context) (bool, error) { return truthyCall(ctx, f) }, nil
 	case "setup_fn":
-		return func(ctx context.Context) error {
-			_, _, err := f.CallWith(ctx, nil, nil, plugins.HostedCallOptions{Terminal: true})
-			return err
-		}, nil
+		return nil, &gateway.PyError{Kind: "TypeError", Msg: "platform " + name + " passed setup_fn, a function that needs a terminal a plugin has none of; " +
+			"declare setup_vars and setup_instructions and icebath asks the questions and saves the answers"}
 	case "env_enablement_fn":
 		return func(ctx context.Context) map[string]any {
 			result, err := f.Call(ctx, nil, nil)
@@ -258,4 +258,28 @@ func standaloneSendPolicy(o *plugins.HostedObject) (*gateway.StandaloneSendPolic
 		}
 	}
 	return policy, nil
+}
+
+// Setup questions of a plugin platform, each a mapping naming the variable its answer is saved under
+func setupVars(name string, value any) ([]gateway.SetupVar, error) {
+	items, ok := value.([]any)
+	if !ok && value != nil {
+		return nil, &gateway.PyError{Kind: "TypeError", Msg: "platform " + name + " setup_vars must be a list of mappings"}
+	}
+	vars := make([]gateway.SetupVar, 0, len(items))
+	for _, item := range items {
+		fields := plugins.FieldsOf(item)
+		env, _ := fields["name"].(string)
+		if fields == nil || env == "" {
+			return nil, &gateway.PyError{Kind: "TypeError", Msg: "platform " + name + " setup_vars entries must name the variable their answer is saved under"}
+		}
+		prompt, _ := fields["prompt"].(string)
+		if prompt == "" {
+			prompt = env
+		}
+		help, _ := fields["help"].(string)
+		vars = append(vars, gateway.SetupVar{Name: env, Prompt: prompt, Help: help,
+			Password: config.PyTruthy(fields["password"]), IsAllowlist: config.PyTruthy(fields["is_allowlist"])})
+	}
+	return vars, nil
 }

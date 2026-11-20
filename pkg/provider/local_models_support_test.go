@@ -150,13 +150,6 @@ func (s *lmRangeServer) slow(d time.Duration, chunk int) {
 	s.mu.Unlock()
 }
 
-// Range headers the server received, an empty string for a plain GET
-func (s *lmRangeServer) seen() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.requests...)
-}
-
 func (s *lmRangeServer) handle(w http.ResponseWriter, r *http.Request) {
 	s.serving.Lock()
 	defer s.serving.Unlock()

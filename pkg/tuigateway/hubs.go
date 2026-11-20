@@ -109,7 +109,7 @@ type PluginsListResult struct {
 type PluginsAction string
 
 func (PluginsAction) Values() []string {
-	return []string{"list", "toggle", "install", "inspect", "update", "remove", "settings", "presence"}
+	return []string{"list", "toggle", "install", "inspect", "update", "update_all", "remove", "settings", "presence"}
 }
 
 // Plugin hub action, key or name and enable for toggle, identifier, repo or catalog name for install and inspect
@@ -242,6 +242,26 @@ type PluginScanFinding struct {
 	Description string `json:"description"`
 }
 
+// Outcome of one plugin an update of every plugin moved or tried to move
+type PluginUpdateStatus string
+
+func (PluginUpdateStatus) Values() []string {
+	return []string{"updated", "current", "failed", "needs_review"}
+}
+
+// One plugin an update of every plugin handled, with the refusal or failure text when it did not update
+type PluginUpdateRow struct {
+	Name   string             `json:"name"`
+	Status PluginUpdateStatus `json:"status"`
+	Detail string             `json:"detail"`
+}
+
+// One plugin an update of every plugin left alone and why
+type PluginUpdateSkip struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
 // Answer of a plugin hub action, the rows and counts for list, the outcome fields of the others
 type PluginsManageResult struct {
 	Plugins               []AgentPluginRow        `json:"plugins,omitzero"`
@@ -275,6 +295,9 @@ type PluginsManageResult struct {
 	Agent                 *bool                   `json:"agent,omitzero"`
 	AgentName             *string                 `json:"agent_name,omitzero"`
 	Insecure              *bool                   `json:"insecure,omitzero"`
+	Results               []PluginUpdateRow       `json:"results,omitzero"`
+	Skipped               []PluginUpdateSkip      `json:"skipped,omitzero"`
+	Current               *int64                  `json:"current,omitzero"`
 }
 
 // Skills hub, the profile's skills by category or search, browse, inspect and install from the hub
@@ -286,7 +309,7 @@ var SkillsReload = NewMethod[SkillsReloadParams, SkillsReloadResult]("skills.rel
 // Loaded plugin manager entries, the flat view the chat commands print
 var PluginsList = NewMethod[PluginsListParams, PluginsListResult]("plugins.list")
 
-// Plugins hub, list, toggle, install, inspect, update, remove, settings and catalog presence
+// Plugins hub, list, toggle, install, inspect, update of one or every plugin, remove, settings and catalog presence
 var PluginsManage = NewMethod[PluginsManageParams, PluginsManageResult]("plugins.manage")
 
 // A skill root changed elsewhere, the UI fetches the command catalog again

@@ -260,7 +260,7 @@ func (a *GoogleChatAdapter) resolveBotUserID(ctx context.Context) string {
 	for _, space := range spaces {
 		members, err := a.api.listMembers(ctx, space, 50)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("[GoogleChat] members.list failed on %s: %s", space, redactSensitive(err.Error())))
+			pkgLog().Debug(fmt.Sprintf("[GoogleChat] members.list failed on %s: %s", space, excText(err)))
 			continue
 		}
 		list, _ := members["memberships"].([]any)
@@ -277,7 +277,7 @@ func (a *GoogleChatAdapter) resolveBotUserID(ctx context.Context) string {
 
 // Logs a redacted connect failure, records it as fatal and reports failure
 func (a *GoogleChatAdapter) connectFailed(ctx context.Context, logFmt string, err error, code string, retryable bool) (bool, error) {
-	msg := redactSensitive(err.Error())
+	msg := excText(err)
 	pkgLog().Error(fmt.Sprintf(logFmt, msg))
 	a.SetFatalError(ctx, code, msg, retryable)
 	return false, nil
@@ -423,7 +423,7 @@ func (a *GoogleChatAdapter) runSupervisor(ctx context.Context) error {
 			return nil
 		}
 		attempt++
-		pkgLog().Warn(fmt.Sprintf("[GoogleChat] Pub/Sub stream died (attempt %d/%d): %s", attempt, maxReconnectAttempts, redactSensitive(err.Error())))
+		pkgLog().Warn(fmt.Sprintf("[GoogleChat] Pub/Sub stream died (attempt %d/%d): %s", attempt, maxReconnectAttempts, excText(err)))
 		if attempt >= maxReconnectAttempts {
 			a.SetFatalError(ctx, "pubsub_reconnect_exhausted", fmt.Sprintf("Pub/Sub reconnect failed %d times; giving up", attempt), false)
 			return nil
@@ -466,7 +466,7 @@ func (a *GoogleChatAdapter) handlePubSubMessage(ctx context.Context, path string
 	}
 	ack := func() {
 		if err := a.api.acknowledge(ctx, path, message.AckID); err != nil {
-			pkgLog().Debug("[GoogleChat] ack failed", "error", redactSensitive(err.Error()))
+			pkgLog().Debug("[GoogleChat] ack failed", "error", excText(err))
 		}
 	}
 	data, err := base64.StdEncoding.DecodeString(message.Message.Data)

@@ -47,6 +47,10 @@ func SaveTrajectory(trajectory []any, model string, completed bool, filename str
 	entry.Set("timestamp", naiveISOFormat(trajectoryNow()))
 	entry.Set("model", model)
 	entry.Set("completed", completed)
+	// A trajectory file is durable and may hold tool arguments or user text, so it is redacted whatever the display toggle says
+	if safe, ok := RedactTrajectoryValue(entry).(*pyjson.Object); ok {
+		entry = safe
+	}
 	if err := appendTrajectoryLine(entry, filename); err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to save trajectory: %s", err))
 		return

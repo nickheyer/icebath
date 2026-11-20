@@ -3,6 +3,7 @@ package wm
 import (
 	"image/color"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -357,6 +358,97 @@ func (m *Model) content(e *entry, w, h int, dim float64) *uv.Buffer {
 	}
 	return e.tinted.Buffer
 }
+
+// Address under a content cell of the card, the hyperlink painted there or else a web or file address written out in the text around it
+func (e *entry) linkAt(x, y int) string {
+	if e.raw.Buffer == nil {
+		return ""
+	}
+	if c := e.raw.CellAt(x, y); c != nil && c.Width == 0 && x > 0 {
+		x--
+	}
+	c := e.raw.CellAt(x, y)
+	if c == nil {
+		return ""
+	}
+	if c.Link.URL != "" {
+		return c.Link.URL
+	}
+	return e.writtenLinkAt(x, y)
+}
+
+// Characters that end an address written out in text
+const linkBoundary = "<>\"'` "
+
+// Character of a cell when it can be part of an address written out in text, false for a wide, blank or delimiting one
+func (e *entry) linkChar(x, y int) (byte, bool) {
+	c := e.raw.CellAt(x, y)
+	if c == nil || c.Width != 1 || len(c.Content) != 1 {
+		return 0, false
+	}
+	ch := c.Content[0]
+	return ch, ch >= 0x21 && ch <= 0x7e && !strings.ContainsRune(linkBoundary, rune(ch))
+}
+
+// Web or file address the text of a row spells out around a cell, without the punctuation of the sentence it ends
+func (e *entry) writtenLinkAt(x, y int) string {
+	if _, ok := e.linkChar(x, y); !ok {
+		return ""
+	}
+	lo, hi := x, x
+	for lo > 0 {
+		if _, ok := e.linkChar(lo-1, y); !ok {
+			break
+		}
+		lo--
+	}
+	for hi < e.raw.Width()-1 {
+		if _, ok := e.linkChar(hi+1, y); !ok {
+			break
+		}
+		hi++
+	}
+	run := make([]byte, 0, hi-lo+1)
+	for i := lo; i <= hi; i++ {
+		ch, _ := e.linkChar(i, y)
+		run = append(run, ch)
+	}
+	token, at := string(run), x-lo
+	start, end := -1, len(token)
+	for _, m := range linkScheme.FindAllStringIndex(token, -1) {
+		if m[0] > at {
+			end = m[0]
+			break
+		}
+		start = m[0]
+	}
+	if start < 0 {
+		return ""
+	}
+	url := token[start:end]
+	for url != "" {
+		last := url[len(url)-1]
+		if strings.IndexByte(".,;:!?", last) >= 0 {
+			url = url[:len(url)-1]
+			continue
+		}
+		opener, closes := linkOpeners[last]
+		if !closes || strings.Count(url, string(last)) <= strings.Count(url, string(opener)) {
+			break
+		}
+		url = url[:len(url)-1]
+	}
+	if at >= start+len(url) {
+		return ""
+	}
+	return url
+}
+
+// Start of a web or file address
+var linkScheme = regexp.MustCompile(`(?:https?|file)://`)
+
+// Bracket that opens what each closing bracket ends, a closing one with none before it not part of an address
+var linkOpeners = map[byte]byte{')': '(', ']': '[', '}': '{'}
 
 // Reports whether a card keeps its last drawing clipped to its frame while its size moves or the screen just resized
 func (m *Model) holding(e *entry) bool {

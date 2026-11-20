@@ -1,7 +1,9 @@
 package tuiserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -456,11 +458,101 @@ func pluginsPresence(ctx context.Context, rid any, params map[string]any) (map[s
 	return ok(rid, map[string]any{"presence": found}), nil
 }
 
+// One plugin of an update of every plugin, its outcome and the refusal or failure text
+type pluginUpdateOutcome struct {
+	name, status, detail string
+}
+
+// Unattended update of one plan row, a consent or scan refusal left for review and an install held on a chosen commit left alone
+func applyPluginUpdate(ctx context.Context, name string) (outcome pluginUpdateOutcome) {
+	failed := func(detail string) pluginUpdateOutcome {
+		pkgLog().Warn(fmt.Sprintf("update of plugin %s failed: %s", name, detail))
+		return pluginUpdateOutcome{name, "failed", detail}
+	}
+	defer func() {
+		if failure := recover(); failure != nil {
+			outcome = failed(failureText(failure))
+		}
+	}()
+	result, err := plugins.UnattendedUpdateUserPlugin(ctx, name, false, false)
+	if err != nil {
+		return failed(errorMessage(err))
+	}
+	detail := errorOr(result, "")
+	switch {
+	case pyrepr.Truthy(result["held"]):
+		return pluginUpdateOutcome{name, "held", detail}
+	case pyrepr.Truthy(result["consent_required"]) || pyrepr.Truthy(result["scan_blocked"]):
+		return pluginUpdateOutcome{name, "needs_review", detail}
+	case !pyrepr.Truthy(result["ok"]):
+		return pluginUpdateOutcome{name, "failed", detail}
+	}
+	if pyrepr.Truthy(result["name"]) {
+		name = pyrepr.Str(result["name"])
+	}
+	if pyrepr.Truthy(result["unchanged"]) {
+		return pluginUpdateOutcome{name, "current", ""}
+	}
+	return pluginUpdateOutcome{name, "updated", ""}
+}
+
+// Rows of a recorded update check as the plan reads them
+func checkedPluginRows(report []byte) ([]*plugins.CheckResult, error) {
+	var listed []struct {
+		Name            string `json:"name"`
+		Class           string `json:"class"`
+		Current         string `json:"current"`
+		Latest          string `json:"latest"`
+		UpdateAvailable *bool  `json:"update_available"`
+		NeedsFixing     string `json:"needs_fixing"`
+		MinIcebath      string `json:"min_icebath"`
+		Reason          string `json:"reason"`
+	}
+	if err := json.Unmarshal(report, &listed); err != nil {
+		return nil, fmt.Errorf("the plugin update check answered no rows: %w", err)
+	}
+	rows := make([]*plugins.CheckResult, 0, len(listed))
+	for _, row := range listed {
+		rows = append(rows, &plugins.CheckResult{Name: row.Name, Class: row.Class, Current: row.Current, Latest: row.Latest,
+			UpdateAvailable: row.UpdateAvailable, NeedsFixing: row.NeedsFixing, MinIcebath: row.MinIcebath, Reason: row.Reason})
+	}
+	return rows, nil
+}
+
+// Checks every installed plugin, records the check and updates each one a plain update would move, accepting nothing on the user's behalf
+func pluginsUpdateAll(ctx context.Context, rid any, _ map[string]any) (map[string]any, error) {
+	if err := ensurePluginActivationListener(ctx); err != nil {
+		return nil, err
+	}
+	var report bytes.Buffer
+	if err := plugins.CmdCheckUpdates(ctx, true, &report); err != nil {
+		return nil, err
+	}
+	checked, err := checkedPluginRows(report.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	plan := plugins.PlanUpdateAll(checked)
+	results, skipped := []map[string]any{}, []map[string]any{}
+	for _, skip := range plan.Skipped {
+		skipped = append(skipped, map[string]any{"name": skip.Row.Name, "reason": skip.Reason})
+	}
+	for _, row := range plan.Movable {
+		applied := applyPluginUpdate(ctx, row.Name)
+		if applied.status == "held" {
+			skipped = append(skipped, map[string]any{"name": applied.name, "reason": applied.detail})
+			continue
+		}
+		results = append(results, map[string]any{"name": applied.name, "status": applied.status, "detail": applied.detail})
+	}
+	return ok(rid, map[string]any{"results": results, "skipped": skipped, "current": plan.Current}), nil
+}
+
 // Action table of plugins.manage
 var pluginsActions = map[string]pluginsAction{
 	"list": pluginsListRows, "presence": pluginsPresence,
 	"toggle": pluginsToggle, "install": pluginsInstall, "inspect": pluginsInspect,
-	"update": pluginsUpdate, "remove": pluginsRemove, "settings": pluginsSettings,
+	"update": pluginsUpdate, "update_all": pluginsUpdateAll, "remove": pluginsRemove, "settings": pluginsSettings,
 }
 
 // Dispatches the fitted action param, list by default, through the table, an action the table lacks answering 4017

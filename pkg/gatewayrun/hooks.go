@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -41,15 +40,15 @@ func skipHook(name, reason string) {
 // One valid hook dir with its name, events, handler and description
 type loadedHookDir struct {
 	name        string
-	events      any
+	events      []string
 	handle      hookHandler
 	description any
 }
 
-// Hook of a valid dir with its handler imported in the plugin host, nil with the reason printed otherwise
+// Hook of a directory whose HOOK.yaml names the command that handles its events, nil with the reason printed for a directory that holds no usable hook
 func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
-	manifestPath, handlerPath := filepath.Join(hookDir, "HOOK.yaml"), filepath.Join(hookDir, "handler.py")
-	if !pathExists(manifestPath) || !pathExists(handlerPath) {
+	manifestPath := filepath.Join(hookDir, "HOOK.yaml")
+	if !pathExists(manifestPath) {
 		return nil, nil
 	}
 	raw, err := os.ReadFile(manifestPath)
@@ -73,40 +72,48 @@ func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
 	if v, ok := manifest["name"]; ok {
 		hookName = pyrepr.Str(v)
 	}
-	var events any = []any{}
-	if v, ok := manifest["events"]; ok {
-		events = v
-	}
-	if !pyrepr.Truthy(events) {
-		skipHook(hookName, "no events declared")
-		return nil, nil
-	}
-	handle, reason, err := plugins.LoadGatewayHook(ctx, hookName, handlerPath)
+	events, err := hookEventNames(manifest["events"])
 	if err != nil {
 		return nil, err
 	}
-	if reason != "" {
-		skipHook(hookName, reason)
+	if len(events) == 0 {
+		skipHook(hookName, "no events declared")
 		return nil, nil
 	}
+	declared, _ := manifest["command"].(string)
+	if pystr.Strip(declared) == "" {
+		if pathExists(filepath.Join(hookDir, "handler.py")) {
+			skipHook(hookName, "handler.py is Python source, which is not loaded; name the handler in HOOK.yaml as `command:`, it receives the event as JSON on standard input")
+		} else {
+			skipHook(hookName, "HOOK.yaml names no command")
+		}
+		return nil, nil
+	}
+	command, err := plugins.ResolveDirectoryHookCommand(hookDir, declared)
+	if err != nil {
+		skipHook(hookName, err.Error())
+		return nil, nil
+	}
+	for _, event := range events {
+		consented, err := plugins.DirectoryHookConsented(ctx, event, command)
+		if err != nil {
+			return nil, err
+		}
+		if !consented {
+			skipHook(hookName, fmt.Sprintf("its command is not approved for %s in %s; use --accept-hooks, ICEBATH_ACCEPT_HOOKS=1 or hooks_auto_accept: true",
+				event, plugins.ShellHookAllowlistPath(ctx)))
+			return nil, nil
+		}
+	}
+	timeout := plugins.DirectoryHookTimeout(manifest["timeout"])
 	var description any = ""
 	if v, ok := manifest["description"]; ok {
 		description = v
 	}
-	return &loadedHookDir{name: hookName, events: events, handle: hostedHookHandler(handle), description: description}, nil
-}
-
-// Handler calling the hosted handle, a TypeError on every call when the attribute is not callable
-func hostedHookHandler(handle any) hookHandler {
-	fn, ok := handle.(*plugins.HostedCallable)
-	if !ok {
-		return func(context.Context, string, map[string]any) (any, error) {
-			return nil, &pyTypeError{msg: fmt.Sprintf("hook handler is %s where a function was expected", errchain.Kind(handle))}
-		}
+	handle := func(ctx context.Context, eventType string, hookContext map[string]any) (any, error) {
+		return plugins.RunDirectoryHook(ctx, eventType, command, timeout, hookContext)
 	}
-	return func(ctx context.Context, eventType string, hookContext map[string]any) (any, error) {
-		return fn.Call(ctx, []any{eventType, hookContext}, nil)
-	}
+	return &loadedHookDir{name: hookName, events: events, handle: handle, description: description}, nil
 }
 
 // Whether the path exists
@@ -115,9 +122,11 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-// Event names a manifest events value iterates to, a TypeError for a value Python cannot iterate
+// Event names a manifest events value lists, a TypeError for a value that is no list
 func hookEventNames(events any) ([]string, error) {
 	switch v := events.(type) {
+	case nil:
+		return nil, nil
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, e := range v {
@@ -125,18 +134,10 @@ func hookEventNames(events any) ([]string, error) {
 		}
 		return out, nil
 	case string:
-		out := make([]string, 0, len(v))
-		for _, r := range v {
-			out = append(out, string(r))
+		if pystr.Strip(v) == "" {
+			return nil, nil
 		}
-		return out, nil
-	case map[string]any:
-		out := make([]string, 0, len(v))
-		for k := range v {
-			out = append(out, k)
-		}
-		sort.Strings(out)
-		return out, nil
+		return []string{pystr.Strip(v)}, nil
 	}
 	return nil, &pyTypeError{msg: fmt.Sprintf("hook events are %s where a list was expected", errchain.Kind(events))}
 }
@@ -160,7 +161,7 @@ func (h *HookRegistry) LoadedHooks() []map[string]any {
 // Registers the always on built in hooks, of which none ship
 func (h *HookRegistry) registerBuiltinHooks() {}
 
-// Registers the built in hooks then loads every valid hook dir under the active profile's hooks dir
+// Registers the built in hooks then loads every valid hook dir under the hooks dir of the active profile
 func (h *HookRegistry) discoverAndLoad(ctx context.Context) error {
 	h.registerBuiltinHooks()
 	hooksDir := resolveHooksDir(ctx)
@@ -191,16 +192,16 @@ func (h *HookRegistry) discoverAndLoad(ctx context.Context) error {
 		if loaded == nil {
 			continue
 		}
-		names, err := hookEventNames(loaded.events)
-		if err != nil {
-			return err
-		}
-		for _, event := range names {
+		for _, event := range loaded.events {
 			h.handlers[event] = append(h.handlers[event], loaded.handle)
 		}
+		listed := make([]any, len(loaded.events))
+		for i, event := range loaded.events {
+			listed[i] = event
+		}
 		h.loadedHooks = append(h.loadedHooks, map[string]any{"name": loaded.name, "description": loaded.description,
-			"events": loaded.events, "path": hookDir})
-		fmt.Fprintf(os.Stdout, "[hooks] Loaded hook '%s' for events: %s\n", loaded.name, pyrepr.Str(loaded.events))
+			"events": listed, "path": hookDir})
+		fmt.Fprintf(os.Stdout, "[hooks] Loaded hook '%s' for events: %s\n", loaded.name, pyrepr.Str(listed))
 	}
 	return nil
 }

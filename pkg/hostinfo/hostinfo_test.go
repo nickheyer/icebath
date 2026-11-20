@@ -15,20 +15,6 @@ func TestNormalizeAndWindowsNativeArch(t *testing.T) {
 	}
 }
 
-func TestParseCPUInfo(t *testing.T) {
-	text := "processor\t: 0\nvendor_id\t: GenuineIntel\nmodel name\t: Intel(R) Core(TM) i9\n"
-	if ParseCPUInfo(text, "") != "Intel(R) Core(TM) i9" || ParseCPUInfoVendor(text) != "GenuineIntel" {
-		t.Fatal("x86")
-	}
-	arm := "processor\t: 0\nCPU implementer\t: 0x4e\nHardware\t: NVIDIA GB10\n"
-	if ParseCPUInfo(arm, "") != "NVIDIA GB10" || ParseCPUInfoVendor(arm) != "NVIDIA" {
-		t.Fatal("arm")
-	}
-	if ParseCPUInfo("", "NVIDIA_DGX\x00") != "NVIDIA DGX" || ParseCPUInfoVendor("CPU implementer: zz") != "" {
-		t.Fatal("device tree")
-	}
-}
-
 func TestGPUClassification(t *testing.T) {
 	if ClassifyGPUVendors(nil) != "none" || ClassifyGPUVendors([]string{"", " "}) != "unknown" {
 		t.Fatal("empty")
@@ -40,12 +26,8 @@ func TestGPUClassification(t *testing.T) {
 	if len(adapters) != 2 || adapters[0].VendorID != "10DE" || adapters[0].DeviceID != "2E03" || adapters[1].VendorID != "" {
 		t.Fatalf("%+v", adapters)
 	}
-	gpus := NvidiaGPUsFromAdapters(adapters)
-	if len(gpus) != 1 || gpus[0].Name != "NVIDIA N1X" || !IsNvidiaN1XPCIID(gpus[0].PCIID) {
-		t.Fatalf("%+v", gpus)
-	}
-	if ParseNvidiaGPUModel("Model:\t NVIDIA GB10\nIRQ: 1") != "NVIDIA GB10" {
-		t.Fatal("model")
+	if !IsNvidiaN1XPCIID(0x2E03<<16 | 0x10DE) {
+		t.Fatal("N1X PCI id")
 	}
 }
 

@@ -33,24 +33,75 @@ func (r *Renderer) Loop(interval time.Duration, done <-chan struct{}) {
 	}
 }
 
+// Failed writes in a row after which the terminal counts as gone
+const deadWriteLimit = 5
+
+// Timing of one frame the renderer wrote to the terminal
+type FrameStat struct {
+	At time.Time
+	// Time the model took to build the view the frame shows
+	View time.Duration
+	// Time the renderer took to turn the view into bytes
+	Compose time.Duration
+	// Time the terminal took to accept the bytes
+	Write time.Duration
+	Bytes int
+}
+
+// Whole time the frame took from the model's view to the last byte written
+func (s FrameStat) Total() time.Duration { return s.View + s.Compose + s.Write }
+
 // Writes whatever the terminal lacks, returning how long until a probe deadline wants another write, zero for none
 func (r *Renderer) Flush(now time.Time) time.Duration {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.held || r.awaitView {
+		r.mu.Unlock()
 		return 0
 	}
+	// The clock is read only for a listener, a program without one paying nothing for the timing
+	onFrame := r.onFrame
+	var began, composed time.Time
+	if onFrame != nil {
+		began = time.Now()
+	}
 	b, next := r.compose(now)
+	if onFrame != nil {
+		composed = time.Now()
+	}
+	var gone error
+	wrote := 0
 	if len(b) > 0 {
-		if _, err := r.out.Write(b); err != nil && r.err == nil {
-			r.err = err
+		if _, err := r.out.Write(b); err != nil {
+			if r.err == nil {
+				r.err = err
+			}
+			if r.fails++; r.fails == deadWriteLimit {
+				gone = err
+			}
+		} else {
+			r.fails, wrote = 0, len(b)
 		}
+	}
+	stat := FrameStat{View: r.viewTook, Bytes: wrote}
+	if onFrame != nil && wrote > 0 {
+		stat.At = time.Now()
+		stat.Compose, stat.Write = composed.Sub(began), stat.At.Sub(composed)
+		r.viewTook = 0
 	}
 	if r.onRestore != nil {
 		if rb := r.undo(nil); string(rb) != string(r.restore) {
 			r.restore = rb
 			r.onRestore(rb)
 		}
+	}
+	onDead := r.onDead
+	r.mu.Unlock()
+	// The listeners run outside the lock, since what they do may come back into the renderer
+	if onFrame != nil && wrote > 0 {
+		onFrame(stat)
+	}
+	if gone != nil && onDead != nil {
+		onDead(gone)
 	}
 	return next
 }

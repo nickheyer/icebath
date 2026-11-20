@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -45,82 +44,6 @@ def register(ctx):
     ctx.register_platform("x", "X", adapter_factory=lambda cfg: None, check_fn=lambda: True)
 `
 
-const secretSourcePlugin = `
-import os
-from agent.secret_sources.base import ErrorKind, FetchResult, SecretSource
-
-class DummyVault(SecretSource):
-    name = "hostvault"
-    label = "Host vault"
-
-    def fetch(self, cfg, home_path):
-        if cfg.get("mode") == "locked":
-            return FetchResult().fail("vault is locked", ErrorKind.AUTH_FAILED)
-        return FetchResult(secrets={"HOSTED_DUMMY_TOKEN": f"dummy-from-{os.getpid()}"},
-                           warnings=["dummy warning"], binary_path=home_path / "bin" / "vault")
-
-def register(ctx):
-    ctx.register_secret_source(DummyVault())
-`
-
-const contextReferencePlugin = `
-from agent.context_references import ContextCompletionItem, ContextReferenceProvider
-
-class Tickets(ContextReferenceProvider):
-    prefix = "hostticket"
-    description = "tickets"
-
-    async def autocomplete(self, query, *, limit=10):
-        return [ContextCompletionItem(text=f"{query}-1", meta="open"), ContextCompletionItem(text=f"{query}-2")]
-
-    async def expand(self, target):
-        return f"ticket {target}"
-
-def register(ctx):
-    ctx.register_context_reference(Tickets())
-`
-
-const contextEnginePlugin = `
-from agent.context_engine import ContextEngine
-
-class Ledger(ContextEngine):
-    @property
-    def name(self):
-        return "hostledger"
-    def update_from_response(self, usage):
-        self.last_prompt_tokens = usage["prompt_tokens"]
-    def should_compress(self, prompt_tokens=None):
-        return False
-    def compress(self, messages, current_tokens=None, **kw):
-        self.compress_options = {"current_tokens": current_tokens, **kw}
-        return messages[-1:]
-
-def register(ctx):
-    ctx.register_context_engine(Ledger())
-`
-
-const sdkPlugin = `
-import json, os
-from agent.redact import redact_sensitive_text
-from icebath_cli.config import get_env_value
-from icebath_constants import get_icebath_home
-from agent.secret_scope import get_secret
-from providers import list_providers, register_provider
-from providers.base import ProviderProfile
-from tools.environments.local import build_subprocess_env
-
-register_provider(ProviderProfile(name="sdkprobe", aliases=("sdkp",)))
-
-def register(ctx):
-    ctx.register_tool(name="sdkprobe", toolset="sdkprobe", schema={"name": "sdkprobe",
-        "description": "d", "parameters": {"type": "object", "properties": {}}},
-        handler=lambda args, **kw: json.dumps({
-            "redacted": redact_sensitive_text("key sk-ant-api03-" + "a" * 90, force=True),
-            "env": get_env_value("SDK_PROBE_VALUE"), "home": str(get_icebath_home()),
-            "secret": get_secret("SDK_PROBE_VALUE"), "providers": [p.name for p in list_providers()],
-            "child_env": sorted(k for k in build_subprocess_env(extra={"SDK_EXTRA": "1"}) if k.startswith("SDK_"))}))
-`
-
 // Scoped registry over hosted objects of one provider base, recording each registration
 type hostedRegistry struct {
 	base string
@@ -153,7 +76,6 @@ func (r *hostedRegistry) Restore(_ string, _, _ any, _ string) bool { return tru
 
 type liveServices struct {
 	images, secrets *hostedRegistry
-	refs            []any
 }
 
 // Installs services that adapt hosted objects the way the top level wiring does, restored at cleanup
@@ -173,7 +95,6 @@ func installLiveServices(t *testing.T) *liveServices {
 			s, _ := v.(string)
 			return s, true
 		},
-		RegisterContextReference: func(p any) error { ls.refs = append(ls.refs, p); return nil },
 		BindProfileSecretScope: func(ctx context.Context, h string) context.Context {
 			return context.WithValue(ctx, liveSecretScopeKey{}, liveSecretScope{home: h, mapping: hostTestSecrets{}.BuildProfileSecretScope(h)})
 		},
@@ -258,15 +179,6 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-func dispatchLive(t *testing.T, h, name string, args map[string]any) string {
-	t.Helper()
-	def := tools.Default.Lookup(homeCtx(h), h, name)
-	if def == nil {
-		t.Fatalf("tool %s is not registered", name)
-	}
-	return def.Handler(homeCtx(h), &tools.Call{Name: name, Args: args})
-}
-
 func loadedError(m *Manager, key string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -275,40 +187,6 @@ func loadedError(m *Manager, key string) string {
 	}
 	return "<not loaded>"
 }
-
-func jsonNumber(f float64) string {
-	b, _ := json.Marshal(f)
-	return string(b)
-}
-
-const modelProviderPlugin = `
-import os
-from providers import register_provider
-from providers.base import ProviderProfile
-
-class HostModel(ProviderProfile):
-    def build_extra_body(self, *, session_id=None, **context):
-        return {"pid": os.getpid(), "session_id": session_id}
-
-register_provider(HostModel(name="hostmodel", base_url="https://hostmodel.example/v1", env_vars=("HOSTMODEL_KEY",)))
-`
-
-const seedingPlugin = `
-import os
-from providers import register_provider
-from providers.base import ProviderProfile
-
-class Seeds(ProviderProfile):
-    def seed_pool_credentials(self, *, suppressed_sources, explicitly_configured):
-        token = os.environ.get("GH_TOKEN", "")
-        if not token or "env:GH_TOKEN" in suppressed_sources:
-            return []
-        return [{"source": "env:GH_TOKEN", "access_token": f"minted-{token}-{explicitly_configured}",
-                 "base_url": None, "label": f"pid {os.getpid()}"}]
-
-register_provider(Seeds(name="seedhost", base_url="https://seedhost.example/v1",
-                        env_vars=("GH_TOKEN",), ambient_credentials=True))
-`
 
 // Port of test_a_routed_home_host_never_inherits_the_launch_shell_token
 func TestARoutedHomeHostNeverInheritsTheLaunchShellToken(t *testing.T) {

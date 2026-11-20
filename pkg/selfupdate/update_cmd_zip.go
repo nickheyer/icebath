@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"golang.org/x/net/http/httpproxy"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -87,7 +89,7 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 		return err
 	}
 	proxy := httpproxy.FromEnvironment().ProxyFunc()
-	client := &http.Client{Transport: &http.Transport{Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }}}
+	client := &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }}}
 	resp, err := client.Do(req)
 	if err != nil {
 		return &pm.PyError{Class: "URLError", Message: "download failed: " + err.Error()}

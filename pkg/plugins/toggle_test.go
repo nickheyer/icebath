@@ -246,29 +246,25 @@ func TestContextEngineDirsAndLoaderHelpers(t *testing.T) {
 	h, bundled := t.TempDir(), t.TempDir()
 	t.Setenv("ICEBATH_BUNDLED_PLUGINS", bundled)
 	ctx := home.WithOverride(context.Background(), h)
-	write := func(dir, init, yaml string) {
-		vtWrite(t, filepath.Join(dir, "__init__.py"), init)
-		if yaml != "" {
-			vtWrite(t, filepath.Join(dir, "plugin.yaml"), yaml)
-		}
-	}
-	write(filepath.Join(bundled, "context_engine", "lcm"), "class X: pass\n", "description: bundled lcm\n")
-	write(filepath.Join(h, "plugins", "lcm"), "ctx.register_context_engine(x)\n", "description: user lcm\n")
-	write(filepath.Join(h, "plugins", "deep"), "\ufefffrom agent.context_engine import ContextEngine\n", "description: 0\n")
-	write(filepath.Join(h, "plugins", "plain"), "def register(ctx): pass\n", "")
-	write(filepath.Join(h, "plugins", "_hidden"), "ContextEngine\n", "")
-	if err := os.MkdirAll(filepath.Join(h, "plugins", "noinit"), 0o755); err != nil {
+	guest := "runtime: program\nentry: [engine]\n"
+	write := func(dir, yaml string) { vtWrite(t, filepath.Join(dir, "plugin.yaml"), yaml) }
+	write(filepath.Join(bundled, "context_engine", "lcm"), guest+"description: bundled lcm\n")
+	write(filepath.Join(h, "plugins", "lcm"), guest+"provides: [context_engine]\ndescription: user lcm\n")
+	write(filepath.Join(h, "plugins", "deep"), guest+"provides: context_engine\ndescription: 0\n")
+	write(filepath.Join(h, "plugins", "sole"), guest+"kind: exclusive\n")
+	write(filepath.Join(h, "plugins", "plain"), guest)
+	write(filepath.Join(h, "plugins", "memory"), guest+"kind: exclusive\nprovides: [memory_provider]\n")
+	write(filepath.Join(h, "plugins", "_hidden"), guest+"provides: [context_engine]\n")
+	write(filepath.Join(h, "plugins", "source"), "description: no runtime\n")
+	if err := os.MkdirAll(filepath.Join(h, "plugins", "nomanifest"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dirs, err := iterEngineDirs(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dirs := iterEngineDirs(ctx)
 	var names []string
 	for _, d := range dirs {
 		names = append(names, d[0]+"="+filepath.Base(filepath.Dir(d[1])))
 	}
-	if strings.Join(names, ",") != "lcm=context_engine,deep=plugins" {
+	if strings.Join(names, ",") != "lcm=context_engine,deep=plugins,sole=plugins" {
 		t.Fatalf("dirs %v", names)
 	}
 	if ReadPluginDescription(filepath.Join(bundled, "context_engine", "lcm")) != "bundled lcm" || ReadPluginDescription(filepath.Join(h, "plugins", "deep")) != "" {

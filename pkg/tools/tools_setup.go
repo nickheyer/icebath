@@ -51,11 +51,13 @@ var ToolsConfigHooks struct {
 	STTModelCatalog      func(provider string) ([]string, bool)
 	STTModelConfigKey    func(provider string) (string, bool)
 	STTDefaultLocalModel func() string
-	DeepInfraModelIDs    func(ctx context.Context, env *Env, tag string) []string
-	FALModels            func() (ids []string, catalog map[string]map[string]any, defaultModel string)
-	ImageGenRegistry     *PickerRegistry
-	VideoGenRegistry     *PickerRegistry
-	TTSRegistry          *PickerRegistry
+	// Voices of the local Piper engine by name, and the one used when none is configured
+	PiperVoices       func() (voices []string, defaultVoice string)
+	DeepInfraModelIDs func(ctx context.Context, env *Env, tag string) []string
+	FALModels         func() (ids []string, catalog map[string]map[string]any, defaultModel string)
+	ImageGenRegistry  *PickerRegistry
+	VideoGenRegistry  *PickerRegistry
+	TTSRegistry       *PickerRegistry
 
 	BrowserRegistry       *PickerRegistry
 	LightpandaBinary      func(env *Env) string

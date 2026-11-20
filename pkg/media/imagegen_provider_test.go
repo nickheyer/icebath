@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -282,29 +281,6 @@ func TestGeneratedDirIsMountedFromTheWritersLocation(t *testing.T) {
 	real, _ := filepath.EvalSymlinks(host)
 	if rp, _ := filepath.EvalSymlinks(path); !strings.HasPrefix(rp, real+string(filepath.Separator)) {
 		t.Fatalf("%s not under %s", rp, real)
-	}
-}
-
-func TestResetImageGenRegistryAndBundledProviderExports(t *testing.T) {
-	resetImageRegistry(t)
-	found := 0
-	for _, key := range plugins.BundledPluginKeys() {
-		p, _ := plugins.BundledPlugin(key)
-		prov, ok := BundledImageGenProvider(p)
-		if !ok {
-			continue
-		}
-		found++
-		if err := RegisterImageGenProvider(prov, ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if found == 0 || len(ListImageGenProviders(context.Background(), "")) != found {
-		t.Fatalf("bundled %d listed %d", found, len(ListImageGenProviders(context.Background(), "")))
-	}
-	ResetImageGenRegistry()
-	if n := len(ListImageGenProviders(context.Background(), "")); n != 0 {
-		t.Fatalf("listed %d after reset", n)
 	}
 }
 

@@ -88,31 +88,13 @@ func GetTranscriptionProvider(ctx context.Context, name, scope string) Transcrip
 	return transcriptionRegistry.GetProvider(ctx, name, scope)
 }
 
-// Plugin facing registry that register_transcription_provider writes into, adapting hosted Python providers
+// Plugin facing registry that register_transcription_provider writes into, a plugin host object stored as the provider adapted from it
 func TranscriptionScopedRegistry() plugins.ScopedRegistry {
-	return hostedTranscriptionScopedRegistry{transcriptionRegistry.Scoped()}
-}
-
-// Scoped registry view that wraps plugin host objects as TranscriptionProvider values before delegating
-type hostedTranscriptionScopedRegistry struct{ inner plugins.ScopedRegistry }
-
-func (s hostedTranscriptionScopedRegistry) Accepts(p any) bool {
-	return s.inner.Accepts(adaptHostedTranscriptionProvider(p))
-}
-func (s hostedTranscriptionScopedRegistry) ProviderName(p any) string {
-	return s.inner.ProviderName(adaptHostedTranscriptionProvider(p))
-}
-func (s hostedTranscriptionScopedRegistry) Identity(p any) error {
-	return s.inner.Identity(adaptHostedTranscriptionProvider(p))
-}
-func (s hostedTranscriptionScopedRegistry) Snapshot(name, scope string) any {
-	return s.inner.Snapshot(name, scope)
-}
-func (s hostedTranscriptionScopedRegistry) Register(p any, scope string) (bool, error) {
-	return s.inner.Register(adaptHostedTranscriptionProvider(p), scope)
-}
-func (s hostedTranscriptionScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
-	return s.inner.Restore(name, adaptHostedTranscriptionProvider(current), adaptHostedTranscriptionProvider(replacement), scope)
+	return plugins.HostedScopedRegistry{Inner: transcriptionRegistry.Scoped(), Adapt: adaptHostedTranscriptionProvider,
+		Object: func(held any) (*plugins.HostedObject, bool) {
+			h, ok := held.(hostedTranscriptionProvider)
+			return h.obj, ok
+		}}
 }
 
 // Python plugin transcription provider object proxied from the plugin host
