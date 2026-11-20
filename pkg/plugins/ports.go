@@ -28,9 +28,17 @@ var (
 // Source an install of a port no catalog lists records
 const builtinPortSource = "builtin:"
 
+// Port that names itself without building its manifest, for a manifest read from an embedded payload every start would otherwise decode
+type namedPort interface{ PortName() string }
+
 // Adds a compiled-in port of a plugin that ships outside core, listed and loaded only once installed into a home
 func RegisterPort(p Plugin) {
-	name := p.Manifest().Name
+	var name string
+	if n, ok := p.(namedPort); ok {
+		name = n.PortName()
+	} else {
+		name = p.Manifest().Name
+	}
 	if name == "" {
 		panic("plugins: RegisterPort with an empty plugin name")
 	}

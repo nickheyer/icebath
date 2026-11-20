@@ -23,6 +23,9 @@ type TurnSubmitter interface {
 type impeccablePlugin struct{}
 
 // Manifest of the impeccable plugin from its Claude build manifest with the design hooks declared
+// Name of plugin.json, registered without decoding the payload
+func (impeccablePlugin) PortName() string { return "impeccable" }
+
 func (impeccablePlugin) Manifest() plugins.Manifest {
 	m, err := manifestFromJSON("impeccable/plugin/.claude-plugin/plugin.json")
 	if err != nil {

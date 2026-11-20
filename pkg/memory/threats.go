@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -84,7 +85,8 @@ type compiledThreat struct {
 	id string
 }
 
-var compiledThreats = compileThreats()
+// Threat patterns compiled on the first scan, their bounded repeats too costly to build at every process start
+var compiledThreats = sync.OnceValue(compileThreats)
 
 // Prefix, shouty name value, and body of the hardcoded secret rule split so the lookahead is emulated by hand
 var (
@@ -148,7 +150,7 @@ func ScanForThreats(content, scope string) ([]string, error) {
 	if content == "" {
 		return nil, nil
 	}
-	patterns, ok := compiledThreats[scope]
+	patterns, ok := compiledThreats()[scope]
 	if !ok {
 		return nil, fmt.Errorf("scan_for_threats: unknown scope %q", scope)
 	}

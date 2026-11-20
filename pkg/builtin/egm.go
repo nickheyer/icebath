@@ -60,6 +60,9 @@ func manifestFromJSON(rel string) (plugins.Manifest, error) {
 }
 
 // Manifest of the egm plugin from its root plugin.json
+// Name of plugin.json, registered without decoding the payload
+func (egmPlugin) PortName() string { return "egm" }
+
 func (egmPlugin) Manifest() plugins.Manifest {
 	m, err := manifestFromJSON(egmRoot + "/plugin.json")
 	if err != nil {

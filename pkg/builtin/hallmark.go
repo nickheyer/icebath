@@ -21,6 +21,9 @@ var hallmarkScripts = []string{"capture", "imagegen", "install", "install-hook",
 type hallmarkPlugin struct{}
 
 // Manifest of the hallmark plugin from its Claude plugin manifest with the lint hook declared
+// Name of plugin.json, registered without decoding the payload
+func (hallmarkPlugin) PortName() string { return "hallmark" }
+
 func (hallmarkPlugin) Manifest() plugins.Manifest {
 	m, err := manifestFromJSON("hallmark/.claude-plugin/plugin.json")
 	if err != nil {
