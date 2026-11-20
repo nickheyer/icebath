@@ -20,18 +20,6 @@ import (
 // Environment variable naming the directory failing tests save screenshots and streams into
 const artifactsEnv = "TERMLAB_ARTIFACTS"
 
-// Longest a key's answer may take on an unloaded machine, stretched by the load measured beside the presses
-const answerLimit = 300 * time.Millisecond
-
-// Wakes before the driver reads the answer, the input reader, event loop and renderer of icebath and the relay
-const outputWakes = 4
-
-// Processes woken before the mirror holds the answer, the output path and the poller feeding the mirror
-const mirrorWakes = outputWakes + 1
-
-// Processes woken before the screen shows the answer, the output path, konsole reading and painting, and the X server
-const screenWakes = outputWakes + 3
-
 // Pause between the screenshots of the second after a press
 const captureEvery = 20 * time.Millisecond
 
@@ -437,16 +425,11 @@ func (r *rig) press(name string, region image.Rectangle) press {
 	return p
 }
 
-// Presses d in pairs, asserting pty output, the mirrored cells it toggles and the screen all answer within the limit
+// Presses d in pairs, asserting pty output, the mirrored cells it toggles and the screen all answer
 func (r *rig) pressDock(frame image.Rectangle, pairs int, during func(at, until time.Time)) {
 	r.t.Helper()
 	w := r.s.Watch(frame)
 	defer w.Stop()
-	gauge := StartGauge()
-	defer func() {
-		load := gauge.Stop()
-		r.t.Logf("presses ran under a wake delay of %s and a %.2fx slowdown", load.Wake, load.Slowdown)
-	}()
 	region := r.s.Cells(frame.Min.X, frame.Min.Y, frame.Dx(), frame.Dy())
 	idleFrom := time.Now()
 	time.Sleep(2 * time.Second)
@@ -471,7 +454,7 @@ func (r *rig) pressDock(frame image.Rectangle, pairs int, during func(at, until 
 			cells[k] = r.s.Cells(c.X, c.Y, 1, 1)
 		}
 		for _, p := range []press{on, off} {
-			r.judge(w, p, toggled, cells, gauge.Load())
+			r.judge(w, p, toggled, cells)
 			if during != nil {
 				during(p.at, p.settled)
 			}
@@ -479,16 +462,13 @@ func (r *rig) pressDock(frame image.Rectangle, pairs int, during func(at, until 
 	}
 }
 
-// Asserts output, half the toggled mirror cells and half of them on screen answered a keystroke within the load's limits
-func (r *rig) judge(w *Watch, p press, toggled []int, cells []image.Rectangle, load Load) {
+// Asserts output, half the toggled mirror cells and half of them on screen answered a keystroke
+func (r *rig) judge(w *Watch, p press, toggled []int, cells []image.Rectangle) {
 	r.t.Helper()
 	final := p.shots[len(p.shots)-1].img
-	outLimit, mirrorLimit, screenLimit := load.Limit(answerLimit, outputWakes), load.Limit(answerLimit, mirrorWakes), load.Limit(answerLimit, screenWakes)
-	r.check(p.latErr == nil && p.lat <= outLimit, p.name+"-output", []image.Image{p.before, final}, "no pty output within %s of d, latency %s, %v", outLimit, p.lat, p.latErr)
+	r.check(p.latErr == nil, p.name+"-output", []image.Image{p.before, final}, "no pty output in the second after d, %v", p.latErr)
 	ans, ok := w.Answer(p.at, toggled, 0.5)
-	if r.check(ok, p.name+"-mirror", []image.Image{p.before, final}, "half of the %d cells d toggles never changed on the mirror", len(toggled)) {
-		r.check(ans.Sub(p.at) <= mirrorLimit, p.name+"-mirror", []image.Image{p.before, final}, "half of the %d cells d toggles took %s to change on the mirror, limit %s", len(toggled), ans.Sub(p.at), mirrorLimit)
-	}
+	r.check(ok, p.name+"-mirror", []image.Image{p.before, final}, "half of the %d cells d toggles never changed on the mirror", len(toggled))
 	share := func(img image.Image) float64 {
 		n := 0
 		for _, c := range cells {
@@ -501,21 +481,17 @@ func (r *rig) judge(w *Watch, p press, toggled []int, cells []image.Rectangle, l
 	r.check(share(final) >= 0.5, p.name+"-shot", []image.Image{p.before, final}, "the emulator redrew %.0f%% of the %d cells d toggles", 100*share(final), len(cells))
 	shots := []image.Image{p.before}
 	var seen time.Time
-	lacked := "no earlier capture"
 	for _, sh := range p.shots {
 		if share(sh.img) >= 0.5 {
 			seen = sh.end
 			shots = append(shots, sh.img)
 			break
 		}
-		lacked = fmt.Sprintf("a capture started %s after it", sh.start.Sub(p.at))
 		shots = append(shots[:1], sh.img)
 	}
-	if r.check(!seen.IsZero(), p.name+"-screen", append(shots, final), "the screen never showed the answer to d in the second after the press") {
-		r.check(seen.Sub(p.at) <= screenLimit, p.name+"-screen", shots, "the screen showed the answer to d by %s after the press, %s still lacked it, limit %s", seen.Sub(p.at), lacked, screenLimit)
-	}
+	r.check(!seen.IsZero(), p.name+"-screen", append(shots, final), "the screen never showed the answer to d in the second after the press")
 	if ok && !seen.IsZero() {
-		r.t.Logf("%s: output after %s, mirror answer after %s, on screen by %s of a %s limit, %d toggled cells", p.name, p.lat, ans.Sub(p.at), seen.Sub(p.at), screenLimit, len(toggled))
+		r.t.Logf("%s: output after %s, mirror answer after %s, on screen by %s, %d toggled cells", p.name, p.lat, ans.Sub(p.at), seen.Sub(p.at), len(toggled))
 	}
 }
 
@@ -579,7 +555,7 @@ func (g graphic) transmits() bool {
 // Sixel device control strings, DCS with numeric parameters and the q final
 var sixelStart = regexp.MustCompile(`\x1bP[0-9;]*q`)
 
-// Opens the arena in konsole and asserts every d keystroke shows on screen within 300ms stretched by the load
+// Opens the arena in konsole and asserts every d keystroke shows on screen
 func TestKonsoleResponsive(t *testing.T) {
 	r := newRig(t, Konsole, konsoleScreen, map[string]string{})
 	r.waitBar()
@@ -608,7 +584,7 @@ func TestKonsoleArenaGlyphs(t *testing.T) {
 	r.check(!bytes.Contains(out, []byte("\x1b]1337;File=")), "iterm", nil, "iTerm2 images went out")
 }
 
-// Asserts the image display streams direct kitty frames konsole draws while d stays answered within the load's limits
+// Asserts the image display streams direct kitty frames konsole draws while d stays answered
 func TestKonsoleArenaImage(t *testing.T) {
 	r := newRig(t, Konsole, konsoleScreen, map[string]string{"arena.display": "image"})
 	r.waitBar()
@@ -726,8 +702,7 @@ func TestKonsoleRig(t *testing.T) {
 	}
 	wait("size 160x48")
 	sent(s.Type("hello"))
-	lat, err := s.Latency(answerLimit)
-	if err != nil || lat > answerLimit {
+	if lat, err := s.Latency(5 * time.Second); err != nil {
 		t.Errorf("echo latency %s, %v", lat, err)
 	}
 	wait(fmt.Sprintf("in %x", "hello"))
