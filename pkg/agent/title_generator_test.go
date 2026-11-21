@@ -36,6 +36,10 @@ func swapTitleSeam[T any](t *testing.T, target *T, v T) {
 	})
 }
 
+func settleTitleUpgrades(t testing.TB) {
+	t.Cleanup(func() { waitForTitleUpgrades(10 * time.Second) })
+}
+
 // Isolated home with an empty config the title module reads
 func titleTestHome(t *testing.T) {
 	t.Helper()
@@ -75,6 +79,7 @@ func newTitleTestDB(t *testing.T, source string, ids ...string) *state.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
+	settleTitleUpgrades(t)
 	for _, id := range ids {
 		if err := db.CreateSession(state.NewSession{ID: id, Source: source}); err != nil {
 			t.Fatal(err)

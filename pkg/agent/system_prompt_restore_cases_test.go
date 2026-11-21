@@ -46,6 +46,7 @@ func restoreRealDB(t *testing.T, sessionID, source string) *state.SessionDB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	settleTitleUpgrades(t)
 	if err := db.CreateSession(state.NewSession{ID: sessionID, Source: source}); err != nil {
 		t.Fatal(err)
 	}

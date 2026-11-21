@@ -58,6 +58,7 @@ func promptTestEnv(t *testing.T) *tools.Env {
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_SESSION_ID", "")
 	os.Unsetenv("ICEBATH_SESSION_ID")
+	settleTitleUpgrades(t)
 	return &tools.Env{Home: h}
 }
 

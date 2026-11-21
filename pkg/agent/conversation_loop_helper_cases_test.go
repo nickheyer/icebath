@@ -417,5 +417,6 @@ func caseHome(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
+	settleTitleUpgrades(t)
 	return h
 }

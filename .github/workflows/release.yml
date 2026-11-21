@@ -56,11 +56,6 @@ jobs:
           [ "$(gh api repos/nickheyer/winget-pkgs -q '.fork and .parent.full_name == "microsoft/winget-pkgs" and .permissions.push')" = true ] \
             || { echo "::error::WINGET_TOKEN cannot push to nickheyer/winget-pkgs, a fork of microsoft/winget-pkgs"; exit 1; }
       - run: go vet -tags goolm ./...
-      - name: Allow unprivileged user namespaces their capabilities
-        run: |
-          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
       - run: go test -tags goolm ./...
       # Termux deletes superseded archives, so each release carries its own copy of every pool pin
       - name: Fetch the Termux pool archives the pm pins name

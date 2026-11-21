@@ -113,7 +113,7 @@ func TestPromptResponseResolvesClarifyChoiceAndOther(t *testing.T) {
 	ctx := context.Background()
 	tools.RegisterGatewayClarify("cl-9", "s", "Which?", []string{"alpha", "beta"}, false)
 	a.SendClarify(ctx, "c1", "Which?", []string{"alpha", "beta"}, "cl-9", "s", nil)
-	action, _ := c.last(t)
+	action := c.lastPrompt(t)
 	relayConsume(t, a, relayPromptEvent(map[string]any{"prompt_id": action["prompt_id"], "option_id": "c1"}))
 	if got := relayClarifyResponse("cl-9"); got != "beta" {
 		t.Fatalf("resolved %q", got)
@@ -121,7 +121,7 @@ func TestPromptResponseResolvesClarifyChoiceAndOther(t *testing.T) {
 	entry := tools.RegisterGatewayClarify("cl-10", "s", "Which?", []string{"a"}, false)
 	defer tools.ClearClarifySession("s")
 	a.SendClarify(ctx, "c1", "Which?", []string{"a"}, "cl-10", "s", nil)
-	action, _ = c.last(t)
+	action = c.lastPrompt(t)
 	relayConsume(t, a, relayPromptEvent(map[string]any{"prompt_id": action["prompt_id"], "option_id": "other"}))
 	if pending := tools.GetPendingClarify("cl-10"); pending != entry || !pending.AwaitingText {
 		t.Fatalf("cl-10 not marked awaiting text")

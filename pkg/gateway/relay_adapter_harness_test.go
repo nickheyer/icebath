@@ -165,6 +165,16 @@ func (c *relayCapture) last(t *testing.T) (map[string]any, string) {
 	return c.sent[len(c.sent)-1], c.platforms[len(c.platforms)-1]
 }
 
+// Newest outbound prompt, passing over the lifecycle acks
+func (c *relayCapture) lastPrompt(t *testing.T) map[string]any {
+	t.Helper()
+	prompts := c.ops("prompt")
+	if len(prompts) == 0 {
+		t.Fatal("no outbound prompt")
+	}
+	return prompts[len(prompts)-1]
+}
+
 // Outbound actions of the op
 func (c *relayCapture) ops(op string) []map[string]any {
 	c.mu.Lock()
