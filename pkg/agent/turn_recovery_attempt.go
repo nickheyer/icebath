@@ -92,6 +92,18 @@ func providerRetryAfterSeconds(apiError error) (time.Duration, bool) {
 	return provider.ProviderRetryAfter(apiErr)
 }
 
+// fast fail on 100% usage...
+func rateLimitOutlastsRetries(resetAt any, now time.Time) bool {
+	if resetAt == nil {
+		return false
+	}
+	epoch, ok := provider.ParseAbsoluteTimestamp(resetAt)
+	if !ok {
+		return false
+	}
+	return epoch-float64(now.UnixNano())/1e9 > (2 * provider.RetryAfterCap).Seconds()
+}
+
 // Picks and announces the wait before the next retry, retry after first, adaptive for rate limits and Z.AI overloads
 func computeErrorBackoff(a *AIAgent, apiError error, retryCount, maxRetries int, isRateLimited, isZAICodingOverload bool, baseURL, model string) float64 {
 	retryAfter, hasRetryAfter := providerRetryAfterSeconds(apiError)

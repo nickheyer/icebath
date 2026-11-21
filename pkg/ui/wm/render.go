@@ -300,8 +300,9 @@ func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
 		avail -= sw + 2
 	}
 	m.paintTitle(face, e, avail, p.lit)
-	focused := e.ws == nil || (shown && e.ws.focus == e && m.overlay == nil)
-	if focused && !e.closing {
+	if _, own := e.card.(Footer); own && !e.closing {
+		m.paintFooter(face, e, p.x, w, h)
+	} else if focused := e.ws == nil || (shown && e.ws.focus == e && m.overlay == nil); focused && !e.closing {
 		m.paintHints(face, e, p.x, w, h)
 	}
 	m.stamp(face, p)
@@ -987,6 +988,52 @@ func (m *Model) hintText(h Hint) (string, string) {
 		}
 	}
 	return key, label
+}
+
+// Writes the card's own footer, its status, into the bottom edge on the frame surface, one part from the left corner and one up to the
+// right corner with the border between them, and records the spans a click fires. A card with a footer names the keys that matter in it
+// itself, so no legend is painted over it
+func (m *Model) paintFooter(face screen, e *entry, sx, w, h int) {
+	e.hints = e.hints[:0]
+	f, ok := e.card.(Footer)
+	room := w - 9
+	if !ok || room < minTitleW {
+		return
+	}
+	line := f.Footer(room)
+	left, right := ansi.Truncate(line.Left, room, ""), line.Right
+	lw := ansi.StringWidth(left)
+	right = ansi.Truncate(right, max(room-lw, 0), "")
+	rw := ansi.StringWidth(right)
+	t := m.theme
+	pad := lipgloss.NewStyle().Background(t.Surface).Render(" ")
+	draw := func(text string, x int) {
+		width := ansi.StringWidth(text)
+		uv.NewStyledString(text).Draw(face, uv.Rect(x, h-1, width, 1))
+		for cx := x; cx < x+width; cx++ {
+			if c := face.CellAt(cx, h-1); c != nil && c.Style.Bg == nil {
+				cell := *c
+				cell.Style.Bg = t.Surface
+				face.SetCell(cx, h-1, &cell)
+			}
+		}
+	}
+	leftAt, rightAt := 3, w-3-rw
+	if lw > 0 {
+		draw(pad+left+pad, leftAt-1)
+	}
+	if rw > 0 {
+		draw(pad+right+pad, rightAt-1)
+	}
+	for _, s := range line.Spans {
+		at, limit := leftAt, lw
+		if s.Right {
+			at, limit = rightAt, rw
+		}
+		if s.Action != "" && s.X0 < s.X1 && s.X1 <= limit {
+			e.hints = append(e.hints, hintSpan{x0: sx + at + s.X0, x1: sx + at + s.X1, id: s.Action})
+		}
+	}
 }
 
 // Frame edge a clockwise perimeter index falls on

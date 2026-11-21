@@ -376,6 +376,8 @@ type fieldText struct {
 	words string
 	more  string
 	key   string
+	// Color of the key, the tint when unset
+	keyTint color.Color
 }
 
 // Waiting item the app raised, else the palette with the key that opens it
@@ -388,11 +390,7 @@ func (m *Model) closedField() fieldText {
 		}
 		return ft
 	}
-	words := "palette"
-	if k := m.keys.Display("palette"); k != "" {
-		words += " (" + k + ")"
-	}
-	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: words}
+	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: "palette", key: m.keys.Display("palette"), keyTint: t.TextDim}
 }
 
 // Columns the closed field wants for its text and key, within its bounds
@@ -638,7 +636,11 @@ func (m *Model) paintField(buf screen) {
 	}
 	ft := m.closedField()
 	if kw := ansi.StringWidth(ft.key); kw > 0 && right-left >= kw+2+fieldMin {
-		m.write(buf, right-kw, 0, ft.key, flat(uv.Style{Fg: ft.tint, Bg: bg}))
+		keyTint := ft.keyTint
+		if keyTint == nil {
+			keyTint = ft.tint
+		}
+		m.write(buf, right-kw, 0, ft.key, flat(uv.Style{Fg: keyTint, Bg: bg}))
 		right -= kw + 2
 	}
 	x := m.write(buf, left, 0, ft.mark, flat(uv.Style{Fg: ft.tint, Bg: bg, Attrs: uv.AttrBold})) + 1

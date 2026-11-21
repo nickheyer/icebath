@@ -31,17 +31,22 @@ type blockPart struct {
 	open     bool
 }
 
-// Rows of a rendered block and the parts of it that take a click
+// Rows of a rendered block, the parts of it that take a click and the pictures the terminal draws over blank rows of it
 type blockRows struct {
-	lines []string
-	parts []blockPart
+	lines  []string
+	parts  []blockPart
+	images []imageSpot
 }
 
-// Appends the rows of another block, its parts moved down by the rows already held
+// Appends the rows of another block, its parts and pictures moved down by the rows already held
 func (b *blockRows) add(more blockRows) {
 	for _, part := range more.parts {
 		part.from, part.to = part.from+len(b.lines), part.to+len(b.lines)
 		b.parts = append(b.parts, part)
+	}
+	for _, spot := range more.images {
+		spot.row += len(b.lines)
+		b.images = append(b.images, spot)
 	}
 	b.lines = append(b.lines, more.lines...)
 }
@@ -84,10 +89,11 @@ func (s blockState) key() string {
 
 // Block laid out in the transcript rows, its identity, the rows it takes from its first and the parts of it that take a click
 type placedBlock struct {
-	id    uint64
-	row   int
-	rows  int
-	parts []blockPart
+	id     uint64
+	row    int
+	rows   int
+	parts  []blockPart
+	images []imageSpot
 }
 
 // Row of a block the window is held at while the rows above it change

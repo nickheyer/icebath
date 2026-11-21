@@ -86,7 +86,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # - run: sudo snap install snapcraft --classic
+      - uses: actions/download-artifact@v8
+        with:
+          name: termux-pool
+          path: ${{ runner.temp }}/termux-pool
       - name: Write package signing keys
         env:
           REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
@@ -106,6 +109,7 @@ jobs:
           HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
           SCOOP_BUCKET_KEY: ${{ secrets.SCOOP_BUCKET_KEY }}
           NIXPKG_KEY: ${{ secrets.NIXPKG_KEY }}
+          TERMUX_POOL_DIR: ${{ runner.temp }}/termux-pool
       # - uses: actions/upload-artifact@v7
       #   with:
       #     name: snaps
@@ -125,19 +129,6 @@ jobs:
   #       env:
   #         SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
   #       run: for s in snaps/*.snap; do snapcraft upload --release=stable "$s"; done
-
-  termux-pool:
-    needs: goreleaser
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: termux-pool
-          path: termux-pool
-      - name: Upload the Termux pool archives pm falls back to
-        run: gh release upload "$GITHUB_REF_NAME" termux-pool/termux-* --clobber --repo "$GITHUB_REPOSITORY"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   chocolatey:
     needs: goreleaser
@@ -193,9 +184,6 @@ jobs:
         run: |
           pipx install check-jsonschema
           packaging/winget/validate.sh "$RUNNER_TEMP/winget"
-      - run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP"/winget/nickheyer.icebath*.yaml --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Submit the manifests to microsoft/winget-pkgs
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}

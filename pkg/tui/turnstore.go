@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
@@ -171,6 +173,8 @@ type tuiStore struct {
 	spawnHistory []spawnSnapshot
 	overlay      overlayState
 	now          func() time.Time
+	// Follows a full repaint of the screen, drawing again the pictures the terminal held, unset in a store without a screen
+	screenCleared func() tea.Cmd
 
 	serverRequests         map[string]*serverRequest
 	delegation             delegationState

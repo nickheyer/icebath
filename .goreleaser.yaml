@@ -55,6 +55,8 @@ release:
   github:
     owner: nickheyer
     name: icebath
+  extra_files:
+    - glob: "{{ .Env.TERMUX_POOL_DIR }}/termux-*"
 
 nfpms:
   - id: packages
@@ -102,6 +104,10 @@ nfpms:
       signature:
         key_file: "{{ .Env.APK_RSA_KEY_FILE }}"
         key_name: icebath
+    overrides:
+      # purego makes the linker emit a glibc dynamic binary even without cgo, so musl Alpine needs gcompat's loader to start it
+      apk:
+        dependencies: [ca-certificates, gcompat]
 
 dockers_v2:
   - ids: [icebath, icebath-init]
@@ -148,8 +154,8 @@ homebrew_casks:
       post:
         install: |
           File.write("#{staged_path}/.install_method", "homebrew\n")
-          on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/icebath"]
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/icebath"]
           end
     repository:
       owner: nickheyer

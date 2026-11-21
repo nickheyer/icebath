@@ -220,6 +220,25 @@ func hintsOf(c Card) []Hint {
 	return nil
 }
 
+// Card that paints a line of its own into its bottom edge, its status, given the columns the two parts may take together
+type Footer interface {
+	Footer(room int) FooterLine
+}
+
+// Status a card paints into its bottom edge, a part at the left end and one at the right end with the border running between them
+type FooterLine struct {
+	Left, Right string
+	// Spans of either part that fire an action when clicked
+	Spans []FooterSpan
+}
+
+// Columns of a footer part, counted from its first cell, that fire an action when clicked
+type FooterSpan struct {
+	X0, X1 int
+	Right  bool
+	Action string
+}
+
 // Card that names the keymap contexts in force while it holds the input, most specific first
 type Contexter interface {
 	Contexts() []string

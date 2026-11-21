@@ -282,66 +282,70 @@ func lerp8(a, b uint32, t float64) uint8 {
 // Every mark the interface draws, swapped as one set so the whole surface keeps one look
 type Glyphs struct {
 	// Mark of the product beside its name
-	Brand     string
-	Session   string
-	Trace     string
-	Agent     string
-	Approval  string
-	Metrics   string
-	Findings  string
-	Jobs      string
-	Mission   string
-	Sessions  string
-	Settings  string
-	Config    string
-	Palette   string
-	Terminal  string
-	Card      string
-	Profiles  string
-	Models    string
-	Rules     string
-	Hooks     string
-	MCP       string
-	Tools     string
-	Keys      string
-	Ext       string
-	Flow      string
-	Read      string
-	Write     string
-	Edit      string
-	Glob      string
-	Grep      string
-	Shell     string
-	Output    string
-	Kill      string
-	Fetch     string
-	Spawn     string
-	Record    string
-	Plan      string
-	Server    string
-	Tool      string
-	Steer     string
-	Thinking  string
-	Compact   string
-	Hook      string
-	Note      string
-	Error     string
-	Flag      string
-	Ask       string
-	Child     string
-	Attach    string
-	Cursor    string
-	Marked    string
-	Live      string
-	Hollow    string
-	Check     string
-	Skip      string
-	Todo      string
-	Done      string
-	Active    string
-	Bullet    string
-	Mask      string
-	Fork      string
+	Brand    string
+	Session  string
+	Trace    string
+	Agent    string
+	Approval string
+	Metrics  string
+	Findings string
+	Jobs     string
+	Mission  string
+	Sessions string
+	Settings string
+	Config   string
+	Palette  string
+	Terminal string
+	Card     string
+	Profiles string
+	Models   string
+	Rules    string
+	Hooks    string
+	MCP      string
+	Tools    string
+	Keys     string
+	Ext      string
+	Flow     string
+	Read     string
+	Write    string
+	Edit     string
+	Glob     string
+	Grep     string
+	Shell    string
+	Output   string
+	Kill     string
+	Fetch    string
+	Spawn    string
+	Record   string
+	Plan     string
+	Server   string
+	Tool     string
+	Steer    string
+	Thinking string
+	Compact  string
+	Hook     string
+	Note     string
+	Error    string
+	Flag     string
+	Ask      string
+	Child    string
+	Attach   string
+	Cursor   string
+	Marked   string
+	Live     string
+	Hollow   string
+	Check    string
+	Skip     string
+	Todo     string
+	Done     string
+	Active   string
+	Bullet   string
+	Mask     string
+	Fork     string
+	// Arrow of the send button, the voice input mark and the spoken replies mark
+	Send      string
+	Voice     string
+	Speak     string
 	Sep       string
 	Ellipsis  string
 	Close     string
@@ -390,7 +394,7 @@ func IcebathGlyphs() Glyphs {
 		Profiles: "⍟", Models: "⟡", Rules: "§", Hooks: "↯", MCP: "⇆", Tools: "⌗", Keys: "⌥", Ext: "⧉", Flow: "⟳",
 		Read: "◇", Write: "◆", Edit: "◈", Glob: "✶", Grep: "⚲", Shell: "⌁", Output: "⇩", Kill: "⊗", Fetch: "⇶", Spawn: "⟁", Record: "⌖", Plan: "≔", Server: "⇆", Tool: "⊳",
 		Steer: "⤷", Thinking: "∴", Compact: "⇊", Hook: "↯", Note: "◦", Error: "✘", Flag: "!", Ask: "?", Child: "⟁", Attach: "⎘", Cursor: "▍", Marked: "▮",
-		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔",
+		Live: "◉", Hollow: "○", Check: "✓", Skip: "⊠", Todo: "□", Done: "■", Active: "◈", Bullet: "▹", Mask: "∙", Fork: "⋔", Send: "➤", Voice: "∿", Speak: "♪",
 		Sep: "│", Ellipsis: "⋯", Close: "✕", Prompt: "$", Notch: "▍", Grip: "⊹", Back: "❮", Info: "◈", Success: "✓", Warn: "◬", Fail: "✘", Search: "⚲", None: "∅",
 		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", SwitchOn: "━━●", SwitchOff: "●┈┈", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "━", Empty: "─",
 		Ramp:    []rune("▁▂▃▄▅▆▇█"),
@@ -407,7 +411,7 @@ func ASCIIGlyphs() Glyphs {
 		Profiles: "@", Models: "o", Rules: "S", Hooks: "!", MCP: "=", Tools: "+", Keys: "k", Ext: "x", Flow: "@",
 		Read: "r", Write: "w", Edit: "e", Glob: "*", Grep: "/", Shell: "$", Output: "v", Kill: "x", Fetch: "@", Spawn: "&", Record: "!", Plan: ":", Server: "=", Tool: ">",
 		Steer: "~", Thinking: ":", Compact: "v", Hook: "!", Note: "-", Error: "x", Flag: "!", Ask: "?", Child: "&", Attach: "+", Cursor: ">", Marked: "#",
-		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y",
+		Live: "*", Hollow: "o", Check: "+", Skip: "x", Todo: "_", Done: "#", Active: ">", Bullet: "-", Mask: "*", Fork: "Y", Send: ">", Voice: "~", Speak: "*",
 		Sep: "|", Ellipsis: "...", Close: "x", Prompt: "$", Notch: "|", Grip: "+", Back: "<", Info: "*", Success: "+", Warn: "!", Fail: "x", Search: "/", None: "-",
 		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", SwitchOn: "==O", SwitchOff: "O--", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
 		Ramp:    []rune(".:-=+*#%"),

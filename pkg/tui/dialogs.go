@@ -61,6 +61,10 @@ func registerPromptKeys(km *keys.Map) {
 type dialogChoice struct {
 	label string
 	value string
+	// Key that picks the choice, shown in place of its number
+	key string
+	// Whether picking it destroys something, its label in the error tone
+	danger bool
 }
 
 // Text the user types into a dialog, masked for credentials, taking several lines where an answer may run long, a hint standing in while it holds
@@ -341,7 +345,7 @@ func (d *dialogCard) rows(width int) []string {
 	}
 	var rows []string
 	tone := t.Color.Text
-	if d.danger {
+	if d.danger && d.kind != "confirm" {
 		tone = t.Color.Warn
 	}
 	for _, para := range d.body {
@@ -448,6 +452,9 @@ func (d *dialogCard) optionRows(width, margin int) []string {
 			}
 		}
 		head := fmt.Sprintf(" %d %s", i+1, mark)
+		if c.key != "" {
+			head = " " + c.key + " " + mark
+		}
 		under := strings.Repeat(" ", ansi.StringWidth(head))
 		lit := i == d.sel && d.focus < 0
 		if lit {
@@ -459,11 +466,15 @@ func (d *dialogCard) optionRows(width, margin int) []string {
 			if n == 0 {
 				text = head + line
 			}
+			litTone := t.Color.Text
+			if c.danger {
+				litTone = t.Color.Error
+			}
 			switch {
 			case lit && n == 0:
-				rows = append(rows, pad+toneStyle(t.Color.Accent).Bold(true).Render("▸")+toneStyle(t.Color.Text).Bold(true).Render(text))
+				rows = append(rows, pad+toneStyle(t.Color.Accent).Bold(true).Render("▸")+toneStyle(litTone).Bold(true).Render(text))
 			case lit:
-				rows = append(rows, pad+" "+toneStyle(t.Color.Text).Bold(true).Render(text))
+				rows = append(rows, pad+" "+toneStyle(litTone).Bold(true).Render(text))
 			default:
 				rows = append(rows, pad+" "+toneStyle(t.Color.Muted).Render(text))
 			}
@@ -1142,8 +1153,11 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 		if no == "" {
 			no = tr(txt.PromptConfirmCancel)
 		}
-		d.choices = []dialogChoice{{label: no, value: "no"}, {label: yes, value: "yes"}}
-		d.hint = func() string { return tr(txt.PromptConfirmHint) }
+		d.choices = []dialogChoice{{label: yes, value: "yes", key: d.app.keys.First("confirm.yes"), danger: req.Danger},
+			{label: no, value: "no", key: d.app.keys.First("confirm.no")}}
+		if req.Danger {
+			d.sel = 1
+		}
 		d.onAnswer = func(choice *dialogChoice, _ []string, _ []string) tea.Cmd {
 			o.Confirm = nil
 			if choice != nil && choice.value == "yes" && req.OnConfirm != nil {

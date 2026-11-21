@@ -76,6 +76,21 @@ type Terminal struct {
 	themed string
 	// Command line the window runs in place of an interactive shell, empty for the shell
 	line string
+	// Program and arguments the window runs directly in place of a shell, empty for the shell or a command line
+	argv []string
+	// Called once when the program ends, the window closes first or the program fails to start, with what the program left on screen
+	OnEnd func(TerminalEnd) tea.Cmd
+	ended bool
+}
+
+// How the program of a window ended, the text it left on screen and in the scrollback and its exit, nil when it never got to exit
+type TerminalEnd struct {
+	Output string
+	Exit   *term.Exit
+	// Error that kept the program from starting
+	Err error
+	// Whether the window was closed while the program still ran
+	Closed bool
 }
 
 // Output arrived on the session of a terminal
@@ -114,9 +129,18 @@ func NewTerminalCommand(env *Env, id int, dir, line string) *Terminal {
 	return &Terminal{env: env, id: id, dir: dir, line: strings.TrimSpace(line)}
 }
 
+// Builds terminal number id running a program with its arguments in dir without a shell, the window closing when it ends well and staying
+// open with its output when it fails
+func NewTerminalArgv(env *Env, id int, dir string, argv []string) *Terminal {
+	return &Terminal{env: env, id: id, dir: dir, argv: append([]string(nil), argv...)}
+}
+
 func (t *Terminal) Title() string {
 	if t.title != "" {
 		return render.Truncate(t.title, 40, t.env.Theme)
+	}
+	if len(t.argv) > 0 {
+		return render.Truncate(filepath.Base(t.argv[0])+" "+strings.Join(t.argv[1:], " "), 40, t.env.Theme)
 	}
 	if t.line != "" {
 		return render.Truncate(t.line, 40, t.env.Theme)
@@ -204,6 +228,9 @@ func (t *Terminal) command() term.Command {
 	}
 	if t.line != "" {
 		cmd = lineCommand(cmd, t.line)
+	}
+	if len(t.argv) > 0 {
+		cmd = term.Command{Path: t.argv[0], Args: t.argv[1:]}
 	}
 	cmd.Dir = t.startDir()
 	cmd.Env = append(term.Environ(os.Environ(), t.env.Version), "ICEBATH=1")
@@ -293,6 +320,28 @@ func (t *Terminal) wait(s *term.Session) tea.Cmd {
 	}
 }
 
+// Text the program left in the scrollback and on the screen, soft wrapped rows joined and blank rows at the end dropped
+func (t *Terminal) Output() string {
+	if t.sess == nil {
+		return ""
+	}
+	e := t.sess.Emu
+	w, h := e.Size()
+	first := e.Base() - uint64(e.ScrollbackLen())
+	last := e.Base() + uint64(max(h-1, 0))
+	text := e.Text(term.Selection{Anchor: term.Pos{Row: first}, Head: term.Pos{Row: last, Col: max(w-1, 0)}, Mode: term.SelLines})
+	return strings.TrimRight(text, " \n")
+}
+
+// Hands how the program ended to the owner once
+func (t *Terminal) end(e TerminalEnd) tea.Cmd {
+	if t.ended || t.OnEnd == nil {
+		return nil
+	}
+	t.ended = true
+	return t.OnEnd(e)
+}
+
 // Ends the shell and waits for it, for a program shutting down
 func (t *Terminal) Close() {
 	t.closed = true
@@ -335,14 +384,20 @@ func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		exit := msg.exit
 		t.exit = &exit
 		t.sel, t.drag = nil, false
+		drained := t.drain()
+		ended := t.end(TerminalEnd{Output: t.Output(), Exit: &exit, Closed: t.closed})
 		if t.closed {
-			return t, nil
+			return t, tea.Batch(drained, ended)
 		}
 		level := wm.Info
-		if exit.Err != nil || exit.Signal != "" || exit.Code != 0 {
+		failed := exit.Err != nil || exit.Signal != "" || exit.Code != 0
+		if failed {
 			level = wm.Warn
 		}
-		return t, tea.Batch(t.drain(), wm.Notify(t.Title()+": "+t.endedText(), level), wm.RequestClose(t))
+		if failed && len(t.argv) > 0 {
+			return t, tea.Batch(drained, ended, wm.Notify(t.Title()+": "+t.endedText(), level))
+		}
+		return t, tea.Batch(drained, ended, wm.Notify(t.Title()+": "+t.endedText(), level), wm.RequestClose(t))
 	case wm.FocusMsg:
 		t.focused = msg.Focused
 		if t.live() {
@@ -357,10 +412,11 @@ func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		return t, nil
 	case wm.ClosedMsg:
 		t.closed = true
+		ended := t.end(TerminalEnd{Output: t.Output(), Exit: t.exit, Err: t.err, Closed: t.exit == nil})
 		if s := t.sess; s != nil {
 			go s.Close()
 		}
-		return t, nil
+		return t, ended
 	case wm.ActionMsg:
 		return t, t.act(msg.ID)
 	case SettingChangedMsg:
@@ -401,7 +457,7 @@ func (t *Terminal) started(msg termStartMsg) tea.Cmd {
 	t.starting = false
 	if msg.err != nil {
 		t.err = msg.err
-		return wm.Notify("terminal: "+msg.err.Error(), wm.Error)
+		return tea.Batch(t.end(TerminalEnd{Err: msg.err}), wm.Notify("terminal: "+msg.err.Error(), wm.Error))
 	}
 	if t.closed {
 		go msg.s.Close()
@@ -484,7 +540,10 @@ func (t *Terminal) key(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	if !t.live() {
-		if msg.Code == tea.KeyEnter && !t.starting {
+		switch {
+		case msg.Code == tea.KeyEnter && t.ended:
+			return wm.RequestClose(t)
+		case msg.Code == tea.KeyEnter && !t.starting:
 			return t.restart()
 		}
 		return nil
@@ -971,6 +1030,9 @@ func (t *Terminal) exitText() string {
 		state = base.Foreground(th.Alarm).Render(fmt.Sprintf(" %s exit %d ", th.Glyphs.Fail, t.exit.Code))
 	default:
 		state = base.Foreground(th.Alive).Render(" " + th.Glyphs.Success + " exit 0 ")
+	}
+	if t.ended {
+		return state + base.Foreground(th.TextDim).Render(" enter closes ")
 	}
 	hint := "enter"
 	if k := t.env.key("terminal.restart"); k != "" {

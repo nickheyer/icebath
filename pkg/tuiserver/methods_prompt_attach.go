@@ -81,11 +81,11 @@ func clipboardPaste(ctx context.Context, rid any, params map[string]any) map[str
 		missing, noDesktop := ClipboardImageBlocker()
 		switch {
 		case missing != "":
-			message = "pasting an image needs " + missing + " on this desktop; install it, or attach the file with /image <path>"
+			message = "pasting an image needs " + missing + " on this desktop; install it, or paste the file's path into the prompt"
 		case noDesktop:
-			message = "no desktop clipboard is reachable from this gateway; attach the image with /image <path> or drop the file into the prompt"
+			message = "no desktop clipboard is reachable from this gateway; paste or drop the image file's path into the prompt"
 		case HasClipboardImage():
-			message = "the clipboard holds an image that could not be written as PNG; copy it again or attach the file with /image <path>"
+			message = "the clipboard holds an image that could not be written as PNG; copy it again or paste the file's path into the prompt"
 		}
 		return imageAnswer(rid, tuigateway.AttachedImageResult{Message: message})
 	}

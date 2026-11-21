@@ -162,6 +162,14 @@ func (g *Tabs) Status() string {
 	return ""
 }
 
+// Footer line of the active tab
+func (g *Tabs) Footer(room int) FooterLine {
+	if f, ok := g.current().(Footer); ok {
+		return f.Footer(room)
+	}
+	return FooterLine{}
+}
+
 // Cursor of the active card moved down past the strip and its padding
 func (g *Tabs) Cursor() *tea.Cursor {
 	c, ok := g.current().(Cursorer)

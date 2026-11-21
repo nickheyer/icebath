@@ -79,7 +79,9 @@ type transcriptView struct {
 	sticky bool
 	// Row each user prompt starts at and its text, for the prompt kept in view while its reply scrolls
 	prompts []promptRow
-	stable  struct {
+	// Pictures wholly inside the window as last painted, their rows counted from the first row of the window
+	inView []imageSpot
+	stable struct {
 		key   blockKey
 		lines []string
 	}
@@ -210,7 +212,8 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx, st blockState) blockRow
 	case m.Kind == "diff":
 		out.lines = diffLines(m, c)
 	case m.Kind == "image":
-		return blockRows{lines: imageLines(m, c)}
+		lines, spots := imageLines(m, c)
+		return blockRows{lines: lines, images: spots}
 	case m.Kind == "slash":
 		out.lines = wrapUnder(m.Text, c.width, "", toneStyle(c.t.Color.Accent))
 	case m.Kind == "delegation":
@@ -236,8 +239,13 @@ func (v *transcriptView) renderBlock(m msg, c renderCtx, st blockState) blockRow
 			out.lines = wrapUnder(stripAnsi(m.Text), c.width, "", toneStyle(tone))
 		}
 	}
-	if pictures := imageLines(m, c); len(pictures) > 0 {
+	if pictures, spots := imageLines(m, c); len(pictures) > 0 {
+		at := len(out.lines) + 1
 		out.lines = append(append(out.lines, ""), pictures...)
+		for _, spot := range spots {
+			spot.row += at
+			out.images = append(out.images, spot)
+		}
 	}
 	if len(m.Pastes) > 0 {
 		out.add(pasteRows(m, c, st))
@@ -645,7 +653,7 @@ func (v *transcriptView) liveRows(s *tuiStore, stream string, c renderCtx, tick 
 		if seg := turn.StreamSegments[i]; blockRenders(seg, c.details) {
 			gap()
 			block := v.block(seg, c)
-			placed = append(placed, placedBlock{id: seg.ID, row: len(out.lines), rows: len(block.lines), parts: block.parts})
+			placed = append(placed, placedBlock{id: seg.ID, row: len(out.lines), rows: len(block.lines), parts: block.parts, images: block.images})
 			out.lines = append(out.lines, block.lines...)
 		}
 	}
@@ -786,7 +794,7 @@ func (v *transcriptView) rows(history []msg, s *tuiStore, stream string, c rende
 		if m.Role == "user" && m.Kind == "" {
 			v.prompts = append(v.prompts, promptRow{row: len(lines), text: userDisplay(m.Text)})
 		}
-		v.placed = append(v.placed, placedBlock{id: m.ID, row: len(lines), rows: len(block.lines), parts: block.parts})
+		v.placed = append(v.placed, placedBlock{id: m.ID, row: len(lines), rows: len(block.lines), parts: block.parts, images: block.images})
 		lines = append(lines, block.lines...)
 		prev = &history[i]
 	}
@@ -842,6 +850,19 @@ func (v *transcriptView) view(lines []string, width, height int, c renderCtx) st
 	if v.sticky = sticky != "" && height > 2; v.sticky {
 		lead := toneStyle(c.t.Color.Prompt).Render(c.ut.Glyphs.Prompt + " ")
 		out[0] = lead + toneStyle(c.t.Color.Muted).Render(truncateEnd(strings.ReplaceAll(sticky, "\n", " "), max(width-6, 8)))
+	}
+	v.inView = v.inView[:0]
+	first := top
+	if v.sticky {
+		first++
+	}
+	for _, block := range v.placed {
+		for _, spot := range block.images {
+			if row := block.row + spot.row; row >= first && row+spot.rows <= top+height {
+				spot.row = row - top
+				v.inView = append(v.inView, spot)
+			}
+		}
 	}
 	if v.total > height && width > 4 {
 		scrollbarRows(out, top, v.total, width, c.t, c.ut)

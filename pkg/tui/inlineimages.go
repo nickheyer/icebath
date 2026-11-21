@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-isatty"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -53,11 +54,26 @@ type inlineImages struct {
 	// Count of layouts that landed, part of the identity of every block that draws pictures
 	gen      int
 	graphics bool
+	// Pictures the terminal draws as pixels, sized from their files here, least recently used first
+	pictures     map[imageKey]*placedPicture
+	pictureOrder []imageKey
+	// Protocol and cell size the pixel pictures are laid out for
+	look pictureLook
+	// Screen cell the session content starts at, the boxes the pictures in view should be drawn in and the pictures on screen
+	ox, oy  int
+	desired []placement
+	shown   map[placement]*standing
+	// Layout the drawing waits to hold still, and whether a sixel or iTerm2 picture went down so only a full repaint clears it
+	layoutGen int
+	repaint   bool
+	// Whether the screen is being left, no picture drawn again
+	closed bool
 }
 
 // Empty picture store of an app, asking for graphics when stdout is a terminal
 func newInlineImages(a *app) *inlineImages {
-	return &inlineImages{a: a, renders: map[imageKey]*imageRender{}, placed: map[string]string{}, graphics: isatty.IsTerminal(os.Stdout.Fd())}
+	return &inlineImages{a: a, renders: map[imageKey]*imageRender{}, placed: map[string]string{}, graphics: isatty.IsTerminal(os.Stdout.Fd()),
+		pictures: map[imageKey]*placedPicture{}, shown: map[placement]*standing{}}
 }
 
 // Image form this terminal paints, kitty placeholders or half blocks, read from the environment alone.
@@ -128,9 +144,20 @@ func (s *inlineImages) touch(key imageKey) {
 	}
 }
 
-// Painted rows of a picture, none while its layout is on the way or when it cannot be drawn, asking for the layout the first time
-func (s *inlineImages) rows(path, revision string, cols, rows int) []string {
+// Painted rows of a picture, blank rows the terminal draws its pixels over or rows of cells, none while its layout is on the way or when it
+// cannot be drawn, asking for the layout the first time
+func (s *inlineImages) rows(path, revision string, cols, rows int) ([]string, bool) {
 	key := imageKey{path: path, revision: revision, cols: cols, rows: rows}
+	if s.placing() {
+		if lines := s.pictureRows(key); lines != nil {
+			return lines, true
+		}
+	}
+	return s.cellRows(key), false
+}
+
+// Rows of cells of a picture as the gateway lays it out, kitty placeholders or half blocks
+func (s *inlineImages) cellRows(key imageKey) []string {
 	if r := s.renders[key]; r != nil {
 		switch {
 		case r.pending, r.off:
@@ -203,22 +230,35 @@ func (s *inlineImages) retry() {
 	s.gen++
 }
 
-// Rows of the pictures of a transcript row under the block indent, none while inline images are off
-func imageLines(m msg, c renderCtx) []string {
+// Rows of the pictures of a transcript row under the block indent and where the ones the terminal draws as pixels sit among them, none while
+// inline images are off
+func imageLines(m msg, c renderCtx) ([]string, []imageSpot) {
 	if c.images == nil || !c.inlineImages || len(m.Images) == 0 {
-		return nil
+		return nil, nil
 	}
 	maxRows := inlineImageMaxRows
 	if m.ImageRows > 0 {
 		maxRows = m.ImageRows
 	}
 	maxCols := max(1, min(inlineImageMaxCols*maxRows/inlineImageMaxRows, c.width-transcriptIndent))
+	if c.images.placing() {
+		if m.ImageRows <= 0 {
+			maxRows = placedMaxRows
+		}
+		maxCols = max(1, min(placedMaxCols, c.width-transcriptIndent))
+	}
 	pad := strings.Repeat(" ", transcriptIndent)
 	var lines []string
+	var spots []imageSpot
 	for _, path := range m.Images {
-		for _, row := range c.images.rows(path, m.ImageRevision, maxCols, maxRows) {
+		rows, placed := c.images.rows(path, m.ImageRevision, maxCols, maxRows)
+		if placed && len(rows) > 0 {
+			spots = append(spots, imageSpot{key: imageKey{path: path, revision: m.ImageRevision, cols: maxCols, rows: maxRows}, row: len(lines),
+				col: transcriptIndent, cols: ansi.StringWidth(rows[0]), rows: len(rows)})
+		}
+		for _, row := range rows {
 			lines = append(lines, pad+row)
 		}
 	}
-	return lines
+	return lines, spots
 }

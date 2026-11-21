@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
-	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 const (
@@ -72,24 +71,6 @@ func (a *app) goodVibesHeart(t theme) string {
 		return ""
 	}
 	return toneStyle([]string{t.Color.Error, t.Color.Warn, t.Color.Accent}[a.heartTone%3]).Render("♥")
-}
-
-// Voice state of the status bar with its color role, the capture marks while recording or transcribing, else the mode with the mark of spoken replies
-func (a *app) voiceLabel() (string, wm.SegmentStyle) {
-	switch {
-	case a.voiceRecording:
-		return tr(txt.SessionMainVoiceRec), wm.Bad
-	case a.voiceProcessing:
-		return tr(txt.SessionMainVoiceStt), wm.Hot
-	}
-	label := tr(txt.SessionMainVoiceOff)
-	if a.voiceEnabled {
-		label = tr(txt.SessionMainVoiceOn)
-	}
-	if a.voiceTTS {
-		label += tr(txt.SessionMainVoiceTtsSuffix)
-	}
-	return label, wm.Dim
 }
 
 // Inputs whose transcript bubble this client painted at submit time

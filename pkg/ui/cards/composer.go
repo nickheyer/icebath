@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -92,7 +93,7 @@ type Composer struct {
 	busy        bool
 	button      sendButton
 	cut         int
-	// Rows the input took in the last view, below the completion popup
+	// Rows the input took in the last view
 	shown      int
 	width      int
 	undo, redo []composerSnap
@@ -109,6 +110,12 @@ type Composer struct {
 	Apply func(text string, replace int) tea.Cmd
 	// Called before the prompt is read for sending, for an app that rewrites its draft first
 	Sending func()
+	// Stops the running reply, what the send button does while a reply runs and nothing is typed
+	OnStop func() tea.Cmd
+	// Whether the session is out of reach, the send button showing it cannot send
+	Offline bool
+	// Frame count of the owner's animation clock, the send button pulsing with it while a reply runs
+	Phase int
 }
 
 // File the draft of a session is kept in under dir
@@ -399,10 +406,10 @@ func (c *Composer) Attachments() []string {
 	return out
 }
 
-// Popup of the candidates offered for exactly the text typed now, a list of an older text closed
+// Popup of the candidates offered for exactly the text typed now, nil while the text moved on and the next answer is awaited
 func (c *Composer) live() *completion {
 	if c.comp != nil && c.comp.value != c.ta.Value() {
-		c.comp = nil
+		return nil
 	}
 	return c.comp
 }
@@ -418,9 +425,13 @@ func (c *Composer) Completions() []string {
 // Reports whether the completion popup is open for the text typed now
 func (c *Composer) Completing() bool { return c.live() != nil }
 
-// Shows the candidates the app found for a prompt text, the first one highlighted, none or a text no longer typed closing the popup
+// Shows the candidates the app found for a prompt text, the first one highlighted, none closing the popup. An answer for a text no longer
+// typed is dropped and the shown list kept until the answer for the current text replaces it, so the popup does not blink on every key
 func (c *Composer) Offer(value string, offers []Offer, replace int) {
-	if len(offers) == 0 || value != c.ta.Value() || value == c.quiet {
+	if value != c.ta.Value() {
+		return
+	}
+	if len(offers) == 0 || value == c.quiet {
 		c.comp = nil
 		return
 	}
@@ -438,13 +449,10 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 	c.comp = comp
 }
 
-// Rows the composer wants, two at least, growing with the wrapped text and the completion popup
+// Rows the composer wants, two at least, growing with the wrapped text only. The completion popup floats over the rows above the composer
+// (see Popup) so opening, narrowing or closing it never moves the layout
 func (c *Composer) Height() int {
-	rows := max(c.ta.Height(), minInputRows)
-	if c.live() != nil {
-		rows += min(len(c.comp.items), popupRows)
-	}
-	return rows
+	return max(c.ta.Height(), minInputRows)
 }
 
 // Reports whether the input is empty with nothing attached
@@ -879,25 +887,48 @@ func (c *Composer) base() string {
 	return wd
 }
 
-// Send or steer button in capitals, dim while the input is empty and lit once there is something to send
+// Send button, one arrow whose look follows the session: dim on an empty prompt, a lit pill once there is something to send, a pulsing steer
+// arrow while a reply runs and something is typed, a pulsing stop mark while a reply runs on an empty prompt and a cross while the session is
+// out of reach. It always takes three cells so the input never re-wraps as the state changes
 func (c *Composer) buttonLabel() string {
 	t := c.theme
-	word := "send"
-	if c.busy {
-		word = "steer"
+	g := t.Glyphs
+	glyph := func(mark, fallback string) string {
+		if mark == "" {
+			return fallback
+		}
+		return mark
 	}
+	send, steer, stop, off := glyph(g.Send, ">"), glyph(g.Steer, "~"), glyph(g.Done, "#"), glyph(g.Fail, "x")
+	empty := c.Empty()
 	if t.Plain {
-		return "[ " + word + " ]"
+		mark := send
+		switch {
+		case c.Offline:
+			mark = off
+		case c.busy && empty:
+			mark = stop
+		case c.busy:
+			mark = steer
+		}
+		if empty && !c.busy && !c.Offline {
+			return lipgloss.NewStyle().Foreground(t.TextDim).Render(" " + mark + " ")
+		}
+		return lipgloss.NewStyle().Reverse(true).Render(" " + mark + " ")
 	}
-	text := " " + strings.ToUpper(word) + " "
-	lit := t.Ice
-	if c.busy {
-		lit = t.Accent
+	pulse := (1 + math.Sin(float64(c.Phase)*0.35)) / 2
+	cell := lipgloss.NewStyle().Bold(true)
+	switch {
+	case c.Offline:
+		return cell.Foreground(t.Alarm).Render(" " + off + " ")
+	case c.busy && empty:
+		return cell.Foreground(theme.Mix(t.TextDim, t.Accent, 0.3+0.7*pulse)).Render(" " + stop + " ")
+	case c.busy:
+		return cell.Foreground(t.Bg).Background(theme.Mix(t.Steel, t.Accent, 0.45+0.55*pulse)).Render(" " + steer + " ")
+	case empty:
+		return cell.Foreground(t.Steel).Render(" " + send + " ")
 	}
-	if c.Empty() {
-		return lipgloss.NewStyle().Foreground(lit).Background(t.Ghost).Render(text)
-	}
-	return lipgloss.NewStyle().Foreground(t.Bg).Background(lit).Bold(true).Render(text)
+	return cell.Foreground(t.Bg).Background(t.Ice).Render(" " + send + " ")
 }
 
 // Empty prompt line, the mark then how to reach commands and the palette, all muted
@@ -934,11 +965,10 @@ func (c *Composer) Fit(w int) int {
 }
 
 func (c *Composer) View(w, h int) string {
-	popup := c.popup(w)
-	rows := max(h-len(popup), 1)
+	rows := max(h, 1)
 	button := c.buttonLabel()
 	iw := c.Fit(w)
-	c.button.y, c.shown = len(popup), h-len(popup)
+	c.button.y, c.shown = 0, rows
 	input := strings.Split(c.ta.View(), "\n")
 	c.cut = 0
 	if len(input) > rows {
@@ -964,7 +994,6 @@ func (c *Composer) View(w, h int) string {
 		input[0] += " " + button
 	}
 	parts := make([]string, 0, h)
-	parts = append(parts, popup...)
 	parts = append(parts, input...)
 	for len(parts) < h {
 		parts = append(parts, "")
@@ -972,44 +1001,62 @@ func (c *Composer) View(w, h int) string {
 	return strings.Join(parts[:h], "\n")
 }
 
-// Sends when the click lands on the send button, reporting whether it did
+// Sends when the click lands on the send button, or stops the running reply when nothing is typed, reporting whether it took the click
 func (c *Composer) Click(x, y int) (tea.Cmd, bool) {
 	b := c.button
 	if b.w == 0 || y != b.y || x < b.x || x >= b.x+b.w {
 		return nil, false
 	}
+	if c.busy && c.Empty() && c.OnStop != nil {
+		return c.OnStop(), true
+	}
 	return c.submit(), true
 }
 
-// Completion rows shown above the input
-func (c *Composer) popup(w int) []string {
-	if c.live() == nil {
+// Completion rows the owner paints over the rows right above the composer, the list last offered kept while the answer for newer text is
+// awaited, nil when closed or unfocused
+func (c *Composer) Popup(w int) []string {
+	comp := c.comp
+	if comp == nil || !c.focused || len(comp.items) == 0 {
 		return nil
 	}
 	t := c.theme
-	limit := min(len(c.comp.items), popupRows)
+	limit := min(len(comp.items), popupRows)
 	from := 0
-	if c.comp.idx >= limit {
-		from = c.comp.idx - limit + 1
+	if comp.idx >= limit {
+		from = comp.idx - limit + 1
 	}
+	base := lipgloss.NewStyle().Foreground(t.Text).Background(t.Surface)
+	dim := lipgloss.NewStyle().Foreground(t.TextDim).Background(t.Surface)
+	lit := lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
 	var rows []string
-	for i := from; i < from+limit && i < len(c.comp.items); i++ {
-		item := c.comp.items[i]
-		label := item
-		if i < len(c.comp.descs) && c.comp.descs[i] != "" {
-			label = render.Fit(item, 14, t) + " " + render.Dim(c.comp.descs[i], t)
+	for i := from; i < from+limit && i < len(comp.items); i++ {
+		name, desc := " "+ansi.Strip(comp.items[i]), ""
+		if i < len(comp.descs) && comp.descs[i] != "" {
+			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), 14, t)+" ", ansi.Strip(comp.descs[i])
 		}
-		st := lipgloss.NewStyle().Foreground(t.Text)
-		if i == c.comp.idx {
-			st = lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
-			label = ansi.Strip(label)
+		line := render.Fit(name+desc, w, t)
+		if i == comp.idx {
+			rows = append(rows, lit.Render(line))
+			continue
 		}
-		rows = append(rows, st.Render(render.Fit(" "+label, w, t)))
+		cut := min(ansi.StringWidth(name), ansi.StringWidth(line))
+		rows = append(rows, base.Render(ansi.Truncate(line, cut, ""))+dim.Render(ansi.TruncateLeft(line, cut, "")))
 	}
 	return rows
 }
 
-// Cursor inside the input area, below any completion popup
+// Paints the completion popup over the last rows of the lines above the composer, leaving the layout where it was
+func OverlayPopup(above []string, popup []string) []string {
+	if len(popup) == 0 || len(above) == 0 {
+		return above
+	}
+	popup = popup[max(len(popup)-len(above), 0):]
+	copy(above[len(above)-len(popup):], popup)
+	return above
+}
+
+// Cursor inside the input area
 func (c *Composer) Cursor() *tea.Cursor {
 	if !c.focused {
 		return nil
@@ -1019,9 +1066,6 @@ func (c *Composer) Cursor() *tea.Cursor {
 		return nil
 	}
 	cur.Y -= c.cut
-	if c.live() != nil {
-		cur.Y += min(len(c.comp.items), popupRows)
-	}
 	return cur
 }
 

@@ -416,13 +416,19 @@ func (l *sessionLifecycle) onResumeScroll(m resumeScrollMsg) tea.Cmd {
 	}
 	scroll.scrollToBottom()
 	if m.index == 0 {
-		return tea.ClearScreen
+		return l.store.clearScreen()
 	}
 	return nil
 }
 
 // Starts a session, closing the current one unless kept, then names it and adopts its subscription
 func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bool, then func(sid string) tea.Cmd) tea.Cmd {
+	return l.startSession(message, title, keepCurrent, true, then)
+}
+
+// Starts a session as startNewSession does. With intro set the transcript opens on the session banner and the notices of the new session;
+// without it, as /clear wants, the transcript stays blank: no banner, no notices, no setup panel
+func (l *sessionLifecycle) startSession(message, title string, keepCurrent, intro bool, then func(sid string) tea.Cmd) tea.Cmd {
 	l.attachmentFlight++
 	flight := l.attachmentFlight
 	previousSid := l.store.ui.Sid
@@ -461,9 +467,13 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 		connected := true
 		l.store.ui.GatewayConnected = &connected
 		l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = a.Info, a.SessionID, status, a.StoredSID, usageFrom(a.Info)
-		l.view.setHistoryItems(func([]msg) []msg { return []msg{introMsg(a.Info)} })
-		reportNewSessionNotices(a.Info, message, l.view.sys)
-		l.printClosed(closed)
+		if intro {
+			l.view.setHistoryItems(func([]msg) []msg { return []msg{introMsg(a.Info)} })
+			reportNewSessionNotices(a.Info, message, l.view.sys)
+			l.printClosed(closed)
+		} else {
+			l.view.setHistoryItems(func([]msg) []msg { return []msg{} })
+		}
 		cmds := []tea.Cmd{}
 		if requestedTitle != "" {
 			cmds = append(cmds, l.nameNewSession(a.SessionID, requestedTitle))
@@ -527,7 +537,9 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 				return settle("")
 			}
 			if !serves {
-				l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
+				if intro {
+					l.view.panel(setupRequiredTitle(), buildSetupRequiredSections())
+				}
 				l.store.ui.Status = tr(txt.SessionStatusSetupRequired)
 				return settle("")
 			}
@@ -590,6 +602,13 @@ func (l *sessionLifecycle) nameNewSession(sid, requestedTitle string) tea.Cmd {
 // Starts a fresh session in place of the current one
 func (l *sessionLifecycle) newSession(message, title string, then func(sid string) tea.Cmd) tea.Cmd {
 	return l.startNewSession(message, title, false, then)
+}
+
+// Wipes the transcript at once, the /clear line itself included, then starts a fresh session in place of the current one that adds nothing to it
+func (l *sessionLifecycle) clearSession(then func(sid string) tea.Cmd) tea.Cmd {
+	l.view.setHistoryItems(func([]msg) []msg { return []msg{} })
+	l.view.setStickyPrompt("")
+	return l.startSession("", "", false, false, then)
 }
 
 // Starts a fresh session beside the current live one, closing the switcher

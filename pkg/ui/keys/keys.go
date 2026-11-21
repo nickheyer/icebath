@@ -580,6 +580,24 @@ func Pair(a, b string) string {
 // Name of the keybind file inside the configuration directory
 const FileName = "keybinds.json"
 
+// Binds the map to the keybind file at path and applies it over the defaults when it exists, a missing file leaving the defaults in force
+// until the first save writes one
+func (m *Map) Load(path string) error {
+	m.path = path
+	if path == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return m.Reload()
+}
+
+// Puts every action back on its default keys
+func (m *Map) ResetAll() {
+	m.defaults()
+}
+
 // Reads the file again over the default keys without writing it, keeping the keys in force when it does not parse
 func (m *Map) Reload() error {
 	if m.path == "" {

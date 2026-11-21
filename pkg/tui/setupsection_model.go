@@ -1,17 +1,14 @@
 package tui
 
 import (
-	"errors"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/ui/tty"
+	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -248,9 +245,7 @@ func (a *app) askHosted(f *hostedFlow, q *tuigateway.SetupHostedQuestion) tea.Cm
 		}
 		settled = true
 		a.sys(tr(txt.SetupFlowFlowRunning, strings.Join(argv, " ")))
-		return tty.Exec(exec.Command(argv[0], argv[1:]...), func(err error) tea.Msg {
-			return asyncDoneMsg{run: func() tea.Cmd { return a.answerHosted(f, id, commandAnswer(err)) }}
-		})
+		return a.runInTerminal(argv, func(end cards.TerminalEnd) tea.Cmd { return a.answerHosted(f, id, terminalAnswer(end)) })
 	}
 	p := wm.NewPrompt(a.toolkit, title, "", func(text string) tea.Cmd {
 		settled = true
@@ -260,17 +255,23 @@ func (a *app) askHosted(f *hostedFlow, q *tuigateway.SetupHostedQuestion) tea.Cm
 	return a.wm.ShowOverlay(p)
 }
 
-// Answer of a terminal program run, ran when it exited on its own, else the start error
-func commandAnswer(err error) tuigateway.SetupHostedAnswerParams {
-	var exit *exec.ExitError
-	switch {
-	case err == nil:
-		return tuigateway.SetupHostedAnswerParams{Ran: true}
-	case errors.As(err, &exit):
-		status, waited := exit.Sys().(syscall.WaitStatus)
-		return tuigateway.SetupHostedAnswerParams{Ran: !waited || !status.Signaled()}
+// Most of a program's output an answer carries, its newest text
+const hostedOutputLimit = 64 << 10
+
+// Answer of a program run in a terminal window: ran when it exited on its own, with the text it left so the flow can take a token it
+// printed; not ran when the window was closed first; the start error when it never ran
+func terminalAnswer(end cards.TerminalEnd) tuigateway.SetupHostedAnswerParams {
+	output := end.Output
+	if len(output) > hostedOutputLimit {
+		output = output[len(output)-hostedOutputLimit:]
 	}
-	return tuigateway.SetupHostedAnswerParams{Error: err.Error()}
+	switch {
+	case end.Err != nil:
+		return tuigateway.SetupHostedAnswerParams{Error: end.Err.Error()}
+	case end.Exit == nil:
+		return tuigateway.SetupHostedAnswerParams{Text: output}
+	}
+	return tuigateway.SetupHostedAnswerParams{Ran: end.Exit.Signal == "" && end.Exit.Err == nil, Text: output}
 }
 
 // Settles a finished flow, naming a changed default model and starting the first session once one is set

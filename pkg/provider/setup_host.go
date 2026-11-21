@@ -257,11 +257,49 @@ func askHostedChecklist(ask SetupAsker, title string, rows []string, pre []int) 
 
 // Whether a hosted run of a terminal program exited on its own, an error when it could not start
 func askHostedCommand(ask SetupAsker, argv []string) (bool, error) {
+	ran, _, err := askHostedCommandOutput(ask, argv)
+	return ran, err
+}
+
+// Runs a program in a terminal window of the host as askHostedCommand does, also returning the text it left on screen
+func askHostedCommandOutput(ask SetupAsker, argv []string) (bool, string, error) {
 	answer := ask(HostedPrompt{Kind: HostedCommand, Argv: argv, Title: strings.Join(argv, " ")})
 	if answer.Err != "" {
-		return false, errors.New(answer.Err)
+		return false, "", errors.New(answer.Err)
 	}
-	return !answer.Cancelled && answer.Ran, nil
+	return !answer.Cancelled && answer.Ran, answer.Text, nil
+}
+
+// Start of a setup token claude setup-token prints
+var setupTokenStartRe = regexp.MustCompile(`sk-ant-oat[0-9]*-[A-Za-z0-9_-]+`)
+
+// Row made only of token characters, the rest of a token the CLI broke across rows
+var setupTokenRestRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// Newest setup token in a program's output, rows it was hard wrapped across and box borders around it taken off, empty when none shows
+func scrapeSetupToken(output string) string {
+	clean := func(line string) string { return strings.Trim(line, " \t│┃|║") }
+	lines := strings.Split(strings.ReplaceAll(output, "\r", ""), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := clean(lines[i])
+		at := setupTokenStartRe.FindAllStringIndex(line, -1)
+		if len(at) == 0 {
+			continue
+		}
+		last := at[len(at)-1]
+		token := line[last[0]:last[1]]
+		for j := i + 1; last[1] == len(line) && j < len(lines); j++ {
+			rest := clean(lines[j])
+			if !setupTokenRestRe.MatchString(rest) {
+				break
+			}
+			token += rest
+		}
+		if len(token) >= 40 {
+			return token
+		}
+	}
+	return ""
 }
 
 // Hosted console input asking the host for each line and refusing raw reads of the gateway input
@@ -514,9 +552,12 @@ func hostedSetupToken(env PoolEnv, ask SetupAsker) (string, error) {
 	if claudePath == "" {
 		return "", claudeCLIMissingError{}
 	}
-	ran, err := askHostedCommand(ask, []string{claudePath, "setup-token"})
+	ran, output, err := askHostedCommandOutput(ask, []string{claudePath, "setup-token"})
 	if err != nil {
 		return "", err
+	}
+	if token := scrapeSetupToken(output); token != "" {
+		return token, nil
 	}
 	if !ran && errors.Is(env.ctx().Err(), context.Canceled) {
 		return "", nil

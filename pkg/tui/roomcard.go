@@ -377,9 +377,9 @@ func (c *roomCard) View(w, h int) string {
 		shown[i] = " " + shown[i]
 	}
 	c.composerTop = bodyRows + len(chrome)
-	parts := append(shown, chrome...)
-	parts = append(parts, c.composer.View(w, composerRows))
-	return strings.Join(parts, "\n")
+	above := strings.Split(strings.Join(append(shown, chrome...), "\n"), "\n")
+	above = cards.OverlayPopup(above, c.composer.Popup(w))
+	return strings.Join(append(above, c.composer.View(w, composerRows)), "\n")
 }
 
 // Cursor of the composer, moved below the log

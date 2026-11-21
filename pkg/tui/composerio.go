@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -294,11 +295,16 @@ func (a *app) onClipboardImage(m clipboardImageMsg) tea.Cmd {
 	if m.path == "" {
 		cleanup()
 		switch {
+		case m.quiet:
+		case (m.missing != "" || m.noDesktop) && a.clipboardWarned:
+			return wm.Notify(tr(txt.ComposerNoClipboardImage), wm.Info)
 		case m.missing != "":
+			a.clipboardWarned = true
 			a.sys(tr(txt.ComposerClipboardImageTool, m.missing))
 		case m.noDesktop:
+			a.clipboardWarned = true
 			a.sys(tr(txt.ComposerClipboardNoDesktop))
-		case !m.quiet:
+		default:
 			a.sys(tr(txt.ComposerNoClipboardImage))
 		}
 		return nil
@@ -350,9 +356,12 @@ func (a *app) pasted(content string) tea.Cmd {
 	}
 	revision := a.composerRevision()
 	current := func() bool { return a.store.isCurrentDestination(destination) && revision == a.composerRevision() }
+	if pdf, pages, isPDF := isPDFPath(cleaned, a.store.typedPathBase()); isPDF {
+		return tea.Batch(a.dropImageCommand(), a.attachPDFPages(pdf, pages))
+	}
 	return a.stageImage(cleaned, func(image *stagedImage, err error) tea.Cmd {
 		if err == nil && image != nil {
-			return a.attachImageToken(image)
+			return tea.Batch(a.dropImageCommand(), a.attachImageToken(image))
 		}
 		return call(a.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{SessionID: sid, Text: cleaned}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
 			if !current() {
@@ -364,6 +373,23 @@ func (a *app) pasted(content string) tea.Cmd {
 			return a.insertPaste(cleaned)
 		})
 	})
+}
+
+// Drops a "/image " typed right before the cursor once a pasted path attached its file, so the command word is neither sent to the model
+// as text nor run as a command over the attachment token
+func (a *app) dropImageCommand() tea.Cmd {
+	composer := a.card.composer
+	runes := []rune(composer.Value())
+	at := min(max(composer.Offset(), 0), len(runes))
+	head := strings.TrimRight(string(runes[:at]), " \t")
+	if !strings.HasSuffix(head, "/image") {
+		return nil
+	}
+	cut := len([]rune(head)) - len([]rune("/image"))
+	if cut > 0 && !unicode.IsSpace(runes[cut-1]) {
+		return nil
+	}
+	return composer.SetValueAt(string(runes[:cut])+string(runes[at:]), cut)
 }
 
 // Longest the terminal may take to answer a clipboard query before the paste goes on without it
@@ -481,11 +507,11 @@ func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 	}
 	text := strings.TrimRightFunc(m.text, isJSSpace)
 	if !m.ok || text == "" {
-		return tea.ClearScreen
+		return a.store.clearScreen()
 	}
 	if !a.store.isCurrentDestination(a.editorTarget) || a.editorRevision != a.composerRevision() {
 		a.enqueue(text, text, a.editorTarget)
-		return tea.ClearScreen
+		return a.store.clearScreen()
 	}
 	var kept []composerToken
 	for _, t := range a.tokens {
@@ -495,7 +521,7 @@ func (a *app) onEditorDone(m editorDoneMsg) tea.Cmd {
 	}
 	a.tokens = kept
 	emptied := a.card.composer.SetValue("")
-	return tea.Batch(tea.ClearScreen, emptied, a.submit(text))
+	return tea.Batch(a.store.clearScreen(), emptied, a.submit(text))
 }
 
 // Runs the shell commands a person typed between braces and hands their output on in order, one that cannot run refusing the whole send, its input
@@ -650,23 +676,6 @@ func (a *app) collapsePaste() tea.Cmd {
 	return composer.SetValueAt(collapsed.value, collapsed.cursor)
 }
 
-// Line above the status row naming the paste key while the draft holds a collapsed paste or an expanded one, none once the key is bound elsewhere
-func (a *app) pasteHintRows(rc renderCtx) []string {
-	if a.keys.Display("tui.paste.expand") != "ctrl+p" {
-		return nil
-	}
-	hint := ""
-	switch {
-	case a.pasteSpan != nil:
-		hint = tr(txt.ComposerPasteCollapseHint)
-	case hasPasteChip(a.card.composer.Value(), a.tokens):
-		hint = tr(txt.ComposerPasteExpandHint)
-	default:
-		return nil
-	}
-	return []string{"  " + toneStyle(rc.t.Color.Muted).Render(hint)}
-}
-
 // Second escape within the window, a draft discarded into the history with an armed rewind dropped, else a running turn stopped, false when neither applies
 func (a *app) doubleEscape() (tea.Cmd, bool) {
 	ui := a.store.ui
@@ -758,7 +767,7 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 		return a.openEditor(), true
 	case "tui.redraw":
 		a.card.view.invalidate()
-		return tea.ClearScreen, true
+		return a.store.clearScreen(), true
 	case "tui.suspend":
 		return a.suspend(), true
 	case "tui.paste.image":

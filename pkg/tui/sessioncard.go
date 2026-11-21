@@ -38,8 +38,6 @@ type sessionCard struct {
 	tick        int
 	phase       float64
 	lines       []string
-	// Columns of the live session count on the status row, empty while the bar shows it
-	sessionsBox [2]int
 	// First content row of the transcript window, below the widgets docked above it
 	viewTop int
 	// Row of the scrollbar thumb the pointer holds while it drags the bar, minus one otherwise
@@ -66,6 +64,7 @@ func newSessionCard(a *app) *sessionCard {
 	c.composer.OnRemember = a.inputs.push
 	c.composer.Apply = a.applyOffer
 	c.composer.Sending = func() { a.collapsePaste() }
+	c.composer.OnStop = a.interruptTurn
 	return c
 }
 
@@ -255,11 +254,8 @@ func (c *sessionCard) wheel(m tea.MouseWheelMsg) {
 	c.app.turn.boostStreamingForScroll()
 }
 
-// Carries out a press and release on one cell, the session switcher opened from the live session count of the status row, the part of the transcript block under it opened or closed, else the address under it opened unless the terminal opens the links it shows itself
+// Carries out a press and release on one cell, the part of the transcript block under it opened or closed, else the address under it opened unless the terminal opens the links it shows itself
 func (c *sessionCard) tap(m wm.TapMsg) tea.Cmd {
-	if m.Y == c.composerTop-1 && m.X >= c.sessionsBox[0] && m.X < c.sessionsBox[1] {
-		return c.app.wm.Fire("open.sessions")
-	}
 	if m.X < 0 || m.X >= c.view.width {
 		return nil
 	}
@@ -448,13 +444,18 @@ func (c *sessionCard) indicator(rc renderCtx) string {
 // Columns a status fact takes before its text on the status row
 const factGap = 3
 
-// Status row, the spinner, the status of the turn and its facts at the left and the notice or hint, the facts of the session and the affection heart at the right
-func (c *sessionCard) statusRow(width int, rc renderCtx) string {
+// Blank rows kept between the transcript and chrome and the prompt
+const composerGap = 1
+
+// Status of the session painted into the bottom edge of its window, away from the prompt: the spinner, the turn status and the
+// turn facts at the left; the notice or live transcript, the session facts and the affection heart at the right
+func (c *sessionCard) Footer(room int) wm.FooterLine {
 	ui := c.app.store.ui
+	rc := c.renderCtx(max(c.width, room))
 	t := rc.t
 	muted := toneStyle(t.Color.Muted)
-	c.sessionsBox = [2]int{}
-	left := "  "
+	var spans []wm.FooterSpan
+	left := ""
 	raw := trimJS(ui.Status)
 	status := displayStatus(raw)
 	if ui.Busy {
@@ -478,12 +479,21 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 	if ui.GatewayConnected != nil && !*ui.GatewayConnected {
 		tone = t.Color.Warn
 	}
+	if !ui.Busy && (raw == "ready" || raw == tr(txt.StatusReady)) {
+		status = ""
+	}
 	left += toneStyle(tone).Render(status)
+	sep := func() string {
+		if left == "" {
+			return ""
+		}
+		return muted.Render(" · ")
+	}
 	shown := ui.StatusBar != "off"
 	if shown && ui.FocusView {
-		left += muted.Render(" · ") + toneStyle(t.Color.Warn).Render(tr(txt.StatusFocus))
+		left += sep() + toneStyle(t.Color.Warn).Render(tr(txt.StatusFocus))
 	}
-	right, capturing := "", false
+	right := ""
 	switch {
 	case ui.Notice != nil:
 		noticeTone := t.Color.Accent
@@ -497,13 +507,13 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 		}
 		right = toneStyle(noticeTone).Render(ui.Notice.Text)
 	case c.app.store.voicePartial != "":
-		right, capturing = toneStyle(t.Color.Accent).Render("● "+c.app.store.voicePartial), true
-	case c.app.voiceRecording:
-		right, capturing = toneStyle(t.Color.Error).Render(tr(txt.ComposerRecording)), true
-	case c.app.voiceProcessing:
-		right, capturing = toneStyle(t.Color.Accent).Render(tr(txt.ComposerTranscribing)), true
+		right = toneStyle(t.Color.Accent).Render(c.app.store.voicePartial)
 	case len(imageAttachments(c.composer.Value(), c.app.tokens)) > 0:
 		right = toneStyle(t.Color.Accent).Render(trCount(txt.ComposerImagesAttachedOne, txt.ComposerImagesAttachedOther, len(imageAttachments(c.composer.Value(), c.app.tokens))))
+	case ui.Busy && c.composer.Empty():
+		if key := c.app.keys.Display("interrupt"); key != "" {
+			right = muted.Render(key + " stop")
+		}
 	case ui.BusyInputMode != "" && ui.Busy:
 		right = muted.Render(tr(txt.ComposerEnterMode, ui.BusyInputMode))
 	}
@@ -514,10 +524,10 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 	if heart := c.app.goodVibesHeart(t); heart != "" {
 		tail = strings.TrimSpace(tail + " " + heart)
 	}
-	room := width - ansi.StringWidth(left) - 1
+	free := room - ansi.StringWidth(left)
 	for _, fixed := range []string{right, tail} {
 		if fixed != "" {
-			room -= ansi.StringWidth(fixed) + 2
+			free -= ansi.StringWidth(fixed) + 2
 		}
 	}
 	cols, _ := c.app.wm.Size()
@@ -530,20 +540,19 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 	var aside []statusFact
 	for _, f := range facts {
 		need := factGap + ansi.StringWidth(f.text)
-		if need > room || (capturing && f.rank == rankVoice) {
+		if need > free {
 			continue
 		}
-		room -= need
+		free -= need
 		if f.turn {
-			left += muted.Render(" · ") + paint(f)
+			left += sep() + paint(f)
 		} else {
 			aside = append(aside, f)
 		}
 	}
-	if hud, style := spawnHUD(c.app.store.turn.Subagents, c.app.store.delegation); shown && hud != "" && room > factGap {
-		left += muted.Render(" · ") + toneStyle(factTone(style, t)).Render(truncateEnd(hud, room-factGap))
+	if hud, style := spawnHUD(c.app.store.turn.Subagents, c.app.store.delegation); shown && hud != "" && free > factGap {
+		left += sep() + toneStyle(factTone(style, t)).Render(truncateEnd(hud, free-factGap))
 	}
-	sessionsAt, sessionsWide := -1, 0
 	for i, f := range aside {
 		switch {
 		case i > 0:
@@ -551,8 +560,9 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 		case right != "":
 			right += "  "
 		}
-		if f.action == "open.sessions" {
-			sessionsAt, sessionsWide = ansi.StringWidth(right), ansi.StringWidth(f.text)
+		if f.action != "" {
+			at := ansi.StringWidth(right)
+			spans = append(spans, wm.FooterSpan{X0: at, X1: at + ansi.StringWidth(f.text), Right: true, Action: f.action})
 		}
 		right += paint(f)
 	}
@@ -560,19 +570,15 @@ func (c *sessionCard) statusRow(width int, rc renderCtx) string {
 		right += "  "
 	}
 	right += tail
-	room = width - ansi.StringWidth(left) - 1
-	if room < 4 {
-		return render.Fit(left, width, rc.ut)
+	if ansi.StringWidth(left)+ansi.StringWidth(right) > room {
+		right = truncateEnd(right, max(room-ansi.StringWidth(left), 0))
 	}
-	if wide := ansi.StringWidth(right); sessionsAt >= 0 && wide <= room {
-		c.sessionsBox = [2]int{width - wide + sessionsAt, width - wide + sessionsAt + sessionsWide}
-	}
-	right = truncateEnd(right, room)
-	return left + strings.Repeat(" ", max(width-ansi.StringWidth(left)-ansi.StringWidth(right), 1)) + right
+	return wm.FooterLine{Left: left, Right: right, Spans: spans}
 }
 
 func (c *sessionCard) View(w, h int) string {
 	c.width, c.height = w, h
+	c.app.images.beginFrame()
 	rc := c.renderCtx(w)
 	c.composer.Hint = c.app.composerPlaceholder()
 	c.composer.Fit(w)
@@ -589,11 +595,15 @@ func (c *sessionCard) View(w, h int) string {
 	}
 	chrome = append(chrome, c.app.stashPanelRows(w, rc)...)
 	chrome = append(chrome, c.app.rewindHintRows(rc)...)
-	chrome = append(chrome, c.app.pasteHintRows(rc)...)
 	chrome = append(chrome, c.quickHelpRows(w, h-len(chrome)-quickHelpReserve, rc)...)
-	chrome = append(chrome, c.statusRow(w, rc))
+	c.composer.Phase = c.tick
+	c.composer.Offline = c.app.store.ui.GatewayConnected != nil && !*c.app.store.ui.GatewayConnected
 	composerRows := min(c.composer.Height(), max(h-len(chrome)-3, 2))
-	bodyRows := max(h-len(chrome)-composerRows, 1)
+	gap := 0
+	if h-len(chrome)-composerRows > composerGap+1 {
+		gap = composerGap
+	}
+	bodyRows := max(h-len(chrome)-composerRows-gap, 1)
 	top := c.app.widgets.dock("dock-top", w)
 	bottom := c.app.widgets.dock("dock-bottom", w)
 	bodyRows = max(bodyRows-len(top)-len(bottom), 1)
@@ -610,18 +620,23 @@ func (c *sessionCard) View(w, h int) string {
 		body += "\n" + strings.Join(bottom, "\n")
 	}
 	bodyRows += len(top) + len(bottom)
-	c.composerTop = bodyRows + len(chrome)
-	parts := []string{body}
-	parts = append(parts, chrome...)
-	parts = append(parts, c.composer.View(w, composerRows))
-	return strings.Join(parts, "\n")
+	c.composerTop = bodyRows + len(chrome) + gap
+	above := strings.Split(strings.Join(append([]string{body}, chrome...), "\n"), "\n")
+	above = append(above, make([]string, gap)...)
+	popup := c.composer.Popup(w)
+	c.app.images.layout(c.view.inView, c.viewTop, len(above)-len(popup))
+	above = cards.OverlayPopup(above, popup)
+	return strings.Join(append(above, c.composer.View(w, composerRows)), "\n")
 }
 
-// Screen cell the content starts at, where the pet image is placed from
-func (c *sessionCard) Origin(x, y int) { c.app.pet.origin(x, y) }
+// Screen cell the content starts at, where the pet image and the transcript pictures are placed from
+func (c *sessionCard) Origin(x, y int) {
+	c.app.pet.origin(x, y)
+	c.app.images.origin(x, y)
+}
 
-// Box of a pet image the terminal places under the cells
-func (c *sessionCard) Holes() []wm.Box { return c.app.pet.holes() }
+// Boxes of the pet image and the transcript pictures the terminal draws over the cells
+func (c *sessionCard) Holes() []wm.Box { return append(c.app.pet.holes(), c.app.images.holes()...) }
 
 // Cursor of the prompt, moved below the transcript and chrome
 func (c *sessionCard) Cursor() *tea.Cursor {

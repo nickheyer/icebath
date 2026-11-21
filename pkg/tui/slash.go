@@ -533,24 +533,16 @@ func (a *app) coreCommands() []slashCommand {
 			if a.life.guardBusySessionSwitch(tr(txt.SlashCmdCoreClearSwitchSessions)) {
 				return nil
 			}
-			title, message := "", ""
-			if isNew {
-				title, message = trimJS(r.arg), tr(txt.SlashCmdCoreClearNewSessionStarted)
+			a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
+			if !isNew {
+				return tea.Batch(r.ran(), a.life.clearSession(nil))
 			}
-			commit := func() tea.Cmd {
-				a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
-				return tea.Batch(r.ran(), a.life.newSession(message, title, nil))
-			}
-			yes, heading := tr(txt.SlashCmdCoreClearConfirmClear), tr(txt.SlashCmdCoreClearTitleClear)
-			if isNew {
-				yes, heading = tr(txt.SlashCmdCoreClearConfirmNew), tr(txt.SlashCmdCoreClearTitleNew)
-			}
-			return a.confirmDestructive(heading, tr(txt.SlashCmdCoreClearDetail), yes, tr(txt.SlashCmdCoreClearCancelLabel), commit)
+			return tea.Batch(r.ran(), a.life.newSession(tr(txt.SlashCmdCoreClearNewSessionStarted), trimJS(r.arg), nil))
 		}},
 		{name: "redraw", help: "force a full UI repaint", run: func(r *slashRun) tea.Cmd {
 			a.card.view.invalidate()
 			r.sys(tr(txt.SlashCmdCoreRedrawDone))
-			return tea.ClearScreen
+			return a.store.clearScreen()
 		}},
 		{name: "status", help: "show live session info", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {

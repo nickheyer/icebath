@@ -538,6 +538,25 @@ func (m *Model) FrameOf(c Card) (Box, bool) {
 	return e.frame(), true
 }
 
+// Box the frame of the card covers on the screen, the bar rows above the stage counted, false when it is not open
+func (m *Model) ScreenFrameOf(c Card) (Box, bool) {
+	f, ok := m.FrameOf(c)
+	if !ok {
+		return Box{}, false
+	}
+	f.Y += barHeight
+	return f, true
+}
+
+// Screen box the toasts take now, the right half of the rows they stack in, false while none shows
+func (m *Model) ToastRegion() (Box, bool) {
+	if len(m.toasts) == 0 || m.width < 12 {
+		return Box{}, false
+	}
+	w := max(10, m.width/2) + m.gapOutX + 2
+	return Box{X: max(m.width-w, 0), Y: barHeight, W: min(w, m.width), H: len(m.toasts) * toastGap}, true
+}
+
 // Card with the key and the workspace holding it, a tab of a group included
 func (m *Model) Find(key string) (Card, *Workspace) {
 	for _, ws := range m.spaces {

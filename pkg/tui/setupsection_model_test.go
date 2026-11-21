@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
-	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -173,20 +171,5 @@ func TestHostedWaitDialogKeepsWaitingOrStopsTheFlow(t *testing.T) {
 	drain(a, again.pick("stop"))
 	if cancels := gw.sent("setup.hosted.cancel"); len(cancels) != 1 || cancels[0]["job"] != "flow-4" {
 		t.Fatalf("cancel %v", cancels)
-	}
-}
-
-func TestCommandAnswerReportsHowTheProgramEnded(t *testing.T) {
-	if got := commandAnswer(nil); !got.Ran {
-		t.Fatalf("clean exit %v", got)
-	}
-	if got := commandAnswer(exec.Command("false").Run()); !got.Ran {
-		t.Fatalf("non zero exit %v", got)
-	}
-	if got := commandAnswer(exec.Command("sh", "-c", "kill -INT $$").Run()); got.Ran {
-		t.Fatalf("interrupted %v", got)
-	}
-	if got := commandAnswer(errors.New("exec: \"claude\": executable file not found in $PATH")); !strings.Contains(got.Error, "not found") {
-		t.Fatalf("start failure %v", got)
 	}
 }

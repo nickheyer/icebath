@@ -108,7 +108,7 @@ func (s *tuiStore) commitTheme(t theme) tea.Cmd {
 	if !changed {
 		return nil
 	}
-	return tea.Tick(themeRedrawDelay, func(time.Time) tea.Msg { return tea.ClearScreen() })
+	return tea.Tick(themeRedrawDelay, func(time.Time) tea.Msg { return asyncDoneMsg{run: s.clearScreen} })
 }
 
 // Paints the terminal default colors the skin authored, the theme text over an authored background

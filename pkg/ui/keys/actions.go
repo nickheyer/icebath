@@ -113,7 +113,7 @@ var registry = func() []Action {
 		quiet(act("composer.up", Session, "up", "move up a line; on the first line, show the previous prompt", "up")),
 		quiet(act("composer.down", Session, "down", "move down a line; on the last line, show the next prompt", "down")),
 		act("composer.attachments.clear", Session, "clear attachments", "remove all attachments", "ctrl+x"),
-		act("composer.undo", Session, "undo", "undo the last edit of the prompt", "ctrl+_", "super+z"),
+		act("composer.undo", Session, "undo", "undo the last edit of the prompt", "ctrl+z", "super+z", "ctrl+_"),
 		act("composer.redo", Session, "redo", "redo the edit the last undo took back", "ctrl+y", "ctrl+shift+z", "shift+super+z", "super+y"),
 		quiet(act("composer.left", Session, "left", "move the cursor left", "left")),
 		quiet(act("composer.right", Session, "right", "move the cursor right", "right")),

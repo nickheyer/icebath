@@ -35,8 +35,16 @@ jobs:
           if ([int]$green -lt 1) { throw "no release workflow run for $tag has succeeded, rerun its failed jobs first" }
           "TAG=$tag" >> $env:GITHUB_ENV
           "VERSION=$($tag.TrimStart('v'))" >> $env:GITHUB_ENV
-      - name: Download the manifests from the release
-        run: gh release download $env:TAG -R $env:GITHUB_REPOSITORY -p 'nickheyer.icebath*.yaml' -D "$env:RUNNER_TEMP/manifests"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - name: Render the manifests from the release checksums and publish date
+        shell: bash
+        run: |
+          tmp=$(cygpath -u "$RUNNER_TEMP")
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p checksums.txt -D "$tmp" --clobber
+          published=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json publishedAt -q .publishedAt)
+          sh packaging/winget/render.sh "$TAG" "$tmp/checksums.txt" "${published%%T*}" "$tmp/manifests"
       - name: Open the pull request
         run: |
           Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile "$env:RUNNER_TEMP/wingetcreate.exe"

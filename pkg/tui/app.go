@@ -169,6 +169,8 @@ type app struct {
 	heartSeen  int
 	heartUntil time.Time
 	heartTone  int
+	// Whether the missing clipboard tool was named already this run, the advice shown once
+	clipboardWarned bool
 }
 
 var (
@@ -192,7 +194,7 @@ func tuiKeymap() *keys.Map {
 		{ID: "tui.agents", Context: tuiContext, Label: "agents", Doc: "open the spawn tree of the agents of the session", Default: []string{"ctrl+t"}},
 		{ID: "tui.editor", Context: tuiContext, Label: "editor", Doc: "edit the prompt in the external editor", Default: []string{"ctrl+g", "alt+g"}},
 		{ID: "tui.redraw", Context: tuiContext, Label: "redraw", Doc: "repaint the screen", Default: []string{"ctrl+l"}},
-		{ID: "tui.suspend", Context: tuiContext, Label: "suspend", Doc: "suspend to the shell, fg brings it back", Default: []string{"ctrl+z"}},
+		{ID: "tui.suspend", Context: tuiContext, Label: "suspend", Doc: "suspend to the shell, fg brings it back"},
 		{ID: "tui.exit", Context: tuiContext, Label: "exit", Doc: "quit on an empty prompt", Default: []string{"ctrl+d"}},
 		{ID: "tui.queue.send", Context: tuiContext, Label: "send queued", Doc: "send the first queued input now, an unconfirmed one again", Default: []string{"alt+k", "super+k"}},
 		{ID: "tui.queue.drop", Context: tuiContext, Label: "drop queued", Doc: "drop the newest queued input", Default: []string{"ctrl+k"}},
@@ -230,6 +232,7 @@ func newApp(ctx context.Context, host Host) *app {
 	setRPCErrorLogSink(gw.recordLog)
 	a := &app{ctx: ctx, host: host, keys: tuiKeymap(), gw: gw, store: store, turn: turn, git: newGitBranchTracker(), battery: &batteryPoller{},
 		resize: newResizeCoalescer(32 * time.Millisecond), inputs: newComposerHistory(newInputHistory(ctx))}
+	keysLoaded := a.loadKeybinds()
 	a.background = newBackgroundWatch()
 	a.events, a.boot = newEventHandler(store, turn, gw, a)
 	a.life = newSessionLifecycle(store, turn, gw, a)
@@ -238,6 +241,12 @@ func newApp(ctx context.Context, host Host) *app {
 	a.config = newConfigSync(store, turn, gw, a)
 	a.graphics = gfx.New()
 	a.images = newInlineImages(a)
+	store.screenCleared = a.images.redraw
+	var probe tea.Cmd
+	if a.images.graphics && !a.graphicsProbed {
+		a.graphicsProbed = true
+		probe = a.graphics.Probe()
+	}
 	a.arena = arenaViewFor(a)
 	a.syncTheme()
 	a.widgets = newWidgetHost(a)
@@ -247,6 +256,7 @@ func newApp(ctx context.Context, host Host) *app {
 	a.localCommands = append(a.localCommands, a.mcpCommands()...)
 	a.localCommands = append(a.localCommands, a.roomsCommands()...)
 	a.localCommands = append(a.localCommands, a.terminalCommands()...)
+	a.localCommands = append(a.localCommands, a.keyCommands()...)
 	a.localCommands = append(a.localCommands, a.screenCommands()...)
 	a.localCommands = append(a.localCommands, a.languageCommands()...)
 	for _, commands := range tierCommands {
@@ -257,7 +267,7 @@ func newApp(ctx context.Context, host Host) *app {
 	a.card = newSessionCard(a)
 	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(a.motion()))
 	_, open := a.wm.AddWorkspace("session", a.card)
-	a.boot = tea.Batch(a.boot, open)
+	a.boot = tea.Batch(a.boot, open, keysLoaded, probe)
 	a.wm.SetBar(a.barStatus)
 	a.wm.SetCommands(a.commands())
 	a.wm.SetEmptyHints("palette")
@@ -358,6 +368,10 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		if a.graphicsProbed {
 			cmd = tea.Batch(cmd, a.graphics.Measure())
 		}
+		cmd = tea.Batch(cmd, a.images.redraw())
+	case tea.ResumeMsg:
+		_, cmd = a.wm.Update(m)
+		cmd = tea.Batch(cmd, a.images.redraw())
 		if _, reflow := a.resize.schedule(); reflow != nil {
 			cmd = tea.Batch(cmd, reflow)
 		}
@@ -1171,6 +1185,7 @@ func (a *app) dieFor(code int, reason string) tea.Cmd {
 	a.store.ui.Status = tr(txt.SessionStatusClosing)
 	done := func() tea.Msg { return exitMsg{code: code} }
 	return tea.Batch(
+		a.images.release(),
 		tea.Sequence(a.life.closeForExit(), done),
 		tea.Tick(exitCloseLimit, func(time.Time) tea.Msg { return exitMsg{code: code} }),
 	)
@@ -1261,7 +1276,6 @@ const (
 	contextFullCols  = 72
 	durationCols     = 76
 	compressionsCols = 80
-	voiceCols        = 84
 	bgTasksCols      = 88
 	subagentsCols    = 92
 	cacheHitCols     = 96
@@ -1314,7 +1328,7 @@ func (a *app) laneName() string {
 	return a.card.untitled()
 }
 
-// Dials of the session most important first, the model with its effort, the context, cost, session time, folder, battery, live sessions and parked drafts
+// Dials of the session most important first, the model with its effort, the context, cost, session time, folder, battery, voice, live sessions and parked drafts
 func (a *app) barFacts(cols, folderCols int) []statusFact {
 	ui := a.store.ui
 	info := infoOf(ui.Info)
@@ -1343,6 +1357,9 @@ func (a *app) barFacts(cols, folderCols int) []statusFact {
 	if b := ui.BatteryStatus; ui.Battery && b != nil && b.Available && ui.statusField("battery") {
 		facts = append(facts, statusFact{text: batteryText(b), style: batteryStyle(b), rank: rankBattery})
 	}
+	if voice, ok := a.voiceFact(); ok {
+		facts = append(facts, voice)
+	}
 	if a.liveSessions > 0 && ui.StatusBar != "off" {
 		facts = append(facts, statusFact{text: tr(txt.StatusSessionCount, a.liveSessions), style: wm.Cool, action: "open.sessions", rank: rankSessions})
 	}
@@ -1352,7 +1369,38 @@ func (a *app) barFacts(cols, folderCols int) []statusFact {
 	return facts
 }
 
-// Read-outs of the session most important first, its compressions, cache hit share, reply latency, token rate and voice state
+// Mark of voice input: lit while voice is on, dim while off, red while recording, warm while transcribing, with the spoken replies mark
+// after it while replies are read aloud and a click toggling recording while voice is on; none in a build without voice or with the voice
+// field hidden
+func (a *app) voiceFact() (statusFact, bool) {
+	if !keyLinked("tui.voice") || !a.store.ui.statusField("voice") {
+		return statusFact{}, false
+	}
+	g := a.uiTheme().Glyphs
+	mark := g.Voice
+	if mark == "" {
+		mark = "~"
+	}
+	style := wm.Dim
+	switch {
+	case a.voiceRecording:
+		mark, style = g.Live, wm.Bad
+	case a.voiceProcessing:
+		style = wm.Warm
+	case a.voiceEnabled:
+		style = wm.Cool
+	}
+	if a.voiceTTS && g.Speak != "" {
+		mark += g.Speak
+	}
+	f := statusFact{text: mark, style: style, rank: rankVoice}
+	if a.voiceEnabled {
+		f.action = "tui.voice"
+	}
+	return f, true
+}
+
+// Read-outs of the session most important first, its compressions, cache hit share, reply latency and token rate
 func (a *app) sessionFacts(cols int) []statusFact {
 	ui := a.store.ui
 	usage := usageOf(ui.Usage)
@@ -1382,10 +1430,6 @@ func (a *app) sessionFacts(cols int) []statusFact {
 	}
 	if rate := usage.AvgTPS; rate != nil && cols >= tpsCols && ui.statusField("tps") {
 		facts = append(facts, statusFact{text: "↑ " + spawnNumber(jsRound(*rate)) + " t/s", style: wm.Dim, rank: rankTPS})
-	}
-	if cols >= voiceCols && ui.statusField("voice") {
-		text, style := a.voiceLabel()
-		facts = append(facts, statusFact{text: text, style: style, rank: rankVoice})
 	}
 	return facts
 }

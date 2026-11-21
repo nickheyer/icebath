@@ -210,6 +210,16 @@ func settleUnrecoveredError(ctx context.Context, a *AIAgent, s *LoopState, e *ap
 	}
 
 	attemptsMade := min(s.RetryCount, s.MaxRetries)
+	if e.isRateLimited && s.RetryCount < s.MaxRetries && rateLimitOutlastsRetries(e.errorContext["reset_at"], time.Now()) {
+		if a.tryActivateFallbackAt(ctx, cl.Reason, e.errorContext["reset_at"]) {
+			s.ActiveSystemPrompt = armFallbackRestart(ctx, a, s.APIMessages, s.ActiveSystemPrompt, retry)
+			s.RetryCount, s.CompressionAttempts = 0, 0
+			return PhaseVerdict{Action: "break"}, nil
+		}
+		delivered := settleDeliveredPartial(ctx, a, &s.Messages, s.CurrentTurnUserIdx)
+		result, err := settleExhaustedResult(ctx, a, s, e, max(attemptsMade, 1), delivered)
+		return PhaseVerdict{Action: "return", Result: result}, err
+	}
 	if s.RetryCount >= s.MaxRetries {
 		if !retry.PrimaryRecoveryAttempted && a.tryRecoverPrimaryTransport(ctx, e.apiError, s.RetryCount) {
 			retry.PrimaryRecoveryAttempted = true
