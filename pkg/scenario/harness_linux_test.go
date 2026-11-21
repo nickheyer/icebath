@@ -667,12 +667,15 @@ func (s *S) logTail() string {
 		if len(lines) > 15 {
 			lines = lines[len(lines)-15:]
 		}
-		b.WriteString("== " + name + "\n")
+		b.WriteString("== ")
+		b.WriteString(name)
+		b.WriteString("\n")
 		for _, line := range lines {
 			if len(line) > 300 {
 				line = line[:300]
 			}
-			b.WriteString(line + "\n")
+			b.WriteString(line)
+			b.WriteString("\n")
 		}
 	}
 	return b.String()
