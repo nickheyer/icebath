@@ -427,6 +427,8 @@ func TestRequirementsRejectUnsupportedEngineWithoutAttemptingInstall(t *testing.
 			wakeVoiceLoopReady(t, true, true)
 			wakeHostInterpreter(t)
 			wakeInProcessGates(t, map[string]string{"wake-openwakeword": "python_version < '0'"})
+			// The alternatives are judged with a working microphone, so a host without PortAudio cannot fail them
+			swap(t, &wakeAudioAvailable, func() (bool, error) { return true, nil })
 			savedImportable := pm.SwapAnchorImportable(func(_ context.Context, anchor string) bool { return anchor == "pvporcupine" })
 			t.Cleanup(func() { pm.SwapAnchorImportable(savedImportable) })
 			t.Setenv("PORCUPINE_ACCESS_KEY", "test-key")

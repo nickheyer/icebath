@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/relayhost"
@@ -42,10 +43,40 @@ type indexFile struct {
 // Builds once before the network block a cached venv holding nemo_relay and fetches the index wheels
 func Provision() {
 	provisionOnce.Do(func() {
+		cache, err := cacheRoot()
+		if err != nil {
+			provisionErr = err
+			return
+		}
+		unlock, err := lockCache(cache)
+		if err != nil {
+			provisionErr = err
+			return
+		}
+		defer unlock()
 		if projectRoot, provisionErr = provision(); provisionErr == nil {
 			provisionErr = provisionIndex()
 		}
 	})
+}
+
+// Holds the shared cache's provisioning lock, so test binaries running at once unpack each pin a single time instead of into each other's staging
+func lockCache(cache string) (func(), error) {
+	if err := os.MkdirAll(cache, 0o777); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(cache, ".provision.lock"), os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
+		return nil, err
+	}
+	if err := pyfs.LockFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() {
+		pyfs.UnlockFile(f)
+		f.Close()
+	}, nil
 }
 
 // Pinned uv and interpreter the provisioning toolchain runs
@@ -254,7 +285,7 @@ func pinnedTool(cache, target, pkg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	staging := root + ".partial"
+	staging := filepath.Join(cache, ".partial-"+pkg+"-"+sha[:16])
 	os.RemoveAll(staging)
 	if err := os.MkdirAll(staging, 0o777); err != nil {
 		return "", err

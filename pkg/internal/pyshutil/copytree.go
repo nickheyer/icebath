@@ -79,7 +79,7 @@ func CopyTreeIgnore(src, dst string, symlinks, dirsExistOK bool, ignore func(dir
 			if resolved.IsDir() {
 				err = CopyTreeIgnore(from, to, symlinks, dirsExistOK, ignore)
 			} else {
-				err = Copy2(from, to)
+				err = Copy2Entry(from, to, resolved)
 			}
 			if err != nil {
 				failures = append(failures, err)
@@ -89,7 +89,7 @@ func CopyTreeIgnore(src, dst string, symlinks, dirsExistOK bool, ignore func(dir
 				failures = append(failures, err)
 			}
 		default:
-			if err := Copy2(from, to); err != nil {
+			if err := Copy2Entry(from, to, info); err != nil {
 				failures = append(failures, err)
 			}
 		}

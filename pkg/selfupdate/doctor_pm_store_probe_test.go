@@ -20,7 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Tool store fixture pinning the host ripgrep, with a hostile rg as the only PATH entry
+// Tool store fixture pinning a stand-in ripgrep, with a hostile rg as the only PATH entry
 type toolStore struct {
 	primary       string
 	versionOutput string
@@ -28,23 +28,19 @@ type toolStore struct {
 	publish       func(root string) string
 }
 
-// Pins the host ripgrep in a temporary lockfile under a sealed payload store layout
+// Pins a stand-in ripgrep in a temporary lockfile under a sealed payload store layout
 func newToolStore(t *testing.T) toolStore {
 	t.Helper()
-	rg, err := exec.LookPath("rg")
-	if err != nil {
-		t.Fatal("this executable parity test requires ripgrep")
-	}
-	rawVersion, err := exec.Command(rg, "--version").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	versionOutput := string(rawVersion)
-	version := strings.Fields(strings.SplitN(versionOutput, "\n", 2)[0])[1]
 	tmp := t.TempDir()
 	if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
 		tmp = resolved
 	}
+	// The fixture owns its ripgrep so neither the host lacking one nor its version decides the outcome
+	const version = "15.2.0"
+	versionLine := "ripgrep " + version + " (store fixture)"
+	versionOutput := versionLine + "\n"
+	rg := filepath.Join(tmp, "fixture", "rg")
+	writeTestFile(t, rg, "#!/bin/sh\necho '"+versionLine+"'\n", 0o755)
 	icebathHome := filepath.Join(tmp, "home")
 	primary := filepath.Join(tmp, "payload", "tools")
 	if err := os.MkdirAll(primary, 0o755); err != nil {

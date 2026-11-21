@@ -1,7 +1,9 @@
 package scenario
 
 import (
+	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,18 @@ const iceShopPage = `<!DOCTYPE html><html><head><title>Ice Shop</title></head><b
 <h1>Ice Shop</h1><ul id="items"><li>Alpha</li><li>Beta</li><li>Gamma</li></ul><input id="q">
 </body></html>`
 
+// Chromium or Chrome of the test host, wherever its distribution installs it
+func hostBrowser(t *testing.T) string {
+	t.Helper()
+	for _, name := range []string{"chromium", "chromium-browser", "google-chrome-stable", "google-chrome"} {
+		if found, err := exec.LookPath(name); err == nil {
+			return found
+		}
+	}
+	t.Fatal("this scenario drives a real browser: install Chromium or Google Chrome")
+	return ""
+}
+
 // One turn runs browser_exec code that loops over a loopback page with several helpers, then code whose helper raises
 func TestScenarioBrowserExecRunsPythonAgainstALoopbackPage(t *testing.T) {
 	reading, failing := map[string]any{}, map[string]any{}
@@ -20,7 +34,7 @@ func TestScenarioBrowserExecRunsPythonAgainstALoopbackPage(t *testing.T) {
 		fakellm.ToolCall{Name: "browser_exec", Args: reading},
 		fakellm.ToolCall{Name: "browser_exec", Args: failing},
 		fakellm.Text{Text: "The shop lists three items."},
-	}, Extra: "browser:\n  executable_path: /usr/bin/chromium\n"})
+	}, Extra: fmt.Sprintf("browser:\n  executable_path: %q\n", hostBrowser(t))})
 	shop := s.Peer("shop", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(iceShopPage))

@@ -98,7 +98,8 @@ func TestMoveMatchesShutilMove(t *testing.T) {
 		os.MkdirAll(j("c7", "out"), 0o755)
 		src := j("c7", "locked", "f.bin")
 		mustWrite(t, src, "data", 0o640)
-		atime, mtime := time.Unix(1000000000, 500000000), time.Unix(1100000000, 250000000)
+		// An atime past the ctime and within the day survives the copy read on relatime and noatime mounts
+		atime, mtime := time.Unix(time.Now().Add(time.Hour).Unix(), 500000000), time.Unix(1100000000, 250000000)
 		if err := os.Chtimes(src, atime, mtime); err != nil {
 			t.Fatal(err)
 		}
@@ -107,9 +108,11 @@ func TestMoveMatchesShutilMove(t *testing.T) {
 		if !errors.Is(err, fs.ErrPermission) || OSErrorText(err) != "[Errno 13] Permission denied: '"+src+"'" {
 			t.Fatalf("%v", err)
 		}
+		// shutil.move hands copy2 the path, whose copystat stats the source after the read, so a strictatime mount hands on the atime that read stamped
+		want := identityAccessTime(t, src)
 		st, err := os.Stat(j("c7", "out", "g.bin"))
-		if err != nil || st.Mode().Perm() != 0o640 || st.ModTime().UnixNano() != 1100000000250000000 || identityAccessTime(t, j("c7", "out", "g.bin")).UnixNano() != 1000000000500000000 {
-			t.Fatalf("copied stat %v %v", st, err)
+		if err != nil || st.Mode().Perm() != 0o640 || st.ModTime().UnixNano() != 1100000000250000000 || !identityAccessTime(t, j("c7", "out", "g.bin")).Equal(want) {
+			t.Fatalf("copied stat %v %v, want atime %v", st, err, want)
 		}
 		if b, _ := os.ReadFile(j("c7", "out", "g.bin")); string(b) != "data" {
 			t.Fatalf("content %q", b)

@@ -15,7 +15,15 @@ func copy2(src, dst string) error {
 	if isDirectory(dst) {
 		dst = filepath.Join(dst, filepath.Base(src))
 	}
-	return platformCopy2(src, dst)
+	return platformCopy2(src, dst, nil)
+}
+
+// copy2 as copytree calls it with an os.DirEntry, whose stat cached before the bytes were read supplies the metadata
+func copy2Entry(src, dst string, st os.FileInfo) error {
+	if isDirectory(dst) {
+		dst = filepath.Join(dst, filepath.Base(src))
+	}
+	return platformCopy2(src, dst, st)
 }
 
 // Copies a file's bytes the way shutil copyfile does, refusing the same file and named pipes
@@ -51,11 +59,13 @@ func copyFileData(src, dst string) error {
 	return out.Close()
 }
 
-// Copies access and modify times, extended attributes, permission bits and file flags like shutil copystat
-func copyStat(src, dst string) error {
-	st, err := os.Stat(src)
-	if err != nil {
-		return err
+// Copies access and modify times, extended attributes, permission bits and file flags like shutil copystat, st a stat of src taken earlier or nil to stat it now
+func copyStat(src, dst string, st os.FileInfo) error {
+	if st == nil {
+		var err error
+		if st, err = os.Stat(src); err != nil {
+			return err
+		}
 	}
 	atime, err := fileAccessTime(src, st)
 	if err != nil {

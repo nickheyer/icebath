@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -107,6 +108,15 @@ func fetchPinned(pkg, binaryName string) (string, error) {
 	if binary := findFile(root, binaryName); binary != "" {
 		return binary, nil
 	}
+	unlock, err := lockCache(cache)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	// Another test binary may have unpacked the pin while this one waited for the lock
+	if binary := findFile(root, binaryName); binary != "" {
+		return binary, nil
+	}
 	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Get(url)
 	if err != nil {
 		return "", fmt.Errorf("%s is not unpacked under %s and the download failed: %w", pkg, root, err)
@@ -119,7 +129,7 @@ func fetchPinned(pkg, binaryName string) (string, error) {
 	if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != sha {
 		return "", &fs.PathError{Op: "sha256", Path: url, Err: fs.ErrInvalid}
 	}
-	staging := root + ".partial"
+	staging := filepath.Join(cache, ".partial-"+pkg+"-"+sha[:16])
 	os.RemoveAll(staging)
 	if err := os.MkdirAll(staging, 0o777); err != nil {
 		return "", err
@@ -139,6 +149,25 @@ func fetchPinned(pkg, binaryName string) (string, error) {
 		return binary, nil
 	}
 	return "", &fs.PathError{Op: "find", Path: filepath.Join(root, binaryName), Err: fs.ErrNotExist}
+}
+
+// Holds the shared cache's provisioning lock, so test binaries running at once unpack each pin a single time instead of into each other's staging
+func lockCache(cache string) (func(), error) {
+	if err := os.MkdirAll(cache, 0o777); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(cache, ".provision.lock"), os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
+		return nil, err
+	}
+	if err := pyfs.LockFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() {
+		pyfs.UnlockFile(f)
+		f.Close()
+	}, nil
 }
 
 // First regular file or link named name under root in lexical walk order

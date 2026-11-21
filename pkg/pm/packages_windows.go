@@ -26,8 +26,8 @@ type copyFile2Params struct {
 	CallbackContext uintptr
 }
 
-// Copies with CopyFile2 allowing a decrypted destination, falling back to copyfile and copystat on access denied
-func platformCopy2(src, dst string) error {
+// Copies with CopyFile2 allowing a decrypted destination, falling back to copyfile and copystat on access denied, st the stat that copystat applies or nil
+func platformCopy2(src, dst string, st os.FileInfo) error {
 	if procCopyFile2.Find() == nil {
 		from, err := syscall.UTF16PtrFromString(src)
 		if err != nil {
@@ -54,7 +54,7 @@ func platformCopy2(src, dst string) error {
 	if err := copyFileData(src, dst); err != nil {
 		return err
 	}
-	return copyStat(src, dst)
+	return copyStat(src, dst, st)
 }
 
 // Last access time Windows records for a file

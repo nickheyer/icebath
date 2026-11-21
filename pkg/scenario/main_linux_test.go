@@ -22,7 +22,7 @@ const (
 	isolatedEnv      = "ICEBATH_SCENARIO_ISOLATED"
 	runTagEnv        = "ICEBATH_SCENARIO_RUN"
 	exercisedEnv     = "ICEBATH_SCENARIO_EXERCISED"
-	exercisedDefault = "/home/nick/code/icebath/dev/ledger2/exercised.tsv"
+	exercisedDefault = "dev/ledger2/exercised.tsv"
 )
 
 // Built binary, its coverage directory and the module root shared by every scenario of one run
@@ -86,6 +86,9 @@ func runIsolated(m *testing.M) int {
 	flag.Parse()
 	if err := loopbackUp(); err != nil {
 		fmt.Fprintf(os.Stderr, "scenario: bringing the private loopback up: %v\n", err)
+		if restricted, _ := os.ReadFile("/proc/sys/kernel/apparmor_restrict_unprivileged_userns"); bytes.Equal(bytes.TrimSpace(restricted), []byte("1")) {
+			fmt.Fprintln(os.Stderr, "scenario: AppArmor strips the capabilities of unprivileged user namespaces here, lift it with: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0")
+		}
 		return 2
 	}
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -121,7 +124,7 @@ func runIsolated(m *testing.M) int {
 	}
 	out := os.Getenv(exercisedEnv)
 	if out == "" {
-		out = exercisedDefault
+		out = filepath.Join(root, filepath.FromSlash(exercisedDefault))
 	}
 	if err := writeExercised(root, suite.coverDir, work, out, built); err != nil {
 		fmt.Fprintf(os.Stderr, "scenario: writing %s: %v\n", out, err)

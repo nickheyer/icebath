@@ -9,10 +9,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Sets the access and modification time of a symlink itself
-func setLinkTimes(t *testing.T, path string, at time.Time) {
+// Sets the access and modification times of a symlink itself
+func setLinkTimes(t *testing.T, path string, atime, mtime time.Time) {
 	t.Helper()
-	ts := []unix.Timespec{unix.NsecToTimespec(at.UnixNano()), unix.NsecToTimespec(at.UnixNano())}
+	ts := []unix.Timespec{unix.NsecToTimespec(atime.UnixNano()), unix.NsecToTimespec(mtime.UnixNano())}
 	if err := unix.UtimesNanoAt(unix.AT_FDCWD, path, ts, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		t.Fatal(err)
 	}

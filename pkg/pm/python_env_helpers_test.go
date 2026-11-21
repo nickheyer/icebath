@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -100,7 +101,8 @@ func peFetchPinned(pkg, binaryName string) (string, error) {
 	if peCacheRoot == "" {
 		return "", &fs.PathError{Op: "cache", Path: "user cache directory", Err: fs.ErrNotExist}
 	}
-	root := filepath.Join(peCacheRoot, "icebath-pm-tests", pkg+"-"+sha[:16])
+	cache := filepath.Join(peCacheRoot, "icebath-pm-tests")
+	root := filepath.Join(cache, pkg+"-"+sha[:16])
 	find := func() string {
 		found := ""
 		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -111,6 +113,15 @@ func peFetchPinned(pkg, binaryName string) (string, error) {
 		})
 		return found
 	}
+	if binary := find(); binary != "" {
+		return binary, nil
+	}
+	unlock, err := peLockCache(cache)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	// Another test binary may have unpacked the pin while this one waited for the lock
 	if binary := find(); binary != "" {
 		return binary, nil
 	}
@@ -128,7 +139,7 @@ func peFetchPinned(pkg, binaryName string) (string, error) {
 	if hex.EncodeToString(sum[:]) != sha {
 		return "", &fs.PathError{Op: "sha256", Path: url, Err: fs.ErrInvalid}
 	}
-	staging := root + ".partial"
+	staging := filepath.Join(cache, ".partial-"+pkg+"-"+sha[:16])
 	os.RemoveAll(staging)
 	if err := os.MkdirAll(staging, 0o777); err != nil {
 		return "", err
@@ -149,6 +160,25 @@ func peFetchPinned(pkg, binaryName string) (string, error) {
 		return "", &fs.PathError{Op: "find", Path: root, Err: fs.ErrNotExist}
 	}
 	return binary, nil
+}
+
+// Holds the shared cache's provisioning lock, so test binaries running at once unpack each pin a single time instead of into each other's staging
+func peLockCache(cache string) (func(), error) {
+	if err := os.MkdirAll(cache, 0o777); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(cache, ".provision.lock"), os.O_RDWR|os.O_CREATE, 0o666)
+	if err != nil {
+		return nil, err
+	}
+	if err := pyfs.LockFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() {
+		pyfs.UnlockFile(f)
+		f.Close()
+	}, nil
 }
 
 // Interpreter the tests build environments with, the host Python standing in for sys executable

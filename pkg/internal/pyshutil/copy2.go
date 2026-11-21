@@ -16,6 +16,17 @@ func Copy2(src, dst string) error {
 	return copyStat(src, dst)
 }
 
+// shutil.copy2 as copytree calls it with an os.DirEntry, whose stat cached before the content was read supplies the times and mode
+func Copy2Entry(src, dst string, st os.FileInfo) error {
+	if fi, err := os.Stat(dst); err == nil && fi.IsDir() {
+		dst = dst + string(os.PathSeparator) + baseName(src)
+	}
+	if err := copyFile(src, dst); err != nil {
+		return err
+	}
+	return copyStatFrom(src, dst, st)
+}
+
 // Last path element of p split on the host separators
 func baseName(p string) string {
 	for i := len(p) - 1; i >= 0; i-- {
@@ -58,6 +69,11 @@ func copyStat(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	return copyStatFrom(src, dst, fi)
+}
+
+// shutil.copystat from a stat of src taken earlier, the extended attributes still read from src
+func copyStatFrom(src, dst string, fi os.FileInfo) error {
 	if err := os.Chtimes(dst, fileAtime(fi), fi.ModTime()); err != nil {
 		return err
 	}

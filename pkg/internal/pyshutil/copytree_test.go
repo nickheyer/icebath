@@ -97,9 +97,11 @@ func TestCopyTreeCopiesLinkTimesDirectoryModeAndLeavesNothingForAFileSource(t *t
 		t.Fatal(err)
 	}
 	old := time.Date(2001, 2, 3, 4, 5, 6, 789000000, time.UTC)
-	setLinkTimes(t, link, old)
+	// An atime past the ctime and within the day survives the readlink and listing on relatime and noatime mounts
+	fresh := time.Unix(time.Now().Add(time.Hour).Unix(), 123456789)
+	setLinkTimes(t, link, fresh, old)
 	dirTime := time.Date(2010, 1, 2, 3, 4, 5, 0, time.UTC)
-	if err := os.Chtimes(filepath.Join(src, "sub"), dirTime.Add(time.Hour), dirTime); err != nil {
+	if err := os.Chtimes(filepath.Join(src, "sub"), fresh.Add(time.Minute), dirTime); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(filepath.Join(src, "sub"), 0o555); err != nil {
@@ -111,19 +113,28 @@ func TestCopyTreeCopiesLinkTimesDirectoryModeAndLeavesNothingForAFileSource(t *t
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(filepath.Join(dst, "sub"), 0o755) })
+	// shutil.copystat lstats a kept link after readlink and stats a directory after listing it, so a strictatime mount hands on the atime that read stamped
+	srcLink, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcSub, err := os.Stat(filepath.Join(src, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	copied, err := os.Lstat(filepath.Join(dst, "link"))
 	if err != nil || copied.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("link copy %v %v", copied, err)
 	}
-	if !copied.ModTime().Equal(old) || !fileAtime(copied).Equal(old) {
-		t.Fatalf("link times %v and %v, want %v", copied.ModTime(), fileAtime(copied), old)
+	if !copied.ModTime().Equal(old) || !fileAtime(copied).Equal(fileAtime(srcLink)) {
+		t.Fatalf("link times %v and %v, want %v and %v", copied.ModTime(), fileAtime(copied), old, fileAtime(srcLink))
 	}
 	sub, err := os.Stat(filepath.Join(dst, "sub"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sub.Mode().Perm() != 0o555 || !sub.ModTime().Equal(dirTime) || !fileAtime(sub).Equal(dirTime.Add(time.Hour)) {
-		t.Fatalf("directory copy mode %v mtime %v atime %v", sub.Mode().Perm(), sub.ModTime(), fileAtime(sub))
+	if sub.Mode().Perm() != 0o555 || !sub.ModTime().Equal(dirTime) || !fileAtime(sub).Equal(fileAtime(srcSub)) {
+		t.Fatalf("directory copy mode %v mtime %v atime %v, want atime %v", sub.Mode().Perm(), sub.ModTime(), fileAtime(sub), fileAtime(srcSub))
 	}
 	file := filepath.Join(root, "plain")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
@@ -135,5 +146,33 @@ func TestCopyTreeCopiesLinkTimesDirectoryModeAndLeavesNothingForAFileSource(t *t
 	}
 	if _, err := os.Lstat(target); err == nil {
 		t.Fatal("a failed scan of the source still created the destination")
+	}
+}
+
+func TestCopyTreeGivesAFileTheTimesStatedBeforeItsContentWasRead(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(src, "f")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A day old atime is restamped by the read on relatime and strictatime mounts, the os.DirEntry stat copytree hands copy2 predating it
+	atime, mtime := time.Unix(1000000000, 500000000), time.Unix(1100000000, 250000000)
+	if err := os.Chtimes(file, atime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(root, "dst")
+	if err := CopyTree(src, dst, false, false); err != nil {
+		t.Fatal(err)
+	}
+	copied, err := os.Stat(filepath.Join(dst, "f"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !copied.ModTime().Equal(mtime) || !fileAtime(copied).Equal(atime) {
+		t.Fatalf("file times %v and %v, want %v and %v", copied.ModTime(), fileAtime(copied), mtime, atime)
 	}
 }

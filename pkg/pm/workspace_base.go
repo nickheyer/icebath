@@ -61,8 +61,10 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 			}
 			continue
 		}
-		if isDirectory(from) {
+		if resolved, statErr := os.Stat(from); statErr == nil && resolved.IsDir() {
 			err = copyTreeLike(from, to, symlinks, ignore)
+		} else if statErr == nil {
+			err = copy2Entry(from, to, resolved)
 		} else {
 			err = copy2(from, to)
 		}
@@ -70,7 +72,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 			failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", from, to, err.Error()))
 		}
 	}
-	if err := copyStat(src, dst); err != nil {
+	if err := copyStat(src, dst, nil); err != nil {
 		failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", src, dst, errchain.OSText(err)))
 	}
 	if len(failures) > 0 {

@@ -114,15 +114,17 @@ func copyTreeAbortable(src, dst string, symlinks, dirsExistOK bool, ignore Ignor
 				}
 				continue
 			}
-			if isDirPath(from) {
+			if resolved, statErr := os.Stat(from); statErr == nil && resolved.IsDir() {
 				err = copyTreeAbortable(from, to, symlinks, dirsExistOK, ignore)
+			} else if statErr == nil {
+				err = pyshutil.Copy2Entry(from, to, resolved)
 			} else {
 				err = Copy2(from, to)
 			}
 		} else if st.IsDir() || isMountPoint(from) {
 			err = copyTreeAbortable(from, to, symlinks, dirsExistOK, ignore)
 		} else {
-			err = Copy2(from, to)
+			err = pyshutil.Copy2Entry(from, to, st)
 		}
 		if a, ok := err.(*ignoreAbort); ok {
 			return a
