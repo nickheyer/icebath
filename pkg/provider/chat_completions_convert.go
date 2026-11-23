@@ -1972,6 +1972,7 @@ type wireSettings struct {
 	streamDrainTimeout float64
 	localStreamStale   float64
 	streamStale        float64
+	streamStaleSet     bool
 	showCommentary     bool
 	textVerbosity      string
 	reasoningEcho      bool
@@ -1992,14 +1993,15 @@ func loadWireSettings(ctx context.Context) wireSettings {
 	if n, set := settings.CompressionCodexResponsesCompactThreshold.Lookup(ctx); set {
 		compactThreshold = n
 	}
-	apiCallStale, err := settings.Resolve(ctx, settings.AgentApiCallStaleTimeout.Key)
-	apiCallStaleSet := err == nil && apiCallStale.Source != settings.SourceDefault
+	apiCallStale, apiCallStaleSet := settings.AgentApiCallStaleTimeout.Lookup(ctx)
+	streamStale, streamStaleSet := streamStaleBase(ctx)
 	return wireSettings{
 		minCodingScore:     settings.OpenrouterMinCodingScore.Get(ctx),
 		streamMaxLifetime:  settings.AgentStreamMaxLifetime.Get(ctx).Seconds(),
 		streamDrainTimeout: settings.AgentStreamDrainTimeout.Get(ctx).Seconds(),
-		localStreamStale:   settings.AgentLocalStreamStaleTimeout.Get(ctx).Seconds(),
-		streamStale:        settings.AgentStreamStaleTimeout.Get(ctx).Seconds(),
+		localStreamStale:   localStreamStaleTimeout(ctx),
+		streamStale:        streamStale,
+		streamStaleSet:     streamStaleSet,
 		showCommentary:     settings.DisplayShowCommentary.Get(ctx),
 		textVerbosity:      settings.AgentTextVerbosity.Get(ctx),
 		reasoningEcho:      settings.AgentReasoningEcho.Get(ctx),
@@ -2009,8 +2011,8 @@ func loadWireSettings(ctx context.Context) wireSettings {
 		nativeCompaction:   settings.CompressionCodexResponsesNative.Get(ctx),
 		compactThreshold:   compactThreshold,
 		replayRecentImages: settings.VisionReplayRecentImages.Get(ctx),
-		apiTimeout:         settings.AgentApiTimeout.Get(ctx).Seconds(),
-		apiCallStale:       settings.AgentApiCallStaleTimeout.Get(ctx).Seconds(),
+		apiTimeout:         APITimeoutSeconds(ctx),
+		apiCallStale:       SilenceLimitSeconds(apiCallStale),
 		apiCallStaleSet:    apiCallStaleSet,
 	}
 }

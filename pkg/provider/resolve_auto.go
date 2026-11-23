@@ -126,40 +126,12 @@ func newResolver(ctx context.Context, cfg config.Tree, secrets *config.Secrets, 
 	return &resolver{ctx: ctx, cfg: m, secrets: secrets, home: h, creds: creds, http: &http.Client{}}
 }
 
-// Process global env names a routed profile may still read from the environment
-var globalEnvExact = map[string]bool{
-	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true,
-	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
-	"PATH": true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
-	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
-	"ICEBATH_KANBAN_DB": true, "ICEBATH_KANBAN_WORKSPACES_ROOT": true, "ICEBATH_KANBAN_BOARD": true,
-	"API_SERVER_ENABLED": true, "API_SERVER_HOST": true, "API_SERVER_PORT": true, "API_SERVER_CORS_ORIGINS": true,
-	"GATEWAY_RELAY_URL": true, "GATEWAY_RELAY_ENDPOINT": true, "GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS": true,
-	"GATEWAY_RELAY_PLATFORMS": true, "GATEWAY_RELAY_BOT_IDS": true, "GATEWAY_RELAY_ROUTE_KEYS": true,
-	"GATEWAY_RELAY_INSTANCE_ID": true, "GATEWAY_RELAY_WAKE_URL": true, "GATEWAY_RELAY_DISPLAY_NAME": true,
-}
-
-var globalEnvPrefixes = []string{"ICEBATH_KANBAN_", "ICEBATH_TELEGRAM_", "TERMINAL_"}
-
-// True for genuinely process global env vars rather than profile secrets
-func isGlobalEnv(name string) bool {
-	if globalEnvExact[name] {
-		return true
-	}
-	for _, p := range globalEnvPrefixes {
-		if strings.HasPrefix(name, p) {
-			return true
-		}
-	}
-	return false
-}
-
 // Call context profile hooks read through, the resolver's home bound onto its context
 func (r *resolver) hookCtx() context.Context { return ctxForHome(r.ctx, r.home) }
 
 // Process environment value under the get_secret rules, a scoped routed profile never reading another profile's value
 func (r *resolver) processEnv(name string) string {
-	if boundScope(r.ctx) != nil && !isGlobalEnv(name) && r.servesRoutedProfile() {
+	if boundScope(r.ctx) != nil && !IsGlobalEnv(name) && r.servesRoutedProfile() {
 		return CurrentSecretScope(r.ctx)[name]
 	}
 	v, _ := SecretScopeFrom(r.ctx).GetSecret(name)
@@ -350,13 +322,13 @@ func detectAPIModeForURL(baseURL string) APIMode {
 // DetectAPIModeForURL is the api mode a base url implies by its path and host, empty when none
 func DetectAPIModeForURL(baseURL string) APIMode { return detectAPIModeForURL(baseURL) }
 
-// Validated api mode from config, alias spellings canonicalized and registered dialects accepted
+// Validated api mode from config, the built in modes and registered dialects accepted
 func (r *resolver) parseAPIMode(raw any) APIMode {
 	s, ok := raw.(string)
 	if !ok {
 		return ""
 	}
-	normalized := strings.ToLower(CanonicalAPIMode(s))
+	normalized := strings.ToLower(strings.TrimSpace(s))
 	if normalized == "" {
 		return ""
 	}
@@ -2241,7 +2213,7 @@ func (r *resolver) resolveTaskProviderModel(task any, provider, model, baseURL, 
 				cfgAPIKey = r.secret(keyEnv)
 			}
 		}
-		resolvedMode = APIMode(strings.ToLower(CanonicalAPIMode(cfgString(tc["api_mode"]))))
+		resolvedMode = APIMode(strings.ToLower(strings.TrimSpace(cfgString(tc["api_mode"]))))
 	}
 	if strings.ToLower(model) == "auto" {
 		model = ""

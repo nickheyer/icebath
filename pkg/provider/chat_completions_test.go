@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -841,7 +840,6 @@ func TestStreamRunawayRepetitionIsCut(t *testing.T) {
 }
 
 func TestStreamStaleKillIsReadTimeout(t *testing.T) {
-	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	ws := newWireServer(t, func(w http.ResponseWriter, r *http.Request, n int, body map[string]any) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
@@ -858,6 +856,7 @@ func TestStreamStaleKillIsReadTimeout(t *testing.T) {
 			fl.Flush()
 		}
 	})
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	log := &eventLog{}
 	start := time.Now()
 	_, err := newTestClient(t, ws.route("custom")).Stream(context.Background(), userRequest("hi"), log.fn)
@@ -901,10 +900,7 @@ func TestStreamLifetimeCapCutsADrip(t *testing.T) {
 		_, _ = io.WriteString(w, chunk(map[string]any{}, "stop", nil)+"data: [DONE]\n\n")
 		fl.Flush()
 	})
-	if err := os.WriteFile(home.ConfigPath(os.Getenv(home.EnvHome)), []byte("agent:\n  stream_max_lifetime: 1.5\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 1.0})
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 1.0, "agent.stream_max_lifetime": 1.5})
 	c := newTestClient(t, ws.route("custom"))
 	for i := 0; i < 2; i++ {
 		start := time.Now()

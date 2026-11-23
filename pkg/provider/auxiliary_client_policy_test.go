@@ -455,7 +455,7 @@ func TestExportedFixedTemperatureAndPortalWire(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
-	if modelsResolver(ctx).parseAPIMode("responses") != ModeCodexResponses || GetNamedCustomProvider(ctx, "nope") != nil {
+	if modelsResolver(ctx).parseAPIMode(" Codex_Responses ") != ModeCodexResponses || GetNamedCustomProvider(ctx, "nope") != nil {
 		t.Fatal("api mode or named provider")
 	}
 	if CarrierRecord(ctx, map[string]any{}) != nil {

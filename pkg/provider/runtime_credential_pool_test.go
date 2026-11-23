@@ -12,7 +12,7 @@ func TestRuntimeCredentialPoolSetOnlyByPoolPaths(t *testing.T) {
 	if rt := mustResolve(t, r, "openrouter", "", "", ""); rt.CredentialPool != nil || rt.APIKey != "sk-or-env-key-12345" {
 		t.Fatalf("env runtime carries a pool %+v", rt)
 	}
-	cfg := map[string]any{"providers": map[string]any{"local-ollama": map[string]any{"api": "http://localhost:11434/v1"}}}
+	cfg := map[string]any{"providers": map[string]any{"local-ollama": map[string]any{"base_url": "http://localhost:11434/v1"}}}
 	r = testResolver(t, cfg, &fakeCreds{creds: map[string]Credential{"local-ollama": {APIKey: "sk-genuinely-long-real-key-12345", Pool: pool}}}, "")
 	if rt := r.tryResolveFromCustomPool("http://localhost:11434/v1", "custom", "", ""); rt == nil || rt.CredentialPool != pool || rt.Source != "pool:local-ollama" {
 		t.Fatalf("custom pool runtime %+v", rt)

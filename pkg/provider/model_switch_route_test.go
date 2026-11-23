@@ -238,7 +238,7 @@ func TestUnlistedIDOnUserProviderIsKeptVerbatim(t *testing.T) {
 	endpoint := srv.URL + "/v1"
 	for _, explicit := range []string{"hyper", "custom:hyper"} {
 		ctx, _ := switchAliasHome(t, "model:\n  provider: custom:hyper\n  default: deepseek-v4-flash-0731\n"+
-			"providers:\n  hyper:\n    base_url: "+endpoint+"\n    api_key_env: HYPER_KEY\n")
+			"providers:\n  hyper:\n    base_url: "+endpoint+"\n    key_env: HYPER_KEY\n")
 		t.Setenv("HYPER_KEY", "test-key-12345")
 		fakeSwitchPipeline(t, false)
 		cfg := modelsConfig(ctx)

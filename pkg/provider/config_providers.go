@@ -18,26 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Alias spellings of api_mode accepted from older configs mapped onto the canonical transport names
-var apiModeAliases = map[string]string{
-	"openai": "chat_completions", "openai_chat": "chat_completions", "openai-chat": "chat_completions",
-	"chat-completions": "chat_completions", "chatcompletions": "chat_completions",
-	"responses": "codex_responses", "openai_responses": "codex_responses", "openai-responses": "codex_responses",
-	"anthropic": "anthropic_messages", "anthropic-messages": "anthropic_messages", "messages": "anthropic_messages",
-	"bedrock": "bedrock_converse", "bedrock-converse": "bedrock_converse",
-}
-
 var falseWords = map[string]bool{"false": true, "0": true, "no": true, "off": true}
 var trueWords = map[string]bool{"true": true, "1": true, "yes": true, "on": true}
-
-// CanonicalAPIMode maps alias spellings onto the canonical transport name and passes unknown values through
-func CanonicalAPIMode(apiMode string) string {
-	cleaned := pystr.Strip(apiMode)
-	if canon, ok := apiModeAliases[pystr.Lower(cleaned)]; ok {
-		return canon
-	}
-	return cleaned
-}
 
 // CoerceProviderID renders a provider identity field as a trimmed string
 func CoerceProviderID(value any) string {
@@ -150,20 +132,10 @@ func pickProviderBaseURL(entry map[string]any, providerKey string) string {
 	return ""
 }
 
-// Normalizes an entry's models to a mapping plus the discovered flag, accepting lists of ids or rows
-func normalizeProviderModels(models any) (map[string]any, bool) {
-	discovered := false
+// Normalizes an entry's models to a mapping, accepting lists of ids or rows
+func normalizeProviderModels(models any) map[string]any {
 	if m, ok := models.(map[string]any); ok && len(m) > 0 {
-		copyM := make(map[string]any, len(m))
-		for k, v := range m {
-			copyM[k] = v
-		}
-		if flag, ok := copyM["__discovered_model_catalog__"].(bool); ok && flag {
-			discovered = true
-		}
-		delete(copyM, "__discovered_model_catalog__")
-		delete(copyM, "__explicit_model_allowlist__")
-		return copyM, discovered
+		return copyAnyMap(m)
 	}
 	if list, ok := asList(models); ok && len(list) > 0 {
 		out := map[string]any{}
@@ -193,9 +165,9 @@ func normalizeProviderModels(models any) (map[string]any, bool) {
 			}
 			out[strings.TrimSpace(modelID)] = rest
 		}
-		return out, discovered
+		return out
 	}
-	return map[string]any{}, discovered
+	return map[string]any{}
 }
 
 // NormalizeCustomProviderEntry returns the runtime shape of one providers block or nil
@@ -257,14 +229,11 @@ func NormalizeCustomProviderEntry(raw any, providerKey string) map[string]any {
 	put("api_key", stripped("api_key"))
 	put("key_cmd", stripped("key_cmd"))
 	put("key_env", stripped("key_env"))
-	if apiMode := stripped("api_mode"); apiMode != "" {
-		put("api_mode", CanonicalAPIMode(apiMode))
-	}
+	put("api_mode", stripped("api_mode"))
 	put("model", stripped("default_model"))
 	put("catalog_provider", stripped("catalog_provider"))
-	modelsDict, discovered := normalizeProviderModels(entry["models"])
-	put("models", modelsDict)
-	if flag, ok := entry["models_discovered"].(bool); (ok && flag) || discovered {
+	put("models", normalizeProviderModels(entry["models"]))
+	if flag, ok := entry["models_discovered"].(bool); ok && flag {
 		normalized["models_discovered"] = true
 	}
 	if caps, ok := entry["capabilities"].(map[string]any); ok {
@@ -479,11 +448,11 @@ func EntriesForRoute(baseURL string, customProviders []map[string]any, cfg map[s
 	return entriesForRoute(baseURL, customProviders, cfg)
 }
 
-// CustomProviderAPIMode is the canonical api_mode of the first custom entry serving the base URL or empty
+// CustomProviderAPIMode is the api_mode of the first custom entry serving the base URL or empty
 func CustomProviderAPIMode(baseURL string, customProviders []map[string]any, cfg map[string]any) string {
 	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
 		if value, ok := entry["api_mode"].(string); ok && strings.TrimSpace(value) != "" {
-			return CanonicalAPIMode(value)
+			return strings.TrimSpace(value)
 		}
 	}
 	return ""

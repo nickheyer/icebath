@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 func nativePreflightClient(t *testing.T, nativeCompaction bool) (context.Context, NativePreflightEstimator) {
 	t.Helper()
 	h := t.TempDir()
-	writeConfigYAML(t, h, "codex_responses:\n  native_compaction: "+map[bool]string{true: "true", false: "false"}[nativeCompaction]+"\ncompression:\n  enabled: true\n")
+	writeConfigYAML(t, h, "compression:\n  enabled: true\n  codex_responses_native: "+strconv.FormatBool(nativeCompaction)+"\n")
 	client, err := newCodexResponsesClient(Route{Provider: "openai-codex", Model: "gpt-5.6", BaseURL: "https://chatgpt.com/backend-api/codex", APIKey: "tok"})
 	if err != nil {
 		t.Fatal(err)

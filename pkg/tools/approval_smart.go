@@ -26,7 +26,6 @@ const smartSystemPrompt = "You are a security reviewer for an AI coding agent. Y
 
 var smartVerdicts = map[string]string{"APPROVE": "approve", "DENY": "deny"}
 
-
 // Removes a trailing unquoted hash comment from one shell line
 func stripLineComment(line string) string {
 	inSingle, inDouble := false, false

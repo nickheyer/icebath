@@ -46,7 +46,7 @@ func TestPrewarmWarmsTheActiveCustomEndpointForTheNextOpen(t *testing.T) {
 	})
 	resetPickerPrewarmGuard(t)
 	writeConfigYAML(t, home.Dir(ctx), "model:\n  provider: custom:example-gateway\n  base_url: "+baseURL+"\n"+
-		"custom_providers:\n- name: example-gateway\n  base_url: "+baseURL+"\n  api_key: sk-gateway-key\n")
+		"providers:\n  example-gateway:\n    name: example-gateway\n    base_url: "+baseURL+"\n    api_key: sk-gateway-key\n")
 	pc := invLoadContext(t, ctx)
 	pc.CurrentModel = ""
 	openPicker := func() map[string]any {

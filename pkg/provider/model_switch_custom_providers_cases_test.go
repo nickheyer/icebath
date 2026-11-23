@@ -900,6 +900,8 @@ func listedModelIDs(t *testing.T, value any) []string {
 
 func TestModelFlowNamedCustomPersistsDiscoveredModels(t *testing.T) {
 	h := newTestHome(t)
+	writeConfigYAML(t, h, "providers:\n  dragomes:\n    name: Dragomes\n    base_url: http://example.com/v1\n    api_mode: anthropic_messages\n"+
+		"    api_key: sk-test\n    default_model: MiniMax-M3\n    extra_headers:\n      X-Tenant: dragomes\n")
 	env := testEnv(t, h)
 	r := &ModelFlowRun{Ctx: env.Ctx, Env: env, Out: io.Discard, Config: map[string]any{}}
 	swapFlowSeam(t, &flowFetchAPIModelsFn, func(context.Context, string, string, time.Duration, string, map[string]string) ([]string, bool) {
@@ -908,7 +910,7 @@ func TestModelFlowNamedCustomPersistsDiscoveredModels(t *testing.T) {
 	swapFlowSeam(t, &flowRadiolistFn, func(string, [][]PickerSegment, PickerRadiolistOptions) (int, error) { return 0, nil })
 	saves := recordDiscoveredSaves(t)
 	err := modelFlowNamedCustom(r, map[string]any{"name": "Dragomes", "base_url": "http://example.com/v1", "api_mode": "anthropic_messages",
-		"extra_headers": map[string]any{"X-Tenant": "dragomes"}, "api_key": "sk-test", "key_env": "", "model": "MiniMax-M3", "provider_key": "",
+		"extra_headers": map[string]any{"X-Tenant": "dragomes"}, "api_key": "sk-test", "key_env": "", "model": "MiniMax-M3", "provider_key": "dragomes",
 		"discover_models": true, "models": map[string]any{}})
 	if err != nil {
 		t.Fatal(err)
@@ -1043,23 +1045,15 @@ func TestApiModeRowsDoNotShareACachedCatalog(t *testing.T) {
 	}
 }
 
-func firstCustomProviderEntry(t *testing.T, h string) map[string]any {
+// The saved providers entry of a key
+func savedProviderEntry(t *testing.T, h, key string) map[string]any {
 	t.Helper()
-	entries, _ := readConfigYAMLMap(t, h)["custom_providers"].([]any)
-	if len(entries) == 0 {
-		t.Fatalf("no custom_providers saved")
+	providers, _ := readConfigYAMLMap(t, h)["providers"].(map[string]any)
+	entry, ok := providers[key].(map[string]any)
+	if !ok {
+		t.Fatalf("no providers.%s saved: %v", key, providers)
 	}
-	entry, _ := entries[0].(map[string]any)
 	return entry
-}
-
-func noSentinelIDs(ids []string) bool {
-	for _, m := range ids {
-		if strings.HasPrefix(m, "__") {
-			return false
-		}
-	}
-	return true
 }
 
 func TestAutoSavedCatalogRoundTripsWithoutPinning(t *testing.T) {
@@ -1067,13 +1061,10 @@ func TestAutoSavedCatalogRoundTripsWithoutPinning(t *testing.T) {
 	h := os.Getenv("ICEBATH_HOME")
 	writeConfigYAML(t, h, "providers:\n  local-mlx:\n    name: Local MLX\n    base_url: "+localEndpoint+"\n    default_model: omlx-model-1\n")
 	saveDiscoveredModelsToConfig(ctx, localEndpoint, localCatalog(), "", nil, nil)
-	saved := firstCustomProviderEntry(t, h)
+	saved := savedProviderEntry(t, h, "local-mlx")
 	models := listedModelIDs(t, saved["models"])
 	if saved["models_discovered"] != true || !reflect.DeepEqual(models, localCatalog()) {
 		t.Fatalf("saved %v", saved)
-	}
-	if !noSentinelIDs(models) {
-		t.Fatalf("sentinel keys must never appear inside the user-facing models mapping %v", models)
 	}
 	newer := append(localCatalog(), "omlx-model-9")
 	seedCustomModelCache(t, newer)
@@ -1083,43 +1074,5 @@ func TestAutoSavedCatalogRoundTripsWithoutPinning(t *testing.T) {
 	}
 	if len(fetched) != 0 {
 		t.Fatalf("fetched %v", fetched)
-	}
-}
-
-func TestLegacySentinelCatalogStillResolvesAndMigrates(t *testing.T) {
-	ctx, _ := pickerTestHome(t, nil)
-	models := map[string]any{"__discovered_model_catalog__": true}
-	yamlModels := "      __discovered_model_catalog__: true\n"
-	for _, m := range localCatalog() {
-		models[m] = map[string]any{}
-		yamlModels += "      " + m + ": {}\n"
-	}
-	legacy := map[string]any{"name": "Local MLX", "base_url": localEndpoint, "model": "omlx-model-1", "models": models}
-	if !entryModelsDiscovered(legacy) || modelsConfigIsAllowlist(legacy["models"], entryModelsDiscovered(legacy)) || !reflect.DeepEqual(declaredModelIDs(legacy["models"]), localCatalog()) {
-		t.Fatalf("legacy entry read wrong %v", declaredModelIDs(legacy["models"]))
-	}
-	copied := map[string]any{}
-	for k, v := range legacy {
-		copied[k] = v
-	}
-	normalized := NormalizeCustomProviderEntry(copied, "")
-	if normalized == nil || normalized["models_discovered"] != true {
-		t.Fatalf("normalized %v", normalized)
-	}
-	if ids := listedModelIDs(t, normalized["models"]); !reflect.DeepEqual(ids, localCatalog()) || !noSentinelIDs(ids) {
-		t.Fatalf("normalized models %v", ids)
-	}
-	seedCustomModelCache(t, []string{})
-	row, fetched := noProbeRow(t, ctx, localEndpoint, AuthenticatedProvidersOptions{CustomProviders: []any{legacy}})
-	if row == nil || !noSentinelIDs(rowModels(row)) || len(fetched) != 0 {
-		t.Fatalf("row %v fetched %v", row, fetched)
-	}
-	h := os.Getenv("ICEBATH_HOME")
-	writeConfigYAML(t, h, "providers:\n  local-mlx:\n    name: Local MLX\n    base_url: "+localEndpoint+"\n    default_model: omlx-model-1\n    models:\n"+yamlModels)
-	saveDiscoveredModelsToConfig(ctx, localEndpoint, localCatalog(), "", nil, nil)
-	saved := firstCustomProviderEntry(t, h)
-	ids := listedModelIDs(t, saved["models"])
-	if saved["models_discovered"] != true || !reflect.DeepEqual(ids, localCatalog()) || !noSentinelIDs(ids) {
-		t.Fatalf("saved %v", saved)
 	}
 }

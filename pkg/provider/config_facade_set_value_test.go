@@ -134,11 +134,11 @@ func TestSetValueDisplaySkinTouch(t *testing.T) {
 }
 
 func TestSetValueLiteralDotKeyEscaping(t *testing.T) {
-	seed := "providers:\n  qwen3.5-397b-wafer-non-zdr:\n    api: https://pass.wafer.ai/v1\n  openrouter:\n    api_key: or-keep\n"
+	seed := "providers:\n  qwen3.5-397b-wafer-non-zdr:\n    base_url: https://pass.wafer.ai/v1\n  openrouter:\n    api_key: or-keep\n"
 	s := newSetValueHome(t, seed)
 	s.mustSet(`providers.qwen3\.5-397b-wafer-non-zdr.extra_headers`, `{"Wafer-ZDR": "required"}`)
 	providers, _ := s.doc()["providers"].(map[string]any)
-	want := map[string]any{"api": "https://pass.wafer.ai/v1", "extra_headers": map[string]any{"Wafer-ZDR": "required"}}
+	want := map[string]any{"base_url": "https://pass.wafer.ai/v1", "extra_headers": map[string]any{"Wafer-ZDR": "required"}}
 	if _, has := providers["qwen3"]; has || !reflect.DeepEqual(providers["qwen3.5-397b-wafer-non-zdr"], want) || !reflect.DeepEqual(providers["openrouter"], map[string]any{"api_key": "or-keep"}) || strings.Contains(s.out.String(), unknownKeyNotice) {
 		t.Fatalf("escaped set %v %q", providers, s.out)
 	}
@@ -150,15 +150,15 @@ func TestSetValueLiteralDotKeyEscaping(t *testing.T) {
 	if _, has := providers["qwen3.5-397b-wafer-non-zdr"]; has || !strings.Contains(s.out.String(), `Unset providers.qwen3\.5-397b-wafer-non-zdr`) {
 		t.Fatalf("escaped unset %v %q", providers, s.out)
 	}
-	s = newSetValueHome(t, "providers:\n  qwen3.5-397b-wafer-non-zdr:\n    api: https://pass.wafer.ai/v1\n    extra_headers: '{\"K\": \"V\"}'\n")
+	s = newSetValueHome(t, "providers:\n  qwen3.5-397b-wafer-non-zdr:\n    base_url: https://pass.wafer.ai/v1\n    extra_headers: '{\"K\": \"V\"}'\n")
 	if err := s.command(config.ConfigArgs{Command: "unset", Key: `providers.qwen3\.5-397b-wafer-non-zdr.extra_headers`}); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.at("providers", "qwen3.5-397b-wafer-non-zdr"); !reflect.DeepEqual(got, map[string]any{"api": "https://pass.wafer.ai/v1"}) {
+	if got := s.at("providers", "qwen3.5-397b-wafer-non-zdr"); !reflect.DeepEqual(got, map[string]any{"base_url": "https://pass.wafer.ai/v1"}) {
 		t.Fatalf("nested unset %v", got)
 	}
-	s = newSetValueHome(t, "providers:\n  qwen3.5-397b:\n    api: https://pass.wafer.ai/v1\n")
-	if got := s.get(`providers.qwen3\.5-397b.api`, false, false); got != "https://pass.wafer.ai/v1" {
+	s = newSetValueHome(t, "providers:\n  qwen3.5-397b:\n    base_url: https://pass.wafer.ai/v1\n")
+	if got := s.get(`providers.qwen3\.5-397b.base_url`, false, false); got != "https://pass.wafer.ai/v1" {
 		t.Fatalf("escaped get %q", got)
 	}
 	s = newSetValueHome(t, "")

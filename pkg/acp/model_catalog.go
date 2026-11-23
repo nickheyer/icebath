@@ -77,7 +77,7 @@ func entryCatalog(ctx context.Context, entry map[string]any, disabled map[string
 	slug := provider.CustomProviderSlug(name, providerKey)
 	apiKey := fieldText(entry, "api_key")
 	if apiKey == "" {
-		keyEnv := strings.TrimSpace(pyStr(pyrepr.Or(pyrepr.Or(entry["key_env"], entry["api_key_env"]), "")))
+		keyEnv := fieldText(entry, "key_env")
 		if keyEnv != "" {
 			apiKey = strings.TrimSpace(os.Getenv(keyEnv))
 		}

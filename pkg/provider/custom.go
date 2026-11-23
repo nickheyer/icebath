@@ -743,13 +743,26 @@ func BuiltinNameUserEntry(ctx context.Context, name string, providers map[string
 	return modelsResolver(ctx).builtinNameUserEntry(name, providers)
 }
 
-// PersistedProviderID is the model.provider a switch saves, a bare built in name that resolved to the user's providers entry becoming that entry's custom identity
+// Config key of the enabled providers entry a provider name routes to at runtime, however the name spells it, false when it routes to none
+func (r *resolver) providerEntryKey(name string, providers map[string]any) (string, bool) {
+	if len(providers) == 0 {
+		return "", false
+	}
+	if _, path := r.selectNamedCustomProvider(name, map[string]any{"providers": providers}, false); path != nil {
+		return path.Key, true
+	}
+	return "", false
+}
+
+// PersistedProviderID is the model.provider a switch saves: the custom identity of the providers entry a name routes to, the name itself when it routes to none
 func PersistedProviderID(ctx context.Context, provider string, providers map[string]any) string {
-	owner, owned := BuiltinNameUserEntry(ctx, provider, providers)
-	if !owned {
+	if len(providers) == 0 {
 		return provider
 	}
-	return CustomProviderSlug(owner, owner)
+	if key, routed := modelsResolver(ctx).providerEntryKey(provider, providers); routed {
+		return CustomProviderSlug(key, key)
+	}
+	return provider
 }
 
 // Scans the keyed providers mapping for the requested name and returns the resolved entry and config key

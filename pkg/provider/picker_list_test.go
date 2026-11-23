@@ -32,7 +32,7 @@ func TestPassthroughKwargsToBase(t *testing.T) {
 		captured = opts
 		return nil
 	}, nil)
-	user := map[string]any{"foo": map[string]any{"api": "http://x"}}
+	user := map[string]any{"foo": map[string]any{"base_url": "http://x"}}
 	custom := []any{map[string]any{"name": "bar", "base_url": "http://y"}}
 	if _, err := ListPickerProviders(context.Background(), PickerProvidersOptions{CurrentProvider: "openrouter",
 		CurrentBaseURL: "http://x", CurrentModel: "openai/gpt-5.4", UserProviders: user, CustomProviders: custom,

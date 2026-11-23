@@ -51,8 +51,4 @@ func TestPromptCacheMetaConfigRoundtrip(t *testing.T) {
 	if normalized["api_mode"] != "codex_responses" {
 		t.Fatalf("api_mode %#v", normalized)
 	}
-	normalized = NormalizeCustomProviderEntry(map[string]any{"name": "Meta", "base_url": "https://api.meta.ai/v1", "transport": "codex_responses"}, "")
-	if normalized["api_mode"] != "codex_responses" && normalized["transport"] != "codex_responses" {
-		t.Fatalf("transport lost %#v", normalized)
-	}
 }

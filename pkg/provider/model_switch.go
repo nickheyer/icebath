@@ -11,9 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Mapping keys older releases wrote inside a provider's models mapping
-var declaredSentinelKeys = map[string]bool{"__explicit_model_allowlist__": true, "__discovered_model_catalog__": true}
-
 // Configured model ids from a mapping, a list of ids or id and name entries, or one string, deduped case insensitively
 func declaredModelIDs(value any) []string {
 	var candidates []any
@@ -22,9 +19,7 @@ func declaredModelIDs(value any) []string {
 		candidates = []any{v}
 	case map[string]any:
 		for _, k := range sortedKeys(v) {
-			if !declaredSentinelKeys[k] {
-				candidates = append(candidates, k)
-			}
+			candidates = append(candidates, k)
 		}
 	case []any:
 		for _, item := range v {
@@ -71,14 +66,7 @@ func entryModelsDiscovered(entry any) bool {
 	if !ok {
 		return false
 	}
-	if b, ok := m["models_discovered"].(bool); ok && b {
-		return true
-	}
-	models, ok := m["models"].(map[string]any)
-	if !ok {
-		return false
-	}
-	b, ok := models["__discovered_model_catalog__"].(bool)
+	b, ok := m["models_discovered"].(bool)
 	return ok && b
 }
 

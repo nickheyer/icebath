@@ -117,7 +117,7 @@ func TestCodexRuntimeRetiresThreadWhenAnInPlaceSwitchChangesTheCodexProvider(t *
 	t.Cleanup(func() { codexAppServerClientFactory = prev })
 	a := promptAgent(t)
 	a.model = "gpt-5.5"
-	if err := os.WriteFile(filepath.Join(a.env.Home, "config.yaml"), []byte("providers:\n  my-gateway:\n    api: https://gw.example/v1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.env.Home, "config.yaml"), []byte("providers:\n  my-gateway:\n    base_url: https://gw.example/v1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, pr := range [][2]string{{"openai-codex", "openai-codex"}, {"openai-codex", "openai-codex"}, {"custom", "custom:my-gateway"}} {

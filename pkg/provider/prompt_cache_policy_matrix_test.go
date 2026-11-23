@@ -169,7 +169,7 @@ func TestAnthropicPromptCachePolicyToolMarkerCapability(t *testing.T) {
 func TestAnthropicPromptCachePolicyConfigAndProbes(t *testing.T) {
 	t.Run("test_modern_providers_yaml_through_real_loader", func(t *testing.T) {
 		ctx := pcpHome(t)
-		pcpWriteYAML(t, "providers:\n  anthropic-proxy:\n    api: https://gateway.example.com/anthropic\n    transport: anthropic_messages\n    models:\n      fable:\n        context_length: 1000000\n        prompt_caching: true\n      opus:\n        prompt_caching: false\n")
+		pcpWriteYAML(t, "providers:\n  anthropic-proxy:\n    base_url: https://gateway.example.com/anthropic\n    api_mode: anthropic_messages\n    models:\n      fable:\n        context_length: 1000000\n        prompt_caching: true\n      opus:\n        prompt_caching: false\n")
 		agent := pcpAgent("custom:anthropic-proxy", pcpGateway, pcpAM, "fable")
 		agent.CustomProviders = nil
 		pcpExpect(t, ctx, agent, CacheDestination{}, true, true)
@@ -178,7 +178,7 @@ func TestAnthropicPromptCachePolicyConfigAndProbes(t *testing.T) {
 	})
 	t.Run("test_modern_providers_yaml_is_honored_during_early_init", func(t *testing.T) {
 		ctx := pcpHome(t)
-		pcpWriteYAML(t, "providers:\n  edge-router:\n    api: https://models.example.net/v1\n    transport: openai_chat\n    models:\n      vendor-agnostic-model:\n        prompt_caching: true\n")
+		pcpWriteYAML(t, "providers:\n  edge-router:\n    base_url: https://models.example.net/v1\n    api_mode: chat_completions\n    models:\n      vendor-agnostic-model:\n        prompt_caching: true\n")
 		agent := pcpAgent("edge-router", pcpEdge, pcpCC, "vendor-agnostic-model")
 		agent.CustomProviders = nil
 		pcpExpect(t, ctx, agent, CacheDestination{}, true, false)

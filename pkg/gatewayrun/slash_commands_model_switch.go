@@ -93,7 +93,7 @@ func configuredPreflightRoute(cfg map[string]any) (*int, agent.PreflightConfigur
 		text := pyrepr.Str(v)
 		return &text
 	}
-	return &value, agent.PreflightConfigured{Model: optional(pyrepr.Or(modelCfg["default"], modelCfg["model"])),
+	return &value, agent.PreflightConfigured{Model: optional(modelCfg["default"]),
 		Provider: optional(modelCfg["provider"]), BaseURL: optional(modelCfg["base_url"])}
 }
 
@@ -251,7 +251,7 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 	ctxLen, ok := provider.ResolveDisplayContextLength(ctx, provider.DisplayContextRequest{
 		Model: result.NewModel, Provider: result.TargetProvider, BaseURL: baseURL, APIKey: apiKey, ModelInfo: mi,
 		CustomProviders: providers, ConfigContextLength: configCtx,
-		ConfiguredModel:    pyrepr.Str(pyrepr.Or(pyrepr.Or(modelCfg["default"], modelCfg["model"]), "")),
+		ConfiguredModel:    pyrepr.Str(pyrepr.Or(modelCfg["default"], "")),
 		ConfiguredProvider: pyrepr.Str(pyrepr.Or(modelCfg["provider"], "")), ConfiguredBaseURL: pyrepr.Str(pyrepr.Or(modelCfg["base_url"], "")),
 	})
 	if ok && ctxLen != 0 {

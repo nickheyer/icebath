@@ -170,9 +170,9 @@ func TestResolveProviderFullRungOrder(t *testing.T) {
 	ctx := contextWithTempHome(t)
 	fakeModelsDevInfo(t, nil)
 	user := map[string]any{
-		"openai":  map[string]any{"api": "https://api.openai.com/v1", "key_env": "OPENAI_API_KEY", "name": "OpenAI Direct"},
+		"openai":  map[string]any{"base_url": "https://api.openai.com/v1", "key_env": "OPENAI_API_KEY", "name": "OpenAI Direct"},
 		"bedrock": map[string]any{"stale_timeout_seconds": 600},
-		"my-gw":   map[string]any{"url": "https://gw.example/v1", "api_key_env": "GW_KEY", "transport": "anthropic_messages"},
+		"my-gw":   map[string]any{"base_url": "https://gw.example/v1", "key_env": "GW_KEY", "api_mode": "anthropic_messages"},
 	}
 	openai := ResolveProviderFull(ctx, "OpenAI", user, nil)
 	if openai == nil || openai.ID != "openai" || openai.Name != "OpenAI Direct" || openai.Source != "user-config" ||
@@ -189,7 +189,7 @@ func TestResolveProviderFullRungOrder(t *testing.T) {
 		"not a dict",
 		map[string]any{"name": "No URL"},
 		map[string]any{"name": "Local Box", "base_url": "http://box:8000/v1", "key_env": "BOX_KEY"},
-		map[string]any{"name": "Keyed", "url": "http://keyed/v1", "provider_key": "kp"},
+		map[string]any{"name": "Keyed", "base_url": "http://keyed/v1", "provider_key": "kp"},
 	}
 	if box := ResolveProviderFull(ctx, "custom:local-box", nil, custom); box == nil || box.ID != "custom:local-box" || box.Name != "Local Box" ||
 		!reflect.DeepEqual(box.KeyEnv, []string{"BOX_KEY"}) {

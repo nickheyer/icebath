@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // One completed Messages stream ending in message_stop with its final message
@@ -83,10 +81,9 @@ func TestStaleKillIncrementsStreak(t *testing.T) {
 }
 
 func TestStaleWindowCoversTheHeaderWaitOfAnAttempt(t *testing.T) {
-	t.Setenv(home.EnvHome, t.TempDir())
+	srv := newAnthServer(t, func(w http.ResponseWriter, body map[string]any) { time.Sleep(3 * time.Second) })
 	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.2})
 	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "50")
-	srv := newAnthServer(t, func(w http.ResponseWriter, body map[string]any) { time.Sleep(3 * time.Second) })
 	c := srv.client(srv.route("https://example.invalid", "test-key"))
 	session := &RetrySession{}
 	logs := captureLogs(t)

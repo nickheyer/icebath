@@ -186,7 +186,7 @@ func TestProviderSwitchDropsTheKeyEnvPointerButASameRouteRepickKeepsIt(t *testin
 	writeConfigYAML(t, home.Dir(ctx), strings.NewReplacer("provider: custom\n", "provider: lmstudio\n",
 		"CUSTOM_BOX_API_KEY", "ICEBATH_CUSTOM_LMSTUDIO_API_KEY").Replace(seed))
 	persistOrFail(t, ctx, ModelSwitchResult{Success: true, NewModel: "qwen3-8b", TargetProvider: "lmstudio",
-		BaseURL: "http://localhost:1234/v1", APIMode: "openai_chat", IsGlobal: true})
+		BaseURL: "http://localhost:1234/v1", APIMode: "chat_completions", IsGlobal: true})
 	block := persistedModelBlock(t, path)
 	if block["default"] != "qwen3-8b" || block["key_env"] != "ICEBATH_CUSTOM_LMSTUDIO_API_KEY" {
 		t.Fatalf("block %v", block)

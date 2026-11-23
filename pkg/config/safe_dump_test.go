@@ -173,7 +173,7 @@ func TestAtomicYamlWriteWritesUnicodeUnescapedAndRoundTrips(t *testing.T) {
 func TestAtomicWriteThenKeyUpdateKeepsLayoutAndValues(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	data := yamlDict("custom_providers", []any{yamlDict("name", "Tëst 🦀", "base_url", "https://example.com")})
+	data := yamlDict("fallback_providers", []any{yamlDict("name", "Tëst 🦀", "base_url", "https://example.com")})
 	if err := AtomicYAMLWrite(context.Background(), path, data, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestAtomicWriteThenKeyUpdateKeepsLayoutAndValues(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(path)
 	content := string(raw)
-	want := map[string]any{"custom_providers": data["custom_providers"], "approvals": map[string]any{"mode": "off"}}
+	want := map[string]any{"fallback_providers": data["fallback_providers"], "approvals": map[string]any{"mode": "off"}}
 	if !strings.Contains(content, "Tëst 🦀") {
 		t.Fatalf("content %q", content)
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -77,10 +78,11 @@ func TestConsumeLoopStopsWhenSupersededMidStream(t *testing.T) {
 }
 
 func TestChatParserFailureClosesManagedStream(t *testing.T) {
+	t.Setenv(home.EnvHome, t.TempDir())
 	c := newTestClient(t, Route{Provider: "openrouter", Model: "test/model", BaseURL: "http://127.0.0.1:9/v1", APIKey: "k", Mode: ModeChatCompletions})
 	ctx := context.Background()
 	req := &Request{Model: "test/model", Messages: []*state.Message{{Role: "user", Content: "hi"}}}
-	tm := c.streamTimeouts(req, wireSettings{}, 0)
+	tm := c.streamTimeouts(req, loadWireSettings(ctx), 0)
 	s := c.newStreamState(ctx, req, &ccPrepared{}, func(StreamEvent) error { return nil }, tm)
 	raw := &relayLLMRawStream{chunks: []any{relayLLMTestOpaque{}}}
 	attemptCtx, cancel := context.WithCancel(ctx)

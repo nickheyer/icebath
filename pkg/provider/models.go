@@ -1262,12 +1262,6 @@ func credentialFingerprint(ctx context.Context, provider string) string {
 		keyEnv := stringOf(providerCfg["key_env"])
 		modelCfg := modelConfigDictFn(ctx)
 		baseURL := stringOf(providerCfg["base_url"])
-		if baseURL == "" {
-			baseURL = stringOf(providerCfg["api"])
-		}
-		if baseURL == "" {
-			baseURL = stringOf(providerCfg["url"])
-		}
 		parts = append(parts,
 			"OLLAMA_HOST="+GetEnvPreferDotenv(env, "OLLAMA_HOST"),
 			"providers.ollama.base_url="+baseURL,

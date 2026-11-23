@@ -42,10 +42,10 @@ func auxSeedOwnedAnthropic(t *testing.T) (context.Context, string, *[]string) {
 	if err := os.WriteFile(borrowed, creds, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	auth, _ := json.Marshal(map[string]any{"credential_pool": map[string]any{"anthropic": []any{map[string]any{
+	auth, _ := json.Marshal(map[string]any{"version": 2, "credential_pool": map[string]any{"anthropic": []any{map[string]any{
 		"id": "owned", "source": "manual:icebath_pkce", "auth_type": "oauth",
 		"access_token": "owned-token", "refresh_token": "owned-refresh",
-		"expires_at": time.Now().UnixMilli() + 3600000, "priority": 0}}}})
+		"expires_at_ms": time.Now().UnixMilli() + 3600000, "priority": 0}}}})
 	if err := os.WriteFile(filepath.Join(dir, "auth.json"), auth, 0o600); err != nil {
 		t.Fatal(err)
 	}

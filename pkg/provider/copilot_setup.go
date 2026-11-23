@@ -139,13 +139,9 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 	}
 	switch choice {
 	case "1":
-		token, err := copilotDeviceCodeLogin(r.ctx(), r.Out, "github.com", 300*time.Second)
-		if (err != nil || token == "") && r.ctx().Err() != nil {
+		token, err := copilotDeviceToken(r.ctx(), r.Out, true)
+		if err != nil && (isSignInCancelled(err) || r.ctx().Err() != nil) {
 			fmt.Fprintln(r.Out, "  Sign-in was cancelled.")
-			return false, nil
-		}
-		if err == nil && token == "" {
-			fmt.Fprintln(r.Out, "  Login cancelled or failed.")
 			return false, nil
 		}
 		if err == nil {
@@ -370,53 +366,18 @@ func copilotPollDeviceLogin(ctx context.Context, state any) (any, error) {
 	return map[string]any{"status": outcome[0], "message": outcome[1]}, nil
 }
 
-// Saves the approved GitHub OAuth token as an owned Copilot login made the profile default
-func copilotSaveDeviceLogin(ctx context.Context, token any) error {
-	return saveCopilotLogin(ctx, pyStr(token))
-}
-
-// Value following a flag in the raw auth arguments, empty when the flag is absent
-func copilotAuthArg(args []string, flag string) string {
-	for i := 0; i+1 < len(args); i++ {
-		if args[i] == flag {
-			return args[i+1]
-		}
-	}
-	return ""
-}
-
-// Both ends of the terminal, so a piped run never blocks on the device poll
-func copilotHasTerminal() bool { return streamIsTTY(os.Stdin) && streamIsTTY(os.Stdout) }
-
-// icebath auth add copilot signs in by GitHub device code and pools the token, an explicit oauth also without a terminal
-func copilotAuthHandler(action string, args []string, _ string) (bool, error) {
-	if action != "add" || copilotAuthArg(args, "--api-key") != "" {
-		return false, nil
-	}
-	authType := strings.ToLower(pystr.Strip(copilotAuthArg(args, "--type")))
-	if authType == "api-key" || authType == "api_key" || (authType != "oauth" && !copilotHasTerminal()) {
-		return false, nil
-	}
-	ctx := context.Background()
-	token, err := copilotDeviceCodeLogin(ctx, os.Stdout, "github.com", 300*time.Second)
+// GitHub device code sign in for Copilot, the approved token checked against what the Copilot API takes
+func copilotDeviceToken(ctx context.Context, out io.Writer, openBrowser bool) (string, error) {
+	credential, err := deviceCodeCredential(ctx, out, "GitHub Copilot", copilotStartDeviceLogin, copilotPollDeviceLogin, openBrowser)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	if token == "" {
-		return false, &PluginAuthError{Message: "GitHub sign-in did not complete; nothing was saved."}
-	}
+	token := strings.TrimSpace(pyStr(credential))
 	if valid, msg := validateCopilotToken(token); !valid {
-		return false, &PluginAuthError{Message: msg}
+		return "", &AuthError{Provider: "copilot", Code: "copilot_token_unsupported", Message: msg}
 	}
-	pool := LoadPool(modelsPoolEnv(ctx), "copilot")
-	label := pystr.Strip(copilotAuthArg(args, "--label"))
-	if label == "" {
-		label = fmt.Sprintf("github-device-%d", len(pool.Entries())+1)
-	}
-	if _, err := pool.AddEntry(PooledCredential{Provider: "copilot", ID: authNewEntryID(), Label: label, AuthType: AuthTypeAPIKey,
-		Priority: 0, Source: "manual:device_code", AccessToken: token, BaseURL: copilotBaseURL}); err != nil {
-		return false, err
-	}
-	fmt.Fprintf(os.Stdout, "Added copilot credential #%d: \"%s\"\n", len(pool.Entries()), label)
-	return true, nil
+	return token, nil
 }
+
+// Both ends of the terminal, so a piped run never waits on a device code nobody can read
+func copilotHasTerminal() bool { return streamIsTTY(os.Stdin) && streamIsTTY(os.Stdout) }

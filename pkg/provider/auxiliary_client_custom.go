@@ -332,14 +332,6 @@ func auxNoneIfEmpty(s string) any {
 	return s
 }
 
-// Python str of a truthy value, empty for a falsy one
-func auxOrEmptyStr(v any) string {
-	if pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
-	}
-	return ""
-}
-
 // Truthiness of a string or callable api key
 func auxKeyTruthy(key any) bool {
 	switch k := key.(type) {

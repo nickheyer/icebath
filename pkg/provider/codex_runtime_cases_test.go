@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -227,27 +226,29 @@ func TestCodexAppServerIntegrationRuntime(t *testing.T) {
 			t.Fatalf("session cwd %q bin %q", a.session.cwd, a.session.codexBin)
 		}
 	})
-	approvalRouting := func(t *testing.T, mode any, _ func(a *fakeCodexAgent)) CodexServerRequestRouting {
+	approvalRouting := func(t *testing.T, yamlMode string) CodexServerRequestRouting {
 		f := &fakeCodexClient{}
 		a := codexCaseAgent(t, f)
-		a.env.Config = config.Tree{"approvals": map[string]any{"mode": mode}}
+		if err := os.WriteFile(filepath.Join(a.env.Home, "config.yaml"), []byte("approvals:\n  mode: "+yamlMode+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		if err := ensureCodexSession(a, nil); err != nil {
 			t.Fatal(err)
 		}
 		return a.session.routing
 	}
 	t.Run("approval modes", func(t *testing.T) {
-		for name, cfg := range map[string]any{"test_approvals_mode_off_auto_approves_codex_server_requests": "off",
-			"test_yaml_boolean_false_approval_mode_also_auto_approves": false} {
-			if r := approvalRouting(t, cfg, nil); !r.AutoApproveExec || !r.AutoApproveApplyPatch {
+		for name, yamlMode := range map[string]string{"test_approvals_mode_off_auto_approves_codex_server_requests": `"off"`,
+			"test_yaml_boolean_false_approval_mode_also_auto_approves": "off"} {
+			if r := approvalRouting(t, yamlMode); !r.AutoApproveExec || !r.AutoApproveApplyPatch {
 				t.Fatalf("%s routing %+v", name, r)
 			}
 		}
-		if r := approvalRouting(t, "manual", nil); r.AutoApproveExec || r.AutoApproveApplyPatch {
+		if r := approvalRouting(t, "manual"); r.AutoApproveExec || r.AutoApproveApplyPatch {
 			t.Fatalf("test_manual_approvals_keep_codex_server_requests_fail_closed routing %+v", r)
 		}
 		restore := tools.SwapYoloModeFrozen(true)
-		r := approvalRouting(t, "manual", nil)
+		r := approvalRouting(t, "manual")
 		restore()
 		if !r.AutoApproveExec || !r.AutoApproveApplyPatch {
 			t.Fatalf("test_frozen_yolo_env_auto_approves_codex_server_requests routing %+v", r)
@@ -255,7 +256,7 @@ func TestCodexAppServerIntegrationRuntime(t *testing.T) {
 		t.Setenv("ICEBATH_SESSION_KEY", "codex-yolo-session")
 		tools.EnableSessionYolo(context.Background(), "codex-yolo-session")
 		t.Cleanup(func() { tools.DisableSessionYolo(context.Background(), "codex-yolo-session") })
-		if r := approvalRouting(t, "manual", nil); !r.AutoApproveExec || !r.AutoApproveApplyPatch {
+		if r := approvalRouting(t, "manual"); !r.AutoApproveExec || !r.AutoApproveApplyPatch {
 			t.Fatalf("test_session_yolo_auto_approves_codex_server_requests routing %+v", r)
 		}
 	})
@@ -488,7 +489,7 @@ func TestCodexNamedCustomProviderSelectsCodexModelProvider(t *testing.T) {
 		f := &fakeCodexClient{}
 		a := codexCaseAgent(t, f)
 		a.key, a.provider, a.requestedProvider, a.model = "sk-secret", provider, requested, model
-		os.WriteFile(filepath.Join(a.env.Home, "config.yaml"), []byte("providers:\n  my-gateway:\n    api: https://gateway.example.com/v1\n    api_key: sk-secret\n"), 0o644)
+		os.WriteFile(filepath.Join(a.env.Home, "config.yaml"), []byte("providers:\n  my-gateway:\n    base_url: https://gateway.example.com/v1\n    api_key: sk-secret\n"), 0o644)
 		if err := ensureCodexSession(a, nil); err != nil {
 			t.Fatal(err)
 		}

@@ -758,10 +758,6 @@
 # bedrock:
 #   region: ''
 
-# Key rotation: How to pick between several keys of one provider.
-# Older form. The provider's login rotation setting wins when set.
-# credential_pool_strategies: {}
-
 # Stay-put window: Stay on the main model if its rate limit ends within this time.
 # 0 turns this off, so any rate limit switches to the fallback.
 # fallback:
@@ -959,8 +955,9 @@
 #   verify_guidance: true
 
 # Verify before stop: Asks the agent to check its edits before it finishes.
+# One of: auto, on, off.
 # agent:
-#   verify_on_stop: false
+#   verify_on_stop: 'off'
 
 # Bot turn wait: How long a queued bot message waits for the running turn.
 # bot_mode:
@@ -5226,6 +5223,7 @@
 #   gateway_turn_lease_timeout: 5
 
 # Local silence limit: How long a local model may stay silent before the request is dropped.
+# Zero means no limit.
 # agent:
 #   local_stream_stale_timeout: 900
 
@@ -5264,6 +5262,7 @@
 #   stream_max_lifetime: 0
 
 # Model silence limit: How long a model may stay silent before the request is retried.
+# Zero means no limit.
 # agent:
 #   stream_stale_timeout: 180
 
@@ -5610,7 +5609,7 @@
 #   api_timeout: 1800
 
 # Silent request limit: How long a model may stay silent on a request that is not streamed.
-# Unset picks it from the model and the request size. A provider's own stale timeout wins over this.
+# Unset picks it from the model and the request size. Zero means no limit. A provider's own stale timeout wins over this.
 # Unset: picked from the model and request size.
 # Applies from the next turn.
 # agent:

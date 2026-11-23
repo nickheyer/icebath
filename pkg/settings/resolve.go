@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -311,11 +312,19 @@ func eachMisfit(e Entry, key string, v any, report func(key string, v any, field
 	if v == nil {
 		return
 	}
-	if _, ok := e.read(v); !ok {
+	if _, ok := readPart(e, v); !ok {
 		report(key, v, e)
 		return
 	}
 	switch t := e.(type) {
+	case *List:
+		if t.Item == nil {
+			return
+		}
+		items, _ := t.items(v)
+		for i, item := range items {
+			eachMisfit(t.Item, key+"."+strconv.Itoa(i), item, report)
+		}
 	case *Map:
 		if t.Value == nil {
 			return
@@ -324,11 +333,14 @@ func eachMisfit(e Entry, key string, v any, report func(key string, v any, field
 			eachMisfit(t.Value, key+"."+name, item, report)
 		}
 	case *Object:
-		for name, item := range config.AsMap(v) {
-			if f := t.Field(name); f != nil {
-				eachMisfit(f, key+"."+name, item, report)
-			} else {
-				report(key+"."+name, item, nil)
+		for _, part := range t.parts("", config.AsMap(v)) {
+			switch {
+			case part.field != nil:
+				eachMisfit(part.field, key+"."+part.name, part.value, report)
+			case t.holds(part.name):
+				report(key+"."+part.name, part.value, &Object{Meta: Meta{Key: key + "." + part.name}})
+			default:
+				report(key+"."+part.name, part.value, nil)
 			}
 		}
 	}
@@ -336,7 +348,7 @@ func eachMisfit(e Entry, key string, v any, report func(key string, v any, field
 
 // What a setting takes, said the way a refusal of the same value says it
 func takes(e Entry, v any) string {
-	if _, err := e.Coerce(v); err != nil {
+	if _, err := coercePart(e, v); err != nil {
 		return reasonOf(err)
 	}
 	switch e.Kind() {
@@ -492,7 +504,7 @@ func Resolve(ctx context.Context, key string) (Value, error) {
 
 // Typed value of a stored value, the default when it does not fit; tellMisfits has told the person about the misfit
 func typedOr(e Entry, v any) any {
-	if typed, ok := e.read(v); ok {
+	if typed, ok := readPart(e, v); ok {
 		return typed
 	}
 	typed, _ := e.read(e.DefaultValue())

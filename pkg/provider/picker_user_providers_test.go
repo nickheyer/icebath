@@ -8,10 +8,10 @@ import (
 )
 
 func TestSwitchModelResolvesUserProviderCredentials(t *testing.T) {
-	ctx, _ := switchAliasHome(t, "providers:\n  local-ollama:\n    api: http://localhost:11434/v1\n    name: Local Ollama\n    default_model: minimax-m2.7:cloud\n")
+	ctx, _ := switchAliasHome(t, "providers:\n  local-ollama:\n    base_url: http://localhost:11434/v1\n    name: Local Ollama\n    default_model: minimax-m2.7:cloud\n")
 	fakeSwitchPipeline(t, true)
 	userProviders := map[string]any{"local-ollama": map[string]any{
-		"api": "http://localhost:11434/v1", "name": "Local Ollama", "default_model": "minimax-m2.7:cloud"}}
+		"base_url": "http://localhost:11434/v1", "name": "Local Ollama", "default_model": "minimax-m2.7:cloud"}}
 	res := mustSwitch(t, ctx, SwitchModelOptions{RawInput: "kimi-k2.5:cloud", CurrentProvider: "local-ollama",
 		CurrentBaseURL: "http://localhost:11434/v1", UserProviders: userProviders})
 	if !res.Success || res.ErrorMessage != "" {
@@ -25,7 +25,7 @@ func TestSectionThreeProbesKeylessEndpointWithSingularDefaultModel(t *testing.T)
 	})
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50),
 		UserProviders: map[string]any{"local-ollama": map[string]any{
-			"name": "Local Ollama", "api": "http://localhost:11434/v1", "default_model": "llama3"}}})
+			"name": "Local Ollama", "base_url": "http://localhost:11434/v1", "default_model": "llama3"}}})
 	if len(*calls) == 0 || (*calls)[0].apiKey != "" {
 		t.Fatalf("singular default_model must not suppress live discovery, calls %+v", *calls)
 	}

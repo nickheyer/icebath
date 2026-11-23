@@ -135,7 +135,7 @@ func (w *silentFirstRequest) requests() int {
 func TestWedgedStreamUnwindsWithinItsStaleBudgetAndReconnects(t *testing.T) {
 	wire := newSilentFirstRequest(t)
 	agent := killTestAgent(t)
-	t.Setenv("ICEBATH_STREAM_STALE_TIMEOUT", "1")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 1})
 	t.Setenv("ICEBATH_STREAM_RETRIES", "1")
 	t.Setenv("ICEBATH_STREAM_READ_TIMEOUT", "20")
 	agent.baseURL, agent.plat = wire.server.URL+"/v1", "cli"

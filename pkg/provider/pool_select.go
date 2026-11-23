@@ -27,7 +27,7 @@ func (p *Pool) resetClearedAfter(entry PooledCredential) (float64, bool) {
 	return 0, false
 }
 
-// Re-reads an exhausted or DEAD singleton seeded entry from its token authority
+// Clears an exhausted or DEAD row another process reset, and re-reads a linked row from the tool that owns its tokens
 func (p *Pool) resyncStaleEntry(entry PooledCredential) PooledCredential {
 	if entry.LastStatus != StatusExhausted && entry.LastStatus != StatusDead {
 		return entry

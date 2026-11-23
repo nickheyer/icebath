@@ -20,7 +20,6 @@ const atomicSelectionSeed = "# Keep this header\n" +
 	"  api_mode: chat_completions\n" +
 	"  api_key: ${OLD_MODEL_KEY}\n" +
 	"  key_env: OLD_MODEL_KEY\n" +
-	"  api_key_env: OLD_MODEL_KEY\n" +
 	"  context_length: 32000\n" +
 	"  model_slots:\n" +
 	"    fast: \"keep-this\" # Keep this slot\n" +

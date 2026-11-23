@@ -131,7 +131,7 @@ func buildSwitchResult(ctx context.Context, st *modelSwitch) ModelSwitchResult {
 		st.BaseURL = NormalizeOpenCodeBaseURL(st.TargetProvider, APIMode(st.APIMode), st.BaseURL)
 	}
 	res := ModelSwitchResult{
-		Success: true, NewModel: st.NewModel, TargetProvider: st.TargetProvider, ProviderChanged: st.providerChanged(),
+		Success: true, NewModel: st.NewModel, TargetProvider: st.TargetProvider, ProviderChanged: st.providerChanged(ctx),
 		APIKey: st.APIKey, BaseURL: st.BaseURL, APIMode: st.APIMode, ProviderLabel: st.ProviderLabel,
 		ResolvedViaAlias: st.ResolvedAlias, IsGlobal: st.IsGlobal, AliasEndpointApplied: st.AliasEndpointApplied,
 	}
@@ -213,12 +213,9 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 		{Key: "base_url", Value: orNil(result.BaseURL)}, {Key: "api_mode", Value: orNil(result.APIMode)},
 	}
 	var stale []string
-	if _, legacyName := modelCfg["model"]; legacyName {
-		stale = append(stale, "model")
-	}
 	_, pinned := modelCfg["context_length"]
 	_, vision := modelCfg["supports_vision"]
-	if (pinned || vision) && selectionClearsContextPinFn(pyStrOrEmpty(pyOr(modelCfg["default"], modelCfg["model"])), result.NewModel,
+	if (pinned || vision) && selectionClearsContextPinFn(pyStrOrEmpty(modelCfg["default"]), result.NewModel,
 		pyStrOrEmpty(modelCfg["base_url"]), result.BaseURL, pyStrOrEmpty(modelCfg["provider"]), result.TargetProvider) {
 		stale = append(stale, "context_length", "supports_vision")
 	}
@@ -226,7 +223,7 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 	// a leftover there, while a custom target keeps its inline key and its key pointer across a same route pick
 	routeChanged := SelectionRouteChanged(modelCfg, result)
 	if !strings.HasPrefix(strings.ToLower(pyStripSpace(result.TargetProvider)), "custom") || routeChanged {
-		stale = append(stale, "api_key", "api")
+		stale = append(stale, "api_key")
 	}
 	if routeChanged {
 		stale = append(stale, "key_env")

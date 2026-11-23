@@ -341,7 +341,7 @@ func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName 
 					case string:
 						main = mc
 					case map[string]any:
-						main = firstTruthy(mc["default"], mc["model"], mc["name"])
+						main = mc["default"]
 					default:
 						main = ""
 					}

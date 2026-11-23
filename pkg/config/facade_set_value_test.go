@@ -32,8 +32,8 @@ func TestSecretRedactionInDisplay(t *testing.T) {
 	})
 	t.Run("test_redact_config_value_walks_lists", func(t *testing.T) {
 		secret := "sk-deadbeefdeadbeefdeadbeef"
-		walked, _ := RedactConfigValue(map[string]any{"custom_providers": []any{map[string]any{"name": "p", "api_key": secret}}}).(map[string]any)
-		entries, _ := walked["custom_providers"].([]any)
+		walked, _ := RedactConfigValue(map[string]any{"fallback_providers": []any{map[string]any{"name": "p", "api_key": secret}}}).(map[string]any)
+		entries, _ := walked["fallback_providers"].([]any)
 		if strings.Contains(PyStr(walked), secret) || len(entries) != 1 || AsMap(entries[0])["name"] != "p" {
 			t.Fatalf("list %v", walked)
 		}

@@ -151,15 +151,15 @@ func TestProviderRequiresStreamNormalEndpointsAreNot(t *testing.T) {
 
 func TestProviderRequiresStreamConfigMarkerMatchesCustomEndpoint(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
-	auxFakeConfigTree(t, config.Tree{"auxiliary": map[string]any{"stream_only_base_urls": []any{"my-proxy.example.com"}}})
+	auxFixedConfig(t, map[string]any{"auxiliary": map[string]any{"stream_only_base_urls": []any{"my-proxy.example.com"}}})
 	if !auxProviderRequiresStream(ctx, "https://my-proxy.example.com/v1") || auxProviderRequiresStream(ctx, "https://other.example.com/v1") {
 		t.Fatal("config markers match their own host only")
 	}
-	auxFakeConfigTree(t, config.Tree{"auxiliary": map[string]any{"stream_only_base_urls": []any{" Gateway.Example ", "", 3}}})
+	auxFixedConfig(t, map[string]any{"auxiliary": map[string]any{"stream_only_base_urls": []any{" Gateway.Example ", "", 3}}})
 	if auxProviderRequiresStream(ctx, "") || !auxProviderRequiresStream(ctx, "https://copilot.tencent.com/v1") || !auxProviderRequiresStream(ctx, "https://api.gateway.example/v1") || auxProviderRequiresStream(ctx, "https://api.openai.com/v1") {
 		t.Fatal("stream only markers")
 	}
-	auxFakeConfigTree(t, config.Tree{"auxiliary": nil})
+	auxFixedConfig(t, map[string]any{"auxiliary": nil})
 	if auxProviderRequiresStream(ctx, "https://api.gateway.example/v1") {
 		t.Fatal("a null auxiliary section reads as no markers")
 	}

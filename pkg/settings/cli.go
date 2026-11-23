@@ -55,10 +55,18 @@ func valueText(r Row) string {
 	case map[string]any:
 		return fmt.Sprintf("%d entries", len(v))
 	}
-	if r.Unit != "" {
-		return fmt.Sprintf("%v %s", r.Value, r.Unit)
+	return withUnit(r.Value, r.Unit)
+}
+
+// Number with its unit, the unit said in the singular for exactly one
+func withUnit(value any, unit string) string {
+	if unit == "" {
+		return fmt.Sprint(value)
 	}
-	return fmt.Sprint(r.Value)
+	if n, isNumber := config.AsFloat(value); isNumber && n == 1 && len(unit) > 3 && strings.HasSuffix(unit, "s") {
+		unit = strings.TrimSuffix(unit, "s")
+	}
+	return fmt.Sprintf("%v %s", value, unit)
 }
 
 // Every settings group with its everyday rows and the advanced rows that are set, for config show

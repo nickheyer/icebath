@@ -3,7 +3,6 @@ package gateway
 import (
 	"reflect"
 	"testing"
-
 )
 
 func TestBoolTokenAndCoerceBool(t *testing.T) {

@@ -51,10 +51,20 @@ func GetProviderStaleTimeout(ctx context.Context, providerID, model string) (flo
 	return configuredProviderSeconds(loadWireSettings(ctx).providers, providerID, model, "stale_timeout_seconds", "stale_timeout_seconds")
 }
 
-// Stream stale base from agent.stream_stale_timeout, and whether the profile set it itself
+// Stream stale base in seconds from agent.stream_stale_timeout, and whether the profile set it itself
 func streamStaleBase(ctx context.Context) (float64, bool) {
 	v, err := settings.Resolve(ctx, settings.AgentStreamStaleTimeout.Key)
-	return settings.AgentStreamStaleTimeout.Get(ctx).Seconds(), err == nil && v.Source != settings.SourceDefault
+	return SilenceLimitSeconds(settings.AgentStreamStaleTimeout.Get(ctx)), err == nil && v.Source != settings.SourceDefault
+}
+
+// APITimeoutSeconds is how long one model request may take from agent.api_timeout, a stored value under one second counting as one second
+func APITimeoutSeconds(ctx context.Context) float64 {
+	return max(settings.AgentApiTimeout.Get(ctx), time.Second).Seconds()
+}
+
+// Stale patience of a local provider in seconds from agent.local_stream_stale_timeout
+func localStreamStaleTimeout(ctx context.Context) float64 {
+	return SilenceLimitSeconds(settings.AgentLocalStreamStaleTimeout.Get(ctx))
 }
 
 // Cloud stale patience scaled for context size and floored for known reasoning models

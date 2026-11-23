@@ -37,7 +37,7 @@ func writeLoopbackProvider(t *testing.T, h, baseURL string, settings map[string]
 	for k, v := range settings {
 		entry[k] = v
 	}
-	raw, err := json.Marshal(map[string]any{"custom_providers": []any{entry}})
+	raw, err := json.Marshal(map[string]any{"providers": map[string]any{"loopback": entry}})
 	if err != nil {
 		t.Fatal(err)
 	}

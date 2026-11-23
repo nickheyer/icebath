@@ -298,7 +298,6 @@ context.memory_trim.info_log_min_delta_mb
 context.memory_trim.log_every_n
 context_file_max_chars
 context_file_read_timeout
-credential_pool_strategies
 cron.allow_agent_scheduling
 cron.catch_up_missed
 cron.cleanup_timeout_seconds

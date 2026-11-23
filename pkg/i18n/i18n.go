@@ -56,8 +56,8 @@ var (
 	bundledSurf    = map[string]map[langSurface]bool{}
 	configLangMu   sync.Mutex
 	configLangLRU  []configLangEntry
-	localesDirFn                = localesDir
-	configLangFn                = configLanguage
+	localesDirFn   = localesDir
+	configLangFn   = configLanguage
 )
 
 type configLangEntry struct {

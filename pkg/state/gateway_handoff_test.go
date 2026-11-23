@@ -137,7 +137,7 @@ func TestSessionGatewayRuntimePrecedence(t *testing.T) {
 		want string
 	}{
 		{meta("model_config", `{"gateway_runtime": {"provider": "openrouter", "api_mode": null}, "provider": "x"}`), `{"provider": "openrouter"}`},
-		{meta("model_config", `{"provider": "anthropic", "base_url": "", "api_mode": "messages"}`), `{"provider": "anthropic", "api_mode": "messages"}`},
+		{meta("model_config", `{"provider": "anthropic", "base_url": "", "api_mode": "anthropic_messages"}`), `{"provider": "anthropic", "api_mode": "anthropic_messages"}`},
 		{meta("model_config", "{}", "billing_provider", " openrouter "), `{"provider": "openrouter"}`},
 		{meta("model_config", "{}", "billing_provider", "custom", "billing_base_url", "http://h/v1"), `{"base_url": "http://h/v1", "provider": "custom"}`},
 		{meta("model_config", "not json", "billing_provider", "auto"), `{}`},

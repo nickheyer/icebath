@@ -160,9 +160,8 @@ func TestAggregateChatStreamWatchdogOnlyCutsItsOwnUnfinishedStream(t *testing.T)
 		}
 	})
 	t.Run("provider_stale_timeout_before_first_token", func(t *testing.T) {
-		gates, call := auxSSEFixture(t, "providers:\n  openrouter:\n    stale_timeout_seconds: 900\n")
+		gates, call := auxSSEFixture(t, "agent:\n  stream_stale_timeout: 0.5\nproviders:\n  openrouter:\n    stale_timeout_seconds: 900\n")
 		gates["release"].set()
-		t.Setenv("ICEBATH_STREAM_STALE_TIMEOUT", "0.5")
 		result, err := call("slow", "compression", true, "openrouter")
 		if err != nil {
 			t.Fatal(err)

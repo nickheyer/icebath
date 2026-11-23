@@ -152,7 +152,7 @@ func TestCustomProviderSlugAndAliases(t *testing.T) {
 	if resolveUserProvider("bedrock", userProviders) != nil {
 		t.Fatal("tuning block is not a custom endpoint")
 	}
-	list := []any{map[string]any{"name": "First", "base_url": "https://f/v1"}, map[string]any{"name": "Second", "url": "https://s/v1", "provider_key": "sec"}}
+	list := []any{map[string]any{"name": "First", "base_url": "https://f/v1"}, map[string]any{"name": "Second", "base_url": "https://s/v1", "provider_key": "sec"}}
 	if p := resolveCustomProvider("custom", list); p == nil || p.Name != "First" {
 		t.Fatalf("bare custom self heals: %+v", p)
 	}
@@ -428,7 +428,7 @@ func TestCustomEntryForEndpointWrapper(t *testing.T) {
 	cfg := map[string]any{"providers": map[string]any{"plain": map[string]any{"base_url": "http://127.0.0.1:1/v1"}}}
 	name, entry, ok := CustomEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg)
 	match := customEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg)
-	if !ok || match == nil || name != match.name || entry["api"] != match.entry["api"] {
+	if !ok || match == nil || name != match.name || entry["base_url"] != match.entry["base_url"] {
 		t.Fatalf("CustomEntryForEndpoint = %q %v %v", name, entry, ok)
 	}
 	if _, _, ok := CustomEntryForEndpoint("", "", cfg); ok {

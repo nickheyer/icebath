@@ -42,7 +42,7 @@ func TestProviderOwnsRoute(t *testing.T) {
 	if _, known := ProviderOwnsRoute("deepseek", ""); known {
 		t.Fatal("empty url is unknown")
 	}
-	cfg := map[string]any{"providers": map[string]any{"mygw": map[string]any{"api": "https://gw.example/v1"}}}
+	cfg := map[string]any{"providers": map[string]any{"mygw": map[string]any{"base_url": "https://gw.example/v1"}}}
 	if owned, known := providerOwnsRouteIn("mygw", "https://gw.example/v1", cfg); !owned || !known {
 		t.Fatalf("user entry own url: %v %v", owned, known)
 	}

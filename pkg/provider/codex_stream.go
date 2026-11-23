@@ -862,12 +862,8 @@ func (c *codexResponsesClient) resolveWatchdogs(ctx context.Context, req *Reques
 			ttfb = cap
 		}
 	} else if !ttfbExplicit {
-		localCeiling := settings.localStreamStale
-		if localCeiling <= 0 {
-			localCeiling = 900
-		}
-		if localCeiling > ttfb {
-			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", c.route.BaseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
+		if localCeiling := settings.localStreamStale; localCeiling > ttfb {
+			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %s (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", c.route.BaseURL, ttfb, windowText(localCeiling), CodexTTFBTimeoutEnv))
 			ttfb = localCeiling
 		}
 	}

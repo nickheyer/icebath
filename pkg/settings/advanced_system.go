@@ -54,7 +54,7 @@ var AgentGatewayTimeoutWarning = Register(&Duration{Meta: Meta{Key: "agent.gatew
 var AgentGatewayTurnLeaseTimeout = Register(&Duration{Meta: Meta{Key: "agent.gateway_turn_lease_timeout", Label: "Turn lock timeout", Short: "How long a chat turn waits for the session to be free.", Group: GroupSystem, Order: 1160, Advanced: true, Apply: Restart}, Default: 5 * time.Second})
 
 // How long a local model may stay silent before the request is dropped
-var AgentLocalStreamStaleTimeout = Register(&Duration{Meta: Meta{Key: "agent.local_stream_stale_timeout", Label: "Local silence limit", Short: "How long a local model may stay silent before the request is dropped.", Group: GroupSystem, Order: 1170, Advanced: true}, Default: 15 * time.Minute})
+var AgentLocalStreamStaleTimeout = Register(&Duration{Meta: Meta{Key: "agent.local_stream_stale_timeout", Label: "Local silence limit", Short: "How long a local model may stay silent before the request is dropped.", Help: "Zero means no limit.", Group: GroupSystem, Order: 1170, Advanced: true}, Default: 15 * time.Minute, Min: at(time.Duration(0))})
 
 // How long a chat app can stay disconnected before you are alerted
 var AgentReconnectAttentionAfter = Register(&Duration{Meta: Meta{Key: "agent.reconnect_attention_after", Label: "Reconnect alert delay", Short: "How long a chat app can stay disconnected before you are alerted.", Help: "Zero or less turns the alert off.", Group: GroupSystem, Order: 1180, Advanced: true}, Default: 2 * time.Hour})
@@ -72,13 +72,13 @@ var AgentSanitizerHealEscalationThreshold = Register(&Int{Meta: Meta{Key: "agent
 var AgentSessionStallTimeout = Register(&Duration{Meta: Meta{Key: "agent.session_stall_timeout", Label: "Stall timeout", Short: "How long a chat session may sit with no activity before it is stuck.", Group: GroupSystem, Order: 1220, Advanced: true, Apply: Restart}, Default: 5 * time.Minute})
 
 // How long to wait for a finished model stream to close
-var AgentStreamDrainTimeout = Register(&Duration{Meta: Meta{Key: "agent.stream_drain_timeout", Label: "Stream close wait", Short: "How long to wait for a finished model stream to close.", Group: GroupSystem, Order: 1230, Advanced: true}, Default: 2 * time.Second})
+var AgentStreamDrainTimeout = Register(&Duration{Meta: Meta{Key: "agent.stream_drain_timeout", Label: "Stream close wait", Short: "How long to wait for a finished model stream to close.", Group: GroupSystem, Order: 1230, Advanced: true}, Default: 2 * time.Second, Min: at(time.Duration(0))})
 
 // Longest a single model response may keep streaming
-var AgentStreamMaxLifetime = Register(&Duration{Meta: Meta{Key: "agent.stream_max_lifetime", Label: "Stream time limit", Short: "Longest a single model response may keep streaming.", Help: "Zero means no limit.", Group: GroupSystem, Order: 1240, Advanced: true}, Default: 0})
+var AgentStreamMaxLifetime = Register(&Duration{Meta: Meta{Key: "agent.stream_max_lifetime", Label: "Stream time limit", Short: "Longest a single model response may keep streaming.", Help: "Zero means no limit.", Group: GroupSystem, Order: 1240, Advanced: true}, Default: 0, Min: at(time.Duration(0))})
 
 // How long a model may stay silent before the request is retried
-var AgentStreamStaleTimeout = Register(&Duration{Meta: Meta{Key: "agent.stream_stale_timeout", Label: "Model silence limit", Short: "How long a model may stay silent before the request is retried.", Group: GroupSystem, Order: 1250, Advanced: true}, Default: 3 * time.Minute})
+var AgentStreamStaleTimeout = Register(&Duration{Meta: Meta{Key: "agent.stream_stale_timeout", Label: "Model silence limit", Short: "How long a model may stay silent before the request is retried.", Help: "Zero means no limit.", Group: GroupSystem, Order: 1250, Advanced: true}, Default: 3 * time.Minute, Min: at(time.Duration(0))})
 
 // How often a running turn is checked for being stuck
 var AgentTurnLivenessPollS = Register(&Duration{Meta: Meta{Key: "agent.turn_liveness.poll_s", Label: "Hang check interval", Short: "How often a running turn is checked for being stuck.", Group: GroupSystem, Order: 1260, Advanced: true}, Default: 15 * time.Second})
@@ -305,10 +305,10 @@ var DatabaseTempStore = Register(&Enum{Meta: Meta{Key: "database.temp_store", La
 var DatabaseSynchronous = Register(&Enum{Meta: Meta{Key: "database.synchronous", Label: "Database write safety", Short: "How carefully the session database waits for the disk after writes.", Help: "macOS always keeps Full.", Group: GroupSystem, Order: 1348, Advanced: true, Apply: Restart}, Null: "database default", Values: []Choice{{Value: "OFF", Label: "Off", Meaning: "Fastest, may lose data on a crash."}, {Value: "NORMAL", Label: "Normal", Meaning: "Safe in most crashes."}, {Value: "FULL", Label: "Full", Meaning: "Waits for every write."}, {Value: "EXTRA", Label: "Extra", Meaning: "Also waits for the journal."}}})
 
 // How long one model request may take before it is given up
-var AgentApiTimeout = Register(&Duration{Meta: Meta{Key: "agent.api_timeout", Label: "Request time limit", Short: "How long one model request may take before it is given up.", Help: "A provider's own request timeout under Providers wins over this.", Group: GroupSystem, Order: 3050, Advanced: true, Apply: NextTurn}, Default: 1800 * time.Second})
+var AgentApiTimeout = Register(&Duration{Meta: Meta{Key: "agent.api_timeout", Label: "Request time limit", Short: "How long one model request may take before it is given up.", Help: "A provider's own request timeout under Providers wins over this.", Group: GroupSystem, Order: 3050, Advanced: true, Apply: NextTurn}, Default: 1800 * time.Second, Min: at(time.Second)})
 
 // How long a model may stay silent on a request that is not streamed
-var AgentApiCallStaleTimeout = Register(&Duration{Meta: Meta{Key: "agent.api_call_stale_timeout", Label: "Silent request limit", Short: "How long a model may stay silent on a request that is not streamed.", Help: "Unset picks it from the model and the request size. A provider's own stale timeout wins over this.", Group: GroupSystem, Order: 3060, Advanced: true, Apply: NextTurn}, Null: "picked from the model and request size"})
+var AgentApiCallStaleTimeout = Register(&Duration{Meta: Meta{Key: "agent.api_call_stale_timeout", Label: "Silent request limit", Short: "How long a model may stay silent on a request that is not streamed.", Help: "Unset picks it from the model and the request size. Zero means no limit. A provider's own stale timeout wins over this.", Group: GroupSystem, Order: 3060, Advanced: true, Apply: NextTurn}, Null: "picked from the model and request size", Min: at(time.Duration(0))})
 
 // Longest a batch of tool calls run together may take
 var TimeoutsToolsConcurrentBatch = Register(&Duration{Meta: Meta{Key: "timeouts.tools.concurrent_batch", Label: "Tool batch limit", Short: "Longest a batch of tool calls run at the same time may take.", Help: "Zero means no limit.", Group: GroupSystem, Order: 2000, Advanced: true, Apply: NextTurn}, Default: 7 * time.Minute, Min: at(time.Duration(0))})

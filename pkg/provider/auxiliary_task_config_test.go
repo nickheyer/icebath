@@ -167,7 +167,7 @@ func TestAuthoritativeTaskStripsOnlyRouteFields(t *testing.T) {
 		t.Fatalf("authoritative task keeps its name, got %q", task)
 	}
 	a.set(map[string]any{"compression": map[string]any{"provider": "custom", "model": "aux-model", "base_url": "https://aux.example/v1",
-		"api_key": "aux-key", "api_mode": "chat_completions", "key_env": "AUX_KEY", "api_key_env": "AUX_KEY", "reasoning_effort": "none",
+		"api_key": "aux-key", "api_mode": "chat_completions", "key_env": "AUX_KEY", "reasoning_effort": "none",
 		"timeout": 417, "max_concurrency": 2, "extra_body": map[string]any{"trace": "kept-policy"}}})
 	got := a.resolve(context.Background(), task)
 	if toFloat(got["timeout"]) != 417 || toFloat(got["max_concurrency"]) != 2 || !reflect.DeepEqual(got["extra_body"], map[string]any{"trace": "kept-policy"}) {

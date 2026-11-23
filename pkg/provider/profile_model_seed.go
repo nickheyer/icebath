@@ -8,9 +8,7 @@ import (
 )
 
 // Fields endpoint lookups match on, expanded for matching while copied entries keep their env refs
-var seedRoutingFields = map[string]bool{
-	"name": true, "provider_key": true, "base_url": true, "baseUrl": true, "url": true, "api": true, "enabled": true,
-}
+var seedRoutingFields = map[string]bool{"name": true, "provider_key": true, "base_url": true, "enabled": true}
 
 // Identity and eligibility fields an inherited seed fixes in the source scope, URL and credential refs staying raw
 var seedIdentityFields = map[string]bool{"name": true, "provider_key": true, "enabled": true}

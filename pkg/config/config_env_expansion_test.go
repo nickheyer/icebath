@@ -122,7 +122,7 @@ func unsetEnv(t *testing.T, name string) {
 
 func TestSaveConfigPreservesUnresolvedEnvRefs(t *testing.T) {
 	ctx := context.Background()
-	h, path := facadeHome(t, "custom_providers:\n  - name: unresolved\n    api_key: ${MISSING_SECRET}\n    model: claude-opus-4-6\nmodel:\n  default: claude-opus-4-6\n")
+	h, path := facadeHome(t, "fallback_providers:\n  - provider: unresolved\n    api_key: ${MISSING_SECRET}\n    model: claude-opus-4-6\nmodel:\n  default: claude-opus-4-6\n")
 	unsetEnv(t, "MISSING_SECRET")
 	cfg, err := LoadContext(ctx, h, EnvRefLookupContext(ctx))
 	if err != nil {
@@ -139,13 +139,13 @@ func TestSaveConfigPreservesUnresolvedEnvRefs(t *testing.T) {
 
 func TestSaveConfigAllowsIntentionalSecretValueChange(t *testing.T) {
 	ctx := context.Background()
-	h, path := facadeHome(t, "custom_providers:\n  - name: tuzi\n    api_key: ${TU_ZI_API_KEY}\n    model: claude-opus-4-6\nmodel:\n  default: claude-opus-4-6\n")
+	h, path := facadeHome(t, "fallback_providers:\n  - provider: tuzi\n    api_key: ${TU_ZI_API_KEY}\n    model: claude-opus-4-6\nmodel:\n  default: claude-opus-4-6\n")
 	t.Setenv("TU_ZI_API_KEY", "sk-old-secret")
 	cfg, err := LoadContext(ctx, h, EnvRefLookupContext(ctx))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg["custom_providers"].([]any)[0].(map[string]any)["api_key"] = "sk-new-secret"
+	cfg["fallback_providers"].([]any)[0].(map[string]any)["api_key"] = "sk-new-secret"
 	if err := SaveConfig(ctx, h, map[string]any(cfg), SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}

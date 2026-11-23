@@ -54,10 +54,6 @@ func copilotAPIProfile() Profile {
 	p.AccountCard = map[string]string{"name": "GitHub Copilot", "docs_url": "https://docs.github.com/en/copilot"}
 	p.SetupReasoningEfforts = copilotSetupReasoningEfforts
 	p.AccountStatus = copilotAccountStatus
-	p.StartDeviceLogin = copilotStartDeviceLogin
-	p.PollDeviceLogin = copilotPollDeviceLogin
-	p.SaveDeviceLogin = copilotSaveDeviceLogin
-	p.AuthHandler = copilotAuthHandler
 	p.BuildAPIKwargsExtrasHook = copilotBuildAPIKwargsExtras
 	p.APIModeForModelHook = copilotAPIModeForModel
 	p.ClientHeadersHook = copilotClientHeaders

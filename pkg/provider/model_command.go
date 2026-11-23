@@ -73,12 +73,6 @@ func (m *customProviderMap) get(key string) (map[string]any, bool) {
 	return info, ok
 }
 
-// One identity a raw env reference template is indexed under, a bare name or a name and model pair
-type rawRefIdentity struct {
-	key, model string
-	paired     bool
-}
-
 // Copy of the provider label table with the custom endpoint label
 func catalogProviderLabelsCopy() map[string]string {
 	labels := map[string]string{}
@@ -97,86 +91,23 @@ func labelOr(labels map[string]string, slug string) string {
 	return slug
 }
 
-// Saved custom providers keyed by slug with the raw env reference templates of key and URL preserved
+// Saved custom providers keyed by slug, each with the raw env reference template of its key preserved
 func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProviderMap, error) {
-	rawAPIKeyRefs := map[rawRefIdentity]string{}
-	rawBaseURLRefs := map[rawRefIdentity]string{}
 	rawCfg, err := config.ReadRawConfig(r.ctx(), r.home())
 	if err != nil {
 		return nil, err
 	}
-	type rawEntry struct {
-		name, providerKey any
-		entry             map[string]any
-	}
-	var rawEntries []rawEntry
+	rawAPIKeyRefs := map[string]string{}
 	if providers, ok := rawCfg["providers"].(map[string]any); ok {
 		for _, k := range config.MappingKeys(providers) {
-			if m, isMap := providers[k].(map[string]any); isMap {
-				name := dictGet(m, "name", "")
-				if !pyTruthy(name) {
-					name = k
-				}
-				rawEntries = append(rawEntries, rawEntry{name, k, m})
-			}
-		}
-	}
-	for _, re := range rawEntries {
-		template := pystr.Strip(pyOrStr(dictGet(re.entry, "api_key", "")))
-		base := dictGet(re.entry, "base_url", "")
-		if !pyTruthy(base) {
-			base = dictGet(re.entry, "url", "")
-		}
-		if !pyTruthy(base) {
-			base = dictGet(re.entry, "api", "")
-		}
-		baseTemplate := pystr.Strip(pyOrStr(base))
-		name := pystr.Strip(pyOrStr(re.name))
-		providerKey := pystr.Strip(pyOrStr(re.providerKey))
-		modelRaw := dictGet(re.entry, "model", "")
-		if !pyTruthy(modelRaw) {
-			modelRaw = dictGet(re.entry, "default_model", "")
-		}
-		model := pystr.Strip(pyOrStr(modelRaw))
-		var keys []string
-		for _, k := range []string{name, providerKey} {
-			if k != "" {
-				keys = append(keys, pystr.Lower(k))
-			}
-		}
-		var identities []rawRefIdentity
-		for _, k := range keys {
-			identities = append(identities, rawRefIdentity{key: k})
-		}
-		for _, k := range keys {
-			identities = append(identities, rawRefIdentity{key: k, model: model, paired: true})
-		}
-		for _, pair := range []struct {
-			refs map[rawRefIdentity]string
-			tmpl string
-		}{{rawAPIKeyRefs, template}, {rawBaseURLRefs, baseTemplate}} {
-			if strings.Contains(pair.tmpl, "${") {
-				for _, identity := range identities {
-					if _, seen := pair.refs[identity]; !seen {
-						pair.refs[identity] = pair.tmpl
-					}
-				}
-			}
-		}
-	}
-	lookupRef := func(refs map[rawRefIdentity]string, name, providerKey, model any) string {
-		nameLC := pystr.Lower(pystr.Strip(pyOrStr(name)))
-		pkeyLC := pystr.Lower(pystr.Strip(pyOrStr(providerKey)))
-		modelStr := pystr.Strip(pyOrStr(model))
-		for _, identity := range []rawRefIdentity{{pkeyLC, modelStr, true}, {key: pkeyLC}, {nameLC, modelStr, true}, {key: nameLC}} {
-			if identity.key == "" {
+			entry, isMap := providers[k].(map[string]any)
+			if !isMap {
 				continue
 			}
-			if tmpl, ok := refs[identity]; ok {
-				return tmpl
+			if template := pystr.Strip(pyOrStr(dictGet(entry, "api_key", ""))); strings.Contains(template, "${") {
+				rawAPIKeyRefs[pystr.Lower(storedProviderID(providers, k))] = template
 			}
 		}
-		return ""
 	}
 	out := newCustomProviderMap()
 	for _, entry := range ProviderEntries(cfg) {
@@ -215,8 +146,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 			"discover_models":   dictGet(entry, "discover_models", true),
 			"api_mode":          dictGet(entry, "api_mode", ""),
 			"provider_key":      providerKey,
-			"api_key_ref":       lookupRef(rawAPIKeyRefs, name, providerKey, model),
-			"base_url_ref":      lookupRef(rawBaseURLRefs, name, providerKey, model),
+			"api_key_ref":       rawAPIKeyRefs[pystr.Lower(providerKey)],
 		})
 	}
 	return out, nil

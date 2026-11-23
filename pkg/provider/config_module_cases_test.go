@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -74,10 +73,9 @@ func configModuleLoad(t *testing.T, h string) config.Tree {
 func TestCustomProviderCompatibilityProvidersDictResolvesAtRuntime(t *testing.T) {
 	h, path, _ := configModuleCase(t, "")
 	configModuleDump(t, path, map[string]any{
-		"_config_version": 17,
 		"providers": map[string]any{"openai-direct": map[string]any{
-			"api": "https://api.openai.com/v1", "api_key": "test-key", "default_model": "gpt-5-mini",
-			"name": "OpenAI Direct", "transport": "codex_responses",
+			"base_url": "https://api.openai.com/v1", "api_key": "test-key", "default_model": "gpt-5-mini",
+			"name": "OpenAI Direct", "api_mode": "codex_responses",
 		}},
 	})
 	compatible := ProviderEntries(configModuleLoad(t, h))
@@ -87,22 +85,6 @@ func TestCustomProviderCompatibilityProvidersDictResolvesAtRuntime(t *testing.T)
 	if compatible[0]["name"] != "OpenAI Direct" || compatible[0]["base_url"] != "https://api.openai.com/v1" ||
 		compatible[0]["provider_key"] != "openai-direct" || compatible[0]["api_mode"] != "codex_responses" {
 		t.Fatalf("entry %v", compatible[0])
-	}
-}
-
-func TestCustomProviderCompatibilityCompatibleCustomProvidersPrefersBaseUrlThenUrlThenApi(t *testing.T) {
-	h, path, _ := configModuleCase(t, "")
-	configModuleDump(t, path, map[string]any{
-		"_config_version": 17,
-		"providers": map[string]any{"my-provider": map[string]any{
-			"name": "My Provider", "api": "https://api.example.com/v1", "url": "https://url.example.com/v1",
-			"base_url": "https://base.example.com/v1",
-		}},
-	})
-	compatible := ProviderEntries(configModuleLoad(t, h))
-	want := []map[string]any{{"name": "My Provider", "base_url": "https://base.example.com/v1", "provider_key": "my-provider"}}
-	if !reflect.DeepEqual(compatible, want) {
-		t.Fatalf("compatible %v", compatible)
 	}
 }
 
@@ -220,7 +202,7 @@ func TestSaveConfigPartialWritePreservationMergeExistingPreservesPlatformsOnPart
 	err := config.SaveConfig(t.Context(), h, map[string]any{
 		"_config_version": 30,
 		"model":           map[string]any{"default": "deepseek-v4-pro", "provider": "deepseek"},
-		"agent":           map[string]any{"max_turns": 60, "verify_on_stop": false},
+		"agent":           map[string]any{"max_turns": 60, "verify_on_stop": "off"},
 	}, config.SaveOptions{MergeExisting: true})
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +215,7 @@ func TestSaveConfigPartialWritePreservationMergeExistingPreservesPlatformsOnPart
 	if _, has := raw.Map("agent")["verify_on_stop"]; has {
 		t.Fatalf("default written: %v", raw["agent"])
 	}
-	if merged.Get("agent.verify_on_stop") != false {
+	if merged.Get("agent.verify_on_stop") != "off" {
 		t.Fatalf("merged verify_on_stop %v", merged.Get("agent.verify_on_stop"))
 	}
 }
@@ -287,40 +269,4 @@ func captureDefaultLog(t *testing.T) *bytes.Buffer {
 	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return buf
-}
-
-func compatibleNames(cfg map[string]any) []any {
-	names := []any{}
-	for _, e := range ProviderEntries(cfg) {
-		names = append(names, e["name"])
-	}
-	return names
-}
-
-func TestCompatibleProvidersMalformedLegacyKeyStringCustomProvidersKeepsProvidersViewAndWarns(t *testing.T) {
-	log := captureDefaultLog(t)
-	names := compatibleNames(map[string]any{
-		"custom_providers": "- name: broken",
-		"providers":        map[string]any{"exl3": map[string]any{"api": "http://127.0.0.1:8290/v1", "default_model": "m"}},
-	})
-	if !reflect.DeepEqual(names, []any{"exl3"}) {
-		t.Fatalf("names %v", names)
-	}
-	if !strings.Contains(log.String(), "custom_providers is a str") {
-		t.Fatalf("log %q", log.String())
-	}
-}
-
-func TestCompatibleProvidersMalformedLegacyKeyListCustomProvidersIsSilent(t *testing.T) {
-	log := captureDefaultLog(t)
-	names := compatibleNames(map[string]any{
-		"custom_providers": []any{map[string]any{"name": "legacy", "base_url": "http://h/v1"}},
-		"providers":        map[string]any{},
-	})
-	if !reflect.DeepEqual(names, []any{"legacy"}) {
-		t.Fatalf("names %v", names)
-	}
-	if strings.Contains(log.String(), "custom_providers is a") {
-		t.Fatalf("log %q", log.String())
-	}
 }

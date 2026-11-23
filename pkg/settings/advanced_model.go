@@ -380,9 +380,6 @@ var BedrockGuardrailTrace = Register(&Enum{Meta: Meta{Key: "bedrock.guardrail.tr
 // AWS region used for Bedrock requests
 var BedrockRegion = Register(&String{Meta: Meta{Key: "bedrock.region", Label: "Bedrock region", Short: "AWS region used for Bedrock requests.", Help: "Blank takes the region from the endpoint address, else us-east-1.", Group: GroupModel, Order: 2250, Advanced: true}, Default: ""})
 
-// How to pick between several keys of one provider
-var CredentialPoolStrategies = Register(&Map{Meta: Meta{Key: "credential_pool_strategies", Label: "Key rotation", Short: "How to pick between several keys of one provider.", Help: "Older form. The provider's login rotation setting wins when set.", Group: GroupModel, Order: 2260, Advanced: true}})
-
 // Stay on the main model if its rate limit ends within this time
 var FallbackMinSwitchResetSeconds = Register(&Duration{Meta: Meta{Key: "fallback.min_switch_reset_seconds", Label: "Stay-put window", Short: "Stay on the main model if its rate limit ends within this time.", Help: "0 turns this off, so any rate limit switches to the fallback.", Group: GroupModel, Order: 2270, Advanced: true}, Default: 0})
 

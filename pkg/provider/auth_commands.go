@@ -203,7 +203,7 @@ func (c *authCLI) pluginArgs() []string {
 	if v := authTextOr(c.ns["auth_type"]); v != "" {
 		args = append(args, "--type", v)
 	}
-	for _, key := range []string{"label", "api_key"} {
+	for _, key := range []string{"name", "label", "api_key"} {
 		if v := authTextOr(c.ns[key]); v != "" {
 			args = append(args, "--"+strings.ReplaceAll(key, "_", "-"), v)
 		}
@@ -214,7 +214,7 @@ func (c *authCLI) pluginArgs() []string {
 	if timeout := authTimeout(c.ns, 0); timeout > 0 {
 		args = append(args, "--timeout", strconv.FormatFloat(timeout.Seconds(), 'f', -1, 64))
 	}
-	for _, key := range []string{"no_browser", "browser"} {
+	for _, key := range []string{"rotate", "default", "no_browser", "browser"} {
 		if nsFlag(c.ns, key) {
 			args = append(args, "--"+strings.ReplaceAll(key, "_", "-"))
 		}
@@ -537,6 +537,20 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 			}
 			entry.LastRefresh = authTextOr(creds["last_refresh"])
 		}},
+	"copilot": {
+		login: func(c *authCLI) (map[string]any, error) {
+			token, err := copilotDeviceToken(c.ctx, c.out, !nsFlag(c.ns, "no_browser"))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"access_token": token}, nil
+		},
+		token:  func(creds map[string]any) string { return authTextOr(creds["access_token"]) },
+		source: authConstSource(SourceManualDeviceCode),
+		fields: func(c *authCLI, creds map[string]any, provider string, entry *PooledCredential) {
+			entry.BaseURL = copilotBaseURL
+		},
+		authType: AuthTypeAPIKey},
 	"qwen-oauth": {
 		login:  (*authCLI).qwenOAuthLogin,
 		token:  func(creds map[string]any) string { return authTextOr(creds["api_key"]) },
@@ -610,22 +624,24 @@ func (c *authCLI) addAPIKeyCredential(provider string, pool *Pool) (PooledCreden
 	if err != nil {
 		return PooledCredential{}, err
 	}
-	fmt.Fprintf(c.out, "Added %s credential #%d: \"%s\"\n", provider, len(pool.Entries()), label)
 	return entry, nil
 }
 
 // icebath auth add, the plugin seam first, then the known provider gate, migration, pool add and placement
 func (c *authCLI) add() error {
 	provider := c.normalizeProvider(authTextOr(c.ns["provider"]))
+	before, previousActive := c.storedLogins(provider)
 	if owned, err := dispatchPluginAuth("add", c.pluginArgs(), provider); err != nil || owned {
-		return err
+		if err != nil {
+			return err
+		}
+		return c.adoptStoredLogin(provider, before, previousActive)
 	}
 	configured := c.configuredProviderEntry(provider)
 	if !c.isKnownProvider(provider, configured) {
 		return c.unknownProviderExit(provider)
 	}
-	profile, hasProfile := pluginProfile(provider)
-	deviceLogin := hasProfile && profileHasDeviceLogin(profile)
+	profile, deviceLogin := deviceLoginProfile(provider)
 	if err := pluginMissingAuthHandlerError(provider, "add"); err != nil && !deviceLogin {
 		return err
 	}
@@ -636,12 +652,18 @@ func (c *authCLI) add() error {
 		requestedType = AuthTypeAPIKey
 	case requestedType == "":
 		requestedType = AuthTypeAPIKey
-		if authOAuthDefaultProviders[provider] && !isCustom {
+		if !isCustom && strings.TrimSpace(authTextOr(c.ns["api_key"])) == "" && signsInByDefault(provider) {
 			requestedType = AuthTypeOAuth
 		}
 	}
 	if deviceLogin && !isCustom && (requestedType == AuthTypeOAuth || registryAuthType(profile) != AuthTypeAPIKey) {
-		return profileDeviceLogin(c.ctx, c.out, profile.Label(), profile, !nsFlag(c.ns, "no_browser"))
+		if err := c.checkRequestedLoginName(provider); err != nil {
+			return err
+		}
+		if err := profileDeviceLogin(c.ctx, c.out, profile.Label(), profile, !nsFlag(c.ns, "no_browser")); err != nil {
+			return err
+		}
+		return c.adoptStoredLogin(provider, before, previousActive)
 	}
 	if provider == "vertex" && requestedType != AuthTypeOAuth {
 		return c.addVertexServiceAccount()
@@ -657,7 +679,7 @@ func (c *authCLI) add() error {
 	if err := c.checkRequestedLoginName(provider); err != nil {
 		return err
 	}
-	previousActive := currentLoginID(c.env, provider)
+	previousActive = currentLoginID(c.env, provider)
 	pool := LoadPool(c.env, provider)
 	if !isCustom {
 		c.unsuppressProviderSources(provider)
@@ -681,15 +703,27 @@ func (c *authCLI) add() error {
 	if err := c.nameAddedLogin(provider, entry, previousActive); err != nil {
 		return err
 	}
-	if wanted, ok := authWantedPriority(c.ns); ok {
-		placed := LoadPool(c.env, provider)
-		moved, ok := placed.MoveEntry(entry.ID, wanted)
-		if !ok {
-			return fmt.Errorf("provider: credential %s vanished from the %s pool before placement", entry.ID, provider)
-		}
-		c.reportPriority(provider, placed, moved, wanted, "Placed", "at")
+	return c.placeAddedLogin(provider, entry.ID)
+}
+
+// Moves a just added login to the priority --priority names, when it names one
+func (c *authCLI) placeAddedLogin(provider, id string) error {
+	wanted, ok := authWantedPriority(c.ns)
+	if !ok {
+		return nil
 	}
+	placed := LoadPool(c.env, provider)
+	moved, ok := placed.MoveEntry(id, wanted)
+	if !ok {
+		return fmt.Errorf("provider: credential %s vanished from the %s pool before placement", id, provider)
+	}
+	c.reportPriority(provider, placed, moved, wanted, "Placed", "at")
 	return nil
+}
+
+// Whether auth add signs a provider in rather than asking for a key when neither --type nor --api-key says which
+func signsInByDefault(provider string) bool {
+	return authOAuthDefaultProviders[provider] || (provider == "copilot" && copilotHasTerminal())
 }
 
 // Saves a Google service account key as the profile's VERTEX_CREDENTIALS_PATH, the credential the Vertex runtime reads
@@ -753,7 +787,7 @@ func noOAuthSignInMessage(provider string) string {
 			"workload identity, or AZURE_CLIENT_ID with a secret): set model.auth_mode: entra_id in config.yaml or pick " +
 			"'Microsoft Entra ID' in `icebath model`. An API key goes in with `icebath auth add azure-foundry --type api-key`."
 	}
-	oauth := []string{"copilot"}
+	oauth := make([]string, 0, len(authOAuthAddSpecs))
 	for name := range authOAuthAddSpecs {
 		oauth = append(oauth, name)
 	}
@@ -778,10 +812,14 @@ func (c *authCLI) addCredential(provider string, pool *Pool, requestedType strin
 	return c.storeOAuthCredential(provider, pool, creds)
 }
 
-// Stores the credentials an OAuth sign in returned as a new row of the provider's pool
+// Stores the credentials an OAuth sign in returned as a new row of the provider's pool, refusing a sign in that returned no token
 func (c *authCLI) storeOAuthCredential(provider string, pool *Pool, creds map[string]any) (PooledCredential, error) {
 	spec := authOAuthAddSpecs[provider]
-	token := spec.token(creds)
+	token := strings.TrimSpace(spec.token(creds))
+	if token == "" {
+		return PooledCredential{}, &AuthError{Provider: provider, Code: "sign_in_without_token",
+			Message: fmt.Sprintf("The %s sign in returned no access token, so no login was saved.", authProviderDisplayName(provider))}
+	}
 	label := strings.TrimSpace(authTextOr(c.ns["label"]))
 	if label == "" {
 		label = LabelFromToken(token, fmt.Sprintf("%s-oauth-%d", provider, len(pool.Entries())+1))
@@ -798,7 +836,6 @@ func (c *authCLI) storeOAuthCredential(provider string, pool *Pool, creds map[st
 	if err != nil {
 		return PooledCredential{}, err
 	}
-	fmt.Fprintf(c.out, "Added %s OAuth credential #%d: \"%s\"\n", provider, len(pool.Entries()), entry.Label)
 	if provider == "openai-codex" {
 		c.warnSameCodexAccount(token, existing)
 	}

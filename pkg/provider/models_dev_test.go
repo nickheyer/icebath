@@ -592,7 +592,7 @@ func TestMetadataOnlyOverrideOnCustomProviderLeavesCapabilitiesUnknown(t *testin
 
 func TestCatalogProviderAliasReachesBuiltinAndCatalogMetadata(t *testing.T) {
 	f := newModelsDevFixture(t)
-	cfg := map[string]any{"providers": map[string]any{"925llm": map[string]any{"api": "http://gw.internal/v1", "catalog_provider": "deepseek"}}}
+	cfg := map[string]any{"providers": map[string]any{"925llm": map[string]any{"base_url": "http://gw.internal/v1", "catalog_provider": "deepseek"}}}
 	f.setMemory(jsonMap(`{"deepseek": {"id": "deepseek", "models": {"deepseek-chat": {"id": "deepseek-chat", "limit": {"context": 128000, "output": 8000}, "tool_call": true, "reasoning": false, "modalities": {"input": ["text"], "output": ["text"]}}}}}`), time.Now())
 	builtin, ok := modelsDevCapabilitiesIn(f.home, "925llm", "deepseek-v4.1-flash", false, cfg)
 	prefixed, _ := modelsDevCapabilitiesIn(f.home, "custom:925llm", "deepseek-v4.1-flash", false, cfg)
@@ -607,7 +607,7 @@ func TestCatalogProviderAliasReachesBuiltinAndCatalogMetadata(t *testing.T) {
 	if info.ProviderID != "deepseek" || info.ContextWindow != 128000 {
 		t.Fatalf("info %+v", info)
 	}
-	f.writeConfig("providers:\n  925llm:\n    api: http://gw.internal/v1\n    catalog_provider: deepseek\n")
+	f.writeConfig("providers:\n  925llm:\n    base_url: http://gw.internal/v1\n    catalog_provider: deepseek\n")
 	if n, ok := LookupModelsDevContext(f.ctx, "925llm", "deepseek-chat", false); !ok || n != 128000 {
 		t.Fatalf("ctx %d %v", n, ok)
 	}
@@ -616,7 +616,7 @@ func TestCatalogProviderAliasReachesBuiltinAndCatalogMetadata(t *testing.T) {
 func TestMistypedAliasWarnsOnceAndKeepsTheConfiguredSlug(t *testing.T) {
 	f := newModelsDevFixture(t)
 	cfg := map[string]any{
-		"providers":       map[string]any{"925llm": map[string]any{"api": "http://gw.internal/v1", "catalog_provider": "deepsek"}},
+		"providers":       map[string]any{"925llm": map[string]any{"base_url": "http://gw.internal/v1", "catalog_provider": "deepsek"}},
 		"model_overrides": map[string]any{"925llm": map[string]any{"deepseek-v4.1-flash": map[string]any{"context_window": 1000000}}},
 	}
 	f.setMemory(jsonMap(`{"deepseek": {"models": {}}}`), time.Now())
@@ -634,16 +634,16 @@ func TestMistypedAliasWarnsOnceAndKeepsTheConfiguredSlug(t *testing.T) {
 
 func TestWithoutAliasCustomProviderStaysUnknown(t *testing.T) {
 	f := newModelsDevFixture(t)
-	cfg := map[string]any{
-		"providers":        map[string]any{"925llm": map[string]any{"api": "http://gw.internal/v1"}},
-		"custom_providers": []any{map[string]any{"name": "legacy-gw", "base_url": "http://x/v1", "catalog_provider": "deepseek"}},
-	}
+	cfg := map[string]any{"providers": map[string]any{
+		"925llm":     map[string]any{"base_url": "http://gw.internal/v1"},
+		"aliased-gw": map[string]any{"base_url": "http://x/v1", "catalog_provider": "deepseek"},
+	}}
 	if _, ok := modelsDevCapabilitiesIn(f.home, "925llm", "deepseek-v4.1-flash", false, cfg); ok {
 		t.Fatal("unaliased custom provider inherited vendor metadata")
 	}
-	legacy, ok := modelsDevCapabilitiesIn(f.home, "legacy-gw", "deepseek-v4.1-flash", false, cfg)
-	if !ok || !boolPtrEq(legacy.SupportsVision, true) {
-		t.Fatalf("%+v %v", legacy, ok)
+	aliased, ok := modelsDevCapabilitiesIn(f.home, "aliased-gw", "deepseek-v4.1-flash", false, cfg)
+	if !ok || !boolPtrEq(aliased.SupportsVision, true) {
+		t.Fatalf("%+v %v", aliased, ok)
 	}
 }
 

@@ -36,7 +36,8 @@ func TestMappedProviderCredentialPoolVisibility(t *testing.T) {
 	pickerFetchModelsDevFn = func(context.Context, bool) map[string]any {
 		return map[string]any{mdevID: map[string]any{"env": []any{"GEMINI_API_KEY"}}}
 	}
-	writeAuthStore(t, home.Dir(ctx), map[string]any{"providers": map[string]any{}, "credential_pool": map[string]any{"gemini": map[string]any{"token": "fake"}}})
+	writeAuthStore(t, home.Dir(ctx), map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"gemini": []any{
+		map[string]any{"id": "gem-1", "label": "pasted", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "fake-gemini-key"}}}})
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "gemini"})
 	gemini := pickerRow(rows, "gemini")
 	if gemini == nil {

@@ -49,7 +49,7 @@ func (f *fakeCreds) TokenBenchedForModel(provider, token, model string) bool {
 	return f.benched[token+"|"+model]
 }
 
-func (f *fakeCreds) ActiveLoggedInProvider() string { return f.active }
+func (f *fakeCreds) SignedInProvider() string { return f.active }
 
 func (f *fakeCreds) RuntimeCredential(provider string) (Credential, error) {
 	if cred, ok := f.Credential(provider); ok && (cred.APIKey != "" || cred.TokenSource != nil) {
@@ -293,7 +293,7 @@ func TestXaiPoolBaseURLRules(t *testing.T) {
 }
 
 func TestCustomPoolLoopbackNoKeyExemption(t *testing.T) {
-	cfg := map[string]any{"providers": map[string]any{"local-ollama": map[string]any{"api": "http://localhost:11434/v1"}, "remote": map[string]any{"api": "https://api.remote-vendor.example/v1"}}}
+	cfg := map[string]any{"providers": map[string]any{"local-ollama": map[string]any{"base_url": "http://localhost:11434/v1"}, "remote": map[string]any{"base_url": "https://api.remote-vendor.example/v1"}}}
 	pool := func(key string) *fakeCreds {
 		return &fakeCreds{creds: map[string]Credential{"local-ollama": {APIKey: key}, "remote": {APIKey: key}}}
 	}
@@ -581,7 +581,7 @@ func TestExplicitOpenRouterMirrorRules(t *testing.T) {
 }
 
 func TestBareCustomExplicitLaunchKeyWinsOverPool(t *testing.T) {
-	cfg := map[string]any{"model": map[string]any{"provider": "custom"}, "providers": map[string]any{"nine": map[string]any{"api": "http://127.0.0.1:9/v1"}}}
+	cfg := map[string]any{"model": map[string]any{"provider": "custom"}, "providers": map[string]any{"nine": map[string]any{"base_url": "http://127.0.0.1:9/v1"}}}
 	r := testResolver(t, cfg, &fakeCreds{creds: map[string]Credential{"nine": {APIKey: "sk-pooled", Source: "pool"}}}, "")
 	rt := r.resolveOpenRouterRuntime("custom", "sk-launch-explicit", "http://127.0.0.1:9/v1")
 	if rt.APIKey != "sk-launch-explicit" {
@@ -594,7 +594,7 @@ func TestBareCustomExplicitLaunchKeyWinsOverPool(t *testing.T) {
 func TestCodexAppServerOptInRoutesOnlyNamedCustomProviders(t *testing.T) {
 	cfg := map[string]any{
 		"model":     map[string]any{"provider": "custom:my-gateway", "default": "gpt-5.4", "openai_runtime": "codex_app_server"},
-		"providers": map[string]any{"my-gateway": map[string]any{"api": "https://gateway.example.com/v1", "api_key": "test-key", "default_model": "gpt-5.4"}},
+		"providers": map[string]any{"my-gateway": map[string]any{"base_url": "https://gateway.example.com/v1", "api_key": "test-key", "default_model": "gpt-5.4"}},
 	}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	rt := mustResolve(t, r, "custom:my-gateway", "", "", "")
@@ -613,7 +613,7 @@ func TestCodexAppServerOptInRoutesOnlyNamedCustomProviders(t *testing.T) {
 }
 
 func TestNamedCustomProviderUsesSavedCredentials(t *testing.T) {
-	cfg := map[string]any{"custom_providers": []any{map[string]any{"name": "Local", "base_url": "http://1.2.3.4:1234/v1", "api_key": "local-provider-key", "model": "gpt-5.6", "capabilities": map[string]any{"openai_native_compaction": true}}}}
+	cfg := map[string]any{"providers": map[string]any{"local": map[string]any{"name": "Local", "base_url": "http://1.2.3.4:1234/v1", "api_key": "local-provider-key", "default_model": "gpt-5.6", "capabilities": map[string]any{"openai_native_compaction": true}}}}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	rt := mustResolve(t, r, "local", "", "", "")
 	if rt.Provider != "custom" || rt.APIMode != ModeChatCompletions || rt.BaseURL != "http://1.2.3.4:1234/v1" || rt.APIKey != "local-provider-key" || rt.RequestedProvider != "local" || rt.Source != "custom_provider:Local" {
@@ -631,20 +631,20 @@ func TestNamedCustomProviderUsesSavedCredentials(t *testing.T) {
 }
 
 func TestBareCustomResolvesProvidersEntryNamedCustom(t *testing.T) {
-	cfg := map[string]any{"providers": map[string]any{"custom": map[string]any{"api": "https://cliproxy.example.com/v1", "api_key": "cliproxy-key", "default_model": "gpt-5.4", "name": "CLIProxy"}}}
+	cfg := map[string]any{"providers": map[string]any{"custom": map[string]any{"base_url": "https://cliproxy.example.com/v1", "api_key": "cliproxy-key", "default_model": "gpt-5.4", "name": "CLIProxy"}}}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	rt := mustResolve(t, r, "custom", "", "", "")
 	if rt.Provider != "custom" || rt.BaseURL != "https://cliproxy.example.com/v1" || rt.APIKey != "cliproxy-key" || rt.RequestedProvider != "custom" {
 		t.Fatalf("got %+v", rt)
 	}
-	r = testResolver(t, map[string]any{"providers": map[string]any{"custom": map[string]any{"api": "http://localhost:11434/v1"}}}, &fakeCreds{}, "")
+	r = testResolver(t, map[string]any{"providers": map[string]any{"custom": map[string]any{"base_url": "http://localhost:11434/v1"}}}, &fakeCreds{}, "")
 	if rt := mustResolve(t, r, "custom", "", "", ""); rt.BaseURL != "http://localhost:11434/v1" || rt.APIKey != NoKeyPlaceholder {
 		t.Fatalf("loopback noauth: %+v", rt)
 	}
 }
 
 func TestBareCustomWithoutCredentialsForRemoteEndpointFailsFast(t *testing.T) {
-	cfg := map[string]any{"model": map[string]any{"provider": "volcano"}, "providers": map[string]any{"volcano": map[string]any{"api": "https://ark.example.com/v1", "key_env": "ARK_API_KEY"}}}
+	cfg := map[string]any{"model": map[string]any{"provider": "volcano"}, "providers": map[string]any{"volcano": map[string]any{"base_url": "https://ark.example.com/v1", "key_env": "ARK_API_KEY"}}}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	_, err := r.ResolveRuntime("custom", "", "", nil, "")
 	authErr := authErrOf(t, err)
@@ -701,21 +701,21 @@ func TestLocalAliasWithAnEndpointAnywhereResolvesToIt(t *testing.T) {
 }
 
 func TestNamedCustomProvidersOnOneGatewayKeepOwnCredentials(t *testing.T) {
-	cfg := map[string]any{"custom_providers": []any{
-		map[string]any{"name": "gpt", "base_url": "https://gateway.example.com", "key_env": "GPT_KEY", "api_mode": "codex_responses", "model": "gpt-5.5"},
-		map[string]any{"name": "claude", "base_url": "https://gateway.example.com", "key_env": "CLAUDE_KEY", "api_mode": "anthropic_messages", "model": "claude-opus-4-8"},
+	cfg := map[string]any{"providers": map[string]any{
+		"gpt":    map[string]any{"base_url": "https://gateway.example.com", "key_env": "GPT_KEY", "api_mode": "codex_responses", "default_model": "gpt-5.5"},
+		"claude": map[string]any{"base_url": "https://gateway.example.com", "key_env": "CLAUDE_KEY", "api_mode": "anthropic_messages", "default_model": "claude-opus-4-8"},
 	}}
 	r := testResolver(t, cfg, &fakeCreds{}, "GPT_KEY=gpt-secret\nCLAUDE_KEY=claude-secret\n")
 	rt := mustResolve(t, r, "custom:claude", "", "", "")
 	if rt.Provider != "custom" || rt.BaseURL != "https://gateway.example.com" || rt.APIKey != "claude-secret" || rt.APIMode != ModeAnthropicMessages || rt.RequestedProvider != "custom:claude" || rt.Model != "claude-opus-4-8" {
 		t.Fatalf("got %+v", rt)
 	}
-	r = testResolver(t, map[string]any{"custom_providers": []any{map[string]any{"name": "Local LLM", "base_url": "http://localhost:1234/v1"}}}, &fakeCreds{}, "OPENAI_API_KEY=env-openai-key\n")
+	r = testResolver(t, map[string]any{"providers": map[string]any{"local-llm": map[string]any{"name": "Local LLM", "base_url": "http://localhost:1234/v1"}}}, &fakeCreds{}, "OPENAI_API_KEY=env-openai-key\n")
 	rt = mustResolve(t, r, "custom:local-llm", "", "", "")
 	if rt.BaseURL != "http://localhost:1234/v1" || rt.APIKey != NoKeyPlaceholder || rt.RequestedProvider != "custom:local-llm" {
 		t.Fatalf("no leak to local: %+v", rt)
 	}
-	r = testResolver(t, map[string]any{"custom_providers": []any{map[string]any{"name": "kimi", "base_url": "https://my-custom-kimi.example.com/v1", "api_key": "my-kimi-key"}}}, &fakeCreds{}, "")
+	r = testResolver(t, map[string]any{"providers": map[string]any{"kimi": map[string]any{"base_url": "https://my-custom-kimi.example.com/v1", "api_key": "my-kimi-key"}}}, &fakeCreds{}, "")
 	entry := r.getNamedCustomProvider("kimi", nil, true)
 	if entry == nil || entry["base_url"] != "https://my-custom-kimi.example.com/v1" || entry["api_key"] != "my-kimi-key" {
 		t.Fatalf("alias named entry wins over builtin alias: %v", entry)
@@ -757,7 +757,7 @@ func TestRemovedKeylessFreeProviderPointsAtReplacements(t *testing.T) {
 }
 
 func TestBareCustomResolvesModelKeyEnvForConfiguredBaseURL(t *testing.T) {
-	cfg := map[string]any{"custom_providers": []any{}, "model": map[string]any{"provider": "custom", "base_url": "https://api.example.test/v1", "key_env": "MY_LLM_API_KEY", "default": "glm-5.2", "api_mode": "chat_completions"}}
+	cfg := map[string]any{"model": map[string]any{"provider": "custom", "base_url": "https://api.example.test/v1", "key_env": "MY_LLM_API_KEY", "default": "glm-5.2", "api_mode": "chat_completions"}}
 	r := testResolver(t, cfg, &fakeCreds{}, "MY_LLM_API_KEY=scw-real-key-0123456789abcdef\n")
 	rt := mustResolve(t, r, "custom", "", "", "")
 	if rt.BaseURL != "https://api.example.test/v1" || rt.APIKey != "scw-real-key-0123456789abcdef" {
@@ -803,9 +803,9 @@ func captureLogs(t *testing.T) *logCapture {
 }
 
 func TestConfiguredKeyEnvResolvingEmptyIsLogged(t *testing.T) {
-	cfg := map[string]any{"custom_providers": []any{
-		map[string]any{"name": "scw", "base_url": "https://api.example.test/v1", "key_env": "UNSET_LLM_KEY", "model": "m"},
-		map[string]any{"name": "local", "base_url": "http://127.0.0.1:8080/v1", "model": "m"},
+	cfg := map[string]any{"providers": map[string]any{
+		"scw":   map[string]any{"base_url": "https://api.example.test/v1", "key_env": "UNSET_LLM_KEY", "default_model": "m"},
+		"local": map[string]any{"base_url": "http://127.0.0.1:8080/v1", "default_model": "m"},
 	}}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	t.Setenv("UNSET_LLM_KEY", "")
@@ -836,7 +836,7 @@ const (
 )
 
 func shadowConfig(name string, entryExtra map[string]any) map[string]any {
-	entry := map[string]any{"name": name, "api": shadowEndpoint, "transport": "chat_completions", "default_model": "m"}
+	entry := map[string]any{"name": name, "base_url": shadowEndpoint, "api_mode": "chat_completions", "default_model": "m"}
 	if entryExtra == nil {
 		entry["key_env"] = "ENTRY_KEY_VAR"
 	}
@@ -902,7 +902,7 @@ func TestShadowingEntrySendsItsOwnKeyEnv(t *testing.T) {
 	}
 	for _, requested := range []string{"custom:deepseek", "custom"} {
 		cfg := shadowConfig("deepseek", nil)
-		cfg["providers"].(map[string]any)["deepseek"].(map[string]any)["api"] = "https://api.deepseek.com/v1"
+		cfg["providers"].(map[string]any)["deepseek"].(map[string]any)["base_url"] = "https://api.deepseek.com/v1"
 		r := testResolver(t, cfg, pool, "DEEPSEEK_API_KEY="+shadowBuiltin+"\n")
 		logs := captureLogs(t)
 		base := ""
@@ -1116,7 +1116,7 @@ func TestConfiguredCustomEndpointResolvesAsAProvider(t *testing.T) {
 		{"loopback url only", map[string]any{"model": map[string]any{"default": "qwen3", "base_url": "http://localhost:8080/v1"}}, "custom"},
 		{"provider openrouter", map[string]any{"model": map[string]any{"default": "openrouter/auto", "provider": "openrouter"}}, "openrouter"},
 		{"openrouter mirror", map[string]any{"model": map[string]any{"default": "openrouter/auto", "provider": "openrouter", "base_url": "https://openrouter-mirror.example.com/api/v1"}}, "openrouter"},
-		{"named providers pin", map[string]any{"model": map[string]any{"default": "test-model", "provider": "CPA"}, "providers": map[string]any{"CPA": map[string]any{"api": "http://127.0.0.1:8317/v1", "default_model": "test-model"}}}, "custom"},
+		{"named providers pin", map[string]any{"model": map[string]any{"default": "test-model", "provider": "CPA"}, "providers": map[string]any{"CPA": map[string]any{"base_url": "http://127.0.0.1:8317/v1", "default_model": "test-model"}}}, "custom"},
 		{"provider auto loopback", map[string]any{"model": map[string]any{"provider": "auto", "base_url": "http://127.0.0.1:8000/v1"}}, "custom"},
 	}
 	for _, c := range cases {
@@ -1139,7 +1139,7 @@ func TestEnvKeyAutoDetectionPrefersOpenRouterAndWarnsOverOAuth(t *testing.T) {
 	if err != nil || p != "deepseek" {
 		t.Fatalf("got %q %v", p, err)
 	}
-	if len(logs.lines) == 0 || !strings.Contains(logs.lines[0], "preempting your logged-in OAuth provider") {
+	if len(logs.lines) == 0 || !strings.Contains(logs.lines[0], "preempting your signed-in provider") {
 		t.Fatalf("warning: %v", logs.lines)
 	}
 	r = testResolver(t, nil, &fakeCreds{active: "openai-codex"}, "")
@@ -1184,7 +1184,7 @@ func namedProfileResolver(t *testing.T, keyEnv bool, dotenv string, modelExtra m
 	if keyEnv {
 		entry["key_env"] = "CANARY_KEY"
 	}
-	cfg := config.Tree{"model": model, "custom_providers": []any{entry}}
+	cfg := config.Tree{"model": model, "providers": map[string]any{"fakeup": entry}}
 	SetMultiplexActive(true)
 	t.Cleanup(func() { SetMultiplexActive(false) })
 	ctx := WithSecretScope(context.Background(), BuildProfileSecretScope(h), h)
@@ -1234,7 +1234,7 @@ func TestDeclaredKeyMissingFromProfileScopeFailsBeforeTheRequest(t *testing.T) {
 func TestResolveTaskProviderModelPrecedence(t *testing.T) {
 	cfg := map[string]any{"auxiliary": map[string]any{
 		"vision":      map[string]any{"provider": "auto", "model": "auto"},
-		"compression": map[string]any{"provider": "deepseek", "model": "deepseek-flash", "api_mode": "responses"},
+		"compression": map[string]any{"provider": "deepseek", "model": "deepseek-flash", "api_mode": "codex_responses"},
 		"review":      map[string]any{"base_url": "http://127.0.0.1:1/v1", "api_key": "k", "model": "m"},
 		"keyed":       map[string]any{"base_url": "http://127.0.0.1:2/v1", "key_env": "AUX_KEY", "provider": "ollama"},
 	}}
@@ -1271,7 +1271,7 @@ func TestResolveMainRouteAndFallbackChain(t *testing.T) {
 	cfg := map[string]any{
 		"model":     map[string]any{"provider": "deepseek", "default": "deepseek-v4-pro"},
 		"auxiliary": map[string]any{"compression": map[string]any{"provider": "custom:gw", "model": "small"}},
-		"providers": map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "api_key": "gw-key-1234"}},
+		"providers": map[string]any{"gw": map[string]any{"base_url": "https://gw.example/v1", "api_key": "gw-key-1234"}},
 		"fallback_providers": []any{
 			map[string]any{"provider": "custom:gw", "model": "fb-model"},
 			map[string]any{"provider": "nonexistent", "model": "x"},

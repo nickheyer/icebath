@@ -150,9 +150,8 @@ func sameEndpoint(a, b any) bool {
 }
 
 // A configured provider block naming a different host than the submitted endpoint
-func entryPointsElsewhere(entry any, baseURL string) bool {
-	m, ok := entry.(map[string]any)
-	return ok && !sameEndpoint(m["base_url"], baseURL)
+func entryPointsElsewhere(entry map[string]any, baseURL string) bool {
+	return entry != nil && !sameEndpoint(entry["base_url"], baseURL)
 }
 
 // A bare custom or local pick carrying its own endpoint URL
@@ -175,7 +174,9 @@ func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provid
 	if explicit {
 		kept := map[string]any{}
 		for _, k := range config.MappingKeys(userProviders) {
-			if v := userProviders[k]; !(bareCustomSelectors[pystr.Lower(pystr.Strip(k))] && entryPointsElsewhere(v, baseURL)) {
+			v := userProviders[k]
+			entry, _ := v.(map[string]any)
+			if !(bareCustomSelectors[pystr.Lower(pystr.Strip(k))] && entryPointsElsewhere(entry, baseURL)) {
 				assignKey(kept, k, v)
 			}
 		}
@@ -219,9 +220,6 @@ func applyMainModelAssignment(ctx context.Context, modelCfg any, result ModelSwi
 	out := ApplyModelSelection(modelCfg, result, !fileTooling)
 	if key := pystr.Strip(apiKey); key != "" {
 		assignKey(out, "api_key", key)
-		if err := DropModelKey(ctx, out, "api"); err != nil {
-			return nil, err
-		}
 	}
 	if err := RemoteModelSelectionGuard(ctx, modelCfg, out); err != nil {
 		return nil, err
@@ -246,26 +244,27 @@ func DropModelKey(ctx context.Context, modelCfg map[string]any, key string) erro
 	return nil
 }
 
-// Carries the provider's credential pointer onto the model block, never a secret the load expanded
-func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, provider string, providerEntry any) error {
-	var rawEntry map[string]any
-	if raw, err := config.ReadRawConfig(ctx, home.Dir(ctx)); err == nil {
-		_, rawEntry = FindProviderEntry(raw["providers"], provider)
+// Carries the credential of a provider's config block onto the model block the way config.yaml spells it, never a secret the load expanded
+func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, entryKey string, entry map[string]any) error {
+	if entry == nil {
+		return nil
 	}
-	if rawEntry == nil {
-		rawEntry = map[string]any{}
+	raw, err := config.ReadRawConfig(ctx, home.Dir(ctx))
+	if err != nil {
+		return err
 	}
-	if keyEnv := pystr.Strip(pyOrStr(rawEntry["key_env"])); keyEnv != "" {
+	// The key pointer names a variable and is safe from either document, the key itself is only ever copied as written
+	_, spelled := FindProviderEntry(raw["providers"], entryKey)
+	pointer := entry["key_env"]
+	if spelled != nil {
+		pointer = spelled["key_env"]
+	}
+	if keyEnv := pystr.Strip(pyOrStr(pointer)); keyEnv != "" {
 		assignKey(modelCfg, "key_env", keyEnv)
 		return DropModelKey(ctx, modelCfg, "api_key")
 	}
-	if entry, ok := providerEntry.(map[string]any); ok && pyTruthy(entry["api_key"]) {
-		rawKey := pystr.Strip(pyOrStr(rawEntry["api_key"]))
-		if strings.HasPrefix(rawKey, "${") && strings.HasSuffix(rawKey, "}") {
-			assignKey(modelCfg, "api_key", rawKey)
-		} else {
-			assignKey(modelCfg, "api_key", entry["api_key"])
-		}
+	if key := spelled["api_key"]; pyTruthy(key) {
+		assignKey(modelCfg, "api_key", key)
 	}
 	return nil
 }
@@ -306,6 +305,12 @@ func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) [
 	if !ok {
 		return stale
 	}
+	// Every spelling of one providers entry is the same provider
+	providers, _ := cfg["providers"].(map[string]any)
+	identity := func(name string) string {
+		return pystr.Lower(pystr.Strip(PersistedProviderID(ctx, pystr.Strip(name), providers)))
+	}
+	current := identity(newProvider)
 	for _, slot := range auxTaskSlots(ctx) {
 		slotCfg, ok := auxCfg[slot].(map[string]any)
 		if !ok {
@@ -313,7 +318,7 @@ func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) [
 		}
 		slotProvider := pystr.Strip(pyOrStr(pyGetAny(slotCfg, "provider", "")))
 		lower := pystr.Lower(slotProvider)
-		if slotProvider == "" || lower == "auto" || lower == "main" || lower == newProvider {
+		if slotProvider == "" || lower == "auto" || lower == "main" || identity(slotProvider) == current {
 			continue
 		}
 		if IsLocalEndpoint(pyOrStr(pyGetAny(slotCfg, "base_url", ""))) {
@@ -324,12 +329,18 @@ func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) [
 	return stale
 }
 
-// The providers block of one provider, nil when the config has none
-func providerEntryOf(cfg map[string]any, provider string) any {
-	if providers, ok := cfg["providers"].(map[string]any); ok {
-		return providers[provider]
+// Config key and block of the providers entry a provider's settings live in: the enabled entry the name routes to at runtime
+// however the name spells it, else the block its own name keys, a nil block when the config holds neither
+func providerEntryOf(ctx context.Context, cfg map[string]any, provider string) (string, map[string]any) {
+	providers, _ := cfg["providers"].(map[string]any)
+	if len(providers) == 0 {
+		return "", nil
 	}
-	return nil
+	if key, routed := modelsResolver(ctx).providerEntryKey(provider, providers); routed {
+		entry, _ := providers[key].(map[string]any)
+		return key, entry
+	}
+	return FindProviderEntry(providers, provider)
 }
 
 // Validation half of a main slot assignment returning the effective base URL and switch result, writing nothing
@@ -343,8 +354,10 @@ func prepareMainAssignment(ctx context.Context, cfg map[string]any, provider, mo
 	} else {
 		provider, model = normalizeMainModelAssignment(ctx, provider, model)
 	}
-	if entry, ok := providerEntryOf(cfg, provider).(map[string]any); baseURL == "" && ok && pyTruthy(entry["base_url"]) {
-		baseURL = pystr.Strip(pyOrStr(entry["base_url"]))
+	if baseURL == "" {
+		if _, entry := providerEntryOf(ctx, cfg, provider); pyTruthy(entry["base_url"]) {
+			baseURL = pystr.Strip(pyOrStr(entry["base_url"]))
+		}
 	}
 	result, err := validatedMainModelSelection(ctx, cfg, provider, model, baseURL, apiKey, &explicit)
 	if err != nil {
@@ -368,7 +381,7 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 	}
 	baseURL, result := prepared.BaseURL, prepared.Result
 	provider, model = result.TargetProvider, result.NewModel
-	providerEntry := providerEntryOf(cfg, provider)
+	entryKey, providerEntry := providerEntryOf(ctx, cfg, provider)
 	providerLC := pystr.Lower(pystr.Strip(provider))
 	endpointAlreadyKnown := bareCustomSelectors[providerLC] && baseURL != "" && endpointKnownToConfig(cfg, baseURL)
 	modelCfg, err := applyMainModelAssignment(ctx, pyGetAny(cfg, "model", map[string]any{}), result, apiKey)
@@ -376,7 +389,7 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 		return nil, err
 	}
 	if !(explicit && entryPointsElsewhere(providerEntry, baseURL)) {
-		if err := resolveAssignmentCredentials(ctx, modelCfg, provider, providerEntry); err != nil {
+		if err := resolveAssignmentCredentials(ctx, modelCfg, entryKey, providerEntry); err != nil {
 			return nil, err
 		}
 	}

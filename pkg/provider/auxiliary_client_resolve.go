@@ -907,7 +907,7 @@ func ResolveProviderClient(ctx context.Context, provider, model string, opts Pro
 func auxResolveProviderClient(ctx context.Context, provider, model string, opts ProviderClientOptions) (auxResolveResult, error) {
 	originalProvider := strings.ToLower(strings.TrimSpace(provider))
 	provider = auxNormalizeAuxProvider(ctx, provider)
-	apiMode := strings.ToLower(CanonicalAPIMode(opts.APIMode))
+	apiMode := strings.ToLower(strings.TrimSpace(opts.APIMode))
 	explicitBase, explicitKey := opts.ExplicitBaseURL, opts.ExplicitAPIKey
 	if provider == "moa" {
 		aggProvider, aggModel := auxResolveMoaAggregator(ctx, model)

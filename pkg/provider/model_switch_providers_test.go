@@ -89,7 +89,7 @@ func userConfigRows(rows []map[string]any) []map[string]any {
 func TestListAuthenticatedProvidersIncludesFullModelsListFromUserProviders(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50),
-		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "api": "http://localhost:11434/v1",
+		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "base_url": "http://localhost:11434/v1",
 			"default_model": "minimax-m2.7:cloud", "models": []any{"minimax-m2.7:cloud", "kimi-k2.5:cloud", "glm-5.1:cloud", "qwen3.5:cloud"}}}})
 	row := pickerRow(rows, "local-ollama")
 	if row == nil || row["is_user_defined"] != true || row["total_models"] != 4 {
@@ -103,7 +103,7 @@ func TestListAuthenticatedProvidersIncludesFullModelsListFromUserProviders(t *te
 func TestListAuthenticatedProvidersEnumeratesDictFormatModels(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50),
-		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "api": "http://localhost:11434/v1",
+		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "base_url": "http://localhost:11434/v1",
 			"default_model": "minimax-m2.7:cloud", "models": map[string]any{"minimax-m2.7:cloud": map[string]any{"context_length": 196608},
 				"kimi-k2.5:cloud": map[string]any{"context_length": 200000}, "glm-5.1:cloud": map[string]any{"context_length": 202752}}}}})
 	row := pickerRow(rows, "local-ollama")
@@ -221,7 +221,7 @@ func TestSection3ProbesNoKeyEndpointWithoutExplicitModels(t *testing.T) {
 		return []string{"live-model-1", "live-model-2", "live-model-3"}, true
 	})
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-llamacpp", MaxModels: intPtr(50),
-		UserProviders: map[string]any{"local-llamacpp": map[string]any{"name": "Local llama.cpp", "api": "http://localhost:8080/v1"}}})
+		UserProviders: map[string]any{"local-llamacpp": map[string]any{"name": "Local llama.cpp", "base_url": "http://localhost:8080/v1"}}})
 	if len(*calls) != 1 || (*calls)[0].apiKey != "" || (*calls)[0].timeout != 5*time.Second || (*calls)[0].apiMode != "" || (*calls)[0].headers != nil {
 		t.Fatalf("calls %+v", *calls)
 	}
@@ -267,7 +267,7 @@ func TestSection3ProbesNoKeyEndpointWithSingularDefaultModel(t *testing.T) {
 		return []string{"live-model-1", "live-model-2", "live-model-3"}, true
 	})
 	rows := mustListProviders(t, ctx, AuthenticatedProvidersOptions{CurrentProvider: "local-ollama", MaxModels: intPtr(50), CustomProviders: []any{},
-		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "api": "http://localhost:11434/v1", "default_model": "llama3"}}})
+		UserProviders: map[string]any{"local-ollama": map[string]any{"name": "Local Ollama", "base_url": "http://localhost:11434/v1", "default_model": "llama3"}}})
 	if len(*calls) == 0 {
 		t.Fatal("singular default_model must not suppress live discovery")
 	}
@@ -284,9 +284,9 @@ func TestSameEndpointSameCredentialEntriesFoldToOneRow(t *testing.T) {
 	ctx, _ := pickerTestHome(t, func(string, string) ([]string, bool) { return []string{}, true })
 	rows := userConfigRows(mustListProviders(t, ctx, AuthenticatedProvidersOptions{MaxModels: intPtr(50), UserProviders: map[string]any{
 		"palantir-claude46": map[string]any{"name": "Palantir Claude 4.6 Opus", "base_url": "https://foundry.example.com/anthropic",
-			"key_env": "PALANTIR_TOKEN", "api_mode": "anthropic_messages", "model": "ri.language-model-service..language-model.anthropic-claude-4-6-opus"},
+			"key_env": "PALANTIR_TOKEN", "api_mode": "anthropic_messages", "default_model": "ri.language-model-service..language-model.anthropic-claude-4-6-opus"},
 		"palantir-claude47": map[string]any{"name": "Palantir Claude 4.7 Opus", "base_url": "https://foundry.example.com/anthropic",
-			"key_env": "PALANTIR_TOKEN", "api_mode": "anthropic_messages", "model": "ri.language-model-service..language-model.anthropic-claude-4-7-opus"}}}))
+			"key_env": "PALANTIR_TOKEN", "api_mode": "anthropic_messages", "default_model": "ri.language-model-service..language-model.anthropic-claude-4-7-opus"}}}))
 	if len(rows) != 1 || rows[0]["slug"] != "palantir-claude46" || rows[0]["name"] != "Palantir Claude" || len(rowModels(rows[0])) != 2 {
 		t.Fatalf("rows %v", rows)
 	}
@@ -296,9 +296,9 @@ func TestDifferentExtraHeadersKeepDistinctRows(t *testing.T) {
 	ctx, _ := pickerTestHome(t, func(string, string) ([]string, bool) { return []string{}, true })
 	rows := userConfigRows(mustListProviders(t, ctx, AuthenticatedProvidersOptions{MaxModels: intPtr(50), UserProviders: map[string]any{
 		"tenant-a": map[string]any{"name": "Tenant A", "base_url": "https://proxy.example.com/v1", "key_env": "PROXY_TOKEN",
-			"api_mode": "openai_chat", "extra_headers": map[string]any{"X-Tenant": "a"}, "model": "model-a"},
+			"api_mode": "chat_completions", "extra_headers": map[string]any{"X-Tenant": "a"}, "model": "model-a"},
 		"tenant-b": map[string]any{"name": "Tenant B", "base_url": "https://proxy.example.com/v1", "key_env": "PROXY_TOKEN",
-			"api_mode": "openai_chat", "extra_headers": map[string]any{"X-Tenant": "b"}, "model": "model-b"}}}))
+			"api_mode": "chat_completions", "extra_headers": map[string]any{"X-Tenant": "b"}, "model": "model-b"}}}))
 	if len(rows) != 2 {
 		t.Fatalf("rows %v", rows)
 	}

@@ -2,8 +2,11 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -284,10 +287,10 @@ func (d *Duration) Coerce(v any) (any, error) {
 		return nil, invalid(d.Key, "is too long, the most it takes is %d days", int(time.Duration(math.MaxInt64)/(24*time.Hour)))
 	}
 	if d.Min != nil && parsed < *d.Min {
-		return nil, invalid(d.Key, "must be at least %s", *d.Min)
+		return nil, invalid(d.Key, "must be at least %s", d.text(*d.Min))
 	}
 	if d.Max != nil && parsed > *d.Max {
-		return nil, invalid(d.Key, "must be at most %s", *d.Max)
+		return nil, invalid(d.Key, "must be at most %s", d.text(*d.Max))
 	}
 	return d.stored(parsed), nil
 }
@@ -301,6 +304,11 @@ func (d *Duration) read(v any) (any, bool) {
 		return nil, false
 	}
 	return parsed, true
+}
+
+// Length of time said as the number the setting stores with its unit
+func (d *Duration) text(v time.Duration) string {
+	return withUnit(d.stored(v), unitName(d.unit()))
 }
 
 // Value in effect for ctx and whether it is set at all
@@ -541,6 +549,10 @@ type List struct {
 	Default []any
 	// Kind of each item, string when empty
 	Of Kind
+	// Schema each item follows, nil for items no schema checks
+	Item Entry
+	// Text given in place of a list is one item, such as a pattern that may hold commas, instead of items split at commas
+	Whole bool
 	// Unset by default when not empty, the text saying what unset means
 	Null string
 }
@@ -554,43 +566,95 @@ func (l *List) DefaultValue() any {
 	return config.Clone(append([]any{}, l.Default...))
 }
 
+// Items checked by the item schema, each refusal naming the position of its item
+func (l *List) coerceItems(items []any) (any, error) {
+	if l.Item == nil {
+		return config.Clone(items), nil
+	}
+	out := make([]any, len(items))
+	for i, item := range items {
+		coerced, err := coercePart(l.Item, item)
+		if err != nil {
+			return nil, invalid(l.Key+"."+strconv.Itoa(i), "%s", reasonOf(err))
+		}
+		out[i] = coerced
+	}
+	return out, nil
+}
+
+// Items a written or stored value spells: a list as it is and, for a list of text, a JSON list decoded, other text split at commas or kept whole, and a lone switch or number as its one item
+func (l *List) items(v any) ([]any, bool) {
+	switch t := v.(type) {
+	case []any:
+		return t, true
+	case []string:
+		out := make([]any, len(t))
+		for i, s := range t {
+			out[i] = s
+		}
+		return out, true
+	}
+	if l.Of != "" && l.Of != KindString {
+		return nil, false
+	}
+	switch t := v.(type) {
+	case string:
+		text := strings.TrimSpace(t)
+		if text == "" {
+			return []any{}, true
+		}
+		if strings.HasPrefix(text, "[") {
+			var decoded []any
+			if json.Unmarshal([]byte(text), &decoded) == nil {
+				return decoded, true
+			}
+		}
+		if l.Whole {
+			return []any{text}, true
+		}
+		out := []any{}
+		for _, s := range config.AsStrings(text) {
+			out = append(out, s)
+		}
+		return out, true
+	case bool, int, int64, float64:
+		return []any{fmt.Sprint(t)}, true
+	}
+	return nil, false
+}
+
 func (l *List) Coerce(v any) (any, error) {
 	if v == nil && l.Null != "" {
 		return nil, nil
 	}
-	switch items := v.(type) {
-	case []any:
-		return config.Clone(items), nil
-	case []string:
-		out := make([]any, len(items))
-		for i, s := range items {
-			out[i] = s
-		}
-		return out, nil
-	case string:
-		if l.Of != "" && l.Of != KindString {
-			break
-		}
-		out := []any{}
-		for _, s := range config.AsStrings(items) {
-			out = append(out, s)
-		}
-		return out, nil
+	items, ok := l.items(v)
+	if !ok {
+		return nil, invalid(l.Key, "takes a list")
 	}
-	return nil, invalid(l.Key, "takes a list")
+	return l.coerceItems(items)
 }
 
 func (l *List) read(v any) (any, bool) {
-	switch t := v.(type) {
-	case nil:
+	if v == nil {
 		return nil, l.Null != ""
-	case []any:
-		return t, true
 	}
 	if l.Null != "" && emptyText(v) {
 		return nil, true
 	}
-	return nil, false
+	items, ok := l.items(v)
+	if !ok {
+		return nil, false
+	}
+	if l.Item == nil {
+		return items, true
+	}
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		if typed, ok := readPart(l.Item, item); ok {
+			out = append(out, typed)
+		}
+	}
+	return out, true
 }
 
 // Items in effect for ctx
@@ -637,7 +701,7 @@ func (m *Map) Coerce(v any) (any, error) {
 			out[name] = config.Clone(item)
 			continue
 		}
-		coerced, err := m.Value.Coerce(item)
+		coerced, err := coercePart(m.Value, item)
 		if err != nil {
 			return nil, invalid(m.Key+"."+name, "%s", reasonOf(err))
 		}
@@ -659,7 +723,7 @@ func (m *Map) read(v any) (any, bool) {
 	}
 	out := make(map[string]any, len(in))
 	for name, item := range in {
-		if typed, ok := m.Value.read(item); ok {
+		if typed, ok := readPart(m.Value, item); ok {
 			out[name] = typed
 		}
 	}
@@ -684,7 +748,7 @@ func (m *Map) Get(ctx context.Context) map[string]any {
 	return map[string]any{}
 }
 
-// Mapping of named fields, each field following its own entry whose Key is the field name
+// Mapping of named fields, each field following its own entry whose Key is the field name, a dotted Key naming a field nested inside mappings
 type Object struct {
 	Meta
 	Fields []Entry
@@ -702,11 +766,83 @@ func (o *Object) Field(name string) Entry {
 	return nil
 }
 
+// Whether fields of the object are nested under a dotted name
+func (o *Object) holds(name string) bool {
+	for _, f := range o.Fields {
+		if strings.HasPrefix(f.Info().Key, name+".") {
+			return true
+		}
+	}
+	return false
+}
+
+// Field the leading names of a path spell and how many names it takes, nil when they spell none
+func (o *Object) fieldAt(names []string) (Entry, int) {
+	for n := len(names); n > 0; n-- {
+		if slices.ContainsFunc(names[:n], func(name string) bool { return strings.Contains(name, ".") }) {
+			continue
+		}
+		if f := o.Field(strings.Join(names[:n], ".")); f != nil {
+			return f, n
+		}
+	}
+	return nil, 0
+}
+
+// One value of a stored mapping in the object's terms: the dotted name it sits at, its field, nil when no field takes it, and the value
+type objectPart struct {
+	name  string
+	field Entry
+	value any
+}
+
+// Values of a stored mapping in name order, a mapping walked into where fields are nested under its name
+func (o *Object) parts(prefix string, in map[string]any) []objectPart {
+	names := make([]string, 0, len(in))
+	for name := range in {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []objectPart
+	for _, name := range names {
+		path, item := prefix+name, in[name]
+		if f := o.Field(path); f != nil {
+			out = append(out, objectPart{name: path, field: f, value: item})
+			continue
+		}
+		if o.holds(path) {
+			if item == nil {
+				continue
+			}
+			if nested := config.AsMap(item); nested != nil {
+				out = append(out, o.parts(path+".", nested)...)
+				continue
+			}
+		}
+		out = append(out, objectPart{name: path, value: item})
+	}
+	return out
+}
+
+// Stores a value at a dotted name of a mapping, making the mappings on the way
+func putNested(m map[string]any, name string, v any) {
+	names := strings.Split(name, ".")
+	for _, part := range names[:len(names)-1] {
+		next, ok := m[part].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			m[part] = next
+		}
+		m = next
+	}
+	m[names[len(names)-1]] = v
+}
+
 func (o *Object) DefaultValue() any {
 	out := map[string]any{}
 	for _, f := range o.Fields {
 		if v := f.DefaultValue(); v != nil {
-			out[f.Info().Key] = v
+			putNested(out, f.Info().Key, v)
 		}
 	}
 	return out
@@ -721,17 +857,19 @@ func (o *Object) Coerce(v any) (any, error) {
 		return nil, invalid(o.Key, "takes a mapping")
 	}
 	out := make(map[string]any, len(in))
-	for name, item := range in {
-		f := o.Field(name)
-		if f == nil {
-			return nil, invalid(o.Key+"."+name, "is not a field here; fields: %s", strings.Join(o.fieldNames(), ", "))
+	for _, part := range o.parts("", in) {
+		if part.field == nil {
+			if o.holds(part.name) {
+				return nil, invalid(o.Key+"."+part.name, "takes a mapping")
+			}
+			return nil, invalid(o.Key+"."+part.name, "is not a field here; fields: %s", strings.Join(o.fieldNames(), ", "))
 		}
-		coerced, err := f.Coerce(item)
+		coerced, err := coercePart(part.field, part.value)
 		if err != nil {
-			return nil, invalid(o.Key+"."+name, "%s", reasonOf(err))
+			return nil, invalid(o.Key+"."+part.name, "%s", reasonOf(err))
 		}
 		if coerced != nil {
-			out[name] = coerced
+			putNested(out, part.name, coerced)
 		}
 	}
 	return out, nil
@@ -755,14 +893,48 @@ func (o *Object) read(v any) (any, bool) {
 		return nil, false
 	}
 	out := make(map[string]any, len(in))
-	for name, item := range in {
-		if f := o.Field(name); f != nil {
-			if typed, ok := f.read(item); ok {
-				out[name] = typed
-			}
+	for _, part := range o.parts("", in) {
+		if part.field == nil {
+			continue
+		}
+		if typed, ok := readPart(part.field, part.value); ok {
+			putNested(out, part.name, typed)
 		}
 	}
 	return out, true
+}
+
+// Stored form of a value an entry takes, its kind's check then the entry's own check applied
+func coercePart(e Entry, v any) (any, error) {
+	coerced, err := e.Coerce(v)
+	if err != nil {
+		return nil, err
+	}
+	if check := e.Info().Validate; check != nil && coerced != nil {
+		if err := check(coerced); err != nil {
+			return nil, invalid(e.Info().Key, "%s", err.Error())
+		}
+	}
+	return coerced, nil
+}
+
+// Whether a stored value passes the entry's own check; a derived setting's check guards only what may be written
+func passes(e Entry, v any) bool {
+	m := e.Info()
+	if m.Validate == nil || m.Derive != nil || v == nil {
+		return true
+	}
+	coerced, err := e.Coerce(v)
+	return err != nil || coerced == nil || m.Validate(coerced) == nil
+}
+
+// Typed form of a stored value, false when the entry's kind does not take it or its own check refuses it
+func readPart(e Entry, v any) (any, bool) {
+	typed, ok := e.read(v)
+	if !ok || !passes(e, v) {
+		return nil, false
+	}
+	return typed, true
 }
 
 // Free value under a map whose entries follow no schema

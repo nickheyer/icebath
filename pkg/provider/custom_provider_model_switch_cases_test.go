@@ -73,7 +73,7 @@ func configText(t *testing.T, h string) string {
 
 func TestCustomProviderModelSwitchCustomEndpointSwitchPrunesStaleModelConfigPoolEntry(t *testing.T) {
 	h, r := customSwitchHome(t, "model:\n  default: old-model\n  provider: custom\n  base_url: https://old.example.test/v1\n  api_key: sk-old-model-config\n"+
-		"custom_providers:\n- name: Old Endpoint\n  base_url: https://old.example.test/v1\n  api_key: sk-old-config\n  model: old-model\n")
+		"providers:\n  old-endpoint:\n    name: Old Endpoint\n    base_url: https://old.example.test/v1\n    api_key: sk-old-config\n    default_model: old-model\n")
 	t.Setenv(config.CustomEndpointKeyEnv("new.example.test"), "")
 	store := r.store()
 	if _, err := store.WriteCredentialPool("custom:old-endpoint", []map[string]any{
@@ -111,15 +111,15 @@ func TestCustomProviderModelSwitchCustomEndpointSwitchPrunesStaleModelConfigPool
 	}
 }
 
-func TestCustomProviderModelSwitchEnvTemplateApiKeyIsPreservedInModelConfig(t *testing.T) {
-	h, r := customSwitchHome(t, "model:\n  default: old-model\n  provider: openrouter\ncustom_providers:\n- name: Example Provider\n"+
-		"  base_url: https://api.example-provider.test/v1\n  api_key: ${EXAMPLE_PROVIDER_API_KEY}\n  model: qwen3.6-35b-fast\n")
+func TestCustomProviderModelSwitchEnvTemplateApiKeyStaysATemplate(t *testing.T) {
+	h, r := customSwitchHome(t, "model:\n  default: old-model\n  provider: openrouter\nproviders:\n  example-provider:\n    name: Example Provider\n"+
+		"    base_url: https://api.example-provider.test/v1\n    api_key: ${EXAMPLE_PROVIDER_API_KEY}\n    default_model: qwen3.6-35b-fast\n")
 	t.Setenv("EXAMPLE_PROVIDER_API_KEY", "sk-live-example-provider")
 	keys := recordedFetch(t, []string{"qwen3.6-35b-fast"})
 	noCursesMenus(t)
 	scriptBuiltinsInput(t, "1")
 	info := map[string]any{"name": "Example Provider", "base_url": "https://api.example-provider.test/v1", "api_key": "sk-live-example-provider",
-		"api_key_ref": "${EXAMPLE_PROVIDER_API_KEY}", "model": "qwen3.6-35b-fast"}
+		"api_key_ref": "${EXAMPLE_PROVIDER_API_KEY}", "model": "qwen3.6-35b-fast", "provider_key": "example-provider"}
 	if err := modelFlowNamedCustom(r, info); err != nil {
 		t.Fatal(err)
 	}
@@ -127,31 +127,12 @@ func TestCustomProviderModelSwitchEnvTemplateApiKeyIsPreservedInModelConfig(t *t
 		t.Fatalf("probe keys %v", *keys)
 	}
 	cfg := readConfig(t, h)
-	if cfg["model"].(map[string]any)["api_key"] != "${EXAMPLE_PROVIDER_API_KEY}" ||
-		cfg["custom_providers"].([]any)[0].(map[string]any)["api_key"] != "${EXAMPLE_PROVIDER_API_KEY}" {
-		t.Fatalf("config %v", cfg)
+	model := cfg["model"].(map[string]any)
+	if _, inline := model["api_key"]; inline || model["provider"] != "custom:example-provider" || model["default"] != "qwen3.6-35b-fast" {
+		t.Fatalf("model %v", model)
 	}
-	if strings.Contains(configText(t, h), "sk-live-example-provider") {
-		t.Fatal("secret written to config.yaml")
-	}
-}
-
-func TestCustomProviderModelSwitchKeyEnvCustomProviderPersistsReferenceNotSecret(t *testing.T) {
-	h, r := customSwitchHome(t, "model:\n  default: old-model\ncustom_providers:\n- name: Example Provider\n"+
-		"  base_url: https://api.example-provider.test/v1\n  key_env: EXAMPLE_PROVIDER_API_KEY\n  model: qwen3.6-35b-fast\n")
-	t.Setenv("EXAMPLE_PROVIDER_API_KEY", "sk-live-example-provider")
-	recordedFetch(t, []string{"qwen3.6-35b-fast"})
-	noCursesMenus(t)
-	scriptBuiltinsInput(t, "1")
-	info := map[string]any{"name": "Example Provider", "base_url": "https://api.example-provider.test/v1", "api_key": "",
-		"key_env": "EXAMPLE_PROVIDER_API_KEY", "model": "qwen3.6-35b-fast"}
-	if err := modelFlowNamedCustom(r, info); err != nil {
-		t.Fatal(err)
-	}
-	cfg := readConfig(t, h)
-	if cfg["model"].(map[string]any)["api_key"] != "${EXAMPLE_PROVIDER_API_KEY}" ||
-		cfg["custom_providers"].([]any)[0].(map[string]any)["key_env"] != "EXAMPLE_PROVIDER_API_KEY" {
-		t.Fatalf("config %v", cfg)
+	if entry := cfg["providers"].(map[string]any)["example-provider"].(map[string]any); entry["api_key"] != "${EXAMPLE_PROVIDER_API_KEY}" {
+		t.Fatalf("entry %v", entry)
 	}
 	if strings.Contains(configText(t, h), "sk-live-example-provider") {
 		t.Fatal("secret written to config.yaml")
@@ -159,8 +140,8 @@ func TestCustomProviderModelSwitchKeyEnvCustomProviderPersistsReferenceNotSecret
 }
 
 func TestCustomProviderModelSwitchEnvRefBaseUrlPreservesApiKeyRefThroughPicker(t *testing.T) {
-	h, r := customSwitchHome(t, "model:\n  default: old-model\n  provider: openrouter\ncustom_providers:\n- name: NeuralWatt\n"+
-		"  base_url: ${NEURALWATT_API_BASE}\n  api_key: ${NEURALWATT_API_KEY}\n  model: qwen3.6-35b-fast\n  models: []\n")
+	h, r := customSwitchHome(t, "model:\n  default: old-model\n  provider: openrouter\nproviders:\n  neuralwatt:\n    name: NeuralWatt\n"+
+		"    base_url: ${NEURALWATT_API_BASE}\n    api_key: ${NEURALWATT_API_KEY}\n    default_model: qwen3.6-35b-fast\n")
 	t.Setenv("NEURALWATT_API_BASE", "https://api.neuralwatt.com/v1")
 	t.Setenv("NEURALWATT_API_KEY", "sk-live-neuralwatt-secret")
 	swapFlowSeam(t, &pickerPromptProviderChoiceFn, func(_ io.Writer, labels []string, def int, title string) (int, bool) {
@@ -183,18 +164,18 @@ func TestCustomProviderModelSwitchEnvRefBaseUrlPreservesApiKeyRefThroughPicker(t
 	}
 	saved := configText(t, h)
 	cfg := readConfig(t, h)
-	if cfg["model"].(map[string]any)["api_key"] != "${NEURALWATT_API_KEY}" ||
-		cfg["custom_providers"].([]any)[0].(map[string]any)["api_key"] != "${NEURALWATT_API_KEY}" {
+	entry := cfg["providers"].(map[string]any)["neuralwatt"].(map[string]any)
+	if cfg["model"].(map[string]any)["provider"] != "custom:neuralwatt" || entry["api_key"] != "${NEURALWATT_API_KEY}" || entry["base_url"] != "${NEURALWATT_API_BASE}" {
 		t.Fatalf("config %v", cfg)
 	}
-	if strings.Contains(saved, "sk-live-neuralwatt-secret") {
-		t.Fatal("secret written to config.yaml")
+	if strings.Contains(saved, "sk-live-neuralwatt-secret") || strings.Contains(saved, "https://api.neuralwatt.com/v1") {
+		t.Fatalf("resolved values written to config.yaml: %s", saved)
 	}
 }
 
 func TestCustomProviderModelSwitchKeyEnvProvidersDictEntryDoesNotAddApiKey(t *testing.T) {
 	h, r := customSwitchHome(t, "providers:\n  crs-henkee:\n    name: CRS Henkee\n    base_url: http://127.0.0.1:3000/api/v1\n"+
-		"    key_env: ICEBATH_CRS_HENKEE_KEY\n    transport: anthropic_messages\n    model: claude-opus-4-7\n    default_model: claude-opus-4-7\ncustom_providers: []\n")
+		"    key_env: ICEBATH_CRS_HENKEE_KEY\n    api_mode: anthropic_messages\n    default_model: claude-opus-4-7\n")
 	t.Setenv("ICEBATH_CRS_HENKEE_KEY", "cr_live_secret_xyz")
 	keys := recordedFetch(t, []string{"claude-opus-4-7"})
 	noCursesMenus(t)
@@ -228,7 +209,7 @@ func TestCustomProviderModelSwitchPickerRecognizesCurrentProviderAliasWhenNameDi
 	for _, stored := range []string{"local-127.0.0.1:11434", "custom:local-ollama", "custom:local-127.0.0.1:11434"} {
 		t.Run(stored, func(t *testing.T) {
 			_, r := customSwitchHome(t, "model:\n  provider: "+stored+"\n  default: qwen3.5:9b\nproviders:\n  local-127.0.0.1:11434:\n"+
-				"    name: Local Ollama\n    base_url: http://127.0.0.1:11434/v1\n    default_model: qwen3.5:9b\n    models:\n      qwen3.5:9b: {}\ncustom_providers: []\n")
+				"    name: Local Ollama\n    base_url: http://127.0.0.1:11434/v1\n    default_model: qwen3.5:9b\n    models:\n      qwen3.5:9b: {}\n")
 			var labels []string
 			def := -1
 			swapFlowSeam(t, &pickerPromptProviderChoiceFn, func(_ io.Writer, choices []string, d int, title string) (int, bool) {
@@ -247,8 +228,8 @@ func TestCustomProviderModelSwitchPickerRecognizesCurrentProviderAliasWhenNameDi
 
 func TestCustomProviderModelSwitchKeyEnvProvidersDictPreservesExistingApiKey(t *testing.T) {
 	h, r := customSwitchHome(t, "providers:\n  crs-henkee:\n    name: CRS Henkee\n    base_url: http://127.0.0.1:3000/api/v1\n"+
-		"    api_key: ${ICEBATH_CRS_HENKEE_KEY}\n    key_env: ICEBATH_CRS_HENKEE_KEY\n    transport: anthropic_messages\n    model: claude-opus-4-7\n"+
-		"    default_model: claude-opus-4-7\ncustom_providers: []\n")
+		"    api_key: ${ICEBATH_CRS_HENKEE_KEY}\n    key_env: ICEBATH_CRS_HENKEE_KEY\n    api_mode: anthropic_messages\n"+
+		"    default_model: claude-opus-4-7\n")
 	t.Setenv("ICEBATH_CRS_HENKEE_KEY", "cr_live_secret_xyz")
 	recordedFetch(t, []string{"claude-opus-4-7"})
 	noCursesMenus(t)
@@ -286,12 +267,14 @@ func orderedModels(ids ...string) map[string]any {
 }
 
 func TestCustomProviderDiscoverModelsDiscoverFalseWithOnlySingularModelSkipsProbe(t *testing.T) {
-	_, r := customSwitchHome(t, "custom_providers: []\nmodel: old-model\n")
+	_, r := customSwitchHome(t, "model:\n  default: old-model\nproviders:\n  headered-ollama:\n    name: Headered Ollama\n    base_url: http://127.0.0.1:11434\n"+
+		"    api_key: no-key-required\n    discover_models: false\n    default_model: qwen3:8b\n")
 	keys := recordedFetch(t, nil)
 	ollama := countOllamaProbes(t)
 	noCursesMenus(t)
 	scriptBuiltinsInput(t, "1")
-	info := map[string]any{"name": "Headered Ollama", "base_url": "http://127.0.0.1:11434", "api_key": "no-key-required", "discover_models": false, "model": "qwen3:8b"}
+	info := map[string]any{"name": "Headered Ollama", "base_url": "http://127.0.0.1:11434", "api_key": "no-key-required", "discover_models": false, "model": "qwen3:8b",
+		"provider_key": "headered-ollama"}
 	if err := modelFlowNamedCustom(r, info); err != nil {
 		t.Fatal(err)
 	}
@@ -301,12 +284,13 @@ func TestCustomProviderDiscoverModelsDiscoverFalseWithOnlySingularModelSkipsProb
 }
 
 func TestCustomProviderDiscoverModelsDiscoverFalseSavesChoiceFromConfiguredList(t *testing.T) {
-	h, r := customSwitchHome(t, "custom_providers: []\nmodel: old-model\n")
+	h, r := customSwitchHome(t, "model:\n  default: old-model\nproviders:\n  baidu-coding:\n    name: Baidu Coding\n    base_url: https://qianfan.baidubce.com/v2/coding\n"+
+		"    api_key: sk-test\n    discover_models: false\n    default_model: kimi-k2.5\n    models:\n      kimi-k2.5: {}\n      glm-5: {}\n")
 	keys := recordedFetch(t, nil)
 	noCursesMenus(t)
 	scriptBuiltinsInput(t, "2")
 	info := map[string]any{"name": "Baidu Coding", "base_url": "https://qianfan.baidubce.com/v2/coding", "api_key": "sk-test",
-		"discover_models": false, "models": orderedModels("kimi-k2.5", "glm-5"), "model": "kimi-k2.5"}
+		"discover_models": false, "models": orderedModels("kimi-k2.5", "glm-5"), "model": "kimi-k2.5", "provider_key": "baidu-coding"}
 	if err := modelFlowNamedCustom(r, info); err != nil {
 		t.Fatal(err)
 	}
@@ -317,12 +301,13 @@ func TestCustomProviderDiscoverModelsDiscoverFalseSavesChoiceFromConfiguredList(
 }
 
 func TestCustomProviderDiscoverModelsProbeEmptyFallsBackToConfiguredList(t *testing.T) {
-	h, r := customSwitchHome(t, "custom_providers: []\nmodel: old-model\n")
+	h, r := customSwitchHome(t, "model:\n  default: old-model\nproviders:\n  my-gateway:\n    name: My Gateway\n    base_url: https://gw.example.com/v1\n"+
+		"    api_key: sk-test\n    default_model: fallback-a\n    models:\n      fallback-a: {}\n      fallback-b: {}\n")
 	recordedFetch(t, []string{})
 	noCursesMenus(t)
 	scriptBuiltinsInput(t, "2")
 	info := map[string]any{"name": "My Gateway", "base_url": "https://gw.example.com/v1", "api_key": "sk-test",
-		"models": orderedModels("fallback-a", "fallback-b"), "model": "fallback-a"}
+		"models": orderedModels("fallback-a", "fallback-b"), "model": "fallback-a", "provider_key": "my-gateway"}
 	if err := modelFlowNamedCustom(r, info); err != nil {
 		t.Fatal(err)
 	}
@@ -332,12 +317,13 @@ func TestCustomProviderDiscoverModelsProbeEmptyFallsBackToConfiguredList(t *test
 }
 
 func TestCustomProviderDiscoverModelsDiscoverFalseStringIsNormalised(t *testing.T) {
-	_, r := customSwitchHome(t, "custom_providers: []\nmodel: old-model\n")
+	_, r := customSwitchHome(t, "model:\n  default: old-model\nproviders:\n  baidu-coding:\n    name: Baidu Coding\n    base_url: https://qianfan.baidubce.com/v2/coding\n"+
+		"    api_key: sk-test\n    discover_models: 'false'\n    default_model: kimi-k2.5\n    models:\n      kimi-k2.5: {}\n      glm-5: {}\n")
 	keys := recordedFetch(t, nil)
 	noCursesMenus(t)
 	scriptBuiltinsInput(t, "1")
 	info := map[string]any{"name": "Baidu Coding", "base_url": "https://qianfan.baidubce.com/v2/coding", "api_key": "sk-test",
-		"discover_models": "false", "models": orderedModels("kimi-k2.5", "glm-5"), "model": "kimi-k2.5"}
+		"discover_models": "false", "models": orderedModels("kimi-k2.5", "glm-5"), "model": "kimi-k2.5", "provider_key": "baidu-coding"}
 	if err := modelFlowNamedCustom(r, info); err != nil {
 		t.Fatal(err)
 	}

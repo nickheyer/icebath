@@ -87,33 +87,48 @@ func TestXAIRefreshPureStatusCodes(t *testing.T) {
 	}
 }
 
-func TestXAIResolveRefreshesExpiringGrantAndQuarantinesDeadOne(t *testing.T) {
+// xAI login row a sign in stores, holding the given token pair
+func xaiLogin(accessToken, refreshToken string) map[string]any {
+	return map[string]any{"id": "xai-login", "label": "xai", "auth_type": "oauth", "priority": 0, "source": SourceManualDeviceCode,
+		"access_token": accessToken, "refresh_token": refreshToken, "base_url": DefaultXAIOAuthBaseURL}
+}
+
+// Replaces auth.json with one holding the xAI login row
+func writeXAILogin(t *testing.T, h string, login map[string]any) {
+	t.Helper()
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"xai-oauth": []any{login}}})
+}
+
+func TestXAIResolveRefreshesExpiringGrantAndMarksADeadOne(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	expiring := jwtWithClaims(map[string]any{"exp": time.Now().Unix() + 60})
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{
-		"tokens": map[string]any{"access_token": expiring, "refresh_token": "r0"}, "auth_mode": "oauth_pkce",
-		"discovery": map[string]any{"token_endpoint": "https://auth.x.ai/oauth2/token"}}}})
+	writeXAILogin(t, h, xaiLogin(jwtWithClaims(map[string]any{"exp": time.Now().Unix() + 60}), "r0"))
 	status, body := 200, `{"access_token":"fresh","refresh_token":"r1"}`
-	scriptClient(t, &xaiHTTPClientFn, func(*http.Request) (*http.Response, error) { return textResponse(status, body), nil })
+	scriptClient(t, &xaiHTTPClientFn, func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() == XAIOAuthDiscoveryURL {
+			return textResponse(200, `{"authorization_endpoint":"https://auth.x.ai/oauth2/auth","token_endpoint":"https://auth.x.ai/oauth2/token"}`), nil
+		}
+		return textResponse(status, body), nil
+	})
 	creds, err := resolveXAIOAuthRuntimeCredentials(env, false, true, 0)
-	if err != nil || creds["api_key"] != "fresh" || creds["source"] != "icebath-auth-store" || creds["base_url"] != DefaultXAIOAuthBaseURL {
+	if err != nil || creds["api_key"] != "fresh" || creds["source"] != "credential_pool" || creds["base_url"] != DefaultXAIOAuthBaseURL {
 		t.Fatalf("%v %v", creds, err)
 	}
-	state := readAuthStore(t, h)["providers"].(map[string]any)["xai-oauth"].(map[string]any)
-	if state["tokens"].(map[string]any)["refresh_token"] != "r1" || state["auth_mode"] != "oauth_pkce" {
-		t.Fatalf("%v", state)
+	if row := poolRows(t, h, "xai-oauth")[0]; row["access_token"] != "fresh" || row["refresh_token"] != "r1" {
+		t.Fatalf("%v", row)
 	}
 	status, body = 400, `{"error":"invalid_grant"}`
 	_, err = resolveXAIOAuthRuntimeCredentials(env, true, true, 0)
-	if !isTerminalXAIOAuthRefreshError(err) {
+	var ae *AuthError
+	if !errors.As(err, &ae) || ae.Code != "xai_refresh_failed" || !ae.ReloginRequired {
 		t.Fatalf("%v", err)
 	}
-	state = readAuthStore(t, h)["providers"].(map[string]any)["xai-oauth"].(map[string]any)
-	tokens := state["tokens"].(map[string]any)
-	marker, _ := state["last_auth_error"].(map[string]any)
-	if _, has := tokens["refresh_token"]; has || marker["code"] != "xai_refresh_failed" || marker["reason"] != "runtime_refresh_failure" {
-		t.Fatalf("%v", state)
+	row := poolRows(t, h, "xai-oauth")[0]
+	if row["last_status"] != StatusDead || row["last_error_reason"] != "xai_refresh_failed" || row["refresh_token"] != "r1" {
+		t.Fatalf("%v", row)
+	}
+	if _, err = resolveXAIOAuthRuntimeCredentials(env, false, true, 0); !errors.As(err, &ae) || ae.Code != "xai_auth_missing" {
+		t.Fatalf("a dead login still resolved: %v", err)
 	}
 }
 
@@ -169,12 +184,11 @@ func TestXAIDeviceCodeLoginSavesTokensAndSelectsProvider(t *testing.T) {
 	}
 }
 
-func TestResolveXAIOAuthRuntimeCredentialsExportedReadsStore(t *testing.T) {
+func TestResolveXAIOAuthRuntimeCredentialsExportedReadsTheLogin(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
 	token := jwtWithClaims(map[string]any{"exp": time.Now().Unix() + 3600})
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{
-		"tokens": map[string]any{"access_token": token, "refresh_token": "r0"}, "auth_mode": "oauth_pkce"}}})
+	writeXAILogin(t, h, xaiLogin(token, "r0"))
 	creds, err := ResolveXAIOAuthRuntimeCredentials(env, false, false, 0)
 	if err != nil || creds["api_key"] != token || creds["base_url"] != DefaultXAIOAuthBaseURL {
 		t.Fatalf("%v %v", creds, err)

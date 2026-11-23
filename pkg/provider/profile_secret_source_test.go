@@ -53,7 +53,7 @@ func TestToolRuntimeCredentialsResolveTheRequestedRoute(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("MY_RELAY_KEY", "relay-test-key")
 	writeConfig(t, h, map[string]any{
-		"providers": map[string]any{"my-relay": map[string]any{"base_url": "http://127.0.0.1:1/v1", "key_env": "MY_RELAY_KEY", "transport": "codex_responses"}},
+		"providers": map[string]any{"my-relay": map[string]any{"base_url": "http://127.0.0.1:1/v1", "key_env": "MY_RELAY_KEY", "api_mode": "codex_responses"}},
 	})
 	base, key, err := ToolRuntimeCredentials(context.Background(), &tools.Env{Home: h}, "custom:my-relay", "")
 	if err != nil {

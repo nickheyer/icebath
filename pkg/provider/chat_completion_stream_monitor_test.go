@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,12 +38,11 @@ func (o *anthEventsOverride) Events(resp *http.Response) anthEventSource { retur
 // Typed Anthropic client against a server that opens every stream, its events scripted per attempt, with a 0.3s stale window
 func scriptedAnthropicClient(t *testing.T, open func(resp *http.Response) anthEventSource) *anthropicClient {
 	t.Helper()
-	t.Setenv(home.EnvHome, t.TempDir())
-	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	srv := newAnthServer(t, func(w http.ResponseWriter, body map[string]any) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
 	})
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	c := srv.client(srv.route("https://example.invalid", "test-key"))
 	c.transport = &anthEventsOverride{anthTransport: c.transport, open: open}
 	return c
@@ -366,6 +364,7 @@ func TestAbandonJoinsTheWorkerForRelayTeardownLikeStop(t *testing.T) {
 	release := make(chan struct{})
 	h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
 	relayLLMInstallFake(t, "stream-abandon-profile")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	ctx := pyctx.With(context.Background(), pyctx.New())
 	host := tools.GetRelayRuntime(ctx, true, tools.CurrentRelayProfileKey(ctx))
 	if host == nil {
@@ -385,18 +384,18 @@ func TestAbandonJoinsTheWorkerForRelayTeardownLikeStop(t *testing.T) {
 }
 
 func TestWedgedWorkerUnderTheLifetimeCapIsAbandonedOnce(t *testing.T) {
-	for _, tc := range []struct{ name, stale, cap string }{{"stale_off", "inf", "1"}, {"cap_at_stale", "0.3", "0.3"}} {
+	for _, tc := range []struct {
+		name       string
+		stale, cap float64
+	}{{"stale_off", 0, 1}, {"cap_at_stale", 0.3, 0.3}} {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := captureLogs(t)
 			release := make(chan struct{})
 			defer close(release)
 			h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
-			setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": tc.stale})
-			if err := os.WriteFile(home.ConfigPath(os.Getenv(home.EnvHome)), []byte("agent:\n  stream_max_lifetime: "+tc.cap+"\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": tc.stale, "agent.stream_max_lifetime": tc.cap})
 			o := h.wait(h.start(context.Background()), 10*time.Second)
-			capped := tc.stale == "inf"
+			capped := tc.stale == 0
 			var cut *StreamLifetimeExceededError
 			if errors.As(o.err, &cut) != capped {
 				t.Fatalf("outcome %T %v", o.err, o.err)

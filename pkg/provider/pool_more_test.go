@@ -468,12 +468,12 @@ func deadEntry(provider, source string) PooledCredential {
 	return PooledCredential{ID: "e1", Provider: provider, AuthType: "oauth", AccessToken: "dead-access", RefreshToken: "dead-refresh", Label: "e1", Source: source, Priority: 0, Extra: map[string]any{}}
 }
 
-func TestTerminalRefreshQuarantineWarnsWithReauthHint(t *testing.T) {
+func TestTerminalRefreshMarksTheLoginDeadAndWarnsWithReauthHint(t *testing.T) {
 	for provider, code := range map[string]string{"openai-codex": "invalid_grant", "xai-oauth": "xai_refresh_failed"} {
 		t.Run(provider, func(t *testing.T) {
 			sink := &recordingHandler{}
 			pool := barePool(t, provider, sink)
-			entry := deadEntry(provider, "device_code")
+			entry := deadEntry(provider, SourceManualDeviceCode)
 			pool.mu.Lock()
 			pool.entries = []PooledCredential{entry}
 			pool.mu.Unlock()
@@ -485,8 +485,9 @@ func TestTerminalRefreshQuarantineWarnsWithReauthHint(t *testing.T) {
 			if len(warnings) != 1 || !strings.Contains(warnings[0], "icebath auth add "+provider) || !strings.Contains(warnings[0], "invalid_grant") {
 				t.Fatalf("one WARNING with the re-auth hint expected: %v", warnings)
 			}
-			if len(pool.Entries()) != 0 {
-				t.Fatal("the singleton seeded row must be quarantined")
+			rows := pool.Entries()
+			if len(rows) != 1 || rows[0].LastStatus != StatusDead || rows[0].LastErrorReason != code || rows[0].RefreshToken != "dead-refresh" {
+				t.Fatalf("the login must stay, marked dead: %+v", rows)
 			}
 		})
 	}
@@ -551,7 +552,7 @@ func TestSurvivingManualEntryIsMarkedDeadAfterTerminalRefresh(t *testing.T) {
 func TestTransientRefreshErrorStillBenched(t *testing.T) {
 	sink := &recordingHandler{}
 	pool := barePool(t, "xai-oauth", sink)
-	entry := deadEntry("xai-oauth", "device_code")
+	entry := deadEntry("xai-oauth", SourceManualDeviceCode)
 	pool.mu.Lock()
 	pool.entries = []PooledCredential{entry}
 	pool.mu.Unlock()
@@ -725,6 +726,7 @@ func persistFailureHome(t *testing.T) (string, PoolEnv) {
 	ResetSpentRotationsForTests()
 	t.Cleanup(ResetSpentRotationsForTests)
 	h := newTestHome(t)
+	writeConfigYAML(t, h, "model:\n  provider: anthropic\n")
 	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	env := testEnv(t, h)
 	anthropicTokenServer(t, &env, func(string) (map[string]any, int) {

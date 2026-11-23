@@ -191,8 +191,8 @@ func sortedIndex(list []string, s string) int {
 
 func TestDirectAliasCredentialLoading(t *testing.T) {
 	t.Run("test_api_key_and_key_env_are_loaded_from_config", func(t *testing.T) {
-		ctx, _ := switchAliasHome(t, "model:\n  default: gpt-4\n  provider: openrouter\nmodel_aliases:\n  theta:\n    model: theta-1\n"+
-			"    provider: custom\n    base_url: https://theta.example.com/v1\n    api_key: sk-literal\n    key_env: THETA_API_KEY\n")
+		ctx, _ := switchAliasHome(t, "model:\n  default: gpt-4\n  provider: openrouter\n  aliases:\n    theta:\n      model: theta-1\n"+
+			"      provider: custom\n      base_url: https://theta.example.com/v1\n      api_key: sk-literal\n      key_env: THETA_API_KEY\n")
 		a, _ := loadDirectAliases(ctx, nil).Get("theta")
 		if a.APIKey != "sk-literal" || a.KeyEnv != "THETA_API_KEY" {
 			t.Fatalf("%+v", a)
@@ -214,15 +214,8 @@ func TestDirectAliasCredentialLoading(t *testing.T) {
 			t.Fatalf("%+v", n)
 		}
 	})
-	t.Run("test_direct_alias_loaded_from_config", func(t *testing.T) {
-		ctx, _ := switchAliasHome(t, "model_aliases:\n  mymodel:\n    model: custom-model:latest\n    provider: custom\n    base_url: https://example.com/v1\n")
-		m, ok := loadDirectAliases(ctx, nil).Get("mymodel")
-		if !ok || m != (DirectAlias{Model: "custom-model:latest", Provider: "custom", BaseURL: "https://example.com/v1"}) {
-			t.Fatalf("%+v %v", m, ok)
-		}
-	})
 	t.Run("test_empty_model_string_skipped", func(t *testing.T) {
-		ctx, _ := switchAliasHome(t, "model_aliases:\n  empty:\n    model: \"\"\n    provider: custom\n  good:\n    model: real\n    provider: custom\n")
+		ctx, _ := switchAliasHome(t, "model:\n  aliases:\n    empty:\n      model: \"\"\n      provider: custom\n    good:\n      model: real\n      provider: custom\n")
 		loaded := loadDirectAliases(ctx, nil)
 		_, hasEmpty := loaded.Get("empty")
 		_, hasGood := loaded.Get("good")
@@ -319,8 +312,8 @@ func TestAliasCacheIsProfileScoped(t *testing.T) {
 		return DirectAliases
 	}
 	t.Run("test_second_profile_does_not_inherit_the_first_profiles_key", func(t *testing.T) {
-		a := profile("a", "model_aliases:\n  theta:\n    model: a-model\n    provider: custom\n    base_url: \"https://a.example.com/v1\"\n    api_key: \"sk-PROFILE-A-SECRET\"\n")
-		b := profile("b", "model_aliases:\n  theta:\n    model: b-model\n    provider: custom\n    base_url: \"https://b.example.com/v1\"\n    api_key: \"sk-PROFILE-B-SECRET\"\n")
+		a := profile("a", "model:\n  aliases:\n    theta:\n      model: a-model\n      provider: custom\n      base_url: \"https://a.example.com/v1\"\n      api_key: \"sk-PROFILE-A-SECRET\"\n")
+		b := profile("b", "model:\n  aliases:\n    theta:\n      model: b-model\n      provider: custom\n      base_url: \"https://b.example.com/v1\"\n      api_key: \"sk-PROFILE-B-SECRET\"\n")
 		if theta, _ := load(a).Get("theta"); theta.APIKey != "sk-PROFILE-A-SECRET" {
 			t.Fatal(theta)
 		}
@@ -329,8 +322,8 @@ func TestAliasCacheIsProfileScoped(t *testing.T) {
 		}
 	})
 	t.Run("test_alias_absent_from_the_second_profile_does_not_persist", func(t *testing.T) {
-		a2 := profile("a2", "model_aliases:\n  only-in-a:\n    model: x\n    provider: custom\n    base_url: \"https://a.example.com/v1\"\n")
-		b2 := profile("b2", "model_aliases:\n  only-in-b:\n    model: y\n    provider: custom\n    base_url: \"https://b.example.com/v1\"\n")
+		a2 := profile("a2", "model:\n  aliases:\n    only-in-a:\n      model: x\n      provider: custom\n      base_url: \"https://a.example.com/v1\"\n")
+		b2 := profile("b2", "model:\n  aliases:\n    only-in-b:\n      model: y\n      provider: custom\n      base_url: \"https://b.example.com/v1\"\n")
 		if _, ok := load(a2).Get("only-in-a"); !ok {
 			t.Fatal("only-in-a missing")
 		}
@@ -343,18 +336,18 @@ func TestAliasCacheIsProfileScoped(t *testing.T) {
 		}
 	})
 	t.Run("test_key_rotation_in_place_is_picked_up", func(t *testing.T) {
-		rot := profile("rot", "model_aliases:\n  theta:\n    model: m\n    provider: custom\n    base_url: \"https://h.example.com/v1\"\n    api_key: \"sk-BEFORE-ROTATION\"\n")
+		rot := profile("rot", "model:\n  aliases:\n    theta:\n      model: m\n      provider: custom\n      base_url: \"https://h.example.com/v1\"\n      api_key: \"sk-BEFORE-ROTATION\"\n")
 		if theta, _ := load(rot).Get("theta"); theta.APIKey != "sk-BEFORE-ROTATION" {
 			t.Fatal(theta)
 		}
-		writeConfigYAML(t, home.Dir(rot), "model_aliases:\n  theta:\n    model: m\n    provider: custom\n    base_url: \"https://h.example.com/v1\"\n    api_key: \"sk-AFTER-ROTATION-XYZ\"\n")
+		writeConfigYAML(t, home.Dir(rot), "model:\n  aliases:\n    theta:\n      model: m\n      provider: custom\n      base_url: \"https://h.example.com/v1\"\n      api_key: \"sk-AFTER-ROTATION-XYZ\"\n")
 		if theta, _ := load(rot).Get("theta"); theta.APIKey != "sk-AFTER-ROTATION-XYZ" {
 			t.Fatal(theta)
 		}
 	})
 	t.Run("test_cache_is_still_mutated_in_place", func(t *testing.T) {
 		before := DirectAliases
-		load(profile("inplace", "model_aliases:\n  theta:\n    model: m\n    provider: custom\n    base_url: \"https://h.example.com/v1\"\n"))
+		load(profile("inplace", "model:\n  aliases:\n    theta:\n      model: m\n      provider: custom\n      base_url: \"https://h.example.com/v1\"\n"))
 		if DirectAliases != before {
 			t.Fatal("alias table rebound")
 		}
@@ -482,13 +475,12 @@ func TestAliasLaunchConfigSnapshotCarriesAliasEndpointAndKey(t *testing.T) {
 	ctx, _ := switchAliasHome(t, "")
 	t.Setenv("ALIAS_HOST_KEY", "sk-alias-env-secret")
 	cfg := map[string]any{
-		"model":     map[string]any{"provider": "custom", "base_url": "http://127.0.0.1:1/v1", "default": "model-main"},
-		"providers": map[string]any{"named-host": map[string]any{"base_url": "http://127.0.0.1:2/v1", "model": "model-named"}},
-		"model_aliases": map[string]any{
+		"model": map[string]any{"provider": "custom", "base_url": "http://127.0.0.1:1/v1", "default": "model-main", "aliases": map[string]any{
 			"alias-host": map[string]any{"model": "model-alias", "provider": "custom", "base_url": "http://127.0.0.1:3/v1", "api_key": "sk-alias-literal"},
 			"alias-env":  map[string]any{"model": "model-alias-env", "provider": "custom", "base_url": "http://127.0.0.1:3/v1", "key_env": "ALIAS_HOST_KEY"},
 			"fast":       map[string]any{"model": "model-alias", "provider": "custom", "base_url": "http://127.0.0.1:3/v1"},
-		},
+		}},
+		"providers": map[string]any{"named-host": map[string]any{"base_url": "http://127.0.0.1:2/v1", "default_model": "model-named"}},
 	}
 	opts := StartupRouteOptions{UserProviders: cfg["providers"].(map[string]any), AliasConfig: cfg}
 	for raw, want := range map[string]StartupModelRoute{

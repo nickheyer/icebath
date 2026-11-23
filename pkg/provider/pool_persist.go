@@ -867,13 +867,7 @@ func seedCustomPool(env PoolEnv, poolKey string, entries *[]PooledCredential) (b
 	if modelCfg, ok := cfg["model"].(map[string]any); ok {
 		modelProvider := strings.ToLower(strings.TrimSpace(anyString(modelCfg["provider"])))
 		modelBaseURL := normPoolURL(modelCfg["base_url"])
-		modelAPIKey := ""
-		for _, k := range []string{"api_key", "api"} {
-			if v, ok := modelCfg[k].(string); ok && strings.TrimSpace(v) != "" {
-				modelAPIKey = strings.TrimSpace(v)
-				break
-			}
-		}
+		modelAPIKey := strings.TrimSpace(anyString(modelCfg["api_key"]))
 		if modelProvider == "custom" && modelBaseURL != "" && modelAPIKey != "" {
 			for _, key := range customProviderPoolKeyCandidates(modelBaseURL, "", cfg) {
 				if strings.ToLower(strings.TrimSpace(key)) == poolKey {

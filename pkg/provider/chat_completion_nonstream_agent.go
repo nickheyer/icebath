@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // CodexWatchdogState is the watchdog clock one codex request shares with the codex stream its worker runs
@@ -183,11 +182,6 @@ func agentHighEffortSilenceFloor(cfg map[string]any) float64 {
 	return HighEffortSilenceFloorSeconds
 }
 
-// Local provider stale ceiling from agent.local_stream_stale_timeout
-func localStreamStaleTimeoutDefault(ctx context.Context) float64 {
-	return settings.AgentLocalStreamStaleTimeout.Get(ctx).Seconds()
-}
-
 var resolveAgentNonstreamWatchdogs = resolveAgentNonstreamWatchdogsOf
 
 // Stale timeout of the agent plus the codex TTFB, idle and first progress watchdogs of the request
@@ -241,8 +235,8 @@ func resolveAgentNonstreamWatchdogsOf(ctx context.Context, agent ChatCompletionA
 			ttfb = ttfbCap
 		}
 	case !ttfbExplicit && local:
-		if localCeiling := localStreamStaleTimeoutDefault(ctx); localCeiling > ttfb {
-			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", baseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
+		if localCeiling := localStreamStaleTimeout(ctx); localCeiling > ttfb {
+			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %s (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", baseURL, ttfb, windowText(localCeiling), CodexTTFBTimeoutEnv))
 			ttfb = localCeiling
 		}
 	}

@@ -9,7 +9,7 @@ func TestLoadRuntimePoolWithReadsResolvedKeyThroughLoad(t *testing.T) {
 	env := testEnv(t, h)
 	env.Config = func() map[string]any {
 		return map[string]any{"providers": map[string]any{"gemini-no-filter": map[string]any{
-			"name": "Gemini Display", "api": "https://generativelanguage.googleapis.com/v1beta"}}}
+			"name": "Gemini Display", "base_url": "https://generativelanguage.googleapis.com/v1beta"}}}
 	}
 	var keys []string
 	want := NewPool(env, "openrouter", nil)
@@ -17,7 +17,7 @@ func TestLoadRuntimePoolWithReadsResolvedKeyThroughLoad(t *testing.T) {
 	if got := LoadRuntimePoolWith(env, load, "openrouter", "https://openrouter.ai/api/v1", "", nil); got != want {
 		t.Fatalf("built-in pool %v", got)
 	}
-	owner := map[string]any{"name": "Gemini Display", "provider_key": "gemini-no-filter", "api": "https://generativelanguage.googleapis.com/v1beta"}
+	owner := map[string]any{"name": "Gemini Display", "provider_key": "gemini-no-filter", "base_url": "https://generativelanguage.googleapis.com/v1beta"}
 	snapshot := map[string]any{SnapshotOwnerKey: owner}
 	if got := LoadRuntimePoolWith(env, load, "custom", "https://generativelanguage.googleapis.com/v1beta", "custom:gemini-no-filter", snapshot); got != want {
 		t.Fatalf("custom pool %v", got)

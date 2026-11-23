@@ -19,10 +19,6 @@ func streamBudgetHome(t *testing.T, configBody string) {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	for _, name := range []string{"ICEBATH_API_CALL_STALE_TIMEOUT"} {
-		t.Setenv(name, "")
-		os.Unsetenv(name)
-	}
 	if configBody == "" {
 		configBody = "{}\n"
 	}

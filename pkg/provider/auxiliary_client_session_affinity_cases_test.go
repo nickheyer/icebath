@@ -58,7 +58,7 @@ func TestRotationSurvivesAtSessionOriginAndForIndependentAuxPool(t *testing.T) {
 func TestNamedProviderDefaultsComposeUnderTaskOverrides(t *testing.T) {
 	auxIsolateClientCache(t)
 	t.Setenv("NAMED_KEY", "named-key")
-	ctx := auxMainTestHome(t, "model:\n  provider: openai\n  default: gpt-5.4\nproviders:\n  openai:\n    api: https://named.example/v1\n    key_env: NAMED_KEY\n")
+	ctx := auxMainTestHome(t, "model:\n  provider: openai\n  default: gpt-5.4\nproviders:\n  openai:\n    base_url: https://named.example/v1\n    key_env: NAMED_KEY\n")
 	route := func(explicitBase string, explicitKey any) [2]string {
 		t.Helper()
 		auxClientCacheMu.Lock()

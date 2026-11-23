@@ -153,9 +153,9 @@ func TestAddCommandAddPreservesPrimaryWhenPickerChangesIt(t *testing.T) {
 	h, ctx := fallbackTestHome(t)
 	primary := map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-6", "base_url": "https://api.anthropic.com", "api_mode": "anthropic_messages"}
 	writeConfig(t, h, map[string]any{"model": primary})
-	custom := []any{map[string]any{"name": "Picker-created endpoint", "base_url": "https://picker.example/v1", "model": "picker-model"}}
+	custom := map[string]any{"picker-created-endpoint": map[string]any{"name": "Picker-created endpoint", "base_url": "https://picker.example/v1", "default_model": "picker-model"}}
 	fallbackPickerDouble(t, fallbackPickerWriting(t, h, map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6",
-		"base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}, map[string]any{"custom_providers": custom}))
+		"base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}, map[string]any{"providers": custom}))
 	runFallback(t, ctx, h, "add")
 	cfg := readConfig(t, h)
 	model := cfg["model"].(map[string]any)
@@ -166,8 +166,8 @@ func TestAddCommandAddPreservesPrimaryWhenPickerChangesIt(t *testing.T) {
 	if len(chain) != 1 || chain[0].(map[string]any)["provider"] != "openrouter" {
 		t.Fatalf("chain %v", chain)
 	}
-	if !reflect.DeepEqual(cfg["custom_providers"], custom) {
-		t.Fatalf("custom providers %v", cfg["custom_providers"])
+	if !reflect.DeepEqual(cfg["providers"], custom) {
+		t.Fatalf("providers %v", cfg["providers"])
 	}
 }
 

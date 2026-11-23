@@ -28,6 +28,9 @@ func setSettingsForTest(t *testing.T, values map[string]any) {
 		h = t.TempDir()
 		t.Setenv(home.EnvHome, h)
 	}
+	if err := os.MkdirAll(h, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(h, "config.yaml")
 	doc := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {

@@ -113,15 +113,9 @@ func Set(ctx context.Context, key string, value any, scope Scope) (Change, error
 	if value == nil {
 		return Reset(ctx, key, scope)
 	}
-	m := e.Info()
-	coerced, err := e.Coerce(value)
+	coerced, err := coercePart(e, value)
 	if err != nil {
 		return Change{}, err
-	}
-	if m.Validate != nil && coerced != nil {
-		if err := m.Validate(coerced); err != nil {
-			return Change{}, &ValueError{Key: m.Key, Reason: err.Error()}
-		}
 	}
 	return write(ctx, e, coerced, scope, false)
 }
@@ -189,7 +183,10 @@ func sessionWrites(ctx context.Context, e Entry, value any, reset bool) (map[str
 	var drop []string
 	if child, isChild := e.(*mapChild); isChild {
 		parent := child.parent.Key
-		entries := config.Clone(resolveTyped(ctx, child.parent)).(map[string]any)
+		entries, _ := config.Clone(config.AsMap(resolveEntry(ctx, child.parent).Value)).(map[string]any)
+		if entries == nil {
+			entries = map[string]any{}
+		}
 		name := strings.TrimPrefix(m.Key, parent+".")
 		if reset {
 			config.Tree(entries).Unset(name)

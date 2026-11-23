@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Streaming request on the agent wire firing the delta callbacks, the non streaming response shape on return
@@ -301,7 +300,7 @@ func (c *streamingCall) streamTimeouts() (float64, float64, float64) {
 	if cfg, ok := GetProviderRequestTimeout(c.ctx, c.agent.Provider(), c.agent.Model()); ok {
 		return cfg, cfg, math.Min(cfg, 60)
 	}
-	base := settings.AgentApiTimeout.Get(c.ctx).Seconds()
+	base := APITimeoutSeconds(c.ctx)
 	read := envFloat("ICEBATH_STREAM_READ_TIMEOUT", 120)
 	c.mu.Lock()
 	stale := c.staleTimeout
@@ -902,22 +901,22 @@ func (c *streamingCall) forgetInvisibleDeltas(err error) bool {
 	return toolInFlight
 }
 
-// Per provider stale_timeout_seconds config, else agent.stream_stale_timeout
-func streamingConfiguredStaleBase(ctx context.Context, agent ChatCompletionAgent) float64 {
-	if cfg, ok := GetProviderStaleTimeout(ctx, agent.Provider(), agent.Model()); ok {
-		return cfg
+// Whether the provider's stale_timeout_seconds or agent.stream_stale_timeout sets the stale patience of the agent's route
+func streamingStaleConfigured(ctx context.Context, agent ChatCompletionAgent) bool {
+	if _, ok := GetProviderStaleTimeout(ctx, agent.Provider(), agent.Model()); ok {
+		return true
 	}
-	base, _ := streamStaleBase(ctx)
-	return base
+	_, set := streamStaleBase(ctx)
+	return set
 }
 
 // Picks the stale timeout, finite long patience for local endpoints and context scaled for cloud ones
 func (c *streamingCall) resolveStaleTimeout() {
 	baseURL := c.agent.BaseURL()
 	timeout := 0.0
-	if streamingConfiguredStaleBase(c.ctx, c.agent) == 180 && baseURL != "" && IsLocalEndpoint(baseURL) {
-		timeout = localStreamStaleTimeoutDefault(c.ctx)
-		pkgLog().Debug(fmt.Sprintf("Local provider detected (%s) — stale stream timeout set to %.0fs", baseURL, timeout))
+	if !streamingStaleConfigured(c.ctx, c.agent) && baseURL != "" && IsLocalEndpoint(baseURL) {
+		timeout = localStreamStaleTimeout(c.ctx)
+		pkgLog().Debug(fmt.Sprintf("Local provider detected (%s) — stale stream timeout set to %s", baseURL, windowText(timeout)))
 	} else {
 		timeout = cloudStaleTimeoutForAgent(c.ctx, c.agent, c.agent.Provider(), c.agent.Model(), c.apiKwargs)
 	}

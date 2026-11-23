@@ -281,7 +281,7 @@ func dumpConfigOverrides(cfg config.Tree) [][2]string {
 }
 
 // Fallback entry fields useful to support
-var dumpFallbackDebugFields = []string{"provider", "model", "base_url", "api_mode", "key_env", "api_key_env", "max_tokens"}
+var dumpFallbackDebugFields = []string{"provider", "model", "base_url", "api_mode", "key_env", "max_tokens"}
 
 // Route metadata of fallback entries, an inline key shown only as a credential source status
 func dumpFallbackDebugProjection(value any) []any {

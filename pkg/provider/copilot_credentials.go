@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -65,8 +64,6 @@ var (
 		"      Use the `copilot` provider with a Copilot subscription token (`icebath",
 		"      setup` → GitHub Copilot), or pick any other provider.",
 	}
-	copilotDeviceTerminalErrors = map[string]string{"expired_token": "  ✗ Device code expired. Please try again.",
-		"access_denied": "  ✗ Authorization was denied."}
 	copilotProxyEpRe = pyre.MustCompile(`(?:^|;)\s*proxy-ep=([^;\s]+)`)
 )
 
@@ -353,106 +350,6 @@ func resolveCopilotToken(ctx context.Context) (string, string, error) {
 		pkgLog().Warn(fmt.Sprintf("Token from %s is not supported: %s", envVar, msg))
 	}
 	return "", "", nil
-}
-
-// Python str of a JSON value or the default when the key is missing
-func cpStrOr(v any, key, def string) string {
-	val, ok := cpGet(v, key)
-	if !ok {
-		return def
-	}
-	return pyStr(val)
-}
-
-// Device code poll interval of a reply, five when absent and at least one
-func copilotStartInterval(data any) (float64, error) {
-	raw, ok := cpGet(data, "interval")
-	if !ok {
-		return copilotDeviceCodePollInterval, nil
-	}
-	f, isNum := cpFloat(raw)
-	if _, isStr := raw.(string); isStr || !isNum {
-		return 0, fmt.Errorf("the device code interval is %s, expected a number", errchain.Kind(raw))
-	}
-	return math.Max(f, 1), nil
-}
-
-// GitHub OAuth device code flow printing to out, empty on cancel, denial, expiry or timeout
-func copilotDeviceCodeLogin(ctx context.Context, out io.Writer, host string, timeout time.Duration) (string, error) {
-	domain := strings.TrimRight(host, "/")
-	deviceData, err := copilotPostForm(ctx, "https://"+domain+"/login/device/code",
-		[][2]string{{"client_id", copilotOAuthClientID}, {"scope", "read:user"}}, 15*time.Second)
-	var notDict *copilotNotDictError
-	if errors.As(err, &notDict) {
-		return "", err
-	}
-	if err != nil && ctx.Err() != nil {
-		return "", ctx.Err()
-	}
-	if err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to initiate device authorization: %v", err))
-		fmt.Fprintf(out, "  ✗ Failed to start device authorization: %v\n", err)
-		return "", nil
-	}
-	verificationURI := cpStrOr(deviceData, "verification_uri", "https://github.com/login/device")
-	userCode := cpStrOr(deviceData, "user_code", "")
-	deviceCode := cpStrOr(deviceData, "device_code", "")
-	interval, err := copilotStartInterval(deviceData)
-	if err != nil {
-		return "", err
-	}
-	if !cpTruthy(cpGetOr(deviceData, "device_code", "")) || !cpTruthy(cpGetOr(deviceData, "user_code", "")) {
-		fmt.Fprintln(out, "  ✗ GitHub did not return a device code.")
-		return "", nil
-	}
-	fmt.Fprintf(out, "\n  Open this URL in your browser: %s\n  Enter this code: %s\n\n", verificationURI, userCode)
-	fmt.Fprint(out, "  Waiting for authorization...")
-	pollFields := [][2]string{{"client_id", copilotOAuthClientID}, {"device_code", deviceCode},
-		{"grant_type", "urn:ietf:params:oauth:grant-type:device_code"}}
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(time.Duration((interval + copilotDeviceCodePollSafetyMargin) * float64(time.Second))):
-		}
-		result, err := copilotPostForm(ctx, "https://"+domain+"/login/oauth/access_token", pollFields, 10*time.Second)
-		if err != nil {
-			var notDict *copilotNotDictError
-			if errors.As(err, &notDict) {
-				return "", err
-			}
-			fmt.Fprint(out, ".")
-			continue
-		}
-		if token := cpGetOr(result, "access_token", nil); cpTruthy(token) {
-			fmt.Fprintln(out, " ✓")
-			return pyStr(token), nil
-		}
-		errValue := cpGetOr(result, "error", "")
-		errText, _ := errValue.(string)
-		if errText == "slow_down" {
-			if n, ok := cpPositiveNumber(cpGetOr(result, "interval", nil)); ok {
-				interval = math.Trunc(n)
-			} else {
-				interval += 5
-			}
-		}
-		if errText == "authorization_pending" || errText == "slow_down" {
-			fmt.Fprint(out, ".")
-			continue
-		}
-		if cpTruthy(errValue) {
-			msg, known := copilotDeviceTerminalErrors[errText]
-			if !known {
-				msg = "  ✗ Authorization failed: " + pyStr(errValue)
-			}
-			fmt.Fprintln(out, "\n"+msg)
-			return "", nil
-		}
-	}
-	fmt.Fprintln(out, "\n  ✗ Timed out waiting for authorization.")
-	return "", nil
 }
 
 // First sixteen hex digits of the token's SHA-256, the cache key that never stores the token

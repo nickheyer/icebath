@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -71,11 +70,9 @@ func TestSuppressedEnvKeyDoesNotOverrideOauth(t *testing.T) {
 			h := t.TempDir()
 			t.Setenv("ICEBATH_HOME", h)
 			store, err := json.Marshal(map[string]any{
-				"version": 2,
-				"providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{
-					"access_token": "oauth-live-token", "refresh_token": "r",
-					"expires_at": time.Now().UnixMilli() + 3_600_000}}},
-				"credential_pool":    map[string]any{},
+				"version":            2,
+				"providers":          map[string]any{},
+				"credential_pool":    map[string]any{"xai-oauth": []any{xaiLogin("oauth-live-token", "r")}},
 				"suppressed_sources": tc.suppressed,
 			})
 			if err != nil {

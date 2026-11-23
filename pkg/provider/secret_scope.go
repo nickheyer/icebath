@@ -171,9 +171,10 @@ func (e *UnscopedSecretError) Error() string {
 		"report it with `icebath debug share`."
 }
 
+// Process wide env names a profile bound call still reads from the environment
 var globalEnvNames = map[string]bool{
 	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true,
-	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
+	"ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
 	"PATH": true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
 	"ICEBATH_KANBAN_DB": true, "ICEBATH_KANBAN_WORKSPACES_ROOT": true, "ICEBATH_KANBAN_BOARD": true,
@@ -183,6 +184,7 @@ var globalEnvNames = map[string]bool{
 	"GATEWAY_RELAY_INSTANCE_ID": true, "GATEWAY_RELAY_WAKE_URL": true, "GATEWAY_RELAY_DISPLAY_NAME": true,
 }
 
+// Prefixes of process wide env names
 var globalEnvNamePrefixes = []string{"ICEBATH_KANBAN_", "ICEBATH_TELEGRAM_", "TERMINAL_"}
 
 // IsGlobalEnv is true for process deployment settings that are never profile secrets

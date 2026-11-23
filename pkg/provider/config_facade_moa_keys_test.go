@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-const unknownKeyNotice = "not a recognized config key"
+const unknownKeyNotice = "is not a setting icebath knows"
 
 // Home with an empty .env and the given JSON config, facade output captured
 func moaKeysHome(t *testing.T, data map[string]any) (string, *bytes.Buffer, *bytes.Buffer) {
@@ -132,15 +132,36 @@ func TestMoAAggregatorSlotFieldsSetWithoutNotice(t *testing.T) {
 	}
 }
 
-func TestMoANonFieldPathsStillNotice(t *testing.T) {
+func TestMoANonFieldPathsAreRefused(t *testing.T) {
 	for _, key := range []string{
 		"moa.presets.default.fanoutt", "moa.presets.review.reference_timeot", `moa.presets.review\.v2.fanoutt`,
 		"moa.presets.review.unexpected.fanout", "moa.presets.review.fanout.unexpected", "moa.presets. review .fanout",
 		"moa.presets.review", "moa.presets.review.aggregator.bogus", "moa.presets.review.enabled.x", "moa.presets.review.fanout.n",
 	} {
 		h, out, errOut := moaKeysHome(t, map[string]any{})
-		if !setNotice(t, h, key, "5", out, errOut) {
-			t.Fatalf("%s set without the notice: %q", key, out)
+		path := filepath.Join(h, "config.yaml")
+		before, _ := os.ReadFile(path)
+		err := config.SetConfigValue(context.Background(), h, key, "5", moaCommandSources())
+		after, _ := os.ReadFile(path)
+		if err == nil || !bytes.Equal(before, after) {
+			t.Fatalf("%s was written: err %v out %q %q", key, err, out, errOut)
+		}
+	}
+}
+
+func TestMoAPresetFieldValuesAreChecked(t *testing.T) {
+	for _, c := range [][2]string{
+		{"moa.presets.review.fanout", "sometimes"}, {"moa.presets.review.fanout", "every_n:1"}, {"moa.presets.review.reference_timeout", "soon"},
+		{"moa.presets.review.degraded_reference_policy", "quiet"}, {"moa.presets.review.aggregator.reasoning_effort", "enormous"},
+		{"moa.presets.review.reference_temperature", "9"}, {"moa.presets.review.enabled", "perhaps"},
+	} {
+		h, out, errOut := moaKeysHome(t, map[string]any{})
+		path := filepath.Join(h, "config.yaml")
+		before, _ := os.ReadFile(path)
+		err := config.SetConfigValue(context.Background(), h, c[0], c[1], moaCommandSources())
+		after, _ := os.ReadFile(path)
+		if err == nil || !bytes.Equal(before, after) {
+			t.Fatalf("%s = %s was written: err %v out %q %q", c[0], c[1], err, out, errOut)
 		}
 	}
 }

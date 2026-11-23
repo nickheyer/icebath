@@ -153,64 +153,64 @@ func customProviderAPIKeyConfigValue(providerInfo map[string]any, resolvedAPIKey
 	return pystr.Strip(resolvedAPIKey)
 }
 
-// The value persisted for a custom provider URL, the reference when one exists
-func customProviderBaseURLConfigValue(providerInfo map[string]any, resolvedBaseURL string) string {
-	if ref := pystr.Strip(pyOrStr(providerInfo["base_url_ref"])); ref != "" {
-		return ref
-	}
-	return pystr.Strip(resolvedBaseURL)
-}
-
 // Saves a custom endpoint as a providers entry through the settings writer, updating the entry that already serves the base URL
 func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextLength int, name, apiMode, keyEnv string) error {
 	ctx := home.WithOverride(r.ctx(), r.home())
 	existing := settings.Providers.Get(ctx)
 	key := ""
-	entry := map[string]any{}
+	var held map[string]any
 	for _, k := range sortedKeys(existing) {
-		held, ok := existing[k].(map[string]any)
-		if ok && strings.TrimRight(pyOrStr(held["base_url"]), "/") == strings.TrimRight(baseURL, "/") {
-			key, entry = k, held
+		entry, ok := existing[k].(map[string]any)
+		if ok && strings.TrimRight(pyOrStr(entry["base_url"]), "/") == strings.TrimRight(baseURL, "/") {
+			key, held = k, entry
 			break
 		}
 	}
-	created := key == ""
-	if created {
-		if name == "" {
-			name = autoProviderName(baseURL)
+	if key != "" {
+		var set []config.KeyValue
+		var unset []string
+		if model != "" {
+			set = append(set, config.KeyValue{Key: "default_model", Value: model})
+			if contextLength != 0 {
+				set = append(set, modelContextLengthField(held["models"], model, contextLength))
+			}
 		}
-		key = strings.TrimPrefix(CustomProviderSlug(name, ""), "custom:")
-		entry = map[string]any{"name": name, "base_url": baseURL}
-		if keyEnv == "" && apiKey != "" {
-			entry["api_key"] = apiKey
+		if apiMode != "" {
+			set = append(set, config.KeyValue{Key: "api_mode", Value: apiMode})
+		} else if _, has := held["api_mode"]; has {
+			unset = append(unset, "api_mode")
 		}
+		if keyEnv != "" {
+			set = append(set, config.KeyValue{Key: "key_env", Value: keyEnv})
+			if _, has := held["api_key"]; has {
+				unset = append(unset, "api_key")
+			}
+		}
+		return setProviderEntryFields(ctx, key, set, unset...)
+	}
+	if name == "" {
+		name = autoProviderName(baseURL)
+	}
+	key = strings.TrimPrefix(CustomProviderSlug(name, ""), "custom:")
+	entry := map[string]any{"name": name, "base_url": baseURL}
+	if keyEnv != "" {
+		entry["key_env"] = keyEnv
+	} else if apiKey != "" {
+		entry["api_key"] = apiKey
 	}
 	if model != "" {
 		entry["default_model"] = model
 		if contextLength != 0 {
-			models, _ := entry["models"].(map[string]any)
-			if models == nil {
-				models = map[string]any{}
-			}
-			models[model] = contextLengthEntry(contextLength)
-			entry["models"] = models
+			entry["models"] = map[string]any{model: contextLengthEntry(contextLength)}
 		}
 	}
 	if apiMode != "" {
 		entry["api_mode"] = apiMode
-	} else {
-		delete(entry, "api_mode")
-	}
-	if keyEnv != "" {
-		entry["key_env"] = keyEnv
-		delete(entry, "api_key")
 	}
 	if _, err := settings.Set(ctx, settings.Providers.EntryKey(key), entry, settings.Global); err != nil {
 		return err
 	}
-	if created {
-		fmt.Fprintf(r.Out, "  💾 Saved to providers as \"%s\" (edit in config.yaml)\n", key)
-	}
+	fmt.Fprintf(r.Out, "  💾 Saved to providers as \"%s\" (edit in config.yaml)\n", key)
 	return nil
 }
 
@@ -225,6 +225,34 @@ func pyStrReceiver(v any, setting string) (string, error) {
 // The models entry of one context length
 func contextLengthEntry(contextLength int) map[string]any {
 	return map[string]any{"context_length": contextLength}
+}
+
+// Field write recording one model's context length in a providers entry: beside the model's other settings in a models mapping, a models list becoming the mapping per model settings live in with every listed model kept
+func modelContextLengthField(models any, model string, contextLength int) config.KeyValue {
+	field := "models." + strings.ReplaceAll(model, ".", `\.`)
+	keyed, isMapping := models.(map[string]any)
+	switch {
+	case models == nil:
+		return config.KeyValue{Key: field, Value: contextLengthEntry(contextLength)}
+	case !isMapping:
+		all := normalizeProviderModels(models)
+		for _, id := range declaredModelIDs(models) {
+			if _, listed := all[id]; !listed {
+				all[id] = map[string]any{}
+			}
+		}
+		modelCfg, _ := all[model].(map[string]any)
+		if modelCfg == nil {
+			modelCfg = map[string]any{}
+		}
+		modelCfg["context_length"] = contextLength
+		all[model] = modelCfg
+		return config.KeyValue{Key: "models", Value: all}
+	}
+	if _, hasSettings := keyed[model].(map[string]any); hasSettings {
+		return config.KeyValue{Key: field + ".context_length", Value: contextLength}
+	}
+	return config.KeyValue{Key: field, Value: contextLengthEntry(contextLength)}
 }
 
 // Token count for display, 128000 as 128K and 1048576 as 1M
@@ -535,13 +563,13 @@ func modelFlowCustom(r *ModelFlowRun) error {
 	return nil
 }
 
-// Model ids from a providers entry models mapping or list, marker keys skipped
+// Model ids from a providers entry models mapping or list
 func configuredModelIDs(cfgModels any) []string {
 	out := []string{}
 	switch models := cfgModels.(type) {
 	case map[string]any:
 		for _, m := range config.MappingKeys(models) {
-			if m == "__explicit_model_allowlist__" || m == "__discovered_model_catalog__" || pystr.Strip(m) == "" {
+			if pystr.Strip(m) == "" {
 				continue
 			}
 			out = append(out, m)
@@ -739,6 +767,9 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 	keyEnv := anyString(providerInfo["key_env"])
 	savedModel := anyString(providerInfo["model"])
 	providerKey := strings.TrimSpace(anyString(providerInfo["provider_key"]))
+	if providerKey == "" {
+		return fmt.Errorf("the provider %s has no entry under providers in config.yaml", name)
+	}
 	if apiKey == "" && keyEnv != "" {
 		apiKey = GetSecretStr(r.ctx(), keyEnv, "")
 	}
@@ -810,17 +841,9 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 		return err
 	}
 	delete(model, "key_env")
-	if providerKey != "" {
-		pyDictSet(model, "provider", CustomProviderSlug(name, providerKey))
-		delete(model, "base_url")
-		delete(model, "api_key")
-	} else {
-		pyDictSet(model, "provider", "custom")
-		pyDictSet(model, "base_url", customProviderBaseURLConfigValue(providerInfo, baseURL))
-		if configAPIKey != "" {
-			pyDictSet(model, "api_key", configAPIKey)
-		}
-	}
+	pyDictSet(model, "provider", CustomProviderSlug(name, providerKey))
+	delete(model, "base_url")
+	delete(model, "api_key")
 	if apiMode != "" {
 		pyDictSet(model, "api_mode", apiMode)
 	} else {
@@ -829,28 +852,24 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 	if err := commitModelConfig(r.Env, cfg); err != nil {
 		return err
 	}
-	if providerKey != "" {
-		cfg, err := r.loadConfig()
-		if err != nil {
+	cfg, err = r.loadConfig()
+	if err != nil {
+		return err
+	}
+	providersCfg, _ := cfg["providers"].(map[string]any)
+	if providerEntry, ok := providersCfg[providerKey].(map[string]any); ok {
+		pyDictSet(providerEntry, "default_model", modelName)
+		hadInlineAPIKey := pystr.Strip(pyOrStr(providerInfo["api_key_ref"])) != "" || pystr.Strip(pyOrStr(providerInfo["api_key"])) != ""
+		if hadInlineAPIKey && configAPIKey != "" && pystr.Strip(pyOrStr(providerEntry["api_key"])) == "" {
+			pyDictSet(providerEntry, "api_key", configAPIKey)
+		}
+		if keyEnv != "" && pystr.Strip(pyOrStr(providerEntry["key_env"])) == "" {
+			pyDictSet(providerEntry, "key_env", keyEnv)
+		}
+		pyDictSet(cfg, "providers", providersCfg)
+		if err := config.Save(r.home(), cfg); err != nil {
 			return err
 		}
-		providersCfg, _ := cfg["providers"].(map[string]any)
-		if providerEntry, ok := providersCfg[providerKey].(map[string]any); ok {
-			pyDictSet(providerEntry, "default_model", modelName)
-			hadInlineAPIKey := pystr.Strip(pyOrStr(providerInfo["api_key_ref"])) != "" || pystr.Strip(pyOrStr(providerInfo["api_key"])) != ""
-			if hadInlineAPIKey && configAPIKey != "" && pystr.Strip(pyOrStr(providerEntry["api_key"])) == "" {
-				pyDictSet(providerEntry, "api_key", configAPIKey)
-			}
-			if keyEnv != "" && pystr.Strip(pyOrStr(providerEntry["key_env"])) == "" {
-				pyDictSet(providerEntry, "key_env", keyEnv)
-			}
-			pyDictSet(cfg, "providers", providersCfg)
-			if err := config.Save(r.home(), cfg); err != nil {
-				return err
-			}
-		}
-	} else if err := saveCustomProviderFn(r, baseURL, configAPIKey, modelName, 0, "", apiMode, ""); err != nil {
-		return err
 	}
 	flowSay(r.Out, fmt.Sprintf("\n✅ Model set to: %s", modelName), fmt.Sprintf("   Provider: %s (%s)", name, baseURL))
 	return nil

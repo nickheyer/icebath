@@ -19,7 +19,7 @@ const auxGatewayKeyCmdConfigYAML = "model:\n  provider: icebath-gw\n  default: m
 	"auxiliary:\n  compression:\n    provider: icebath-gw\n    model: aux-model\n"
 
 const auxKeyedGroqConfigYAML = "model:\n  default: vendor/model\n  provider: groq\n" +
-	"providers:\n  groq:\n    name: groq\n    api: https://api.groq.com/openai/v1\n    api_key: k\n"
+	"providers:\n  groq:\n    name: groq\n    base_url: https://api.groq.com/openai/v1\n    api_key: k\n"
 
 const auxProxyExtraBodyBaseURL = "https://proxy.example/v1"
 

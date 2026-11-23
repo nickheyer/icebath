@@ -161,33 +161,33 @@ func deviceLoginField(login map[string]any, key string) (any, error) {
 	return v, nil
 }
 
-// Device code sign in through the profile's hooks, polled at its pace until it ends or the context stops, the browser opened here when asked
-func profileDeviceLogin(ctx context.Context, out io.Writer, name string, profile Profile, openBrowser bool) error {
-	started, err := profile.StartDeviceLogin(ctx)
+// Device code sign in through a start and a poll hook, polled at their pace until it ends or the context stops, the browser opened here when asked; answers the credential the approved sign in produced
+func deviceCodeCredential(ctx context.Context, out io.Writer, name string, start func(context.Context) (any, error), poll func(context.Context, any) (any, error), openBrowser bool) (any, error) {
+	started, err := start(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	login := hostedMapOrNil(started)
 	if len(login) == 0 {
-		return authExit(fmt.Sprintf("Provider %s does not support device-code flow", name))
+		return nil, authExit(fmt.Sprintf("Provider %s does not support device-code flow", name))
 	}
 	fields := map[string]any{}
 	for _, key := range []string{"user_code", "verification_url", "expires_in", "interval"} {
 		if fields[key], err = deviceLoginField(login, key); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	expiresIn, err := deviceLoginInt(fields["expires_in"])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	interval, err := deviceLoginInt(fields["interval"])
 	if err != nil {
-		return err
+		return nil, err
 	}
 	interval = max(1, interval)
 	if err := printDeviceCodeInstructions(out, hostedStr(fields["verification_url"]), hostedStr(fields["user_code"]), openBrowser && !isRemoteSession(), "—", true); err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Fprintln(out, "Waiting for approval...")
 	state := login["state"]
@@ -196,11 +196,11 @@ func profileDeviceLogin(ctx context.Context, out io.Writer, name string, profile
 	result := map[string]any{}
 	for time.Now().Before(deadline) {
 		if cancellableSleep(time.Duration(interval)*time.Second, cancelled) != nil {
-			return &SignInCancelledError{ExitCode: 130, HasCode: true}
+			return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
 		}
-		polled, err := profile.PollDeviceLogin(ctx, state)
+		polled, err := poll(ctx, state)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		result = hostedMap(polled)
 		if next, ok := result["state"]; ok {
@@ -211,12 +211,12 @@ func profileDeviceLogin(ctx context.Context, out io.Writer, name string, profile
 		}
 		if truthy(result["interval"]) {
 			if interval, err = deviceLoginInt(result["interval"]); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	if cancelled() {
-		return &SignInCancelledError{ExitCode: 130, HasCode: true}
+		return nil, &SignInCancelledError{ExitCode: 130, HasCode: true}
 	}
 	status := hostedStr(result["status"])
 	if status == "" || status == "pending" {
@@ -230,9 +230,18 @@ func profileDeviceLogin(ctx context.Context, out io.Writer, name string, profile
 		if message == "" {
 			message = "Sign-in failed"
 		}
-		return authExit(message)
+		return nil, authExit(message)
 	}
-	if err := profile.SaveDeviceLogin(ctx, result["credential"]); err != nil {
+	return result["credential"], nil
+}
+
+// Device code sign in through the profile's hooks, the approved credential stored by the profile's own save hook
+func profileDeviceLogin(ctx context.Context, out io.Writer, name string, profile Profile, openBrowser bool) error {
+	credential, err := deviceCodeCredential(ctx, out, name, profile.StartDeviceLogin, profile.PollDeviceLogin, openBrowser)
+	if err != nil {
+		return err
+	}
+	if err := profile.SaveDeviceLogin(ctx, credential); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Signed in to %s.\n", name)

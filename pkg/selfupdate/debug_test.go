@@ -393,8 +393,7 @@ func TestRunDebugShareRedactionFallbackSecretFieldsMaskedByRepoPolicy(t *testing
 		{"clientApiKey", "'opaque***CamelKey0123456789'", "opaque***CamelKey0123456789"}} {
 		t.Run(c[0], func(t *testing.T) {
 			h := dbgHomeWithSecret(t, "")
-			dbgFallbackConfig(t, h, "    key_env: BACKUP_KEY_ENV_NAME\n", "    api_key_env: BACKUP_API_KEY_ENV_NAME\n",
-				"    max_tokens: 4321\n", "    "+c[0]+": "+c[1]+"\n")
+			dbgFallbackConfig(t, h, "    key_env: BACKUP_KEY_ENV_NAME\n", "    max_tokens: 4321\n", "    "+c[0]+": "+c[1]+"\n")
 			dbgNoSweep()
 			debugScheduleAutoDelete = func(context.Context, []string, int) error { return nil }
 			uploaded := dbgRecordUploads()
@@ -411,7 +410,7 @@ func TestRunDebugShareRedactionFallbackSecretFieldsMaskedByRepoPolicy(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, s := range []string{"backup-model", "BACKUP_KEY_ENV_NAME", "BACKUP_API_KEY_ENV_NAME", "4321"} {
+			for _, s := range []string{"backup-model", "BACKUP_KEY_ENV_NAME", "4321"} {
 				if !strings.Contains(raw, s) {
 					t.Fatalf("dump lost %q:\n%s", s, raw)
 				}

@@ -15,7 +15,7 @@ import (
 func TestModelSwitchMasksInheritedEndpointCredentials(t *testing.T) {
 	p := setupBootPlane(t)
 	p.Upper = map[string]any{"model": map[string]any{"default": "old", "provider": "custom:old", "base_url": "https://old.example/v1",
-		"api_key": "${OLD_KEY}", "key_env": "OLD_KEY", "api_key_env": "OLD_KEY", "context_length": 123456}}
+		"api_key": "${OLD_KEY}", "key_env": "OLD_KEY", "context_length": 123456}}
 	path := filepath.Join(p.Home, "config.yaml")
 	ctx := context.Background()
 	if err := PersistModelSelection(ctx, ModelSwitchResult{Success: true, NewModel: "new", TargetProvider: "custom", ProviderChanged: true,
@@ -27,7 +27,7 @@ func TestModelSwitchMasksInheritedEndpointCredentials(t *testing.T) {
 		t.Fatal("nothing sent")
 	}
 	set, _ := patches[len(patches)-1].Body["set"].(map[string]any)
-	for _, key := range []string{"api_key", "key_env", "api_key_env", "context_length"} {
+	for _, key := range []string{"api_key", "key_env", "context_length"} {
 		if v, has := set["model."+key]; !has || v != nil {
 			t.Fatalf("model.%s sent %v in %v", key, v, patches[len(patches)-1].Body)
 		}
@@ -40,7 +40,7 @@ func TestModelSwitchMasksInheritedEndpointCredentials(t *testing.T) {
 	if model["base_url"] != "https://new.example/v1" {
 		t.Fatalf("model %v", model)
 	}
-	for _, key := range []string{"api_key", "key_env", "api_key_env", "context_length"} {
+	for _, key := range []string{"api_key", "key_env", "context_length"} {
 		if model[key] != nil {
 			t.Fatalf("model.%s %v", key, model[key])
 		}
@@ -55,7 +55,7 @@ func TestModelSwitchRefusesWhenALockLandsAfterTheGuard(t *testing.T) {
 			p := setupBootPlane(t)
 			url := "https://new.example/v1"
 			p.Upper = map[string]any{"model": map[string]any{"default": "old", "provider": "custom:old", "base_url": "https://old.example/v1",
-				"api_key": "${OLD_KEY}", "key_env": "OLD_KEY", "api_key_env": "OLD_KEY", "context_length": 123456},
+				"api_key": "${OLD_KEY}", "key_env": "OLD_KEY", "context_length": 123456},
 				"providers": map[string]any{"known-new": map[string]any{"base_url": url}}}
 			ctx := home.WithOverride(context.Background(), p.Home)
 			if _, err := config.ReadRawConfig(ctx, p.Home); err != nil {

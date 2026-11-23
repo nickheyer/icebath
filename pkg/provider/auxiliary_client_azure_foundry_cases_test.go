@@ -186,12 +186,12 @@ func TestResolveProviderClientAzureFoundryWarnsAndReturnsNoneOnFailure(t *testin
 	}
 }
 
-func TestAzureFoundryResponsesAliasTaskLevelResponsesAliasRoutesVisionThroughResponsesAdapter(t *testing.T) {
+func TestAzureFoundryTaskLevelResponsesModeRoutesVisionThroughResponsesAdapter(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("AZURE_FOUNDRY_API_KEY", "k")
 	auxFakeConfigTree(t, config.Tree{"model": map[string]any{"provider": "openrouter", "default": "x"},
 		"auxiliary": map[string]any{"vision": map[string]any{"provider": "azure-foundry", "model": "gpt-5.4-nano",
-			"base_url": "https://r.services.ai.azure.com/openai/v1", "api_mode": "responses"}}})
+			"base_url": "https://r.services.ai.azure.com/openai/v1", "api_mode": "codex_responses"}}})
 	provider, client, model, err := ResolveVisionProviderClient(context.Background(), "", "", "", nil, false, nil)
 	if err != nil || provider != "azure-foundry" || model != "gpt-5.4-nano" {
 		t.Fatalf("provider %q model %q err %v", provider, model, err)
@@ -201,10 +201,10 @@ func TestAzureFoundryResponsesAliasTaskLevelResponsesAliasRoutesVisionThroughRes
 	}
 }
 
-func TestAzureFoundryResponsesAliasExplicitResponsesAliasKwargWrapsInCodexAdapter(t *testing.T) {
+func TestAzureFoundryExplicitResponsesModeWrapsInCodexAdapter(t *testing.T) {
 	t.Setenv("AZURE_FOUNDRY_API_KEY", "k")
 	ctx := auxAzureFoundryConfig(t, map[string]any{"provider": "azure-foundry", "base_url": "https://r.services.ai.azure.com/openai/v1"})
-	client, model, err := ResolveProviderClient(ctx, "azure-foundry", "gpt-5.4-nano", ProviderClientOptions{APIMode: "responses"})
+	client, model, err := ResolveProviderClient(ctx, "azure-foundry", "gpt-5.4-nano", ProviderClientOptions{APIMode: "codex_responses"})
 	if err != nil || model != "gpt-5.4-nano" {
 		t.Fatalf("model %q err %v", model, err)
 	}

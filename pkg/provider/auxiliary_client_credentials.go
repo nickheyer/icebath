@@ -2,13 +2,10 @@ package provider
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -18,22 +15,12 @@ import (
 // Pool entry selector seam the tests swap for a present but exhausted pool
 var auxSelectPoolEntryFn = auxSelectPoolEntry
 
-// Key and slash trimmed base URL of a runtime credentials map, false when either is missing
-func auxCredsPair(creds map[string]any) (string, string, bool) {
-	apiKey := strings.TrimSpace(auxOrEmptyStr(creds["api_key"]))
-	baseURL := strings.TrimRight(strings.TrimSpace(auxOrEmptyStr(creds["base_url"])), "/")
-	if apiKey == "" || baseURL == "" {
-		return "", "", false
-	}
-	return apiKey, baseURL, true
-}
-
 // Trimmed slashless form of a URL candidate
 func auxTrimURL(v string) string {
 	return strings.TrimRight(strings.TrimSpace(v), "/")
 }
 
-// Fresh xAI OAuth key and base URL from the pool, then the singleton auth store resolver
+// Fresh xAI OAuth key and base URL of the selected xAI login, false when there is none to use
 func auxResolveXaiOAuthForAux(ctx context.Context) (string, string, bool) {
 	var apiKey, baseURL string
 	err := auxRecoverRaise(func() {
@@ -44,22 +31,10 @@ func auxResolveXaiOAuthForAux(ctx context.Context) (string, string, bool) {
 		}
 	})
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Auxiliary xAI OAuth pool credential resolution failed: %v", err))
-	} else if apiKey != "" && baseURL != "" {
-		return apiKey, baseURL, true
-	}
-	var creds map[string]any
-	if err := auxRecoverRaise(func() {
-		var resolveErr error
-		creds, resolveErr = auxResolveXaiOAuthRuntimeCredentialsFn(ctx)
-		if resolveErr != nil {
-			panic(resolveErr)
-		}
-	}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Auxiliary xAI OAuth runtime credential resolution failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("Auxiliary xAI OAuth credential resolution failed: %v", err))
 		return "", "", false
 	}
-	return auxCredsPair(creds)
+	return apiKey, baseURL, apiKey != "" && baseURL != ""
 }
 
 // Key and validated base URL of the selected xAI OAuth pool row, scoped base URL env first
@@ -96,12 +71,7 @@ func auxXaiOAuthPoolPair(ctx context.Context) (string, string, error) {
 	return apiKey, xaiValidateInferenceBaseURL(env, candidate, DefaultXAIOAuthBaseURL), nil
 }
 
-// Singleton xAI OAuth resolver seam, refreshing an expiring token by default
-var auxResolveXaiOAuthRuntimeCredentialsFn = func(ctx context.Context) (map[string]any, error) {
-	return resolveXAIOAuthRuntimeCredentials(modelsPoolEnv(ctx), false, true, 0)
-}
-
-// Codex token and the base URL of the same authority, an override first, else the pool row route or auth.json
+// Codex token of the selected login and the base URL of the same authority, an override first, else the route of the login
 func auxResolveCodexCredentialAndBase(ctx context.Context) (string, string, error) {
 	override, err := auxCodexBaseURLOverride(ctx)
 	if err != nil {
@@ -127,43 +97,8 @@ func ResolveCodexCredentialAndBase(ctx context.Context) (string, string, error) 
 	return auxResolveCodexCredentialAndBase(ctx)
 }
 
-// Registry rows and the auth.json Codex token reader, swapped by tests
-var (
-	auxRegistryRowsFn = canonicalRegistryRows
-)
-
-// Wall clock seam of the Codex expiry check
-var auxCodexNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-
-// Numeric exp claim of a JWT payload, false for a non JWT token or a non numeric claim
-func auxJWTExp(token string) (float64, bool) {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return 0, false
-	}
-	payload := parts[1]
-	payload += strings.Repeat("=", (4-len(payload)%4)%4)
-	raw, err := base64.URLEncoding.DecodeString(payload)
-	if err != nil {
-		return 0, false
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(raw, &claims); err != nil {
-		return 0, false
-	}
-	switch v := claims["exp"].(type) {
-	case nil:
-		return 0, true
-	case float64:
-		return v, true
-	case bool:
-		if v {
-			return 1, true
-		}
-		return 0, true
-	}
-	return 0, false
-}
+// Registry rows the API key chain walks, swapped by tests
+var auxRegistryRowsFn = canonicalRegistryRows
 
 // Wire client of the first healthy API key provider with credentials and a known auxiliary model
 func auxResolveAPIKeyProvider(ctx context.Context) (AuxClient, string, error) {

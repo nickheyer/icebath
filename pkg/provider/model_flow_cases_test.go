@@ -326,10 +326,9 @@ func TestLocalOllamaModelDiscoveryNamedCustomModelFlowDiscoversOllamaApiTags(t *
 	writePickerConfig(t, h, "providers:\n  ollama:\n    base_url: "+baseURL+"\n")
 	menu := captureMenuAndCancel(t)
 	swapFlowSeam(t, &flowSaveModelChoiceFn, func(PoolEnv, string) error { return nil })
-	swapFlowSeam(t, &saveCustomProviderFn, func(*ModelFlowRun, string, string, string, int, string, string, string) error { return nil })
 	scriptBuiltinsInput(t, "manual-fallback")
 	r := pickerCaseRun(t, ctx, h, out)
-	if err := modelFlowNamedCustom(r, map[string]any{"name": "Local Ollama", "base_url": baseURL}); err != nil {
+	if err := modelFlowNamedCustom(r, map[string]any{"name": "Local Ollama", "base_url": baseURL, "provider_key": "ollama"}); err != nil {
 		t.Fatal(err)
 	}
 	seen := paths()
@@ -344,7 +343,7 @@ func TestLocalOllamaModelDiscoveryNamedCustomModelFlowPreservesExplicitOllamaMod
 	writePickerConfig(t, h, "providers:\n  ollama:\n    base_url: "+baseURL+"\n")
 	menu := captureMenuAndCancel(t)
 	r := pickerCaseRun(t, ctx, h, out)
-	if err := modelFlowNamedCustom(r, map[string]any{"name": "Local Ollama", "base_url": baseURL, "models": []any{"curated-only"}}); err != nil {
+	if err := modelFlowNamedCustom(r, map[string]any{"name": "Local Ollama", "base_url": baseURL, "models": []any{"curated-only"}, "provider_key": "ollama"}); err != nil {
 		t.Fatal(err)
 	}
 	seen := paths()
@@ -401,85 +400,73 @@ func TestStepfunPickerMergesLiveWithCuratedWizardOfferMergesLiveAndCurated(t *te
 }
 
 func TestSetupProbeCredentialsNeverBecomeSavedCredentials(t *testing.T) {
-	for _, route := range []string{"providers", "custom_providers"} {
-		for _, discover := range []any{true, false, "false"} {
-			for _, static := range []map[string]any{{}, {"api_key": "stale"}, {"key_env": "TEST_GATEWAY_KEY"}} {
-				t.Run(fmt.Sprintf("%s-%v-%v", route, discover, static), func(t *testing.T) {
-					h, ctx, out := pickerCaseHome(t)
-					t.Setenv("TEST_GATEWAY_KEY", "stale")
-					entry := map[string]any{"name": "Gateway", "base_url": "https://gateway.invalid/v1", "key_cmd": "tenant-a",
-						"model": "fallback", "default_model": "fallback", "discover_models": discover}
-					for k, v := range static {
-						entry[k] = v
+	for _, discover := range []any{true, false, "false"} {
+		for _, static := range []map[string]any{{}, {"api_key": "stale"}, {"key_env": "TEST_GATEWAY_KEY"}} {
+			t.Run(fmt.Sprintf("%v-%v", discover, static), func(t *testing.T) {
+				h, ctx, out := pickerCaseHome(t)
+				t.Setenv("TEST_GATEWAY_KEY", "stale")
+				entry := map[string]any{"name": "Gateway", "base_url": "https://gateway.invalid/v1", "key_cmd": "tenant-a",
+					"default_model": "fallback", "discover_models": discover}
+				for k, v := range static {
+					entry[k] = v
+				}
+				cfg := map[string]any{"model": map[string]any{"default": "fallback", "provider": "custom:gateway"}, "providers": map[string]any{"gateway": cloneMap(entry)}}
+				if err := config.Save(h, config.Tree(cfg)); err != nil {
+					t.Fatal(err)
+				}
+				r := pickerCaseRun(t, ctx, h, out)
+				infos, err := namedCustomProviderMap(r, r.Config)
+				if err != nil || len(infos.keys) == 0 {
+					t.Fatalf("map %v %v", infos, err)
+				}
+				info := infos.byKey[infos.keys[0]]
+				var mints, probes, choices []string
+				swapFlowSeam(t, &commandTokenMintFn, func(_ context.Context, s *CommandTokenSource) (string, time.Duration, error) {
+					mints = append(mints, s.Command)
+					return "transient-bearer", time.Hour, nil
+				})
+				swapFlowSeam(t, &flowFetchAPIModelsFn, func(_ context.Context, key, _ string, _ time.Duration, _ string, _ map[string]string) ([]string, bool) {
+					probes = append(probes, key)
+					if key == "transient-bearer" {
+						return []string{"fallback", "discovered"}, true
 					}
-					cfg := map[string]any{"model": map[string]any{"default": "fallback", "provider": "custom"}}
-					if route == "providers" {
-						cfg[route] = map[string]any{"gateway": cloneMap(entry)}
-					} else {
-						cfg[route] = []any{cloneMap(entry)}
-					}
-					if err := config.Save(h, config.Tree(cfg)); err != nil {
-						t.Fatal(err)
-					}
-					r := pickerCaseRun(t, ctx, h, out)
-					infos, err := namedCustomProviderMap(r, r.Config)
-					if err != nil || len(infos.keys) == 0 {
-						t.Fatalf("map %v %v", infos, err)
-					}
-					info := infos.byKey[infos.keys[0]]
-					var mints, probes, choices []string
-					swapFlowSeam(t, &commandTokenMintFn, func(_ context.Context, s *CommandTokenSource) (string, time.Duration, error) {
-						mints = append(mints, s.Command)
-						return "transient-bearer", time.Hour, nil
-					})
-					swapFlowSeam(t, &flowFetchAPIModelsFn, func(_ context.Context, key, _ string, _ time.Duration, _ string, _ map[string]string) ([]string, bool) {
-						probes = append(probes, key)
-						if key == "transient-bearer" {
-							return []string{"fallback", "discovered"}, true
-						}
-						return nil, false
-					})
-					swapFlowSeam(t, &shouldUseOllamaNativeCatalogFn, func(context.Context, string, string, map[string]string) bool { return false })
-					swapFlowSeam(t, &pickNamedCustomModelFn, func(_ *ModelFlowRun, _ string, available []string, _ string) (string, bool) {
-						choices = append(choices, available...)
-						return available[len(available)-1], true
-					})
-					swapFlowSeam(t, &flowAskFn, func(io.Writer, string, flowAskOptions) (string, bool) { return "fallback", true })
-					if err := modelFlowNamedCustom(r, info); err != nil {
-						t.Fatal(err)
-					}
-					if discover == true {
-						if !reflect.DeepEqual(mints, []string{"tenant-a"}) || !reflect.DeepEqual(probes, []string{"transient-bearer"}) ||
-							!reflect.DeepEqual(choices, []string{"fallback", "discovered"}) {
-							t.Fatalf("mints %v probes %v choices %v", mints, probes, choices)
-						}
-					} else if len(mints) != 0 || len(probes) != 0 || !reflect.DeepEqual(choices, []string{"fallback"}) {
+					return nil, false
+				})
+				swapFlowSeam(t, &shouldUseOllamaNativeCatalogFn, func(context.Context, string, string, map[string]string) bool { return false })
+				swapFlowSeam(t, &pickNamedCustomModelFn, func(_ *ModelFlowRun, _ string, available []string, _ string) (string, bool) {
+					choices = append(choices, available...)
+					return available[len(available)-1], true
+				})
+				swapFlowSeam(t, &flowAskFn, func(io.Writer, string, flowAskOptions) (string, bool) { return "fallback", true })
+				if err := modelFlowNamedCustom(r, info); err != nil {
+					t.Fatal(err)
+				}
+				if discover == true {
+					if !reflect.DeepEqual(mints, []string{"tenant-a"}) || !reflect.DeepEqual(probes, []string{"transient-bearer"}) ||
+						!reflect.DeepEqual(choices, []string{"fallback", "discovered"}) {
 						t.Fatalf("mints %v probes %v choices %v", mints, probes, choices)
 					}
-					saved, err := config.Load(h, config.NewSecrets(h).Lookup())
-					if err != nil {
-						t.Fatal(err)
-					}
-					if strings.Contains(fmt.Sprint(map[string]any(saved)), "transient-bearer") {
-						t.Fatalf("bearer persisted %v", saved)
-					}
-					var persisted map[string]any
-					if route == "providers" {
-						persisted = saved[route].(map[string]any)["gateway"].(map[string]any)
-					} else {
-						persisted = saved[route].([]any)[0].(map[string]any)
-					}
-					if persisted["key_cmd"] != entry["key_cmd"] || pyOrStr(dictGet(persisted, "api_key", "")) != pyOrStr(dictGet(static, "api_key", "")) {
-						t.Fatalf("persisted %v", persisted)
-					}
-				})
-			}
+				} else if len(mints) != 0 || len(probes) != 0 || !reflect.DeepEqual(choices, []string{"fallback"}) {
+					t.Fatalf("mints %v probes %v choices %v", mints, probes, choices)
+				}
+				saved, err := config.Load(h, config.NewSecrets(h).Lookup())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(fmt.Sprint(map[string]any(saved)), "transient-bearer") {
+					t.Fatalf("bearer persisted %v", saved)
+				}
+				persisted := saved["providers"].(map[string]any)["gateway"].(map[string]any)
+				if persisted["key_cmd"] != entry["key_cmd"] || pyOrStr(dictGet(persisted, "api_key", "")) != pyOrStr(dictGet(static, "api_key", "")) {
+					t.Fatalf("persisted %v", persisted)
+				}
+			})
 		}
 	}
 }
 
 func TestPickerCommandAuthIsLazyAndCredentialScoped(t *testing.T) {
-	for _, route := range []string{"providers", "custom_providers"} {
+	for _, route := range []string{"providers map", "entries list"} {
 		for _, static := range []map[string]any{{}, {"api_key": "stale"}, {"key_env": "TEST_GATEWAY_KEY"}} {
 			t.Run(fmt.Sprintf("%s-%v", route, static), func(t *testing.T) {
 				h, ctx, _ := pickerCaseHome(t)
@@ -514,7 +501,7 @@ func TestPickerCommandAuthIsLazyAndCredentialScoped(t *testing.T) {
 				rows := func(probe bool, entries ...map[string]any) []map[string]any {
 					b := &pickerBuild{ctx: ctx, probeCustomProviders: probe, excluded: map[string]bool{}, curated: map[string][]string{},
 						seenSlugs: map[string]bool{}, builtinEndpoints: map[string]bool{}, section3Pairs: map[[2]string]bool{}}
-					if route == "providers" {
+					if route == "providers map" {
 						user := map[string]any{}
 						for i, e := range entries {
 							user[fmt.Sprintf("gateway-%d", i)] = e
@@ -555,18 +542,16 @@ func TestPickerCommandAuthIsLazyAndCredentialScoped(t *testing.T) {
 					t.Fatalf("mints %v probes %v", mints, probes)
 				}
 				other := with(map[string]any{"key_cmd": "tenant-b", "discover_models": false})
-				if err := config.Save(h, config.Tree{"custom_providers": []any{cloneMap(entry), other}}); err != nil {
+				if err := config.Save(h, config.Tree{"providers": map[string]any{"gateway-0": cloneMap(entry), "other": other}}); err != nil {
 					t.Fatal(err)
 				}
-				if route == "custom_providers" {
-					rows(true, entry)
-					saved, err := config.Load(h, config.NewSecrets(h).Lookup())
-					if err != nil {
-						t.Fatal(err)
-					}
-					if m := saved["custom_providers"].([]any)[1].(map[string]any)["models"]; m != nil {
-						t.Fatalf("other entry gained models %v", m)
-					}
+				rows(true, entry)
+				saved, err := config.Load(h, config.NewSecrets(h).Lookup())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if m := saved["providers"].(map[string]any)["other"].(map[string]any)["models"]; m != nil {
+					t.Fatalf("other entry gained models %v", m)
 				}
 				source := BuildCommandTokenSource("tenant-a", "", h, nil)
 				result, _ := CachedFetchAPIModels(ctx, CachedFetchOptions{APIKey: source, BaseURL: entry["base_url"].(string), ForceRefresh: true,

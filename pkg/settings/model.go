@@ -162,6 +162,6 @@ var Logins = Register(&Map{Meta: Meta{Key: "logins", Label: "Logins per provider
 				{"rotate", "Rotate", "Move on to the next login in the rotation."},
 			}},
 		&Enum{Meta: Meta{Key: "strategy", Label: "Rotation order",
-			Short: "Order the logins in the rotation are used in."}, Null: "the provider's key rotation setting",
+			Short: "Order the logins in the rotation are used in."}, Null: "fill first",
 			Values: loginStrategyChoices},
 	}}})

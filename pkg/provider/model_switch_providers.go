@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -81,7 +82,23 @@ type pickerPool interface {
 	HasAvailable(model string) bool
 }
 
-// Writes a successful live probe into every matching providers entry whose catalog is stale, through the settings writer
+// Stores fields of one providers entry one at a time and drops the unset ones, every other field staying as config.yaml spells it so an env reference is never written out as its value
+func setProviderEntryFields(ctx context.Context, key string, set []config.KeyValue, unset ...string) error {
+	entryKey := settings.Providers.EntryKey(key)
+	for _, field := range set {
+		if _, err := settings.Set(ctx, entryKey+"."+field.Key, field.Value, settings.Global); err != nil {
+			return err
+		}
+	}
+	for _, field := range unset {
+		if _, err := settings.Reset(ctx, entryKey+"."+field, settings.Global); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Writes a successful live probe into every matching providers entry whose catalog is stale, through the settings writer, a model that is still served keeping its own settings
 func saveDiscoveredModelsToConfig(ctx context.Context, apiURL string, modelIDs []string, apiMode string, headers map[string]string, credentialIdentity *string) {
 	if apiURL == "" || len(modelIDs) == 0 {
 		return
@@ -108,13 +125,16 @@ func saveDiscoveredModelsToConfig(ctx context.Context, apiURL string, modelIDs [
 		if !discoveredCatalogStale(entry, modelIDs) {
 			continue
 		}
+		held, _ := entry["models"].(map[string]any)
 		models := make(map[string]any, len(modelIDs))
 		for _, id := range modelIDs {
-			models[id] = map[string]any{}
+			kept, _ := held[id].(map[string]any)
+			if kept == nil {
+				kept = map[string]any{}
+			}
+			models[id] = kept
 		}
-		entry["models"] = models
-		entry["models_discovered"] = true
-		if _, err := settings.Set(ctx, settings.Providers.EntryKey(key), entry, settings.Global); err != nil {
+		if err := setProviderEntryFields(ctx, key, []config.KeyValue{{Key: "models_discovered", Value: true}, {Key: "models", Value: models}}); err != nil {
 			pkgLog().Debug(fmt.Sprintf("saving discovered models for %s failed: %v", key, err))
 		}
 	}
@@ -135,11 +155,8 @@ func stringMapsEqual(a, b map[string]string) bool {
 // A discovered mapping may be refreshed when stale, a curated mapping or list of dicts never is
 func discoveredCatalogStale(entry map[string]any, modelIDs []string) bool {
 	existing := entry["models"]
-	existingMap, isMap := existing.(map[string]any)
-	legacy := isMap && existingMap["__discovered_model_catalog__"] == true
-	discovered := entry["models_discovered"] == true || legacy
-	if isMap {
-		return discovered && (legacy || !sameStringSet(sortedStringKeys(existingMap), modelIDs))
+	if existingMap, isMap := existing.(map[string]any); isMap {
+		return entry["models_discovered"] == true && !sameStringSet(sortedStringKeys(existingMap), modelIDs)
 	}
 	if list, ok := existing.([]any); ok {
 		for _, m := range list {
@@ -1282,11 +1299,7 @@ func lapBareCustomRow(b *pickerBuild, customProviders []any) {
 		if strings.ToLower(strings.TrimSpace(pyOrStr(cfgModel["provider"]))) != "custom" || baseURL == "" {
 			return
 		}
-		dflt, present := cfgModel["default"]
-		if !present {
-			dflt = cfgModel["name"]
-		}
-		defaultModel = strings.TrimSpace(pyOrStr(dflt))
+		defaultModel = strings.TrimSpace(pyOrStr(cfgModel["default"]))
 	}
 	for _, item := range customProviders {
 		if cp, ok := item.(map[string]any); ok && normURL(entryBaseURL(cp, defaultEntryURLKeys)) == normURL(baseURL) {

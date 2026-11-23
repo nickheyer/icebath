@@ -63,7 +63,10 @@ func (st *modelSwitch) failOnTarget(message string) *ModelSwitchResult {
 	return res
 }
 
-func (st *modelSwitch) providerChanged() bool { return st.TargetProvider != st.CurrentProvider }
+// Whether the switch leaves the provider the session runs on, two spellings of one providers entry being the same provider
+func (st *modelSwitch) providerChanged(ctx context.Context) bool {
+	return providerIdentity(ctx, st.TargetProvider, st.UserProviders, st.CustomProviders) != providerIdentity(ctx, st.CurrentProvider, st.UserProviders, st.CustomProviders)
+}
 
 // Fills key, base URL, mode and headers from runtime resolution, headers kept when none resolve
 func (st *modelSwitch) resolveRuntime(ctx context.Context, requested, explicitAPIKey, explicitBaseURL string) error {
@@ -410,7 +413,7 @@ func openrouterMirrorBaseURL(ctx context.Context) string {
 func resolveSwitchCredentials(ctx context.Context, st *modelSwitch) (*ModelSwitchResult, error) {
 	st.ProviderLabel = switchProviderLabel(ctx, st)
 	st.APIKey, st.BaseURL = st.CurrentAPIKey, st.CurrentBaseURL
-	if st.providerChanged() || st.ExplicitProvider != "" {
+	if st.providerChanged(ctx) || st.ExplicitProvider != "" {
 		if fail := credsForSwitchedProvider(ctx, st); fail != nil {
 			return fail, nil
 		}

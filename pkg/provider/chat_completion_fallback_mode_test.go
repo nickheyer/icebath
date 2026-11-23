@@ -60,7 +60,7 @@ func TestFallbackAPIModeHintPrefersExplicitThenDeclaredThenAnthropicSignal(t *te
 		want     string
 	}{
 		{"explicit api_mode wins even as chat", map[string]any{"api_mode": "chat_completions"}, "anthropic", &anthropicBase, true, "chat_completions"},
-		{"transport spelling", map[string]any{"transport": "responses"}, "custom", nil, true, "codex_responses"},
+		{"explicit api_mode in another case", map[string]any{"api_mode": " Codex_Responses "}, "custom", nil, true, "codex_responses"},
 		{"invalid explicit falls through", map[string]any{"api_mode": "bogus"}, "custom", &plainBase, false, "chat_completions"},
 		{"declared provider wire", map[string]any{}, "relay", &plainBase, true, "codex_responses"},
 		{"provider without a declared wire", map[string]any{}, "plain", &plainBase, false, "chat_completions"},

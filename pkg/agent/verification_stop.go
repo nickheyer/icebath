@@ -31,7 +31,6 @@ var (
 		".adoc": true, ".asciidoc": true, ".org": true, ".log": true, ".csv": true, ".tsv": true}
 	nonCodeVerifyFilenames = map[string]bool{"license": true, "licence": true, "notice": true, "authors": true,
 		"contributors": true, "changelog": true, "codeowners": true}
-	verifyTruthyTokens = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 )
 
 // True when a changed path is documentation or prose with nothing to verify
@@ -42,19 +41,11 @@ func isNonCodeVerifyPath(raw string) bool {
 
 // Edit then verify before finish switch from agent.verify_on_stop, auto meaning on outside chat apps
 func verifyOnStopEnabled(ctx context.Context, env *tools.Env) bool {
-	v, err := settings.Resolve(ctx, settings.AgentVerifyOnStop.Key)
-	if err != nil {
-		return false
-	}
-	switch t := v.Value.(type) {
-	case bool:
-		return t
-	case string:
-		token := pystr.Lower(pystr.Strip(t))
-		if token == "auto" {
-			return !tools.SessionIsMessagingSurface(env)
-		}
-		return verifyTruthyTokens[token]
+	switch settings.AgentVerifyOnStop.Get(ctx) {
+	case "on":
+		return true
+	case "auto":
+		return !tools.SessionIsMessagingSurface(env)
 	}
 	return false
 }

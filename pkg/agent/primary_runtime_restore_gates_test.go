@@ -20,7 +20,7 @@ const codexRestoreURL = "https://chatgpt.com/backend-api/codex"
 // Codex primary on a fixture agent whose snapshot and pool mirror the reselect suite
 func newReselectAgent(t *testing.T, entries []map[string]any) *AIAgent {
 	t.Helper()
-	a := newRestoreAgent(t, "credential_pool_strategies:\n  openai-codex: round_robin\n", nil, "custom", restoreBaseURL, nil)
+	a := newRestoreAgent(t, "logins:\n  openai-codex:\n    strategy: round_robin\n", nil, "custom", restoreBaseURL, nil)
 	rows := make([]provider.PooledCredential, 0, len(entries))
 	for _, e := range entries {
 		rows = append(rows, provider.PooledCredentialFromMap("openai-codex", e))
@@ -452,7 +452,7 @@ func TestBackoffCounterResetsOnSuccessfulPrimaryRestore(t *testing.T) {
 func TestFallbackReasoningOverrideFallbackRecoveryRestoresPrimaryReasoning(t *testing.T) {
 	a := newRestoreAgent(t, "", nil, "custom", restoreBaseURL, nil)
 	a.primaryRuntime = map[string]any{
-		"model": "gemini-flash", "provider": "google", "base_url": "", "api_mode": "openai", "api_key": "key",
+		"model": "gemini-flash", "provider": "google", "base_url": "", "api_mode": "chat_completions", "api_key": "key",
 		"client_kwargs": map[string]any{}, "use_prompt_caching": false, "use_native_cache_layout": false,
 		"runtime_capabilities": map[string]any{"native_compaction": true}, "reasoning_config": map[string]any{"enabled": true, "effort": "medium"},
 		"compressor_model": "gemini-flash", "compressor_base_url": "", "compressor_api_key": "", "compressor_provider": "",

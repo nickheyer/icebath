@@ -217,7 +217,7 @@ func TestActualBackgroundTasksReachChatCompletions(t *testing.T) {
 					writeConfig(t, h, map[string]any{
 						"model":     map[string]any{"provider": mainProvider, "default": "test-model", "base_url": baseURL},
 						"auxiliary": aux,
-						"providers": map[string]any{"actual-relay": map[string]any{"base_url": relayBase, "key_env": "ACTUAL_API_KEY", "transport": transport}},
+						"providers": map[string]any{"actual-relay": map[string]any{"base_url": relayBase, "key_env": "ACTUAL_API_KEY", "api_mode": transport}},
 					})
 					ctx := context.Background()
 					rt, err := ResolveRuntimeProvider(ctx, h, "actual", "", "", "")
@@ -294,7 +294,7 @@ func TestActualRuntimeTransitionsResolveChatCompletions(t *testing.T) {
 			t.Setenv("OPENAI_API_KEY", "actual-test-key")
 			writeConfig(t, h, map[string]any{
 				"model":     map[string]any{"provider": row.provider, "default": "gpt-5.4", "base_url": baseURL, "api_mode": "codex_responses"},
-				"providers": map[string]any{"actual-relay": map[string]any{"base_url": baseURL, "key_env": "ACTUAL_API_KEY", "transport": "codex_responses"}},
+				"providers": map[string]any{"actual-relay": map[string]any{"base_url": baseURL, "key_env": "ACTUAL_API_KEY", "api_mode": "codex_responses"}},
 			})
 			rt, err := ResolveRuntimeProvider(context.Background(), h, row.provider, "", "", "")
 			if err != nil {
@@ -318,7 +318,7 @@ func TestActualAuxiliaryFallbackReachesChatCompletions(t *testing.T) {
 				t.Setenv("ACTUAL_API_KEY", "actual-test-key")
 				writeConfig(t, h, map[string]any{
 					"model":     map[string]any{"provider": "actual", "default": "test-model", "base_url": actualURL},
-					"providers": map[string]any{"actual-relay": map[string]any{"base_url": actualURL, "key_env": "ACTUAL_API_KEY", "transport": "codex_responses"}},
+					"providers": map[string]any{"actual-relay": map[string]any{"base_url": actualURL, "key_env": "ACTUAL_API_KEY", "api_mode": "codex_responses"}},
 					"auxiliary": map[string]any{"session_search": map[string]any{"provider": "custom", "model": "unavailable-model", "base_url": localURL + "/v1",
 						"fallback_chain": []any{map[string]any{"provider": provider, "model": "test-model", "api_mode": "codex_responses", "base_url": actualURL}}}},
 				})
@@ -365,7 +365,7 @@ func TestActualRejectsForcedResponsesBeforeHTTP(t *testing.T) {
 				t.Setenv("ICEBATH_HOME", h)
 				writeConfig(t, h, map[string]any{
 					"model":     map[string]any{"provider": row.provider, "base_url": baseURL, "default": "test-model"},
-					"providers": map[string]any{"actual-relay": map[string]any{"base_url": baseURL, "transport": "codex_responses"}},
+					"providers": map[string]any{"actual-relay": map[string]any{"base_url": baseURL, "api_mode": "codex_responses"}},
 				})
 				ctx := context.Background()
 				client, model, err := ResolveProviderClient(ctx, row.provider, "test-model", ProviderClientOptions{

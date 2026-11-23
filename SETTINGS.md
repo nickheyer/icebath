@@ -153,7 +153,6 @@ The model, how hard it thinks, and its fallback.
 | Guardrail streaming | `bedrock.guardrail.stream_processing_mode` | see config | Whether guardrail checks block streamed replies (sync) or not. One of: async, sync. |
 | Guardrail trace | `bedrock.guardrail.trace` | see config | Whether Bedrock reports why a guardrail acted. One of: disabled, enabled, enabled_full. |
 | Bedrock region | `bedrock.region` | `''` | AWS region used for Bedrock requests. Blank takes the region from the endpoint address, else us-east-1. |
-| Key rotation | `credential_pool_strategies` | `{}` | How to pick between several keys of one provider. Older form. The provider's login rotation setting wins when set. |
 | Stay-put window | `fallback.min_switch_reset_seconds` | see config | Stay on the main model if its rate limit ends within this time. 0 turns this off, so any rate limit switches to the fallback. |
 | Model overrides | `model_overrides` | `{}` | Per-model limits such as context size, by provider. |
 | Min coding score | `openrouter.min_coding_score` | see config | Lowest coding score for automatic OpenRouter model routing. |
@@ -203,7 +202,7 @@ How long the agent works and when it shortens chats.
 | Finish tasks advice | `agent.task_completion_guidance` | see config | Reminds the agent to finish a task before it stops. Applies to new sessions. |
 | Tool use nudge | `agent.tool_use_enforcement` | see config | Pushes the model to call tools instead of only describing steps. Auto turns it on for model families that need it. One of: auto, always, never. Applies to new sessions. |
 | Verify advice | `agent.verify_guidance` | see config | Adds how-to-verify advice to the reminders sent before stopping. |
-| Verify before stop | `agent.verify_on_stop` | see config | Asks the agent to check its edits before it finishes. |
+| Verify before stop | `agent.verify_on_stop` | see config | Asks the agent to check its edits before it finishes. One of: auto, on, off. |
 | Bot turn wait | `bot_mode.turn_wait_seconds` | see config | How long a queued bot message waits for the running turn. |
 | Stop on failure | `compression.abort_on_summary_failure` | see config | Stops the turn if the summary of old messages fails. |
 | Require checkpoint | `compression.checkpoint_required` | see config | Refuses to compress until a checkpoint of the chat is saved. Not allowed with the Codex app server mode. |
@@ -1173,7 +1172,7 @@ Timeouts, logging, updates and limits.
 | Chat turn timeout | `agent.gateway_timeout` | see config | How long a chat app turn may run before it is stopped. Restart the background service to apply. |
 | Chat turn warning | `agent.gateway_timeout_warning` | see config | How far into a chat turn a timeout warning is sent. Restart the background service to apply. |
 | Turn lock timeout | `agent.gateway_turn_lease_timeout` | see config | How long a chat turn waits for the session to be free. Restart the background service to apply. |
-| Local silence limit | `agent.local_stream_stale_timeout` | see config | How long a local model may stay silent before the request is dropped. |
+| Local silence limit | `agent.local_stream_stale_timeout` | see config | How long a local model may stay silent before the request is dropped. Zero means no limit. |
 | Reconnect alert delay | `agent.reconnect_attention_after` | see config | How long a chat app can stay disconnected before you are alerted. Zero or less turns the alert off. |
 | Restart wait | `agent.restart_after_turn_timeout` | see config | How long a restart waits for running turns before going ahead. Restart the background service to apply. |
 | Restart drain wait | `agent.restart_drain_timeout` | see config | How long shutdown waits for running work to wind down. Zero uses the built-in wait. Restart the background service to apply. |
@@ -1181,7 +1180,7 @@ Timeouts, logging, updates and limits.
 | Stall timeout | `agent.session_stall_timeout` | see config | How long a chat session may sit with no activity before it is stuck. Restart the background service to apply. |
 | Stream close wait | `agent.stream_drain_timeout` | see config | How long to wait for a finished model stream to close. |
 | Stream time limit | `agent.stream_max_lifetime` | see config | Longest a single model response may keep streaming. Zero means no limit. |
-| Model silence limit | `agent.stream_stale_timeout` | see config | How long a model may stay silent before the request is retried. |
+| Model silence limit | `agent.stream_stale_timeout` | see config | How long a model may stay silent before the request is retried. Zero means no limit. |
 | Hang check interval | `agent.turn_liveness.poll_s` | see config | How often a running turn is checked for being stuck. |
 | Hang timeout | `agent.turn_liveness.timeout_s` | see config | How long a turn can make no progress before it is flagged as stuck. Zero or less turns the check off. |
 | Memory trim cooldown | `context.memory_trim.cooldown_seconds` | see config | Minimum time between automatic memory cleanups. |
@@ -1249,4 +1248,4 @@ Timeouts, logging, updates and limits.
 | Tool batch limit | `timeouts.tools.concurrent_batch` | see config | Longest a batch of tool calls run at the same time may take. Zero means no limit. Applies from the next turn. |
 | Single tool limit | `timeouts.tools.sequential_call` | unset (the tool batch limit) | Longest one tool call run on its own may take. Zero means no limit. Unset: the tool batch limit. Applies from the next turn. |
 | Request time limit | `agent.api_timeout` | see config | How long one model request may take before it is given up. A provider's own request timeout under Providers wins over this. Applies from the next turn. |
-| Silent request limit | `agent.api_call_stale_timeout` | unset (picked from the model and request size) | How long a model may stay silent on a request that is not streamed. Unset picks it from the model and the request size. A provider's own stale timeout wins over this. Unset: picked from the model and request size. Applies from the next turn. |
+| Silent request limit | `agent.api_call_stale_timeout` | unset (picked from the model and request size) | How long a model may stay silent on a request that is not streamed. Unset picks it from the model and the request size. Zero means no limit. A provider's own stale timeout wins over this. Unset: picked from the model and request size. Applies from the next turn. |

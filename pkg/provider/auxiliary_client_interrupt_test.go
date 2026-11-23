@@ -362,7 +362,7 @@ func TestProbeModeIsScopedReentrantAndPerCallChain(t *testing.T) {
 func TestResolveAuxVerifySSLVerifyFalse(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	cfg := config.Tree{"custom_providers": []any{map[string]any{"name": "ollama", "base_url": "https://ollama.example.com/v1", "ssl_verify": false}}}
+	cfg := config.Tree{"providers": map[string]any{"ollama": map[string]any{"base_url": "https://ollama.example.com/v1", "ssl_verify": false}}}
 	if err := config.Save(h, cfg); err != nil {
 		t.Fatal(err)
 	}

@@ -1478,18 +1478,10 @@ func (c *anthropicClient) staleTimeout(req *Request, settings wireSettings, estT
 	if d, ok := configuredProviderTimeout(settings.providers, c.providerLower(), req.Model, "stale_timeout_seconds", "stale_timeout_seconds"); ok {
 		return d.Seconds()
 	}
-	base := settings.streamStale
-	if base <= 0 {
-		base = defaultStreamStaleTimeout
+	if !settings.streamStaleSet && c.route.Local {
+		return settings.localStreamStale
 	}
-	if base == defaultStreamStaleTimeout && c.route.Local {
-		local := settings.localStreamStale
-		if local <= 0 {
-			local = 900
-		}
-		return local
-	}
-	timeout := scaleStaleTimeoutForContext(base, estTokens)
+	timeout := scaleStaleTimeoutForContext(settings.streamStale, estTokens)
 	if floor, ok := ReasoningStaleTimeoutFloor(req.Model); ok && floor.Seconds() > timeout {
 		timeout = floor.Seconds()
 	}

@@ -23,8 +23,8 @@ func TestNormalizeEntryKeepsExtraHeaders(t *testing.T) {
 	}
 }
 
-func TestApiKeyEnvAliasNormalizesToKeyEnv(t *testing.T) {
-	n := NormalizeCustomProviderEntry(map[string]any{"name": "vendor", "base_url": "https://api.vendor.example.com/v1", "api_key_env": "MY_VENDOR_KEY"}, "vendor")
+func TestNormalizerKeepsKeyEnvAndExtraBody(t *testing.T) {
+	n := NormalizeCustomProviderEntry(map[string]any{"name": "vendor", "base_url": "https://api.vendor.example.com/v1", "key_env": " MY_VENDOR_KEY "}, "vendor")
 	if n == nil || n["key_env"] != "MY_VENDOR_KEY" {
 		t.Fatalf("got %v", n)
 	}
@@ -42,7 +42,7 @@ func TestNormalizeEntryShapes(t *testing.T) {
 	if NormalizeCustomProviderEntry(map[string]any{"base_url": "nonsense"}, "k") != nil {
 		t.Fatal("invalid url is dropped")
 	}
-	n := NormalizeCustomProviderEntry(map[string]any{"base_url": "https://{region}.example/v1", "api_mode": "responses",
+	n := NormalizeCustomProviderEntry(map[string]any{"base_url": "https://{region}.example/v1", "api_mode": " codex_responses ",
 		"models": []any{"a", map[string]any{"id": "b", "context_length": 1000}}, "capabilities": map[string]any{"vision": true, "bad": "yes"},
 		"context_length": 4096, "ssl_verify": "false", "api_key": "plain"}, "proxy")
 	if n == nil || n["name"] != "proxy" || n["api_mode"] != "codex_responses" || n["api_key"] != "plain" {
@@ -56,16 +56,14 @@ func TestNormalizeEntryShapes(t *testing.T) {
 	}
 }
 
-func TestCompatibleCustomProvidersDedupes(t *testing.T) {
+func TestProviderEntriesDedupes(t *testing.T) {
 	cfg := map[string]any{
-		"custom_providers": []any{
-			map[string]any{"name": "Local", "base_url": "http://h/v1/", "model": "m"},
-			map[string]any{"name": "local", "base_url": "http://h/v1", "model": "m"},
-			"garbage",
-		},
 		"providers": map[string]any{
-			"keyed":    map[string]any{"api": "http://k/v1"},
-			"disabled": map[string]any{"api": "http://d/v1", "enabled": false},
+			"a-first":  map[string]any{"name": "Local", "base_url": "http://h/v1/", "default_model": "m"},
+			"b-second": map[string]any{"name": "local", "base_url": "http://h/v1", "default_model": "m"},
+			"garbage":  "not an entry",
+			"keyed":    map[string]any{"base_url": "http://k/v1"},
+			"disabled": map[string]any{"base_url": "http://d/v1", "enabled": false},
 			"nourl":    map[string]any{"stale_timeout_seconds": 600},
 		},
 	}
@@ -77,20 +75,20 @@ func TestCompatibleCustomProvidersDedupes(t *testing.T) {
 	if !reflect.DeepEqual(names, []string{"Local", "keyed"}) {
 		t.Fatalf("got %v", names)
 	}
-	if CustomProviderAPIMode("http://K/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"api": "http://k/v1", "transport": "anthropic"}}}) != "anthropic_messages" {
+	if CustomProviderAPIMode("http://K/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "api_mode": " anthropic_messages "}}}) != "anthropic_messages" {
 		t.Fatal("api mode by route")
 	}
-	if n := CustomProviderContextLength("m", "http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"api": "http://k/v1", "context_length": 9000, "models": map[string]any{"m": map[string]any{"context_length": 100}}}}}); n != 100 {
+	if n := CustomProviderContextLength("m", "http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "context_length": 9000, "models": map[string]any{"m": map[string]any{"context_length": 100}}}}}); n != 100 {
 		t.Fatalf("context length: %d", n)
 	}
-	if v, known := CustomProviderModelCapability("m", "http://k/v1", "vision", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"api": "http://k/v1", "models": map[string]any{"m": map[string]any{"vision": false}}}}}); !known || v {
+	if v, known := CustomProviderModelCapability("m", "http://k/v1", "vision", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "models": map[string]any{"m": map[string]any{"vision": false}}}}}); !known || v {
 		t.Fatalf("capability: %v %v", v, known)
 	}
-	tls := CustomProviderTLSSettings("http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"api": "http://k/v1", "ssl_verify": "no", "ssl_ca_cert": "/ca.pem"}}})
+	tls := CustomProviderTLSSettings("http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "ssl_verify": "no", "ssl_ca_cert": "/ca.pem"}}})
 	if tls.CACert != "/ca.pem" || !tls.HasVerify || tls.Verify {
 		t.Fatalf("tls: %+v", tls)
 	}
-	if CustomProviderSessionAffinityHeader("http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"api": "http://k/v1", "session_affinity_header": " X-Session "}}}) != "X-Session" {
+	if CustomProviderSessionAffinityHeader("http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "session_affinity_header": " X-Session "}}}) != "X-Session" {
 		t.Fatal("affinity header")
 	}
 }
@@ -105,22 +103,13 @@ func TestIsProviderEnabled(t *testing.T) {
 }
 
 func TestFindProviderEntryAndStringify(t *testing.T) {
-	providers := map[string]any{"2070": map[string]any{"api": "http://x/v1"}}
+	providers := map[string]any{"2070": map[string]any{"base_url": "http://x/v1"}}
 	key, entry := FindProviderEntry(providers, 2070)
 	if key != "2070" || entry == nil {
 		t.Fatalf("got %q %v", key, entry)
 	}
 	if got := StringifyProviderMap(map[string]any{" a ": 1}); !reflect.DeepEqual(got, map[string]any{"a": 1}) {
 		t.Fatalf("got %v", got)
-	}
-}
-
-func TestCanonicalAPIMode(t *testing.T) {
-	cases := map[string]string{"openai": "chat_completions", "Responses": "codex_responses", "anthropic": "anthropic_messages", "bedrock": "bedrock_converse", "weird": "weird", " chat_completions ": "chat_completions"}
-	for raw, want := range cases {
-		if got := CanonicalAPIMode(raw); got != want {
-			t.Errorf("%q: got %q", raw, got)
-		}
 	}
 }
 

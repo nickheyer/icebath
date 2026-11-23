@@ -229,6 +229,38 @@ func deviceLoginResult(env PoolEnv, provider string) Login {
 	return Login{Provider: provider, Name: provider, Label: group.Label, AuthType: AuthTypeOAuth, Origin: LoginOriginOwned, Status: LoginStatusReady}
 }
 
+// Login a device login profile's own save stored, named, put in rotation and made the default as asked; the provider's login in use, with a line saying the options did not apply, when the profile keeps the sign in outside the provider's logins
+func adoptDeviceLogin(env PoolEnv, out io.Writer, provider string, before []PooledCredential, previousActive string, o LoginOAuthOptions) (Login, error) {
+	entry, isNew, found := loginStoredSince(env, provider, before)
+	if !found {
+		if o.Name != "" || o.Rotate || o.MakeDefault {
+			fmt.Fprintf(out, "%s keeps this sign-in itself, so the name, rotation and default asked for did not apply.\n", provider)
+		}
+		return deviceLoginResult(env, provider), nil
+	}
+	var signedIn Login
+	var err error
+	if isNew {
+		signedIn, err = NameNewLogin(env, provider, entry.ID, o.Name, o.Rotate, previousActive)
+	} else {
+		for _, held := range ListLogins(env, provider).Logins {
+			if held.ID == entry.ID {
+				signedIn = held
+			}
+		}
+		if o.Name != "" && o.Name != entry.LoginName() {
+			signedIn, err = RenameLogin(env, provider, entry.ID, o.Name)
+		}
+		if err == nil && o.Rotate {
+			signedIn, err = SetLoginRotation(env, provider, entry.ID, true)
+		}
+	}
+	if err == nil && o.MakeDefault {
+		_, err = SetLoginDefault(env, provider, entry.ID)
+	}
+	return signedIn, err
+}
+
 // StartLoginOAuth starts a provider's OAuth sign in in the background, reusing the device code and PKCE flows of icebath auth add
 func StartLoginOAuth(env PoolEnv, provider string, o LoginOAuthOptions) (*LoginOAuthJob, error) {
 	asked := strings.ToLower(strings.TrimSpace(provider))
@@ -237,7 +269,7 @@ func StartLoginOAuth(env PoolEnv, provider string, o LoginOAuthOptions) (*LoginO
 	if _, ok := authOAuthAddSpecs[provider]; !ok && !deviceLogin {
 		return nil, loginFault(LoginFaultAuthType, "%s", noOAuthSignInMessage(asked))
 	}
-	if o.Name != "" && !deviceLogin {
+	if o.Name != "" {
 		if err := checkNewLoginName(env, provider, o.Name); err != nil {
 			return nil, err
 		}
@@ -262,13 +294,18 @@ func StartLoginOAuth(env PoolEnv, provider string, o LoginOAuthOptions) (*LoginO
 			}
 		}()
 		if deviceLogin {
+			before, previousActive := cli.storedLogins(provider)
 			if err := profileDeviceLogin(ctx, job, profile.Label(), profile, false); err != nil {
 				if !isSignInCancelled(err) {
 					job.finish(nil, err)
 				}
 				return
 			}
-			signedIn := deviceLoginResult(jobEnv, provider)
+			signedIn, err := adoptDeviceLogin(jobEnv, job, provider, before, previousActive, o)
+			if err != nil {
+				job.finish(nil, err)
+				return
+			}
 			job.finish(&signedIn, nil)
 			return
 		}
@@ -329,10 +366,11 @@ type OAuthSignIn struct {
 func SignInOAuthLogin(env PoolEnv, out io.Writer, provider string, o OAuthSignIn) (Login, error) {
 	provider = loginOAuthProvider(provider)
 	if profile, deviceLogin := deviceLoginProfile(provider); deviceLogin {
+		before, previousActive := LoadPool(env, provider).Entries(), currentLoginID(env, provider)
 		if err := profileDeviceLogin(env.ctx(), out, profile.Label(), profile, !o.NoBrowser); err != nil {
 			return Login{}, err
 		}
-		return deviceLoginResult(env, provider), nil
+		return adoptDeviceLogin(env, out, provider, before, previousActive, LoginOAuthOptions{MakeDefault: o.MakeDefault})
 	}
 	if _, ok := authOAuthAddSpecs[provider]; !ok {
 		return Login{}, loginFault(LoginFaultAuthType, "%s", noOAuthSignInMessage(provider))

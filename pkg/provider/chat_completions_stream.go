@@ -25,7 +25,6 @@ import (
 const StreamReadTimeoutEnv = "ICEBATH_STREAM_READ_TIMEOUT"
 
 const defaultStreamReadTimeout = 120.0
-const defaultStreamStaleTimeout = 180.0
 
 // Upper bound on an error body copied into an APIError
 const ccErrorBodyLimit = 1 << 20
@@ -52,6 +51,22 @@ func durationSeconds(d time.Duration) float64 {
 		return math.Inf(1)
 	}
 	return d.Seconds()
+}
+
+// Seconds of a watchdog window for a log line, an unbounded window said in words
+func windowText(seconds float64) string {
+	if math.IsInf(seconds, 1) {
+		return "no limit"
+	}
+	return fmt.Sprintf("%.0fs", seconds)
+}
+
+// SilenceLimitSeconds is a silence limit setting in seconds, infinite when it is zero and so sets no limit
+func SilenceLimitSeconds(limit time.Duration) float64 {
+	if limit <= 0 {
+		return math.Inf(1)
+	}
+	return durationSeconds(limit)
 }
 
 // Overall request timeout and whether a per provider setting supplied it
@@ -88,18 +103,10 @@ func (c *chatCompletionsClient) staleTimeout(req *Request, settings wireSettings
 	if d, ok := configuredProviderTimeout(settings.providers, c.cc.provider, req.Model, "stale_timeout_seconds", "stale_timeout_seconds"); ok {
 		return d.Seconds()
 	}
-	base := settings.streamStale
-	if base <= 0 {
-		base = defaultStreamStaleTimeout
+	if !settings.streamStaleSet && c.cc.local {
+		return settings.localStreamStale
 	}
-	if base == defaultStreamStaleTimeout && c.cc.local {
-		local := settings.localStreamStale
-		if local <= 0 {
-			local = 900
-		}
-		return local
-	}
-	timeout := scaleStaleTimeoutForContext(base, estTokens)
+	timeout := scaleStaleTimeoutForContext(settings.streamStale, estTokens)
 	if floor, ok := ReasoningStaleTimeoutFloor(req.Model); ok && floor.Seconds() > timeout {
 		timeout = floor.Seconds()
 	}

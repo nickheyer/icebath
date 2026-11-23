@@ -208,14 +208,13 @@ func (c *authCLI) rotation() error {
 	return nil
 }
 
-
 // Names a login an auth add just stored, applies --rotate and --default, and says how to use it
 func (c *authCLI) nameAddedLogin(provider string, entry PooledCredential, previousActive string) error {
 	named, err := NameNewLogin(c.env, provider, entry.ID, strings.TrimSpace(authTextOr(c.ns["name"])), nsFlag(c.ns, "rotate"), previousActive)
 	if err != nil {
 		return authExit(err.Error())
 	}
-	fmt.Fprintf(c.out, "Login name: %s\n", named.Name)
+	fmt.Fprintf(c.out, "Added the %s login %s.\n", provider, named.Name)
 	if nsFlag(c.ns, "default") {
 		if _, err := SetLoginDefault(c.env, provider, named.ID); err != nil {
 			return authExit(err.Error())
@@ -227,6 +226,92 @@ func (c *authCLI) nameAddedLogin(provider string, entry PooledCredential, previo
 		fmt.Fprintf(c.out, "The default login is unchanged. Use this one with `icebath auth use %s %s` or `/model <model> --login %s`.\n", provider, named.Name, named.Name)
 	}
 	return nil
+}
+
+// Logins the provider's pool holds and the one its requests use, read before a sign in so the login it stores can be told apart
+func (c *authCLI) storedLogins(provider string) ([]PooledCredential, string) {
+	if provider == "" {
+		return nil, ""
+	}
+	return LoadPool(c.env, provider).Entries(), currentLoginID(c.env, provider)
+}
+
+// Login a sign in left in the provider's pool since before: the row that is new, else the row that holds a new token
+func loginStoredSince(env PoolEnv, provider string, before []PooledCredential) (entry PooledCredential, isNew, found bool) {
+	held := map[string]string{}
+	for _, e := range before {
+		held[e.ID] = e.AccessToken
+	}
+	var renewed *PooledCredential
+	for _, e := range LoadPool(env, provider).Entries() {
+		token, existed := held[e.ID]
+		if !existed {
+			return e, true, true
+		}
+		if token != e.AccessToken && renewed == nil {
+			row := e
+			renewed = &row
+		}
+	}
+	if renewed != nil {
+		return *renewed, false, true
+	}
+	return PooledCredential{}, false, false
+}
+
+// Flags of auth add that shape the stored login, as the user typed them
+func (c *authCLI) namingFlags() []string {
+	var asked []string
+	if strings.TrimSpace(authTextOr(c.ns["name"])) != "" {
+		asked = append(asked, "--name")
+	}
+	for _, flag := range []string{"rotate", "default"} {
+		if nsFlag(c.ns, flag) {
+			asked = append(asked, "--"+flag)
+		}
+	}
+	if _, ok := authWantedPriority(c.ns); ok {
+		asked = append(asked, "--priority")
+	}
+	return asked
+}
+
+// Applies --name, --rotate, --default and --priority to the login a plugin's own sign in stored and says what was added; says which flags did not apply when the plugin keeps its sign in outside the provider's logins
+func (c *authCLI) adoptStoredLogin(provider string, before []PooledCredential, previousActive string) error {
+	entry, isNew, found := loginStoredSince(c.env, provider, before)
+	if !found {
+		if asked := c.namingFlags(); len(asked) > 0 {
+			fmt.Fprintf(c.out, "%s keeps this sign-in itself, so %s did not apply.\n", provider, strings.Join(asked, ", "))
+		}
+		return nil
+	}
+	if isNew {
+		if err := c.nameAddedLogin(provider, entry, previousActive); err != nil {
+			return err
+		}
+		return c.placeAddedLogin(provider, entry.ID)
+	}
+	name := entry.LoginName()
+	if wanted := strings.TrimSpace(authTextOr(c.ns["name"])); wanted != "" && wanted != name {
+		renamed, err := RenameLogin(c.env, provider, entry.ID, wanted)
+		if err != nil {
+			return authExit(err.Error())
+		}
+		name = renamed.Name
+	}
+	if nsFlag(c.ns, "rotate") {
+		if _, err := SetLoginRotation(c.env, provider, entry.ID, true); err != nil {
+			return authExit(err.Error())
+		}
+	}
+	fmt.Fprintf(c.out, "Signed in again to the %s login %s.\n", provider, name)
+	if nsFlag(c.ns, "default") {
+		if _, err := SetLoginDefault(c.env, provider, entry.ID); err != nil {
+			return authExit(err.Error())
+		}
+		fmt.Fprintf(c.out, "%s now uses %s by default.\n", provider, name)
+	}
+	return c.placeAddedLogin(provider, entry.ID)
 }
 
 // Refuses an invalid or taken --name before any sign in runs

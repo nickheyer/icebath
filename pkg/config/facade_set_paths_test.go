@@ -205,8 +205,8 @@ func TestBackwardCompatibility(t *testing.T) {
 		}
 	})
 	t.Run("test_list_index_navigation_unchanged", func(t *testing.T) {
-		listed := Tree{"custom_providers": []any{map[string]any{"name": "p1"}}}
-		if err := listed.Set("custom_providers.0.name", "p2"); err != nil || AsMap(listed["custom_providers"].([]any)[0])["name"] != "p2" {
+		listed := Tree{"fallback_providers": []any{map[string]any{"name": "p1"}}}
+		if err := listed.Set("fallback_providers.0.name", "p2"); err != nil || AsMap(listed["fallback_providers"].([]any)[0])["name"] != "p2" {
 			t.Fatalf("list index set %v %v", err, listed)
 		}
 	})
@@ -214,21 +214,21 @@ func TestBackwardCompatibility(t *testing.T) {
 
 // Python list subscripts, typed write errors, list element pruning and insertion order of new keys
 func TestNestedPathPythonSemantics(t *testing.T) {
-	cfg := Tree{"custom_providers": []any{map[string]any{"name": "a"}, map[string]any{"name": "b"}}, "label": "x"}
-	if v, ok := cfg.Lookup("custom_providers.-1.name"); !ok || v != "b" {
+	cfg := Tree{"fallback_providers": []any{map[string]any{"name": "a"}, map[string]any{"name": "b"}}, "label": "x"}
+	if v, ok := cfg.Lookup("fallback_providers.-1.name"); !ok || v != "b" {
 		t.Fatalf("negative index %v %v", v, ok)
 	}
-	if v, ok := cfg.Lookup("custom_providers. 1 .name"); !ok || v != "b" {
+	if v, ok := cfg.Lookup("fallback_providers. 1 .name"); !ok || v != "b" {
 		t.Fatalf("int() spacing %v %v", v, ok)
 	}
 	if _, ok := cfg.Lookup(""); ok {
 		t.Fatal("empty path resolves only a literal empty key")
 	}
 	cases := []struct{ path, kind, msg string }{
-		{"custom_providers.x", "ValueError", "x is not a list index"},
-		{"custom_providers.5", "IndexError", "the list has no item 5"},
-		{"custom_providers.x.name", "TypeError", "Cannot navigate into list at key 'custom_providers.x.name': segment 'x' is not a numeric index"},
-		{"custom_providers.9.name", "IndexError", "the list has no item 9"},
+		{"fallback_providers.x", "ValueError", "x is not a list index"},
+		{"fallback_providers.5", "IndexError", "the list has no item 5"},
+		{"fallback_providers.x.name", "TypeError", "Cannot navigate into list at key 'fallback_providers.x.name': segment 'x' is not a numeric index"},
+		{"fallback_providers.9.name", "IndexError", "the list has no item 9"},
 		{"label.inner.deep", "", ""},
 	}
 	for _, tc := range cases {
@@ -248,8 +248,8 @@ func TestNestedPathPythonSemantics(t *testing.T) {
 	if err, ok := scalarItems.Set("items.0.name", 1).(*PathError); !ok || err.Kind != "TypeError" || err.Msg != "Cannot navigate into str at key 'items.0.name'" {
 		t.Fatalf("scalar item %#v", err)
 	}
-	pruned := Tree{"custom_providers": []any{map[string]any{"name": "a"}, map[string]any{"only": 1}}}
-	if !pruned.Unset("custom_providers.1.only") || len(pruned["custom_providers"].([]any)) != 1 {
+	pruned := Tree{"fallback_providers": []any{map[string]any{"name": "a"}, map[string]any{"only": 1}}}
+	if !pruned.Unset("fallback_providers.1.only") || len(pruned["fallback_providers"].([]any)) != 1 {
 		t.Fatalf("emptied list element is deleted %v", pruned)
 	}
 	shadow := map[string]any{"grok-4.6": 1, "grok-4.5": 2}

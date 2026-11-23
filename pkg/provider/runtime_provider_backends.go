@@ -42,11 +42,8 @@ func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, e
 		cfgProvider = strings.ToLower(strings.TrimSpace(s))
 	}
 	cfgAPIKey := ""
-	for _, v := range []any{modelCfg["api_key"], modelCfg["api"]} {
-		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-			cfgAPIKey = strings.TrimSpace(s)
-			break
-		}
+	if s, ok := modelCfg["api_key"].(string); ok {
+		cfgAPIKey = strings.TrimSpace(s)
 	}
 	requestedNorm := strings.ToLower(strings.TrimSpace(requestedProvider))
 	if requestedNorm != "" && requestedNorm != "custom" && r.resolvesToCustom(requestedNorm) {

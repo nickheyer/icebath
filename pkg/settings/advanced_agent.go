@@ -1,6 +1,11 @@
 package settings
 
-import "time"
+import (
+	"errors"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // Tells the agent how to behave when relayed through a bot
 var AgentBotModeProtocol = Register(&Bool{Meta: Meta{Key: "agent.bot_mode_protocol", Label: "Bot mode rules", Short: "Tells the agent how to behave when relayed through a bot.", Group: GroupAgent, Order: 1000, Advanced: true, Apply: NewSession}, Default: true})
@@ -51,7 +56,7 @@ var AgentToolUseEnforcement = Register(&Enum{Meta: Meta{Key: "agent.tool_use_enf
 var AgentVerifyGuidance = Register(&Bool{Meta: Meta{Key: "agent.verify_guidance", Label: "Verify advice", Short: "Adds how-to-verify advice to the reminders sent before stopping.", Group: GroupAgent, Order: 1150, Advanced: true}, Default: true})
 
 // Asks the agent to check its edits before it finishes
-var AgentVerifyOnStop = Register(&Bool{Meta: Meta{Key: "agent.verify_on_stop", Label: "Verify before stop", Short: "Asks the agent to check its edits before it finishes.", Group: GroupAgent, Order: 1160, Advanced: true}, Default: false})
+var AgentVerifyOnStop = Register(&Enum{Meta: Meta{Key: "agent.verify_on_stop", Label: "Verify before stop", Short: "Asks the agent to check its edits before it finishes.", Group: GroupAgent, Order: 1160, Advanced: true}, Default: "off", Off: "off", On: "on", Values: []Choice{{Value: "auto", Label: "Auto", Meaning: "Check edits everywhere but in chat apps."}, {Value: "on", Label: "Always", Meaning: "Always check edits before finishing."}, {Value: "off", Label: "Never", Meaning: "Never ask for a check."}}})
 
 // How long a queued bot message waits for the running turn
 var BotModeTurnWaitSeconds = Register(&Duration{Meta: Meta{Key: "bot_mode.turn_wait_seconds", Label: "Bot turn wait", Short: "How long a queued bot message waits for the running turn.", Group: GroupAgent, Order: 1170, Advanced: true}, Default: 2 * time.Minute})
@@ -314,8 +319,59 @@ var MoaActivePreset = Register(&String{Meta: Meta{Key: "moa.active_preset", Labe
 // Mixture preset used when none is chosen
 var MoaDefaultPreset = Register(&String{Meta: Meta{Key: "moa.default_preset", Label: "Default mix", Short: "Mixture preset used when none is chosen.", Group: GroupAgent, Order: 2030, Advanced: true}, Default: "default"})
 
+// Cadences a mixture preset may ask its answering models at
+func checkMoaFanout(v any) error {
+	text, _ := v.(string)
+	if text == "user_turn" || text == "per_iteration" {
+		return nil
+	}
+	if count, isEvery := strings.CutPrefix(text, "every_n:"); isEvery {
+		if n, err := strconv.Atoi(count); err == nil && n >= 2 {
+			return nil
+		}
+	}
+	return errors.New("takes user_turn, per_iteration or every_n:<count> with a count of 2 or more")
+}
+
+// Fields of one model a mixture preset names, the answering models also carrying their own switch
+func moaSlotFields(what string, withSwitch bool) []Entry {
+	fields := []Entry{
+		&String{Meta: Meta{Key: "provider", Label: "Provider", Short: "Provider " + what + " is reached through."}},
+		&String{Meta: Meta{Key: "model", Label: "Model", Short: "Name of " + what + "."}},
+		&Enum{Meta: Meta{Key: "reasoning_effort", Label: "Thinking effort", Short: "How long " + what + " thinks before answering."},
+			Values: reasoningChoices, Null: "the model's own level"},
+	}
+	if withSwitch {
+		fields = append(fields, &Bool{Meta: Meta{Key: "enabled", Label: "In use", Short: "Whether " + what + " takes part."}, Default: true})
+	}
+	return fields
+}
+
 // Named groups of models that answer together, with one combining model
-var MoaPresets = Register(&Map{Meta: Meta{Key: "moa.presets", Label: "Mixture presets", Short: "Named groups of models that answer together, with one combining model.", Group: GroupAgent, Order: 2040, Advanced: true}, Default: map[string]any{"default": map[string]any{"aggregator": map[string]any{"model": "anthropic/claude-opus-4.8", "provider": "openrouter"}, "enabled": true, "reference_models": []any{map[string]any{"model": "gpt-5.5", "provider": "openai-codex"}, map[string]any{"model": "deepseek/deepseek-v4-pro", "provider": "openrouter"}}}}})
+var MoaPresets = Register(&Map{Meta: Meta{Key: "moa.presets", Label: "Mixture presets", Short: "Named groups of models that answer together, with one combining model.", Group: GroupAgent, Order: 2040, Advanced: true},
+	Default: map[string]any{"default": map[string]any{"aggregator": map[string]any{"model": "anthropic/claude-opus-4.8", "provider": "openrouter"}, "enabled": true, "reference_models": []any{map[string]any{"model": "gpt-5.5", "provider": "openai-codex"}, map[string]any{"model": "deepseek/deepseek-v4-pro", "provider": "openrouter"}}}},
+	Value: &Object{Meta: Meta{Key: "moa.presets.*", Label: "Mixture preset", Short: "Models that answer together and the model that combines them."}, Fields: []Entry{
+		&Bool{Meta: Meta{Key: "enabled", Label: "In use", Short: "Whether the preset can be picked."}, Default: true},
+		&List{Meta: Meta{Key: "reference_models", Label: "Answering models", Short: "Models that each answer first, each with a provider and a model."},
+			Of: KindObject, Item: &Object{Meta: Meta{Key: "moa.presets.*.reference_models.*", Label: "Answering model", Short: "One model that answers before the combining model."},
+				Fields: moaSlotFields("the answering model", true)}},
+		&Object{Meta: Meta{Key: "aggregator", Label: "Combining model", Short: "Model that writes the final answer from the others."},
+			Fields: moaSlotFields("the combining model", false)},
+		&Float{Meta: Meta{Key: "reference_temperature", Label: "Answering temperature", Short: "How varied the answering models may be."},
+			Null: "each provider's default", Min: at(0.0), Max: at(2.0)},
+		&Float{Meta: Meta{Key: "aggregator_temperature", Label: "Combining temperature", Short: "How varied the combining model may be."},
+			Null: "the provider's default", Min: at(0.0), Max: at(2.0)},
+		&Duration{Meta: Meta{Key: "reference_timeout", Label: "Answering time limit", Short: "Longest wait for one answering model."},
+			Null: "the reference answer time limit", Min: at(time.Second)},
+		&Enum{Meta: Meta{Key: "degraded_reference_policy", Label: "Missing answers", Short: "Whether you are told when an answering model fails."},
+			Default: "loud", Values: []Choice{
+				{"loud", "Tell me", "Say which models gave no answer."},
+				{"silent", "Stay quiet", "Combine the answers that arrived without a note."},
+			}},
+		&String{Meta: Meta{Key: "fanout", Label: "Asking cadence", Short: "How often the answering models are asked.",
+			Help: "user_turn asks once per prompt, per_iteration every step, every_n:<count> every few steps.", Validate: checkMoaFanout},
+			Default: "user_turn"},
+	}}})
 
 // Hides private details sent to the mixture's models
 var MoaPrivacyFilter = Register(&Enum{Meta: Meta{Key: "moa.privacy_filter", Label: "Mixture privacy", Short: "Hides private details sent to the mixture's models.", Group: GroupAgent, Order: 2050, Advanced: true}, Default: "", Values: []Choice{{Value: "", Label: "Off", Meaning: "No filtering."}, {Value: "display", Label: "Display", Meaning: "Hide details on screen only."}, {Value: "full", Label: "Full", Meaning: "Hide details everywhere."}}})

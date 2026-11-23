@@ -49,7 +49,9 @@ func TestProbeFailureNeverBlocksTheSave(t *testing.T) {
 func scopedProfileHome(t *testing.T) (string, context.Context) {
 	t.Helper()
 	h := newTestHome(t)
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model: old-model\ncustom_providers: []\n"), 0o600); err != nil {
+	seed := "model:\n  default: old-model\nproviders:\n  example-provider:\n    name: Example Provider\n" +
+		"    base_url: https://api.example-provider.test/v1\n    key_env: EXAMPLE_PROVIDER_API_KEY\n    default_model: qwen3.6-35b-fast\n"
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(seed), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(h, ".env"), []byte("EXAMPLE_PROVIDER_API_KEY=sk-from-profile-dotenv\n"), 0o600); err != nil {
@@ -70,7 +72,7 @@ func TestNamedCustomFlowProbesWithScopedKeyEnv(t *testing.T) {
 	env.Ctx = ctx
 	r := &ModelFlowRun{Ctx: ctx, Env: env, Out: io.Discard, Config: map[string]any{}}
 	providerInfo := map[string]any{"name": "Example Provider", "base_url": "https://api.example-provider.test/v1", "api_key": "",
-		"key_env": "EXAMPLE_PROVIDER_API_KEY", "model": "qwen3.6-35b-fast"}
+		"key_env": "EXAMPLE_PROVIDER_API_KEY", "model": "qwen3.6-35b-fast", "provider_key": "example-provider"}
 	var probedKeys []string
 	swapFlowSeam(t, &flowFetchAPIModelsFn, func(_ context.Context, apiKey, _ string, _ time.Duration, _ string, _ map[string]string) ([]string, bool) {
 		probedKeys = append(probedKeys, apiKey)

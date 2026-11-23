@@ -26,9 +26,9 @@ func switchToThetaAlias(t *testing.T, sessionProvider, sessionModel, sessionBase
 	}
 	sort.Strings(keys)
 	var b strings.Builder
-	fmt.Fprintf(&b, "model:\n  default: %s\n  provider: %s\nmodel_aliases:\n  theta:\n", sessionModel, sessionProvider)
+	fmt.Fprintf(&b, "model:\n  default: %s\n  provider: %s\n  aliases:\n    theta:\n", sessionModel, sessionProvider)
 	for _, k := range keys {
-		fmt.Fprintf(&b, "    %s: %q\n", k, alias[k])
+		fmt.Fprintf(&b, "      %s: %q\n", k, alias[k])
 	}
 	kept := map[string]string{}
 	for _, k := range seedableEnvVars {
@@ -246,7 +246,6 @@ func switchSharedModel(t *testing.T, configYAML string, opts SwitchModelOptions,
 	cfg := readConfigYAMLMap(t, h)
 	opts.RawInput = "shared-model"
 	opts.UserProviders, _ = cfg["providers"].(map[string]any)
-	opts.CustomProviders, _ = cfg["custom_providers"].([]any)
 	return mustSwitch(t, ctx, opts)
 }
 
@@ -261,7 +260,7 @@ func TestExplicitProviderAliasOwnership(t *testing.T) {
 	aAlias := NamedDirectAlias{"a-alias", DirectAlias{Model: "shared-model", Provider: "custom", BaseURL: "https://alias-host.example.com/v1", APIKey: "sk-alias-host"}}
 	t.Run("test_explicit_provider_never_adopts_alias_bound_to_another_provider", func(t *testing.T) {
 		res := explicitSwitchToProviderB(t, "provider-b", "", aAlias)
-		if !res.Success || res.TargetProvider != "provider-b" || res.BaseURL != "https://api-b.example.com/v1" || res.APIKey != "sk-provider-b" || res.ResolvedViaAlias != "" {
+		if !res.Success || res.TargetProvider != "custom:provider-b" || res.BaseURL != "https://api-b.example.com/v1" || res.APIKey != "sk-provider-b" || res.ResolvedViaAlias != "" {
 			t.Fatalf("result %+v", res)
 		}
 	})
@@ -274,14 +273,14 @@ func TestExplicitProviderAliasOwnership(t *testing.T) {
 	})
 	corpAlias := NamedDirectAlias{"corp-alias", DirectAlias{Model: "shared-model", Provider: "corp-llm", BaseURL: "https://corp.example.com/v2", APIKey: "sk-corp-alias"}}
 	providerAAlias := NamedDirectAlias{"a-alias", DirectAlias{Model: "shared-model", Provider: "provider-a", BaseURL: "https://alias-host.example.com/v1", APIKey: "sk-alias-host"}}
-	corpEntry := "providers:\n  corp-llm:\n    base_url: https://corp.example.com/v1\n    api_key: sk-corp\n"
-	t.Run("test_explicit_provider_keeps_alias_owned_by_legacy_custom_provider", func(t *testing.T) {
+	corpEntry := "  corp-llm:\n    base_url: https://corp.example.com/v1\n    api_key: sk-corp\n"
+	t.Run("test_explicit_provider_keeps_alias_owned_by_its_providers_entry", func(t *testing.T) {
 		res := explicitSwitchToProviderB(t, "corp-llm", corpEntry, providerAAlias, corpAlias)
 		if !res.Success || res.TargetProvider != "custom:corp-llm" || res.ResolvedViaAlias != "corp-alias" || res.BaseURL != "https://corp.example.com/v2" || res.APIKey != "sk-corp-alias" {
 			t.Fatalf("result %+v", res)
 		}
 	})
-	t.Run("test_implicit_switch_prefers_alias_of_current_legacy_custom_provider", func(t *testing.T) {
+	t.Run("test_implicit_switch_prefers_alias_of_the_current_providers_entry", func(t *testing.T) {
 		cfg := "model:\n  provider: custom:corp-llm\n  default: old-model\nproviders:\n  provider-a:\n    base_url: https://api-a.example.com/v1\n" + corpEntry
 		res := switchSharedModel(t, cfg, SwitchModelOptions{CurrentProvider: "custom:corp-llm",
 			CurrentBaseURL: "https://corp.example.com/v1", CurrentAPIKey: "sk-corp"}, providerAAlias, corpAlias)

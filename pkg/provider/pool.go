@@ -43,8 +43,6 @@ var oauthRefreshProviders = map[string]oauthRefreshSpec{
 // RefreshableOAuthProviders are the built in providers whose pooled OAuth rows the pool can refresh
 var RefreshableOAuthProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true, "minimax-oauth": true}
 
-var singleUseRefreshProviders = map[string]bool{"openai-codex": true, "xai-oauth": true, "anthropic": true}
-
 // Lock free window between consecutive auth store holds in a deferred refresh sweep
 const refreshSweepSpacing = 500 * time.Millisecond
 
@@ -364,25 +362,6 @@ func (p *Pool) adopt(updated PooledCredential, held, persist bool) PooledCredent
 	return updated
 }
 
-// Drops every entry seeded from sources and persists the removal
-func (p *Pool) quarantineSources(entry PooledCredential, sources map[string]bool, held bool) {
-	defer p.lockUnless(held)()
-	var removed []string
-	kept := p.entries[:0:0]
-	for _, e := range p.entries {
-		if sources[e.Source] {
-			removed = append(removed, e.ID)
-			continue
-		}
-		kept = append(kept, e)
-	}
-	p.entries = kept
-	if p.currentID == entry.ID {
-		p.currentID = ""
-	}
-	p.persist(true, removed, nil)
-}
-
 // ---- exhaustion ----
 
 // Upstream permanent OAuth failures that will not recover on TTL
@@ -444,13 +423,21 @@ func (p *Pool) syncAnthropicEntryFromCredentialsFile(entry PooledCredential, hel
 	return entry
 }
 
-// Adopts a token pair rotated by another pool instance for anthropic, xai and plugin providers
+// Whether the pool refreshes the provider's OAuth rows through a token request of its own
+func (p *Pool) refreshes() bool {
+	return p.provider == "anthropic" || oauthRefreshProviders[p.provider].refresh != nil || pluginRefreshHook(p.env.ctx(), p.provider) != nil
+}
+
+// Adopts a token pair another pool instance rotated and stored for the row
 func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledCredential {
-	if p.provider != "anthropic" && p.provider != "xai-oauth" && pluginRefreshHook(p.env.ctx(), p.provider) == nil {
+	if !p.refreshes() {
 		return entry
 	}
 	isAnthropic, isXAI := p.provider == "anthropic", p.provider == "xai-oauth"
-	display := map[string]string{"anthropic": "Anthropic", "xai-oauth": "xAI"}[p.provider]
+	display := oauthRefreshProviders[p.provider].short
+	if isAnthropic {
+		display = "Anthropic"
+	}
 	if display == "" {
 		display = p.provider
 	}
@@ -496,7 +483,7 @@ type refreshDone struct {
 
 func (r refreshDone) Error() string { return "refresh short circuit" }
 
-// Refreshes one OAuth entry, serializing single use providers under the cross process auth store lock
+// Refreshes one OAuth entry under the cross process auth store lock, adopting a pair another instance rotated first
 func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string, held bool) (PooledCredential, bool) {
 	if entry.AuthType != AuthTypeOAuth || entry.RefreshToken == "" {
 		if force {
@@ -504,7 +491,7 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 		}
 		return PooledCredential{}, false
 	}
-	if !singleUseRefreshProviders[p.provider] && pluginRefreshHook(p.env.ctx(), p.provider) == nil {
+	if !p.refreshes() {
 		return p.refreshEntryImpl(entry, force, failedKey, held)
 	}
 	unlock, err := p.env.Store.Lock(p.singleUseRefreshLockTimeout())

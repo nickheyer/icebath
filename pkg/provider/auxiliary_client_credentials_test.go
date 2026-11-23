@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,22 +67,39 @@ func TestNormalizeAuxProviderCoversEveryAuthAlias(t *testing.T) {
 	}
 }
 
-func TestResolveCodexCredentialTokenFromAuthStore(t *testing.T) {
+// Test home whose ChatGPT login holds the access token, its token refresh answering as scripted
+func auxCodexRefreshHome(t *testing.T, accessToken string, refreshed map[string]any, refreshErr error) context.Context {
+	t.Helper()
+	ctx := auxCodexLoginHome(t, accessToken)
+	prev := oauthRefreshProviders["openai-codex"]
+	spec := prev
+	spec.refresh = func(context.Context, PooledCredential, time.Duration) (map[string]any, error) {
+		return refreshed, refreshErr
+	}
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
+	return ctx
+}
+
+func TestResolveCodexCredentialTokenFromTheLogin(t *testing.T) {
 	now := time.Now().Unix()
+	valid, expired, rotated := auxCodexJWT(now+3600), auxCodexJWT(now-3600), auxCodexJWT(now+7200)
+	unexpected := errors.New("a usable token must not be refreshed")
 	cases := []struct {
-		name, token, want string
+		name, token string
+		refreshed   map[string]any
+		refreshErr  error
+		want        string
 	}{
-		{"valid auth store", "tok-123", "tok-123"},
-		{"expired jwt returns none", auxCodexJWT(now - 3600), ""},
-		{"valid jwt returns token", auxCodexJWT(now + 3600), auxCodexJWT(now + 3600)},
+		{"opaque token", "tok-123", nil, unexpected, "tok-123"},
+		{"valid jwt", valid, nil, unexpected, valid},
+		{"expired jwt is refreshed", expired, map[string]any{"access_token": rotated, "refresh_token": "r-789"}, nil, rotated},
+		{"expired jwt whose refresh fails gives no token", expired, nil, errors.New("refresh refused"), ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := auxMainTestHome(t, "")
-			auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{
-				"openai-codex": map[string]any{"tokens": map[string]any{"access_token": tc.token, "refresh_token": "r-456"}}}})
-			auxFixedPoolEntry(t, false, nil)
-			token, base, err := auxResolveCodexCredentialAndBase(ctx)
+			ctx := auxCodexRefreshHome(t, tc.token, tc.refreshed, tc.refreshErr)
+			token, base, err := ResolveCodexCredentialAndBase(ctx)
 			if err != nil || token != tc.want || base != DefaultCodexBaseURL {
 				t.Fatalf("got %q %q %v", token, base, err)
 			}
@@ -243,16 +261,5 @@ func TestUnhealthyCacheExpiresAndLogsSkipOncePerMinute(t *testing.T) {
 	}
 	if auxNormalizeChainLabel(" Custom ") != "local/custom" || auxNormalizeChainLabel("ZAI") != "zai" || auxNormalizeChainLabel("") != "" {
 		t.Fatal("chain label mapping")
-	}
-}
-
-func TestResolveCodexCredentialAndBaseReadsTheAuthStore(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{
-		"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "tok-123", "refresh_token": "r-456"}}}})
-	auxFixedPoolEntry(t, false, nil)
-	token, base, err := ResolveCodexCredentialAndBase(ctx)
-	if err != nil || token != "tok-123" || base != DefaultCodexBaseURL {
-		t.Fatalf("got %q %q %v", token, base, err)
 	}
 }

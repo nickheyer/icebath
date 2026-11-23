@@ -43,7 +43,7 @@ type Row struct {
 	ProfileSource Source `json:"profile_source,omitempty"`
 	// Entries of a map setting in name order, each with its full key and value
 	Entries []MapEntry `json:"entries,omitempty"`
-	// Schema of one entry of a map setting whose entries follow one
+	// Schema of one entry of a map setting or one item of a list setting, when they follow one
 	EntrySchema *Row `json:"entry_schema,omitempty"`
 	// Schema of each field of an object setting or of a map entry that is an object
 	Fields []Row `json:"fields,omitempty"`
@@ -116,6 +116,12 @@ func schemaOf(row *Row, e Entry) {
 		}
 	case *List:
 		row.Null = t.Null
+		if t.Item != nil {
+			item := Row{Key: t.Key + ".*", Label: t.Item.Info().Label, Short: t.Item.Info().Short, Help: t.Item.Info().Help,
+				Default: t.Item.DefaultValue()}
+			schemaOf(&item, t.Item)
+			row.EntrySchema = &item
+		}
 	case *Map:
 		if t.Value != nil {
 			entry := Row{Key: t.Key + ".*", Label: t.Value.Info().Label, Short: t.Value.Info().Short, Help: t.Value.Info().Help,

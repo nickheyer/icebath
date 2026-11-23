@@ -405,7 +405,7 @@ var GatewayRoomLinkURL = Register(&String{Meta: Meta{Key: "gateway.room_link_url
 var TelegramRequireMention = Register(&Bool{Meta: Meta{Key: "telegram.require_mention", Label: "Require mention", Short: "Telegram: answer in groups only when someone mentions the bot.", Group: GroupChatApps, Order: 2340, Advanced: true}, Default: false})
 
 // Telegram: words that count as a mention besides the bot's name
-var TelegramMentionPatterns = Register(&List{Meta: Meta{Key: "telegram.mention_patterns", Label: "Mention words", Short: "Telegram: words that count as a mention besides the bot's name.", Help: "Each item is a pattern matched against the message text.", Group: GroupChatApps, Order: 2340, Advanced: true}})
+var TelegramMentionPatterns = Register(&List{Meta: Meta{Key: "telegram.mention_patterns", Label: "Mention words", Short: "Telegram: words that count as a mention besides the bot's name.", Help: "Each item is a pattern matched against the message text.", Group: GroupChatApps, Order: 2340, Advanced: true}, Whole: true})
 
 // Telegram: a mention of another bot means the message is not for this one
 var TelegramExclusiveBotMentions = Register(&Bool{Meta: Meta{Key: "telegram.exclusive_bot_mentions", Label: "Other bot mentions", Short: "Telegram: skip messages that mention only another bot.", Group: GroupChatApps, Order: 2340, Advanced: true}, Default: true})
@@ -510,7 +510,7 @@ var WhatsappGroupAllowFrom = Register(&List{Meta: Meta{Key: "whatsapp.group_allo
 var WhatsappRequireMention = Register(&Bool{Meta: Meta{Key: "whatsapp.require_mention", Label: "Require mention", Short: "WhatsApp: answer in groups only when someone mentions it.", Group: GroupChatApps, Order: 2350, Advanced: true}, Default: false})
 
 // WhatsApp: words that count as a mention
-var WhatsappMentionPatterns = Register(&List{Meta: Meta{Key: "whatsapp.mention_patterns", Label: "Mention words", Short: "WhatsApp: words that count as a mention besides its name.", Group: GroupChatApps, Order: 2350, Advanced: true}})
+var WhatsappMentionPatterns = Register(&List{Meta: Meta{Key: "whatsapp.mention_patterns", Label: "Mention words", Short: "WhatsApp: words that count as a mention besides its name.", Group: GroupChatApps, Order: 2350, Advanced: true}, Whole: true})
 
 // WhatsApp: chats where it answers without a mention
 var WhatsappFreeResponseChats = Register(&List{Meta: Meta{Key: "whatsapp.free_response_chats", Label: "Free reply chats", Short: "WhatsApp: chats where it answers without being mentioned.", Group: GroupChatApps, Order: 2350, Advanced: true}})
@@ -615,7 +615,7 @@ var MattermostURL = Register(&String{Meta: Meta{Key: "mattermost.url", Label: "S
 var DingtalkRequireMention = Register(&Bool{Meta: Meta{Key: "dingtalk.require_mention", Label: "Require mention", Short: "DingTalk: only answer in group chats when mentioned.", Group: GroupChatApps, Order: 3200, Advanced: true}, Default: false})
 
 // DingTalk: words that count as calling the bot
-var DingtalkMentionPatterns = Register(&List{Meta: Meta{Key: "dingtalk.mention_patterns", Label: "Wake patterns", Short: "DingTalk: patterns in a message that count as mentioning it.", Help: "Regular expressions, matched without regard to case.", Group: GroupChatApps, Order: 3210, Advanced: true, Apply: Restart}})
+var DingtalkMentionPatterns = Register(&List{Meta: Meta{Key: "dingtalk.mention_patterns", Label: "Wake patterns", Short: "DingTalk: patterns in a message that count as mentioning it.", Help: "Regular expressions, matched without regard to case.", Group: GroupChatApps, Order: 3210, Advanced: true, Apply: Restart}, Whole: true})
 
 // DingTalk: group chats answered without a mention
 var DingtalkFreeResponseChats = Register(&List{Meta: Meta{Key: "dingtalk.free_response_chats", Label: "Free reply chats", Short: "DingTalk: group chat IDs where it replies without a mention.", Group: GroupChatApps, Order: 3220, Advanced: true}})

@@ -247,16 +247,16 @@ func (a *AIAgent) resolvedAPICallTimeout(ctx context.Context) float64 {
 	if v, ok := provider.GetProviderRequestTimeout(ctx, a.provider, a.model); ok {
 		return v
 	}
-	return settings.AgentApiTimeout.Get(ctx).Seconds()
+	return provider.APITimeoutSeconds(ctx)
 }
 
 // The silent request limit the user set, false when it is left to the model
 func explicitAPICallStaleTimeout(ctx context.Context) (float64, bool) {
-	v, err := settings.Resolve(ctx, settings.AgentApiCallStaleTimeout.Key)
-	if err != nil || v.Source == settings.SourceDefault {
+	limit, set := settings.AgentApiCallStaleTimeout.Lookup(ctx)
+	if !set {
 		return 0, false
 	}
-	return settings.AgentApiCallStaleTimeout.Get(ctx).Seconds(), true
+	return provider.SilenceLimitSeconds(limit), true
 }
 
 // Base non stream stale timeout and whether it is the implicit 90 second default

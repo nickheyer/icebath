@@ -82,7 +82,7 @@ func invFind(t *testing.T, rows []map[string]any, slug string) map[string]any {
 func TestLoadPickerContextCoercesNumericYAMLProvider(t *testing.T) {
 	h := invTestHome(t)
 	writeConfigYAML(t, h, "model:\n  provider: 2070\n  default: Qwen3.5-9B-Q4_K_M.gguf\n  base_url: http://192.168.1.10:8082/v1\n"+
-		"providers:\n  2070:\n    name: 2070\n    base_url: http://192.168.1.10:8082/v1\n    model: Qwen3.5-9B-Q4_K_M.gguf\ncustom_providers: []\n")
+		"providers:\n  2070:\n    name: 2070\n    base_url: http://192.168.1.10:8082/v1\n    default_model: Qwen3.5-9B-Q4_K_M.gguf\n")
 	pc, err := loadPickerContext(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestEndToEndWithRealContextNoCredentialsLeak(t *testing.T) {
 	canary := "sk-canary-XYZ-must-not-appear"
 	t.Setenv("OPENROUTER_API_KEY", canary)
 	t.Setenv("ANTHROPIC_API_KEY", canary)
-	writeConfigYAML(t, h, "model:\n  provider: openrouter\nproviders: {}\ncustom_providers: []\n")
+	writeConfigYAML(t, h, "model:\n  provider: openrouter\nproviders: {}\n")
 	pc, err := loadPickerContext(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -438,15 +438,15 @@ providers:
     models:
       big-model: {}
       small-model: {}
-custom_providers:
-  - name: Legacy Box
-    base_url: https://legacy.example.com/v1
-    key_env: LEGACY_KEY
-    model: legacy-1
+  second-box:
+    name: Second Box
+    base_url: https://second.example.com/v1
+    key_env: SECOND_KEY
+    default_model: second-1
     discover_models: false
 `
 
-// Home with one providers entry and one legacy custom_providers entry, both keyed through env
+// Home with two providers entries, both keyed through env
 func invAuxHome(t *testing.T) {
 	t.Helper()
 	pickerTestHome(t, nil)
@@ -454,7 +454,7 @@ func invAuxHome(t *testing.T) {
 	writeConfigYAML(t, h, invAuxConfig)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
 	t.Setenv("MYLLM_KEY", "sk-mine")
-	t.Setenv("LEGACY_KEY", "sk-legacy")
+	t.Setenv("SECOND_KEY", "sk-second")
 }
 
 func TestAuxPickerSurfacesUserDefinedProviders(t *testing.T) {
@@ -464,7 +464,7 @@ func TestAuxPickerSurfacesUserDefinedProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	slugs := invSlugs(rows)
-	if !slices.Contains(slugs, "my-llm") || !slices.Contains(slugs, "custom:legacy-box") {
+	if !slices.Contains(slugs, "my-llm") || !slices.Contains(slugs, "second-box") {
 		t.Fatalf("slugs %v", slugs)
 	}
 }

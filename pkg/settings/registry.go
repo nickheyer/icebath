@@ -112,8 +112,8 @@ func (c *mapChild) DefaultValue() any {
 	return c.Entry.DefaultValue()
 }
 
-// Map setting a key is an entry or entry field of, with the entry name and the field path, nil when the key is under no map setting
-func mapParentOf(key string) (parent *Map, name, field string) {
+// Map setting a key is an entry or entry field of, with the entry name and the field names under it, nil when the key is under no map setting
+func mapParentOf(key string) (parent *Map, name string, fields []string) {
 	segs := config.SplitPath(key)
 	for n := len(segs) - 1; n > 0; n-- {
 		registry.RLock()
@@ -122,9 +122,9 @@ func mapParentOf(key string) (parent *Map, name, field string) {
 		if p == nil {
 			continue
 		}
-		return p, segs[n], strings.Join(segs[n+1:], ".")
+		return p, segs[n], segs[n+1:]
 	}
-	return nil, "", ""
+	return nil, "", nil
 }
 
 // Key of one entry of a map setting, dots in the entry name kept literal
@@ -132,33 +132,40 @@ func (m *Map) EntryKey(name string) string {
 	return m.Key + "." + strings.ReplaceAll(name, ".", `\.`)
 }
 
-// Entry of a map setting a dotted key names, nil when the key is under no map with an entry schema
+// Entry of a map setting a dotted key names: one named entry, or a field any depth inside an entry that follows a schema; nil when the key is under no map, the entry name is blank or padded with spaces, or the schema has no such field
 func mapChildOf(key string) Entry {
-	parent, name, field := mapParentOf(key)
-	if parent == nil || name == "" {
+	parent, name, fields := mapParentOf(key)
+	if parent == nil || name == "" || name != strings.TrimSpace(name) {
 		return nil
 	}
 	meta := parent.Meta
-	meta.Key, meta.Slash, meta.Companions, meta.Derive = key, "", nil, nil
+	meta.Key, meta.Slash, meta.Validate, meta.Companions, meta.Derive = key, "", nil, nil, nil
 	def := config.AsMap(parent.DefaultValue())[name]
 	if parent.Value == nil {
 		v, _ := lookupPath(config.AsMap(parent.DefaultValue()), strings.TrimPrefix(key, parent.Key+"."))
 		return &mapChild{Entry: &anyValue{}, meta: meta, parent: parent, def: v}
 	}
-	if field == "" {
-		return &mapChild{Entry: parent.Value, meta: meta, parent: parent, def: def}
+	entry := parent.Value
+	for rest := fields; len(rest) > 0; {
+		obj, ok := entry.(*Object)
+		if !ok {
+			return nil
+		}
+		field, taken := obj.fieldAt(rest)
+		if field == nil {
+			return nil
+		}
+		for _, part := range rest[:taken] {
+			def = config.AsMap(def)[part]
+		}
+		entry, rest = field, rest[taken:]
 	}
-	obj, ok := parent.Value.(*Object)
-	if !ok {
-		return nil
+	info := entry.Info()
+	meta.Validate = info.Validate
+	if len(fields) > 0 {
+		meta.Label, meta.Short, meta.Help = info.Label, info.Short, info.Help
 	}
-	f := obj.Field(field)
-	if f == nil {
-		return nil
-	}
-	fm := f.Info()
-	meta.Label, meta.Short, meta.Help = fm.Label, fm.Short, fm.Help
-	return &mapChild{Entry: f, meta: meta, parent: parent, def: config.AsMap(def)[field]}
+	return &mapChild{Entry: entry, meta: meta, parent: parent, def: def}
 }
 
 // Every setting in group and order

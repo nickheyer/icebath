@@ -6,6 +6,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 type auxLogRecord struct {
@@ -94,15 +97,12 @@ func TestResolveMinimaxOAuthMissingCredentialsLogOnceDebug(t *testing.T) {
 	}
 }
 
-func TestResolveMinimaxOAuthProbeReadsRawStateNoRefresh(t *testing.T) {
+func TestResolveMinimaxOAuthProbeReadsTheStoredLoginWithoutRefresh(t *testing.T) {
 	ctx := modelsTestHome(t)
 	auxMinimaxSeams(t)
-	var asked []string
-	auxProviderAuthStateFn = func(_ PoolEnv, provider string) (map[string]any, error) {
-		asked = append(asked, provider)
-		return map[string]any{"access_token": "expired-but-present", "refresh_token": "rt",
-			"expires_at": "2001-01-01T00:00:00+00:00", "inference_base_url": auxMinimaxInferenceBaseURL}, nil
-	}
+	login := minimaxLogin(-time.Hour)
+	login["base_url"] = auxMinimaxInferenceBaseURL + "/"
+	writeMinimaxLogin(t, home.Dir(ctx), login)
 	resolveCalled := false
 	auxMinimaxRuntimeCredentialsFn = func(PoolEnv, bool) (map[string]any, error) {
 		resolveCalled = true
@@ -117,10 +117,10 @@ func TestResolveMinimaxOAuthProbeReadsRawStateNoRefresh(t *testing.T) {
 	}
 	probe, ok := client.(*auxProbeClient)
 	if !ok || probe.BaseURL() != auxMinimaxInferenceBaseURL {
-		t.Fatalf("probe mode must answer minimax-oauth with a probe client from the raw persisted state, got %#v", client)
+		t.Fatalf("probe mode must answer minimax-oauth with a probe client from the stored login, got %#v", client)
 	}
-	if resolveCalled || len(asked) != 1 || asked[0] != "minimax-oauth" {
-		t.Fatalf("resolver called %v, state asked %v", resolveCalled, asked)
+	if row := poolRows(t, home.Dir(ctx), "minimax-oauth")[0]; resolveCalled || row["access_token"] != "old" || row["refresh_token"] != "r0" {
+		t.Fatalf("the probe resolved or refreshed the login: called %v row %v", resolveCalled, row)
 	}
 }
 

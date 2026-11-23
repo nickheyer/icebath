@@ -27,8 +27,7 @@ func defaultsLiteral() Tree {
 		"fallback": map[string]any{
 			"min_switch_reset_seconds": 0,
 		},
-		"credential_pool_strategies": map[string]any{},
-		"toolsets":                   []any{"icebath-cli"},
+		"toolsets": []any{"icebath-cli"},
 		"database": map[string]any{
 			"journal_mode":       "wal",
 			"wal_autocheckpoint": nil,
@@ -88,7 +87,7 @@ func defaultsLiteral() Tree {
 			"coding_instructions":                   "",
 			"verify_guidance":                       true,
 			"max_verify_nudges":                     3,
-			"verify_on_stop":                        false,
+			"verify_on_stop":                        "off",
 			"gateway_timeout_warning":               900,
 			"clarify_timeout":                       3600,
 			"gateway_notify_interval":               180,

@@ -126,8 +126,8 @@ func TestFetchApiModelsSendsExtraHeadersToModelsProbe(t *testing.T) {
 	}
 }
 
-func TestNormalizerDoesNotMutateEntryApiKeyEnv(t *testing.T) {
-	entry := map[string]any{"base_url": "https://x.example/v1", "api_key_env": "MY_KEY"}
+func TestNormalizerDoesNotMutateTheEntry(t *testing.T) {
+	entry := map[string]any{"base_url": " https://x.example/v1 ", "key_env": " MY_KEY ", "api_mode": " chat_completions "}
 	snapshot := config.Clone(entry)
 	out := NormalizeCustomProviderEntry(entry, "p")
 	if !reflect.DeepEqual(entry, snapshot) {
@@ -138,18 +138,9 @@ func TestNormalizerDoesNotMutateEntryApiKeyEnv(t *testing.T) {
 	}
 }
 
-func TestNormalizerDoesNotMutateEntryCamelAliases(t *testing.T) {
-	entry := map[string]any{"baseUrl": "https://x.example/v1", "apiKey": "sk-test-not-real"}
-	snapshot := config.Clone(entry)
-	NormalizeCustomProviderEntry(entry, "p")
-	if !reflect.DeepEqual(entry, snapshot) {
-		t.Fatalf("camelCase aliasing wrote into the input: %v", entry)
-	}
-}
-
 func TestProvidersDictRoundtripLeavesCachedConfigUntouched(t *testing.T) {
 	cfg := map[string]any{"providers": map[string]any{"myprov": map[string]any{
-		"base_url": "https://x.example/v1", "api_key_env": "MY_KEY", "models": map[string]any{"m1": map[string]any{"context_length": 8192}},
+		"base_url": "https://x.example/v1", "key_env": "MY_KEY", "models": map[string]any{"m1": map[string]any{"context_length": 8192}},
 	}}}
 	snapshot := config.Clone(cfg)
 	ProvidersDictToCustomProviders(cfg["providers"])

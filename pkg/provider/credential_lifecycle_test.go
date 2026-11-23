@@ -45,7 +45,7 @@ func TestDeleteClearsProviderModelsCache(t *testing.T) {
 	key := "zk-" + strings.Repeat("a", 24)
 	t.Setenv("ZAI_API_KEY", key)
 	credentialLifecycleWrite(t, filepath.Join(h, ".env"), "ZAI_API_KEY="+key+"\n")
-	raw, _ := json.Marshal(map[string]any{"credential_pool": map[string]any{"zai": []any{map[string]any{
+	raw, _ := json.Marshal(map[string]any{"version": 2, "credential_pool": map[string]any{"zai": []any{map[string]any{
 		"id": "e1", "label": "env", "auth_type": "api_key", "priority": 0, "source": "env:ZAI_API_KEY", "access_token": key}}}})
 	credentialLifecycleWrite(t, filepath.Join(h, "auth.json"), string(raw))
 	cachePath := filepath.Join(h, "provider_models_cache.json")
@@ -93,7 +93,7 @@ func TestPutAPIEnvMaterializesCredentialPoolEntry(t *testing.T) {
 	h := credentialLifecycleHome(t)
 	key := "ocg-" + strings.Repeat("e", 28)
 	t.Setenv("OPENCODE_GO_API_KEY", "")
-	credentialLifecycleWrite(t, filepath.Join(h, "auth.json"), `{"credential_pool": {}}`)
+	credentialLifecycleWrite(t, filepath.Join(h, "auth.json"), `{"version": 2, "credential_pool": {}}`)
 	result, err := SaveProviderEnvCredential(context.Background(), h, "OPENCODE_GO_API_KEY", key)
 	if err != nil || !result.OK || result.Key != "OPENCODE_GO_API_KEY" {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -152,16 +152,16 @@ func TestDeleteScrubsKeyedProvidersMirror(t *testing.T) {
 	}
 }
 
-func TestScrubNeverTouchesProvidersBaseURLAlias(t *testing.T) {
+func TestScrubNeverTouchesAProvidersBaseURL(t *testing.T) {
 	h := credentialLifecycleHome(t)
 	old := "https://llm.example.test/v1"
 	credentialLifecycleWrite(t, filepath.Join(h, ".env"), "OPENAI_API_KEY="+old+"\n")
-	credentialLifecycleWrite(t, filepath.Join(h, "config.yaml"), "providers:\n  myendpoint:\n    api: "+old+"\n    model: my-model\n")
+	credentialLifecycleWrite(t, filepath.Join(h, "config.yaml"), "providers:\n  myendpoint:\n    base_url: "+old+"\n    default_model: my-model\n")
 	result, err := RemoveProviderEnvCredential(context.Background(), h, "OPENAI_API_KEY")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg := credentialLifecycleRead(t, filepath.Join(h, "config.yaml")); !strings.Contains(cfg, old) || containsString(result.ConfigScrubbed, "providers.myendpoint.api") {
-		t.Fatalf("providers.<id>.api is a base_url and must survive:\n%s %v", cfg, result.ConfigScrubbed)
+	if cfg := credentialLifecycleRead(t, filepath.Join(h, "config.yaml")); !strings.Contains(cfg, old) || containsString(result.ConfigScrubbed, "providers.myendpoint.base_url") {
+		t.Fatalf("providers.<id>.base_url is an address and must survive:\n%s %v", cfg, result.ConfigScrubbed)
 	}
 }

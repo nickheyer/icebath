@@ -243,7 +243,7 @@ func TestPooledCredentialEnablesTheBackend(t *testing.T) {
 
 func TestOneJobKeepsOneCredentialWhileThePoolRotates(t *testing.T) {
 	h := orIsolation(t)
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("credential_pool_strategies:\n  openrouter: round_robin\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("logins:\n  openrouter:\n    strategy: round_robin\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	addPooledKey(t, h, "sk-or-one", "one", "aaaaaa")

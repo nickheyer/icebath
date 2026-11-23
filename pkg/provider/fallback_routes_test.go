@@ -61,8 +61,8 @@ func TestResolveFallbackEntryAPIKeyExport(t *testing.T) {
 	if got := ResolveFallbackEntryAPIKey(ctx, h, map[string]any{"api_key": " sk-inline ", "key_env": "FALLBACK_ENTRY_KEY"}); got != "sk-inline" {
 		t.Fatalf("inline %q", got)
 	}
-	if got := ResolveFallbackEntryAPIKey(ctx, h, map[string]any{"api_key_env": "FALLBACK_ENTRY_KEY"}); got != "sk-from-env" {
-		t.Fatalf("key env alias %q", got)
+	if got := ResolveFallbackEntryAPIKey(ctx, h, map[string]any{"key_env": "FALLBACK_ENTRY_KEY"}); got != "sk-from-env" {
+		t.Fatalf("key env %q", got)
 	}
 	if got := ResolveFallbackEntryAPIKey(ctx, h, nil); got != "" {
 		t.Fatalf("nil entry %q", got)

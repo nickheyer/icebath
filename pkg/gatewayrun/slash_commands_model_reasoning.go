@@ -71,7 +71,7 @@ func (r *GatewayRunner) handleReasoningCommand(ctx context.Context, event *gatew
 	routeProvider := pyrepr.Str(pyrepr.Or(pyrepr.Or(sessionRoute["provider"], modelCfg["provider"]), ""))
 	routeModel := sessionModel
 	if routeModel == "" {
-		routeModel = pyrepr.Str(pyrepr.Or(pyrepr.Or(modelCfg["default"], modelCfg["model"]), ""))
+		routeModel = pyrepr.Str(pyrepr.Or(modelCfg["default"], ""))
 	}
 	routeMode := provider.GetCurrentCodexRuntime(map[string]any{"model": modelCfg})
 	label := func(effort string) string {

@@ -4,19 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 )
-
-// Temp home whose auth.json holds one Codex access token and no pool
-func auxCodexAuthHome(t *testing.T, accessToken string) context.Context {
-	t.Helper()
-	ctx := auxMainTestHome(t, "")
-	auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{
-		"openai-codex": map[string]any{"tokens": map[string]any{"access_token": accessToken, "refresh_token": "r"}},
-	}})
-	auxFixedPoolEntry(t, false, nil)
-	return ctx
-}
 
 // Swaps the Anthropic SDK builder alone, recording the key and base URL it receives
 func auxRecordAnthropicBuild(t *testing.T) *[2]any {
@@ -39,31 +27,6 @@ func auxAnthropicIsOAuth(t *testing.T, client AuxClient) bool {
 		t.Fatalf("got %T", client)
 	}
 	return wrapped.adapter.isOAuth
-}
-
-func TestResolveCodexCredentialTokenValidAuthStore(t *testing.T) {
-	ctx := auxCodexAuthHome(t, "tok-123")
-	token, _, err := auxResolveCodexCredentialAndBase(ctx)
-	if err != nil || token != "tok-123" {
-		t.Fatalf("got %q %v", token, err)
-	}
-}
-
-func TestResolveCodexCredentialTokenExpiredJwtReturnsNone(t *testing.T) {
-	ctx := auxCodexAuthHome(t, auxCodexJWT(time.Now().Unix()-3600))
-	token, _, err := auxResolveCodexCredentialAndBase(ctx)
-	if err != nil || token != "" {
-		t.Fatalf("Expired JWT should return None, got %q %v", token, err)
-	}
-}
-
-func TestResolveCodexCredentialTokenValidJwtReturnsToken(t *testing.T) {
-	valid := auxCodexJWT(time.Now().Unix() + 3600)
-	ctx := auxCodexAuthHome(t, valid)
-	token, _, err := auxResolveCodexCredentialAndBase(ctx)
-	if err != nil || token != valid {
-		t.Fatalf("got %q %v", token, err)
-	}
 }
 
 func TestAnthropicOAuthFlagOauthTokenSetsFlag(t *testing.T) {

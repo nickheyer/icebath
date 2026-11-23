@@ -197,7 +197,7 @@ func TestStatusSnapshotDoesNotRefreshOrBenchAnExpiringPoolEntry(t *testing.T) {
 
 func TestStatusSnapshotLeavesRoundRobinOrderAndCountsUntouched(t *testing.T) {
 	h, env, _ := poolOnlyCodexHome(t, []string{jwtExpiringIn(3600), jwtExpiringIn(3600)})
-	writeConfigYAML(t, h, "credential_pool_strategies:\n  openai-codex: round_robin\n")
+	writeConfigYAML(t, h, "logins:\n  openai-codex:\n    strategy: round_robin\n")
 	before, _ := os.ReadFile(filepath.Join(h, "auth.json"))
 	if GetCodexAuthStatus(env)["logged_in"] != true {
 		t.Fatal("not logged in")
@@ -343,7 +343,7 @@ func TestClearModelEndpointCredentialsRemovesKeyAndMode(t *testing.T) {
 }
 
 func TestClearModelEndpointCredentialsTreatsKeyEnvLikeTheInlineKey(t *testing.T) {
-	modelCfg := map[string]any{"provider": "custom_x", "key_env": "CUSTOM_X_API_KEY", "api_mode": "openai"}
+	modelCfg := map[string]any{"provider": "custom_x", "key_env": "CUSTOM_X_API_KEY", "api_mode": "chat_completions"}
 	clearModelEndpointCredentials(modelCfg, false, true, false)
 	if modelCfg["key_env"] != "CUSTOM_X_API_KEY" {
 		t.Fatal("key_env cleared under clear_api_key=false")
@@ -479,7 +479,7 @@ func TestLogoutFallsBackToConfigSelectedOAuthProvider(t *testing.T) {
 
 func TestLogoutUnknownProviderAndUntouchedConfig(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{"access_token": "a"}}}})
+	writeXAILogin(t, h, xaiLogin("a", "r"))
 	writeConfigYAML(t, h, "model:\n  provider: openrouter\n")
 	var out bytes.Buffer
 	err := LogoutLogin(env, "no-such-provider", false, &out)

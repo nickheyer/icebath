@@ -199,12 +199,16 @@ func ambiguousAliasMessage(err *AmbiguousAliasError) string {
 		err.Alias, len(err.Candidates), err.Provider, strings.Join(lines, "\n"), more)
 }
 
-// Id a provider name routes to, custom colon name for a legacy custom provider entry
+// Id a provider name routes to, a providers entry answering its one custom identity however the name spells it
 func providerIdentity(ctx context.Context, name string, userProviders map[string]any, customProviders []any) string {
-	if name != "" {
-		if pdef := ResolveProviderFull(ctx, name, userProviders, customProviders); pdef != nil {
-			return pdef.ID
-		}
+	if name == "" {
+		return NormalizeProviderDef(ctx, name)
+	}
+	if id := PersistedProviderID(ctx, name, userProviders); id != name {
+		return id
+	}
+	if pdef := ResolveProviderFull(ctx, name, userProviders, customProviders); pdef != nil {
+		return PersistedProviderID(ctx, pdef.ID, userProviders)
 	}
 	return NormalizeProviderDef(ctx, name)
 }
@@ -524,7 +528,7 @@ func configuredProviderIdentity(slug string, cfg map[string]any) [4]string {
 	}
 	apiMode := msClean(entry["api_mode"])
 	if apiMode != "" {
-		apiMode = strings.ToLower(CanonicalAPIMode(apiMode))
+		apiMode = strings.ToLower(strings.TrimSpace(apiMode))
 	}
 	return [4]string{name, baseURL, credential, apiMode}
 }
@@ -647,7 +651,7 @@ func entryConfiguredKey(cfg map[string]any, readEnv func(string) string) string 
 // The providers.ollama block and its configured base URL
 func ollamaConfiguredBase(ctx context.Context) (map[string]any, string) {
 	cfg := getProviderConfigDict(ctx, "ollama")
-	return cfg, msClean(pyOr(cfg["base_url"], cfg["api"], cfg["url"]))
+	return cfg, msClean(cfg["base_url"])
 }
 
 // Unknown provider error with the left core install hint or up to three config structure issues

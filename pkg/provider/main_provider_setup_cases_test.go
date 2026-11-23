@@ -556,9 +556,9 @@ func TestRemoveCustomProviderFallsBackOnMenuRuntimeError(t *testing.T) {
 	})
 	r := pickerCaseRun(t, ctx, h, out)
 	cfg := r.Config
-	cfg["custom_providers"] = []any{
-		map[string]any{"name": "Local A", "base_url": "http://localhost:8001/v1"},
-		map[string]any{"name": "Local B", "base_url": "http://localhost:8002/v1"},
+	cfg["providers"] = map[string]any{
+		"local-a": map[string]any{"name": "Local A", "base_url": "http://localhost:8001/v1"},
+		"local-b": map[string]any{"name": "Local B", "base_url": "http://localhost:8002/v1"},
 	}
 	if err := config.Save(h, config.Tree(cfg)); err != nil {
 		t.Fatal(err)
@@ -576,8 +576,8 @@ func TestRemoveCustomProviderFallsBackOnMenuRuntimeError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(reloaded["custom_providers"], []any{map[string]any{"name": "Local B", "base_url": "http://localhost:8002/v1"}}) {
-		t.Fatalf("custom providers %v", reloaded["custom_providers"])
+	if !reflect.DeepEqual(reloaded["providers"], map[string]any{"local-b": map[string]any{"name": "Local B", "base_url": "http://localhost:8002/v1"}}) {
+		t.Fatalf("providers %v", reloaded["providers"])
 	}
 }
 
@@ -587,7 +587,7 @@ func TestSelectProviderAndModelWarnsIfNamedCustomProviderDisappears(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg["custom_providers"] = []any{map[string]any{"name": "Local", "base_url": "http://localhost:8080/v1"}}
+	cfg["providers"] = map[string]any{"local": map[string]any{"name": "Local", "base_url": "http://localhost:8080/v1"}}
 	if err := config.Save(h, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestSelectProviderAndModelWarnsIfNamedCustomProviderDisappears(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		current["custom_providers"] = []any{}
+		current["providers"] = map[string]any{}
 		if err := config.Save(h, current); err != nil {
 			t.Fatal(err)
 		}
@@ -652,7 +652,7 @@ func capturePickerLabels(t *testing.T, ctx context.Context) []string {
 
 func TestCliPickerHidesExcludedProvider(t *testing.T) {
 	h, ctx, _ := pickerCaseHome(t)
-	writePickerConfig(t, h, "custom_providers: []\nmodel: old-model\nmodel_catalog:\n  excluded_providers:\n  - openrouter\n")
+	writePickerConfig(t, h, "model: old-model\nmodel_catalog:\n  excluded_providers:\n  - openrouter\n")
 	labels := capturePickerLabels(t, ctx)
 	if len(labels) == 0 {
 		t.Fatal("provider menu was empty")
@@ -679,11 +679,11 @@ func TestCliPickerHidesExcludedProviderByAlias(t *testing.T) {
 		}
 		return false
 	}
-	writePickerConfig(t, h, "custom_providers: []\nmodel: old-model\n")
+	writePickerConfig(t, h, "model: old-model\n")
 	if baseline := capturePickerLabels(t, ctx); !contains(baseline) {
 		t.Fatalf("sanity: %s (%q) should appear by default; labels=%v", targetSlug, fragment, baseline)
 	}
-	writePickerConfig(t, h, "custom_providers: []\nmodel: old-model\nmodel_catalog:\n  excluded_providers:\n  - "+targetAlias+"\n")
+	writePickerConfig(t, h, "model: old-model\nmodel_catalog:\n  excluded_providers:\n  - "+targetAlias+"\n")
 	if excluded := capturePickerLabels(t, ctx); contains(excluded) {
 		t.Fatalf("excluding alias %q should hide %s; labels=%v", targetAlias, targetSlug, excluded)
 	}
@@ -691,9 +691,9 @@ func TestCliPickerHidesExcludedProviderByAlias(t *testing.T) {
 
 func TestCliPickerEmptyExcludedIsNoop(t *testing.T) {
 	h, ctx, _ := pickerCaseHome(t)
-	writePickerConfig(t, h, "custom_providers: []\nmodel: old-model\nmodel_catalog:\n  excluded_providers: []\n")
+	writePickerConfig(t, h, "model: old-model\nmodel_catalog:\n  excluded_providers: []\n")
 	excluded := capturePickerLabels(t, ctx)
-	writePickerConfig(t, h, "custom_providers: []\nmodel: old-model\n")
+	writePickerConfig(t, h, "model: old-model\n")
 	baseline := capturePickerLabels(t, ctx)
 	if !reflect.DeepEqual(excluded, baseline) {
 		t.Fatalf("excluded %v baseline %v", excluded, baseline)

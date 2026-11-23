@@ -112,7 +112,7 @@ func TestProvidersBlockKeepsDeclaredBareSlug(t *testing.T) {
 
 func TestCustomProviderNameCanonicalizesToDurableSlug(t *testing.T) {
 	assignHome(t)
-	cfg := map[string]any{"custom_providers": []any{map[string]any{"name": "US Azure", "base_url": "http://localhost:18025/v1"}}}
+	cfg := map[string]any{"providers": map[string]any{"us-azure": map[string]any{"name": "US Azure", "base_url": "http://localhost:18025/v1"}}}
 	for _, provider := range []string{"US Azure", "custom:us-azure"} {
 		if p, m := assignNormalize(t, cfg, provider); p != "custom:us-azure" || m != "vendor/model-a" {
 			t.Fatalf("%s: %q %q", provider, p, m)
@@ -221,7 +221,7 @@ func TestModelSetSecretHandlingEnvTemplateKeyIsCopiedAsTemplateNotPlaintext(t *t
 	t.Setenv("MY_SECRET_KEY", assignSecret)
 	assignWrite(t, h, "model:\n  provider: openrouter\n  default: some/model\n"+
 		"providers:\n  myprov:\n    base_url: https://api.example.com/v1\n"+
-		"    api_key: ${MY_SECRET_KEY}\n    model: test-model\n")
+		"    api_key: ${MY_SECRET_KEY}\n    default_model: test-model\n")
 	assignMain(t, "myprov", "test-model", "", "")
 	raw, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
 	if strings.Contains(string(raw), assignSecret) {
@@ -238,7 +238,7 @@ func TestModelSetSecretHandlingKeyEnvPointerIsPreferredOverApiKey(t *testing.T) 
 	t.Setenv("MYPROV_KEY", assignSecret)
 	assignWrite(t, h, "model:\n  provider: openrouter\n  default: some/model\n"+
 		"providers:\n  myprov:\n    base_url: https://api.example.com/v1\n"+
-		"    key_env: MYPROV_KEY\n    api_key: ${MYPROV_KEY}\n    model: test-model\n")
+		"    key_env: MYPROV_KEY\n    api_key: ${MYPROV_KEY}\n    default_model: test-model\n")
 	assignMain(t, "myprov", "test-model", "", "")
 	raw, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
 	block := assignBeforeProviders(t, h)
@@ -247,12 +247,12 @@ func TestModelSetSecretHandlingKeyEnvPointerIsPreferredOverApiKey(t *testing.T) 
 	}
 }
 
-func TestModelSetSecretHandlingLiteralOnDiskKeyKeepsLegacyCopyBehavior(t *testing.T) {
+func TestModelSetSecretHandlingLiteralOnDiskKeyIsCopied(t *testing.T) {
 	h := assignHome(t)
 	t.Setenv("MY_SECRET_KEY", assignSecret)
 	assignWrite(t, h, "model:\n  provider: openrouter\n  default: some/model\n"+
 		"providers:\n  myprov:\n    base_url: https://api.example.com/v1\n"+
-		"    api_key: sk-literal-on-disk\n    model: test-model\n")
+		"    api_key: sk-literal-on-disk\n    default_model: test-model\n")
 	assignMain(t, "myprov", "test-model", "", "")
 	if !strings.Contains(assignBeforeProviders(t, h), "api_key: sk-literal-on-disk") {
 		t.Fatalf("model block %s", assignBeforeProviders(t, h))
@@ -295,20 +295,11 @@ const (
 	assignSubmittedURL = "http://127.0.0.2:9/v1"
 )
 
-// The two named provider layouts the explicit endpoint cases run over
-var assignLayouts = map[string]map[string]any{
-	"custom_providers_list": {"custom_providers": []any{map[string]any{"name": "provider-a", "base_url": assignOldURL, "api_key": "key-a", "model": "model-a"}}},
-	"providers_dict": {"providers": map[string]any{"custom:provider-a": map[string]any{"name": "provider-a", "base_url": assignOldURL,
-		"api_key": "key-a", "default_model": "model-a"}}},
-}
-
-// Writes the JSON config of a layout with provider-a active
-func assignWriteLayout(t *testing.T, h, layout string, model map[string]any) {
+// Writes the JSON config of the saved provider-a endpoint with the given model section
+func assignWriteNamed(t *testing.T, h string, model map[string]any) {
 	t.Helper()
-	doc := map[string]any{"model": model}
-	for k, v := range assignLayouts[layout] {
-		doc[k] = v
-	}
+	doc := map[string]any{"model": model, "providers": map[string]any{"provider-a": map[string]any{"name": "provider-a", "base_url": assignOldURL,
+		"api_key": "key-a", "default_model": "model-a"}}}
 	raw, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -316,19 +307,11 @@ func assignWriteLayout(t *testing.T, h, layout string, model map[string]any) {
 	assignWrite(t, h, string(raw))
 }
 
-// Every endpoint URL the custom_providers rows and providers entries of a config list
+// Every endpoint URL the providers entries of a config hold
 func assignEndpointURLs(cfg map[string]any) map[string]bool {
 	out := map[string]bool{}
-	var rows []any
-	if list, ok := cfg["custom_providers"].([]any); ok {
-		rows = append(rows, list...)
-	}
-	if providers, ok := cfg["providers"].(map[string]any); ok {
-		for _, v := range providers {
-			rows = append(rows, v)
-		}
-	}
-	for _, row := range rows {
+	providers, _ := cfg["providers"].(map[string]any)
+	for _, row := range providers {
 		if m, ok := row.(map[string]any); ok {
 			out[pyOrStr(m["base_url"])] = true
 		}
@@ -337,35 +320,33 @@ func assignEndpointURLs(cfg map[string]any) map[string]bool {
 }
 
 func TestWizardSaveWithNewUrlRoutesToAndSavesTheNewEndpoint(t *testing.T) {
-	for _, layout := range []string{"custom_providers_list", "providers_dict"} {
-		for _, apiKey := range []string{"key-b", ""} {
-			t.Run(layout+"-"+apiKey, func(t *testing.T) {
-				h := assignHome(t)
-				assignWriteLayout(t, h, layout, map[string]any{"provider": "custom:provider-a", "default": "model-a"})
-				result := assignMain(t, "custom", "model-b", assignNewURL, apiKey)
-				if result["provider"] != "custom" || result["base_url"] != assignNewURL {
-					t.Fatalf("result %v", result)
-				}
-				cfg := assignRead(t, h)
-				model := cfg["model"].(map[string]any)
-				if model["provider"] != "custom" || model["default"] != "model-b" || model["base_url"] != assignNewURL {
-					t.Fatalf("model %v", model)
-				}
-				if pyOrStr(model["api_key"]) != apiKey {
-					t.Fatalf("api_key %v", model["api_key"])
-				}
-				urls := assignEndpointURLs(cfg)
-				if !urls[assignOldURL] || !urls[assignNewURL] {
-					t.Fatalf("endpoints %v", urls)
-				}
-			})
-		}
+	for _, apiKey := range []string{"key-b", ""} {
+		t.Run("api_key="+apiKey, func(t *testing.T) {
+			h := assignHome(t)
+			assignWriteNamed(t, h, map[string]any{"provider": "custom:provider-a", "default": "model-a"})
+			result := assignMain(t, "custom", "model-b", assignNewURL, apiKey)
+			if result["provider"] != "custom" || result["base_url"] != assignNewURL {
+				t.Fatalf("result %v", result)
+			}
+			cfg := assignRead(t, h)
+			model := cfg["model"].(map[string]any)
+			if model["provider"] != "custom" || model["default"] != "model-b" || model["base_url"] != assignNewURL {
+				t.Fatalf("model %v", model)
+			}
+			if pyOrStr(model["api_key"]) != apiKey {
+				t.Fatalf("api_key %v", model["api_key"])
+			}
+			urls := assignEndpointURLs(cfg)
+			if !urls[assignOldURL] || !urls[assignNewURL] {
+				t.Fatalf("endpoints %v", urls)
+			}
+		})
 	}
 }
 
 func TestBareCustomWithoutUrlStillRecoversTheNamedProvider(t *testing.T) {
 	h := assignHome(t)
-	assignWriteLayout(t, h, "custom_providers_list", map[string]any{"provider": "custom:provider-a", "default": "model-a"})
+	assignWriteNamed(t, h, map[string]any{"provider": "custom:provider-a", "default": "model-a"})
 	ctx := context.Background()
 	if provider, _ := normalizeMainModelAssignment(ctx, "custom", "model-a"); provider != "custom:provider-a" {
 		t.Fatalf("provider %q", provider)
@@ -408,7 +389,7 @@ func TestWizardValidationProbesTheSubmittedEndpointNotTheSavedOne(t *testing.T) 
 	for _, apiKey := range []string{"key-b", ""} {
 		t.Run("api_key="+apiKey, func(t *testing.T) {
 			h := assignHome(t)
-			assignWriteLayout(t, h, "custom_providers_list", map[string]any{"provider": "custom:provider-a", "default": "model-a",
+			assignWriteNamed(t, h, map[string]any{"provider": "custom:provider-a", "default": "model-a",
 				"base_url": assignOldURL, "api_key": "key-a"})
 			probes := &assignProbes{}
 			probes.install()
@@ -478,9 +459,8 @@ func TestSameEndpointModelSetPreservesBareCustomBlock(t *testing.T) {
 		model["api_mode"] != "chat_completions" {
 		t.Fatalf("model %v", model)
 	}
-	raw, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
-	if strings.Contains(string(raw), "custom_providers") {
-		t.Fatalf("registered a known endpoint %s", raw)
+	if urls := assignEndpointURLs(assignRead(t, h)); len(urls) != 0 {
+		t.Fatalf("registered a known endpoint %v", urls)
 	}
 }
 
@@ -488,16 +468,8 @@ func TestNewEndpointModelSetStillRegistersNamedProvider(t *testing.T) {
 	h := assignHome(t)
 	assignWrite(t, h, assignCLIConfig)
 	assignMain(t, "custom", "other-model", "http://192.168.1.50:11434/v1", "")
-	cfg := assignRead(t, h)
-	registered := false
-	rows, _ := cfg["custom_providers"].([]any)
-	for _, row := range rows {
-		if m, ok := row.(map[string]any); ok && m["base_url"] == "http://192.168.1.50:11434/v1" {
-			registered = true
-		}
-	}
-	if !registered {
-		t.Fatalf("custom_providers %v", cfg["custom_providers"])
+	if cfg := assignRead(t, h); !assignEndpointURLs(cfg)["http://192.168.1.50:11434/v1"] {
+		t.Fatalf("providers %v", cfg["providers"])
 	}
 	if got := assignModelBlock(t, h)["base_url"]; got != "http://192.168.1.50:11434/v1" {
 		t.Fatalf("base_url %v", got)

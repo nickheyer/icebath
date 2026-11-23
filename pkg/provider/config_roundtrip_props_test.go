@@ -82,7 +82,7 @@ func TestP2RealCLIConfigSetChangesExactlyOneKey(t *testing.T) {
 		{"documented-existing", 401, func(c *roundtrip.Case) string {
 			for _, p := range c.LeafOrder {
 				// A free text setting, the one kind any text value replaces in place
-				if _, isText := settings.Find(roundtrip.CLIKey(p)).(*settings.String); isText && p[0] != "providers" && p[0] != "_config_version" {
+				if _, isText := settings.Find(roundtrip.CLIKey(p)).(*settings.String); isText && p[0] != "providers" {
 					return roundtrip.CLIKey(p)
 				}
 			}
@@ -92,8 +92,7 @@ func TestP2RealCLIConfigSetChangesExactlyOneKey(t *testing.T) {
 		{"documented-absent-bool", 408, func(*roundtrip.Case) string { return "compression.enabled" }, "false", false},
 		{"dotted-provider-name", 403, func(c *roundtrip.Case) string { return "providers." + propDottedProvider(c) + ".api_mode" }, "codex_responses", "codex_responses"},
 		{"yaml11-word-stays-a-string", 404, func(*roundtrip.Case) string { return "approvals.mode" }, "off", "off"},
-		{"unicode-value", 405, func(*roundtrip.Case) string { return "agent.system_prompt" }, "Réponds en français — 日本語 😀", "Réponds en français — 日本語 😀"},
-		{"custom-top-level-key", 406, func(*roundtrip.Case) string { return "c18_custom_root" }, "changed ü", "changed ü"},
+		{"unicode-value", 405, func(*roundtrip.Case) string { return "custom_prompt" }, "Réponds en français — 日本語 😀", "Réponds en français — 日本語 😀"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {

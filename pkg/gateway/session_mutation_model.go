@@ -224,7 +224,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	}
 	keyEnv := credential.keyEnv
 	if keyEnv == "" {
-		keyEnv = selectedProviderKeyEnv(resolution, result.TargetProvider)
+		keyEnv = selectedProviderKeyEnv(ctx, resolution, result.TargetProvider)
 	}
 	if keyEnv != "" {
 		model["key_env"] = keyEnv
@@ -421,10 +421,15 @@ func providerResolutionConfig(ctx context.Context, a *SessionAuthority, cfg map[
 	return resolved
 }
 
-// Credential pointer a selected named provider declares, never its secret value
-func selectedProviderKeyEnv(cfg map[string]any, name string) string {
+// Credential pointer the providers block of a selected provider declares, never its secret value: the entry the name routes to
+// however the name spells it, else the block its own name keys
+func selectedProviderKeyEnv(ctx context.Context, cfg map[string]any, name string) string {
 	providers, _ := cfg["providers"].(map[string]any)
-	entry, ok := providers[name].(map[string]any)
+	key := name
+	if path := provider.NamedCustomProviderPath(ctx, name, cfg); path != nil {
+		key = path.Key
+	}
+	entry, ok := providers[key].(map[string]any)
 	if !ok {
 		return ""
 	}

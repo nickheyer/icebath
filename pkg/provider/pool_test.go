@@ -438,7 +438,7 @@ func TestLoadPoolOAuthPathStillAutodiscovers(t *testing.T) {
 
 func TestLeastUsedStrategySelectsLowestCount(t *testing.T) {
 	h := newTestHome(t)
-	writeConfigYAML(t, h, "credential_pool_strategies:\n  openrouter: least_used\n")
+	writeConfigYAML(t, h, "logins:\n  openrouter:\n    strategy: least_used\n")
 	writeAuthStore(t, h, authWithPool("openrouter",
 		row(map[string]any{"id": "key-a", "label": "heavy", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-or-heavy", "request_count": 100}),
 		row(map[string]any{"id": "key-b", "label": "light", "auth_type": "api_key", "priority": 1, "source": "manual", "access_token": "sk-or-light", "request_count": 10}),
@@ -550,6 +550,7 @@ func TestPersistPreservesConcurrentDiskOnlyEntry(t *testing.T) {
 
 func makeAnthropicClaudeCodePool(t *testing.T, h, access, refresh string, expiresAtMS int64) (*Pool, PooledCredential) {
 	t.Helper()
+	writeConfigYAML(t, h, "model:\n  provider: anthropic\n")
 	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{}})
 	writeClaudeCodeCredentials(t, access, refresh, expiresAtMS)
 	pool := LoadPool(testEnv(t, h), "anthropic")
@@ -1131,7 +1132,7 @@ func writeEnvHome(t *testing.T, h, provider string, envFile map[string]string, e
 		text += k + "=" + v + "\n"
 	}
 	writeEnvFile(t, h, text)
-	writeConfigYAML(t, h, "credential_pool_strategies:\n  "+provider+": round_robin\n")
+	writeConfigYAML(t, h, "logins:\n  "+provider+":\n    strategy: round_robin\n")
 	writeAuthStore(t, h, authWithPool(provider, row(map[string]any{"id": "x2", "label": extraVar, "auth_type": "api_key", "priority": 1, "source": "env:" + extraVar})))
 }
 
@@ -1194,7 +1195,7 @@ func TestNumberedEnvSiblingsSeedRotationWithoutConfig(t *testing.T) {
 		t.Run(tc.provider, func(t *testing.T) {
 			h := newTestHome(t)
 			writeEnvFile(t, h, tc.primary+"="+synPrimary+"\n"+tc.primary+"_2="+synSecondary+"\n"+tc.primary+"_3=syn-third-cccccccccccccccccccccccc\n"+tc.primary+"_5=syn-fifth-eeeeeeeeeeeeeeeeeeeeeeee\n")
-			writeConfigYAML(t, h, "credential_pool_strategies:\n  "+tc.provider+": round_robin\n")
+			writeConfigYAML(t, h, "logins:\n  "+tc.provider+":\n    strategy: round_robin\n")
 			pool := LoadPool(testEnv(t, h), tc.provider)
 			pool.mu.Lock()
 			available, _ := pool.availableEntries(false, false, "")

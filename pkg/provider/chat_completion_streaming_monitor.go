@@ -108,7 +108,7 @@ func (c *streamingCall) pollUntilDone() {
 	stale := c.currentStaleTimeout()
 	lifeCap := resolveStreamMaxLifetime(loadWireSettings(c.ctx).streamMaxLifetime, stale)
 	c.mon.lifetime = streamingLifetime{cap: lifeCap, started: time.Now()}
-	pkgLog().Debug(fmt.Sprintf("stream watchdog armed: stale=%.0fs cap=%.0fs model=%s", stale, lifeCap, c.kwargsModel("unknown")))
+	pkgLog().Debug(fmt.Sprintf("stream watchdog armed: stale=%s cap=%.0fs model=%s", windowText(stale), lifeCap, c.kwargsModel("unknown")))
 	for !c.callIsDone() {
 		select {
 		case <-c.callDone:
